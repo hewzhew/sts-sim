@@ -453,6 +453,12 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::MakeCopyInHand { original, amount } => {
             cards::handle_make_copy_in_hand(original, amount, state)
         }
+        Action::MakeCopyInDrawPile {
+            original,
+            amount,
+            random_spot,
+            to_bottom,
+        } => cards::handle_make_copy_in_draw_pile(original, amount, random_spot, to_bottom, state),
         Action::MakeCopyInDiscard { original, amount } => {
             cards::handle_make_copy_in_discard(original, amount, state)
         }

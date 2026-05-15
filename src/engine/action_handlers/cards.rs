@@ -710,6 +710,20 @@ fn make_random_pool_card_from_id(
     crate::content::cards::make_fresh_card_copy_for_combat(card_id, uuid, state)
 }
 
+fn apply_make_random_draw_pile_cost_override(
+    card: &mut crate::runtime::combat::CombatCard,
+    cost_for_turn: Option<u8>,
+) {
+    let Some(cost) = cost_for_turn else {
+        return;
+    };
+    if cost == 0 && card.combat_cost_without_turn_override_java() > 0 {
+        card.set_combat_and_turn_cost_java(0);
+    } else {
+        card.set_cost_for_turn_java(cost as i32);
+    }
+}
+
 fn materialize_random_class_card_in_hand_action(action: &mut Action, state: &mut CombatState) {
     let (card_type, cost_for_turn) = match action {
         Action::MakeRandomCardInHand {
@@ -725,7 +739,63 @@ fn materialize_random_class_card_in_hand_action(action: &mut Action, state: &mut
     }
 
     let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
-    let mut card = make_random_pool_card_from_id(pool[idx], state.next_card_uuid(), state);
+    let mut card = make_random_pool_card_from_id(pool[idx], 0, state);
+    if let Some(cost) = cost_for_turn {
+        card.set_cost_for_turn_java(cost as i32);
+    }
+
+    *action = Action::MakeCopyInHand {
+        original: Box::new(card),
+        amount: 1,
+    };
+}
+
+fn materialize_random_class_card_in_draw_pile_action(action: &mut Action, state: &mut CombatState) {
+    let (card_type, cost_for_turn, random_spot) = match action {
+        Action::MakeRandomCardInDrawPile {
+            card_type,
+            cost_for_turn,
+            random_spot,
+        } => (*card_type, *cost_for_turn, *random_spot),
+        _ => return,
+    };
+
+    let pool = class_card_pool_for_type(state.meta.player_class, card_type);
+    if pool.is_empty() {
+        return;
+    }
+
+    let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
+    let mut card = make_random_pool_card_from_id(pool[idx], 0, state);
+    apply_make_random_draw_pile_cost_override(&mut card, cost_for_turn);
+
+    *action = Action::MakeCopyInDrawPile {
+        original: Box::new(card),
+        amount: 1,
+        random_spot,
+        to_bottom: false,
+    };
+}
+
+fn materialize_random_colorless_card_in_hand_action(action: &mut Action, state: &mut CombatState) {
+    let (cost_for_turn, upgraded) = match action {
+        Action::MakeRandomColorlessCardInHand {
+            cost_for_turn,
+            upgraded,
+        } => (*cost_for_turn, *upgraded),
+        _ => return,
+    };
+
+    let pool = state.colorless_combat_pool();
+    if pool.is_empty() {
+        return;
+    }
+
+    let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
+    let mut card = crate::runtime::combat::CombatCard::new(pool[idx], 0);
+    if upgraded {
+        card.upgrades = 1;
+    }
     if let Some(cost) = cost_for_turn {
         card.set_cost_for_turn_java(cost as i32);
     }
@@ -860,6 +930,27 @@ pub fn handle_make_copy_in_hand(
     for _ in 0..amount {
         let card = original.make_stat_equivalent_copy_with_uuid(state.next_card_uuid());
         add_generated_card_to_hand_or_discard(card, state);
+    }
+}
+
+pub fn handle_make_copy_in_draw_pile(
+    original: Box<crate::runtime::combat::CombatCard>,
+    amount: u8,
+    random_spot: bool,
+    to_bottom: bool,
+    state: &mut CombatState,
+) {
+    for _ in 0..amount {
+        let mut card = original.make_stat_equivalent_copy_with_uuid(state.next_card_uuid());
+        let upgrade_call_sites = if amount < 6 { 2 } else { 1 };
+        apply_master_reality_to_generated_card(&mut card, state, upgrade_call_sites);
+        if to_bottom {
+            state.add_card_to_draw_pile_bottom(card);
+        } else if random_spot {
+            state.add_card_to_draw_pile_random_spot(card);
+        } else {
+            state.add_card_to_draw_pile_top(card);
+        }
     }
 }
 
@@ -1173,9 +1264,7 @@ pub fn handle_make_random_card_in_draw_pile(
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
         let mut card = make_random_pool_card_from_id(card_id, state.next_card_uuid(), state);
-        if let Some(cost) = cost_for_turn {
-            card.set_cost_for_turn_java(cost as i32);
-        }
+        apply_make_random_draw_pile_cost_override(&mut card, cost_for_turn);
         apply_master_reality_to_generated_card(&mut card, state, 2);
         if random_spot {
             state.add_card_to_draw_pile_random_spot(card);
@@ -1359,6 +1448,8 @@ fn execute_played_card(
     }
     for action in &mut card_actions {
         materialize_random_class_card_in_hand_action(&mut action.action, state);
+        materialize_random_class_card_in_draw_pile_action(&mut action.action, state);
+        materialize_random_colorless_card_in_hand_action(&mut action.action, state);
     }
     state.queue_actions(card_actions);
 

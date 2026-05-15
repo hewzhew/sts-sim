@@ -4887,6 +4887,80 @@ fn transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing() {
 }
 
 #[test]
+fn jack_of_all_trades_locks_random_colorless_cards_when_used() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut jack = CombatCard::new(CardId::JackOfAllTrades, 3970);
+    jack.upgrades = 1;
+    state.zones.hand = vec![jack];
+
+    assert_eq!(state.rng.card_random_rng.counter, 0);
+    crate::engine::action_handlers::cards::handle_play_card_from_hand(0, None, &mut state)
+        .expect("Jack Of All Trades should be playable");
+
+    assert_eq!(
+        state.rng.card_random_rng.counter, 2,
+        "Java JackOfAllTrades.use samples each random colorless card before queuing MakeTempCardInHandAction"
+    );
+    for _ in 0..2 {
+        match state.pop_next_action() {
+            Some(Action::MakeCopyInHand { original, amount }) => {
+                assert_eq!(amount, 1);
+                assert!(state.colorless_combat_pool().contains(&original.id));
+            }
+            other => {
+                panic!("Jack Of All Trades should queue concrete colorless cards, got {other:?}")
+            }
+        }
+    }
+}
+
+#[test]
+fn metamorphosis_locks_random_attacks_and_combat_cost_when_used() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.meta.player_class = "Silent";
+    state.zones.hand = vec![CombatCard::new(CardId::Metamorphosis, 3971)];
+
+    assert_eq!(state.rng.card_random_rng.counter, 0);
+    crate::engine::action_handlers::cards::handle_play_card_from_hand(0, None, &mut state)
+        .expect("Metamorphosis should be playable");
+
+    assert_eq!(
+        state.rng.card_random_rng.counter, 3,
+        "Java Metamorphosis.use samples concrete random attacks before queuing MakeTempCardInDrawPileAction"
+    );
+    for _ in 0..3 {
+        match state.pop_next_action() {
+            Some(Action::MakeCopyInDrawPile {
+                original,
+                amount,
+                random_spot,
+                to_bottom,
+            }) => {
+                assert_eq!(amount, 1);
+                assert!(random_spot);
+                assert!(!to_bottom);
+                let generated_def = get_card_definition(original.id);
+                assert_eq!(generated_def.card_type, CardType::Attack);
+                if generated_def.cost > 0 {
+                    assert_eq!(
+                        original.combat_cost_without_turn_override_java(),
+                        0,
+                        "Java Metamorphosis mutates positive-cost generated cards to combat cost 0"
+                    );
+                    assert_eq!(original.cost_for_turn_java(), 0);
+                } else {
+                    assert_eq!(
+                        original.combat_cost_without_turn_override_java(),
+                        i32::from(generated_def.cost)
+                    );
+                }
+            }
+            other => panic!("Metamorphosis should queue concrete draw-pile cards, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn forethought_resolves_as_execution_time_action_like_java() {
     let state = crate::test_support::blank_test_combat();
     let forethought = CombatCard::new(CardId::Forethought, 830);

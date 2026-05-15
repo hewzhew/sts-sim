@@ -491,6 +491,12 @@ pub enum Action {
         original: Box<crate::runtime::combat::CombatCard>,
         amount: u8,
     },
+    MakeCopyInDrawPile {
+        original: Box<crate::runtime::combat::CombatCard>,
+        amount: u8,
+        random_spot: bool,
+        to_bottom: bool,
+    },
     MakeCopyInDiscard {
         original: Box<crate::runtime::combat::CombatCard>,
         amount: u8,
