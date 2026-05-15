@@ -121,6 +121,103 @@ fn ironclad_starter_basic_runtime_actions_match_java_use_methods() {
 }
 
 #[test]
+fn silent_starter_and_discard_only_cards_are_registered_like_java_sources() {
+    let java_map = build_java_id_map();
+    assert_eq!(java_id(CardId::StrikeG), "Strike_G");
+    assert_eq!(java_id(CardId::DefendG), "Defend_G");
+    assert_eq!(java_id(CardId::Reflex), "Reflex");
+    assert_eq!(java_id(CardId::Tactician), "Tactician");
+    assert_eq!(java_map.get("Strike_G"), Some(&CardId::StrikeG));
+    assert_eq!(java_map.get("Defend_G"), Some(&CardId::DefendG));
+    assert_eq!(java_map.get("Reflex"), Some(&CardId::Reflex));
+    assert_eq!(java_map.get("Tactician"), Some(&CardId::Tactician));
+
+    let strike_g = get_card_definition(CardId::StrikeG);
+    assert_eq!(strike_g.name, "Strike");
+    assert_eq!(strike_g.card_type, CardType::Attack);
+    assert_eq!(strike_g.rarity, CardRarity::Basic);
+    assert_eq!(strike_g.cost, 1);
+    assert_eq!(strike_g.base_damage, 6);
+    assert_eq!(strike_g.target, CardTarget::Enemy);
+    assert_eq!(strike_g.upgrade_damage, 3);
+    assert!(strike_g.tags.contains(&CardTag::Strike));
+    assert!(strike_g.tags.contains(&CardTag::StarterStrike));
+
+    let defend_g = get_card_definition(CardId::DefendG);
+    assert_eq!(defend_g.name, "Defend");
+    assert_eq!(defend_g.card_type, CardType::Skill);
+    assert_eq!(defend_g.rarity, CardRarity::Basic);
+    assert_eq!(defend_g.cost, 1);
+    assert_eq!(defend_g.base_block, 5);
+    assert_eq!(defend_g.target, CardTarget::SelfTarget);
+    assert_eq!(defend_g.upgrade_block, 3);
+    assert!(defend_g.tags.contains(&CardTag::StarterDefend));
+
+    let reflex = get_card_definition(CardId::Reflex);
+    assert_eq!(reflex.card_type, CardType::Skill);
+    assert_eq!(reflex.rarity, CardRarity::Uncommon);
+    assert_eq!(reflex.cost, -2);
+    assert_eq!(reflex.base_magic, 2);
+    assert_eq!(reflex.upgrade_magic, 1);
+    assert!(SILENT_UNCOMMON_POOL.contains(&CardId::Reflex));
+
+    let tactician = get_card_definition(CardId::Tactician);
+    assert_eq!(tactician.card_type, CardType::Skill);
+    assert_eq!(tactician.rarity, CardRarity::Uncommon);
+    assert_eq!(tactician.cost, -2);
+    assert_eq!(tactician.base_magic, 1);
+    assert_eq!(tactician.upgrade_magic, 1);
+    assert!(SILENT_UNCOMMON_POOL.contains(&CardId::Tactician));
+
+    let state = crate::test_support::blank_test_combat();
+    let strike_actions = resolve_card_play(
+        CardId::StrikeG,
+        &state,
+        &CombatCard::new(CardId::StrikeG, 4),
+        Some(7),
+    );
+    assert_eq!(strike_actions.len(), 1);
+    match &strike_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 6);
+            assert_eq!(info.output, 6);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Strike_G should emit DamageAction, got {other:?}"),
+    }
+
+    let defend_actions = resolve_card_play(
+        CardId::DefendG,
+        &state,
+        &CombatCard::new(CardId::DefendG, 5),
+        None,
+    );
+    assert_eq!(
+        defend_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 5,
+        }
+    );
+
+    assert!(resolve_card_play(
+        CardId::Reflex,
+        &state,
+        &CombatCard::new(CardId::Reflex, 6),
+        None,
+    )
+    .is_empty());
+    assert!(resolve_card_play(
+        CardId::Tactician,
+        &state,
+        &CombatCard::new(CardId::Tactician, 7),
+        None,
+    )
+    .is_empty());
+}
+
+#[test]
 fn ironclad_common_utility_definitions_match_java_sources() {
     let anger = get_card_definition(CardId::Anger);
     assert_eq!(anger.name, "Anger");
