@@ -218,6 +218,11 @@ pub struct CombatRuntimeHints {
     pub emitted_events: Vec<DomainEvent>,
     pub engine_diagnostics: Vec<EngineDiagnostic>,
     pub pending_rewards: Vec<crate::rewards::state::RewardItem>,
+    /// Narrow Rust equivalent of Java `DrawCardAction.drawnCards`.
+    ///
+    /// It is updated only by draw actions that explicitly opt into draw
+    /// history because only Java follow-up actions should observe it.
+    pub last_drawn_cards: Vec<CardId>,
     pub monster_protocol: HashMap<EntityId, MonsterProtocolState>,
     /// Java `AbstractRoom.mugged` equivalent at combat scope.
     ///

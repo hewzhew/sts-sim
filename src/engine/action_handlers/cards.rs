@@ -112,7 +112,40 @@ fn move_hand_card_to_discard_at(pos: usize, hook_order: DiscardHookOrder, state:
     queue_manual_discard_hooks(&card, hook_order, state);
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DrawHistoryMode {
+    Untouched,
+    Track { clear_history: bool },
+}
+
 pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
+    handle_draw_cards_inner(amount, DrawHistoryMode::Untouched, state);
+}
+
+pub fn handle_draw_cards_with_history(amount: u32, clear_history: bool, state: &mut CombatState) {
+    handle_draw_cards_inner(amount, DrawHistoryMode::Track { clear_history }, state);
+}
+
+fn queue_split_draw_action_front(amount: u32, mode: DrawHistoryMode, state: &mut CombatState) {
+    match mode {
+        DrawHistoryMode::Untouched => state.queue_action_front(Action::DrawCards(amount)),
+        DrawHistoryMode::Track { .. } => state.queue_action_front(Action::DrawCardsWithHistory {
+            amount,
+            clear_history: false,
+        }),
+    }
+}
+
+fn handle_draw_cards_inner(amount: u32, mode: DrawHistoryMode, state: &mut CombatState) {
+    if matches!(
+        mode,
+        DrawHistoryMode::Track {
+            clear_history: true
+        }
+    ) {
+        state.runtime.last_drawn_cards.clear();
+    }
+
     let has_no_draw = store::has_power(state, 0, PowerId::NoDraw);
     if has_no_draw {
         return;
@@ -140,10 +173,10 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
 
     if amount as usize > deck_size {
         let remaining = amount - deck_size as u32;
-        state.queue_action_front(Action::DrawCards(remaining));
+        queue_split_draw_action_front(remaining, mode, state);
         state.queue_action_front(Action::EmptyDeckShuffle);
         if deck_size != 0 {
-            state.queue_action_front(Action::DrawCards(deck_size as u32));
+            queue_split_draw_action_front(deck_size as u32, mode, state);
         }
         return;
     }
@@ -159,6 +192,10 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
         if card.id == CardId::Void {
             let void_actions = crate::content::cards::status::void::on_drawn(state);
             state.queue_actions(void_actions);
+        }
+
+        if matches!(mode, DrawHistoryMode::Track { .. }) {
+            state.runtime.last_drawn_cards.push(card.id);
         }
 
         // Apply pre-draw powers (like Corruption, Confusion)
@@ -181,6 +218,18 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
                 state.queue_action_back(a);
             }
         }
+    }
+}
+
+pub fn handle_escape_plan_block_if_skill(block: i32, state: &mut CombatState) {
+    if state.runtime.last_drawn_cards.iter().any(|&card_id| {
+        crate::content::cards::get_card_definition(card_id).card_type
+            == crate::content::cards::CardType::Skill
+    }) {
+        state.queue_action_front(Action::GainBlock {
+            target: 0,
+            amount: block,
+        });
     }
 }
 

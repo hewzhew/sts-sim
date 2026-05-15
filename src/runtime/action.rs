@@ -278,6 +278,18 @@ pub enum Action {
     },
     LimitBreak,
     DrawCards(u32),
+    /// Java `DrawCardAction` path that exposes its static `drawnCards`
+    /// history to a queued follow-up action. Generic draw actions intentionally
+    /// do not mutate this history; actions that need it must opt in.
+    DrawCardsWithHistory {
+        amount: u32,
+        clear_history: bool,
+    },
+    /// Java `EscapePlanAction`: after the preceding DrawCardAction finishes,
+    /// gain block if that DrawCardAction drew at least one Skill.
+    EscapePlanBlockIfSkill {
+        block: i32,
+    },
     /// Java `CalculatedGambleAction`: at execution time, discard the current
     /// hand, then draw the same count, optionally plus one.
     CalculatedGamble {

@@ -5793,6 +5793,15 @@ fn silent_direct_attack_batch_matches_java_sources() {
     assert_eq!(expertise.upgrade_magic, 1);
     assert_eq!(java_id(CardId::Expertise), "Expertise");
 
+    let escape_plan = get_card_definition(CardId::EscapePlan);
+    assert_eq!(escape_plan.name, "Escape Plan");
+    assert_eq!(escape_plan.card_type, CardType::Skill);
+    assert_eq!(escape_plan.rarity, CardRarity::Uncommon);
+    assert_eq!(escape_plan.cost, 0);
+    assert_eq!(escape_plan.base_block, 3);
+    assert_eq!(escape_plan.upgrade_block, 2);
+    assert_eq!(java_id(CardId::EscapePlan), "Escape Plan");
+
     let predator = get_card_definition(CardId::Predator);
     assert_eq!(predator.name, "Predator");
     assert_eq!(predator.card_type, CardType::Attack);
@@ -5823,6 +5832,10 @@ fn silent_direct_attack_batch_matches_java_sources() {
     assert_eq!(
         build_java_id_map().get("Expertise"),
         Some(&CardId::Expertise)
+    );
+    assert_eq!(
+        build_java_id_map().get("Escape Plan"),
+        Some(&CardId::EscapePlan)
     );
     assert_eq!(build_java_id_map().get("Predator"), Some(&CardId::Predator));
 }
@@ -5863,6 +5876,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Catalyst,
             CardId::Concentrate,
             CardId::Dash,
+            CardId::EscapePlan,
             CardId::Expertise,
             CardId::Finisher,
             CardId::Flechettes,
@@ -6117,10 +6131,68 @@ fn silent_execution_time_action_cards_match_java_actions() {
         Some(Action::DrawCards(4))
     );
 
+    let escape = resolve_card_play(
+        CardId::EscapePlan,
+        &state,
+        &CombatCard::new(CardId::EscapePlan, 923),
+        None,
+    );
+    assert_eq!(
+        escape[0].action,
+        Action::DrawCardsWithHistory {
+            amount: 1,
+            clear_history: true,
+        }
+    );
+    assert_eq!(
+        escape[1].action,
+        Action::EscapePlanBlockIfSkill { block: 3 }
+    );
+    let mut escape_state = crate::test_support::blank_test_combat();
+    escape_state.zones.draw_pile = vec![CombatCard::new(CardId::Prepared, 924)];
+    escape_state.runtime.last_drawn_cards = vec![CardId::StrikeG];
+    crate::engine::action_handlers::execute_action(escape[0].action.clone(), &mut escape_state);
+    assert_eq!(
+        escape_state.runtime.last_drawn_cards,
+        vec![CardId::Prepared]
+    );
+    crate::engine::action_handlers::execute_action(escape[1].action.clone(), &mut escape_state);
+    assert_eq!(
+        escape_state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 3,
+        })
+    );
+
+    let mut split_escape_state = crate::test_support::blank_test_combat();
+    split_escape_state.zones.draw_pile.clear();
+    split_escape_state.zones.discard_pile = vec![CombatCard::new(CardId::Prepared, 925)];
+    split_escape_state.runtime.last_drawn_cards = vec![CardId::StrikeG];
+    crate::engine::action_handlers::execute_action(
+        escape[0].action.clone(),
+        &mut split_escape_state,
+    );
+    assert_eq!(
+        split_escape_state.runtime.last_drawn_cards,
+        Vec::<CardId>::new()
+    );
+    assert_eq!(
+        split_escape_state.pop_next_action(),
+        Some(Action::EmptyDeckShuffle)
+    );
+    assert_eq!(
+        split_escape_state.pop_next_action(),
+        Some(Action::DrawCardsWithHistory {
+            amount: 1,
+            clear_history: false,
+        })
+    );
+
     let predator = resolve_card_play(
         CardId::Predator,
         &state,
-        &CombatCard::new(CardId::Predator, 922),
+        &CombatCard::new(CardId::Predator, 926),
         Some(7),
     );
     match &predator[0].action {

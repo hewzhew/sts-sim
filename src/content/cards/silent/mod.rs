@@ -19,6 +19,7 @@ pub mod deadly_poison;
 pub mod deflect;
 pub mod die_die_die;
 pub mod dodge_and_roll;
+pub mod escape_plan;
 pub mod expertise;
 pub mod finisher;
 pub mod flechettes;

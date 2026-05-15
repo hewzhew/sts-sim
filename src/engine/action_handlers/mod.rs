@@ -343,6 +343,13 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
 
         // === Card domain ===
         Action::DrawCards(amount) => cards::handle_draw_cards(amount, state),
+        Action::DrawCardsWithHistory {
+            amount,
+            clear_history,
+        } => cards::handle_draw_cards_with_history(amount, clear_history, state),
+        Action::EscapePlanBlockIfSkill { block } => {
+            cards::handle_escape_plan_block_if_skill(block, state)
+        }
         Action::ExpertiseDraw { target_hand_size } => {
             cards::handle_expertise_draw(target_hand_size, state)
         }
