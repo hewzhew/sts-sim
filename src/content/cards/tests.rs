@@ -5942,6 +5942,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Concentrate,
             CardId::CripplingPoison,
             CardId::Dash,
+            CardId::Distraction,
             CardId::EndlessAgony,
             CardId::EscapePlan,
             CardId::Eviscerate,
@@ -7618,6 +7619,44 @@ fn alchemize_matches_java_random_potion_action() {
     );
     assert_eq!(actions.len(), 1);
     assert_eq!(actions[0].action, Action::ObtainPotion);
+}
+
+#[test]
+fn distraction_matches_java_random_skill_free_for_turn() {
+    let distraction = get_card_definition(CardId::Distraction);
+    assert_eq!(distraction.name, "Distraction");
+    assert_eq!(distraction.card_type, CardType::Skill);
+    assert_eq!(distraction.rarity, CardRarity::Uncommon);
+    assert_eq!(distraction.cost, 1);
+    assert_eq!(distraction.target, CardTarget::None);
+    assert!(distraction.exhaust);
+    assert!(exhausts_when_played(&CombatCard::new(
+        CardId::Distraction,
+        1007
+    )));
+    assert_eq!(java_id(CardId::Distraction), "Distraction");
+    assert_eq!(
+        build_java_id_map().get("Distraction"),
+        Some(&CardId::Distraction)
+    );
+    let mut distraction_plus = CombatCard::new(CardId::Distraction, 1008);
+    distraction_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&distraction_plus), Some(0));
+
+    let actions = resolve_card_play(
+        CardId::Distraction,
+        &crate::test_support::blank_test_combat(),
+        &distraction_plus,
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::MakeRandomCardInHand {
+            card_type: Some(CardType::Skill),
+            cost_for_turn: Some(0),
+        }
+    );
 }
 
 #[test]

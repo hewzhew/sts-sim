@@ -26,6 +26,7 @@ pub mod dash;
 pub mod deadly_poison;
 pub mod deflect;
 pub mod die_die_die;
+pub mod distraction;
 pub mod dodge_and_roll;
 pub mod doppelganger;
 pub mod endless_agony;
