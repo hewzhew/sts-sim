@@ -181,6 +181,8 @@ pub enum CardId {
     AllOutAttack,
     Concentrate,
     CalculatedGamble,
+    StormOfSteel,
+    Unload,
     // Add more as we expand
 }
 
@@ -3253,6 +3255,44 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 0,
             upgrade_magic: 0,
         },
+        CardId::StormOfSteel => CardDefinition {
+            id: CardId::StormOfSteel,
+            name: "Storm of Steel",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Rare,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::None,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
+        CardId::Unload => CardDefinition {
+            id: CardId::Unload,
+            name: "Unload",
+            card_type: CardType::Attack,
+            rarity: CardRarity::Rare,
+            cost: 1,
+            base_damage: 14,
+            base_block: 0,
+            base_magic: 0,
+            target: CardTarget::Enemy,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 4,
+            upgrade_block: 0,
+            upgrade_magic: 0,
+        },
         CardId::Adrenaline => CardDefinition {
             id: CardId::Adrenaline,
             name: "Adrenaline",
@@ -3516,7 +3556,13 @@ pub const SILENT_UNCOMMON_POOL: &[CardId] = &[
     CardId::Tactician,
 ];
 
-pub const SILENT_RARE_POOL: &[CardId] = &[CardId::Adrenaline, CardId::AfterImage, CardId::Burst];
+pub const SILENT_RARE_POOL: &[CardId] = &[
+    CardId::Adrenaline,
+    CardId::AfterImage,
+    CardId::Burst,
+    CardId::StormOfSteel,
+    CardId::Unload,
+];
 
 /// Returns the pool for a given rarity (Ironclad).
 /// Returns the pool of randomly obtainable curse cards.
@@ -3848,6 +3894,8 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::AllOutAttack => "All Out Attack",
         CardId::Concentrate => "Concentrate",
         CardId::CalculatedGamble => "Calculated Gamble",
+        CardId::StormOfSteel => "Storm of Steel",
+        CardId::Unload => "Unload",
         CardId::Adrenaline => "Adrenaline",
         CardId::AfterImage => "After Image",
         CardId::Burst => "Burst",
@@ -4026,6 +4074,8 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         AllOutAttack,
         Concentrate,
         CalculatedGamble,
+        StormOfSteel,
+        Unload,
         Adrenaline,
         AfterImage,
         Burst,

@@ -199,6 +199,37 @@ pub fn handle_calculated_gamble(draw_extra: bool, state: &mut CombatState) {
     });
 }
 
+pub fn handle_blade_fury(upgraded: bool, state: &mut CombatState) {
+    let count = state.zones.hand.len() as u8;
+    state.queue_action_front(Action::MakeTempCardInHand {
+        card_id: CardId::Shiv,
+        amount: count,
+        upgraded,
+    });
+    state.queue_action_front(Action::DiscardFromHand {
+        amount: count as i32,
+        random: false,
+        end_turn: false,
+    });
+}
+
+pub fn handle_unload_non_attack(state: &mut CombatState) {
+    let non_attacks: Vec<u32> = state
+        .zones
+        .hand
+        .iter()
+        .filter(|card| {
+            crate::content::cards::get_card_definition(card.id).card_type
+                != crate::content::cards::CardType::Attack
+        })
+        .map(|card| card.uuid)
+        .collect();
+
+    for uuid in non_attacks {
+        state.queue_action_front(Action::DiscardCard { card_uuid: uuid });
+    }
+}
+
 pub fn handle_put_on_deck(amount: usize, random: bool, state: &mut CombatState) {
     let amount = amount.min(state.zones.hand.len());
     if amount == 0 {

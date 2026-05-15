@@ -27,5 +27,7 @@ pub mod prepared;
 pub mod quick_slash;
 pub mod slice;
 pub mod sneaky_strike;
+pub mod storm_of_steel;
 pub mod sucker_punch;
 pub mod survivor;
+pub mod unload;

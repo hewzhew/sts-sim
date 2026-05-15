@@ -176,6 +176,8 @@ pub fn resolve_card_play_with_context(
         CardId::CalculatedGamble => {
             silent::calculated_gamble::calculated_gamble_play(_state, _card)
         }
+        CardId::StormOfSteel => silent::storm_of_steel::storm_of_steel_play(_state, _card),
+        CardId::Unload => silent::unload::unload_play(_state, _card, t),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),

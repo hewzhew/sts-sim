@@ -266,6 +266,13 @@ pub enum Action {
     CalculatedGamble {
         draw_extra: bool,
     },
+    /// Java `BladeFuryAction` from Storm of Steel.
+    BladeFury {
+        upgraded: bool,
+    },
+    /// Java `UnloadAction`: queues DiscardSpecificCardAction for every
+    /// non-Attack in hand at execution time.
+    UnloadNonAttack,
     EmptyDeckShuffle,
     ShuffleDiscardIntoDraw,
     PlayCard {

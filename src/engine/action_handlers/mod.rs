@@ -343,6 +343,8 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::CalculatedGamble { draw_extra } => {
             cards::handle_calculated_gamble(draw_extra, state)
         }
+        Action::BladeFury { upgraded } => cards::handle_blade_fury(upgraded, state),
+        Action::UnloadNonAttack => cards::handle_unload_non_attack(state),
         Action::EmptyDeckShuffle => cards::handle_empty_deck_shuffle(state),
         Action::ShuffleDiscardIntoDraw => cards::handle_shuffle_discard_into_draw(state),
         Action::DiscardCard { card_uuid } => cards::handle_discard_card(card_uuid, state),

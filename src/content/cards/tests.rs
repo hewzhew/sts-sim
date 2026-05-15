@@ -5624,6 +5624,107 @@ fn silent_discard_action_cards_runtime_actions_match_java_use_methods() {
 }
 
 #[test]
+fn silent_hand_conversion_cards_match_java_sources() {
+    let storm = get_card_definition(CardId::StormOfSteel);
+    assert_eq!(storm.name, "Storm of Steel");
+    assert_eq!(storm.card_type, CardType::Skill);
+    assert_eq!(storm.rarity, CardRarity::Rare);
+    assert_eq!(storm.cost, 1);
+    assert_eq!(storm.target, CardTarget::None);
+    assert_eq!(java_id(CardId::StormOfSteel), "Storm of Steel");
+
+    let unload = get_card_definition(CardId::Unload);
+    assert_eq!(unload.name, "Unload");
+    assert_eq!(unload.card_type, CardType::Attack);
+    assert_eq!(unload.rarity, CardRarity::Rare);
+    assert_eq!(unload.cost, 1);
+    assert_eq!(unload.base_damage, 14);
+    assert_eq!(unload.upgrade_damage, 4);
+    assert_eq!(java_id(CardId::Unload), "Unload");
+}
+
+#[test]
+fn silent_hand_conversion_cards_queue_java_execution_actions() {
+    let state = crate::test_support::blank_test_combat();
+
+    let storm = resolve_card_play(
+        CardId::StormOfSteel,
+        &state,
+        &CombatCard::new(CardId::StormOfSteel, 900),
+        None,
+    );
+    assert_eq!(storm[0].action, Action::BladeFury { upgraded: false });
+
+    let mut storm_plus = CombatCard::new(CardId::StormOfSteel, 901);
+    storm_plus.upgrades = 1;
+    let storm_plus_actions = resolve_card_play(CardId::StormOfSteel, &state, &storm_plus, None);
+    assert_eq!(
+        storm_plus_actions[0].action,
+        Action::BladeFury { upgraded: true }
+    );
+
+    let mut blade_state = crate::test_support::blank_test_combat();
+    blade_state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 902),
+        CombatCard::new(CardId::Defend, 903),
+    ];
+    crate::engine::action_handlers::execute_action(
+        Action::BladeFury { upgraded: true },
+        &mut blade_state,
+    );
+    assert_eq!(
+        blade_state.pop_next_action(),
+        Some(Action::DiscardFromHand {
+            amount: 2,
+            random: false,
+            end_turn: false,
+        }),
+        "Java BladeFuryAction addToTop's DiscardAction after MakeTempCardInHandAction, so discard executes first"
+    );
+    assert_eq!(
+        blade_state.pop_next_action(),
+        Some(Action::MakeTempCardInHand {
+            card_id: CardId::Shiv,
+            amount: 2,
+            upgraded: true,
+        })
+    );
+
+    let unload = resolve_card_play(
+        CardId::Unload,
+        &state,
+        &CombatCard::new(CardId::Unload, 904),
+        Some(7),
+    );
+    match &unload[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.output, 14);
+        }
+        other => panic!("Unload first action should damage, got {other:?}"),
+    }
+    assert_eq!(unload[1].action, Action::UnloadNonAttack);
+
+    let mut unload_state = crate::test_support::blank_test_combat();
+    unload_state.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 905),
+        CombatCard::new(CardId::Defend, 906),
+        CombatCard::new(CardId::Reflex, 907),
+    ];
+    crate::engine::action_handlers::execute_action(Action::UnloadNonAttack, &mut unload_state);
+    assert_eq!(
+        unload_state.pop_next_action(),
+        Some(Action::DiscardCard { card_uuid: 907 }),
+        "Java UnloadAction addToTop's DiscardSpecificCardAction while iterating hand; later non-attacks execute first"
+    );
+    assert_eq!(
+        unload_state.pop_next_action(),
+        Some(Action::DiscardCard { card_uuid: 906 })
+    );
+    assert_eq!(unload_state.pop_next_action(), None);
+}
+
+#[test]
 fn reflex_and_tactician_manual_discard_hooks_match_java_order() {
     let reflex = get_card_definition(CardId::Reflex);
     assert_eq!(reflex.cost, -2);
