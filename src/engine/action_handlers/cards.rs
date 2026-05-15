@@ -301,6 +301,12 @@ pub fn handle_blade_fury(upgraded: bool, state: &mut CombatState) {
     });
 }
 
+pub fn handle_apply_bullet_time(state: &mut CombatState) {
+    for card in &mut state.zones.hand {
+        card.set_cost_for_turn_java(0);
+    }
+}
+
 pub fn handle_unload_non_attack(state: &mut CombatState) {
     let non_attacks: Vec<u32> = state
         .zones

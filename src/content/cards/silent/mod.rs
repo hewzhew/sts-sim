@@ -10,6 +10,7 @@ pub mod bane;
 pub mod blade_dance;
 pub mod blur;
 pub mod bouncing_flask;
+pub mod bullet_time;
 pub mod burst;
 pub mod calculated_gamble;
 pub mod caltrops;

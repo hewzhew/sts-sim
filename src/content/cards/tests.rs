@@ -5968,6 +5968,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Adrenaline,
             CardId::AfterImage,
             CardId::AThousandCuts,
+            CardId::BulletTime,
             CardId::Burst,
             CardId::DieDieDie,
             CardId::Doppelganger,
@@ -7479,6 +7480,58 @@ fn a_thousand_cuts_matches_java_power_and_thorns_damage_hook() {
             damage_type: DamageType::Thorns,
             is_modified: false,
         }
+    );
+}
+
+#[test]
+fn bullet_time_matches_java_no_draw_and_hand_cost_override() {
+    let bullet_time = get_card_definition(CardId::BulletTime);
+    assert_eq!(bullet_time.name, "Bullet Time");
+    assert_eq!(bullet_time.card_type, CardType::Skill);
+    assert_eq!(bullet_time.rarity, CardRarity::Rare);
+    assert_eq!(bullet_time.cost, 3);
+    assert_eq!(bullet_time.target, CardTarget::None);
+    assert_eq!(java_id(CardId::BulletTime), "Bullet Time");
+    assert_eq!(
+        build_java_id_map().get("Bullet Time"),
+        Some(&CardId::BulletTime)
+    );
+    let mut bullet_time_plus = CombatCard::new(CardId::BulletTime, 1000);
+    bullet_time_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&bullet_time_plus), Some(2));
+
+    let actions = resolve_card_play(
+        CardId::BulletTime,
+        &crate::test_support::blank_test_combat(),
+        &bullet_time_plus,
+        None,
+    );
+    assert_eq!(actions.len(), 2);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::NoDraw,
+            amount: 1,
+        }
+    );
+    assert_eq!(actions[1].action, Action::ApplyBulletTime);
+
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![
+        CombatCard::new(CardId::StrikeG, 1001),
+        CombatCard::new(CardId::DefendG, 1002),
+        CombatCard::new(CardId::Dash, 1003),
+    ];
+    crate::engine::action_handlers::execute_action(Action::ApplyBulletTime, &mut state);
+    assert!(
+        state
+            .zones
+            .hand
+            .iter()
+            .all(|card| card.cost_for_turn_java() == 0),
+        "Java ApplyBulletTimeAction calls setCostForTurn(-9) on every current hand card"
     );
 }
 

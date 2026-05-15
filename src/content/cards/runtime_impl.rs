@@ -214,6 +214,7 @@ pub fn resolve_card_play_with_context(
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::AThousandCuts => silent::a_thousand_cuts::a_thousand_cuts_play(_state, _card),
+        CardId::BulletTime => silent::bullet_time::bullet_time_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),
         CardId::Pride => smallvec::smallvec![], // Coast 1 but does nothing on play
         CardId::Finesse
@@ -535,6 +536,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Barricade if card.upgrades > 0 => Some(2),
         CardId::BloodForBlood if card.upgrades > 0 => Some(3),
         CardId::BodySlam if card.upgrades > 0 => Some(0),
+        CardId::BulletTime if card.upgrades > 0 => Some(2),
         CardId::Corruption if card.upgrades > 0 => Some(2),
         CardId::DarkEmbrace if card.upgrades > 0 => Some(1),
         CardId::Envenom if card.upgrades > 0 => Some(1),

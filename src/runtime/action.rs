@@ -316,6 +316,8 @@ pub enum Action {
     BladeFury {
         upgraded: bool,
     },
+    /// Java `ApplyBulletTimeAction`: set every current hand card free for the turn.
+    ApplyBulletTime,
     /// Java `UnloadAction`: queues DiscardSpecificCardAction for every
     /// non-Attack in hand at execution time.
     UnloadNonAttack,
