@@ -97,6 +97,8 @@ pub enum PowerId {
     MasterRealityPower,
     AccuracyPower,
     InfiniteBladesPower,
+    Blur,
+    Choked,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -182,7 +184,8 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::NoSkills
         | PowerId::Fading
         | PowerId::Shackled
-        | PowerId::DrawReduction => true,
+        | PowerId::DrawReduction
+        | PowerId::Choked => true,
         // Everything else is BUFF
         _ => false,
     }
@@ -215,7 +218,8 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         | PowerId::DexterityDown
         | PowerId::NoSkills
         | PowerId::Fading
-        | PowerId::DrawReduction => amount > 0,
+        | PowerId::DrawReduction
+        | PowerId::Choked => amount > 0,
         _ => false,
     }
 }
@@ -522,6 +526,8 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Infinite Blades",
         },
+        PowerId::Blur => PowerDefinition { id, name: "Blur" },
+        PowerId::Choked => PowerDefinition { id, name: "Choked" },
     }
 }
 
@@ -657,6 +663,7 @@ pub fn resolve_power_on_card_played(
             silent::thousand_cuts::on_after_card_played(state, owner, power_amount)
         }
         PowerId::AfterImage => silent::after_image::on_card_played(owner, power_amount, card),
+        PowerId::Choked => silent::choked::on_card_played(state, owner, card, power_amount),
         PowerId::Curiosity => core::curiosity::on_player_card_played(owner, power_amount, card),
         PowerId::TimeWarp => {
             core::time_warp::on_player_card_played(owner, power_amount, card, state)
@@ -764,6 +771,7 @@ pub fn resolve_power_at_turn_start(
             }
         }
         PowerId::Poison => core::poison::at_turn_start(owner, amount),
+        PowerId::Choked => silent::choked::at_turn_start(owner),
         PowerId::Flight => core::flight::at_turn_start(_state, owner, amount),
         _ => smallvec::smallvec![],
     }
@@ -929,6 +937,7 @@ pub fn resolve_power_at_end_of_round(
         PowerId::DrawReduction => {
             core::draw_reduction::at_end_of_round(owner, amount, just_applied)
         }
+        PowerId::Blur => silent::blur::at_end_of_round(owner, amount),
         PowerId::Slow => core::slow::at_end_of_round(owner, amount),
         PowerId::IntangiblePlayer => core::intangible::at_end_of_round(owner, amount),
         PowerId::Ritual => core::ritual::at_end_of_round(_state, owner, amount),

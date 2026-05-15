@@ -730,6 +730,12 @@ pub fn tick_engine(
 
                     // 2.5 === FULL ROUND END ===
                     // Java: applyEndOfTurnPowers() calls p.atEndOfRound() on player and all monsters
+                    let player_had_blur_for_block_retention =
+                        crate::content::powers::store::has_power(
+                            combat_state,
+                            0,
+                            crate::content::powers::PowerId::Blur,
+                        );
                     // Player powers:
                     for power in
                         &crate::content::powers::store::powers_snapshot_for(combat_state, 0)
@@ -796,7 +802,7 @@ pub fn tick_engine(
                         0,
                         crate::content::powers::PowerId::Barricade,
                     );
-                    if !has_barricade {
+                    if !has_barricade && !player_had_blur_for_block_retention {
                         let has_calipers = !combat_state
                             .entities
                             .player
@@ -1487,5 +1493,48 @@ mod tests {
             "Runic Pyramid's global retention does not keep RetainCardsAction's one-turn retain flag alive"
         );
         assert!(combat_state.zones.discard_pile.is_empty());
+    }
+
+    #[test]
+    fn blur_retains_player_block_through_next_turn_while_power_ticks_down() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.player.block = 12;
+        combat_state.entities.monsters = vec![crate::test_support::planned_monster(
+            crate::content::monsters::EnemyId::Cultist,
+            3,
+        )];
+        combat_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::Blur,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                just_applied: false,
+            }],
+        );
+        combat_state.turn.begin_turn_transition();
+        let mut engine_state = EngineState::CombatProcessing;
+
+        for _ in 0..64 {
+            if engine_state == EngineState::CombatPlayerTurn {
+                break;
+            }
+            assert!(super::tick_engine(
+                &mut engine_state,
+                &mut combat_state,
+                None
+            ));
+        }
+
+        assert_eq!(engine_state, EngineState::CombatPlayerTurn);
+        assert_eq!(
+            combat_state.entities.player.block, 12,
+            "Java GameActionManager skips new-turn block loss while Blur exists"
+        );
+        assert!(
+            !crate::content::powers::store::has_power(&combat_state, 0, PowerId::Blur),
+            "Java BlurPower ticks down while still preserving that turn's block"
+        );
     }
 }

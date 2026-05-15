@@ -195,6 +195,11 @@ pub fn resolve_card_play_with_context(
         CardId::InfiniteBlades => silent::infinite_blades::infinite_blades_play(_state, _card),
         CardId::Eviscerate => silent::eviscerate::eviscerate_play(_state, _card, t),
         CardId::MasterfulStab => silent::masterful_stab::masterful_stab_play(_state, _card, t),
+        CardId::Blur => silent::blur::blur_play(_state, _card),
+        CardId::Choke => silent::choke::choke_play(_state, _card, t),
+        CardId::CripplingPoison => silent::crippling_poison::crippling_poison_play(_state, _card),
+        CardId::LegSweep => silent::leg_sweep::leg_sweep_play(_state, _card, t),
+        CardId::Terror => silent::terror::terror_play(_state, _card, t),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),
@@ -526,6 +531,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::InfernalBlade if card.upgrades > 0 => Some(0),
         CardId::Madness if card.upgrades > 0 => Some(0),
         CardId::SeeingRed if card.upgrades > 0 => Some(0),
+        CardId::Terror if card.upgrades > 0 => Some(0),
         _ => None,
     }
 }

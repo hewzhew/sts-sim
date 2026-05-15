@@ -5933,11 +5933,14 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Accuracy,
             CardId::AllOutAttack,
             CardId::Backstab,
+            CardId::Blur,
             CardId::BouncingFlask,
             CardId::CalculatedGamble,
             CardId::Caltrops,
             CardId::Catalyst,
+            CardId::Choke,
             CardId::Concentrate,
+            CardId::CripplingPoison,
             CardId::Dash,
             CardId::EscapePlan,
             CardId::Eviscerate,
@@ -5947,12 +5950,14 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Footwork,
             CardId::HeelHook,
             CardId::InfiniteBlades,
+            CardId::LegSweep,
             CardId::MasterfulStab,
             CardId::NoxiousFumes,
             CardId::Predator,
             CardId::Reflex,
             CardId::RiddleWithHoles,
             CardId::Tactician,
+            CardId::Terror,
         ]
     );
     assert_eq!(
@@ -6494,6 +6499,229 @@ fn silent_dynamic_cost_cards_match_java_draw_discard_and_damage_hooks() {
     assert_eq!(
         damage_state.zones.discard_pile[0].combat_cost_without_turn_override_java(),
         1
+    );
+}
+
+#[test]
+fn silent_target_control_cards_match_java_sources_and_power_hooks() {
+    let blur = get_card_definition(CardId::Blur);
+    assert_eq!(blur.name, "Blur");
+    assert_eq!(blur.card_type, CardType::Skill);
+    assert_eq!(blur.rarity, CardRarity::Uncommon);
+    assert_eq!(blur.cost, 1);
+    assert_eq!(blur.base_block, 5);
+    assert_eq!(blur.upgrade_block, 3);
+    assert_eq!(java_id(CardId::Blur), "Blur");
+
+    let choke = get_card_definition(CardId::Choke);
+    assert_eq!(choke.name, "Choke");
+    assert_eq!(choke.card_type, CardType::Attack);
+    assert_eq!(choke.rarity, CardRarity::Uncommon);
+    assert_eq!(choke.cost, 2);
+    assert_eq!(choke.base_damage, 12);
+    assert_eq!(choke.base_magic, 3);
+    assert_eq!(choke.upgrade_magic, 2);
+    assert_eq!(java_id(CardId::Choke), "Choke");
+
+    let crippling = get_card_definition(CardId::CripplingPoison);
+    assert_eq!(crippling.name, "Crippling Poison");
+    assert_eq!(crippling.card_type, CardType::Skill);
+    assert_eq!(crippling.rarity, CardRarity::Uncommon);
+    assert_eq!(crippling.cost, 2);
+    assert_eq!(crippling.base_magic, 4);
+    assert_eq!(crippling.upgrade_magic, 3);
+    assert!(exhausts_when_played(&CombatCard::new(
+        CardId::CripplingPoison,
+        950
+    )));
+    assert_eq!(java_id(CardId::CripplingPoison), "Crippling Poison");
+
+    let leg_sweep = get_card_definition(CardId::LegSweep);
+    assert_eq!(leg_sweep.name, "Leg Sweep");
+    assert_eq!(leg_sweep.card_type, CardType::Skill);
+    assert_eq!(leg_sweep.rarity, CardRarity::Uncommon);
+    assert_eq!(leg_sweep.cost, 2);
+    assert_eq!(leg_sweep.base_block, 11);
+    assert_eq!(leg_sweep.base_magic, 2);
+    assert_eq!(leg_sweep.upgrade_block, 3);
+    assert_eq!(leg_sweep.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::LegSweep), "Leg Sweep");
+
+    let terror = get_card_definition(CardId::Terror);
+    assert_eq!(terror.name, "Terror");
+    assert_eq!(terror.card_type, CardType::Skill);
+    assert_eq!(terror.rarity, CardRarity::Uncommon);
+    assert_eq!(terror.cost, 1);
+    assert!(exhausts_when_played(&CombatCard::new(CardId::Terror, 951)));
+    let mut terror_plus = CombatCard::new(CardId::Terror, 952);
+    terror_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&terror_plus), Some(0));
+    assert_eq!(java_id(CardId::Terror), "Terror");
+
+    assert_eq!(build_java_id_map().get("Blur"), Some(&CardId::Blur));
+    assert_eq!(build_java_id_map().get("Choke"), Some(&CardId::Choke));
+    assert_eq!(
+        build_java_id_map().get("Crippling Poison"),
+        Some(&CardId::CripplingPoison)
+    );
+    assert_eq!(
+        build_java_id_map().get("Leg Sweep"),
+        Some(&CardId::LegSweep)
+    );
+    assert_eq!(build_java_id_map().get("Terror"), Some(&CardId::Terror));
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    state.entities.monsters = vec![first, second];
+
+    let blur_actions = resolve_card_play(
+        CardId::Blur,
+        &state,
+        &CombatCard::new(CardId::Blur, 953),
+        None,
+    );
+    assert_eq!(blur_actions.len(), 2);
+    assert!(matches!(
+        blur_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 5
+        }
+    ));
+    assert!(matches!(
+        blur_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Blur,
+            amount: 1
+        }
+    ));
+
+    let choke_actions = resolve_card_play(
+        CardId::Choke,
+        &state,
+        &CombatCard::new(CardId::Choke, 954),
+        Some(7),
+    );
+    assert_eq!(choke_actions.len(), 2);
+    match &choke_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.output, 12);
+        }
+        other => panic!("Choke should first queue DamageAction, got {other:?}"),
+    }
+    assert!(matches!(
+        choke_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Choked,
+            amount: 3
+        }
+    ));
+
+    let choked_actions = crate::content::powers::resolve_power_on_card_played(
+        PowerId::Choked,
+        &state,
+        7,
+        &CombatCard::new(CardId::DefendG, 955),
+        3,
+    );
+    assert_eq!(
+        choked_actions[0],
+        Action::LoseHp {
+            target: 7,
+            amount: 3,
+            triggers_rupture: false,
+        }
+    );
+    assert_eq!(
+        crate::content::powers::resolve_power_at_turn_start(PowerId::Choked, &state, 7, 3)[0],
+        Action::RemovePower {
+            target: 7,
+            power_id: PowerId::Choked
+        }
+    );
+
+    let mut leg_plus = CombatCard::new(CardId::LegSweep, 956);
+    leg_plus.upgrades = 1;
+    let leg_actions = resolve_card_play(CardId::LegSweep, &state, &leg_plus, Some(7));
+    assert_eq!(leg_actions.len(), 2);
+    assert!(matches!(
+        leg_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Weak,
+            amount: 3
+        }
+    ));
+    assert!(matches!(
+        leg_actions[1].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 14
+        }
+    ));
+
+    let terror_actions = resolve_card_play(
+        CardId::Terror,
+        &state,
+        &CombatCard::new(CardId::Terror, 957),
+        Some(8),
+    );
+    assert_eq!(
+        terror_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 8,
+            power_id: PowerId::Vulnerable,
+            amount: 99,
+        }
+    );
+
+    let mut cripple_state = state.clone();
+    cripple_state.entities.monsters[1].is_dying = true;
+    let cripple_actions = resolve_card_play(
+        CardId::CripplingPoison,
+        &cripple_state,
+        &CombatCard::new(CardId::CripplingPoison, 958),
+        None,
+    );
+    assert_eq!(
+        cripple_actions
+            .iter()
+            .map(|info| &info.action)
+            .collect::<Vec<_>>(),
+        vec![
+            &Action::ApplyPower {
+                source: 0,
+                target: 7,
+                power_id: PowerId::Poison,
+                amount: 4,
+            },
+            &Action::ApplyPower {
+                source: 0,
+                target: 7,
+                power_id: PowerId::Weak,
+                amount: 2,
+            },
+        ]
+    );
+
+    assert_eq!(
+        crate::content::powers::resolve_power_at_end_of_round(PowerId::Blur, &state, 0, 1, false)
+            [0],
+        Action::ReducePower {
+            target: 0,
+            power_id: PowerId::Blur,
+            amount: 1,
+        }
     );
 }
 
