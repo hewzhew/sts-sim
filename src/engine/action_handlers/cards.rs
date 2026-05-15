@@ -1316,15 +1316,18 @@ fn execute_played_card(
             played_from_hand: source == CardPlaySource::Hand,
         },
     );
-    if card_id == CardId::Havoc {
+    if card_id == CardId::Havoc || card_id == CardId::BouncingFlask {
         for action in &mut card_actions {
-            if let Action::PlayTopCard { target, .. } = &mut action.action {
-                if target.is_none() {
+            match &mut action.action {
+                Action::PlayTopCard { target, .. } | Action::BouncingFlask { target, .. }
+                    if target.is_none() =>
+                {
                     *target = targeting::pick_random_target(
                         state,
                         crate::state::TargetValidation::AnyEnemy,
                     );
                 }
+                _ => {}
             }
         }
     }

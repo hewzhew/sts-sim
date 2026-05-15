@@ -6441,6 +6441,35 @@ fn silent_power_cards_match_java_power_hooks() {
 }
 
 #[test]
+fn bouncing_flask_locks_initial_random_target_when_card_is_used() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    second.slot = 1;
+    state.entities.monsters = vec![first, second];
+    state.zones.hand = vec![CombatCard::new(CardId::BouncingFlask, 9320)];
+
+    assert_eq!(state.rng.card_random_rng.counter, 0);
+    crate::engine::action_handlers::cards::handle_play_card_from_hand(0, None, &mut state)
+        .expect("Bouncing Flask should be playable");
+
+    assert_eq!(
+        state.rng.card_random_rng.counter, 1,
+        "Java BouncingFlask.use chooses the first random monster immediately"
+    );
+    match state.pop_next_action() {
+        Some(Action::BouncingFlask {
+            target: Some(7 | 8),
+            amount: 3,
+            num_times: 3,
+        }) => {}
+        other => panic!("Bouncing Flask should enqueue a locked first target, got {other:?}"),
+    }
+}
+
+#[test]
 fn silent_dynamic_cost_cards_match_java_draw_discard_and_damage_hooks() {
     let mut state = crate::test_support::blank_test_combat();
     let mut target = crate::test_support::test_monster(EnemyId::JawWorm);

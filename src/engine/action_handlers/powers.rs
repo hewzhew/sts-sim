@@ -470,6 +470,11 @@ pub fn handle_bouncing_flask(
         return;
     };
 
+    if state.are_monsters_basically_dead_java() {
+        state.clear_post_combat_actions();
+        return;
+    }
+
     if num_times > 1 {
         let next_target = random_alive_monster(state);
         state.queue_action_front(Action::BouncingFlask {
@@ -840,6 +845,25 @@ mod tests {
             state.pop_next_action(),
             None,
             "Java BouncingFlaskAction chooses targets via getRandomMonster(aliveOnly=true), which excludes halfDead monsters"
+        );
+    }
+
+    #[test]
+    fn bouncing_flask_clears_post_combat_actions_if_monsters_are_basically_dead() {
+        let mut state = blank_test_combat();
+        let mut dying = crate::test_support::test_monster(EnemyId::JawWorm);
+        dying.id = 48;
+        dying.current_hp = 0;
+        dying.is_dying = true;
+        state.entities.monsters = vec![dying];
+        state.queue_action_back(Action::DrawCards(1));
+
+        handle_bouncing_flask(Some(48), 3, 2, &mut state);
+
+        assert_eq!(
+            state.pop_next_action(),
+            None,
+            "Java BouncingFlaskAction clears non-retained post-combat actions when all monsters are basically dead"
         );
     }
 
