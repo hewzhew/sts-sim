@@ -710,6 +710,32 @@ fn make_random_pool_card_from_id(
     crate::content::cards::make_fresh_card_copy_for_combat(card_id, uuid, state)
 }
 
+fn materialize_random_class_card_in_hand_action(action: &mut Action, state: &mut CombatState) {
+    let (card_type, cost_for_turn) = match action {
+        Action::MakeRandomCardInHand {
+            card_type,
+            cost_for_turn,
+        } => (*card_type, *cost_for_turn),
+        _ => return,
+    };
+
+    let pool = class_card_pool_for_type(state.meta.player_class, card_type);
+    if pool.is_empty() {
+        return;
+    }
+
+    let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
+    let mut card = make_random_pool_card_from_id(pool[idx], state.next_card_uuid(), state);
+    if let Some(cost) = cost_for_turn {
+        card.set_cost_for_turn_java(cost as i32);
+    }
+
+    *action = Action::MakeCopyInHand {
+        original: Box::new(card),
+        amount: 1,
+    };
+}
+
 pub fn handle_exhume_card(card_uuid: u32, upgrade: bool, state: &mut CombatState) {
     if state.zones.hand.len() >= 10 {
         return;
@@ -1330,6 +1356,9 @@ fn execute_played_card(
                 _ => {}
             }
         }
+    }
+    for action in &mut card_actions {
+        materialize_random_class_card_in_hand_action(&mut action.action, state);
     }
     state.queue_actions(card_actions);
 

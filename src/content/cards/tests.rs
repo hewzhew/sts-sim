@@ -7764,6 +7764,35 @@ fn distraction_matches_java_random_skill_free_for_turn() {
             cost_for_turn: Some(0),
         }
     );
+
+    let mut play_state = crate::test_support::blank_test_combat();
+    play_state.meta.player_class = "Silent";
+    play_state.zones.hand = vec![CombatCard::new(CardId::Distraction, 10080)];
+    assert_eq!(play_state.rng.card_random_rng.counter, 0);
+    crate::engine::action_handlers::cards::handle_play_card_from_hand(0, None, &mut play_state)
+        .expect("Distraction should be playable");
+    assert_eq!(
+        play_state.rng.card_random_rng.counter, 1,
+        "Java Distraction.use calls returnTrulyRandomCardInCombat before queuing MakeTempCardInHandAction"
+    );
+    match play_state.pop_next_action() {
+        Some(Action::MakeCopyInHand { original, amount }) => {
+            assert_eq!(amount, 1);
+            let generated_def = get_card_definition(original.id);
+            assert_eq!(generated_def.card_type, CardType::Skill);
+            let expected_cost_for_turn = i32::from(if generated_def.cost >= 0 {
+                0
+            } else {
+                generated_def.cost
+            });
+            assert_eq!(
+                original.cost_for_turn_java(),
+                expected_cost_for_turn,
+                "Java Distraction calls setCostForTurn(-99), which leaves X-cost/unplayable costs unchanged"
+            );
+        }
+        other => panic!("Distraction should queue a concrete generated card, got {other:?}"),
+    }
 }
 
 #[test]
