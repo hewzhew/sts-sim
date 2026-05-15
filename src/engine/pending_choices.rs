@@ -241,13 +241,16 @@ pub fn handle_hand_select(
                 }
                 HandSelectReason::Retain => {
                     // Java RetainCardsAction/MeditateAction sets AbstractCard.retain
-                    // for one end-of-turn discard pass. RestoreRetainedCardsAction
-                    // clears that flag after the card survives the turn.
+                    // for one end-of-turn discard pass only for non-ethereal
+                    // cards. RestoreRetainedCardsAction clears that flag after
+                    // the card survives the turn.
                     for uuid in &uuids {
                         if let Some(card) =
                             combat_state.zones.hand.iter_mut().find(|c| c.uuid == *uuid)
                         {
-                            card.retain_override = Some(true);
+                            if !crate::content::cards::is_ethereal(card) {
+                                card.retain_override = Some(true);
+                            }
                         }
                     }
                 }

@@ -77,6 +77,7 @@ pub enum PowerId {
     NextTurnBlock,
     DrawCardNextTurn,
     Energized,
+    Equilibrium,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -105,6 +106,7 @@ pub enum PowerId {
     DoubleDamage,
     Envenom,
     ToolsOfTheTrade,
+    RetainCards,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -486,6 +488,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Energized",
         },
+        PowerId::Equilibrium => PowerDefinition {
+            id,
+            name: "Equilibrium",
+        },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -562,6 +568,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         PowerId::ToolsOfTheTrade => PowerDefinition {
             id,
             name: "Tools of the Trade",
+        },
+        PowerId::RetainCards => PowerDefinition {
+            id,
+            name: "Retain Cards",
         },
     }
 }
@@ -868,6 +878,7 @@ pub fn resolve_power_at_end_of_turn(
         }],
         PowerId::DexterityDown => core::dexterity_down::at_end_of_turn(owner, amount),
         PowerId::WraithForm => silent::wraith_form::at_end_of_turn(owner, amount),
+        PowerId::RetainCards => silent::retain_cards::at_end_of_turn(_state, owner, amount),
         PowerId::NoDraw => core::no_draw::at_end_of_turn(owner),
         PowerId::Ritual => core::ritual::at_end_of_turn(owner, amount, power.extra_data),
         PowerId::Shackled => core::shackled::at_end_of_turn(owner, amount),

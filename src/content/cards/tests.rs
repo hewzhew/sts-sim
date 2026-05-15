@@ -5962,6 +5962,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Skewer,
             CardId::Tactician,
             CardId::Terror,
+            CardId::WellLaidPlans,
         ]
     );
     assert_eq!(
@@ -7845,6 +7846,122 @@ fn setup_matches_java_hand_select_to_draw_top_with_free_once() {
         combat_state.zones.draw_pile[0].free_to_play_once,
         "Java SetupAction checks AbstractCard.cost, so a temporary zero-cost turn override still becomes free once"
     );
+}
+
+#[test]
+fn well_laid_plans_matches_java_retain_cards_power() {
+    let plans = get_card_definition(CardId::WellLaidPlans);
+    assert_eq!(plans.name, "Well Laid Plans");
+    assert_eq!(plans.card_type, CardType::Power);
+    assert_eq!(plans.rarity, CardRarity::Uncommon);
+    assert_eq!(plans.cost, 1);
+    assert_eq!(plans.base_magic, 1);
+    assert_eq!(plans.target, CardTarget::None);
+    assert_eq!(plans.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::WellLaidPlans), "Well Laid Plans");
+    assert_eq!(
+        build_java_id_map().get("Well Laid Plans"),
+        Some(&CardId::WellLaidPlans)
+    );
+
+    let mut plans_plus = CombatCard::new(CardId::WellLaidPlans, 1011);
+    plans_plus.base_magic_num_mut = 2;
+    let actions = resolve_card_play(
+        CardId::WellLaidPlans,
+        &crate::test_support::blank_test_combat(),
+        &plans_plus,
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::RetainCards,
+            amount: 2,
+        }
+    );
+
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![CombatCard::new(CardId::StrikeG, 31)];
+    let retain_actions = crate::content::powers::silent::retain_cards::at_end_of_turn(&state, 0, 2);
+    assert_eq!(retain_actions.len(), 1);
+    assert_eq!(
+        retain_actions[0],
+        Action::SuspendForHandSelect {
+            min: 0,
+            max: 2,
+            can_cancel: true,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::Retain,
+        }
+    );
+
+    let mut pyramid_state = state.clone();
+    pyramid_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::RunicPyramid,
+        ));
+    assert!(
+        crate::content::powers::silent::retain_cards::at_end_of_turn(&pyramid_state, 0, 2)
+            .is_empty(),
+        "Java RetainCardPower does not open a retain choice under Runic Pyramid"
+    );
+
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Equilibrium,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    assert!(
+        crate::content::powers::silent::retain_cards::at_end_of_turn(&state, 0, 2).is_empty(),
+        "Java RetainCardPower does not open a retain choice while Equilibrium is active"
+    );
+}
+
+#[test]
+fn retain_selection_does_not_mark_ethereal_cards_like_java() {
+    let mut choice_state = crate::state::core::EngineState::PendingChoice(
+        crate::state::core::PendingChoice::HandSelect {
+            candidate_uuids: vec![41, 42],
+            min_cards: 0,
+            max_cards: 2,
+            can_cancel: true,
+            reason: crate::state::HandSelectReason::Retain,
+        },
+    );
+    let mut combat_state = crate::test_support::blank_test_combat();
+    combat_state.zones.hand = vec![
+        CombatCard::new(CardId::Apparition, 41),
+        CombatCard::new(CardId::StrikeG, 42),
+    ];
+
+    crate::engine::pending_choices::handle_hand_select(
+        &mut choice_state,
+        &mut combat_state,
+        &[41, 42],
+        2,
+        false,
+        true,
+        crate::state::HandSelectReason::Retain,
+        crate::state::core::ClientInput::SubmitHandSelect(vec![41, 42]),
+    )
+    .expect("retain selection should resolve");
+
+    assert_eq!(
+        combat_state.zones.hand[0].retain_override, None,
+        "Java RetainCardsAction returns ethereal cards to hand but does not set retain"
+    );
+    assert_eq!(combat_state.zones.hand[1].retain_override, Some(true));
 }
 
 #[test]

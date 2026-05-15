@@ -219,6 +219,7 @@ pub fn resolve_card_play_with_context(
         CardId::ToolsOfTheTrade => {
             silent::tools_of_the_trade::tools_of_the_trade_play(_state, _card)
         }
+        CardId::WellLaidPlans => silent::well_laid_plans::well_laid_plans_play(_state, _card),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Alchemize => silent::alchemize::alchemize_play(_state, _card),
