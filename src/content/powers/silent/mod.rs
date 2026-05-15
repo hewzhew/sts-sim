@@ -2,6 +2,7 @@ pub mod after_image;
 pub mod blur;
 pub mod burst;
 pub mod choked;
+pub mod corpse_explosion;
 pub mod envenom;
 pub mod noxious_fumes;
 pub mod phantasmal;

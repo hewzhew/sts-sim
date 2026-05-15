@@ -5972,6 +5972,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::AThousandCuts,
             CardId::BulletTime,
             CardId::Burst,
+            CardId::CorpseExplosion,
             CardId::DieDieDie,
             CardId::Doppelganger,
             CardId::Envenom,
@@ -7656,6 +7657,121 @@ fn distraction_matches_java_random_skill_free_for_turn() {
             card_type: Some(CardType::Skill),
             cost_for_turn: Some(0),
         }
+    );
+}
+
+#[test]
+fn corpse_explosion_matches_java_poison_then_death_power() {
+    let corpse = get_card_definition(CardId::CorpseExplosion);
+    assert_eq!(corpse.name, "Corpse Explosion");
+    assert_eq!(corpse.card_type, CardType::Skill);
+    assert_eq!(corpse.rarity, CardRarity::Rare);
+    assert_eq!(corpse.cost, 2);
+    assert_eq!(corpse.base_magic, 6);
+    assert_eq!(corpse.target, CardTarget::Enemy);
+    assert_eq!(corpse.upgrade_magic, 3);
+    assert_eq!(java_id(CardId::CorpseExplosion), "Corpse Explosion");
+    assert_eq!(
+        build_java_id_map().get("Corpse Explosion"),
+        Some(&CardId::CorpseExplosion)
+    );
+    assert!(crate::content::powers::is_debuff(
+        PowerId::CorpseExplosion,
+        1
+    ));
+    assert!(crate::content::powers::is_debuff_application(
+        PowerId::CorpseExplosion,
+        1
+    ));
+
+    let mut corpse_plus = CombatCard::new(CardId::CorpseExplosion, 1009);
+    corpse_plus.base_magic_num_mut = 9;
+    let actions = resolve_card_play(
+        CardId::CorpseExplosion,
+        &crate::test_support::blank_test_combat(),
+        &corpse_plus,
+        Some(1),
+    );
+    assert_eq!(actions.len(), 2);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 1,
+            power_id: PowerId::Poison,
+            amount: 9,
+        }
+    );
+    assert_eq!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 1,
+            power_id: PowerId::CorpseExplosion,
+            amount: 1,
+        }
+    );
+}
+
+#[test]
+fn corpse_explosion_power_on_death_matches_java_max_hp_thorns_blast() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut exploding = crate::test_support::test_monster(EnemyId::JawWorm);
+    exploding.id = 10;
+    exploding.current_hp = 0;
+    exploding.max_hp = 42;
+    let mut survivor = crate::test_support::test_monster(EnemyId::JawWorm);
+    survivor.id = 11;
+    survivor.current_hp = 40;
+    state.entities.monsters = vec![exploding, survivor];
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        10,
+        vec![Power {
+            power_type: PowerId::CorpseExplosion,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    crate::engine::action_handlers::check_and_trigger_monster_death(&mut state, 10);
+
+    assert!(state.entities.monsters[0].is_dying);
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::DamageAllEnemies {
+            source: NO_SOURCE,
+            damages: smallvec::smallvec![84, 84],
+            damage_type: DamageType::Thorns,
+            is_modified: false,
+        })
+    );
+
+    let mut last_monster_state = crate::test_support::blank_test_combat();
+    let mut last_monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    last_monster.id = 1;
+    last_monster.current_hp = 0;
+    last_monster_state.entities.monsters = vec![last_monster];
+    crate::content::powers::store::set_powers_for(
+        &mut last_monster_state,
+        1,
+        vec![Power {
+            power_type: PowerId::CorpseExplosion,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    crate::engine::action_handlers::check_and_trigger_monster_death(&mut last_monster_state, 1);
+
+    assert_eq!(
+        last_monster_state.pop_next_action(),
+        None,
+        "Java CorpseExplosionPower skips the blast once all monsters are basically dead"
     );
 }
 

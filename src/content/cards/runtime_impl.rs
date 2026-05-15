@@ -202,6 +202,9 @@ pub fn resolve_card_play_with_context(
         CardId::Blur => silent::blur::blur_play(_state, _card),
         CardId::Choke => silent::choke::choke_play(_state, _card, t),
         CardId::CripplingPoison => silent::crippling_poison::crippling_poison_play(_state, _card),
+        CardId::CorpseExplosion => {
+            silent::corpse_explosion::corpse_explosion_play(_state, _card, t)
+        }
         CardId::LegSweep => silent::leg_sweep::leg_sweep_play(_state, _card, t),
         CardId::Malaise => silent::malaise::malaise_play(_state, _card, t),
         CardId::Terror => silent::terror::terror_play(_state, _card, t),

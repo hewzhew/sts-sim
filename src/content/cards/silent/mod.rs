@@ -19,6 +19,7 @@ pub mod catalyst;
 pub mod choke;
 pub mod cloak_and_dagger;
 pub mod concentrate;
+pub mod corpse_explosion;
 pub mod crippling_poison;
 pub mod dagger_spray;
 pub mod dagger_throw;

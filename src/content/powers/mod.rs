@@ -99,6 +99,7 @@ pub enum PowerId {
     InfiniteBladesPower,
     Blur,
     Choked,
+    CorpseExplosion,
     WraithForm,
     Phantasmal,
     DoubleDamage,
@@ -193,6 +194,7 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::Shackled
         | PowerId::DrawReduction
         | PowerId::Choked
+        | PowerId::CorpseExplosion
         | PowerId::WraithForm => true,
         // Everything else is BUFF
         _ => false,
@@ -227,7 +229,8 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         | PowerId::NoSkills
         | PowerId::Fading
         | PowerId::DrawReduction
-        | PowerId::Choked => amount > 0,
+        | PowerId::Choked
+        | PowerId::CorpseExplosion => amount > 0,
         _ => false,
     }
 }
@@ -536,6 +539,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         },
         PowerId::Blur => PowerDefinition { id, name: "Blur" },
         PowerId::Choked => PowerDefinition { id, name: "Choked" },
+        PowerId::CorpseExplosion => PowerDefinition {
+            id,
+            name: "Corpse Explosion",
+        },
         PowerId::WraithForm => PowerDefinition {
             id,
             name: "Wraith Form",
@@ -1081,6 +1088,7 @@ pub fn resolve_power_on_death(
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::SporeCloud => core::spore_cloud::on_death(state, owner, amount),
+        PowerId::CorpseExplosion => silent::corpse_explosion::on_death(state, owner, amount),
         PowerId::Stasis => core::stasis::on_death(state, owner, extra_data),
         PowerId::Unawakened => core::unawakened::on_death(owner, amount),
         PowerId::Shackled => smallvec::smallvec![],
