@@ -5957,6 +5957,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Predator,
             CardId::Reflex,
             CardId::RiddleWithHoles,
+            CardId::Skewer,
             CardId::Tactician,
             CardId::Terror,
         ]
@@ -6761,6 +6762,15 @@ fn silent_special_attack_cards_match_java_draw_and_mutation_hooks() {
     assert_eq!(finale.upgrade_damage, 10);
     assert!(finale.is_multi_damage);
     assert_eq!(java_id(CardId::GrandFinale), "Grand Finale");
+    let skewer = get_card_definition(CardId::Skewer);
+    assert_eq!(skewer.name, "Skewer");
+    assert_eq!(skewer.card_type, CardType::Attack);
+    assert_eq!(skewer.rarity, CardRarity::Uncommon);
+    assert_eq!(skewer.cost, -1);
+    assert_eq!(skewer.base_damage, 7);
+    assert_eq!(skewer.upgrade_damage, 3);
+    assert_eq!(skewer.target, CardTarget::Enemy);
+    assert_eq!(java_id(CardId::Skewer), "Skewer");
 
     assert_eq!(
         build_java_id_map().get("Endless Agony"),
@@ -6774,6 +6784,7 @@ fn silent_special_attack_cards_match_java_draw_and_mutation_hooks() {
         build_java_id_map().get("Grand Finale"),
         Some(&CardId::GrandFinale)
     );
+    assert_eq!(build_java_id_map().get("Skewer"), Some(&CardId::Skewer));
 
     let mut state = crate::test_support::blank_test_combat();
     let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
@@ -6882,6 +6893,97 @@ fn silent_special_attack_cards_match_java_draw_and_mutation_hooks() {
         &mut knife_state,
     );
     assert_eq!(knife_state.zones.limbo[0].base_damage_override, Some(6));
+}
+
+#[test]
+fn skewer_matches_java_x_cost_single_target_action() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    state.entities.monsters = vec![target];
+
+    let mut skewer_card = CombatCard::new(CardId::Skewer, 970);
+    skewer_card.energy_on_use = 2;
+    let actions = resolve_card_play(CardId::Skewer, &state, &skewer_card, Some(7));
+    assert_eq!(actions.len(), 1);
+    match &actions[0].action {
+        Action::Skewer {
+            target,
+            damage_info,
+            free_to_play_once,
+            energy_on_use,
+        } => {
+            assert_eq!(*target, 7);
+            assert_eq!(damage_info.target, 7);
+            assert_eq!(damage_info.output, 7);
+            assert!(!free_to_play_once);
+            assert_eq!(*energy_on_use, 2);
+        }
+        other => panic!("Skewer should emit SkewerAction equivalent, got {other:?}"),
+    }
+
+    let mut energy_state = crate::test_support::blank_test_combat();
+    energy_state.turn.energy = 5;
+    crate::engine::action_handlers::execute_action(
+        Action::Skewer {
+            target: 7,
+            damage_info: DamageInfo {
+                source: 0,
+                target: 7,
+                base: 7,
+                output: 7,
+                damage_type: DamageType::Normal,
+                is_modified: true,
+            },
+            free_to_play_once: false,
+            energy_on_use: 2,
+        },
+        &mut energy_state,
+    );
+    assert_eq!(
+        energy_state.turn.energy, 0,
+        "Java SkewerAction spends EnergyPanel.totalCount, not energyOnUse"
+    );
+    for _ in 0..2 {
+        match energy_state.pop_next_action() {
+            Some(Action::Damage(info)) => {
+                assert_eq!(info.target, 7);
+                assert_eq!(info.output, 7);
+            }
+            other => panic!("SkewerAction should queue fixed target DamageAction, got {other:?}"),
+        }
+    }
+    assert!(energy_state.pop_next_action().is_none());
+
+    let mut chemical_x_state = crate::test_support::blank_test_combat();
+    chemical_x_state.turn.energy = 0;
+    chemical_x_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::ChemicalX,
+        ));
+    crate::engine::action_handlers::execute_action(
+        Action::Skewer {
+            target: 7,
+            damage_info: DamageInfo {
+                source: 0,
+                target: 7,
+                base: 7,
+                output: 7,
+                damage_type: DamageType::Normal,
+                is_modified: true,
+            },
+            free_to_play_once: false,
+            energy_on_use: -1,
+        },
+        &mut chemical_x_state,
+    );
+    assert_eq!(
+        chemical_x_state.action_queue_len(),
+        2,
+        "Chemical X adds two Skewer hits even when current energy is zero"
+    );
 }
 
 #[test]

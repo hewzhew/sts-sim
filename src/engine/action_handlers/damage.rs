@@ -8,7 +8,7 @@
 
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageType, NO_SOURCE};
+use crate::runtime::action::{Action, DamageInfo, DamageType, NO_SOURCE};
 use crate::runtime::combat::CombatState;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -678,6 +678,32 @@ pub fn handle_whirlwind(
                 damage_type,
                 is_modified: false,
             });
+        }
+        if !free_to_play_once {
+            state.turn.spend_energy(state.turn.energy as i32);
+        }
+    }
+}
+
+pub fn handle_skewer(
+    target: usize,
+    damage_info: DamageInfo,
+    free_to_play_once: bool,
+    energy_on_use: i32,
+    state: &mut CombatState,
+) {
+    let base_effect = if energy_on_use != -1 {
+        energy_on_use
+    } else {
+        state.turn.energy as i32
+    };
+    let effect = crate::content::relics::hooks::on_calculate_x_cost(state, base_effect);
+
+    if effect > 0 {
+        for _ in 0..effect {
+            let mut hit = damage_info.clone();
+            hit.target = target;
+            state.queue_action_back(Action::Damage(hit));
         }
         if !free_to_play_once {
             state.turn.spend_energy(state.turn.energy as i32);

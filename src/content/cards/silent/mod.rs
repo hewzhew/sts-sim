@@ -47,6 +47,7 @@ pub mod predator;
 pub mod prepared;
 pub mod quick_slash;
 pub mod riddle_with_holes;
+pub mod skewer;
 pub mod slice;
 pub mod sneaky_strike;
 pub mod storm_of_steel;

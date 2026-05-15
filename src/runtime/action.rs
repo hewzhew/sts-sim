@@ -154,6 +154,12 @@ pub enum Action {
         free_to_play_once: bool,
         energy_on_use: i32,
     },
+    Skewer {
+        target: EntityId,
+        damage_info: DamageInfo,
+        free_to_play_once: bool,
+        energy_on_use: i32,
+    },
     GainBlock {
         target: EntityId,
         amount: i32,

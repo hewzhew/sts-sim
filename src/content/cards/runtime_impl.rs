@@ -183,6 +183,7 @@ pub fn resolve_card_play_with_context(
         CardId::RiddleWithHoles => {
             silent::riddle_with_holes::riddle_with_holes_play(_state, _card, t)
         }
+        CardId::Skewer => silent::skewer::skewer_play(_state, _card, t),
         CardId::DieDieDie => silent::die_die_die::die_die_die_play(_state, _card),
         CardId::Finisher => silent::finisher::finisher_play(_state, _card, t),
         CardId::Flechettes => silent::flechettes::flechettes_play(_state, _card, t),
