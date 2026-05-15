@@ -7,7 +7,7 @@
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
 use crate::runtime::action::Action;
-use crate::runtime::combat::CombatState;
+use crate::runtime::combat::{CombatState, PowerPayload};
 
 pub fn apply_player_turn_energy_recharge_hooks(state: &mut CombatState) {
     // Java PlayerTurnEffect first recharges base energy, then calls
@@ -34,6 +34,28 @@ pub fn handle_apply_power(
     state: &mut CombatState,
 ) {
     handle_apply_power_detailed(source, target, power_id, amount, None, None, state);
+}
+
+pub fn handle_apply_power_with_payload(
+    source: usize,
+    target: usize,
+    power_id: PowerId,
+    amount: i32,
+    instance_id: Option<u32>,
+    extra_data: Option<i32>,
+    payload: PowerPayload,
+    state: &mut CombatState,
+) {
+    handle_apply_power_detailed_internal(
+        source,
+        target,
+        power_id,
+        amount,
+        instance_id,
+        extra_data,
+        payload,
+        state,
+    );
 }
 
 pub fn handle_spot_weakness(target: usize, amount: i32, state: &mut CombatState) {
@@ -155,9 +177,31 @@ pub fn handle_apply_power_detailed(
     source: usize,
     target: usize,
     power_id: PowerId,
+    amount: i32,
+    instance_id: Option<u32>,
+    extra_data: Option<i32>,
+    state: &mut CombatState,
+) {
+    handle_apply_power_detailed_internal(
+        source,
+        target,
+        power_id,
+        amount,
+        instance_id,
+        extra_data,
+        PowerPayload::None,
+        state,
+    );
+}
+
+fn handle_apply_power_detailed_internal(
+    source: usize,
+    target: usize,
+    power_id: PowerId,
     mut amount: i32,
     instance_id: Option<u32>,
     extra_data: Option<i32>,
+    payload: PowerPayload,
     state: &mut CombatState,
 ) {
     amount = crate::content::powers::canonicalize_applied_amount(power_id, amount);
@@ -266,6 +310,9 @@ pub fn handle_apply_power_detailed(
                 if let Some(extra_data) = extra_data {
                     existing.extra_data = extra_data;
                 }
+                if !matches!(payload, PowerPayload::None) {
+                    existing.payload = payload;
+                }
                 if !crate::content::powers::should_keep_power_instance(power_id, existing.amount) {
                     should_remove_existing = true;
                 }
@@ -275,6 +322,7 @@ pub fn handle_apply_power_detailed(
                     instance_id: Some(instance_id),
                     amount,
                     extra_data: extra_data.unwrap_or(0),
+                    payload,
                     just_applied: true,
                 });
             }
@@ -282,6 +330,9 @@ pub fn handle_apply_power_detailed(
             existing.amount += amount;
             if let Some(extra_data) = extra_data {
                 existing.extra_data = extra_data;
+            }
+            if !matches!(payload, PowerPayload::None) {
+                existing.payload = payload;
             }
             if !crate::content::powers::should_keep_power_instance(power_id, existing.amount) {
                 should_remove_existing = true;
@@ -292,6 +343,7 @@ pub fn handle_apply_power_detailed(
                 instance_id: None,
                 amount,
                 extra_data: extra_data.unwrap_or(0),
+                payload,
                 just_applied: true,
             });
         }
@@ -338,6 +390,7 @@ pub fn handle_apply_power_detailed(
                 instance_id: None,
                 amount: stored_amount,
                 extra_data,
+                payload,
                 just_applied: true,
             });
         }
@@ -690,6 +743,7 @@ mod tests {
                 instance_id: None,
                 amount: 2,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );

@@ -55,6 +55,7 @@ pub fn seed_monster_internal_state_from_snapshot(
             instance_id: None,
             amount: source_amount,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         });
     }

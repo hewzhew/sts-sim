@@ -220,6 +220,7 @@ pub fn resolve_card_play_with_context(
             silent::tools_of_the_trade::tools_of_the_trade_play(_state, _card)
         }
         CardId::WellLaidPlans => silent::well_laid_plans::well_laid_plans_play(_state, _card),
+        CardId::Nightmare => silent::nightmare::nightmare_play(_state, _card),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Alchemize => silent::alchemize::alchemize_play(_state, _card),
@@ -557,6 +558,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Havoc if card.upgrades > 0 => Some(0),
         CardId::InfernalBlade if card.upgrades > 0 => Some(0),
         CardId::Madness if card.upgrades > 0 => Some(0),
+        CardId::Nightmare if card.upgrades > 0 => Some(2),
         CardId::PhantasmalKiller if card.upgrades > 0 => Some(0),
         CardId::SeeingRed if card.upgrades > 0 => Some(0),
         CardId::Setup if card.upgrades > 0 => Some(0),

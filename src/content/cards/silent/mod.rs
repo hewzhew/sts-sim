@@ -47,6 +47,7 @@ pub mod leg_sweep;
 pub mod malaise;
 pub mod masterful_stab;
 pub mod neutralize;
+pub mod nightmare;
 pub mod noxious_fumes;
 pub mod outmaneuver;
 pub mod phantasmal_killer;

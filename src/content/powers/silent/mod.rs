@@ -4,6 +4,7 @@ pub mod burst;
 pub mod choked;
 pub mod corpse_explosion;
 pub mod envenom;
+pub mod nightmare;
 pub mod noxious_fumes;
 pub mod phantasmal;
 pub mod retain_cards;

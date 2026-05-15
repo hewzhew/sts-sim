@@ -300,6 +300,24 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             extra_data,
             state,
         ),
+        Action::ApplyPowerWithPayload {
+            source,
+            target,
+            power_id,
+            amount,
+            instance_id,
+            extra_data,
+            payload,
+        } => powers::handle_apply_power_with_payload(
+            source,
+            target,
+            power_id,
+            amount,
+            instance_id,
+            extra_data,
+            payload,
+            state,
+        ),
         Action::ReducePower {
             target,
             power_id,
@@ -460,6 +478,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             card_type,
             cost_for_turn,
         } => cards::handle_make_random_card_in_hand(card_type, cost_for_turn, state),
+        Action::Nightmare { amount } => cards::handle_nightmare(amount, state),
         Action::MakeRandomCardInDrawPile {
             card_type,
             cost_for_turn,

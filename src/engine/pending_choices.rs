@@ -273,6 +273,25 @@ pub fn handle_hand_select(
                         }
                     }
                 }
+                HandSelectReason::Nightmare { amount } => {
+                    // Java NightmareAction's selected branch removes the
+                    // selected card through the hand-select screen, applies a
+                    // NightmarePower carrying a stat-equivalent copy, then
+                    // returns the original selected card to hand with addToHand.
+                    for uuid in &uuids {
+                        if let Some(pos) =
+                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
+                        {
+                            let card = combat_state.zones.hand.remove(pos);
+                            crate::engine::action_handlers::cards::queue_nightmare_power_front(
+                                &card,
+                                amount,
+                                combat_state,
+                            );
+                            combat_state.zones.hand.push(card);
+                        }
+                    }
+                }
                 HandSelectReason::Upgrade => {
                     if candidate_uuids.len() > 1 {
                         let mut remaining_candidates = Vec::new();

@@ -1601,6 +1601,7 @@ mod tests {
                 instance_id: None,
                 amount: -1,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );

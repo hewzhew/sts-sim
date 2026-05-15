@@ -431,6 +431,15 @@ pub enum Action {
         instance_id: Option<u32>,
         extra_data: Option<i32>,
     },
+    ApplyPowerWithPayload {
+        source: EntityId,
+        target: EntityId,
+        power_id: crate::content::powers::PowerId,
+        amount: i32,
+        instance_id: Option<u32>,
+        extra_data: Option<i32>,
+        payload: crate::runtime::combat::PowerPayload,
+    },
     ReducePower {
         target: EntityId,
         power_id: crate::content::powers::PowerId,
@@ -493,6 +502,12 @@ pub enum Action {
     MakeRandomCardInHand {
         card_type: Option<crate::content::cards::CardType>,
         cost_for_turn: Option<u8>,
+    },
+    /// Java `NightmareAction`: at execution time choose/capture a hand card
+    /// and apply one independent Nightmare power carrying a stat-equivalent
+    /// card snapshot.
+    Nightmare {
+        amount: u8,
     },
     MakeRandomCardInDrawPile {
         card_type: Option<crate::content::cards::CardType>,

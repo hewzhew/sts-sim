@@ -218,6 +218,7 @@ pub struct CombatRuntimeHints {
     pub emitted_events: Vec<DomainEvent>,
     pub engine_diagnostics: Vec<EngineDiagnostic>,
     pub pending_rewards: Vec<crate::rewards::state::RewardItem>,
+    pub power_instance_counter: u32,
     /// Narrow Rust equivalent of Java `DrawCardAction.drawnCards`.
     ///
     /// It is updated only by draw actions that explicitly opt into draw
@@ -1269,6 +1270,20 @@ impl CombatCard {
         card
     }
 
+    /// Java `AbstractCard.resetAttributes()` restores transient rendered values
+    /// and resets `costForTurn` back to the combat cost. It does not clear
+    /// persistent combat cost changes or `freeToPlayOnce`.
+    pub fn reset_attributes_java(&mut self) {
+        self.base_damage_mut = 0;
+        self.base_block_mut = 0;
+        self.base_magic_num_mut = 0;
+        self.multi_damage.clear();
+        self.cost_for_turn = None;
+        self.exhaust_override = None;
+        self.retain_override = None;
+        self.energy_on_use = 0;
+    }
+
     /// Java `AbstractCard.makeSameInstanceOf()` is a stat-equivalent copy with
     /// the original UUID restored. Replay effects such as Double Tap, Burst,
     /// Duplication Potion, and Necronomicon use this path.
@@ -1394,12 +1409,20 @@ fn clamp_cost_modifier(modifier: i32) -> i8 {
     modifier.clamp(i8::MIN as i32, i8::MAX as i32) as i8
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum PowerPayload {
+    #[default]
+    None,
+    Card(CombatCard),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Power {
     pub power_type: PowerId,
     pub instance_id: Option<u32>,
     pub amount: i32,
     pub extra_data: i32,
+    pub payload: PowerPayload,
     pub just_applied: bool,
 }
 
@@ -1432,6 +1455,11 @@ impl CombatState {
     pub fn next_card_uuid(&mut self) -> u32 {
         self.zones.card_uuid_counter += 1;
         self.zones.card_uuid_counter
+    }
+
+    pub fn next_power_instance_id(&mut self) -> u32 {
+        self.runtime.power_instance_counter += 1;
+        self.runtime.power_instance_counter
     }
 
     /// Java `MonsterGroup.areMonstersBasicallyDead()` only skips monsters that

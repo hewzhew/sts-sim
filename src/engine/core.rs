@@ -633,12 +633,12 @@ pub fn tick_engine(
                         for power in
                             &crate::content::powers::store::powers_snapshot_for(combat_state, *mid)
                         {
-                            let hook_actions = crate::content::powers::resolve_power_at_turn_start(
-                                power.power_type,
-                                combat_state,
-                                *mid,
-                                power.amount,
-                            );
+                            let hook_actions =
+                                crate::content::powers::resolve_power_instance_at_turn_start(
+                                    power,
+                                    combat_state,
+                                    *mid,
+                                );
                             for a in hook_actions {
                                 combat_state.queue_action_back(a);
                             }
@@ -856,11 +856,10 @@ pub fn tick_engine(
                     for power in
                         &crate::content::powers::store::powers_snapshot_for(combat_state, 0)
                     {
-                        let pa = crate::content::powers::resolve_power_at_turn_start(
-                            power.power_type,
+                        let pa = crate::content::powers::resolve_power_instance_at_turn_start(
+                            power,
                             combat_state,
                             0,
-                            power.amount,
                         );
                         for a in pa {
                             combat_state.queue_action_back(a);
@@ -1192,6 +1191,7 @@ fn hand_select_can_fizzle_when_empty(reason: crate::state::HandSelectReason) -> 
             | crate::state::HandSelectReason::PutOnDrawPile
             | crate::state::HandSelectReason::Setup
             | crate::state::HandSelectReason::PutToBottomOfDraw
+            | crate::state::HandSelectReason::Nightmare { .. }
     )
 }
 
@@ -1340,6 +1340,7 @@ mod tests {
                 instance_id: None,
                 amount: -1,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );
@@ -1407,6 +1408,7 @@ mod tests {
                 instance_id: None,
                 amount: -1,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );
@@ -1511,6 +1513,7 @@ mod tests {
                 instance_id: None,
                 amount: 1,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );

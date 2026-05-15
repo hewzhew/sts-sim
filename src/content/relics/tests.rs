@@ -138,6 +138,7 @@ fn paper_frog_vulnerable_multiplier_applies_only_to_enemy_targets() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -242,6 +243,7 @@ fn champion_belt_respects_java_player_source_and_artifact_guard() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -2362,6 +2364,7 @@ fn unceasing_top_uses_mechanical_refresh_conditions_without_ui_state() {
             instance_id: None,
             amount: -1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -3487,6 +3490,7 @@ fn data_disk_focus_changes_orb_passive_amounts() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -3799,6 +3803,7 @@ fn paper_crane_changes_weak_monster_damage_from_75_to_60_percent() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -4025,6 +4030,7 @@ fn ginger_and_turnip_block_apply_power_before_artifact_without_blocking_cleanup(
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -4098,6 +4104,7 @@ fn ginger_and_turnip_block_apply_power_before_artifact_without_blocking_cleanup(
             instance_id: None,
             amount: 2,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );

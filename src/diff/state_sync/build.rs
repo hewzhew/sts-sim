@@ -57,6 +57,7 @@ pub fn build_powers_from_snapshot(powers_arr: &Value) -> Vec<Power> {
                     instance_id: p["id"].as_str().and_then(power_instance_id_from_java),
                     amount,
                     extra_data: 0,
+                    payload: crate::runtime::combat::PowerPayload::None,
                     just_applied: p
                         .get("just_applied")
                         .and_then(|v| v.as_bool())

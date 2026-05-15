@@ -277,6 +277,7 @@ fn ironclad_common_utility_runtime_actions_match_java_use_methods() {
             instance_id: None,
             amount: -1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -1139,6 +1140,7 @@ fn ironclad_power_and_debuff_runtime_actions_match_java_use_methods() {
             instance_id: None,
             amount: -1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -1504,6 +1506,7 @@ fn dropkick_and_double_tap_action_hooks_match_java_sources() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -1543,6 +1546,7 @@ fn dropkick_and_double_tap_action_hooks_match_java_sources() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -1589,6 +1593,7 @@ fn same_instance_replay_powers_preserve_card_uuid_like_java() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -1613,6 +1618,7 @@ fn same_instance_replay_powers_preserve_card_uuid_like_java() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -1817,6 +1823,7 @@ fn evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources() {
             instance_id: None,
             amount: -1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -1850,6 +1857,7 @@ fn evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -1893,6 +1901,7 @@ fn evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources() {
             instance_id: None,
             amount: -1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -1960,6 +1969,7 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
             instance_id: None,
             amount: -1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -2258,6 +2268,7 @@ fn fire_breathing_flame_barrier_and_fiend_fire_hooks_match_java_sources() {
             instance_id: None,
             amount: 4,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         },
         &state,
@@ -2370,6 +2381,7 @@ fn ironclad_topdeck_and_strength_scaling_runtime_actions_match_java_use_methods(
             instance_id: None,
             amount: 2,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -2595,6 +2607,7 @@ fn ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods(
             instance_id: None,
             amount: 2,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -2733,6 +2746,7 @@ fn ironclad_power_and_hybrid_attack_runtime_actions_match_java_use_methods() {
             instance_id: None,
             amount: 2,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -3038,6 +3052,7 @@ fn limit_break_and_metallicize_hooks_match_java_sources() {
             instance_id: None,
             amount: 3,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -3070,6 +3085,7 @@ fn limit_break_and_metallicize_hooks_match_java_sources() {
             instance_id: None,
             amount: 4,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         },
         &state,
@@ -3135,6 +3151,7 @@ fn ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -3249,6 +3266,7 @@ fn rage_power_hooks_match_java_source() {
                 instance_id: None,
                 amount: 5,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             },
             &state,
@@ -3312,6 +3330,7 @@ fn ironclad_rampage_and_rupture_runtime_actions_match_java_use_methods() {
             instance_id: None,
             amount: 2,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -3448,6 +3467,7 @@ fn rupture_and_reaper_execution_hooks_match_java_sources() {
             instance_id: None,
             amount: 2,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -3633,6 +3653,7 @@ fn ironclad_upgrade_and_exhaust_utility_runtime_actions_match_java_use_methods()
                 instance_id: None,
                 amount: 2,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             },
             Power {
@@ -3640,6 +3661,7 @@ fn ironclad_upgrade_and_exhaust_utility_runtime_actions_match_java_use_methods()
                 instance_id: None,
                 amount: 2,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             },
         ],
@@ -3734,6 +3756,7 @@ fn sentinel_exhaust_trigger_matches_java_add_to_top_energy() {
             instance_id: None,
             amount: 4,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -3853,6 +3876,7 @@ fn ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods() {
                 instance_id: None,
                 amount: 2,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             },
             Power {
@@ -3860,6 +3884,7 @@ fn ironclad_exhaust_debuff_and_intent_runtime_actions_match_java_use_methods() {
                 instance_id: None,
                 amount: 2,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             },
         ],
@@ -4147,6 +4172,7 @@ fn ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods() {
                 instance_id: None,
                 amount: 2,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             },
             Power {
@@ -4154,6 +4180,7 @@ fn ironclad_random_and_exhaust_attack_runtime_actions_match_java_use_methods() {
                 instance_id: None,
                 amount: 2,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             },
         ],
@@ -4336,6 +4363,7 @@ fn attack_damage_random_enemy_card_recalculates_damage_at_execution_like_java() 
             instance_id: None,
             amount: 4,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -4500,6 +4528,7 @@ fn ironclad_debuff_draw_xcost_and_wound_runtime_actions_match_java_use_methods()
             instance_id: None,
             amount: 2,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -5448,6 +5477,7 @@ fn bane_uses_java_delayed_poison_check_for_second_hit() {
             instance_id: None,
             amount: 3,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -5468,6 +5498,7 @@ fn bane_uses_java_delayed_poison_check_for_second_hit() {
             instance_id: None,
             amount: 3,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -5981,6 +6012,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::GlassKnife,
             CardId::GrandFinale,
             CardId::Malaise,
+            CardId::Nightmare,
             CardId::PhantasmalKiller,
             CardId::StormOfSteel,
             CardId::ToolsOfTheTrade,
@@ -6135,6 +6167,7 @@ fn silent_execution_time_action_cards_match_java_actions() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -6345,6 +6378,7 @@ fn silent_power_cards_match_java_power_hooks() {
             instance_id: None,
             amount: 4,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -7222,6 +7256,7 @@ fn wraith_form_matches_java_intangible_and_dexterity_loss_power() {
         instance_id: None,
         amount: -1,
         extra_data: 0,
+        payload: crate::runtime::combat::PowerPayload::None,
         just_applied: false,
     };
     let turn_end = crate::content::powers::resolve_power_at_end_of_turn(&wraith_power, &state, 0);
@@ -7313,6 +7348,7 @@ fn phantasmal_killer_matches_java_delayed_double_damage_power() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -7371,6 +7407,7 @@ fn envenom_matches_java_owner_on_attack_poison_hook() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -7734,6 +7771,7 @@ fn corpse_explosion_power_on_death_matches_java_max_hp_thorns_blast() {
             instance_id: None,
             amount: 2,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -7764,6 +7802,7 @@ fn corpse_explosion_power_on_death_matches_java_max_hp_thorns_blast() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -7919,6 +7958,7 @@ fn well_laid_plans_matches_java_retain_cards_power() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -7965,6 +8005,153 @@ fn retain_selection_does_not_mark_ethereal_cards_like_java() {
 }
 
 #[test]
+fn nightmare_matches_java_card_and_power_payload_flow() {
+    let nightmare = get_card_definition(CardId::Nightmare);
+    assert_eq!(nightmare.name, "Nightmare");
+    assert_eq!(nightmare.card_type, CardType::Skill);
+    assert_eq!(nightmare.rarity, CardRarity::Rare);
+    assert_eq!(nightmare.cost, 3);
+    assert_eq!(nightmare.base_magic, 3);
+    assert_eq!(nightmare.target, CardTarget::None);
+    assert!(nightmare.exhaust);
+    assert_eq!(java_id(CardId::Nightmare), "Night Terror");
+    assert_eq!(
+        build_java_id_map().get("Night Terror"),
+        Some(&CardId::Nightmare)
+    );
+
+    let mut nightmare_plus = CombatCard::new(CardId::Nightmare, 1012);
+    nightmare_plus.upgrades = 1;
+    nightmare_plus.base_magic_num_mut = 3;
+    assert_eq!(upgraded_base_cost_override(&nightmare_plus), Some(2));
+    let actions = resolve_card_play(
+        CardId::Nightmare,
+        &crate::test_support::blank_test_combat(),
+        &nightmare_plus,
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].action, Action::Nightmare { amount: 3 });
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut copied = CombatCard::new(CardId::Bash, 51);
+    copied.upgrades = 1;
+    copied.cost_modifier = -1;
+    copied.cost_for_turn = Some(0);
+    copied.base_damage_mut = 99;
+    copied.free_to_play_once = true;
+    state.zones.hand = vec![copied.clone()];
+
+    crate::engine::action_handlers::cards::handle_nightmare(3, &mut state);
+    match state.pop_next_action() {
+        Some(Action::ApplyPowerWithPayload {
+            source,
+            target,
+            power_id,
+            amount,
+            instance_id,
+            payload:
+                crate::runtime::combat::PowerPayload::Card(crate::runtime::combat::CombatCard {
+                    id,
+                    upgrades,
+                    cost_modifier,
+                    cost_for_turn,
+                    base_damage_mut,
+                    free_to_play_once,
+                    ..
+                }),
+            ..
+        }) => {
+            assert_eq!(source, 0);
+            assert_eq!(target, 0);
+            assert_eq!(power_id, PowerId::Nightmare);
+            assert_eq!(amount, 3);
+            assert_eq!(instance_id, Some(1));
+            assert_eq!(id, CardId::Bash);
+            assert_eq!(upgrades, 1);
+            assert_eq!(cost_modifier, -1);
+            assert_eq!(cost_for_turn, None);
+            assert_eq!(base_damage_mut, 0);
+            assert!(free_to_play_once);
+        }
+        other => panic!("expected Nightmare ApplyPowerWithPayload, got {other:?}"),
+    }
+}
+
+#[test]
+fn nightmare_selection_returns_original_and_start_turn_copies_payload() {
+    let mut choice_state = crate::state::core::EngineState::PendingChoice(
+        crate::state::core::PendingChoice::HandSelect {
+            candidate_uuids: vec![61, 62],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: crate::state::HandSelectReason::Nightmare { amount: 2 },
+        },
+    );
+    let mut combat_state = crate::test_support::blank_test_combat();
+    combat_state.zones.hand = vec![
+        CombatCard::new(CardId::StrikeG, 61),
+        CombatCard::new(CardId::DefendG, 62),
+    ];
+
+    crate::engine::pending_choices::handle_hand_select(
+        &mut choice_state,
+        &mut combat_state,
+        &[61, 62],
+        1,
+        true,
+        false,
+        crate::state::HandSelectReason::Nightmare { amount: 2 },
+        crate::state::core::ClientInput::SubmitHandSelect(vec![61]),
+    )
+    .expect("Nightmare hand selection should resolve");
+
+    assert_eq!(
+        choice_state,
+        crate::state::core::EngineState::CombatProcessing
+    );
+    assert_eq!(
+        combat_state
+            .zones
+            .hand
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        vec![62, 61],
+        "Java NightmareAction returns the selected original with hand.addToHand after hand-select removal"
+    );
+
+    let apply = combat_state
+        .pop_next_action()
+        .expect("Nightmare selection should queue power application");
+    crate::engine::action_handlers::execute_action(apply, &mut combat_state);
+    let power = crate::content::powers::store::powers_for(&combat_state, 0)
+        .and_then(|powers| powers.iter().find(|p| p.power_type == PowerId::Nightmare))
+        .cloned()
+        .expect("Nightmare power should be applied");
+
+    let start_actions =
+        crate::content::powers::resolve_power_instance_at_turn_start(&power, &combat_state, 0);
+    assert_eq!(start_actions.len(), 2);
+    match &start_actions[0] {
+        Action::MakeCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::StrikeG);
+            assert_eq!(*amount, 2);
+        }
+        other => panic!("expected Nightmare to make copies at start of turn, got {other:?}"),
+    }
+    assert_eq!(
+        start_actions[1],
+        Action::RemovePowerInstance {
+            target: 0,
+            power_id: PowerId::Nightmare,
+            instance_id: power.instance_id.unwrap(),
+        }
+    );
+}
+
+#[test]
 fn piercing_wail_matches_java_artifact_and_shackled_rules() {
     let piercing = get_card_definition(CardId::PiercingWail);
     assert_eq!(piercing.name, "Piercing Wail");
@@ -7993,6 +8180,7 @@ fn piercing_wail_matches_java_artifact_and_shackled_rules() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );
@@ -8057,6 +8245,7 @@ fn piercing_wail_matches_java_artifact_and_shackled_rules() {
             instance_id: None,
             amount: 1,
             extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
             just_applied: false,
         }],
     );

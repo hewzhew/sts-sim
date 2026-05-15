@@ -27,6 +27,7 @@ pub enum SelectionReason {
     PutToBottomOfDraw,
     Setup,
     Copy,
+    Nightmare,
     GamblingChip,
     MoveToDrawPile,
     Exhume,

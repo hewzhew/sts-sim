@@ -2016,6 +2016,7 @@ fn compile_powers(specs: &[CombatCasePowerSpec]) -> Result<Vec<Power>, String> {
                 instance_id: None,
                 amount: spec.amount,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             })
         })

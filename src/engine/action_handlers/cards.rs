@@ -837,6 +837,52 @@ pub fn handle_make_copy_in_hand(
     }
 }
 
+fn nightmare_payload_copy(
+    card: &crate::runtime::combat::CombatCard,
+) -> crate::runtime::combat::CombatCard {
+    let mut copy = card.make_stat_equivalent_copy_with_uuid(card.uuid);
+    copy.reset_attributes_java();
+    copy
+}
+
+pub fn queue_nightmare_power_front(
+    card: &crate::runtime::combat::CombatCard,
+    amount: u8,
+    state: &mut CombatState,
+) {
+    let payload = crate::runtime::combat::PowerPayload::Card(nightmare_payload_copy(card));
+    let instance_id = state.next_power_instance_id();
+    state.queue_action_front(Action::ApplyPowerWithPayload {
+        source: 0,
+        target: 0,
+        power_id: PowerId::Nightmare,
+        amount: amount as i32,
+        instance_id: Some(instance_id),
+        extra_data: None,
+        payload,
+    });
+}
+
+pub fn handle_nightmare(amount: u8, state: &mut CombatState) {
+    if state.zones.hand.is_empty() {
+        return;
+    }
+
+    if state.zones.hand.len() == 1 {
+        let card = state.zones.hand[0].clone();
+        queue_nightmare_power_front(&card, amount, state);
+        return;
+    }
+
+    state.queue_action_front(Action::SuspendForHandSelect {
+        min: 1,
+        max: 1,
+        can_cancel: false,
+        filter: crate::state::HandSelectFilter::Any,
+        reason: crate::state::HandSelectReason::Nightmare { amount },
+    });
+}
+
 pub fn handle_make_copy_in_discard(
     original: Box<crate::runtime::combat::CombatCard>,
     amount: u8,
@@ -1986,6 +2032,7 @@ mod tests {
                 instance_id: None,
                 amount: -1,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );
@@ -2007,6 +2054,7 @@ mod tests {
                 instance_id: None,
                 amount: -1,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );
@@ -2033,6 +2081,7 @@ mod tests {
                 instance_id: None,
                 amount: -1,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );
@@ -2062,6 +2111,7 @@ mod tests {
                 instance_id: None,
                 amount: -1,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );
@@ -2095,6 +2145,7 @@ mod tests {
                 instance_id: None,
                 amount: -1,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );

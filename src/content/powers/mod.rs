@@ -107,6 +107,7 @@ pub enum PowerId {
     Envenom,
     ToolsOfTheTrade,
     RetainCards,
+    Nightmare,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -136,7 +137,7 @@ pub fn uses_sentinel_amount(id: PowerId) -> bool {
 }
 
 pub fn uses_distinct_instances(id: PowerId) -> bool {
-    matches!(id, PowerId::TheBombPower)
+    matches!(id, PowerId::TheBombPower | PowerId::Nightmare)
 }
 
 pub fn canonicalize_applied_amount(id: PowerId, amount: i32) -> i32 {
@@ -573,6 +574,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Retain Cards",
         },
+        PowerId::Nightmare => PowerDefinition {
+            id,
+            name: "Nightmare",
+        },
     }
 }
 
@@ -752,10 +757,28 @@ pub fn resolve_power_on_card_played(
 
 pub fn resolve_power_at_turn_start(
     id: PowerId,
-    _state: &CombatState,
+    state: &CombatState,
     owner: crate::core::EntityId,
     amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
+    let power = crate::runtime::combat::Power {
+        power_type: id,
+        instance_id: None,
+        amount,
+        extra_data: 0,
+        payload: crate::runtime::combat::PowerPayload::None,
+        just_applied: false,
+    };
+    resolve_power_instance_at_turn_start(&power, state, owner)
+}
+
+pub fn resolve_power_instance_at_turn_start(
+    power: &crate::runtime::combat::Power,
+    _state: &CombatState,
+    owner: crate::core::EntityId,
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
+    let id = power.power_type;
+    let amount = power.amount;
     match id {
         PowerId::FlameBarrier => {
             smallvec::smallvec![crate::runtime::action::Action::RemovePower {
@@ -818,6 +841,7 @@ pub fn resolve_power_at_turn_start(
         PowerId::Poison => core::poison::at_turn_start(owner, amount),
         PowerId::Choked => silent::choked::at_turn_start(owner),
         PowerId::Phantasmal => silent::phantasmal::at_start_of_turn(owner),
+        PowerId::Nightmare => silent::nightmare::at_start_of_turn(owner, power),
         PowerId::Flight => core::flight::at_turn_start(_state, owner, amount),
         _ => smallvec::smallvec![],
     }
