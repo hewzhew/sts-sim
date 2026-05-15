@@ -207,6 +207,7 @@ pub enum CardId {
     Eviscerate,
     GlassKnife,
     GrandFinale,
+    WraithForm,
     MasterfulStab,
     Terror,
     // Add more as we expand
@@ -3757,6 +3758,25 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 0,
             upgrade_magic: 0,
         },
+        CardId::WraithForm => CardDefinition {
+            id: CardId::WraithForm,
+            name: "Wraith Form",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 3,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 2,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
         CardId::Eviscerate => CardDefinition {
             id: CardId::Eviscerate,
             name: "Eviscerate",
@@ -4109,6 +4129,7 @@ pub const SILENT_RARE_POOL: &[CardId] = &[
     CardId::Malaise,
     CardId::StormOfSteel,
     CardId::Unload,
+    CardId::WraithForm,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -4467,6 +4488,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Eviscerate => "Eviscerate",
         CardId::GlassKnife => "Glass Knife",
         CardId::GrandFinale => "Grand Finale",
+        CardId::WraithForm => "Wraith Form v2",
         CardId::MasterfulStab => "Masterful Stab",
         CardId::Terror => "Terror",
         CardId::Adrenaline => "Adrenaline",
@@ -4673,6 +4695,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Eviscerate,
         GlassKnife,
         GrandFinale,
+        WraithForm,
         MasterfulStab,
         Terror,
         Adrenaline,

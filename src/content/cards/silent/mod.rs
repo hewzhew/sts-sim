@@ -57,3 +57,4 @@ pub mod sucker_punch;
 pub mod survivor;
 pub mod terror;
 pub mod unload;
+pub mod wraith_form;

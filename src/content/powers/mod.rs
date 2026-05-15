@@ -99,6 +99,7 @@ pub enum PowerId {
     InfiniteBladesPower,
     Blur,
     Choked,
+    WraithForm,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -140,8 +141,10 @@ pub fn canonicalize_applied_amount(id: PowerId, amount: i32) -> i32 {
 }
 
 pub fn allows_negative_amount(id: PowerId) -> bool {
-    matches!(id, PowerId::Strength | PowerId::Dexterity | PowerId::Focus)
-        || uses_sentinel_amount(id)
+    matches!(
+        id,
+        PowerId::Strength | PowerId::Dexterity | PowerId::Focus | PowerId::WraithForm
+    ) || uses_sentinel_amount(id)
 }
 
 pub fn should_keep_power_instance(id: PowerId, amount: i32) -> bool {
@@ -185,7 +188,8 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::Fading
         | PowerId::Shackled
         | PowerId::DrawReduction
-        | PowerId::Choked => true,
+        | PowerId::Choked
+        | PowerId::WraithForm => true,
         // Everything else is BUFF
         _ => false,
     }
@@ -204,7 +208,7 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         PowerId::Strength | PowerId::Focus | PowerId::Dexterity => amount < 0,
         // Some Java debuffs use sentinel amounts instead of stacks. Artifact still
         // blocks the application even when the constructor amount is -1.
-        PowerId::NoDraw | PowerId::Confusion => amount != 0,
+        PowerId::NoDraw | PowerId::Confusion | PowerId::WraithForm => amount != 0,
         PowerId::NoBlock => amount > 0,
         PowerId::Vulnerable
         | PowerId::Weak
@@ -528,6 +532,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         },
         PowerId::Blur => PowerDefinition { id, name: "Blur" },
         PowerId::Choked => PowerDefinition { id, name: "Choked" },
+        PowerId::WraithForm => PowerDefinition {
+            id,
+            name: "Wraith Form",
+        },
     }
 }
 
@@ -830,6 +838,7 @@ pub fn resolve_power_at_end_of_turn(
             power_id: PowerId::Rage,
         }],
         PowerId::DexterityDown => core::dexterity_down::at_end_of_turn(owner, amount),
+        PowerId::WraithForm => silent::wraith_form::at_end_of_turn(owner, amount),
         PowerId::NoDraw => core::no_draw::at_end_of_turn(owner),
         PowerId::Ritual => core::ritual::at_end_of_turn(owner, amount, power.extra_data),
         PowerId::Shackled => core::shackled::at_end_of_turn(owner, amount),

@@ -5975,6 +5975,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Malaise,
             CardId::StormOfSteel,
             CardId::Unload,
+            CardId::WraithForm,
         ]
     );
 }
@@ -7154,6 +7155,75 @@ fn silent_x_cost_power_cards_match_java_actions() {
             power_id: PowerId::Weak,
             amount: 3,
         })
+    );
+}
+
+#[test]
+fn wraith_form_matches_java_intangible_and_dexterity_loss_power() {
+    let wraith = get_card_definition(CardId::WraithForm);
+    assert_eq!(wraith.name, "Wraith Form");
+    assert_eq!(wraith.card_type, CardType::Power);
+    assert_eq!(wraith.rarity, CardRarity::Rare);
+    assert_eq!(wraith.cost, 3);
+    assert_eq!(wraith.base_magic, 2);
+    assert_eq!(wraith.upgrade_magic, 1);
+    assert_eq!(wraith.target, CardTarget::SelfTarget);
+    assert_eq!(java_id(CardId::WraithForm), "Wraith Form v2");
+    assert_eq!(
+        build_java_id_map().get("Wraith Form v2"),
+        Some(&CardId::WraithForm)
+    );
+
+    let state = crate::test_support::blank_test_combat();
+    let mut wraith_plus = CombatCard::new(CardId::WraithForm, 990);
+    wraith_plus.upgrades = 1;
+    let actions = resolve_card_play(CardId::WraithForm, &state, &wraith_plus, None);
+    assert_eq!(actions.len(), 2);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::IntangiblePlayer,
+            amount: 3,
+        }
+    );
+    assert_eq!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::WraithForm,
+            amount: -1,
+        }
+    );
+
+    assert!(
+        crate::content::powers::allows_negative_amount(PowerId::WraithForm),
+        "Java WraithFormPower stacks by adding negative amounts"
+    );
+    assert!(
+        crate::content::powers::is_debuff_application(PowerId::WraithForm, -1),
+        "Java WraithFormPower is PowerType.DEBUFF even though it is applied by a card"
+    );
+
+    let wraith_power = Power {
+        power_type: PowerId::WraithForm,
+        instance_id: None,
+        amount: -1,
+        extra_data: 0,
+        just_applied: false,
+    };
+    let turn_end = crate::content::powers::resolve_power_at_end_of_turn(&wraith_power, &state, 0);
+    assert_eq!(turn_end.len(), 1);
+    assert_eq!(
+        turn_end[0],
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Dexterity,
+            amount: -1,
+        }
     );
 }
 

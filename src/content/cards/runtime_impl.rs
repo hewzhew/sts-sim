@@ -206,6 +206,7 @@ pub fn resolve_card_play_with_context(
         CardId::EndlessAgony => silent::endless_agony::endless_agony_play(_state, _card, t),
         CardId::GlassKnife => silent::glass_knife::glass_knife_play(_state, _card, t),
         CardId::GrandFinale => silent::grand_finale::grand_finale_play(_state, _card),
+        CardId::WraithForm => silent::wraith_form::wraith_form_play(_state, _card),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),
