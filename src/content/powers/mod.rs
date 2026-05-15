@@ -757,7 +757,7 @@ pub fn resolve_power_on_card_played(
 
 pub fn resolve_power_at_turn_start(
     id: PowerId,
-    state: &CombatState,
+    state: &mut CombatState,
     owner: crate::core::EntityId,
     amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
@@ -774,7 +774,7 @@ pub fn resolve_power_at_turn_start(
 
 pub fn resolve_power_instance_at_turn_start(
     power: &crate::runtime::combat::Power,
-    _state: &CombatState,
+    state: &mut CombatState,
     owner: crate::core::EntityId,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     let id = power.power_type;
@@ -791,7 +791,7 @@ pub fn resolve_power_instance_at_turn_start(
         }
         PowerId::NextTurnBlock => core::next_turn_block::at_turn_start(owner, amount),
         PowerId::InfiniteBladesPower => {
-            if _state.are_monsters_basically_dead_java() {
+            if state.are_monsters_basically_dead_java() {
                 smallvec::smallvec![]
             } else {
                 smallvec::smallvec![crate::runtime::action::Action::MakeTempCardInHand {
@@ -802,15 +802,21 @@ pub fn resolve_power_instance_at_turn_start(
             }
         }
         PowerId::MagnetismPower => {
-            // Add `amount` random colorless cards to hand
             let mut acts = smallvec::SmallVec::new();
+            if state.are_monsters_basically_dead_java() {
+                return acts;
+            }
+            let pool = state.colorless_combat_pool();
+            if pool.is_empty() {
+                return acts;
+            }
             for _ in 0..amount {
-                acts.push(
-                    crate::runtime::action::Action::MakeRandomColorlessCardInHand {
-                        cost_for_turn: None,
-                        upgraded: false,
-                    },
-                );
+                let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
+                let card = crate::runtime::combat::CombatCard::new(pool[idx], 0);
+                acts.push(crate::runtime::action::Action::MakeCopyInHand {
+                    original: Box::new(card),
+                    amount: 1,
+                });
             }
             acts
         }
@@ -842,7 +848,7 @@ pub fn resolve_power_instance_at_turn_start(
         PowerId::Choked => silent::choked::at_turn_start(owner),
         PowerId::Phantasmal => silent::phantasmal::at_start_of_turn(owner),
         PowerId::Nightmare => silent::nightmare::at_start_of_turn(owner, power),
-        PowerId::Flight => core::flight::at_turn_start(_state, owner, amount),
+        PowerId::Flight => core::flight::at_turn_start(state, owner, amount),
         _ => smallvec::smallvec![],
     }
 }

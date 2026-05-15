@@ -782,10 +782,14 @@ mod tests {
 
     #[test]
     fn energized_is_not_an_ordinary_at_turn_start_power() {
-        let state = blank_test_combat();
+        let mut state = blank_test_combat();
 
-        let actions =
-            crate::content::powers::resolve_power_at_turn_start(PowerId::Energized, &state, 0, 2);
+        let actions = crate::content::powers::resolve_power_at_turn_start(
+            PowerId::Energized,
+            &mut state,
+            0,
+            2,
+        );
 
         assert!(
             actions.is_empty(),

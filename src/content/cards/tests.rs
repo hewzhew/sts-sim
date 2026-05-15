@@ -3256,9 +3256,14 @@ fn rage_power_hooks_match_java_source() {
         5,
     )
     .is_empty());
-    assert!(
-        crate::content::powers::resolve_power_at_turn_start(PowerId::Rage, &state, 0, 5).is_empty()
-    );
+    let mut turn_start_state = state.clone();
+    assert!(crate::content::powers::resolve_power_at_turn_start(
+        PowerId::Rage,
+        &mut turn_start_state,
+        0,
+        5
+    )
+    .is_empty());
     assert_eq!(
         crate::content::powers::resolve_power_at_end_of_turn(
             &Power {
@@ -4895,6 +4900,55 @@ fn transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing() {
 }
 
 #[test]
+fn magnetism_power_locks_random_colorless_cards_at_turn_start() {
+    let monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    let mut state = crate::test_support::combat_with_monsters(vec![monster]);
+
+    assert_eq!(state.rng.card_random_rng.counter, 0);
+    let actions = crate::content::powers::resolve_power_at_turn_start(
+        PowerId::MagnetismPower,
+        &mut state,
+        0,
+        2,
+    );
+
+    assert_eq!(
+        state.rng.card_random_rng.counter, 2,
+        "Java MagnetismPower.atStartOfTurn samples random colorless cards before queuing MakeTempCardInHandAction"
+    );
+    assert_eq!(actions.len(), 2);
+    for action in actions {
+        match action {
+            Action::MakeCopyInHand { original, amount } => {
+                assert_eq!(amount, 1);
+                assert!(state.colorless_combat_pool().contains(&original.id));
+            }
+            other => panic!("Magnetism should queue concrete colorless cards, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn magnetism_power_skips_when_monsters_are_basically_dead() {
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.is_dying = true;
+    let mut state = crate::test_support::combat_with_monsters(vec![monster]);
+
+    let actions = crate::content::powers::resolve_power_at_turn_start(
+        PowerId::MagnetismPower,
+        &mut state,
+        0,
+        2,
+    );
+
+    assert!(actions.is_empty());
+    assert_eq!(
+        state.rng.card_random_rng.counter, 0,
+        "Java MagnetismPower checks MonsterGroup.areMonstersBasicallyDead before sampling cards"
+    );
+}
+
+#[test]
 fn jack_of_all_trades_locks_random_colorless_cards_when_used() {
     let mut state = crate::test_support::blank_test_combat();
     let mut jack = CombatCard::new(CardId::JackOfAllTrades, 3970);
@@ -6508,7 +6562,7 @@ fn silent_power_cards_match_java_power_hooks() {
     live_state.entities.monsters = vec![live_monster];
     let start_actions = crate::content::powers::resolve_power_at_turn_start(
         PowerId::InfiniteBladesPower,
-        &live_state,
+        &mut live_state,
         0,
         1,
     );
@@ -6803,7 +6857,7 @@ fn silent_target_control_cards_match_java_sources_and_power_hooks() {
         }
     );
     assert_eq!(
-        crate::content::powers::resolve_power_at_turn_start(PowerId::Choked, &state, 7, 3)[0],
+        crate::content::powers::resolve_power_at_turn_start(PowerId::Choked, &mut state, 7, 3)[0],
         Action::RemovePower {
             target: 7,
             power_id: PowerId::Choked
@@ -7400,7 +7454,7 @@ fn phantasmal_killer_matches_java_delayed_double_damage_power() {
     phantasmal_plus.upgrades = 1;
     assert_eq!(upgraded_base_cost_override(&phantasmal_plus), Some(0));
 
-    let state = crate::test_support::blank_test_combat();
+    let mut state = crate::test_support::blank_test_combat();
     let actions = resolve_card_play(CardId::PhantasmalKiller, &state, &phantasmal_plus, None);
     assert_eq!(
         actions[0].action,
@@ -7413,7 +7467,7 @@ fn phantasmal_killer_matches_java_delayed_double_damage_power() {
     );
 
     let turn_start =
-        crate::content::powers::resolve_power_at_turn_start(PowerId::Phantasmal, &state, 0, 2);
+        crate::content::powers::resolve_power_at_turn_start(PowerId::Phantasmal, &mut state, 0, 2);
     assert_eq!(
         turn_start[0],
         Action::ApplyPower {
@@ -8310,7 +8364,7 @@ fn nightmare_selection_returns_original_and_start_turn_copies_payload() {
         .expect("Nightmare power should be applied");
 
     let start_actions =
-        crate::content::powers::resolve_power_instance_at_turn_start(&power, &combat_state, 0);
+        crate::content::powers::resolve_power_instance_at_turn_start(&power, &mut combat_state, 0);
     assert_eq!(start_actions.len(), 2);
     match &start_actions[0] {
         Action::MakeCopyInHand { original, amount } => {
