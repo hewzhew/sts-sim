@@ -5970,6 +5970,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Burst,
             CardId::DieDieDie,
             CardId::Doppelganger,
+            CardId::Envenom,
             CardId::GlassKnife,
             CardId::GrandFinale,
             CardId::Malaise,
@@ -7317,6 +7318,113 @@ fn phantasmal_killer_matches_java_delayed_double_damage_power() {
         Action::Damage(info) => assert_eq!(info.output, 12),
         other => panic!("DoubleDamagePower should affect normal attack damage, got {other:?}"),
     }
+}
+
+#[test]
+fn envenom_matches_java_owner_on_attack_poison_hook() {
+    let envenom = get_card_definition(CardId::Envenom);
+    assert_eq!(envenom.name, "Envenom");
+    assert_eq!(envenom.card_type, CardType::Power);
+    assert_eq!(envenom.rarity, CardRarity::Rare);
+    assert_eq!(envenom.cost, 2);
+    assert_eq!(envenom.target, CardTarget::SelfTarget);
+    assert_eq!(java_id(CardId::Envenom), "Envenom");
+    assert_eq!(build_java_id_map().get("Envenom"), Some(&CardId::Envenom));
+    let mut envenom_plus = CombatCard::new(CardId::Envenom, 997);
+    envenom_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&envenom_plus), Some(1));
+
+    let actions = resolve_card_play(
+        CardId::Envenom,
+        &crate::test_support::blank_test_combat(),
+        &envenom_plus,
+        None,
+    );
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Envenom,
+            amount: 1,
+        }
+    );
+
+    let mut poison_state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    target.current_hp = 50;
+    target.max_hp = 50;
+    poison_state.entities.monsters = vec![target];
+    poison_state.entities.power_db.insert(
+        0,
+        vec![Power {
+            power_type: PowerId::Envenom,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: 0,
+            target: 7,
+            base: 6,
+            output: 6,
+            damage_type: DamageType::Normal,
+            is_modified: true,
+        }),
+        &mut poison_state,
+    );
+    assert_eq!(
+        poison_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Poison,
+            amount: 1,
+        })
+    );
+
+    let mut blocked_state = poison_state.clone();
+    blocked_state.clear_pending_actions();
+    blocked_state.entities.monsters[0].current_hp = 50;
+    blocked_state.entities.monsters[0].block = 20;
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: 0,
+            target: 7,
+            base: 6,
+            output: 6,
+            damage_type: DamageType::Normal,
+            is_modified: true,
+        }),
+        &mut blocked_state,
+    );
+    assert!(
+        blocked_state.pop_next_action().is_none(),
+        "Java EnvenomPower.onAttack requires post-block damageAmount > 0"
+    );
+
+    let mut thorns_state = poison_state.clone();
+    thorns_state.clear_pending_actions();
+    thorns_state.entities.monsters[0].current_hp = 50;
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: 0,
+            target: 7,
+            base: 6,
+            output: 6,
+            damage_type: DamageType::Thorns,
+            is_modified: true,
+        }),
+        &mut thorns_state,
+    );
+    assert!(
+        thorns_state.pop_next_action().is_none(),
+        "Java EnvenomPower.onAttack only triggers for NORMAL damage"
+    );
 }
 
 #[test]

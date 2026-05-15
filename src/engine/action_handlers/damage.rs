@@ -217,6 +217,22 @@ fn apply_damage_to_monster_via_pipeline(
             );
         }
 
+        if source_id != NO_SOURCE {
+            for power in &store::powers_snapshot_for(state, source_id) {
+                let hook_actions = crate::content::powers::resolve_power_on_attack(
+                    power.power_type,
+                    source_id,
+                    target_id,
+                    final_damage,
+                    info.damage_type,
+                    power.amount,
+                );
+                for action in hook_actions.into_iter().rev() {
+                    state.queue_action_front(action);
+                }
+            }
+        }
+
         if let Some(real_m) = state
             .entities
             .monsters

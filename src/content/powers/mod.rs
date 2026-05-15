@@ -102,6 +102,7 @@ pub enum PowerId {
     WraithForm,
     Phantasmal,
     DoubleDamage,
+    Envenom,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -545,6 +546,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         PowerId::DoubleDamage => PowerDefinition {
             id,
             name: "Double Damage",
+        },
+        PowerId::Envenom => PowerDefinition {
+            id,
+            name: "Envenom",
         },
     }
 }
@@ -999,6 +1004,22 @@ pub fn resolve_power_on_inflict_damage(
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::PainfulStabs => core::painful_stabs::on_inflict_damage(damage, damage_type),
+        _ => smallvec::smallvec![],
+    }
+}
+
+pub fn resolve_power_on_attack(
+    id: PowerId,
+    owner: crate::core::EntityId,
+    target: crate::core::EntityId,
+    damage: i32,
+    damage_type: crate::runtime::action::DamageType,
+    power_amount: i32,
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
+    match id {
+        PowerId::Envenom => {
+            silent::envenom::on_attack(owner, target, damage, damage_type, power_amount)
+        }
         _ => smallvec::smallvec![],
     }
 }

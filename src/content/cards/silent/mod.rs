@@ -26,6 +26,7 @@ pub mod die_die_die;
 pub mod dodge_and_roll;
 pub mod doppelganger;
 pub mod endless_agony;
+pub mod envenom;
 pub mod escape_plan;
 pub mod eviscerate;
 pub mod expertise;
