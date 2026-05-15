@@ -212,6 +212,7 @@ pub enum CardId {
     WraithForm,
     MasterfulStab,
     Terror,
+    AThousandCuts,
     // Add more as we expand
 }
 
@@ -3874,6 +3875,25 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 0,
             upgrade_magic: 0,
         },
+        CardId::AThousandCuts => CardDefinition {
+            id: CardId::AThousandCuts,
+            name: "A Thousand Cuts",
+            card_type: CardType::Power,
+            rarity: CardRarity::Rare,
+            cost: 2,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 1,
+            target: CardTarget::SelfTarget,
+            is_multi_damage: false,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 1,
+        },
         CardId::Adrenaline => CardDefinition {
             id: CardId::Adrenaline,
             name: "Adrenaline",
@@ -4161,6 +4181,7 @@ pub const SILENT_UNCOMMON_POOL: &[CardId] = &[
 pub const SILENT_RARE_POOL: &[CardId] = &[
     CardId::Adrenaline,
     CardId::AfterImage,
+    CardId::AThousandCuts,
     CardId::Burst,
     CardId::DieDieDie,
     CardId::Doppelganger,
@@ -4535,6 +4556,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::WraithForm => "Wraith Form v2",
         CardId::MasterfulStab => "Masterful Stab",
         CardId::Terror => "Terror",
+        CardId::AThousandCuts => "A Thousand Cuts",
         CardId::Adrenaline => "Adrenaline",
         CardId::AfterImage => "After Image",
         CardId::Burst => "Burst",
@@ -4744,6 +4766,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         WraithForm,
         MasterfulStab,
         Terror,
+        AThousandCuts,
         Adrenaline,
         AfterImage,
         Burst,

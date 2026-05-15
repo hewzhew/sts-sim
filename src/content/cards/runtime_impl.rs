@@ -213,6 +213,7 @@ pub fn resolve_card_play_with_context(
         }
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
+        CardId::AThousandCuts => silent::a_thousand_cuts::a_thousand_cuts_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),
         CardId::Pride => smallvec::smallvec![], // Coast 1 but does nothing on play
         CardId::Finesse

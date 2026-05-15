@@ -1,3 +1,4 @@
+pub mod a_thousand_cuts;
 pub mod accuracy;
 pub mod acrobatics;
 pub mod adrenaline;

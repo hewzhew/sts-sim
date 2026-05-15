@@ -5967,6 +5967,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
         &[
             CardId::Adrenaline,
             CardId::AfterImage,
+            CardId::AThousandCuts,
             CardId::Burst,
             CardId::DieDieDie,
             CardId::Doppelganger,
@@ -7424,6 +7425,60 @@ fn envenom_matches_java_owner_on_attack_poison_hook() {
     assert!(
         thorns_state.pop_next_action().is_none(),
         "Java EnvenomPower.onAttack only triggers for NORMAL damage"
+    );
+}
+
+#[test]
+fn a_thousand_cuts_matches_java_power_and_thorns_damage_hook() {
+    let cuts = get_card_definition(CardId::AThousandCuts);
+    assert_eq!(cuts.name, "A Thousand Cuts");
+    assert_eq!(cuts.card_type, CardType::Power);
+    assert_eq!(cuts.rarity, CardRarity::Rare);
+    assert_eq!(cuts.cost, 2);
+    assert_eq!(cuts.base_magic, 1);
+    assert_eq!(cuts.upgrade_magic, 1);
+    assert_eq!(cuts.target, CardTarget::SelfTarget);
+    assert_eq!(java_id(CardId::AThousandCuts), "A Thousand Cuts");
+    assert_eq!(
+        build_java_id_map().get("A Thousand Cuts"),
+        Some(&CardId::AThousandCuts)
+    );
+
+    let state = crate::test_support::blank_test_combat();
+    let mut cuts_plus = CombatCard::new(CardId::AThousandCuts, 998);
+    cuts_plus.upgrades = 1;
+    let actions = resolve_card_play(CardId::AThousandCuts, &state, &cuts_plus, None);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::ThousandCuts,
+            amount: 2,
+        }
+    );
+
+    let mut hook_state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    hook_state.entities.monsters = vec![first, second];
+    let hook_actions = crate::content::powers::resolve_power_on_card_played(
+        PowerId::ThousandCuts,
+        &hook_state,
+        0,
+        &CombatCard::new(CardId::StrikeG, 999),
+        2,
+    );
+    assert_eq!(
+        hook_actions[0],
+        Action::DamageAllEnemies {
+            source: 0,
+            damages: smallvec::smallvec![2, 2],
+            damage_type: DamageType::Thorns,
+            is_modified: false,
+        }
     );
 }
 
