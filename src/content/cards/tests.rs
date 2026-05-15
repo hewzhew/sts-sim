@@ -2689,6 +2689,27 @@ fn ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods(
             cost_for_turn: Some(0)
         }
     ));
+
+    let mut play_state = state.clone();
+    play_state.zones.hand = vec![CombatCard::new(CardId::InfernalBlade, 275)];
+    assert_eq!(play_state.rng.card_random_rng.counter, 0);
+    crate::engine::action_handlers::cards::handle_play_card_from_hand(0, None, &mut play_state)
+        .expect("Infernal Blade should be playable");
+    assert_eq!(
+        play_state.rng.card_random_rng.counter, 1,
+        "Java InfernalBlade.use samples the random attack before queuing MakeTempCardInHandAction"
+    );
+    match play_state.pop_next_action() {
+        Some(Action::MakeCopyInHand { original, amount }) => {
+            assert_eq!(amount, 1);
+            assert_eq!(
+                crate::content::cards::get_card_definition(original.id).card_type,
+                CardType::Attack
+            );
+            assert_eq!(original.cost_for_turn_java(), 0);
+        }
+        other => panic!("Infernal Blade should queue a concrete generated attack, got {other:?}"),
+    }
 }
 
 #[test]
