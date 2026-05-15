@@ -3,5 +3,6 @@ pub mod blur;
 pub mod burst;
 pub mod choked;
 pub mod noxious_fumes;
+pub mod phantasmal;
 pub mod thousand_cuts;
 pub mod wraith_form;

@@ -43,6 +43,7 @@ pub mod masterful_stab;
 pub mod neutralize;
 pub mod noxious_fumes;
 pub mod outmaneuver;
+pub mod phantasmal_killer;
 pub mod piercing_wail;
 pub mod poisoned_stab;
 pub mod predator;

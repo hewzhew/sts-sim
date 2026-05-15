@@ -5973,6 +5973,7 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::GlassKnife,
             CardId::GrandFinale,
             CardId::Malaise,
+            CardId::PhantasmalKiller,
             CardId::StormOfSteel,
             CardId::Unload,
             CardId::WraithForm,
@@ -7225,6 +7226,97 @@ fn wraith_form_matches_java_intangible_and_dexterity_loss_power() {
             amount: -1,
         }
     );
+}
+
+#[test]
+fn phantasmal_killer_matches_java_delayed_double_damage_power() {
+    let phantasmal = get_card_definition(CardId::PhantasmalKiller);
+    assert_eq!(phantasmal.name, "Phantasmal Killer");
+    assert_eq!(phantasmal.card_type, CardType::Skill);
+    assert_eq!(phantasmal.rarity, CardRarity::Rare);
+    assert_eq!(phantasmal.cost, 1);
+    assert_eq!(phantasmal.target, CardTarget::SelfTarget);
+    assert_eq!(java_id(CardId::PhantasmalKiller), "Phantasmal Killer");
+    assert_eq!(
+        build_java_id_map().get("Phantasmal Killer"),
+        Some(&CardId::PhantasmalKiller)
+    );
+    let mut phantasmal_plus = CombatCard::new(CardId::PhantasmalKiller, 995);
+    phantasmal_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&phantasmal_plus), Some(0));
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(CardId::PhantasmalKiller, &state, &phantasmal_plus, None);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Phantasmal,
+            amount: 1,
+        }
+    );
+
+    let turn_start =
+        crate::content::powers::resolve_power_at_turn_start(PowerId::Phantasmal, &state, 0, 2);
+    assert_eq!(
+        turn_start[0],
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::DoubleDamage,
+            amount: 1,
+        }
+    );
+    assert_eq!(
+        turn_start[1],
+        Action::ReducePower {
+            target: 0,
+            power_id: PowerId::Phantasmal,
+            amount: 1,
+        }
+    );
+
+    let double_damage_round_end = crate::content::powers::resolve_power_at_end_of_round(
+        PowerId::DoubleDamage,
+        &state,
+        0,
+        1,
+        false,
+    );
+    assert_eq!(
+        double_damage_round_end[0],
+        Action::ReducePower {
+            target: 0,
+            power_id: PowerId::DoubleDamage,
+            amount: 1,
+        }
+    );
+
+    let mut damage_state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    damage_state.entities.monsters = vec![target];
+    damage_state.entities.power_db.insert(
+        0,
+        vec![Power {
+            power_type: PowerId::DoubleDamage,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    let strike_actions = resolve_card_play(
+        CardId::StrikeG,
+        &damage_state,
+        &CombatCard::new(CardId::StrikeG, 996),
+        Some(7),
+    );
+    match &strike_actions[0].action {
+        Action::Damage(info) => assert_eq!(info.output, 12),
+        other => panic!("DoubleDamagePower should affect normal attack damage, got {other:?}"),
+    }
 }
 
 #[test]

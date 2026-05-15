@@ -100,6 +100,8 @@ pub enum PowerId {
     Blur,
     Choked,
     WraithForm,
+    Phantasmal,
+    DoubleDamage,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -536,6 +538,14 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Wraith Form",
         },
+        PowerId::Phantasmal => PowerDefinition {
+            id,
+            name: "Phantasmal",
+        },
+        PowerId::DoubleDamage => PowerDefinition {
+            id,
+            name: "Double Damage",
+        },
     }
 }
 
@@ -780,6 +790,7 @@ pub fn resolve_power_at_turn_start(
         }
         PowerId::Poison => core::poison::at_turn_start(owner, amount),
         PowerId::Choked => silent::choked::at_turn_start(owner),
+        PowerId::Phantasmal => silent::phantasmal::at_start_of_turn(owner),
         PowerId::Flight => core::flight::at_turn_start(_state, owner, amount),
         _ => smallvec::smallvec![],
     }
@@ -951,6 +962,7 @@ pub fn resolve_power_at_end_of_round(
         PowerId::IntangiblePlayer => core::intangible::at_end_of_round(owner, amount),
         PowerId::Ritual => core::ritual::at_end_of_round(_state, owner, amount),
         PowerId::GenericStrengthUp => core::generic_strength_up::at_end_of_round(owner, amount),
+        PowerId::DoubleDamage => silent::phantasmal::double_damage_at_end_of_round(owner, amount),
         // Other Powers that decay at end of round can be added here
         _ => smallvec::smallvec![],
     }
@@ -1123,6 +1135,7 @@ pub fn resolve_power_on_calculate_damage_to_enemy(
                 amount,
             ),
             PowerId::PenNibPower => core::pen_nib::on_calculate_damage_to_enemy(damage),
+            PowerId::DoubleDamage => damage * 2.0,
             PowerId::Weak => damage * 0.75,
             // Java: atDamageGive — Vigor adds its amount to NORMAL attack damage
             PowerId::Vigor => damage + amount as f32,
