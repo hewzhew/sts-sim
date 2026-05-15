@@ -98,6 +98,8 @@ fn update_player_cards_on_damage(state: &mut CombatState) {
     {
         if card.id == crate::content::cards::CardId::BloodForBlood {
             card.update_cost_java(-1);
+        } else if card.id == crate::content::cards::CardId::MasterfulStab {
+            card.update_cost_java(1);
         }
     }
 }

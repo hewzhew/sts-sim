@@ -85,18 +85,25 @@ fn queue_manual_discard_hooks(
     state: &mut CombatState,
 ) {
     match order {
-        DiscardHookOrder::None => {}
+        DiscardHookOrder::None => {
+            state.turn.increment_cards_discarded();
+        }
         DiscardHookOrder::CardOnly => {
             let card_actions = crate::content::cards::resolve_card_on_manual_discard(card, state);
             state.queue_actions(card_actions);
+            state.turn.increment_cards_discarded();
         }
         DiscardHookOrder::CardThenRelics => {
             let card_actions = crate::content::cards::resolve_card_on_manual_discard(card, state);
             state.queue_actions(card_actions);
+            state.turn.increment_cards_discarded();
+            apply_player_update_cards_on_discard(state);
             let relic_actions = crate::content::relics::hooks::on_discard(state);
             state.queue_actions(relic_actions);
         }
         DiscardHookOrder::RelicsThenCard => {
+            state.turn.increment_cards_discarded();
+            apply_player_update_cards_on_discard(state);
             let relic_actions = crate::content::relics::hooks::on_discard(state);
             state.queue_actions(relic_actions);
             let card_actions = crate::content::cards::resolve_card_on_manual_discard(card, state);
@@ -105,10 +112,35 @@ fn queue_manual_discard_hooks(
     }
 }
 
+fn apply_player_update_cards_on_discard(state: &mut CombatState) {
+    for card in state
+        .zones
+        .hand
+        .iter_mut()
+        .chain(state.zones.discard_pile.iter_mut())
+        .chain(state.zones.draw_pile.iter_mut())
+    {
+        if card.id == CardId::Eviscerate {
+            card.set_cost_for_turn_java(card.cost_for_turn_java() - 1);
+        }
+    }
+}
+
+fn apply_card_trigger_when_drawn(
+    card: &mut crate::runtime::combat::CombatCard,
+    state: &CombatState,
+) {
+    if card.id == CardId::Eviscerate {
+        card.set_cost_for_turn_java(
+            card.combat_cost_without_turn_override_java()
+                - state.turn.counters.cards_discarded_this_turn as i32,
+        );
+    }
+}
+
 fn move_hand_card_to_discard_at(pos: usize, hook_order: DiscardHookOrder, state: &mut CombatState) {
     let card = state.zones.hand.remove(pos);
     state.add_card_to_discard_pile_top(card.clone());
-    state.turn.increment_cards_discarded();
     queue_manual_discard_hooks(&card, hook_order, state);
 }
 
@@ -188,6 +220,8 @@ fn handle_draw_cards_inner(amount: u32, mode: DrawHistoryMode, state: &mut Comba
         let mut card = state
             .draw_top_card()
             .expect("draw pile was checked non-empty before drawing");
+
+        apply_card_trigger_when_drawn(&mut card, state);
 
         if card.id == CardId::Void {
             let void_actions = crate::content::cards::status::void::on_drawn(state);

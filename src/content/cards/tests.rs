@@ -5802,6 +5802,15 @@ fn silent_direct_attack_batch_matches_java_sources() {
     assert_eq!(escape_plan.upgrade_block, 2);
     assert_eq!(java_id(CardId::EscapePlan), "Escape Plan");
 
+    let eviscerate = get_card_definition(CardId::Eviscerate);
+    assert_eq!(eviscerate.name, "Eviscerate");
+    assert_eq!(eviscerate.card_type, CardType::Attack);
+    assert_eq!(eviscerate.rarity, CardRarity::Uncommon);
+    assert_eq!(eviscerate.cost, 3);
+    assert_eq!(eviscerate.base_damage, 7);
+    assert_eq!(eviscerate.upgrade_damage, 2);
+    assert_eq!(java_id(CardId::Eviscerate), "Eviscerate");
+
     let predator = get_card_definition(CardId::Predator);
     assert_eq!(predator.name, "Predator");
     assert_eq!(predator.card_type, CardType::Attack);
@@ -5840,6 +5849,15 @@ fn silent_direct_attack_batch_matches_java_sources() {
     assert!(is_innate_card(&infinite_plus));
     assert_eq!(java_id(CardId::InfiniteBlades), "Infinite Blades");
 
+    let masterful = get_card_definition(CardId::MasterfulStab);
+    assert_eq!(masterful.name, "Masterful Stab");
+    assert_eq!(masterful.card_type, CardType::Attack);
+    assert_eq!(masterful.rarity, CardRarity::Uncommon);
+    assert_eq!(masterful.cost, 0);
+    assert_eq!(masterful.base_damage, 12);
+    assert_eq!(masterful.upgrade_damage, 4);
+    assert_eq!(java_id(CardId::MasterfulStab), "Masterful Stab");
+
     assert_eq!(build_java_id_map().get("Backstab"), Some(&CardId::Backstab));
     assert_eq!(
         build_java_id_map().get("Riddle With Holes"),
@@ -5866,12 +5884,20 @@ fn silent_direct_attack_batch_matches_java_sources() {
         build_java_id_map().get("Escape Plan"),
         Some(&CardId::EscapePlan)
     );
+    assert_eq!(
+        build_java_id_map().get("Eviscerate"),
+        Some(&CardId::Eviscerate)
+    );
     assert_eq!(build_java_id_map().get("Predator"), Some(&CardId::Predator));
     assert_eq!(build_java_id_map().get("Accuracy"), Some(&CardId::Accuracy));
     assert_eq!(build_java_id_map().get("Caltrops"), Some(&CardId::Caltrops));
     assert_eq!(
         build_java_id_map().get("Infinite Blades"),
         Some(&CardId::InfiniteBlades)
+    );
+    assert_eq!(
+        build_java_id_map().get("Masterful Stab"),
+        Some(&CardId::MasterfulStab)
     );
 }
 
@@ -5914,12 +5940,14 @@ fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() 
             CardId::Concentrate,
             CardId::Dash,
             CardId::EscapePlan,
+            CardId::Eviscerate,
             CardId::Expertise,
             CardId::Finisher,
             CardId::Flechettes,
             CardId::Footwork,
             CardId::HeelHook,
             CardId::InfiniteBlades,
+            CardId::MasterfulStab,
             CardId::NoxiousFumes,
             CardId::Predator,
             CardId::Reflex,
@@ -6353,6 +6381,119 @@ fn silent_power_cards_match_java_power_hooks() {
             amount: 1,
             upgraded: false,
         }]
+    );
+}
+
+#[test]
+fn silent_dynamic_cost_cards_match_java_draw_discard_and_damage_hooks() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    state.entities.monsters = vec![target];
+
+    let eviscerate = resolve_card_play(
+        CardId::Eviscerate,
+        &state,
+        &CombatCard::new(CardId::Eviscerate, 932),
+        Some(7),
+    );
+    assert_eq!(eviscerate.len(), 3);
+    for action in eviscerate {
+        match action.action {
+            Action::Damage(info) => {
+                assert_eq!(info.target, 7);
+                assert_eq!(info.output, 7);
+            }
+            other => panic!("Eviscerate should queue three DamageActions, got {other:?}"),
+        }
+    }
+
+    let masterful = resolve_card_play(
+        CardId::MasterfulStab,
+        &state,
+        &CombatCard::new(CardId::MasterfulStab, 933),
+        Some(7),
+    );
+    match &masterful[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.output, 12);
+        }
+        other => panic!("Masterful Stab should queue DamageAction, got {other:?}"),
+    }
+
+    let mut discard_state = crate::test_support::blank_test_combat();
+    discard_state.zones.hand = vec![
+        CombatCard::new(CardId::StrikeG, 934),
+        CombatCard::new(CardId::Eviscerate, 935),
+    ];
+    discard_state.zones.draw_pile = vec![CombatCard::new(CardId::Eviscerate, 936)];
+    discard_state.zones.discard_pile = vec![CombatCard::new(CardId::Eviscerate, 937)];
+    crate::engine::action_handlers::cards::handle_discard_card(934, &mut discard_state);
+    assert_eq!(discard_state.turn.counters.cards_discarded_this_turn, 1);
+    assert_eq!(discard_state.zones.hand[0].cost_for_turn_java(), 2);
+    assert_eq!(discard_state.zones.draw_pile[0].cost_for_turn_java(), 2);
+    assert_eq!(discard_state.zones.discard_pile[0].cost_for_turn_java(), 2);
+
+    let mut end_turn_discard_state = crate::test_support::blank_test_combat();
+    end_turn_discard_state.zones.hand = vec![CombatCard::new(CardId::StrikeG, 938)];
+    end_turn_discard_state.zones.draw_pile = vec![CombatCard::new(CardId::Eviscerate, 939)];
+    crate::engine::action_handlers::cards::handle_discard_from_hand(
+        1,
+        false,
+        true,
+        &mut end_turn_discard_state,
+    );
+    assert_eq!(
+        end_turn_discard_state.zones.draw_pile[0].cost_for_turn_java(),
+        3,
+        "Java incrementDiscard(endTurn=true) increments count but does not call updateCardsOnDiscard"
+    );
+
+    let mut draw_state = crate::test_support::blank_test_combat();
+    draw_state.turn.increment_cards_discarded();
+    draw_state.turn.increment_cards_discarded();
+    draw_state.zones.draw_pile = vec![CombatCard::new(CardId::Eviscerate, 940)];
+    crate::engine::action_handlers::execute_action(Action::DrawCards(1), &mut draw_state);
+    assert_eq!(draw_state.zones.hand[0].cost_for_turn_java(), 1);
+
+    crate::content::cards::hooks::at_turn_start_in_hand(&mut draw_state);
+    assert_eq!(
+        draw_state.zones.hand[0].cost_for_turn_java(),
+        3,
+        "Java Eviscerate.atTurnStart resetAttributes clears temporary discard reductions"
+    );
+
+    let mut damage_state = crate::test_support::blank_test_combat();
+    let mut attacker = crate::test_support::test_monster(EnemyId::JawWorm);
+    attacker.id = 7;
+    damage_state.entities.monsters = vec![attacker];
+    damage_state.entities.player.current_hp = 50;
+    damage_state.zones.hand = vec![CombatCard::new(CardId::MasterfulStab, 941)];
+    damage_state.zones.draw_pile = vec![CombatCard::new(CardId::MasterfulStab, 942)];
+    damage_state.zones.discard_pile = vec![CombatCard::new(CardId::MasterfulStab, 943)];
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: 7,
+            target: 0,
+            base: 1,
+            output: 1,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }),
+        &mut damage_state,
+    );
+    assert_eq!(
+        damage_state.zones.hand[0].combat_cost_without_turn_override_java(),
+        1
+    );
+    assert_eq!(
+        damage_state.zones.draw_pile[0].combat_cost_without_turn_override_java(),
+        1
+    );
+    assert_eq!(
+        damage_state.zones.discard_pile[0].combat_cost_without_turn_override_java(),
+        1
     );
 }
 

@@ -193,6 +193,8 @@ pub fn resolve_card_play_with_context(
         CardId::Accuracy => silent::accuracy::accuracy_play(_state, _card),
         CardId::Caltrops => silent::caltrops::caltrops_play(_state, _card),
         CardId::InfiniteBlades => silent::infinite_blades::infinite_blades_play(_state, _card),
+        CardId::Eviscerate => silent::eviscerate::eviscerate_play(_state, _card, t),
+        CardId::MasterfulStab => silent::masterful_stab::masterful_stab_play(_state, _card, t),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),
