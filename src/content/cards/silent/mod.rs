@@ -22,6 +22,7 @@ pub mod footwork;
 pub mod neutralize;
 pub mod noxious_fumes;
 pub mod outmaneuver;
+pub mod piercing_wail;
 pub mod poisoned_stab;
 pub mod prepared;
 pub mod quick_slash;

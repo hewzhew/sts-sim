@@ -183,6 +183,7 @@ pub enum CardId {
     CalculatedGamble,
     StormOfSteel,
     Unload,
+    PiercingWail,
     // Add more as we expand
 }
 
@@ -3293,6 +3294,25 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             upgrade_block: 0,
             upgrade_magic: 0,
         },
+        CardId::PiercingWail => CardDefinition {
+            id: CardId::PiercingWail,
+            name: "Piercing Wail",
+            card_type: CardType::Skill,
+            rarity: CardRarity::Common,
+            cost: 1,
+            base_damage: 0,
+            base_block: 0,
+            base_magic: 6,
+            target: CardTarget::AllEnemy,
+            is_multi_damage: false,
+            exhaust: true,
+            ethereal: false,
+            innate: false,
+            tags: &[],
+            upgrade_damage: 0,
+            upgrade_block: 0,
+            upgrade_magic: 2,
+        },
         CardId::Adrenaline => CardDefinition {
             id: CardId::Adrenaline,
             name: "Adrenaline",
@@ -3539,6 +3559,7 @@ pub const SILENT_COMMON_POOL: &[CardId] = &[
     CardId::DodgeAndRoll,
     CardId::SuckerPunch,
     CardId::Outmaneuver,
+    CardId::PiercingWail,
     CardId::SneakyStrike,
     CardId::Bane,
 ];
@@ -3896,6 +3917,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::CalculatedGamble => "Calculated Gamble",
         CardId::StormOfSteel => "Storm of Steel",
         CardId::Unload => "Unload",
+        CardId::PiercingWail => "PiercingWail",
         CardId::Adrenaline => "Adrenaline",
         CardId::AfterImage => "After Image",
         CardId::Burst => "Burst",
@@ -4076,6 +4098,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         CalculatedGamble,
         StormOfSteel,
         Unload,
+        PiercingWail,
         Adrenaline,
         AfterImage,
         Burst,

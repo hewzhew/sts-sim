@@ -178,6 +178,7 @@ pub fn resolve_card_play_with_context(
         }
         CardId::StormOfSteel => silent::storm_of_steel::storm_of_steel_play(_state, _card),
         CardId::Unload => silent::unload::unload_play(_state, _card, t),
+        CardId::PiercingWail => silent::piercing_wail::piercing_wail_play(_state, _card),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),

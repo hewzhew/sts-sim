@@ -212,7 +212,6 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         | PowerId::DexterityDown
         | PowerId::NoSkills
         | PowerId::Fading
-        | PowerId::Shackled
         | PowerId::DrawReduction => amount > 0,
         _ => false,
     }
@@ -1269,7 +1268,6 @@ pub fn resolve_power_on_apply_power(
             //       && !target.hasPower("Artifact"))
             //     → addToBot(DamageAction(target, amount, THORNS))
             if is_debuff_application(applied_power_id, applied_amount)
-                // Java excludes "Shackled" (GainStrengthPower) — TODO: add PowerId::GainStrength
                 && target != source
                 && !crate::content::powers::store::has_power(state, target, PowerId::Artifact)
             {

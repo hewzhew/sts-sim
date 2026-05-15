@@ -5725,6 +5725,121 @@ fn silent_hand_conversion_cards_queue_java_execution_actions() {
 }
 
 #[test]
+fn piercing_wail_matches_java_artifact_and_shackled_rules() {
+    let piercing = get_card_definition(CardId::PiercingWail);
+    assert_eq!(piercing.name, "Piercing Wail");
+    assert_eq!(piercing.card_type, CardType::Skill);
+    assert_eq!(piercing.rarity, CardRarity::Common);
+    assert_eq!(piercing.cost, 1);
+    assert_eq!(piercing.base_magic, 6);
+    assert_eq!(piercing.upgrade_magic, 2);
+    assert!(piercing.exhaust);
+    assert_eq!(java_id(CardId::PiercingWail), "PiercingWail");
+    assert!(
+        !crate::content::powers::is_debuff_application(PowerId::Shackled, 6),
+        "Java ApplyPowerAction does not let Artifact block GainStrengthPower/Shackled"
+    );
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut no_artifact = crate::test_support::test_monster(EnemyId::JawWorm);
+    no_artifact.id = 7;
+    let mut with_artifact = crate::test_support::test_monster(EnemyId::JawWorm);
+    with_artifact.id = 8;
+    state.entities.monsters = vec![no_artifact, with_artifact];
+    state.entities.power_db.insert(
+        8,
+        vec![Power {
+            power_type: PowerId::Artifact,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+
+    let actions = resolve_card_play(
+        CardId::PiercingWail,
+        &state,
+        &CombatCard::new(CardId::PiercingWail, 908),
+        None,
+    );
+    assert_eq!(actions.len(), 3);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Strength,
+            amount: -6,
+        }
+    );
+    assert_eq!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 8,
+            power_id: PowerId::Strength,
+            amount: -6,
+        }
+    );
+    assert_eq!(
+        actions[2].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Shackled,
+            amount: 6,
+        },
+        "Java queues GainStrengthPower only for monsters that lack Artifact at use time"
+    );
+
+    let mut upgraded = CombatCard::new(CardId::PiercingWail, 909);
+    upgraded.upgrades = 1;
+    let upgraded_actions = resolve_card_play(CardId::PiercingWail, &state, &upgraded, None);
+    assert_eq!(
+        upgraded_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Strength,
+            amount: -8,
+        }
+    );
+
+    let mut artifact_state = crate::test_support::blank_test_combat();
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.id = 7;
+    artifact_state.entities.monsters = vec![monster];
+    artifact_state.entities.power_db.insert(
+        7,
+        vec![Power {
+            power_type: PowerId::Artifact,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Shackled,
+            amount: 6,
+        },
+        &mut artifact_state,
+    );
+    assert_eq!(
+        crate::content::powers::store::power_amount(&artifact_state, 7, PowerId::Artifact),
+        1
+    );
+    assert_eq!(
+        crate::content::powers::store::power_amount(&artifact_state, 7, PowerId::Shackled),
+        6
+    );
+}
+
+#[test]
 fn reflex_and_tactician_manual_discard_hooks_match_java_order() {
     let reflex = get_card_definition(CardId::Reflex);
     assert_eq!(reflex.cost, -2);
