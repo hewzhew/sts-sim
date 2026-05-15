@@ -549,6 +549,24 @@ pub fn handle_bane_damage(info: crate::runtime::action::DamageInfo, state: &mut 
     }
 }
 
+pub fn handle_damage_per_attack_played(
+    info: crate::runtime::action::DamageInfo,
+    state: &mut CombatState,
+) {
+    if !target_current_hp_is_positive(state, info.target) {
+        return;
+    }
+
+    let attack_count_before_finisher = state
+        .turn
+        .counters
+        .attacks_played_this_turn
+        .saturating_sub(1) as usize;
+    for _ in 0..attack_count_before_finisher {
+        state.queue_action_front(Action::Damage(info.clone()));
+    }
+}
+
 fn damage_type(kind: crate::semantics::combat::DamageKind) -> crate::runtime::action::DamageType {
     match kind {
         crate::semantics::combat::DamageKind::Normal => crate::runtime::action::DamageType::Normal,

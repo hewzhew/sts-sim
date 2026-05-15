@@ -179,6 +179,12 @@ pub fn resolve_card_play_with_context(
         CardId::StormOfSteel => silent::storm_of_steel::storm_of_steel_play(_state, _card),
         CardId::Unload => silent::unload::unload_play(_state, _card, t),
         CardId::PiercingWail => silent::piercing_wail::piercing_wail_play(_state, _card),
+        CardId::Backstab => silent::backstab::backstab_play(_state, _card, t),
+        CardId::RiddleWithHoles => {
+            silent::riddle_with_holes::riddle_with_holes_play(_state, _card, t)
+        }
+        CardId::DieDieDie => silent::die_die_die::die_die_die_play(_state, _card),
+        CardId::Finisher => silent::finisher::finisher_play(_state, _card, t),
         CardId::Adrenaline => silent::adrenaline::adrenaline_play(_state, _card),
         CardId::AfterImage => silent::after_image::after_image_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),

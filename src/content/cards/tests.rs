@@ -5725,6 +5725,235 @@ fn silent_hand_conversion_cards_queue_java_execution_actions() {
 }
 
 #[test]
+fn silent_direct_attack_batch_matches_java_sources() {
+    let backstab = get_card_definition(CardId::Backstab);
+    assert_eq!(backstab.name, "Backstab");
+    assert_eq!(backstab.card_type, CardType::Attack);
+    assert_eq!(backstab.rarity, CardRarity::Uncommon);
+    assert_eq!(backstab.cost, 0);
+    assert_eq!(backstab.base_damage, 11);
+    assert_eq!(backstab.upgrade_damage, 4);
+    assert!(backstab.exhaust);
+    assert!(backstab.innate);
+    assert_eq!(java_id(CardId::Backstab), "Backstab");
+
+    let riddle = get_card_definition(CardId::RiddleWithHoles);
+    assert_eq!(riddle.name, "Riddle With Holes");
+    assert_eq!(riddle.card_type, CardType::Attack);
+    assert_eq!(riddle.rarity, CardRarity::Uncommon);
+    assert_eq!(riddle.cost, 2);
+    assert_eq!(riddle.base_damage, 3);
+    assert_eq!(riddle.upgrade_damage, 1);
+    assert_eq!(java_id(CardId::RiddleWithHoles), "Riddle With Holes");
+
+    let die = get_card_definition(CardId::DieDieDie);
+    assert_eq!(die.name, "Die Die Die");
+    assert_eq!(die.card_type, CardType::Attack);
+    assert_eq!(die.rarity, CardRarity::Rare);
+    assert_eq!(die.cost, 1);
+    assert_eq!(die.base_damage, 13);
+    assert_eq!(die.upgrade_damage, 4);
+    assert!(die.is_multi_damage);
+    assert!(die.exhaust);
+    assert_eq!(java_id(CardId::DieDieDie), "Die Die Die");
+
+    let finisher = get_card_definition(CardId::Finisher);
+    assert_eq!(finisher.name, "Finisher");
+    assert_eq!(finisher.card_type, CardType::Attack);
+    assert_eq!(finisher.rarity, CardRarity::Uncommon);
+    assert_eq!(finisher.cost, 1);
+    assert_eq!(finisher.base_damage, 6);
+    assert_eq!(finisher.upgrade_damage, 2);
+    assert_eq!(java_id(CardId::Finisher), "Finisher");
+
+    assert_eq!(build_java_id_map().get("Backstab"), Some(&CardId::Backstab));
+    assert_eq!(
+        build_java_id_map().get("Riddle With Holes"),
+        Some(&CardId::RiddleWithHoles)
+    );
+    assert_eq!(
+        build_java_id_map().get("Die Die Die"),
+        Some(&CardId::DieDieDie)
+    );
+    assert_eq!(build_java_id_map().get("Finisher"), Some(&CardId::Finisher));
+}
+
+#[test]
+fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() {
+    assert_eq!(
+        SILENT_COMMON_POOL,
+        &[
+            CardId::Acrobatics,
+            CardId::Backflip,
+            CardId::Bane,
+            CardId::BladeDance,
+            CardId::CloakAndDagger,
+            CardId::DaggerSpray,
+            CardId::DaggerThrow,
+            CardId::DeadlyPoison,
+            CardId::Deflect,
+            CardId::DodgeAndRoll,
+            CardId::FlyingKnee,
+            CardId::Outmaneuver,
+            CardId::PiercingWail,
+            CardId::PoisonedStab,
+            CardId::Prepared,
+            CardId::QuickSlash,
+            CardId::Slice,
+            CardId::SuckerPunch,
+            CardId::SneakyStrike,
+        ]
+    );
+    assert_eq!(
+        SILENT_UNCOMMON_POOL,
+        &[
+            CardId::AllOutAttack,
+            CardId::Backstab,
+            CardId::BouncingFlask,
+            CardId::CalculatedGamble,
+            CardId::Catalyst,
+            CardId::Concentrate,
+            CardId::Dash,
+            CardId::Finisher,
+            CardId::Footwork,
+            CardId::NoxiousFumes,
+            CardId::Reflex,
+            CardId::RiddleWithHoles,
+            CardId::Tactician,
+        ]
+    );
+    assert_eq!(
+        SILENT_RARE_POOL,
+        &[
+            CardId::Adrenaline,
+            CardId::AfterImage,
+            CardId::Burst,
+            CardId::DieDieDie,
+            CardId::StormOfSteel,
+            CardId::Unload,
+        ]
+    );
+}
+
+#[test]
+fn silent_direct_attack_batch_runtime_actions_match_java_use_methods() {
+    fn assert_damage(action: &Action, target: usize, amount: i32) {
+        match action {
+            Action::Damage(info) => {
+                assert_eq!(info.target, target);
+                assert_eq!(info.output, amount);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("expected DamageAction, got {other:?}"),
+        }
+    }
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::JawWorm);
+    second.id = 8;
+    state.entities.monsters = vec![first, second];
+
+    let backstab = resolve_card_play(
+        CardId::Backstab,
+        &state,
+        &CombatCard::new(CardId::Backstab, 910),
+        Some(7),
+    );
+    assert_damage(&backstab[0].action, 7, 11);
+
+    let riddle = resolve_card_play(
+        CardId::RiddleWithHoles,
+        &state,
+        &CombatCard::new(CardId::RiddleWithHoles, 911),
+        Some(7),
+    );
+    assert_eq!(riddle.len(), 5);
+    for action in riddle {
+        assert_damage(&action.action, 7, 3);
+    }
+
+    let die = resolve_card_play(
+        CardId::DieDieDie,
+        &state,
+        &CombatCard::new(CardId::DieDieDie, 912),
+        None,
+    );
+    assert_eq!(
+        die[0].action,
+        Action::DamageAllEnemies {
+            source: 0,
+            damages: smallvec::smallvec![13, 13],
+            damage_type: DamageType::Normal,
+            is_modified: true,
+        }
+    );
+}
+
+#[test]
+fn finisher_reads_attack_count_when_queued_action_executes() {
+    let state = crate::test_support::blank_test_combat();
+    let finisher = resolve_card_play(
+        CardId::Finisher,
+        &state,
+        &CombatCard::new(CardId::Finisher, 913),
+        Some(7),
+    );
+    let Action::DamagePerAttackPlayed(info) = finisher[0].action.clone() else {
+        panic!("Finisher should emit Java DamagePerAttackPlayedAction");
+    };
+    assert_eq!(info.target, 7);
+    assert_eq!(info.output, 6);
+
+    let mut runtime_state = crate::test_support::blank_test_combat();
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.id = 7;
+    monster.current_hp = 50;
+    runtime_state.entities.monsters = vec![monster];
+    for _ in 0..4 {
+        runtime_state.turn.increment_attacks_played();
+    }
+    crate::engine::action_handlers::execute_action(
+        Action::DamagePerAttackPlayed(info.clone()),
+        &mut runtime_state,
+    );
+    let queued = [
+        runtime_state.pop_next_action(),
+        runtime_state.pop_next_action(),
+        runtime_state.pop_next_action(),
+        runtime_state.pop_next_action(),
+    ];
+    for action in &queued[..3] {
+        match action {
+            Some(Action::Damage(damage)) => {
+                assert_eq!(damage.target, 7);
+                assert_eq!(damage.output, 6);
+            }
+            other => panic!("Finisher should queue ordinary DamageAction, got {other:?}"),
+        }
+    }
+    assert_eq!(queued[3], None);
+
+    let mut dead_target_state = crate::test_support::blank_test_combat();
+    let mut dead_monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    dead_monster.id = 7;
+    dead_monster.current_hp = 0;
+    dead_target_state.entities.monsters = vec![dead_monster];
+    dead_target_state.turn.increment_attacks_played();
+    dead_target_state.turn.increment_attacks_played();
+    crate::engine::action_handlers::execute_action(
+        Action::DamagePerAttackPlayed(info),
+        &mut dead_target_state,
+    );
+    assert_eq!(
+        dead_target_state.pop_next_action(),
+        None,
+        "Java DamagePerAttackPlayedAction does nothing unless target.currentHealth > 0"
+    );
+}
+
+#[test]
 fn piercing_wail_matches_java_artifact_and_shackled_rules() {
     let piercing = get_card_definition(CardId::PiercingWail);
     assert_eq!(piercing.name, "Piercing Wail");

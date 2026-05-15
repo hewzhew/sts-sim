@@ -105,6 +105,12 @@ pub enum Action {
     /// Java `BaneAction`: execute a second attack only if the target is alive
     /// and still has Poison when this queued action resolves.
     BaneDamage(DamageInfo),
+    /// Java `DamagePerAttackPlayedAction` used by Finisher.
+    ///
+    /// Execution reads the current attack count from the action manager state,
+    /// subtracts the Finisher card itself, and queues that many ordinary
+    /// `DamageAction`s to the top.
+    DamagePerAttackPlayed(DamageInfo),
     /// Canonical monster attack action.
     ///
     /// Contract:
@@ -613,6 +619,7 @@ impl Action {
             Action::Damage(_)
                 | Action::PummelDamage(_)
                 | Action::MonsterAttack { .. }
+                | Action::DamagePerAttackPlayed(_)
                 | Action::DamageAllEnemies { .. }
                 | Action::DamageRandomEnemy { .. }
                 | Action::Feed { .. }
