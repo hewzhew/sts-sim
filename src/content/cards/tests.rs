@@ -7662,6 +7662,44 @@ fn alchemize_matches_java_random_potion_action() {
 }
 
 #[test]
+fn alchemize_consumes_potion_rng_even_when_potion_is_not_obtained_like_java() {
+    let mut sozu_state = crate::test_support::blank_test_combat();
+    sozu_state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::Sozu,
+        ));
+    let before_sozu_rng = sozu_state.rng.potion_rng.counter;
+    crate::engine::action_handlers::cards::handle_obtain_potion(&mut sozu_state);
+    assert!(
+        sozu_state.rng.potion_rng.counter > before_sozu_rng,
+        "Java Alchemize calls returnRandomPotion(true) before ObtainPotionAction checks Sozu"
+    );
+    assert!(sozu_state.entities.potions.iter().all(Option::is_none));
+
+    let mut full_state = crate::test_support::blank_test_combat();
+    full_state.entities.potions = vec![
+        Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FirePotion,
+            10,
+        )),
+        Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::BlockPotion,
+            11,
+        )),
+    ];
+    let before_full_rng = full_state.rng.potion_rng.counter;
+    let before_potions = full_state.entities.potions.clone();
+    crate::engine::action_handlers::cards::handle_obtain_potion(&mut full_state);
+    assert!(
+        full_state.rng.potion_rng.counter > before_full_rng,
+        "Java stores a concrete random potion in ObtainPotionAction even when obtainPotion later finds no empty slot"
+    );
+    assert_eq!(full_state.entities.potions, before_potions);
+}
+
+#[test]
 fn distraction_matches_java_random_skill_free_for_turn() {
     let distraction = get_card_definition(CardId::Distraction);
     assert_eq!(distraction.name, "Distraction");

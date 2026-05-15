@@ -1733,6 +1733,15 @@ pub fn handle_queue_play_top_card_to_bottom(
 }
 
 pub fn handle_obtain_potion(state: &mut CombatState) {
+    let potion_class = match state.meta.player_class {
+        "Silent" => crate::content::potions::PotionClass::Silent,
+        "Defect" => crate::content::potions::PotionClass::Defect,
+        "Watcher" => crate::content::potions::PotionClass::Watcher,
+        _ => crate::content::potions::PotionClass::Ironclad,
+    };
+    let potion_id =
+        crate::content::potions::random_potion(&mut state.rng.potion_rng, potion_class, true);
+
     if state
         .entities
         .player
@@ -1741,14 +1750,6 @@ pub fn handle_obtain_potion(state: &mut CombatState) {
         return;
     }
     if let Some(slot) = state.entities.potions.iter().position(|p| p.is_none()) {
-        let potion_class = match state.meta.player_class {
-            "Silent" => crate::content::potions::PotionClass::Silent,
-            "Defect" => crate::content::potions::PotionClass::Defect,
-            "Watcher" => crate::content::potions::PotionClass::Watcher,
-            _ => crate::content::potions::PotionClass::Ironclad,
-        };
-        let potion_id =
-            crate::content::potions::random_potion(&mut state.rng.potion_rng, potion_class, true);
         state.entities.potions[slot] = Some(crate::content::potions::Potion::new(
             potion_id,
             40000 + slot as u32,
