@@ -1835,7 +1835,12 @@ pub fn handle_queue_play_top_card_to_bottom(
     exhaust: bool,
     state: &mut CombatState,
 ) {
-    state.queue_action_back(Action::PlayTopCard { target, exhaust });
+    let resolved_target = target
+        .or_else(|| targeting::pick_random_target(state, crate::state::TargetValidation::AnyEnemy));
+    state.queue_action_back(Action::PlayTopCard {
+        target: resolved_target,
+        exhaust,
+    });
 }
 
 pub fn handle_obtain_potion(state: &mut CombatState) {

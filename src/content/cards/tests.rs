@@ -2548,6 +2548,43 @@ fn headbutt_and_havoc_execution_helpers_match_java_sources() {
             panic!("played Havoc should enqueue PlayTopCard with locked target, got {other:?}")
         }
     }
+
+    let mut mayhem_state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 75;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 76;
+    second.slot = 1;
+    mayhem_state.entities.monsters = vec![first, second];
+    let mayhem_actions = crate::content::powers::resolve_power_at_turn_start(
+        PowerId::MayhemPower,
+        &mut mayhem_state,
+        0,
+        1,
+    );
+    assert_eq!(mayhem_actions.len(), 1);
+    assert!(matches!(
+        mayhem_actions[0],
+        Action::QueuePlayTopCardToBottom {
+            target: None,
+            exhaust: false
+        }
+    ));
+    assert_eq!(mayhem_state.rng.card_random_rng.counter, 0);
+    crate::engine::action_handlers::execute_action(mayhem_actions[0].clone(), &mut mayhem_state);
+    assert_eq!(
+        mayhem_state.rng.card_random_rng.counter, 1,
+        "MayhemPower wrapper chooses its random monster target before queuing PlayTopCardAction"
+    );
+    match mayhem_state.pop_next_action() {
+        Some(Action::PlayTopCard { target, exhaust }) => {
+            assert!(matches!(target, Some(75 | 76)));
+            assert!(!exhaust);
+        }
+        other => {
+            panic!("Mayhem wrapper should enqueue PlayTopCard with locked target, got {other:?}")
+        }
+    }
 }
 
 #[test]
