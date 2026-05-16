@@ -72,6 +72,7 @@ pub enum PowerId {
     Vigor,
     BeatOfDeath,
     Mantra,
+    CannotChangeStance,
     Focus,
     DexterityDown,
     PenNibPower,
@@ -172,6 +173,7 @@ pub fn uses_sentinel_amount(id: PowerId) -> bool {
             | PowerId::BackAttack
             | PowerId::PainfulStabs
             | PowerId::Electro
+            | PowerId::CannotChangeStance
             | PowerId::Regrow
             | PowerId::Surrounded
             | PowerId::Unawakened
@@ -242,6 +244,7 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::LoseStrength
         | PowerId::DexterityDown
         | PowerId::NoSkills
+        | PowerId::CannotChangeStance
         | PowerId::Fading
         | PowerId::Shackled
         | PowerId::DrawReduction
@@ -267,6 +270,7 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         // Some Java debuffs use sentinel amounts instead of stacks. Artifact still
         // blocks the application even when the constructor amount is -1.
         PowerId::NoDraw | PowerId::Confusion | PowerId::WraithForm => amount != 0,
+        PowerId::CannotChangeStance => amount != 0,
         PowerId::NoBlock => amount > 0,
         PowerId::Vulnerable
         | PowerId::Weak
@@ -519,6 +523,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         },
         PowerId::Vigor => PowerDefinition { id, name: "Vigor" },
         PowerId::Mantra => PowerDefinition { id, name: "Mantra" },
+        PowerId::CannotChangeStance => PowerDefinition {
+            id,
+            name: "Cannot Change Stance",
+        },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
         PowerId::DexterityDown => PowerDefinition {
             id,
@@ -1071,6 +1079,12 @@ pub fn resolve_power_at_end_of_turn(
             power_id: PowerId::Rebound,
         }],
         PowerId::NoDraw => core::no_draw::at_end_of_turn(owner),
+        PowerId::CannotChangeStance => {
+            smallvec::smallvec![crate::runtime::action::Action::RemovePower {
+                target: owner,
+                power_id: PowerId::CannotChangeStance,
+            }]
+        }
         PowerId::Ritual => core::ritual::at_end_of_turn(owner, amount, power.extra_data),
         PowerId::Shackled => core::shackled::at_end_of_turn(owner, amount),
         PowerId::Shifting => core::shifting::at_end_of_turn(owner),

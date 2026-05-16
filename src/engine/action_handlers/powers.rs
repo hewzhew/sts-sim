@@ -312,6 +312,8 @@ fn handle_apply_power_detailed_internal(
         return;
     }
 
+    let had_existing_power = store::has_power(state, target, power_id);
+
     // Core power application
     let powers = store::ensure_powers_for_mut(state, target);
     let mut should_remove_existing = false;
@@ -422,6 +424,23 @@ fn handle_apply_power_detailed_internal(
     // C2: Corruption on-apply hook
     if power_id == PowerId::Corruption {
         crate::content::cards::ironclad::corruption::corruption_on_apply(state);
+    }
+
+    // Java MantraPower.stackPower(): only stacking an existing Mantra power
+    // checks for the 10-point threshold, then subtracts 10 and enters Divinity.
+    if power_id == PowerId::Mantra && target == 0 && had_existing_power {
+        let current = store::power_amount(state, target, PowerId::Mantra);
+        if current >= 10 {
+            let remainder = current - 10;
+            if remainder > 0 {
+                let _ = store::with_power_mut(state, target, PowerId::Mantra, |power| {
+                    power.amount = remainder;
+                });
+            } else {
+                store::remove_power_type(state, target, PowerId::Mantra);
+            }
+            state.queue_action_front(Action::EnterStance("Divinity".to_string()));
+        }
     }
 
     if target == 0 {
@@ -817,6 +836,54 @@ mod tests {
         assert!(
             actions.is_empty(),
             "Energized belongs to Java onEnergyRecharge, not applyStartOfTurnPowers"
+        );
+    }
+
+    #[test]
+    fn stacking_existing_mantra_to_ten_queues_divinity_and_consumes_ten_mantra() {
+        let mut state = blank_test_combat();
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::Mantra,
+                instance_id: None,
+                amount: 7,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        handle_apply_power(0, 0, PowerId::Mantra, 3, &mut state);
+
+        assert_eq!(store::power_amount(&state, 0, PowerId::Mantra), 0);
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::EnterStance("Divinity".to_string()))
+        );
+    }
+
+    #[test]
+    fn stacking_existing_mantra_over_ten_keeps_remainder_like_java() {
+        let mut state = blank_test_combat();
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::Mantra,
+                instance_id: None,
+                amount: 8,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        handle_apply_power(0, 0, PowerId::Mantra, 5, &mut state);
+
+        assert_eq!(store::power_amount(&state, 0, PowerId::Mantra), 3);
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::EnterStance("Divinity".to_string()))
         );
     }
 

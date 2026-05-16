@@ -891,8 +891,17 @@ pub fn tick_engine(
                         },
                     );
 
+                    // 7.9. current stance atStartOfTurn.
+                    // Java: AbstractPlayer.applyStartOfTurnRelics() calls stance.atStartOfTurn()
+                    // before relic atTurnStart hooks. Divinity queues a return to Neutral here.
+                    if combat_state.entities.player.stance
+                        == crate::runtime::combat::StanceId::Divinity
+                    {
+                        combat_state.queue_action_back(Action::EnterStance("Neutral".to_string()));
+                    }
+
                     // 8. at_turn_start relic hooks (AncientTeaSet, HappyFlower, etc.)
-                    // Java: relics fire atTurnStart BEFORE draw cards
+                    // Java: stance and relics fire atTurnStart BEFORE draw cards
                     let turn_start_actions =
                         crate::content::relics::hooks::at_turn_start(combat_state);
                     combat_state.queue_actions(turn_start_actions);
@@ -1469,15 +1478,16 @@ pub fn tick_until_stable_turn(
 mod tests {
     use super::{class_combat_card_pool, discard_hand_for_turn_transition, resolve_pending_choice};
     use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::action::{Action, CardDestination};
-    use crate::runtime::combat::{CombatCard, Power};
+    use crate::runtime::combat::{CombatCard, Power, StanceId};
     use crate::state::core::{
         ClientInput, DiscoveryChoiceState, EngineState, GridSelectFilter, GridSelectReason,
         PendingChoice, PileType,
     };
-    use crate::test_support::blank_test_combat;
+    use crate::test_support::{blank_test_combat, planned_monster};
 
     #[test]
     fn class_combat_card_pool_uses_current_player_class_not_ironclad_fallback() {
@@ -1492,6 +1502,32 @@ mod tests {
         let ironclad_pool = class_combat_card_pool("Ironclad");
         assert!(ironclad_pool.contains(&CardId::PommelStrike));
         assert!(!ironclad_pool.contains(&CardId::Acrobatics));
+    }
+
+    #[test]
+    fn divinity_returns_to_neutral_at_start_of_next_player_turn() {
+        let mut combat_state = blank_test_combat();
+        let mut engine_state = EngineState::CombatProcessing;
+        combat_state.entities.monsters = vec![planned_monster(EnemyId::Cultist, 3)];
+        combat_state.entities.player.stance = StanceId::Divinity;
+        combat_state.turn.begin_turn_transition();
+
+        for _ in 0..64 {
+            if engine_state == EngineState::CombatPlayerTurn {
+                break;
+            }
+            assert!(super::tick_engine(
+                &mut engine_state,
+                &mut combat_state,
+                None
+            ));
+        }
+
+        assert_eq!(
+            combat_state.entities.player.stance,
+            StanceId::Neutral,
+            "Java DivinityStance.atStartOfTurn queues ChangeStanceAction(\"Neutral\") at the next player turn start"
+        );
     }
 
     #[test]

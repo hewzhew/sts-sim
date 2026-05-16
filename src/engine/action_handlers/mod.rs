@@ -878,6 +878,13 @@ fn handle_redo_orb(state: &mut CombatState) {
 }
 
 fn handle_enter_stance(stance: &str, state: &mut CombatState) {
+    if crate::content::powers::store::has_power(
+        state,
+        0,
+        crate::content::powers::PowerId::CannotChangeStance,
+    ) {
+        return;
+    }
     let new_stance = match stance {
         "Wrath" => crate::runtime::combat::StanceId::Wrath,
         "Calm" => crate::runtime::combat::StanceId::Calm,
@@ -896,4 +903,38 @@ fn handle_enter_stance(stance: &str, state: &mut CombatState) {
     }
     state.entities.player.stance = new_stance;
     crate::content::relics::hooks::on_change_stance(state, old_stance, new_stance);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::powers::PowerId;
+    use crate::runtime::combat::{Power, PowerPayload, StanceId};
+    use crate::test_support::blank_test_combat;
+
+    #[test]
+    fn cannot_change_stance_power_blocks_change_stance_action() {
+        let mut state = blank_test_combat();
+        state.entities.player.stance = StanceId::Calm;
+        state.turn.energy = 0;
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::CannotChangeStance,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        handle_enter_stance("Wrath", &mut state);
+
+        assert_eq!(state.entities.player.stance, StanceId::Calm);
+        assert_eq!(
+            state.turn.energy, 0,
+            "Java ChangeStanceAction returns before oldStance.onExitStance when CannotChangeStancePower is present"
+        );
+    }
 }
