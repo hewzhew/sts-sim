@@ -659,6 +659,7 @@ pub enum Action {
     },
     ChannelOrb(crate::runtime::combat::OrbId),
     EvokeOrb,
+    EvokeOrbWithoutRemoving,
     TriggerStartOfTurnOrbs,
     TriggerEndOfTurnOrbs,
     TriggerImpulseOrbs,

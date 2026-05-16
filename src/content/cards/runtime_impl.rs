@@ -35,6 +35,7 @@ pub fn resolve_card_play_with_context(
     match card_id {
         CardId::Strike => ironclad::strike::strike_play(_state, _card, t),
         CardId::StrikeG => silent::strike_green::strike_green_play(_state, _card, t),
+        CardId::StrikeB => defect::strike_blue::strike_blue_play(_state, _card, t),
         CardId::Bash => ironclad::bash::bash_play(_state, _card, t),
         CardId::Cleave => ironclad::cleave::cleave_play(_state, _card),
         CardId::IronWave => ironclad::iron_wave::iron_wave_play(_state, _card, t),
@@ -45,6 +46,9 @@ pub fn resolve_card_play_with_context(
         CardId::ThunderClap => ironclad::thunderclap::thunderclap_play(_state, _card),
         CardId::Defend => ironclad::defend::defend_play(_state, _card),
         CardId::DefendG => silent::defend_green::defend_green_play(_state, _card),
+        CardId::DefendB => defect::defend_blue::defend_blue_play(_state, _card),
+        CardId::Zap => defect::zap::zap_play(_state, _card),
+        CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
@@ -618,6 +622,8 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Setup if card.upgrades > 0 => Some(0),
         CardId::Terror if card.upgrades > 0 => Some(0),
         CardId::ToolsOfTheTrade if card.upgrades > 0 => Some(0),
+        CardId::Dualcast if card.upgrades > 0 => Some(0),
+        CardId::Zap if card.upgrades > 0 => Some(0),
         _ => None,
     }
 }

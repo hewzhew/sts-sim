@@ -247,7 +247,7 @@ pub fn trigger_impulse_orbs_now(state: &mut CombatState) {
     }
 }
 
-pub fn evoke_next_orb_now(state: &mut CombatState) {
+fn evoke_next_orb(state: &mut CombatState, remove: bool) {
     refresh_orb_focus_values(state);
     let Some(orb) = state.entities.player.orbs.first().cloned() else {
         return;
@@ -273,7 +273,7 @@ pub fn evoke_next_orb_now(state: &mut CombatState) {
         OrbId::Empty => {}
     }
 
-    if !state.entities.player.orbs.is_empty() {
+    if remove && !state.entities.player.orbs.is_empty() {
         state.entities.player.orbs.remove(0);
         state
             .entities
@@ -281,4 +281,12 @@ pub fn evoke_next_orb_now(state: &mut CombatState) {
             .orbs
             .push(OrbEntity::new(OrbId::Empty));
     }
+}
+
+pub fn evoke_next_orb_now(state: &mut CombatState) {
+    evoke_next_orb(state, true);
+}
+
+pub fn evoke_next_orb_without_removing_now(state: &mut CombatState) {
+    evoke_next_orb(state, false);
 }

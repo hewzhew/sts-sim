@@ -614,6 +614,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::IncreaseMaxOrb(amount) => handle_increase_max_orb(amount, state),
         Action::ChannelOrb(orb_id) => handle_channel_orb(orb_id, state),
         Action::EvokeOrb => crate::content::orbs::hooks::evoke_next_orb_now(state),
+        Action::EvokeOrbWithoutRemoving => {
+            crate::content::orbs::hooks::evoke_next_orb_without_removing_now(state)
+        }
         Action::TriggerStartOfTurnOrbs => {
             crate::content::orbs::hooks::trigger_start_of_turn_orbs_now(state)
         }

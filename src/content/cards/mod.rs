@@ -1,5 +1,6 @@
 pub mod colorless;
 pub mod curses;
+pub mod defect;
 pub mod hooks;
 pub mod ironclad;
 pub mod silent;
@@ -221,6 +222,10 @@ pub enum CardId {
     WellLaidPlans,
     Alchemize,
     Distraction,
+    StrikeB,
+    DefendB,
+    Zap,
+    Dualcast,
     // Add more as we expand
 }
 
@@ -353,11 +358,11 @@ pub fn resolve_card_on_exhaust(
 }
 
 pub fn is_starter_strike(id: CardId) -> bool {
-    matches!(id, CardId::Strike | CardId::StrikeG)
+    matches!(id, CardId::Strike | CardId::StrikeG | CardId::StrikeB)
 }
 
 pub fn is_starter_defend(id: CardId) -> bool {
-    matches!(id, CardId::Defend | CardId::DefendG)
+    matches!(id, CardId::Defend | CardId::DefendG | CardId::DefendB)
 }
 
 pub fn is_starter_basic(id: CardId) -> bool {
@@ -467,6 +472,10 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Defend => ironclad::defend::definition(),
         CardId::StrikeG => silent::strike_green::definition(),
         CardId::DefendG => silent::defend_green::definition(),
+        CardId::StrikeB => defect::strike_blue::definition(),
+        CardId::DefendB => defect::defend_blue::definition(),
+        CardId::Zap => defect::zap::definition(),
+        CardId::Dualcast => defect::dualcast::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1115,6 +1124,10 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Bash => "Bash",
         CardId::StrikeG => "Strike_G",
         CardId::DefendG => "Defend_G",
+        CardId::StrikeB => "Strike_B",
+        CardId::DefendB => "Defend_B",
+        CardId::Zap => "Zap",
+        CardId::Dualcast => "Dualcast",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1349,6 +1362,10 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Bash,
         StrikeG,
         DefendG,
+        StrikeB,
+        DefendB,
+        Zap,
+        Dualcast,
         Neutralize,
         Survivor,
         Anger,

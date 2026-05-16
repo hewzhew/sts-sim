@@ -2,7 +2,7 @@ use super::*;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, DamageInfo, DamageType, NO_SOURCE};
-use crate::runtime::combat::{CombatCard, Power};
+use crate::runtime::combat::{CombatCard, OrbEntity, OrbId, Power};
 
 #[test]
 fn ironclad_starter_basic_definitions_match_java_sources() {
@@ -215,6 +215,144 @@ fn silent_starter_and_discard_only_cards_are_registered_like_java_sources() {
         None,
     )
     .is_empty());
+}
+
+#[test]
+fn defect_starter_basic_cards_are_registered_like_java_sources() {
+    let java_map = build_java_id_map();
+    assert_eq!(java_id(CardId::StrikeB), "Strike_B");
+    assert_eq!(java_id(CardId::DefendB), "Defend_B");
+    assert_eq!(java_id(CardId::Zap), "Zap");
+    assert_eq!(java_id(CardId::Dualcast), "Dualcast");
+    assert_eq!(java_map.get("Strike_B"), Some(&CardId::StrikeB));
+    assert_eq!(java_map.get("Defend_B"), Some(&CardId::DefendB));
+    assert_eq!(java_map.get("Zap"), Some(&CardId::Zap));
+    assert_eq!(java_map.get("Dualcast"), Some(&CardId::Dualcast));
+
+    let strike_b = get_card_definition(CardId::StrikeB);
+    assert_eq!(strike_b.name, "Strike");
+    assert_eq!(strike_b.card_type, CardType::Attack);
+    assert_eq!(strike_b.rarity, CardRarity::Basic);
+    assert_eq!(strike_b.cost, 1);
+    assert_eq!(strike_b.base_damage, 6);
+    assert_eq!(strike_b.target, CardTarget::Enemy);
+    assert_eq!(strike_b.upgrade_damage, 3);
+    assert!(strike_b.tags.contains(&CardTag::Strike));
+    assert!(strike_b.tags.contains(&CardTag::StarterStrike));
+
+    let defend_b = get_card_definition(CardId::DefendB);
+    assert_eq!(defend_b.name, "Defend");
+    assert_eq!(defend_b.card_type, CardType::Skill);
+    assert_eq!(defend_b.rarity, CardRarity::Basic);
+    assert_eq!(defend_b.cost, 1);
+    assert_eq!(defend_b.base_block, 5);
+    assert_eq!(defend_b.target, CardTarget::SelfTarget);
+    assert_eq!(defend_b.upgrade_block, 3);
+    assert!(defend_b.tags.contains(&CardTag::StarterDefend));
+
+    let zap = get_card_definition(CardId::Zap);
+    assert_eq!(zap.name, "Zap");
+    assert_eq!(zap.card_type, CardType::Skill);
+    assert_eq!(zap.rarity, CardRarity::Basic);
+    assert_eq!(zap.cost, 1);
+    assert_eq!(zap.base_magic, 1);
+    assert_eq!(zap.target, CardTarget::SelfTarget);
+    let mut zap_plus = CombatCard::new(CardId::Zap, 100);
+    zap_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&zap_plus), Some(0));
+    assert_eq!(zap_plus.get_cost(), 0);
+
+    let dualcast = get_card_definition(CardId::Dualcast);
+    assert_eq!(dualcast.name, "Dualcast");
+    assert_eq!(dualcast.card_type, CardType::Skill);
+    assert_eq!(dualcast.rarity, CardRarity::Basic);
+    assert_eq!(dualcast.cost, 1);
+    assert_eq!(dualcast.target, CardTarget::None);
+    let mut dualcast_plus = CombatCard::new(CardId::Dualcast, 101);
+    dualcast_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&dualcast_plus), Some(0));
+    assert_eq!(dualcast_plus.get_cost(), 0);
+
+    assert!(is_starter_strike(CardId::StrikeB));
+    assert!(is_starter_defend(CardId::DefendB));
+    assert!(is_starter_basic(CardId::StrikeB));
+    assert!(is_starter_basic(CardId::DefendB));
+}
+
+#[test]
+fn defect_starter_basic_runtime_actions_match_java_use_methods() {
+    let state = crate::test_support::blank_test_combat();
+
+    let strike_actions = resolve_card_play(
+        CardId::StrikeB,
+        &state,
+        &CombatCard::new(CardId::StrikeB, 102),
+        Some(7),
+    );
+    assert_eq!(strike_actions.len(), 1);
+    match &strike_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 6);
+            assert_eq!(info.output, 6);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Strike_B should emit DamageAction, got {other:?}"),
+    }
+
+    let defend_actions = resolve_card_play(
+        CardId::DefendB,
+        &state,
+        &CombatCard::new(CardId::DefendB, 103),
+        None,
+    );
+    assert_eq!(
+        defend_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 5,
+        }
+    );
+
+    let zap_actions = resolve_card_play(
+        CardId::Zap,
+        &state,
+        &CombatCard::new(CardId::Zap, 104),
+        None,
+    );
+    assert_eq!(zap_actions.len(), 1);
+    assert_eq!(zap_actions[0].action, Action::ChannelOrb(OrbId::Lightning));
+
+    let dualcast_actions = resolve_card_play(
+        CardId::Dualcast,
+        &state,
+        &CombatCard::new(CardId::Dualcast, 105),
+        None,
+    );
+    assert_eq!(dualcast_actions.len(), 2);
+    assert_eq!(dualcast_actions[0].action, Action::EvokeOrbWithoutRemoving);
+    assert_eq!(dualcast_actions[1].action, Action::EvokeOrb);
+}
+
+#[test]
+fn dualcast_runtime_evoke_without_removing_preserves_front_orb_until_second_evoke() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.max_orbs = 1;
+    state.entities.player.orbs = vec![OrbEntity::new(OrbId::Lightning)];
+
+    crate::engine::action_handlers::execute_action(Action::EvokeOrbWithoutRemoving, &mut state);
+    assert_eq!(state.entities.player.orbs[0].id, OrbId::Lightning);
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::DamageRandomEnemy { base_damage: 8, .. })
+    ));
+
+    crate::engine::action_handlers::execute_action(Action::EvokeOrb, &mut state);
+    assert_eq!(state.entities.player.orbs[0].id, OrbId::Empty);
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::DamageRandomEnemy { base_damage: 8, .. })
+    ));
 }
 
 #[test]
