@@ -373,6 +373,35 @@ Tests:
 - `accept_loses_max_hp_replaces_starter_strikes_with_event_sources`
 - `give_vial_removes_relic_without_max_hp_loss_and_replaces_strikes`
 
+### Moai Head max-HP heal and Golden Idol trade
+
+Java `events/beyond/MoaiHead.java` implements the heal option manually:
+
+```text
+player.maxHealth -= hpAmt
+clamp currentHealth to maxHealth
+clamp maxHealth to at least 1
+player.heal(player.maxHealth)
+```
+
+This means the full heal is still a real player heal and can be blocked by
+`Mark of the Bloom`. The Golden Idol option calls `loseRelic("Golden Idol")`
+and then `gainGold(333)`.
+
+Fixes:
+
+- Moai Head max-HP loss now uses `lose_max_hp_with_source`.
+- The follow-up full heal now uses `heal_with_source`, preserving Java healing
+  hooks.
+- Golden Idol trade now uses `remove_relic_at_with_source` and sourced gold
+  gain.
+
+Tests:
+
+- `enter_loses_max_hp_then_heals_to_new_max_with_event_source`
+- `enter_max_hp_loss_survives_mark_but_full_heal_is_blocked`
+- `trade_removes_golden_idol_and_grants_gold_with_event_sources`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -581,10 +610,11 @@ Validation:
   drawing the button, and several Rust modules still simplify those UI states.
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
   that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`,
-  `FaceTrader`, `ForgottenAltar`, `Ghosts`, and `Vampires` are now covered; the
-  remaining direct writes should be handled event-by-event against Java source.
+  `FaceTrader`, `ForgottenAltar`, `Ghosts`, `Vampires`, and `MoaiHead` are now
+  covered; the remaining direct writes should be handled event-by-event against
+  Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `822 passed`.
+- Current result after this pass: `825 passed`.
