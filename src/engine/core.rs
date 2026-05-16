@@ -1070,7 +1070,13 @@ pub fn tick_engine(
                         crate::content::relics::hooks::at_turn_start(combat_state);
                     combat_state.queue_actions(turn_start_actions);
 
-                    // 8.1. at_turn_start power hooks (Player)
+                    // 8.1. applyStartOfTurnCards (draw pile, hand, discard pile)
+                    // Java runs card atTurnStart hooks before player powers and orbs.
+                    let card_actions =
+                        crate::content::cards::hooks::at_turn_start_in_hand(combat_state);
+                    combat_state.queue_actions(card_actions);
+
+                    // 8.2. at_turn_start power hooks (Player)
                     // Java: player.applyStartOfTurnPowers()
                     for power in
                         &crate::content::powers::store::powers_snapshot_for(combat_state, 0)
@@ -1085,14 +1091,9 @@ pub fn tick_engine(
                         }
                     }
 
-                    // 8.2. applyStartOfTurnOrbs
+                    // 8.3. applyStartOfTurnOrbs
                     let orb_actions = crate::content::orbs::hooks::at_turn_start(combat_state);
                     combat_state.queue_actions(orb_actions);
-
-                    // 8.3. applyStartOfTurnCards (For Curses in hand)
-                    let card_actions =
-                        crate::content::cards::hooks::at_turn_start_in_hand(combat_state);
-                    combat_state.queue_actions(card_actions);
 
                     // 9. Draw cards (default 5, reduced by DrawReduction power)
                     // Java consumes AbstractDungeon.player.gameHandSize here.
