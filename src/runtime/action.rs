@@ -673,6 +673,10 @@ pub enum Action {
     Enlightenment {
         permanent: bool,
     },
+    Halt {
+        block: i32,
+        additional: i32,
+    },
     Madness,
     RandomizeHandCosts,
     UpgradeAllInHand,

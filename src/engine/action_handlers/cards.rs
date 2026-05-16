@@ -1274,6 +1274,15 @@ pub fn handle_enlightenment(permanent: bool, state: &mut CombatState) {
     }
 }
 
+pub fn handle_halt(block: i32, additional: i32, state: &mut CombatState) {
+    let amount = if state.entities.player.stance == crate::runtime::combat::StanceId::Wrath {
+        block + additional
+    } else {
+        block
+    };
+    state.queue_action_front(Action::GainBlock { target: 0, amount });
+}
+
 pub fn handle_madness(state: &mut CombatState) {
     let better_possible: Vec<usize> = state
         .zones

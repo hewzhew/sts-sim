@@ -524,6 +524,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         }
         Action::ReduceAllHandCosts { amount } => cards::handle_reduce_all_hand_costs(amount, state),
         Action::Enlightenment { permanent } => cards::handle_enlightenment(permanent, state),
+        Action::Halt { block, additional } => cards::handle_halt(block, additional, state),
         Action::Madness => cards::handle_madness(state),
         Action::UpgradeAllInHand => cards::handle_upgrade_all_in_hand(state),
         Action::UpgradeAllCardsInCombat => cards::handle_upgrade_all_cards_in_combat(state),

@@ -874,6 +874,146 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
         ),
         (
+            CardId::Crescendo,
+            "Crescendo",
+            CardType::Skill,
+            CardRarity::Common,
+            1,
+            0,
+            0,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
+            CardId::Tranquility,
+            "Tranquility",
+            CardType::Skill,
+            CardRarity::Common,
+            1,
+            0,
+            0,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
+            CardId::Protect,
+            "Protect",
+            CardType::Skill,
+            CardRarity::Common,
+            2,
+            0,
+            12,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            4,
+            0,
+        ),
+        (
+            CardId::CarveReality,
+            "Carve Reality",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            1,
+            6,
+            0,
+            0,
+            CardTarget::Enemy,
+            4,
+            0,
+            0,
+        ),
+        (
+            CardId::DeceiveReality,
+            "Deceive Reality",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            4,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            3,
+            0,
+        ),
+        (
+            CardId::Evaluate,
+            "Evaluate",
+            CardType::Skill,
+            CardRarity::Common,
+            1,
+            0,
+            6,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            4,
+            0,
+        ),
+        (
+            CardId::FlyingSleeves,
+            "Flying Sleeves",
+            CardType::Attack,
+            CardRarity::Common,
+            1,
+            4,
+            0,
+            0,
+            CardTarget::Enemy,
+            2,
+            0,
+            0,
+        ),
+        (
+            CardId::Halt,
+            "Halt",
+            CardType::Skill,
+            CardRarity::Common,
+            0,
+            0,
+            3,
+            9,
+            CardTarget::SelfTarget,
+            0,
+            1,
+            5,
+        ),
+        (
+            CardId::Smite,
+            "Smite",
+            CardType::Attack,
+            CardRarity::Special,
+            1,
+            12,
+            0,
+            0,
+            CardTarget::Enemy,
+            4,
+            0,
+            0,
+        ),
+        (
+            CardId::Safety,
+            "Safety",
+            CardType::Skill,
+            CardRarity::Special,
+            1,
+            0,
+            12,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            4,
+            0,
+        ),
+        (
             CardId::Insight,
             "Insight",
             CardType::Skill,
@@ -932,6 +1072,12 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::FollowUp));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::CrushJoints));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::SashWhip));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::Crescendo));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::Protect));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::Tranquility));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::Evaluate));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::FlyingSleeves));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::Halt));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
@@ -941,6 +1087,8 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Conclude));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WreathOfFlame));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::SignatureMove));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::CarveReality));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::DeceiveReality));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::SimmeringFury));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Study));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Swivel));
@@ -1056,6 +1204,230 @@ fn watcher_first_common_batch_runtime_actions_match_java_use_methods() {
             &Action::DrawCards(3),
             &Action::EnterStance("Neutral".to_string()),
         ]
+    );
+}
+
+#[test]
+fn watcher_retain_stance_and_generated_temp_cards_match_java_sources() {
+    let state = crate::test_support::blank_test_combat();
+
+    assert_eq!(java_id(CardId::Tranquility), "ClearTheMind");
+    for id in [
+        CardId::Crescendo,
+        CardId::Tranquility,
+        CardId::Protect,
+        CardId::Smite,
+        CardId::Safety,
+    ] {
+        assert!(
+            crate::content::cards::is_self_retain(&CombatCard::new(id, 900)),
+            "{id:?} should preserve Java selfRetain"
+        );
+    }
+    assert!(crate::content::cards::exhausts_when_played(
+        &CombatCard::new(CardId::Crescendo, 901)
+    ));
+    assert!(crate::content::cards::exhausts_when_played(
+        &CombatCard::new(CardId::Tranquility, 902)
+    ));
+    assert!(crate::content::cards::exhausts_when_played(
+        &CombatCard::new(CardId::Smite, 903)
+    ));
+    assert!(crate::content::cards::exhausts_when_played(
+        &CombatCard::new(CardId::Safety, 904)
+    ));
+    assert!(!crate::content::cards::exhausts_when_played(
+        &CombatCard::new(CardId::Protect, 905)
+    ));
+
+    let mut crescendo_plus = CombatCard::new(CardId::Crescendo, 906);
+    crescendo_plus.upgrades = 1;
+    assert_eq!(
+        crate::content::cards::upgraded_base_cost_override(&crescendo_plus),
+        Some(0)
+    );
+    let mut tranquility_plus = CombatCard::new(CardId::Tranquility, 907);
+    tranquility_plus.upgrades = 1;
+    assert_eq!(
+        crate::content::cards::upgraded_base_cost_override(&tranquility_plus),
+        Some(0)
+    );
+
+    assert_eq!(
+        resolve_card_play(
+            CardId::Crescendo,
+            &state,
+            &CombatCard::new(CardId::Crescendo, 908),
+            None,
+        )[0]
+        .action,
+        Action::EnterStance("Wrath".to_string())
+    );
+    assert_eq!(
+        resolve_card_play(
+            CardId::Tranquility,
+            &state,
+            &CombatCard::new(CardId::Tranquility, 909),
+            None,
+        )[0]
+        .action,
+        Action::EnterStance("Calm".to_string())
+    );
+
+    let mut protect_plus = CombatCard::new(CardId::Protect, 910);
+    protect_plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::Protect, &state, &protect_plus, None)[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 16,
+        }
+    );
+
+    let mut smite_plus = CombatCard::new(CardId::Smite, 911);
+    smite_plus.upgrades = 1;
+    let smite = resolve_card_play(CardId::Smite, &state, &smite_plus, Some(7));
+    match &smite[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 16);
+            assert_eq!(info.output, 16);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Smite+ should emit upgraded DamageAction, got {other:?}"),
+    }
+
+    let mut safety_plus = CombatCard::new(CardId::Safety, 912);
+    safety_plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::Safety, &state, &safety_plus, None)[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 16,
+        }
+    );
+
+    let mut carve_plus = CombatCard::new(CardId::CarveReality, 913);
+    carve_plus.upgrades = 1;
+    let carve = resolve_card_play(CardId::CarveReality, &state, &carve_plus, Some(7));
+    assert_eq!(carve.len(), 2);
+    match &carve[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 10);
+            assert_eq!(info.output, 10);
+        }
+        other => panic!("Carve Reality+ should emit upgraded DamageAction, got {other:?}"),
+    }
+    assert_eq!(
+        carve[1].action,
+        Action::MakeTempCardInHand {
+            card_id: CardId::Smite,
+            amount: 1,
+            upgraded: false,
+        }
+    );
+
+    let mut deceive_plus = CombatCard::new(CardId::DeceiveReality, 914);
+    deceive_plus.upgrades = 1;
+    let deceive = resolve_card_play(CardId::DeceiveReality, &state, &deceive_plus, None);
+    assert_eq!(
+        deceive.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![
+            &Action::GainBlock {
+                target: 0,
+                amount: 7,
+            },
+            &Action::MakeTempCardInHand {
+                card_id: CardId::Safety,
+                amount: 1,
+                upgraded: false,
+            },
+        ]
+    );
+}
+
+#[test]
+fn watcher_evaluate_flying_sleeves_and_halt_match_java_sources() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.stance = StanceId::Neutral;
+
+    assert!(crate::content::cards::is_self_retain(&CombatCard::new(
+        CardId::FlyingSleeves,
+        920,
+    )));
+
+    let mut evaluate_plus = CombatCard::new(CardId::Evaluate, 921);
+    evaluate_plus.upgrades = 1;
+    let evaluate = resolve_card_play(CardId::Evaluate, &state, &evaluate_plus, None);
+    assert_eq!(
+        evaluate.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![
+            &Action::GainBlock {
+                target: 0,
+                amount: 10,
+            },
+            &Action::MakeTempCardInDrawPile {
+                card_id: CardId::Insight,
+                amount: 1,
+                random_spot: true,
+                to_bottom: false,
+                upgraded: false,
+            },
+        ]
+    );
+
+    let mut flying_plus = CombatCard::new(CardId::FlyingSleeves, 922);
+    flying_plus.upgrades = 1;
+    let flying = resolve_card_play(CardId::FlyingSleeves, &state, &flying_plus, Some(7));
+    assert_eq!(flying.len(), 2);
+    for action in &flying {
+        match &action.action {
+            Action::Damage(info) => {
+                assert_eq!(info.target, 7);
+                assert_eq!(info.base, 6);
+                assert_eq!(info.output, 6);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("Flying Sleeves+ should emit two DamageActions, got {other:?}"),
+        }
+    }
+
+    let mut halt_plus = CombatCard::new(CardId::Halt, 923);
+    halt_plus.upgrades = 1;
+    let halt = resolve_card_play(CardId::Halt, &state, &halt_plus, None);
+    assert_eq!(
+        halt[0].action,
+        Action::Halt {
+            block: 4,
+            additional: 14,
+        },
+        "Java Halt.use queues HaltAction(block, additional); stance is checked when the action executes"
+    );
+
+    crate::engine::action_handlers::execute_action(halt[0].action.clone(), &mut state);
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 4,
+        })
+    );
+
+    state.entities.player.stance = StanceId::Wrath;
+    crate::engine::action_handlers::execute_action(
+        Action::Halt {
+            block: 4,
+            additional: 14,
+        },
+        &mut state,
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 18,
+        })
     );
 }
 
