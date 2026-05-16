@@ -15,6 +15,31 @@ const GLARE: u8 = 1;
 const BITE: u8 = 2;
 const TAIL: u8 = 3;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn first_roll_marks_snecko_first_turn_false_like_java_get_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        let snecko = crate::test_support::test_monster(EnemyId::Snecko);
+        state.entities.monsters = vec![snecko];
+
+        crate::engine::action_handlers::execute_action(
+            Action::RollMonsterMove { monster_id: 1 },
+            &mut state,
+        );
+
+        let snecko = &state.entities.monsters[0];
+        assert_eq!(snecko.planned_move_id(), GLARE);
+        assert!(
+            !snecko.snecko.first_turn,
+            "Java Snecko.getMove clears firstTurn while rolling the opening Glare move"
+        );
+    }
+}
+
 enum SneckoTurn<'a> {
     Glare(&'a ApplyPowerStep),
     Bite(&'a AttackSpec),
@@ -245,6 +270,19 @@ impl MonsterBehavior for Snecko {
         }
     }
 
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if current_runtime_flags(entity) {
+            vec![snecko_runtime_update(entity, Some(false))]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
         plan_for(entity.planned_move_id(), state.meta.ascension_level)
     }
@@ -255,17 +293,8 @@ impl MonsterBehavior for Snecko {
         plan: &MonsterTurnPlan,
     ) -> Vec<Action> {
         let mut actions = match decode_turn(plan) {
-            SneckoTurn::Glare(power) => {
-                vec![
-                    apply_power_action(entity, power),
-                    snecko_runtime_update(entity, Some(false)),
-                ]
-            }
-            SneckoTurn::Bite(attack) => {
-                let mut actions = attack_actions(entity.id, PLAYER, attack);
-                actions.push(snecko_runtime_update(entity, Some(false)));
-                actions
-            }
+            SneckoTurn::Glare(power) => vec![apply_power_action(entity, power)],
+            SneckoTurn::Bite(attack) => attack_actions(entity.id, PLAYER, attack),
             SneckoTurn::Tail {
                 attack,
                 weak,
@@ -276,7 +305,6 @@ impl MonsterBehavior for Snecko {
                     actions.push(apply_power_action(entity, weak));
                 }
                 actions.push(apply_power_action(entity, vulnerable));
-                actions.push(snecko_runtime_update(entity, Some(false)));
                 actions
             }
         };
