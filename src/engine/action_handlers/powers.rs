@@ -63,11 +63,26 @@ pub fn handle_spot_weakness(target: usize, amount: i32, state: &mut CombatState)
         return;
     };
 
-    if monster_has_java_spot_weakness_intent(state, target_monster) {
+    if monster_has_java_attack_intent_base_damage(state, target_monster) {
         state.queue_action_back(Action::ApplyPower {
             source: 0,
             target: 0,
             power_id: PowerId::Strength,
+            amount,
+        });
+    }
+}
+
+pub fn handle_apply_weak_if_target_attacking(target: usize, amount: i32, state: &mut CombatState) {
+    let Some(target_monster) = state.entities.monsters.iter().find(|m| m.id == target) else {
+        return;
+    };
+
+    if monster_has_java_attack_intent_base_damage(state, target_monster) {
+        state.queue_action_front(Action::ApplyPower {
+            source: 0,
+            target,
+            power_id: PowerId::Weak,
             amount,
         });
     }
@@ -139,7 +154,7 @@ fn x_cost_effect(state: &CombatState, upgraded: bool, energy_on_use: i32) -> i32
     effect
 }
 
-fn monster_has_java_spot_weakness_intent(
+fn monster_has_java_attack_intent_base_damage(
     state: &CombatState,
     monster: &crate::runtime::combat::MonsterEntity,
 ) -> bool {

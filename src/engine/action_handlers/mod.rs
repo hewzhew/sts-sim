@@ -217,6 +217,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::SpotWeakness { target, amount } => {
             powers::handle_spot_weakness(target, amount, state)
         }
+        Action::ApplyWeakIfTargetAttacking { target, amount } => {
+            powers::handle_apply_weak_if_target_attacking(target, amount, state)
+        }
         Action::Doppelganger {
             upgraded,
             free_to_play_once,

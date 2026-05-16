@@ -514,6 +514,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::GoForTheEyes,
+            "Go for the Eyes",
+            CardType::Attack,
+            0,
+            3,
+            0,
+            1,
+            CardTarget::Enemy,
+            1,
+            0,
+            1,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -884,6 +897,48 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
         }
         other => panic!("Barrage+ should emit BarrageAction equivalent, got {other:?}"),
     }
+
+    let go_for = resolve_card_play(
+        CardId::GoForTheEyes,
+        &state,
+        &CombatCard::new(CardId::GoForTheEyes, 132),
+        Some(15),
+    );
+    assert_eq!(go_for.len(), 2);
+    match &go_for[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 15);
+            assert_eq!(info.base, 3);
+            assert_eq!(info.output, 3);
+        }
+        other => panic!("Go for the Eyes first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        go_for[1].action,
+        Action::ApplyWeakIfTargetAttacking {
+            target: 15,
+            amount: 1,
+        }
+    );
+
+    let mut go_for_plus = CombatCard::new(CardId::GoForTheEyes, 133);
+    go_for_plus.upgrades = 1;
+    let go_for_plus_actions =
+        resolve_card_play(CardId::GoForTheEyes, &state, &go_for_plus, Some(15));
+    match &go_for_plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 4);
+            assert_eq!(info.output, 4);
+        }
+        other => panic!("Go for the Eyes+ first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        go_for_plus_actions[1].action,
+        Action::ApplyWeakIfTargetAttacking {
+            target: 15,
+            amount: 2,
+        }
+    );
 }
 
 #[test]
@@ -953,6 +1008,43 @@ fn barrage_action_queues_damage_for_each_non_empty_orb_at_execution_time() {
             ..
         }))
     ));
+    assert_eq!(state.pop_next_action(), None);
+}
+
+#[test]
+fn go_for_the_eyes_action_checks_target_attack_intent_when_it_resolves() {
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.id = 43;
+    monster.set_planned_move_id(1);
+
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.monsters = vec![monster];
+
+    crate::engine::action_handlers::execute_action(
+        Action::ApplyWeakIfTargetAttacking {
+            target: 43,
+            amount: 2,
+        },
+        &mut state,
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 43,
+            power_id: PowerId::Weak,
+            amount: 2,
+        })
+    );
+
+    state.entities.monsters[0].set_planned_move_id(2);
+    crate::engine::action_handlers::execute_action(
+        Action::ApplyWeakIfTargetAttacking {
+            target: 43,
+            amount: 2,
+        },
+        &mut state,
+    );
     assert_eq!(state.pop_next_action(), None);
 }
 

@@ -263,6 +263,12 @@ pub enum Action {
         target: EntityId,
         amount: i32,
     },
+    /// Java Defect `ForTheEyesAction`: apply Weak to the target only if its
+    /// current `getIntentBaseDmg()` is non-negative when the action resolves.
+    ApplyWeakIfTargetAttacking {
+        target: EntityId,
+        amount: i32,
+    },
     FiendFire {
         target: EntityId,
         damage_info: DamageInfo,

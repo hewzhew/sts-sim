@@ -7,6 +7,7 @@ pub mod conserve_battery;
 pub mod coolheaded;
 pub mod defend_blue;
 pub mod dualcast;
+pub mod go_for_the_eyes;
 pub mod hologram;
 pub mod leap;
 pub mod stack;
