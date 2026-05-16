@@ -98,7 +98,21 @@ fn generate_discovery_choices(
 }
 
 fn resolve_victory_hooks_immediately(combat_state: &mut CombatState) {
-    let actions = crate::content::relics::hooks::on_victory(combat_state);
+    let mut actions = crate::content::relics::hooks::on_victory(combat_state);
+    for power in crate::content::powers::store::powers_snapshot_for(combat_state, 0) {
+        let power_actions = crate::content::powers::resolve_power_on_victory(
+            power.power_type,
+            combat_state,
+            0,
+            power.amount,
+        );
+        for action in power_actions {
+            actions.push(ActionInfo {
+                action,
+                insertion_mode: crate::runtime::action::AddTo::Bottom,
+            });
+        }
+    }
     if actions.is_empty() {
         return;
     }

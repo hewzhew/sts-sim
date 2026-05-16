@@ -2921,6 +2921,72 @@ fn equilibrium_power_retains_non_ethereal_hand_cards_and_ticks_at_round_end() {
 }
 
 #[test]
+fn self_repair_definition_runtime_and_victory_power_match_java_sources() {
+    let self_repair = get_card_definition(CardId::SelfRepair);
+    assert_eq!(self_repair.name, "Self Repair");
+    assert_eq!(self_repair.card_type, CardType::Power);
+    assert_eq!(self_repair.rarity, CardRarity::Uncommon);
+    assert_eq!(self_repair.cost, 1);
+    assert_eq!(self_repair.base_magic, 7);
+    assert_eq!(self_repair.target, CardTarget::SelfTarget);
+    assert_eq!(self_repair.upgrade_magic, 3);
+    assert!(self_repair.tags.contains(&CardTag::Healing));
+    assert_eq!(java_id(CardId::SelfRepair), "Self Repair");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::SelfRepair,
+        &state,
+        &CombatCard::new(CardId::SelfRepair, 303),
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Repair,
+            amount: 7,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::SelfRepair, 304);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::SelfRepair, &state, &plus, None);
+    assert_eq!(
+        plus_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Repair,
+            amount: 10,
+        }
+    );
+
+    let mut wounded = crate::test_support::blank_test_combat();
+    wounded.entities.player.current_hp = 40;
+    wounded.entities.player.max_hp = 80;
+    let victory_actions =
+        crate::content::powers::resolve_power_on_victory(PowerId::Repair, &wounded, 0, 7);
+    assert_eq!(
+        victory_actions.as_slice(),
+        &[Action::Heal {
+            target: 0,
+            amount: 7,
+        }],
+        "Java RepairPower.onVictory heals the living player by its amount"
+    );
+
+    let mut dead = wounded;
+    dead.entities.player.current_hp = 0;
+    assert!(
+        crate::content::powers::resolve_power_on_victory(PowerId::Repair, &dead, 0, 7).is_empty(),
+        "Java RepairPower checks p.currentHealth > 0 before healing"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

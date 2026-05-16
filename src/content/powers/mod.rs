@@ -79,6 +79,7 @@ pub enum PowerId {
     DrawCardNextTurn,
     Energized,
     Equilibrium,
+    Repair,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -495,6 +496,7 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Equilibrium",
         },
+        PowerId::Repair => PowerDefinition { id, name: "Repair" },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -1050,6 +1052,23 @@ pub fn resolve_power_at_end_of_round(
         PowerId::GenericStrengthUp => core::generic_strength_up::at_end_of_round(owner, amount),
         PowerId::DoubleDamage => silent::phantasmal::double_damage_at_end_of_round(owner, amount),
         // Other Powers that decay at end of round can be added here
+        _ => smallvec::smallvec![],
+    }
+}
+
+pub fn resolve_power_on_victory(
+    id: PowerId,
+    state: &CombatState,
+    owner: crate::core::EntityId,
+    amount: i32,
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
+    match id {
+        PowerId::Repair if owner == 0 && state.entities.player.current_hp > 0 => {
+            smallvec::smallvec![crate::runtime::action::Action::Heal {
+                target: owner,
+                amount,
+            }]
+        }
         _ => smallvec::smallvec![],
     }
 }
