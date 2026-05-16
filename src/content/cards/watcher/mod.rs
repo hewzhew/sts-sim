@@ -7,6 +7,7 @@ pub mod empty_fist;
 pub mod empty_mind;
 pub mod eruption;
 pub mod just_lucky;
+pub mod prostrate;
 pub mod strike_purple;
 pub mod third_eye;
 pub mod vigilance;

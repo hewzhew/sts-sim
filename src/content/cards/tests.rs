@@ -482,6 +482,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::JustLucky, "JustLucky"),
         (CardId::CutThroughFate, "CutThroughFate"),
         (CardId::ThirdEye, "ThirdEye"),
+        (CardId::Prostrate, "Prostrate"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -600,6 +601,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             2,
             2,
         ),
+        (
+            CardId::Prostrate,
+            "Prostrate",
+            CardType::Skill,
+            CardRarity::Common,
+            0,
+            0,
+            4,
+            2,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
     ];
 
     for (
@@ -641,6 +656,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::JustLucky));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::CutThroughFate));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::ThirdEye));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::Prostrate));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
 }
 
@@ -811,6 +827,31 @@ fn watcher_scry_card_runtime_actions_match_java_use_methods() {
                 amount: 9,
             },
             &Action::Scry(5),
+        ]
+    );
+}
+
+#[test]
+fn watcher_prostrate_runtime_actions_match_java_use_method() {
+    let state = crate::test_support::blank_test_combat();
+    let mut prostrate_plus = CombatCard::new(CardId::Prostrate, 320);
+    prostrate_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::Prostrate, &state, &prostrate_plus, None);
+
+    assert_eq!(
+        actions.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![
+            &Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::Mantra,
+                amount: 3,
+            },
+            &Action::GainBlock {
+                target: 0,
+                amount: 4,
+            },
         ]
     );
 }
