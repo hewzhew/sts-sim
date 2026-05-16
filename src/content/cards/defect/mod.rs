@@ -40,6 +40,7 @@ pub mod loop_card;
 pub mod machine_learning;
 pub mod melter;
 pub mod meteor_strike;
+pub mod multi_cast;
 pub mod overclock;
 pub mod rainbow;
 pub mod rebound;

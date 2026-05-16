@@ -4213,6 +4213,137 @@ fn fission_definition_runtime_and_orb_actions_match_java_sources() {
 }
 
 #[test]
+fn multi_cast_definition_runtime_and_x_cost_orb_actions_match_java_sources() {
+    let multi_cast = get_card_definition(CardId::MultiCast);
+    assert_eq!(multi_cast.name, "Multi-Cast");
+    assert_eq!(multi_cast.card_type, CardType::Skill);
+    assert_eq!(multi_cast.rarity, CardRarity::Rare);
+    assert_eq!(multi_cast.cost, -1);
+    assert_eq!(multi_cast.base_magic, 0);
+    assert_eq!(multi_cast.target, CardTarget::None);
+    assert!(!multi_cast.exhaust);
+    assert_eq!(multi_cast.upgrade_magic, 0);
+    assert_eq!(java_id(CardId::MultiCast), "Multi-Cast");
+
+    let state = crate::test_support::blank_test_combat();
+    let mut card = CombatCard::new(CardId::MultiCast, 349);
+    card.energy_on_use = 2;
+    assert_eq!(
+        resolve_card_play(CardId::MultiCast, &state, &card, None)[0].action,
+        Action::MultiCast {
+            upgraded: false,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        }
+    );
+    let mut plus = CombatCard::new(CardId::MultiCast, 350);
+    plus.upgrades = 1;
+    plus.free_to_play_once = true;
+    plus.energy_on_use = 0;
+    assert_eq!(
+        resolve_card_play(CardId::MultiCast, &state, &plus, None)[0].action,
+        Action::MultiCast {
+            upgraded: true,
+            free_to_play_once: true,
+            energy_on_use: 0,
+        }
+    );
+
+    let mut basic = crate::test_support::blank_test_combat();
+    basic.turn.energy = 2;
+    basic.entities.player.orbs = vec![OrbEntity::new(OrbId::Dark), OrbEntity::new(OrbId::Empty)];
+    crate::engine::action_handlers::execute_action(
+        Action::MultiCast {
+            upgraded: false,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        },
+        &mut basic,
+    );
+    assert_eq!(basic.turn.energy, 0);
+    assert_eq!(
+        std::iter::from_fn(|| basic.pop_next_action()).collect::<Vec<_>>(),
+        vec![Action::EvokeOrbWithoutRemoving, Action::EvokeOrb],
+        "Java MulticastAction evokes without removing effect-1 times, then evokes/removes once"
+    );
+
+    let mut upgraded_zero = crate::test_support::blank_test_combat();
+    upgraded_zero.entities.player.orbs = vec![OrbEntity::new(OrbId::Lightning)];
+    crate::engine::action_handlers::execute_action(
+        Action::MultiCast {
+            upgraded: true,
+            free_to_play_once: false,
+            energy_on_use: 0,
+        },
+        &mut upgraded_zero,
+    );
+    assert_eq!(
+        upgraded_zero.pop_next_action(),
+        Some(Action::EvokeOrb),
+        "Java Multi-Cast+ adds one evoke after reading zero X energy"
+    );
+    assert_eq!(upgraded_zero.pop_next_action(), None);
+
+    let mut chemical_x = crate::test_support::blank_test_combat();
+    chemical_x
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::ChemicalX,
+        ));
+    chemical_x.entities.player.orbs = vec![OrbEntity::new(OrbId::Frost)];
+    crate::engine::action_handlers::execute_action(
+        Action::MultiCast {
+            upgraded: false,
+            free_to_play_once: false,
+            energy_on_use: 0,
+        },
+        &mut chemical_x,
+    );
+    assert_eq!(
+        std::iter::from_fn(|| chemical_x.pop_next_action()).collect::<Vec<_>>(),
+        vec![Action::EvokeOrbWithoutRemoving, Action::EvokeOrb],
+        "Chemical X adds two Multi-Cast evokes even when X is zero"
+    );
+
+    let mut free_to_play = crate::test_support::blank_test_combat();
+    free_to_play.turn.energy = 3;
+    free_to_play.entities.player.orbs = vec![OrbEntity::new(OrbId::Plasma)];
+    crate::engine::action_handlers::execute_action(
+        Action::MultiCast {
+            upgraded: false,
+            free_to_play_once: true,
+            energy_on_use: 2,
+        },
+        &mut free_to_play,
+    );
+    assert_eq!(free_to_play.turn.energy, 3);
+    assert_eq!(
+        std::iter::from_fn(|| free_to_play.pop_next_action()).collect::<Vec<_>>(),
+        vec![Action::EvokeOrbWithoutRemoving, Action::EvokeOrb],
+        "freeToPlayOnce keeps current energy but still uses energyOnUse for X"
+    );
+
+    let mut no_orb = crate::test_support::blank_test_combat();
+    no_orb.turn.energy = 3;
+    no_orb.entities.player.orbs = vec![OrbEntity::new(OrbId::Empty)];
+    crate::engine::action_handlers::execute_action(
+        Action::MultiCast {
+            upgraded: false,
+            free_to_play_once: false,
+            energy_on_use: 3,
+        },
+        &mut no_orb,
+    );
+    assert_eq!(no_orb.turn.energy, 3);
+    assert_eq!(
+        no_orb.pop_next_action(),
+        None,
+        "Java MulticastAction does nothing and spends no energy when player.hasOrb() is false"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

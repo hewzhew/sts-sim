@@ -555,6 +555,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             free_to_play_once,
             energy_on_use,
         } => cards::handle_tempest(upgraded, free_to_play_once, energy_on_use, state),
+        Action::MultiCast {
+            upgraded,
+            free_to_play_once,
+            energy_on_use,
+        } => cards::handle_multicast(upgraded, free_to_play_once, energy_on_use, state),
         Action::ReinforcedBody {
             block_amount,
             free_to_play_once,
