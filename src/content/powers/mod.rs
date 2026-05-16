@@ -89,6 +89,8 @@ pub enum PowerId {
     Storm,
     Amplify,
     EchoForm,
+    CreativeAI,
+    Hello,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -127,6 +129,34 @@ use crate::runtime::combat::{CombatCard, CombatState};
 pub struct PowerDefinition {
     pub id: PowerId,
     pub name: &'static str,
+}
+
+fn class_pool_for_rarity(
+    player_class: &str,
+    rarity: crate::content::cards::CardRarity,
+) -> &'static [crate::content::cards::CardId] {
+    match player_class {
+        "Ironclad" => crate::content::cards::ironclad_pool_for_rarity(rarity),
+        "Silent" => crate::content::cards::silent_pool_for_rarity(rarity),
+        "Defect" => crate::content::cards::defect_pool_for_rarity(rarity),
+        "Watcher" => crate::content::cards::watcher_pool_for_rarity(rarity),
+        _ => crate::content::cards::ironclad_pool_for_rarity(rarity),
+    }
+}
+
+fn random_class_card_by_rarity(
+    state: &mut CombatState,
+    rarity: crate::content::cards::CardRarity,
+) -> Option<crate::runtime::combat::CombatCard> {
+    let pool = class_pool_for_rarity(state.meta.player_class, rarity);
+    if pool.is_empty() {
+        return None;
+    }
+
+    let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
+    Some(crate::content::cards::make_fresh_card_copy_for_combat(
+        pool[idx], 0, state,
+    ))
 }
 
 /// Java powers whose runtime amount is a sentinel `-1` rather than a stack count.
@@ -539,6 +569,11 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Echo Form",
         },
+        PowerId::CreativeAI => PowerDefinition {
+            id,
+            name: "Creative AI",
+        },
+        PowerId::Hello => PowerDefinition { id, name: "Hello" },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -926,6 +961,38 @@ pub fn resolve_power_instance_at_turn_start(
                 });
             }
             smallvec::smallvec![]
+        }
+        PowerId::CreativeAI => {
+            let mut acts = smallvec::SmallVec::new();
+            for _ in 0..amount.max(0) {
+                if let Some(card) = crate::content::cards::make_random_class_card_copy_for_combat(
+                    state,
+                    Some(crate::content::cards::CardType::Power),
+                ) {
+                    acts.push(crate::runtime::action::Action::MakeCopyInHand {
+                        original: Box::new(card),
+                        amount: 1,
+                    });
+                }
+            }
+            acts
+        }
+        PowerId::Hello => {
+            let mut acts = smallvec::SmallVec::new();
+            if state.are_monsters_basically_dead_java() {
+                return acts;
+            }
+            for _ in 0..amount.max(0) {
+                if let Some(card) =
+                    random_class_card_by_rarity(state, crate::content::cards::CardRarity::Common)
+                {
+                    acts.push(crate::runtime::action::Action::MakeCopyInHand {
+                        original: Box::new(card),
+                        amount: 1,
+                    });
+                }
+            }
+            acts
         }
         PowerId::Poison => core::poison::at_turn_start(owner, amount),
         PowerId::Choked => silent::choked::at_turn_start(owner),

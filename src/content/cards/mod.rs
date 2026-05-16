@@ -294,6 +294,9 @@ pub enum CardId {
     Scrape,
     Seek,
     Recycle,
+    CreativeAI,
+    HelloWorld,
+    WhiteNoise,
     EchoForm,
     // Add more as we expand
 }
@@ -444,6 +447,7 @@ pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
         || matches!(card.id, CardId::AfterImage) && card.upgrades > 0
         || matches!(card.id, CardId::InfiniteBlades) && card.upgrades > 0
         || matches!(card.id, CardId::Chill) && card.upgrades > 0
+        || matches!(card.id, CardId::HelloWorld) && card.upgrades > 0
         || matches!(card.id, CardId::MachineLearning) && card.upgrades > 0
         || matches!(card.id, CardId::Storm) && card.upgrades > 0
 }
@@ -616,6 +620,9 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Scrape => defect::scrape::definition(),
         CardId::Seek => defect::seek::definition(),
         CardId::Recycle => defect::recycle::definition(),
+        CardId::CreativeAI => defect::creative_ai::definition(),
+        CardId::HelloWorld => defect::hello_world::definition(),
+        CardId::WhiteNoise => defect::white_noise::definition(),
         CardId::EchoForm => defect::echo_form::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
@@ -1111,6 +1118,86 @@ pub const SILENT_RARE_POOL: &[CardId] = &[
     CardId::WraithForm,
 ];
 
+pub const DEFECT_COMMON_POOL: &[CardId] = &[
+    CardId::BallLightning,
+    CardId::Barrage,
+    CardId::BeamCell,
+    CardId::Claw,
+    CardId::ColdSnap,
+    CardId::CompileDriver,
+    CardId::ConserveBattery,
+    CardId::Coolheaded,
+    CardId::GoForTheEyes,
+    CardId::Hologram,
+    CardId::Leap,
+    CardId::Rebound,
+    CardId::Recursion,
+    CardId::Stack,
+    CardId::SteamBarrier,
+    CardId::Streamline,
+    CardId::SweepingBeam,
+    CardId::Turbo,
+];
+
+pub const DEFECT_UNCOMMON_POOL: &[CardId] = &[
+    CardId::Aggregate,
+    CardId::AutoShields,
+    CardId::Blizzard,
+    CardId::BootSequence,
+    CardId::Capacitor,
+    CardId::Chaos,
+    CardId::Chill,
+    CardId::Consume,
+    CardId::Darkness,
+    CardId::Defragment,
+    CardId::DoomAndGloom,
+    CardId::DoubleEnergy,
+    CardId::Equilibrium,
+    CardId::ForceField,
+    CardId::Ftl,
+    CardId::Fusion,
+    CardId::GeneticAlgorithm,
+    CardId::Glacier,
+    CardId::Heatsinks,
+    CardId::HelloWorld,
+    CardId::LockOn,
+    CardId::Loop,
+    CardId::Melter,
+    CardId::Overclock,
+    CardId::Recycle,
+    CardId::ReinforcedBody,
+    CardId::Reprogram,
+    CardId::RipAndTear,
+    CardId::Scrape,
+    CardId::SelfRepair,
+    CardId::Skim,
+    CardId::StaticDischarge,
+    CardId::Storm,
+    CardId::Sunder,
+    CardId::Tempest,
+    CardId::WhiteNoise,
+];
+
+pub const DEFECT_RARE_POOL: &[CardId] = &[
+    CardId::AllForOne,
+    CardId::Amplify,
+    CardId::BiasedCognition,
+    CardId::Buffer,
+    CardId::CoreSurge,
+    CardId::CreativeAI,
+    CardId::EchoForm,
+    CardId::Electrodynamics,
+    CardId::Fission,
+    CardId::Hyperbeam,
+    CardId::MachineLearning,
+    CardId::MeteorStrike,
+    CardId::MultiCast,
+    CardId::Rainbow,
+    CardId::Reboot,
+    CardId::Seek,
+    CardId::ThunderStrike,
+];
+
 /// Returns the pool for a given rarity (Ironclad).
 /// Returns the pool of randomly obtainable curse cards.
 /// Java: AbstractDungeon.returnRandomCurse() draws from this pool.
@@ -1177,9 +1264,13 @@ pub fn silent_pool_for_type(card_type: CardType) -> Vec<CardId> {
     result
 }
 
-/// Returns the pool for a given rarity (Defect). Stub until Defect cards are implemented.
-pub fn defect_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] {
-    &[]
+pub fn defect_pool_for_rarity(rarity: CardRarity) -> &'static [CardId] {
+    match rarity {
+        CardRarity::Common => DEFECT_COMMON_POOL,
+        CardRarity::Uncommon => DEFECT_UNCOMMON_POOL,
+        CardRarity::Rare => DEFECT_RARE_POOL,
+        _ => DEFECT_COMMON_POOL,
+    }
 }
 
 /// Returns the pool for a given rarity (Watcher). Stub until Watcher cards are implemented.
@@ -1337,6 +1428,9 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Scrape => "Scrape",
         CardId::Seek => "Seek",
         CardId::Recycle => "Recycle",
+        CardId::CreativeAI => "Creative AI",
+        CardId::HelloWorld => "Hello World",
+        CardId::WhiteNoise => "White Noise",
         CardId::EchoForm => "Echo Form",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
@@ -1644,6 +1738,9 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Scrape,
         Seek,
         Recycle,
+        CreativeAI,
+        HelloWorld,
+        WhiteNoise,
         EchoForm,
         Neutralize,
         Survivor,

@@ -4812,6 +4812,170 @@ fn recycle_definition_runtime_and_energy_gain_match_java_sources() {
 }
 
 #[test]
+fn defect_random_generation_cards_and_powers_match_java_sources() {
+    let creative = get_card_definition(CardId::CreativeAI);
+    assert_eq!(creative.name, "Creative AI");
+    assert_eq!(creative.card_type, CardType::Power);
+    assert_eq!(creative.rarity, CardRarity::Rare);
+    assert_eq!(creative.cost, 3);
+    assert_eq!(creative.base_magic, 1);
+    assert_eq!(creative.target, CardTarget::SelfTarget);
+    assert_eq!(java_id(CardId::CreativeAI), "Creative AI");
+    let mut creative_plus = CombatCard::new(CardId::CreativeAI, 393);
+    creative_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&creative_plus), Some(2));
+    assert_eq!(
+        resolve_card_play(
+            CardId::CreativeAI,
+            &crate::test_support::blank_test_combat(),
+            &creative_plus,
+            None
+        )[0]
+        .action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::CreativeAI,
+            amount: 1,
+        }
+    );
+
+    let hello = get_card_definition(CardId::HelloWorld);
+    assert_eq!(hello.name, "Hello World");
+    assert_eq!(hello.card_type, CardType::Power);
+    assert_eq!(hello.rarity, CardRarity::Uncommon);
+    assert_eq!(hello.cost, 1);
+    assert_eq!(java_id(CardId::HelloWorld), "Hello World");
+    let mut hello_plus = CombatCard::new(CardId::HelloWorld, 394);
+    hello_plus.upgrades = 1;
+    assert!(is_innate_card(&hello_plus));
+    assert_eq!(
+        resolve_card_play(
+            CardId::HelloWorld,
+            &crate::test_support::blank_test_combat(),
+            &hello_plus,
+            None
+        )[0]
+        .action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Hello,
+            amount: 1,
+        }
+    );
+
+    let white = get_card_definition(CardId::WhiteNoise);
+    assert_eq!(white.name, "White Noise");
+    assert_eq!(white.card_type, CardType::Skill);
+    assert_eq!(white.rarity, CardRarity::Uncommon);
+    assert_eq!(white.cost, 1);
+    assert!(white.exhaust);
+    assert_eq!(white.target, CardTarget::None);
+    assert_eq!(java_id(CardId::WhiteNoise), "White Noise");
+    let mut white_plus = CombatCard::new(CardId::WhiteNoise, 395);
+    white_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&white_plus), Some(0));
+    assert_eq!(
+        resolve_card_play(
+            CardId::WhiteNoise,
+            &crate::test_support::blank_test_combat(),
+            &white_plus,
+            None
+        )[0]
+        .action,
+        Action::MakeRandomCardInHand {
+            card_type: Some(CardType::Power),
+            cost_for_turn: Some(0),
+        }
+    );
+}
+
+#[test]
+fn defect_random_card_pools_are_complete_and_exclude_unregistered_impulse() {
+    assert_eq!(DEFECT_COMMON_POOL.len(), 18);
+    assert_eq!(DEFECT_UNCOMMON_POOL.len(), 36);
+    assert_eq!(DEFECT_RARE_POOL.len(), 17);
+    assert!(!DEFECT_COMMON_POOL.contains(&CardId::Impulse));
+    assert!(!DEFECT_UNCOMMON_POOL.contains(&CardId::Impulse));
+    assert!(!DEFECT_RARE_POOL.contains(&CardId::Impulse));
+    assert!(DEFECT_RARE_POOL.contains(&CardId::CreativeAI));
+    assert!(DEFECT_UNCOMMON_POOL.contains(&CardId::HelloWorld));
+    assert!(DEFECT_UNCOMMON_POOL.contains(&CardId::WhiteNoise));
+
+    for (rarity, pool) in &[
+        (CardRarity::Common, DEFECT_COMMON_POOL),
+        (CardRarity::Uncommon, DEFECT_UNCOMMON_POOL),
+        (CardRarity::Rare, DEFECT_RARE_POOL),
+    ] {
+        for &id in *pool {
+            let def = get_card_definition(id);
+            assert_eq!(
+                def.rarity, *rarity,
+                "{id:?} is in the wrong Defect rarity pool"
+            );
+            assert_ne!(def.rarity, CardRarity::Basic);
+        }
+    }
+}
+
+#[test]
+fn creative_ai_and_hello_world_powers_sample_defect_random_pools() {
+    let mut creative_state = crate::test_support::blank_test_combat();
+    creative_state.meta.player_class = "Defect";
+    let creative_actions = crate::content::powers::resolve_power_at_turn_start(
+        PowerId::CreativeAI,
+        &mut creative_state,
+        0,
+        2,
+    );
+    assert_eq!(creative_actions.len(), 2);
+    for action in creative_actions {
+        match action {
+            Action::MakeCopyInHand { original, amount } => {
+                assert_eq!(amount, 1);
+                assert_eq!(get_card_definition(original.id).card_type, CardType::Power);
+                assert!(
+                    DEFECT_RARE_POOL.contains(&original.id)
+                        || DEFECT_UNCOMMON_POOL.contains(&original.id)
+                        || DEFECT_COMMON_POOL.contains(&original.id)
+                );
+            }
+            other => panic!("Creative AI should queue random Power copies, got {other:?}"),
+        }
+    }
+
+    let mut hello_state = crate::test_support::blank_test_combat();
+    hello_state.meta.player_class = "Defect";
+    hello_state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+    let hello_actions =
+        crate::content::powers::resolve_power_at_turn_start(PowerId::Hello, &mut hello_state, 0, 1);
+    assert_eq!(hello_actions.len(), 1);
+    match &hello_actions[0] {
+        Action::MakeCopyInHand { original, amount } => {
+            assert_eq!(*amount, 1);
+            assert!(
+                DEFECT_COMMON_POOL.contains(&original.id),
+                "Java HelloPower samples AbstractDungeon.getCard(COMMON, cardRandomRng)"
+            );
+        }
+        other => panic!("Hello World should queue a random common card, got {other:?}"),
+    }
+
+    hello_state.entities.monsters[0].is_dying = true;
+    assert!(
+        crate::content::powers::resolve_power_at_turn_start(
+            PowerId::Hello,
+            &mut hello_state,
+            0,
+            1,
+        )
+        .is_empty(),
+        "Java HelloPower skips generation when monsters are basically dead"
+    );
+}
+
+#[test]
 fn fission_definition_runtime_and_orb_actions_match_java_sources() {
     let fission = get_card_definition(CardId::Fission);
     assert_eq!(fission.name, "Fission");
