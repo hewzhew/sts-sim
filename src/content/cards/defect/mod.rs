@@ -20,6 +20,7 @@ pub mod defragment;
 pub mod doom_and_gloom;
 pub mod double_energy;
 pub mod dualcast;
+pub mod equilibrium;
 pub mod ftl;
 pub mod fusion;
 pub mod glacier;

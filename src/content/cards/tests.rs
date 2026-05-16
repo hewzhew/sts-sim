@@ -2805,6 +2805,122 @@ fn buffer_definition_and_runtime_action_match_java_sources() {
 }
 
 #[test]
+fn equilibrium_definition_and_runtime_action_match_java_sources() {
+    let equilibrium = get_card_definition(CardId::Equilibrium);
+    assert_eq!(equilibrium.name, "Equilibrium");
+    assert_eq!(equilibrium.card_type, CardType::Skill);
+    assert_eq!(equilibrium.rarity, CardRarity::Uncommon);
+    assert_eq!(equilibrium.cost, 2);
+    assert_eq!(equilibrium.base_block, 13);
+    assert_eq!(equilibrium.base_magic, 1);
+    assert_eq!(equilibrium.target, CardTarget::SelfTarget);
+    assert_eq!(equilibrium.upgrade_block, 3);
+    assert_eq!(equilibrium.upgrade_magic, 0);
+    assert_eq!(java_id(CardId::Equilibrium), "Undo");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::Equilibrium,
+        &state,
+        &CombatCard::new(CardId::Equilibrium, 298),
+        None,
+    );
+    assert_eq!(actions.len(), 2);
+    assert_eq!(
+        actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 13,
+        }
+    );
+    assert_eq!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: crate::content::powers::PowerId::Equilibrium,
+            amount: 1,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::Equilibrium, 299);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::Equilibrium, &state, &plus, None);
+    assert_eq!(
+        plus_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 16,
+        }
+    );
+    assert_eq!(
+        plus_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: crate::content::powers::PowerId::Equilibrium,
+            amount: 1,
+        }
+    );
+}
+
+#[test]
+fn equilibrium_power_retains_non_ethereal_hand_cards_and_ticks_at_round_end() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![
+        CombatCard::new(CardId::StrikeB, 300),
+        CombatCard::new(CardId::GhostlyArmor, 301),
+        CombatCard::new(CardId::DefendB, 302),
+    ];
+
+    crate::engine::action_handlers::execute_action(Action::RetainNonEtherealHandCards, &mut state);
+    let retain_flags: Vec<_> = state
+        .zones
+        .hand
+        .iter()
+        .map(|card| (card.id, card.retain_override))
+        .collect();
+    assert_eq!(
+        retain_flags,
+        vec![
+            (CardId::StrikeB, Some(true)),
+            (CardId::GhostlyArmor, None),
+            (CardId::DefendB, Some(true)),
+        ],
+        "Java EquilibriumPower marks every non-ethereal hand card retained at end of turn"
+    );
+
+    let power = crate::runtime::combat::Power {
+        power_type: crate::content::powers::PowerId::Equilibrium,
+        instance_id: None,
+        amount: 1,
+        extra_data: 0,
+        payload: crate::runtime::combat::PowerPayload::None,
+        just_applied: false,
+    };
+    let end_turn_actions = crate::content::powers::resolve_power_at_end_of_turn(&power, &state, 0);
+    assert_eq!(
+        end_turn_actions.as_slice(),
+        &[Action::RetainNonEtherealHandCards]
+    );
+    let end_round_actions = crate::content::powers::resolve_power_at_end_of_round(
+        crate::content::powers::PowerId::Equilibrium,
+        &state,
+        0,
+        1,
+        false,
+    );
+    assert_eq!(
+        end_round_actions.as_slice(),
+        &[Action::ReducePower {
+            target: 0,
+            power_id: crate::content::powers::PowerId::Equilibrium,
+            amount: 1,
+        }]
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

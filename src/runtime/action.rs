@@ -352,6 +352,9 @@ pub enum Action {
     /// Java `UnloadAction`: queues DiscardSpecificCardAction for every
     /// non-Attack in hand at execution time.
     UnloadNonAttack,
+    /// Java Defect `EquilibriumPower.atEndOfTurn`: mark every non-ethereal
+    /// hand card retained for the upcoming discard step.
+    RetainNonEtherealHandCards,
     EmptyDeckShuffle,
     ShuffleDiscardIntoDraw,
     PlayCard {

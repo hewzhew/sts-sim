@@ -92,6 +92,7 @@ pub fn resolve_card_play_with_context(
         CardId::Sunder => defect::sunder::sunder_play(_state, _card, t),
         CardId::Chaos => defect::chaos::chaos_play(_state, _card),
         CardId::Buffer => defect::buffer::buffer_play(_state, _card),
+        CardId::Equilibrium => defect::equilibrium::equilibrium_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),

@@ -413,6 +413,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::BladeFury { upgraded } => cards::handle_blade_fury(upgraded, state),
         Action::ApplyBulletTime => cards::handle_apply_bullet_time(state),
         Action::UnloadNonAttack => cards::handle_unload_non_attack(state),
+        Action::RetainNonEtherealHandCards => cards::handle_retain_non_ethereal_hand_cards(state),
         Action::EmptyDeckShuffle => cards::handle_empty_deck_shuffle(state),
         Action::ShuffleDiscardIntoDraw => cards::handle_shuffle_discard_into_draw(state),
         Action::DiscardCard { card_uuid } => cards::handle_discard_card(card_uuid, state),

@@ -914,6 +914,9 @@ pub fn resolve_power_at_end_of_turn(
         }],
         PowerId::DexterityDown => core::dexterity_down::at_end_of_turn(owner, amount),
         PowerId::WraithForm => silent::wraith_form::at_end_of_turn(owner, amount),
+        PowerId::Equilibrium => {
+            smallvec::smallvec![crate::runtime::action::Action::RetainNonEtherealHandCards]
+        }
         PowerId::RetainCards => silent::retain_cards::at_end_of_turn(_state, owner, amount),
         PowerId::Rebound => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
             target: owner,
@@ -1027,6 +1030,20 @@ pub fn resolve_power_at_end_of_round(
             core::draw_reduction::at_end_of_round(owner, amount, just_applied)
         }
         PowerId::Blur => silent::blur::at_end_of_round(owner, amount),
+        PowerId::Equilibrium => {
+            if amount == 0 {
+                smallvec::smallvec![crate::runtime::action::Action::RemovePower {
+                    target: owner,
+                    power_id: PowerId::Equilibrium,
+                }]
+            } else {
+                smallvec::smallvec![crate::runtime::action::Action::ReducePower {
+                    target: owner,
+                    power_id: PowerId::Equilibrium,
+                    amount: 1,
+                }]
+            }
+        }
         PowerId::Slow => core::slow::at_end_of_round(owner, amount),
         PowerId::IntangiblePlayer => core::intangible::at_end_of_round(owner, amount),
         PowerId::Ritual => core::ritual::at_end_of_round(_state, owner, amount),
