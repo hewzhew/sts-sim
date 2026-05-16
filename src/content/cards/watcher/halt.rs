@@ -27,10 +27,14 @@ pub fn definition() -> CardDefinition {
 
 pub fn halt_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
     let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
+    let mut wrath_block_card = card.clone();
+    wrath_block_card.base_block_override = Some(evaluated.base_magic_num_mut);
+    let wrath_block =
+        crate::content::cards::evaluate_card_for_play(&wrath_block_card, state, None);
     smallvec::smallvec![ActionInfo {
         action: Action::Halt {
             block: evaluated.base_block_mut,
-            additional: evaluated.base_magic_num_mut,
+            additional: wrath_block.base_block_mut,
         },
         insertion_mode: AddTo::Bottom,
     }]

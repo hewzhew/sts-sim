@@ -1833,6 +1833,28 @@ fn watcher_evaluate_flying_sleeves_and_halt_match_java_sources() {
             amount: 18,
         })
     );
+
+    let mut dex_state = crate::test_support::blank_test_combat();
+    dex_state.entities.power_db.insert(
+        0,
+        vec![Power {
+            power_type: PowerId::Dexterity,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let dex_halt = resolve_card_play(CardId::Halt, &dex_state, &halt_plus, None);
+    assert_eq!(
+        dex_halt[0].action,
+        Action::Halt {
+            block: 6,
+            additional: 16,
+        },
+        "Java Halt.applyPowers applies block modifiers to both normal block and the Wrath block value"
+    );
 }
 
 #[test]
@@ -4238,6 +4260,28 @@ fn watcher_spirit_shield_runtime_actions_match_java_apply_powers_count() {
     let actions_after_hand_removal =
         resolve_card_play(CardId::SpiritShield, &already_removed, &spirit_plus, None);
     assert_eq!(actions_after_hand_removal[0].action, actions[0].action);
+
+    let mut dex_state = state.clone();
+    dex_state.entities.power_db.insert(
+        0,
+        vec![Power {
+            power_type: PowerId::Dexterity,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let dex_actions = resolve_card_play(CardId::SpiritShield, &dex_state, &spirit_plus, None);
+    assert_eq!(
+        dex_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 14,
+        },
+        "Java SpiritShield.applyPowers sets dynamic baseBlock, then super.applyPowers applies Dexterity"
+    );
 }
 
 #[test]
