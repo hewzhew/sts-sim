@@ -715,6 +715,47 @@ pub fn handle_exhaust_from_hand(
     });
 }
 
+pub fn handle_recycle(state: &mut CombatState) {
+    if state.zones.hand.is_empty() {
+        return;
+    }
+
+    if state.zones.hand.len() == 1 {
+        let card_uuid = state.zones.hand[0].uuid;
+        handle_recycle_selected_card(card_uuid, state);
+        return;
+    }
+
+    state.queue_action_front(Action::SuspendForHandSelect {
+        min: 1,
+        max: 1,
+        can_cancel: false,
+        filter: crate::state::HandSelectFilter::Any,
+        reason: crate::state::HandSelectReason::Recycle,
+    });
+}
+
+pub fn handle_recycle_selected_card(card_uuid: u32, state: &mut CombatState) {
+    let Some(card) = state.zones.hand.iter().find(|card| card.uuid == card_uuid) else {
+        return;
+    };
+    let cost_for_turn = card.cost_for_turn_java();
+    let energy_gain = if cost_for_turn == -1 {
+        state.turn.energy as i32
+    } else if cost_for_turn > 0 {
+        cost_for_turn
+    } else {
+        0
+    };
+
+    if energy_gain > 0 {
+        state.queue_action_front(Action::GainEnergy {
+            amount: energy_gain,
+        });
+    }
+    handle_exhaust_card(card_uuid, crate::state::PileType::Hand, state);
+}
+
 pub fn handle_move_card(
     card_uuid: u32,
     from: crate::state::PileType,

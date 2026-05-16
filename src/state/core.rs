@@ -130,6 +130,7 @@ pub enum HandSelectReason {
     Nightmare { amount: u8 },
     Upgrade,
     GamblingChip,
+    Recycle,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -254,6 +255,7 @@ impl From<HandSelectReason> for SelectionReason {
             HandSelectReason::Nightmare { .. } => SelectionReason::Nightmare,
             HandSelectReason::Upgrade => SelectionReason::Upgrade,
             HandSelectReason::GamblingChip => SelectionReason::GamblingChip,
+            HandSelectReason::Recycle => SelectionReason::Recycle,
         }
     }
 }

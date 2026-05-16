@@ -455,6 +455,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             any_number,
             can_pick_zero,
         } => cards::handle_exhaust_from_hand(amount, random, any_number, can_pick_zero, state),
+        Action::Recycle => cards::handle_recycle(state),
         Action::MoveCard {
             card_uuid,
             from,

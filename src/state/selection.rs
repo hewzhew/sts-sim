@@ -36,6 +36,7 @@ pub enum SelectionReason {
     AttackFromDeckToHand,
     DiscardToHand,
     DiscardToHandNoCostChange,
+    Recycle,
     Discovery,
 }
 

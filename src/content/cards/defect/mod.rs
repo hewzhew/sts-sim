@@ -51,6 +51,7 @@ pub mod rainbow;
 pub mod reboot;
 pub mod rebound;
 pub mod recursion;
+pub mod recycle;
 pub mod reinforced_body;
 pub mod reprogram;
 pub mod rip_and_tear;

@@ -1257,6 +1257,7 @@ fn hand_select_can_fizzle_when_empty(reason: crate::state::HandSelectReason) -> 
             | crate::state::HandSelectReason::Setup
             | crate::state::HandSelectReason::PutToBottomOfDraw
             | crate::state::HandSelectReason::Nightmare { .. }
+            | crate::state::HandSelectReason::Recycle
     )
 }
 

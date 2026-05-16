@@ -184,6 +184,14 @@ pub fn handle_hand_select(
                         });
                     }
                 }
+                HandSelectReason::Recycle => {
+                    for uuid in &uuids {
+                        crate::engine::action_handlers::cards::handle_recycle_selected_card(
+                            *uuid,
+                            combat_state,
+                        );
+                    }
+                }
                 HandSelectReason::Discard => {
                     // Java DiscardAction selected-card path triggers card
                     // manual-discard hooks before incrementDiscard relic hooks.
@@ -1024,6 +1032,52 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![40, 30],
             "Seek keeps the submitted selection order when resolving selected cards"
+        );
+    }
+
+    #[test]
+    fn recycle_hand_selection_gains_energy_and_exhausts_selected_card() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                candidate_uuids: vec![20, 21],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: HandSelectReason::Recycle,
+            });
+        let mut combat_state = blank_test_combat();
+        let mut selected = CombatCard::new(CardId::Strike, 20);
+        selected.update_cost_java(2);
+        selected.set_cost_for_turn_java(0);
+        combat_state.zones.hand = vec![selected, CombatCard::new(CardId::Defend, 21)];
+
+        handle_hand_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[20, 21],
+            1,
+            true,
+            false,
+            HandSelectReason::Recycle,
+            ClientInput::SubmitHandSelect(vec![20]),
+        )
+        .expect("Recycle should resolve selected hand card");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![21]
+        );
+        assert_eq!(combat_state.zones.exhaust_pile[0].uuid, 20);
+        assert_eq!(
+            combat_state.pop_next_action(),
+            None,
+            "Recycle reads costForTurn, so a temporarily free card gives no energy even if combat cost is positive"
         );
     }
 

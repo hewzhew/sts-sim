@@ -426,6 +426,9 @@ pub enum Action {
         any_number: bool,
         can_pick_zero: bool,
     },
+    /// Java Defect `RecycleAction`: choose/exhaust a hand card and gain
+    /// energy from its current costForTurn.
+    Recycle,
     DiscardCard {
         card_uuid: u32,
     },

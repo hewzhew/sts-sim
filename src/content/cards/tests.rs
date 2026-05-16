@@ -4742,6 +4742,76 @@ fn seek_definition_runtime_and_draw_pile_selection_match_java_sources() {
 }
 
 #[test]
+fn recycle_definition_runtime_and_energy_gain_match_java_sources() {
+    let recycle = get_card_definition(CardId::Recycle);
+    assert_eq!(recycle.name, "Recycle");
+    assert_eq!(recycle.card_type, CardType::Skill);
+    assert_eq!(recycle.rarity, CardRarity::Uncommon);
+    assert_eq!(recycle.cost, 1);
+    assert_eq!(recycle.target, CardTarget::SelfTarget);
+    assert_eq!(java_id(CardId::Recycle), "Recycle");
+
+    let state = crate::test_support::blank_test_combat();
+    assert_eq!(
+        resolve_card_play(
+            CardId::Recycle,
+            &state,
+            &CombatCard::new(CardId::Recycle, 387),
+            None,
+        )[0]
+        .action,
+        Action::Recycle
+    );
+    let mut plus = CombatCard::new(CardId::Recycle, 388);
+    plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&plus), Some(0));
+    assert_eq!(plus.get_cost(), 0);
+
+    let mut empty = crate::test_support::blank_test_combat();
+    crate::engine::action_handlers::execute_action(Action::Recycle, &mut empty);
+    assert_eq!(empty.pop_next_action(), None);
+
+    let mut one_card = crate::test_support::blank_test_combat();
+    one_card.zones.hand = vec![CombatCard::new(CardId::Bash, 389)];
+    crate::engine::action_handlers::execute_action(Action::Recycle, &mut one_card);
+    assert!(one_card.zones.hand.is_empty());
+    assert_eq!(one_card.zones.exhaust_pile[0].uuid, 389);
+    assert_eq!(
+        one_card.pop_next_action(),
+        Some(Action::GainEnergy { amount: 2 }),
+        "Java RecycleAction gains positive costForTurn before exhausting the selected card"
+    );
+
+    let mut x_cost = crate::test_support::blank_test_combat();
+    x_cost.turn.energy = 3;
+    x_cost.zones.hand = vec![CombatCard::new(CardId::Whirlwind, 390)];
+    crate::engine::action_handlers::execute_action(Action::Recycle, &mut x_cost);
+    assert_eq!(x_cost.zones.exhaust_pile[0].uuid, 390);
+    assert_eq!(
+        x_cost.pop_next_action(),
+        Some(Action::GainEnergy { amount: 3 }),
+        "Java RecycleAction gives current EnergyPanel energy for X-cost cards"
+    );
+
+    let mut multi = crate::test_support::blank_test_combat();
+    multi.zones.hand = vec![
+        CombatCard::new(CardId::StrikeB, 391),
+        CombatCard::new(CardId::DefendB, 392),
+    ];
+    crate::engine::action_handlers::execute_action(Action::Recycle, &mut multi);
+    assert_eq!(
+        multi.pop_next_action(),
+        Some(Action::SuspendForHandSelect {
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::Recycle,
+        })
+    );
+}
+
+#[test]
 fn fission_definition_runtime_and_orb_actions_match_java_sources() {
     let fission = get_card_definition(CardId::Fission);
     assert_eq!(fission.name, "Fission");
