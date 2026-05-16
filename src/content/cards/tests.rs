@@ -1977,6 +1977,7 @@ fn watcher_tantrum_and_retained_attack_cards_match_java_sources() {
     crate::engine::action_handlers::execute_action(
         Action::UseCardDone {
             should_exhaust: false,
+            trigger_after_use_hooks: true,
         },
         &mut cleanup_state,
     );
@@ -4256,7 +4257,8 @@ fn watcher_signature_move_can_use_requires_no_other_attacks_and_use_matches_java
         matches!(
             autoplay_blocked.pop_next_action(),
             Some(Action::UseCardDone {
-                should_exhaust: false
+                should_exhaust: false,
+                trigger_after_use_hooks: false,
             })
         ),
         "Java queued/autoplay cards still call canUse; Signature Move is blocked by another Attack in hand"
@@ -5550,6 +5552,7 @@ fn rebound_power_skips_card_that_created_it_like_java_just_evoked() {
     crate::engine::action_handlers::execute_action(
         Action::UseCardDone {
             should_exhaust: false,
+            trigger_after_use_hooks: true,
         },
         &mut state,
     );
@@ -5587,6 +5590,7 @@ fn rebound_power_moves_next_non_power_card_to_draw_pile_top() {
     crate::engine::action_handlers::execute_action(
         Action::UseCardDone {
             should_exhaust: false,
+            trigger_after_use_hooks: true,
         },
         &mut state,
     );
@@ -10499,7 +10503,8 @@ fn ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_method
         matches!(
             fizzled_clash_cleanup,
             Some(Action::UseCardDone {
-                should_exhaust: false
+                should_exhaust: false,
+                trigger_after_use_hooks: false,
             })
         ),
         "Java queued/autoplay cards still call canUse; failed autoplay still resolves UseCardAction cleanup"
@@ -14552,6 +14557,7 @@ fn lethal_damage_filters_post_combat_actions_like_java_action_manager() {
     });
     state.queue_action_back(Action::UseCardDone {
         should_exhaust: false,
+        trigger_after_use_hooks: true,
     });
 
     crate::engine::action_handlers::execute_action(
@@ -14584,7 +14590,8 @@ fn lethal_damage_filters_post_combat_actions_like_java_action_manager() {
                 amount: 2
             },
             Action::UseCardDone {
-                should_exhaust: false
+                should_exhaust: false,
+                trigger_after_use_hooks: true,
             }
         ],
         "Java GameActionManager.clearPostCombatActions keeps DamageRandomEnemyAction/Heal/GainBlock/UseCardAction and removes generated cards, draw, energy, powers, and AttackDamageRandomEnemyAction"

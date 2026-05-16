@@ -614,9 +614,10 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             free_to_play_once,
             energy_on_use,
         } => cards::handle_reinforced_body(block_amount, free_to_play_once, energy_on_use, state),
-        Action::UseCardDone { should_exhaust } => {
-            cards::handle_use_card_done(should_exhaust, state)
-        }
+        Action::UseCardDone {
+            should_exhaust,
+            trigger_after_use_hooks,
+        } => cards::handle_use_card_done(should_exhaust, trigger_after_use_hooks, state),
         Action::UseCardAfterUseHooks { card } => {
             cards::handle_use_card_after_use_hooks(*card, state)
         }

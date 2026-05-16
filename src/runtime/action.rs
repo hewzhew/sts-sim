@@ -833,10 +833,13 @@ pub enum Action {
         target: EntityId,
     },
     FleeCombat,
-    /// Deferred card-to-pile placement (matches Java UseCardAction.update() ordering)
+    /// Deferred card-to-pile placement (matches Java UseCardAction.update() ordering).
     /// Card is held in limbo until this action fires, then moved to discard/exhaust.
+    /// Java early-end cleanup routes queued autoplay cards through UseCardAction with
+    /// dontTriggerOnUseCard=true, so those cleanup actions must skip after-use hooks.
     UseCardDone {
         should_exhaust: bool,
+        trigger_after_use_hooks: bool,
     },
     /// Java `UseCardAction.update()` after-use power hook path for cards that
     /// do not enter the normal non-Power discard/exhaust cleanup.

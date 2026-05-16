@@ -1843,9 +1843,17 @@ pub fn handle_use_card_after_use_hooks(
     apply_use_card_after_use_hooks(&card, state);
 }
 
-pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
+pub fn handle_use_card_done(
+    should_exhaust: bool,
+    trigger_after_use_hooks: bool,
+    state: &mut CombatState,
+) {
     if let Some(mut card) = state.zones.limbo.pop() {
-        let placement_overrides = apply_use_card_after_use_hooks(&card, state);
+        let placement_overrides = if trigger_after_use_hooks {
+            apply_use_card_after_use_hooks(&card, state)
+        } else {
+            UseCardPlacementOverrides::default()
+        };
 
         // Java UseCardAction clears this before moving the card to discard or
         // exhaust. Keeping it on a saved/discarded card makes later draws free.
@@ -1884,6 +1892,20 @@ pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
 }
 
 pub fn handle_queue_early_end_turn(state: &mut CombatState) {
+    let queued_cards: Vec<_> = state.zones.queued_cards.drain(..).collect();
+    for queued in queued_cards.into_iter().rev() {
+        if queued.autoplay && !queued.purge_on_use {
+            let should_exhaust = queued
+                .card
+                .exhaust_override
+                .unwrap_or(crate::content::cards::exhausts_when_played(&queued.card));
+            state.zones.limbo.push(queued.card);
+            state.queue_action_back(Action::UseCardDone {
+                should_exhaust,
+                trigger_after_use_hooks: false,
+            });
+        }
+    }
     state.turn.mark_early_end_turn_pending();
 }
 
@@ -2033,7 +2055,10 @@ fn execute_played_card(
 
     if def.card_type != crate::content::cards::CardType::Power && !purge {
         state.zones.limbo.push(played_card);
-        state.queue_action_back(Action::UseCardDone { should_exhaust });
+        state.queue_action_back(Action::UseCardDone {
+            should_exhaust,
+            trigger_after_use_hooks: true,
+        });
     } else {
         state.queue_action_back(Action::UseCardAfterUseHooks {
             card: Box::new(played_card),
@@ -2210,7 +2235,10 @@ pub fn handle_flush_next_queued_card(state: &mut CombatState) {
                 .exhaust_override
                 .unwrap_or(crate::content::cards::exhausts_when_played(&queued.card));
             state.zones.limbo.push(queued.card);
-            state.queue_action_front(Action::UseCardDone { should_exhaust });
+            state.queue_action_front(Action::UseCardDone {
+                should_exhaust,
+                trigger_after_use_hooks: false,
+            });
         }
         if has_more_queued_cards {
             state.queue_action_back(Action::FlushNextQueuedCard);
@@ -2513,8 +2541,8 @@ mod tests {
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
-        handle_return_stasis_card, handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand,
-        handle_use_card_done, obtain_specific_potion_if_allowed,
+        handle_queue_early_end_turn, handle_return_stasis_card, handle_upgrade_all_cards_in_combat,
+        handle_upgrade_all_in_hand, handle_use_card_done, obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
@@ -2522,7 +2550,7 @@ mod tests {
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::action::Action;
-    use crate::runtime::combat::{CombatCard, Power};
+    use crate::runtime::combat::{CombatCard, Power, QueuedCardPlay, QueuedCardSource};
     use crate::test_support::{blank_test_combat, test_monster};
 
     #[test]
@@ -3154,7 +3182,7 @@ mod tests {
         free_strike.free_to_play_once = true;
         discarded.zones.limbo = vec![free_strike];
 
-        handle_use_card_done(false, &mut discarded);
+        handle_use_card_done(false, true, &mut discarded);
 
         assert_eq!(discarded.zones.discard_pile.len(), 1);
         assert!(
@@ -3168,7 +3196,7 @@ mod tests {
         free_havoc_target.exhaust_override = Some(true);
         exhausted.zones.limbo = vec![free_havoc_target];
 
-        handle_use_card_done(true, &mut exhausted);
+        handle_use_card_done(true, true, &mut exhausted);
 
         assert_eq!(exhausted.zones.exhaust_pile.len(), 1);
         assert!(
@@ -3194,7 +3222,7 @@ mod tests {
             havoc_target.exhaust_override = Some(true);
             state.zones.limbo = vec![havoc_target];
 
-            handle_use_card_done(true, &mut state);
+            handle_use_card_done(true, true, &mut state);
 
             assert_eq!(
                 state.rng.card_random_rng.counter, 1,
@@ -3225,7 +3253,7 @@ mod tests {
         let before_counter = no_spoon.rng.card_random_rng.counter;
         no_spoon.zones.limbo = vec![CombatCard::new(CardId::Strike, 93)];
 
-        handle_use_card_done(true, &mut no_spoon);
+        handle_use_card_done(true, true, &mut no_spoon);
 
         assert_eq!(no_spoon.rng.card_random_rng.counter, before_counter);
         assert_eq!(no_spoon.zones.exhaust_pile.len(), 1);
@@ -3239,7 +3267,7 @@ mod tests {
         let before_counter = not_exhausting.rng.card_random_rng.counter;
         not_exhausting.zones.limbo = vec![CombatCard::new(CardId::Strike, 94)];
 
-        handle_use_card_done(false, &mut not_exhausting);
+        handle_use_card_done(false, true, &mut not_exhausting);
 
         assert_eq!(not_exhausting.rng.card_random_rng.counter, before_counter);
         assert_eq!(not_exhausting.zones.discard_pile.len(), 1);
@@ -3308,13 +3336,94 @@ mod tests {
         assert!(matches!(
             state.pop_next_action(),
             Some(Action::UseCardDone {
-                should_exhaust: false
+                should_exhaust: false,
+                trigger_after_use_hooks: false,
             }),
         ));
         assert!(
             state.zones.limbo.iter().any(|card| card.uuid == 711),
             "Java failed autoplay canUse path still routes the card through UseCardAction"
         );
+    }
+
+    #[test]
+    fn early_end_turn_clears_card_queue_and_only_cleans_up_autoplay_cards_like_java() {
+        let mut state = blank_test_combat();
+        crate::content::powers::store::set_powers_for(
+            &mut state,
+            0,
+            vec![Power {
+                power_type: PowerId::Rebound,
+                instance_id: None,
+                amount: 1,
+                extra_data: 1,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        state.zones.queued_cards = std::collections::VecDeque::from([
+            QueuedCardPlay {
+                card: CombatCard::new(CardId::Strike, 712),
+                target: Some(7),
+                energy_on_use: 0,
+                ignore_energy_total: true,
+                autoplay: false,
+                random_target: false,
+                is_end_turn_autoplay: false,
+                purge_on_use: false,
+                source: QueuedCardSource::Normal,
+            },
+            QueuedCardPlay {
+                card: CombatCard::new(CardId::Defend, 713),
+                target: None,
+                energy_on_use: 0,
+                ignore_energy_total: true,
+                autoplay: true,
+                random_target: false,
+                is_end_turn_autoplay: false,
+                purge_on_use: false,
+                source: QueuedCardSource::Normal,
+            },
+        ]);
+
+        handle_queue_early_end_turn(&mut state);
+
+        assert!(state.zones.queued_cards.is_empty());
+        assert_eq!(
+            state
+                .zones
+                .limbo
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![713]
+        );
+        let cleanup = state
+            .pop_next_action()
+            .expect("Java early-end sequence adds UseCardAction only for autoplay queued cards");
+        assert_eq!(
+            cleanup,
+            Action::UseCardDone {
+                should_exhaust: false,
+                trigger_after_use_hooks: false,
+            }
+        );
+
+        crate::engine::action_handlers::execute_action(cleanup, &mut state);
+        assert_eq!(
+            state
+                .zones
+                .discard_pile
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![713],
+            "dontTriggerOnUseCard cleanup must skip Rebound-style after-use hooks"
+        );
+        assert!(state.zones.draw_pile.is_empty());
+        assert!(state.zones.hand.iter().all(|card| card.uuid != 712));
+        assert!(state.zones.discard_pile.iter().all(|card| card.uuid != 712));
+        assert!(state.zones.exhaust_pile.iter().all(|card| card.uuid != 712));
     }
 
     #[test]
