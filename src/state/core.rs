@@ -104,6 +104,9 @@ pub enum PendingChoice {
         destination: crate::runtime::action::CardDestination,
         can_skip: bool,
     },
+    ChooseOneSelect {
+        choices: Vec<ChooseOneCardChoice>,
+    },
     /// StancePotion: player chooses Wrath or Calm. Index 0 = Wrath, 1 = Calm.
     StanceChoice,
 }
@@ -139,6 +142,12 @@ pub struct DiscoveryChoiceState {
     pub colorless: bool,
     pub card_type: Option<CardType>,
     pub can_skip: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChooseOneCardChoice {
+    pub card_id: CardId,
+    pub upgrades: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

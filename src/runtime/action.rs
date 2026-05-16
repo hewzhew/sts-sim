@@ -560,6 +560,11 @@ pub enum Action {
     },
     /// StancePotion: Java ChooseOneAction(ChooseWrath, ChooseCalm)
     SuspendForStanceChoice,
+    /// Java Watcher `ChooseOneAction`: open an option-card choice and run the
+    /// chosen card's `onChoseThisOption` callback.
+    SuspendForChooseOne {
+        choices: Vec<crate::state::ChooseOneCardChoice>,
+    },
     ApplyPower {
         source: EntityId,
         target: EntityId,

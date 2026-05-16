@@ -68,5 +68,6 @@ pub mod wave_of_the_hand;
 pub mod weave;
 pub mod wheel_kick;
 pub mod windmill_strike;
+pub mod wish;
 pub mod worship;
 pub mod wreath_of_flame;

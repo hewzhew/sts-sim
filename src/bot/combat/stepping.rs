@@ -200,6 +200,7 @@ pub(super) fn pending_choice_is_same_turn_frontier(choice: &PendingChoice) -> bo
         | PendingChoice::DiscoverySelect(_)
         | PendingChoice::ScrySelect { .. }
         | PendingChoice::StanceChoice
+        | PendingChoice::ChooseOneSelect { .. }
         | PendingChoice::CardRewardSelect { .. } => true,
     }
 }

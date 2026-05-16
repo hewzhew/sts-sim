@@ -332,6 +332,9 @@ pub enum CardId {
     Swivel,
     Smite,
     Safety,
+    BecomeAlmighty,
+    FameAndFortune,
+    LiveForever,
     Crescendo,
     Tranquility,
     Protect,
@@ -378,6 +381,7 @@ pub enum CardId {
     Meditate,
     Vault,
     Omniscience,
+    Wish,
     // Add more as we expand
 }
 
@@ -746,6 +750,9 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Swivel => watcher::swivel::definition(),
         CardId::Smite => colorless::smite::definition(),
         CardId::Safety => colorless::safety::definition(),
+        CardId::BecomeAlmighty => colorless::become_almighty::definition(),
+        CardId::FameAndFortune => colorless::fame_and_fortune::definition(),
+        CardId::LiveForever => colorless::live_forever::definition(),
         CardId::Crescendo => watcher::crescendo::definition(),
         CardId::Tranquility => watcher::tranquility::definition(),
         CardId::Protect => watcher::protect::definition(),
@@ -792,6 +799,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Meditate => watcher::meditate::definition(),
         CardId::Vault => watcher::vault::definition(),
         CardId::Omniscience => watcher::omniscience::definition(),
+        CardId::Wish => watcher::wish::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1447,6 +1455,7 @@ pub const WATCHER_RARE_POOL: &[CardId] = &[
     CardId::ConjureBlade,
     CardId::Vault,
     CardId::Omniscience,
+    CardId::Wish,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1675,6 +1684,9 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Swivel => "Swivel",
         CardId::Smite => "Smite",
         CardId::Safety => "Safety",
+        CardId::BecomeAlmighty => "BecomeAlmighty",
+        CardId::FameAndFortune => "FameAndFortune",
+        CardId::LiveForever => "LiveForever",
         CardId::Crescendo => "Crescendo",
         CardId::Tranquility => "ClearTheMind",
         CardId::Protect => "Protect",
@@ -1721,6 +1733,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Meditate => "Meditate",
         CardId::Vault => "Vault",
         CardId::Omniscience => "Omniscience",
+        CardId::Wish => "Wish",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -2168,6 +2181,10 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Meditate,
         Vault,
         Omniscience,
+        Wish,
+        BecomeAlmighty,
+        FameAndFortune,
+        LiveForever,
         Neutralize,
         Survivor,
         Anger,

@@ -485,6 +485,7 @@ pub fn decision_type(engine_state: &EngineState) -> &'static str {
         EngineState::PendingChoice(PendingChoice::DiscoverySelect(_)) => "combat_discovery",
         EngineState::PendingChoice(PendingChoice::ScrySelect { .. }) => "combat_scry",
         EngineState::PendingChoice(PendingChoice::CardRewardSelect { .. }) => "combat_card_reward",
+        EngineState::PendingChoice(PendingChoice::ChooseOneSelect { .. }) => "combat_choose_one",
         EngineState::PendingChoice(PendingChoice::StanceChoice) => "combat_stance",
         EngineState::RewardScreen(reward_state) if reward_state.pending_card_choice.is_some() => {
             "reward_card_choice"

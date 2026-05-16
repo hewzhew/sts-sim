@@ -338,6 +338,7 @@ pub fn build_map_observation_if_relevant(
         | EngineState::PendingChoice(PendingChoice::DiscoverySelect(_))
         | EngineState::PendingChoice(PendingChoice::ScrySelect { .. })
         | EngineState::PendingChoice(PendingChoice::CardRewardSelect { .. })
+        | EngineState::PendingChoice(PendingChoice::ChooseOneSelect { .. })
         | EngineState::PendingChoice(PendingChoice::StanceChoice)
         | EngineState::GameOver(_) => None,
         EngineState::RewardScreen(_)
@@ -522,6 +523,7 @@ fn run_pending_choice_kind(engine_state: &EngineState) -> Option<String> {
                 PendingChoice::DiscoverySelect(_) => "discovery_select",
                 PendingChoice::ScrySelect { .. } => "scry_select",
                 PendingChoice::CardRewardSelect { .. } => "card_reward_select",
+                PendingChoice::ChooseOneSelect { .. } => "choose_one_select",
                 PendingChoice::StanceChoice => "stance_choice",
             }
             .to_string(),
@@ -589,6 +591,33 @@ fn build_run_pending_choice_observation(
                         source_pile: None,
                     },
                 )
+                .collect(),
+        }),
+        PendingChoice::ChooseOneSelect { choices } => Some(RunPendingChoiceObservationV0 {
+            kind: "choose_one_select".to_string(),
+            min_select: 1,
+            max_select: 1,
+            can_cancel: false,
+            reason: None,
+            source_pile: None,
+            options: choices
+                .iter()
+                .enumerate()
+                .map(|(option_index, choice)| {
+                    let def = crate::content::cards::get_card_definition(choice.card_id);
+                    RunPendingChoiceOptionObservationV0 {
+                        option_index,
+                        label: if choice.upgrades > 0 {
+                            format!("{}+{}", def.name, choice.upgrades)
+                        } else {
+                            def.name.to_string()
+                        },
+                        card_id: Some(format!("{:?}", choice.card_id)),
+                        card_uuid: None,
+                        selection_uuids: Vec::new(),
+                        source_pile: None,
+                    }
+                })
                 .collect(),
         }),
         PendingChoice::StanceChoice => Some(RunPendingChoiceObservationV0 {

@@ -572,6 +572,12 @@ pub fn tick_engine(
                     *engine_state = EngineState::PendingChoice(PendingChoice::StanceChoice);
                     return true;
                 }
+                Action::SuspendForChooseOne { choices } => {
+                    update_monster_intents(combat_state);
+                    *engine_state =
+                        EngineState::PendingChoice(PendingChoice::ChooseOneSelect { choices });
+                    return true;
+                }
 
                 Action::Scry(amount) => {
                     let amount = crate::content::relics::hooks::on_scry(combat_state, amount);
@@ -1249,6 +1255,23 @@ fn resolve_pending_choice(
                 _ => Err("Invalid input for card reward selection"),
             }
         }
+        PendingChoice::ChooseOneSelect { ref choices } => {
+            if let ClientInput::SubmitDiscoverChoice(idx) = input {
+                let Some(choice) = choices.get(idx).copied() else {
+                    return Err("Invalid choose-one choice index");
+                };
+                let actions = crate::content::cards::resolve_choose_one_option(
+                    choice.card_id,
+                    choice.upgrades,
+                    combat_state,
+                );
+                combat_state.queue_actions(actions);
+                *engine_state = EngineState::CombatProcessing;
+                Ok(())
+            } else {
+                Err("Expected SubmitDiscoverChoice for choose-one selection")
+            }
+        }
         PendingChoice::StanceChoice => {
             // Player picks 0=Wrath, 1=Calm
             if let ClientInput::SubmitDiscoverChoice(idx) = input {
@@ -1712,6 +1735,46 @@ mod tests {
             }
             other => panic!("expected second Omniscience queued play, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn choose_one_selection_queues_selected_option_callback() {
+        let mut combat_state = blank_test_combat();
+        let mut engine_state = EngineState::PendingChoice(PendingChoice::ChooseOneSelect {
+            choices: vec![
+                crate::state::ChooseOneCardChoice {
+                    card_id: CardId::BecomeAlmighty,
+                    upgrades: 1,
+                },
+                crate::state::ChooseOneCardChoice {
+                    card_id: CardId::FameAndFortune,
+                    upgrades: 1,
+                },
+                crate::state::ChooseOneCardChoice {
+                    card_id: CardId::LiveForever,
+                    upgrades: 1,
+                },
+            ],
+        });
+
+        resolve_pending_choice(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::SubmitDiscoverChoice(2),
+        )
+        .expect("valid choose-one selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(
+            combat_state.pop_next_action(),
+            Some(Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::PlatedArmor,
+                amount: 8,
+            }),
+            "Wish's LiveForever+ option should run the Java onChoseThisOption callback"
+        );
     }
 
     #[test]

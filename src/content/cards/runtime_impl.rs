@@ -2,7 +2,7 @@
 
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
-use crate::runtime::action::{Action, ActionInfo};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
@@ -81,6 +81,9 @@ pub fn resolve_card_play_with_context(
         CardId::Swivel => watcher::swivel::swivel_play(_state, _card),
         CardId::Smite => colorless::smite::smite_play(_state, _card, t),
         CardId::Safety => colorless::safety::safety_play(_state, _card),
+        CardId::BecomeAlmighty | CardId::FameAndFortune | CardId::LiveForever => {
+            resolve_choose_one_option(card_id, _card.upgrades, _state)
+        }
         CardId::Crescendo => watcher::crescendo::crescendo_play(_state, _card),
         CardId::Tranquility => watcher::tranquility::tranquility_play(_state, _card),
         CardId::Protect => watcher::protect::protect_play(_state, _card),
@@ -133,6 +136,7 @@ pub fn resolve_card_play_with_context(
         CardId::Meditate => watcher::meditate::meditate_play(_state, _card),
         CardId::Vault => watcher::vault::vault_play(_state, _card),
         CardId::Omniscience => watcher::omniscience::omniscience_play(_state, _card),
+        CardId::Wish => watcher::wish::wish_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -1056,6 +1060,43 @@ fn can_play_card_internal(
     }
 
     Ok(())
+}
+
+pub fn resolve_choose_one_option(
+    card_id: CardId,
+    upgrades: u8,
+    state: &CombatState,
+) -> SmallVec<[ActionInfo; 4]> {
+    let mut card = CombatCard::new(card_id, 0);
+    card.upgrades = upgrades;
+    let evaluated = evaluate_card_for_play(&card, state, None);
+    match card_id {
+        CardId::BecomeAlmighty => smallvec::smallvec![ActionInfo {
+            action: Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::Strength,
+                amount: evaluated.base_magic_num_mut,
+            },
+            insertion_mode: AddTo::Bottom,
+        }],
+        CardId::FameAndFortune => smallvec::smallvec![ActionInfo {
+            action: Action::GainGold {
+                amount: evaluated.base_magic_num_mut,
+            },
+            insertion_mode: AddTo::Bottom,
+        }],
+        CardId::LiveForever => smallvec::smallvec![ActionInfo {
+            action: Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::PlatedArmor,
+                amount: evaluated.base_magic_num_mut,
+            },
+            insertion_mode: AddTo::Bottom,
+        }],
+        _ => smallvec::smallvec![],
+    }
 }
 
 /// A global hook called immediately after a card is played to aggregate passive triggers from the state (e.g. Curses).

@@ -1021,6 +1021,9 @@ fn enumerate_pending_choice_actions(
             }
             actions
         }
+        PendingChoice::ChooseOneSelect { choices } => (0..choices.len())
+            .map(|index| CombatAction::SubmitDiscoverChoice { index })
+            .collect(),
         PendingChoice::StanceChoice => vec![
             CombatAction::SubmitDiscoverChoice { index: 0 },
             CombatAction::SubmitDiscoverChoice { index: 1 },
@@ -1212,6 +1215,7 @@ fn pending_choice_kind(engine_state: &EngineState) -> Option<String> {
                 PendingChoice::DiscoverySelect(_) => "discovery_select",
                 PendingChoice::ScrySelect { .. } => "scry_select",
                 PendingChoice::CardRewardSelect { .. } => "card_reward_select",
+                PendingChoice::ChooseOneSelect { .. } => "choose_one_select",
                 PendingChoice::StanceChoice => "stance_choice",
             }
             .to_string(),
@@ -1275,6 +1279,33 @@ fn build_pending_choice_observation(
                         source_pile: None,
                     },
                 )
+                .collect(),
+        }),
+        PendingChoice::ChooseOneSelect { choices } => Some(CombatObservationPendingChoice {
+            kind: "choose_one_select".to_string(),
+            min_select: 1,
+            max_select: 1,
+            can_cancel: false,
+            reason: None,
+            source_pile: None,
+            options: choices
+                .iter()
+                .enumerate()
+                .map(|(option_index, choice)| {
+                    let def = get_card_definition(choice.card_id);
+                    CombatObservationPendingChoiceOption {
+                        option_index,
+                        label: if choice.upgrades > 0 {
+                            format!("{}+{}", def.name, choice.upgrades)
+                        } else {
+                            def.name.to_string()
+                        },
+                        card_id: Some(format!("{:?}", choice.card_id)),
+                        card_uuid: None,
+                        selection_uuids: Vec::new(),
+                        source_pile: None,
+                    }
+                })
                 .collect(),
         }),
         PendingChoice::StanceChoice => Some(CombatObservationPendingChoice {

@@ -3352,6 +3352,118 @@ fn watcher_omniscience_matches_java_sources() {
 }
 
 #[test]
+fn watcher_wish_and_option_cards_match_java_sources() {
+    let java_map = build_java_id_map();
+    assert_eq!(java_id(CardId::Wish), "Wish");
+    assert_eq!(java_map.get("Wish"), Some(&CardId::Wish));
+    assert_eq!(
+        java_map.get("BecomeAlmighty"),
+        Some(&CardId::BecomeAlmighty)
+    );
+    assert_eq!(
+        java_map.get("FameAndFortune"),
+        Some(&CardId::FameAndFortune)
+    );
+    assert_eq!(java_map.get("LiveForever"), Some(&CardId::LiveForever));
+
+    let wish = get_card_definition(CardId::Wish);
+    assert_eq!(wish.name, "Wish");
+    assert_eq!(wish.card_type, CardType::Skill);
+    assert_eq!(wish.rarity, CardRarity::Rare);
+    assert_eq!(wish.cost, 3);
+    assert_eq!(wish.base_damage, 3);
+    assert_eq!(wish.base_magic, 25);
+    assert_eq!(wish.base_block, 6);
+    assert_eq!(wish.target, CardTarget::None);
+    assert!(wish.exhaust);
+    assert!(wish.tags.contains(&CardTag::Healing));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Wish));
+
+    let almighty = get_card_definition(CardId::BecomeAlmighty);
+    assert_eq!(almighty.card_type, CardType::Power);
+    assert_eq!(almighty.rarity, CardRarity::Special);
+    assert_eq!(almighty.cost, -2);
+    assert_eq!(almighty.base_magic, 3);
+    assert_eq!(almighty.upgrade_magic, 1);
+
+    let fortune = get_card_definition(CardId::FameAndFortune);
+    assert_eq!(fortune.card_type, CardType::Skill);
+    assert_eq!(fortune.rarity, CardRarity::Special);
+    assert_eq!(fortune.cost, -2);
+    assert_eq!(fortune.base_magic, 25);
+    assert_eq!(fortune.upgrade_magic, 5);
+
+    let live = get_card_definition(CardId::LiveForever);
+    assert_eq!(live.card_type, CardType::Power);
+    assert_eq!(live.rarity, CardRarity::Special);
+    assert_eq!(live.cost, -2);
+    assert_eq!(live.base_magic, 6);
+    assert_eq!(live.upgrade_magic, 2);
+
+    let state = crate::test_support::blank_test_combat();
+    let mut wish_plus = CombatCard::new(CardId::Wish, 1047);
+    wish_plus.upgrades = 1;
+    let actions = resolve_card_play(CardId::Wish, &state, &wish_plus, None);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::SuspendForChooseOne {
+            choices: vec![
+                crate::state::ChooseOneCardChoice {
+                    card_id: CardId::BecomeAlmighty,
+                    upgrades: 1,
+                },
+                crate::state::ChooseOneCardChoice {
+                    card_id: CardId::FameAndFortune,
+                    upgrades: 1,
+                },
+                crate::state::ChooseOneCardChoice {
+                    card_id: CardId::LiveForever,
+                    upgrades: 1,
+                },
+            ],
+        },
+        "Java Wish upgrades the three option cards before ChooseOneAction when Wish is upgraded"
+    );
+}
+
+#[test]
+fn watcher_wish_option_callbacks_match_java_on_chose_this_option() {
+    let state = crate::test_support::blank_test_combat();
+
+    let almighty = resolve_choose_one_option(CardId::BecomeAlmighty, 1, &state);
+    assert_eq!(
+        almighty[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 4,
+        },
+        "BecomeAlmighty+ applies 4 Strength"
+    );
+
+    let fortune = resolve_choose_one_option(CardId::FameAndFortune, 1, &state);
+    assert_eq!(
+        fortune[0].action,
+        Action::GainGold { amount: 30 },
+        "FameAndFortune+ gains 30 gold"
+    );
+
+    let live = resolve_choose_one_option(CardId::LiveForever, 1, &state);
+    assert_eq!(
+        live[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::PlatedArmor,
+            amount: 8,
+        },
+        "LiveForever+ applies 8 Plated Armor"
+    );
+}
+
+#[test]
 fn watcher_scry_card_runtime_actions_match_java_use_methods() {
     let state = crate::test_support::blank_test_combat();
 

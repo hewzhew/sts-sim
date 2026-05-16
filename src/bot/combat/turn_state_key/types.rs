@@ -219,6 +219,7 @@ pub(in crate::bot::combat) enum StablePendingChoiceKey {
         can_skip: bool,
         cards: Vec<String>,
     },
+    ChooseOne(Vec<String>),
     StanceChoice,
 }
 
@@ -569,6 +570,7 @@ impl StablePendingChoiceKey {
                 can_skip,
                 cards,
             } => format!("card_reward:{destination}:{can_skip}:{}", cards.join("|")),
+            StablePendingChoiceKey::ChooseOne(cards) => format!("choose_one:{}", cards.join("|")),
             StablePendingChoiceKey::StanceChoice => "stance_choice".to_string(),
         }
     }

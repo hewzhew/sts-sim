@@ -760,6 +760,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         | Action::SuspendForGridSelect { .. }
         | Action::SuspendForDiscovery { .. }
         | Action::SuspendForStanceChoice
+        | Action::SuspendForChooseOne { .. }
         | Action::SuspendForCardReward { .. } => {
             // These suspend actions are intercepted in engine::core and converted into
             // PendingChoice states. Reaching the thin dispatcher is not actionable noise.
