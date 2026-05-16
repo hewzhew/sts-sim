@@ -2710,6 +2710,49 @@ fn watcher_energy_retain_and_block_hook_powers_match_java_sources() {
         .as_slice(),
         &[Action::ReduceRetainedHandCosts { amount: 1 }]
     );
+
+    let mut priority_state = crate::test_support::blank_test_combat();
+    priority_state.zones.hand = vec![CombatCard::new(CardId::Strike, 1007)];
+    crate::content::powers::store::set_powers_for(
+        &mut priority_state,
+        0,
+        vec![
+            Power {
+                power_type: PowerId::EstablishmentPower,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            },
+            Power {
+                power_type: PowerId::RetainCards,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            },
+        ],
+    );
+    crate::engine::action_handlers::execute_action(Action::EndTurnTrigger, &mut priority_state);
+    assert_eq!(
+        priority_state.pop_next_action(),
+        Some(Action::SuspendForHandSelect {
+            min: 0,
+            max: 1,
+            can_cancel: true,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::Retain,
+        }),
+        "Java sorts powers by priority, so RetainCardsPower queues before EstablishmentPower"
+    );
+    assert_eq!(
+        priority_state.pop_next_action(),
+        Some(Action::ReduceRetainedHandCosts { amount: 1 }),
+        "EstablishmentPowerAction must run after the retain choice so selected cards can be discounted"
+    );
+
     let mut reduce_state = crate::test_support::blank_test_combat();
     let mut retained = CombatCard::new(CardId::Strike, 1003);
     retained.retain_override = Some(true);
@@ -3062,6 +3105,19 @@ fn watcher_delayed_energy_batch_matches_java_sources() {
             target: 0,
             power_id: PowerId::CollectPower,
         })
+    );
+
+    let miracle = CombatCard::new(CardId::Miracle, 1016);
+    assert_eq!(
+        resolve_card_play(CardId::Miracle, &state, &miracle, None)[0].action,
+        Action::GainEnergy { amount: 1 }
+    );
+    let mut miracle_plus = CombatCard::new(CardId::Miracle, 1017);
+    miracle_plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::Miracle, &state, &miracle_plus, None)[0].action,
+        Action::GainEnergy { amount: 2 },
+        "Java Miracle.use gains 2 energy when the Miracle card itself is upgraded"
     );
 
     let mut deus_plus = CombatCard::new(CardId::DeusExMachina, 1013);

@@ -478,6 +478,8 @@ fn handle_apply_power_detailed_internal(
         } else {
             store::remove_power_type(state, target, power_id);
         }
+    } else {
+        store::sort_powers_for_java(state, target);
     }
 
     // C2: Corruption on-apply hook

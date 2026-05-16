@@ -43,11 +43,21 @@ pub fn ensure_powers_for_mut(state: &mut CombatState, entity: EntityId) -> &mut 
     state.entities.power_db.entry(entity).or_default()
 }
 
+pub fn sort_powers_for_java(state: &mut CombatState, entity: EntityId) {
+    if let Some(powers) = state.entities.power_db.get_mut(&entity) {
+        powers.sort_by(|left, right| {
+            crate::content::powers::power_priority(left.power_type)
+                .cmp(&crate::content::powers::power_priority(right.power_type))
+        });
+    }
+}
+
 pub fn set_powers_for(state: &mut CombatState, entity: EntityId, powers: Vec<Power>) {
     if powers.is_empty() {
         state.entities.power_db.remove(&entity);
     } else {
         state.entities.power_db.insert(entity, powers);
+        sort_powers_for_java(state, entity);
     }
     if entity == 0 {
         state.recompute_turn_start_draw_modifier();

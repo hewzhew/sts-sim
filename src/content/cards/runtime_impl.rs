@@ -293,8 +293,9 @@ pub fn resolve_card_play_with_context(
         CardId::BodySlam => ironclad::body_slam::body_slam_play(_state, _card, t),
         CardId::Pummel => ironclad::pummel::pummel_play(_state, _card, t),
         CardId::Miracle => {
+            let amount = if _card.upgrades > 0 { 2 } else { 1 };
             smallvec::smallvec![ActionInfo {
-                action: crate::runtime::action::Action::GainEnergy { amount: 1 },
+                action: crate::runtime::action::Action::GainEnergy { amount },
                 insertion_mode: crate::runtime::action::AddTo::Bottom,
             }]
         }

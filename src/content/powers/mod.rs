@@ -152,6 +152,21 @@ pub struct PowerDefinition {
     pub name: &'static str,
 }
 
+pub fn power_priority(id: PowerId) -> i32 {
+    match id {
+        PowerId::Confusion => 0,
+        PowerId::DoubleDamage | PowerId::PenNibPower => 6,
+        PowerId::Frail => 10,
+        PowerId::DrawCardNextTurn => 20,
+        PowerId::EstablishmentPower | PowerId::ToolsOfTheTrade => 25,
+        PowerId::Flight | PowerId::Reactive => 50,
+        PowerId::Intangible | PowerId::IntangiblePlayer => 75,
+        PowerId::Invincible | PowerId::Weak => 99,
+        PowerId::Constricted => 105,
+        _ => 5,
+    }
+}
+
 fn class_pool_for_rarity(
     player_class: &str,
     rarity: crate::content::cards::CardRarity,
