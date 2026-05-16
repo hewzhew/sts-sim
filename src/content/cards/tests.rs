@@ -6238,6 +6238,29 @@ fn silent_hand_conversion_cards_queue_java_execution_actions() {
         Action::BladeFury { upgraded: true }
     );
 
+    let mut blade_state_base = crate::test_support::blank_test_combat();
+    blade_state_base.zones.hand = vec![CombatCard::new(CardId::Strike, 905)];
+    crate::engine::action_handlers::execute_action(
+        Action::BladeFury { upgraded: false },
+        &mut blade_state_base,
+    );
+    assert_eq!(
+        blade_state_base.pop_next_action(),
+        Some(Action::DiscardFromHand {
+            amount: 1,
+            random: false,
+            end_turn: false,
+        })
+    );
+    assert_eq!(
+        blade_state_base.pop_next_action(),
+        Some(Action::MakeTempCardInHand {
+            card_id: CardId::Shiv,
+            amount: 1,
+            upgraded: false,
+        })
+    );
+
     let mut blade_state = crate::test_support::blank_test_combat();
     blade_state.zones.hand = vec![
         CombatCard::new(CardId::Strike, 902),
@@ -7703,6 +7726,39 @@ fn silent_x_cost_power_cards_match_java_actions() {
     );
     assert!(doppelganger_state.pop_next_action().is_none());
 
+    let mut free_doppelganger_state = crate::test_support::blank_test_combat();
+    free_doppelganger_state.turn.energy = 4;
+    crate::engine::action_handlers::execute_action(
+        Action::Doppelganger {
+            upgraded: true,
+            free_to_play_once: true,
+            energy_on_use: -1,
+        },
+        &mut free_doppelganger_state,
+    );
+    assert_eq!(
+        free_doppelganger_state.turn.energy, 4,
+        "free-to-play Doppelganger uses current energy for X but does not spend it"
+    );
+    assert_eq!(
+        free_doppelganger_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Energized,
+            amount: 5,
+        })
+    );
+    assert_eq!(
+        free_doppelganger_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::DrawCardNextTurn,
+            amount: 5,
+        })
+    );
+
     let mut malaise_state = crate::test_support::blank_test_combat();
     malaise_state.turn.energy = 5;
     crate::engine::action_handlers::execute_action(
@@ -7737,6 +7793,40 @@ fn silent_x_cost_power_cards_match_java_actions() {
         })
     );
     assert!(malaise_state.pop_next_action().is_none());
+
+    let mut free_malaise_state = crate::test_support::blank_test_combat();
+    free_malaise_state.turn.energy = 3;
+    crate::engine::action_handlers::execute_action(
+        Action::Malaise {
+            target: 7,
+            upgraded: true,
+            free_to_play_once: true,
+            energy_on_use: 2,
+        },
+        &mut free_malaise_state,
+    );
+    assert_eq!(
+        free_malaise_state.turn.energy, 3,
+        "free-to-play Malaise keeps energy but still uses energy_on_use for X"
+    );
+    assert_eq!(
+        free_malaise_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Strength,
+            amount: -3,
+        })
+    );
+    assert_eq!(
+        free_malaise_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Weak,
+            amount: 3,
+        })
+    );
 
     let mut chemical_x_state = crate::test_support::blank_test_combat();
     chemical_x_state.turn.energy = 0;
@@ -9003,6 +9093,26 @@ fn reflex_and_tactician_manual_discard_hooks_match_java_order() {
         reflex_state.pop_next_action(),
         Some(Action::DrawCards(2)),
         "Java DiscardSpecificCardAction/GamblingChipAction increments discard before Reflex.triggerOnManualDiscard"
+    );
+
+    let mut reflex_plus_state = crate::test_support::blank_test_combat();
+    let mut reflex_plus = CombatCard::new(CardId::Reflex, 872);
+    reflex_plus.upgrades = 1;
+    reflex_plus_state.zones.hand = vec![reflex_plus];
+    crate::engine::action_handlers::cards::handle_discard_card(872, &mut reflex_plus_state);
+    assert_eq!(
+        reflex_plus_state.pop_next_action(),
+        Some(Action::DrawCards(3)),
+        "Reflex+ manual discard derives magic from definition + upgrades, not prefilled render fields"
+    );
+
+    let mut tactician_base_state = crate::test_support::blank_test_combat();
+    tactician_base_state.zones.hand = vec![CombatCard::new(CardId::Tactician, 873)];
+    crate::engine::action_handlers::cards::handle_discard_card(873, &mut tactician_base_state);
+    assert_eq!(
+        tactician_base_state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 1 }),
+        "Tactician base manual discard derives magic from definition + upgrades"
     );
 
     let mut tactician_state = crate::test_support::blank_test_combat();

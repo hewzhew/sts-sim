@@ -20,7 +20,6 @@ buckets:
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import re
 import sys
 from dataclasses import dataclass
@@ -204,7 +203,6 @@ def markdown_table_row(cells: list[str]) -> str:
 
 
 def render_report(root: Path, matches_by_file: dict[str, list[Match]]) -> str:
-    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total_files = len(matches_by_file)
     total_matches = sum(len(v) for v in matches_by_file.values())
     unclassified = sorted(set(matches_by_file) - set(CLASSIFICATIONS))
@@ -219,7 +217,7 @@ def render_report(root: Path, matches_by_file: dict[str, list[Match]]) -> str:
     lines: list[str] = [
         "# Silent Card Upgrade Read Audit",
         "",
-        f"Generated: `{now}`",
+        "Generated: stable audit output.",
         "",
         "Command:",
         "",
@@ -363,15 +361,36 @@ def main() -> int:
         type=Path,
         default=repo_root / "docs" / "audits" / "SILENT_CARD_UPGRADE_READ_AUDIT.md",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify that the markdown report is up to date without writing it.",
+    )
     args = parser.parse_args()
 
     matches_by_file = scan(repo_root, args.silent_dir)
     report = render_report(repo_root, matches_by_file)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(report, encoding="utf-8", newline="\n")
 
     unclassified = sorted(set(matches_by_file) - set(CLASSIFICATIONS))
-    print(f"wrote {args.output}")
+    if args.check:
+        if not args.output.exists():
+            print(f"missing {args.output}", file=sys.stderr)
+            return 1
+        existing = args.output.read_text(encoding="utf-8")
+        if existing != report:
+            print(f"out of date {args.output}", file=sys.stderr)
+            return 1
+        print(f"checked {args.output}")
+    else:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        existing = (
+            args.output.read_text(encoding="utf-8") if args.output.exists() else None
+        )
+        if existing == report:
+            print(f"unchanged {args.output}")
+        else:
+            args.output.write_text(report, encoding="utf-8", newline="\n")
+            print(f"wrote {args.output}")
     print(
         f"files={len(matches_by_file)} matches={sum(len(v) for v in matches_by_file.values())} unclassified={len(unclassified)}"
     )

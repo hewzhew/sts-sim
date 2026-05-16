@@ -26,6 +26,8 @@ pub fn definition() -> CardDefinition {
 }
 
 pub fn doppelganger_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    // Java passes this.upgraded/freeToPlayOnce/energyOnUse into
+    // DoppelgangerAction; this is action semantics, not rendered magic.
     smallvec::smallvec![ActionInfo {
         action: Action::Doppelganger {
             upgraded: card.upgrades > 0,

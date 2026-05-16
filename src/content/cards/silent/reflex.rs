@@ -30,6 +30,8 @@ pub fn reflex_play(_state: &CombatState, _card: &CombatCard) -> SmallVec<[Action
 }
 
 pub fn reflex_manual_discard(card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    // Manual discard triggers outside normal play evaluation, so derive magic
+    // from the static definition plus the concrete card's upgrade count.
     let def = crate::content::cards::get_card_definition(card.id);
     let upgraded = if card.upgrades > 0 { 1 } else { 0 };
     let magic = def.base_magic + upgraded * def.upgrade_magic;

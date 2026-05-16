@@ -32,6 +32,8 @@ pub fn malaise_play(
     target: Option<EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Malaise requires a valid target");
+    // Java passes this.upgraded/freeToPlayOnce/energyOnUse into MalaiseAction;
+    // the X-cost action computes the eventual amount.
     smallvec::smallvec![ActionInfo {
         action: Action::Malaise {
             target,

@@ -26,6 +26,8 @@ pub fn definition() -> CardDefinition {
 }
 
 pub fn storm_of_steel_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    // Java BladeFuryAction receives this.upgraded to decide whether generated
+    // Shivs are upgraded.
     smallvec::smallvec![ActionInfo {
         action: Action::BladeFury {
             upgraded: card.upgrades > 0,

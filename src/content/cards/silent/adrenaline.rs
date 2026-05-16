@@ -30,6 +30,8 @@ pub fn adrenaline_play(state: &CombatState, card: &CombatCard) -> SmallVec<[Acti
     smallvec::smallvec![
         ActionInfo {
             action: Action::GainEnergy {
+                // Java Adrenaline.use branches on this.upgraded; draw count is
+                // evaluated separately from the card definition.
                 amount: if card.upgrades > 0 { 2 } else { 1 },
             },
             insertion_mode: AddTo::Bottom,

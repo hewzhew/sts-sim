@@ -1,6 +1,6 @@
 # Silent Card Upgrade Read Audit
 
-Generated: `2026-05-16 10:38:13`
+Generated: stable audit output.
 
 Command:
 
@@ -39,12 +39,12 @@ No files.
 
 | File | Fields | Lines | Reason | Recommendation |
 | --- | --- | --- | --- | --- |
-| `src/content/cards/silent/adrenaline.rs` | `upgrades` | `src/content/cards/silent/adrenaline.rs:33` | Java Adrenaline.use 根据 this.upgraded 决定 GainEnergyAction(2/1)；抽牌数已由 play 路径本地 evaluate，不再依赖 mutable magic 预填。 | 保留 direct upgraded 分支，并用测试覆盖 Adrenaline+ 在未预填 base_magic_num_mut 时仍获得 2 能量、抽 2 张。 |
-| `src/content/cards/silent/doppelganger.rs` | `upgrades` | `src/content/cards/silent/doppelganger.rs:31` | Java DoppelgangerAction 直接接收 this.upgraded、freeToPlayOnce、energyOnUse；这里读取 card.upgrades 是动作语义参数，不是数值评价。 | 保留直接传 upgraded，但建议测试覆盖 X 费、free_to_play_once、energy_on_use 与升级组合。 |
-| `src/content/cards/silent/malaise.rs` | `upgrades` | `src/content/cards/silent/malaise.rs:38` | Java MalaiseAction 直接接收 this.upgraded、freeToPlayOnce、energyOnUse；这里读取 card.upgrades 是 X 费动作语义参数。 | 保留直接传 upgraded，但建议测试覆盖升级和 energy_on_use 的组合。 |
-| `src/content/cards/silent/reflex.rs` | `upgrades` | `src/content/cards/silent/reflex.rs:34` | triggerOnManualDiscard 不是普通 play 路径；这里按 CardDefinition + card.upgrades 计算 magic，避免依赖未评价的 mutable magic。 | 保留这种模式，后续可抽成 manual-discard magic helper，并继续保留与弃牌顺序相关测试。 |
-| `src/content/cards/silent/storm_of_steel.rs` | `upgrades` | `src/content/cards/silent/storm_of_steel.rs:31` | Java BladeFuryAction 直接接收 this.upgraded；读取 card.upgrades 是生成 Shiv 是否升级的语义参数。 | 保留直接传 upgraded，确保 BladeFuryAction/生成 Shiv 的升级行为有测试覆盖。 |
-| `src/content/cards/silent/tactician.rs` | `upgrades` | `src/content/cards/silent/tactician.rs:34` | triggerOnManualDiscard 不是普通 play 路径；这里按 CardDefinition + card.upgrades 计算 energy amount，匹配 Java addToTop(new GainEnergyAction(this.magicNumber))。 | 保留这种模式，后续可抽成 manual-discard magic helper，并继续保留 addToTop 顺序测试。 |
+| `src/content/cards/silent/adrenaline.rs` | `upgrades` | `src/content/cards/silent/adrenaline.rs:35` | Java Adrenaline.use 根据 this.upgraded 决定 GainEnergyAction(2/1)；抽牌数已由 play 路径本地 evaluate，不再依赖 mutable magic 预填。 | 保留 direct upgraded 分支，并用测试覆盖 Adrenaline+ 在未预填 base_magic_num_mut 时仍获得 2 能量、抽 2 张。 |
+| `src/content/cards/silent/doppelganger.rs` | `upgrades` | `src/content/cards/silent/doppelganger.rs:33` | Java DoppelgangerAction 直接接收 this.upgraded、freeToPlayOnce、energyOnUse；这里读取 card.upgrades 是动作语义参数，不是数值评价。 | 保留直接传 upgraded，但建议测试覆盖 X 费、free_to_play_once、energy_on_use 与升级组合。 |
+| `src/content/cards/silent/malaise.rs` | `upgrades` | `src/content/cards/silent/malaise.rs:40` | Java MalaiseAction 直接接收 this.upgraded、freeToPlayOnce、energyOnUse；这里读取 card.upgrades 是 X 费动作语义参数。 | 保留直接传 upgraded，但建议测试覆盖升级和 energy_on_use 的组合。 |
+| `src/content/cards/silent/reflex.rs` | `upgrades` | `src/content/cards/silent/reflex.rs:36` | triggerOnManualDiscard 不是普通 play 路径；这里按 CardDefinition + card.upgrades 计算 magic，避免依赖未评价的 mutable magic。 | 保留这种模式，后续可抽成 manual-discard magic helper，并继续保留与弃牌顺序相关测试。 |
+| `src/content/cards/silent/storm_of_steel.rs` | `upgrades` | `src/content/cards/silent/storm_of_steel.rs:33` | Java BladeFuryAction 直接接收 this.upgraded；读取 card.upgrades 是生成 Shiv 是否升级的语义参数。 | 保留直接传 upgraded，确保 BladeFuryAction/生成 Shiv 的升级行为有测试覆盖。 |
+| `src/content/cards/silent/tactician.rs` | `upgrades` | `src/content/cards/silent/tactician.rs:36` | triggerOnManualDiscard 不是普通 play 路径；这里按 CardDefinition + card.upgrades 计算 energy amount，匹配 Java addToTop(new GainEnergyAction(this.magicNumber))。 | 保留这种模式，后续可抽成 manual-discard magic helper，并继续保留 addToTop 顺序测试。 |
 
 ## 疑似测试掩盖风险
 
@@ -54,12 +54,12 @@ No files.
 
 | File | Line | Field | Code |
 | --- | --- | --- | --- |
-| `src/content/cards/silent/adrenaline.rs` | 33 | `upgrades` | `amount: if card.upgrades > 0 { 2 } else { 1 },` |
-| `src/content/cards/silent/doppelganger.rs` | 31 | `upgrades` | `upgraded: card.upgrades > 0,` |
-| `src/content/cards/silent/malaise.rs` | 38 | `upgrades` | `upgraded: card.upgrades > 0,` |
-| `src/content/cards/silent/reflex.rs` | 34 | `upgrades` | `let upgraded = if card.upgrades > 0 { 1 } else { 0 };` |
-| `src/content/cards/silent/storm_of_steel.rs` | 31 | `upgrades` | `upgraded: card.upgrades > 0,` |
-| `src/content/cards/silent/tactician.rs` | 34 | `upgrades` | `let upgraded = if card.upgrades > 0 { 1 } else { 0 };` |
+| `src/content/cards/silent/adrenaline.rs` | 35 | `upgrades` | `amount: if card.upgrades > 0 { 2 } else { 1 },` |
+| `src/content/cards/silent/doppelganger.rs` | 33 | `upgrades` | `upgraded: card.upgrades > 0,` |
+| `src/content/cards/silent/malaise.rs` | 40 | `upgrades` | `upgraded: card.upgrades > 0,` |
+| `src/content/cards/silent/reflex.rs` | 36 | `upgrades` | `let upgraded = if card.upgrades > 0 { 1 } else { 0 };` |
+| `src/content/cards/silent/storm_of_steel.rs` | 33 | `upgrades` | `upgraded: card.upgrades > 0,` |
+| `src/content/cards/silent/tactician.rs` | 36 | `upgrades` | `let upgraded = if card.upgrades > 0 { 1 } else { 0 };` |
 
 ## Immediate Recommendations
 
