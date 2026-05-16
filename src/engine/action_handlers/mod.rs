@@ -536,6 +536,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             free_to_play_once,
             energy_on_use,
         } => cards::handle_tempest(upgraded, free_to_play_once, energy_on_use, state),
+        Action::ReinforcedBody {
+            block_amount,
+            free_to_play_once,
+            energy_on_use,
+        } => cards::handle_reinforced_body(block_amount, free_to_play_once, energy_on_use, state),
         Action::UseCardDone { should_exhaust } => {
             cards::handle_use_card_done(should_exhaust, state)
         }
@@ -644,6 +649,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         }
 
         Action::IncreaseMaxOrb(amount) => handle_increase_max_orb(amount, state),
+        Action::DecreaseMaxOrb(amount) => handle_decrease_max_orb(amount, state),
         Action::ChannelOrb(orb_id) => handle_channel_orb(orb_id, state),
         Action::ChannelOrbEntity { orb } => handle_channel_orb_entity(orb, state),
         Action::EvokeOrb => crate::content::orbs::hooks::evoke_next_orb_now(state),
@@ -700,6 +706,18 @@ fn handle_increase_max_orb(amount: u8, state: &mut CombatState) {
             .push(crate::runtime::combat::OrbEntity::new(
                 crate::runtime::combat::OrbId::Empty,
             ));
+    }
+}
+
+fn handle_decrease_max_orb(amount: u8, state: &mut CombatState) {
+    for _ in 0..amount {
+        if state.entities.player.max_orbs == 0 {
+            return;
+        }
+        state.entities.player.max_orbs = state.entities.player.max_orbs.saturating_sub(1);
+        if !state.entities.player.orbs.is_empty() {
+            state.entities.player.orbs.pop();
+        }
     }
 }
 

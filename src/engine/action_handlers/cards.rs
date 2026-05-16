@@ -1469,6 +1469,32 @@ pub fn handle_tempest(
     }
 }
 
+pub fn handle_reinforced_body(
+    block_amount: i32,
+    free_to_play_once: bool,
+    energy_on_use: i32,
+    state: &mut CombatState,
+) {
+    let base_effect = if energy_on_use != -1 {
+        energy_on_use
+    } else {
+        state.turn.energy as i32
+    };
+    let effect = crate::content::relics::hooks::on_calculate_x_cost(state, base_effect);
+
+    if effect > 0 {
+        for _ in 0..effect {
+            state.queue_action_back(Action::GainBlock {
+                target: 0,
+                amount: block_amount,
+            });
+        }
+        if !free_to_play_once {
+            state.turn.spend_energy(state.turn.energy as i32);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct UseCardPlacementOverrides {
     rebound: bool,

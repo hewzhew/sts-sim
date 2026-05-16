@@ -2387,6 +2387,207 @@ fn aggregate_energy_reads_draw_pile_size_when_action_executes() {
 }
 
 #[test]
+fn defect_x_block_dark_attack_and_consume_definitions_match_java_sources() {
+    let body = get_card_definition(CardId::ReinforcedBody);
+    assert_eq!(body.name, "Reinforced Body");
+    assert_eq!(body.card_type, CardType::Skill);
+    assert_eq!(body.rarity, CardRarity::Uncommon);
+    assert_eq!(body.cost, -1);
+    assert_eq!(body.base_block, 7);
+    assert_eq!(body.upgrade_block, 2);
+    assert_eq!(java_id(CardId::ReinforcedBody), "Reinforced Body");
+
+    let doom = get_card_definition(CardId::DoomAndGloom);
+    assert_eq!(doom.name, "Doom and Gloom");
+    assert_eq!(doom.card_type, CardType::Attack);
+    assert_eq!(doom.rarity, CardRarity::Uncommon);
+    assert_eq!(doom.cost, 2);
+    assert_eq!(doom.base_damage, 10);
+    assert_eq!(doom.base_magic, 1);
+    assert_eq!(doom.target, CardTarget::AllEnemy);
+    assert!(doom.is_multi_damage);
+    assert_eq!(doom.upgrade_damage, 4);
+    assert_eq!(java_id(CardId::DoomAndGloom), "Doom and Gloom");
+
+    let consume = get_card_definition(CardId::Consume);
+    assert_eq!(consume.name, "Consume");
+    assert_eq!(consume.card_type, CardType::Skill);
+    assert_eq!(consume.rarity, CardRarity::Uncommon);
+    assert_eq!(consume.cost, 2);
+    assert_eq!(consume.base_magic, 2);
+    assert_eq!(consume.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Consume), "Consume");
+}
+
+#[test]
+fn defect_x_block_dark_attack_and_consume_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 280;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 281;
+    state.entities.monsters = vec![first, second];
+
+    let mut body_card = CombatCard::new(CardId::ReinforcedBody, 282);
+    body_card.energy_on_use = 2;
+    let body = resolve_card_play(CardId::ReinforcedBody, &state, &body_card, None);
+    assert_eq!(
+        body[0].action,
+        Action::ReinforcedBody {
+            block_amount: 7,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        }
+    );
+    let mut body_plus = CombatCard::new(CardId::ReinforcedBody, 283);
+    body_plus.upgrades = 1;
+    body_plus.energy_on_use = 2;
+    let body_plus_actions = resolve_card_play(CardId::ReinforcedBody, &state, &body_plus, None);
+    assert_eq!(
+        body_plus_actions[0].action,
+        Action::ReinforcedBody {
+            block_amount: 9,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        }
+    );
+
+    let doom = resolve_card_play(
+        CardId::DoomAndGloom,
+        &state,
+        &CombatCard::new(CardId::DoomAndGloom, 284),
+        None,
+    );
+    assert_eq!(doom.len(), 2);
+    match &doom[0].action {
+        Action::DamageAllEnemies { damages, .. } => {
+            assert_eq!(damages.as_slice(), &[10, 10]);
+        }
+        other => panic!("Doom and Gloom should damage all enemies first, got {other:?}"),
+    }
+    assert_eq!(doom[1].action, Action::ChannelOrb(OrbId::Dark));
+    let mut doom_plus = CombatCard::new(CardId::DoomAndGloom, 285);
+    doom_plus.upgrades = 1;
+    let doom_plus_actions = resolve_card_play(CardId::DoomAndGloom, &state, &doom_plus, None);
+    match &doom_plus_actions[0].action {
+        Action::DamageAllEnemies { damages, .. } => {
+            assert_eq!(damages.as_slice(), &[14, 14]);
+        }
+        other => panic!("Doom and Gloom+ should damage all enemies first, got {other:?}"),
+    }
+
+    let consume = resolve_card_play(
+        CardId::Consume,
+        &state,
+        &CombatCard::new(CardId::Consume, 286),
+        None,
+    );
+    assert_eq!(consume.len(), 2);
+    assert_eq!(
+        consume[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: 2,
+        }
+    );
+    assert_eq!(consume[1].action, Action::DecreaseMaxOrb(1));
+    let mut consume_plus = CombatCard::new(CardId::Consume, 287);
+    consume_plus.upgrades = 1;
+    let consume_plus_actions = resolve_card_play(CardId::Consume, &state, &consume_plus, None);
+    assert_eq!(
+        consume_plus_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: 3,
+        }
+    );
+}
+
+#[test]
+fn reinforced_body_and_decrease_max_orb_actions_match_java_execution_semantics() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.turn.energy = 2;
+    crate::engine::action_handlers::execute_action(
+        Action::ReinforcedBody {
+            block_amount: 7,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        },
+        &mut state,
+    );
+    assert_eq!(state.turn.energy, 0);
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 7,
+        })
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 7,
+        })
+    );
+    assert_eq!(state.pop_next_action(), None);
+
+    let mut chemical_x = crate::test_support::blank_test_combat();
+    chemical_x
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::ChemicalX,
+        ));
+    crate::engine::action_handlers::execute_action(
+        Action::ReinforcedBody {
+            block_amount: 9,
+            free_to_play_once: true,
+            energy_on_use: 0,
+        },
+        &mut chemical_x,
+    );
+    assert_eq!(chemical_x.turn.energy, 3);
+    assert_eq!(
+        chemical_x.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 9,
+        })
+    );
+    assert_eq!(
+        chemical_x.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 9,
+        })
+    );
+    assert_eq!(chemical_x.pop_next_action(), None);
+
+    let mut orbs = crate::test_support::blank_test_combat();
+    orbs.entities.player.max_orbs = 3;
+    orbs.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Lightning),
+        OrbEntity::new(OrbId::Frost),
+        OrbEntity::new(OrbId::Dark),
+    ];
+    crate::engine::action_handlers::execute_action(Action::DecreaseMaxOrb(1), &mut orbs);
+    assert_eq!(orbs.entities.player.max_orbs, 2);
+    assert_eq!(
+        orbs.entities.player.orbs,
+        vec![
+            OrbEntity::new(OrbId::Lightning),
+            OrbEntity::new(OrbId::Frost)
+        ],
+        "Java decreaseMaxOrbSlots removes the last orb slot without evoking it"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

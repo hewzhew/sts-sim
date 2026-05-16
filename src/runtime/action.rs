@@ -568,6 +568,11 @@ pub enum Action {
         free_to_play_once: bool,
         energy_on_use: i32,
     },
+    ReinforcedBody {
+        block_amount: i32,
+        free_to_play_once: bool,
+        energy_on_use: i32,
+    },
     ReduceAllHandCosts {
         amount: u8,
     },
@@ -648,6 +653,7 @@ pub enum Action {
         target: EntityId,
     },
     IncreaseMaxOrb(u8),
+    DecreaseMaxOrb(u8),
     SpawnMonster {
         monster_id: crate::content::monsters::EnemyId,
         slot: u8,

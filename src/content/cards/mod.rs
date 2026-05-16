@@ -261,6 +261,9 @@ pub enum CardId {
     BootSequence,
     Capacitor,
     Chill,
+    ReinforcedBody,
+    DoomAndGloom,
+    Consume,
     // Add more as we expand
 }
 
@@ -547,6 +550,9 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::BootSequence => defect::boot_sequence::definition(),
         CardId::Capacitor => defect::capacitor::definition(),
         CardId::Chill => defect::chill::definition(),
+        CardId::ReinforcedBody => defect::reinforced_body::definition(),
+        CardId::DoomAndGloom => defect::doom_and_gloom::definition(),
+        CardId::Consume => defect::consume::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1234,6 +1240,9 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::BootSequence => "BootSequence",
         CardId::Capacitor => "Capacitor",
         CardId::Chill => "Chill",
+        CardId::ReinforcedBody => "Reinforced Body",
+        CardId::DoomAndGloom => "Doom and Gloom",
+        CardId::Consume => "Consume",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1507,6 +1516,9 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         BootSequence,
         Capacitor,
         Chill,
+        ReinforcedBody,
+        DoomAndGloom,
+        Consume,
         Neutralize,
         Survivor,
         Anger,
