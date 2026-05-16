@@ -1,7 +1,30 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::DeadlyPoison,
+        name: "Deadly Poison",
+        card_type: CardType::Skill,
+        rarity: CardRarity::Common,
+        cost: 1,
+        base_damage: 0,
+        base_block: 0,
+        base_magic: 5,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 0,
+        upgrade_block: 0,
+        upgrade_magic: 2,
+    }
+}
 
 pub fn deadly_poison_play(
     _state: &CombatState,
