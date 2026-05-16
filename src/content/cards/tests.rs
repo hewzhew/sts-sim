@@ -3537,6 +3537,116 @@ fn hyperbeam_definition_and_runtime_action_match_java_sources() {
 }
 
 #[test]
+fn electrodynamics_definition_runtime_and_sentinel_power_match_java_sources() {
+    let electro = get_card_definition(CardId::Electrodynamics);
+    assert_eq!(electro.name, "Electrodynamics");
+    assert_eq!(electro.card_type, CardType::Power);
+    assert_eq!(electro.rarity, CardRarity::Rare);
+    assert_eq!(electro.cost, 2);
+    assert_eq!(electro.base_magic, 2);
+    assert_eq!(electro.target, CardTarget::SelfTarget);
+    assert_eq!(electro.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Electrodynamics), "Electrodynamics");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::Electrodynamics,
+        &state,
+        &CombatCard::new(CardId::Electrodynamics, 324),
+        None,
+    );
+    assert_eq!(actions.len(), 3);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Electro,
+            amount: -1,
+        },
+        "Java ElectroPower uses AbstractPower's sentinel amount -1"
+    );
+    assert_eq!(actions[1].action, Action::ChannelOrb(OrbId::Lightning));
+    assert_eq!(actions[2].action, Action::ChannelOrb(OrbId::Lightning));
+
+    let mut plus = CombatCard::new(CardId::Electrodynamics, 325);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::Electrodynamics, &state, &plus, None);
+    assert_eq!(plus_actions.len(), 4);
+    assert_eq!(plus_actions[1].action, Action::ChannelOrb(OrbId::Lightning));
+    assert_eq!(plus_actions[2].action, Action::ChannelOrb(OrbId::Lightning));
+    assert_eq!(plus_actions[3].action, Action::ChannelOrb(OrbId::Lightning));
+
+    let mut apply_state = crate::test_support::blank_test_combat();
+    crate::engine::action_handlers::execute_action(actions[0].action.clone(), &mut apply_state);
+    assert_eq!(
+        crate::content::powers::store::power_amount(&apply_state, 0, PowerId::Electro),
+        -1
+    );
+    crate::engine::action_handlers::execute_action(actions[0].action.clone(), &mut apply_state);
+    assert_eq!(
+        crate::content::powers::store::power_amount(&apply_state, 0, PowerId::Electro),
+        -1,
+        "Java sentinel powers do not stack when ApplyPowerAction sees the same power ID"
+    );
+
+    apply_state.entities.player.orbs = vec![OrbEntity::new(OrbId::Lightning)];
+    crate::content::orbs::hooks::trigger_end_of_turn_orbs_now(&mut apply_state);
+    assert_eq!(
+        apply_state.pop_next_action(),
+        Some(Action::OrbDamageAllEnemies {
+            source: 0,
+            base_damage: 3,
+        }),
+        "ElectroPower is amount -1, so lightning must check power presence, not amount > 0"
+    );
+}
+
+#[test]
+fn rainbow_definition_runtime_and_upgrade_exhaust_match_java_sources() {
+    let rainbow = get_card_definition(CardId::Rainbow);
+    assert_eq!(rainbow.name, "Rainbow");
+    assert_eq!(rainbow.card_type, CardType::Skill);
+    assert_eq!(rainbow.rarity, CardRarity::Rare);
+    assert_eq!(rainbow.cost, 2);
+    assert_eq!(rainbow.target, CardTarget::SelfTarget);
+    assert!(rainbow.exhaust);
+    assert_eq!(java_id(CardId::Rainbow), "Rainbow");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::Rainbow,
+        &state,
+        &CombatCard::new(CardId::Rainbow, 326),
+        None,
+    );
+    assert_eq!(actions.len(), 3);
+    assert_eq!(actions[0].action, Action::ChannelOrb(OrbId::Lightning));
+    assert_eq!(actions[1].action, Action::ChannelOrb(OrbId::Frost));
+    assert_eq!(actions[2].action, Action::ChannelOrb(OrbId::Dark));
+
+    assert!(exhausts_when_played(&CombatCard::new(CardId::Rainbow, 327)));
+    let mut rainbow_plus = CombatCard::new(CardId::Rainbow, 328);
+    rainbow_plus.upgrades = 1;
+    assert!(
+        !exhausts_when_played(&rainbow_plus),
+        "Java Rainbow+ changes exhaust only; channel order is unchanged"
+    );
+    let plus_actions = resolve_card_play(CardId::Rainbow, &state, &rainbow_plus, None);
+    assert_eq!(
+        plus_actions
+            .iter()
+            .map(|info| &info.action)
+            .collect::<Vec<_>>(),
+        vec![
+            &Action::ChannelOrb(OrbId::Lightning),
+            &Action::ChannelOrb(OrbId::Frost),
+            &Action::ChannelOrb(OrbId::Dark),
+        ]
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

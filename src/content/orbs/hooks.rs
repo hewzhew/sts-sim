@@ -88,7 +88,7 @@ fn queue_lightning_damage(state: &mut CombatState, amount: i32, to_front: bool) 
     if amount <= 0 {
         return;
     }
-    if store::power_amount(state, 0, PowerId::Electro) > 0 {
+    if store::has_power(state, 0, PowerId::Electro) {
         queue_orb_action(
             state,
             Action::OrbDamageAllEnemies {

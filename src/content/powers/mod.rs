@@ -135,6 +135,7 @@ pub fn uses_sentinel_amount(id: PowerId) -> bool {
             | PowerId::Stasis
             | PowerId::BackAttack
             | PowerId::PainfulStabs
+            | PowerId::Electro
             | PowerId::Regrow
             | PowerId::Surrounded
             | PowerId::Unawakened

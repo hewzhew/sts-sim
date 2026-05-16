@@ -102,6 +102,10 @@ pub fn resolve_card_play_with_context(
         CardId::Loop => defect::loop_card::loop_play(_state, _card),
         CardId::MeteorStrike => defect::meteor_strike::meteor_strike_play(_state, _card, t),
         CardId::Hyperbeam => defect::hyperbeam::hyperbeam_play(_state, _card),
+        CardId::Electrodynamics => {
+            defect::electrodynamics::electrodynamics_play(_state, _card)
+        }
+        CardId::Rainbow => defect::rainbow::rainbow_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
@@ -649,6 +653,7 @@ pub fn exhausts_when_played(card: &CombatCard) -> bool {
         CardId::SecretWeapon => card.upgrades == 0,
         CardId::ThinkingAhead => card.upgrades == 0,
         CardId::Hologram => card.upgrades == 0,
+        CardId::Rainbow => card.upgrades == 0,
         _ => get_card_definition(card.id).exhaust,
     }
 }
