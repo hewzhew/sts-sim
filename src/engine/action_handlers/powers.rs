@@ -514,9 +514,8 @@ pub fn handle_trigger_time_warp_end_turn(owner: usize, state: &mut CombatState) 
         });
     }
 
-    // Java TimeWarpPower.callEndTurnEarlySequence:
-    // clear queued autoplay cards, then end the turn once the current card fully resolves.
-    crate::engine::action_handlers::cards::handle_clear_card_queue(state);
+    // Java TimeWarpPower.callEndTurnEarlySequence clears cardQueue but preserves
+    // autoplay cards as dontTriggerOnUseCard cleanup actions.
     crate::engine::action_handlers::cards::handle_queue_early_end_turn(state);
 
     let alive_monster_ids: Vec<usize> = state
@@ -831,7 +830,7 @@ pub fn handle_lose_max_hp(target: usize, amount: i32, state: &mut CombatState) {
 mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
-    use crate::runtime::combat::Power;
+    use crate::runtime::combat::{CombatCard, Power, QueuedCardPlay, QueuedCardSource};
     use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
     use crate::test_support::blank_test_combat;
 
@@ -864,6 +863,81 @@ mod tests {
             })
         );
         assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn time_warp_end_turn_preserves_autoplay_cleanup_like_java_call_end_turn_early_sequence() {
+        let mut state = blank_test_combat();
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.id = 7;
+        state.entities.monsters = vec![time_eater];
+        store::set_powers_for(
+            &mut state,
+            7,
+            vec![Power {
+                power_type: PowerId::TimeWarp,
+                instance_id: None,
+                amount: 12,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        state.zones.queued_cards = std::collections::VecDeque::from([
+            QueuedCardPlay {
+                card: CombatCard::new(crate::content::cards::CardId::Strike, 900),
+                target: Some(7),
+                energy_on_use: 0,
+                ignore_energy_total: true,
+                autoplay: false,
+                random_target: false,
+                is_end_turn_autoplay: false,
+                purge_on_use: false,
+                source: QueuedCardSource::Normal,
+            },
+            QueuedCardPlay {
+                card: CombatCard::new(crate::content::cards::CardId::Defend, 901),
+                target: None,
+                energy_on_use: 0,
+                ignore_energy_total: true,
+                autoplay: true,
+                random_target: false,
+                is_end_turn_autoplay: false,
+                purge_on_use: false,
+                source: QueuedCardSource::Normal,
+            },
+        ]);
+
+        handle_trigger_time_warp_end_turn(7, &mut state);
+
+        assert_eq!(store::power_amount(&state, 7, PowerId::TimeWarp), 0);
+        assert!(state.zones.queued_cards.is_empty());
+        assert_eq!(
+            state
+                .zones
+                .limbo
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![901],
+            "Java callEndTurnEarlySequence keeps autoplay queued cards for dontTriggerOnUseCard cleanup"
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::UseCardDone {
+                should_exhaust: false,
+                trigger_after_use_hooks: false,
+            })
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::ApplyPower {
+                source: 7,
+                target: 7,
+                power_id: PowerId::Strength,
+                amount: 2,
+            })
+        );
     }
 
     #[test]
