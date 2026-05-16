@@ -55,6 +55,7 @@ pub mod reinforced_body;
 pub mod reprogram;
 pub mod rip_and_tear;
 pub mod scrape;
+pub mod seek;
 pub mod self_repair;
 pub mod skim;
 pub mod stack;

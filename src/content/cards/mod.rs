@@ -292,6 +292,7 @@ pub enum CardId {
     Blizzard,
     ThunderStrike,
     Scrape,
+    Seek,
     EchoForm,
     // Add more as we expand
 }
@@ -612,6 +613,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Blizzard => defect::blizzard::definition(),
         CardId::ThunderStrike => defect::thunder_strike::definition(),
         CardId::Scrape => defect::scrape::definition(),
+        CardId::Seek => defect::seek::definition(),
         CardId::EchoForm => defect::echo_form::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
@@ -1331,6 +1333,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Blizzard => "Blizzard",
         CardId::ThunderStrike => "Thunder Strike",
         CardId::Scrape => "Scrape",
+        CardId::Seek => "Seek",
         CardId::EchoForm => "Echo Form",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
@@ -1636,6 +1639,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Blizzard,
         ThunderStrike,
         Scrape,
+        Seek,
         EchoForm,
         Neutralize,
         Survivor,

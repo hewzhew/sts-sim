@@ -151,6 +151,7 @@ pub enum HandSelectFilter {
 pub enum GridSelectReason {
     MoveToDrawPile,
     Exhume { upgrade: bool },
+    DrawPileToHand,            // Seek: pick any card from draw pile -> hand
     SkillFromDeckToHand,       // SecretTechnique: pick Skill from draw → hand
     AttackFromDeckToHand,      // SecretWeapon: pick Attack from draw → hand
     DiscardToHand,             // LiquidMemories: pick from discard → hand (cost 0)
@@ -262,6 +263,7 @@ impl From<GridSelectReason> for SelectionReason {
         match value {
             GridSelectReason::MoveToDrawPile => SelectionReason::MoveToDrawPile,
             GridSelectReason::Exhume { .. } => SelectionReason::Exhume,
+            GridSelectReason::DrawPileToHand => SelectionReason::DrawPileToHand,
             GridSelectReason::SkillFromDeckToHand => SelectionReason::SkillFromDeckToHand,
             GridSelectReason::AttackFromDeckToHand => SelectionReason::AttackFromDeckToHand,
             GridSelectReason::DiscardToHand => SelectionReason::DiscardToHand,

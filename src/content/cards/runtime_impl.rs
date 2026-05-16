@@ -123,6 +123,7 @@ pub fn resolve_card_play_with_context(
         CardId::Blizzard => defect::blizzard::blizzard_play(_state, _card),
         CardId::ThunderStrike => defect::thunder_strike::thunder_strike_play(_state, _card),
         CardId::Scrape => defect::scrape::scrape_play(_state, _card, t),
+        CardId::Seek => defect::seek::seek_play(_state, _card),
         CardId::EchoForm => defect::echo_form::echo_form_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),

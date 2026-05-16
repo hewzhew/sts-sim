@@ -4663,6 +4663,85 @@ fn scrape_definition_runtime_and_follow_up_match_java_sources() {
 }
 
 #[test]
+fn seek_definition_runtime_and_draw_pile_selection_match_java_sources() {
+    let seek = get_card_definition(CardId::Seek);
+    assert_eq!(seek.name, "Seek");
+    assert_eq!(seek.card_type, CardType::Skill);
+    assert_eq!(seek.rarity, CardRarity::Rare);
+    assert_eq!(seek.cost, 0);
+    assert_eq!(seek.base_magic, 1);
+    assert_eq!(seek.target, CardTarget::None);
+    assert!(seek.exhaust);
+    assert_eq!(seek.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Seek), "Seek");
+    assert!(exhausts_when_played(&CombatCard::new(CardId::Seek, 379)));
+
+    let empty = crate::test_support::blank_test_combat();
+    assert!(
+        resolve_card_play(
+            CardId::Seek,
+            &empty,
+            &CombatCard::new(CardId::Seek, 380),
+            None
+        )
+        .is_empty(),
+        "Java BetterDrawPileToHandAction immediately finishes when draw pile is empty"
+    );
+
+    let mut choose_state = crate::test_support::blank_test_combat();
+    choose_state.zones.draw_pile = vec![
+        CombatCard::new(CardId::StrikeB, 381),
+        CombatCard::new(CardId::DefendB, 382),
+    ];
+    let choose_actions = resolve_card_play(
+        CardId::Seek,
+        &choose_state,
+        &CombatCard::new(CardId::Seek, 383),
+        None,
+    );
+    assert_eq!(
+        choose_actions[0].action,
+        Action::SuspendForGridSelect {
+            source_pile: crate::state::PileType::Draw,
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::GridSelectFilter::Any,
+            reason: crate::state::GridSelectReason::DrawPileToHand,
+        }
+    );
+
+    let mut auto_state = crate::test_support::blank_test_combat();
+    auto_state.zones.draw_pile = vec![
+        CombatCard::new(CardId::StrikeB, 384),
+        CombatCard::new(CardId::DefendB, 385),
+    ];
+    let mut plus = CombatCard::new(CardId::Seek, 386);
+    plus.upgrades = 1;
+    let auto_actions = resolve_card_play(CardId::Seek, &auto_state, &plus, None);
+    assert_eq!(auto_actions.len(), 2);
+    assert_eq!(
+        auto_actions
+            .iter()
+            .map(|info| &info.action)
+            .collect::<Vec<_>>(),
+        vec![
+            &Action::MoveCard {
+                card_uuid: 385,
+                from: crate::state::PileType::Draw,
+                to: crate::state::PileType::Hand,
+            },
+            &Action::MoveCard {
+                card_uuid: 384,
+                from: crate::state::PileType::Draw,
+                to: crate::state::PileType::Hand,
+            },
+        ],
+        "Java BetterDrawPileToHandAction auto-moves the whole drawPile.group in bottom-to-top order"
+    );
+}
+
+#[test]
 fn fission_definition_runtime_and_orb_actions_match_java_sources() {
     let fission = get_card_definition(CardId::Fission);
     assert_eq!(fission.name, "Fission");

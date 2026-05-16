@@ -470,8 +470,10 @@ pub fn handle_grid_select(
                         );
                     }
                 }
-                GridSelectReason::SkillFromDeckToHand | GridSelectReason::AttackFromDeckToHand => {
-                    // SecretTechnique/SecretWeapon: move from draw pile to hand
+                GridSelectReason::DrawPileToHand
+                | GridSelectReason::SkillFromDeckToHand
+                | GridSelectReason::AttackFromDeckToHand => {
+                    // Seek/SecretTechnique/SecretWeapon: move from draw pile to hand.
                     if !matches!(source_pile, PileType::Draw) {
                         return Err("Deck-to-hand selection must source from draw pile");
                     }
@@ -978,6 +980,50 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![30],
             "Java SecretWeapon/SecretTechnique move selected draw-pile card to discard when hand is full"
+        );
+    }
+
+    #[test]
+    fn seek_draw_pile_to_hand_selection_moves_any_selected_cards() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+                source_pile: PileType::Draw,
+                candidate_uuids: vec![30, 40],
+                min_cards: 2,
+                max_cards: 2,
+                can_cancel: false,
+                reason: GridSelectReason::DrawPileToHand,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 30),
+            CombatCard::new(CardId::Defend, 40),
+        ];
+
+        handle_grid_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[30, 40],
+            PileType::Draw,
+            2,
+            2,
+            false,
+            GridSelectReason::DrawPileToHand,
+            ClientInput::SubmitGridSelect(vec![40, 30]),
+        )
+        .expect("Seek should move arbitrary selected draw-pile cards to hand");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert!(combat_state.zones.draw_pile.is_empty());
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![40, 30],
+            "Seek keeps the submitted selection order when resolving selected cards"
         );
     }
 

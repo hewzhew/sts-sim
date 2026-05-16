@@ -31,6 +31,7 @@ pub enum SelectionReason {
     GamblingChip,
     MoveToDrawPile,
     Exhume,
+    DrawPileToHand,
     SkillFromDeckToHand,
     AttackFromDeckToHand,
     DiscardToHand,
