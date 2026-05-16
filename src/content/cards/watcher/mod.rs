@@ -12,6 +12,7 @@ pub mod indignation;
 pub mod inner_peace;
 pub mod just_lucky;
 pub mod prostrate;
+pub mod sanctity;
 pub mod strike_purple;
 pub mod third_eye;
 pub mod vigilance;

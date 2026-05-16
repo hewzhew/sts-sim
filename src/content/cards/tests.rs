@@ -490,6 +490,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::FearNoEvil, "FearNoEvil"),
         (CardId::Indignation, "Indignation"),
         (CardId::FollowUp, "FollowUp"),
+        (CardId::Sanctity, "Sanctity"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -692,6 +693,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Sanctity,
+            "Sanctity",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            6,
+            2,
+            CardTarget::SelfTarget,
+            0,
+            3,
+            0,
+        ),
     ];
 
     for (
@@ -740,6 +755,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::FearNoEvil));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Indignation));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Sanctity));
 }
 
 #[test]
@@ -1139,6 +1155,44 @@ fn watcher_follow_up_runtime_action_reads_previous_played_card_when_it_resolves(
         vec![CardId::DefendP, CardId::FollowUp];
     crate::engine::action_handlers::execute_action(Action::FollowUp, &mut skill_previous);
     assert_eq!(skill_previous.pop_next_action(), None);
+}
+
+#[test]
+fn watcher_sanctity_runtime_action_reads_previous_played_card_when_it_resolves() {
+    let state = crate::test_support::blank_test_combat();
+    let mut sanctity_plus = CombatCard::new(CardId::Sanctity, 326);
+    sanctity_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::Sanctity, &state, &sanctity_plus, None);
+
+    assert_eq!(
+        actions.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![
+            &Action::GainBlock {
+                target: 0,
+                amount: 9,
+            },
+            &Action::Sanctity { draw_amount: 2 },
+        ]
+    );
+
+    let mut skill_previous = crate::test_support::blank_test_combat();
+    skill_previous.turn.counters.card_ids_played_this_combat =
+        vec![CardId::DefendP, CardId::Sanctity];
+    crate::engine::action_handlers::execute_action(
+        Action::Sanctity { draw_amount: 2 },
+        &mut skill_previous,
+    );
+    assert_eq!(skill_previous.pop_next_action(), Some(Action::DrawCards(2)));
+
+    let mut attack_previous = crate::test_support::blank_test_combat();
+    attack_previous.turn.counters.card_ids_played_this_combat =
+        vec![CardId::StrikeP, CardId::Sanctity];
+    crate::engine::action_handlers::execute_action(
+        Action::Sanctity { draw_amount: 2 },
+        &mut attack_previous,
+    );
+    assert_eq!(attack_previous.pop_next_action(), None);
 }
 
 #[test]

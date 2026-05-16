@@ -247,6 +247,11 @@ pub enum Action {
     /// Java Watcher `FollowUpAction`: at execution time, gain 1 energy if the
     /// previous card in `cardsPlayedThisCombat` was an Attack.
     FollowUp,
+    /// Java Watcher `SanctityAction`: at execution time, draw if the previous
+    /// card in `cardsPlayedThisCombat` was a Skill.
+    Sanctity {
+        draw_amount: u32,
+    },
     /// Java `ExpertiseAction`: draw until the current hand size reaches this
     /// amount, evaluated when the queued action resolves.
     ExpertiseDraw {
