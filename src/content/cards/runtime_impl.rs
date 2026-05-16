@@ -99,6 +99,7 @@ pub fn resolve_card_play_with_context(
         CardId::BiasedCognition => {
             defect::biased_cognition::biased_cognition_play(_state, _card)
         }
+        CardId::Loop => defect::loop_card::loop_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),

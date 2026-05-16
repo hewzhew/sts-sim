@@ -761,6 +761,11 @@ pub enum Action {
     TriggerStartOfTurnOrbs,
     TriggerEndOfTurnOrbs,
     TriggerImpulseOrbs,
+    /// Java Defect `LoopPower.atStartOfTurn`: repeat first orb start/end
+    /// callbacks `times` times.
+    TriggerFirstOrbStartAndEnd {
+        times: u8,
+    },
     /// Java Defect `DarkImpulseAction`: trigger start/end turn callbacks only
     /// for Dark orbs, with Gold Plated Cables repeating only if the first orb
     /// is a non-empty Dark orb.

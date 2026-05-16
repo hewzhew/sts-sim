@@ -3316,6 +3316,93 @@ fn biased_cognition_definition_runtime_and_bias_power_match_java_sources() {
 }
 
 #[test]
+fn loop_definition_runtime_and_first_orb_trigger_match_java_sources() {
+    let loop_card = get_card_definition(CardId::Loop);
+    assert_eq!(loop_card.name, "Loop");
+    assert_eq!(loop_card.card_type, CardType::Power);
+    assert_eq!(loop_card.rarity, CardRarity::Uncommon);
+    assert_eq!(loop_card.cost, 1);
+    assert_eq!(loop_card.base_magic, 1);
+    assert_eq!(loop_card.target, CardTarget::SelfTarget);
+    assert_eq!(loop_card.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Loop), "Loop");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::Loop,
+        &state,
+        &CombatCard::new(CardId::Loop, 315),
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Loop,
+            amount: 1,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::Loop, 316);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::Loop, &state, &plus, None);
+    assert_eq!(
+        plus_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Loop,
+            amount: 2,
+        }
+    );
+
+    let mut start_state = crate::test_support::blank_test_combat();
+    let start_actions =
+        crate::content::powers::resolve_power_at_turn_start(PowerId::Loop, &mut start_state, 0, 2);
+    assert_eq!(
+        start_actions.as_slice(),
+        &[Action::TriggerFirstOrbStartAndEnd { times: 2 }]
+    );
+
+    let mut frost_state = crate::test_support::blank_test_combat();
+    frost_state.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Frost),
+        OrbEntity::new(OrbId::Lightning),
+    ];
+    crate::engine::action_handlers::execute_action(
+        Action::TriggerFirstOrbStartAndEnd { times: 2 },
+        &mut frost_state,
+    );
+    assert_eq!(
+        std::iter::from_fn(|| frost_state.pop_next_action()).collect::<Vec<_>>(),
+        vec![
+            Action::GainBlock {
+                target: 0,
+                amount: 2,
+            },
+            Action::GainBlock {
+                target: 0,
+                amount: 2,
+            },
+        ],
+        "Java LoopPower triggers only the first orb, so the second Lightning orb should not fire"
+    );
+
+    let mut dark_state = crate::test_support::blank_test_combat();
+    dark_state.entities.player.orbs = vec![OrbEntity::new(OrbId::Dark)];
+    crate::engine::action_handlers::execute_action(
+        Action::TriggerFirstOrbStartAndEnd { times: 2 },
+        &mut dark_state,
+    );
+    assert_eq!(
+        dark_state.entities.player.orbs[0].evoke_amount, 18,
+        "Dark orb onEndOfTurn runs once per Loop stack"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

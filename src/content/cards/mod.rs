@@ -272,6 +272,7 @@ pub enum CardId {
     LockOn,
     CoreSurge,
     BiasedCognition,
+    Loop,
     // Add more as we expand
 }
 
@@ -569,6 +570,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::LockOn => defect::lock_on::definition(),
         CardId::CoreSurge => defect::core_surge::definition(),
         CardId::BiasedCognition => defect::biased_cognition::definition(),
+        CardId::Loop => defect::loop_card::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1267,6 +1269,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::LockOn => "Lockon",
         CardId::CoreSurge => "Core Surge",
         CardId::BiasedCognition => "Biased Cognition",
+        CardId::Loop => "Loop",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1551,6 +1554,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         LockOn,
         CoreSurge,
         BiasedCognition,
+        Loop,
         Neutralize,
         Survivor,
         Anger,

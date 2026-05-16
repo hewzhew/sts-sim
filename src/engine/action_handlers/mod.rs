@@ -684,6 +684,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             crate::content::orbs::hooks::trigger_end_of_turn_orbs_now(state)
         }
         Action::TriggerImpulseOrbs => crate::content::orbs::hooks::trigger_impulse_orbs_now(state),
+        Action::TriggerFirstOrbStartAndEnd { times } => {
+            crate::content::orbs::hooks::trigger_first_orb_start_and_end_now(state, times)
+        }
         Action::TriggerDarkImpulseOrbs => {
             crate::content::orbs::hooks::trigger_dark_impulse_orbs_now(state)
         }

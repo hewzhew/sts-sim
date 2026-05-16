@@ -82,6 +82,7 @@ pub enum PowerId {
     Repair,
     LockOn,
     Bias,
+    Loop,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -508,6 +509,7 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             name: "Lock-On",
         },
         PowerId::Bias => PowerDefinition { id, name: "Bias" },
+        PowerId::Loop => PowerDefinition { id, name: "Loop" },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -869,6 +871,15 @@ pub fn resolve_power_instance_at_turn_start(
             power_id: PowerId::Focus,
             amount: -amount,
         }],
+        PowerId::Loop => {
+            if owner == 0 && amount > 0 {
+                smallvec::smallvec![crate::runtime::action::Action::TriggerFirstOrbStartAndEnd {
+                    times: amount.min(u8::MAX as i32) as u8,
+                }]
+            } else {
+                smallvec::smallvec![]
+            }
+        }
         PowerId::Poison => core::poison::at_turn_start(owner, amount),
         PowerId::Choked => silent::choked::at_turn_start(owner),
         PowerId::Phantasmal => silent::phantasmal::at_start_of_turn(owner),

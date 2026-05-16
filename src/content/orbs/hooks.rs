@@ -235,6 +235,17 @@ pub fn trigger_impulse_orbs_now(state: &mut CombatState) {
     }
 }
 
+pub fn trigger_first_orb_start_and_end_now(state: &mut CombatState, times: u8) {
+    refresh_orb_focus_values(state);
+    if state.entities.player.orbs.is_empty() {
+        return;
+    }
+    for _ in 0..times {
+        trigger_orb_start_of_turn(state, 0);
+        trigger_orb_end_of_turn(state, 0);
+    }
+}
+
 pub fn trigger_dark_impulse_orbs_now(state: &mut CombatState) {
     refresh_orb_focus_values(state);
     let len = state.entities.player.orbs.len();
