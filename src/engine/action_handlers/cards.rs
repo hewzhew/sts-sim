@@ -519,6 +519,47 @@ pub fn handle_discard_from_hand(
     });
 }
 
+pub fn handle_discard_to_hand(card_uuid: u32, cost_for_turn: Option<u8>, state: &mut CombatState) {
+    if state.zones.hand.len() >= 10 {
+        return;
+    }
+
+    let Some(pos) = state
+        .zones
+        .discard_pile
+        .iter()
+        .position(|card| card.uuid == card_uuid)
+    else {
+        return;
+    };
+
+    let mut card = state.zones.discard_pile.remove(pos);
+    if let Some(cost) = cost_for_turn {
+        card.set_cost_for_turn_java(cost as i32);
+    }
+    crate::content::cards::evaluate_card(&mut card, state, None);
+    state.zones.hand.push(card);
+}
+
+pub fn handle_all_cost_to_hand(cost_target: i32, state: &mut CombatState) {
+    let matching_uuids: Vec<u32> = state
+        .zones
+        .discard_pile
+        .iter()
+        .filter(|card| {
+            card.combat_cost_without_turn_override_java() == cost_target || card.free_to_play_once
+        })
+        .map(|card| card.uuid)
+        .collect();
+
+    for uuid in matching_uuids {
+        state.queue_action_back(Action::DiscardToHand {
+            card_uuid: uuid,
+            cost_for_turn: None,
+        });
+    }
+}
+
 pub fn handle_exhaust_card(
     card_uuid: u32,
     source_pile: crate::state::PileType,

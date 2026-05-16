@@ -114,6 +114,7 @@ pub fn resolve_card_play_with_context(
         CardId::Amplify => defect::amplify::amplify_play(_state, _card),
         CardId::Fission => defect::fission::fission_play(_state, _card),
         CardId::MultiCast => defect::multi_cast::multi_cast_play(_state, _card),
+        CardId::AllForOne => defect::all_for_one::all_for_one_play(_state, _card, t),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),

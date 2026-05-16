@@ -1,4 +1,5 @@
 pub mod aggregate;
+pub mod all_for_one;
 pub mod amplify;
 pub mod auto_shields;
 pub mod ball_lightning;

@@ -4344,6 +4344,127 @@ fn multi_cast_definition_runtime_and_x_cost_orb_actions_match_java_sources() {
 }
 
 #[test]
+fn all_for_one_definition_runtime_and_discard_to_hand_match_java_sources() {
+    let all_for_one = get_card_definition(CardId::AllForOne);
+    assert_eq!(all_for_one.name, "All For One");
+    assert_eq!(all_for_one.card_type, CardType::Attack);
+    assert_eq!(all_for_one.rarity, CardRarity::Rare);
+    assert_eq!(all_for_one.cost, 2);
+    assert_eq!(all_for_one.base_damage, 10);
+    assert_eq!(all_for_one.target, CardTarget::Enemy);
+    assert_eq!(all_for_one.upgrade_damage, 4);
+    assert_eq!(java_id(CardId::AllForOne), "All For One");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::AllForOne,
+        &state,
+        &CombatCard::new(CardId::AllForOne, 351),
+        Some(352),
+    );
+    assert_eq!(actions.len(), 2);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 352);
+            assert_eq!(info.base, 10);
+            assert_eq!(info.output, 10);
+        }
+        other => panic!("All For One should damage before retrieving cards, got {other:?}"),
+    }
+    assert_eq!(actions[1].action, Action::AllCostToHand { cost_target: 0 });
+
+    let mut plus = CombatCard::new(CardId::AllForOne, 353);
+    plus.upgrades = 1;
+    match &resolve_card_play(CardId::AllForOne, &state, &plus, Some(354))[0].action {
+        Action::Damage(info) => assert_eq!(info.base, 14),
+        other => panic!("All For One+ should still emit damage first, got {other:?}"),
+    }
+
+    let mut retrieval = crate::test_support::blank_test_combat();
+    let zero_cost = CombatCard::new(CardId::Deflect, 355);
+    let mut free_nonzero = CombatCard::new(CardId::StrikeG, 356);
+    free_nonzero.free_to_play_once = true;
+    let mut only_turn_free = CombatCard::new(CardId::StrikeG, 357);
+    only_turn_free.set_cost_for_turn_java(0);
+    retrieval.zones.discard_pile = vec![
+        zero_cost.clone(),
+        free_nonzero.clone(),
+        only_turn_free.clone(),
+    ];
+    crate::engine::action_handlers::execute_action(
+        Action::AllCostToHand { cost_target: 0 },
+        &mut retrieval,
+    );
+    assert_eq!(
+        retrieval.pop_next_action(),
+        Some(Action::DiscardToHand {
+            card_uuid: zero_cost.uuid,
+            cost_for_turn: None,
+        })
+    );
+    assert_eq!(
+        retrieval.pop_next_action(),
+        Some(Action::DiscardToHand {
+            card_uuid: free_nonzero.uuid,
+            cost_for_turn: None,
+        })
+    );
+    assert_eq!(retrieval.pop_next_action(), None);
+
+    crate::engine::action_handlers::execute_action(
+        Action::DiscardToHand {
+            card_uuid: zero_cost.uuid,
+            cost_for_turn: None,
+        },
+        &mut retrieval,
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::DiscardToHand {
+            card_uuid: free_nonzero.uuid,
+            cost_for_turn: None,
+        },
+        &mut retrieval,
+    );
+    assert_eq!(
+        retrieval
+            .zones
+            .hand
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        vec![zero_cost.uuid, free_nonzero.uuid]
+    );
+    assert_eq!(
+        retrieval
+            .zones
+            .discard_pile
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        vec![only_turn_free.uuid],
+        "Java AllCostToHandAction checks card.cost, not temporary costForTurn"
+    );
+
+    let mut full_hand = crate::test_support::blank_test_combat();
+    full_hand.zones.hand = (0..10)
+        .map(|idx| CombatCard::new(CardId::StrikeG, 400 + idx))
+        .collect();
+    full_hand.zones.discard_pile = vec![CombatCard::new(CardId::Deflect, 411)];
+    crate::engine::action_handlers::execute_action(
+        Action::DiscardToHand {
+            card_uuid: 411,
+            cost_for_turn: None,
+        },
+        &mut full_hand,
+    );
+    assert_eq!(full_hand.zones.hand.len(), 10);
+    assert_eq!(
+        full_hand.zones.discard_pile[0].uuid, 411,
+        "Java DiscardToHandAction leaves the card in discard when the hand is full"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

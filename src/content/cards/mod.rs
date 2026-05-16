@@ -285,6 +285,7 @@ pub enum CardId {
     Amplify,
     Fission,
     MultiCast,
+    AllForOne,
     // Add more as we expand
 }
 
@@ -597,6 +598,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Amplify => defect::amplify::definition(),
         CardId::Fission => defect::fission::definition(),
         CardId::MultiCast => defect::multi_cast::definition(),
+        CardId::AllForOne => defect::all_for_one::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1308,6 +1310,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Amplify => "Amplify",
         CardId::Fission => "Fission",
         CardId::MultiCast => "Multi-Cast",
+        CardId::AllForOne => "All For One",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1605,6 +1608,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Amplify,
         Fission,
         MultiCast,
+        AllForOne,
         Neutralize,
         Survivor,
         Anger,

@@ -423,6 +423,18 @@ pub enum Action {
         random: bool,
         end_turn: bool,
     },
+    /// Java `DiscardToHandAction`: move a specific discard-pile card to hand
+    /// only if hand has room; otherwise leave it in discard.
+    DiscardToHand {
+        card_uuid: u32,
+        cost_for_turn: Option<u8>,
+    },
+    /// Java Defect `AllCostToHandAction`: queues DiscardToHandAction for all
+    /// discard-pile cards whose combat cost matches `cost_target`, or that are
+    /// currently freeToPlayOnce.
+    AllCostToHand {
+        cost_target: i32,
+    },
     MoveCard {
         card_uuid: u32,
         from: PileType,

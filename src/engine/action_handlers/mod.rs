@@ -435,6 +435,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             random,
             end_turn,
         } => cards::handle_discard_from_hand(amount, random, end_turn, state),
+        Action::DiscardToHand {
+            card_uuid,
+            cost_for_turn,
+        } => cards::handle_discard_to_hand(card_uuid, cost_for_turn, state),
+        Action::AllCostToHand { cost_target } => cards::handle_all_cost_to_hand(cost_target, state),
         Action::ExhaustCard {
             card_uuid,
             source_pile,
