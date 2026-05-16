@@ -483,6 +483,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::CutThroughFate, "CutThroughFate"),
         (CardId::ThirdEye, "ThirdEye"),
         (CardId::Prostrate, "Prostrate"),
+        (CardId::WheelKick, "WheelKick"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -615,6 +616,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             1,
         ),
+        (
+            CardId::WheelKick,
+            "Wheel Kick",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            2,
+            15,
+            0,
+            2,
+            CardTarget::Enemy,
+            5,
+            0,
+            0,
+        ),
     ];
 
     for (
@@ -658,6 +673,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::ThirdEye));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::Prostrate));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
 }
 
 #[test]
@@ -854,6 +870,28 @@ fn watcher_prostrate_runtime_actions_match_java_use_method() {
             },
         ]
     );
+}
+
+#[test]
+fn watcher_wheel_kick_runtime_actions_match_java_use_method() {
+    let state = crate::test_support::blank_test_combat();
+    let mut wheel_kick_plus = CombatCard::new(CardId::WheelKick, 321);
+    wheel_kick_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::WheelKick, &state, &wheel_kick_plus, Some(7));
+
+    assert_eq!(actions.len(), 2);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.source, 0);
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 20);
+            assert_eq!(info.output, 20);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Wheel Kick first action should be DamageAction, got {other:?}"),
+    }
+    assert_eq!(actions[1].action, Action::DrawCards(2));
 }
 
 #[test]

@@ -11,3 +11,4 @@ pub mod prostrate;
 pub mod strike_purple;
 pub mod third_eye;
 pub mod vigilance;
+pub mod wheel_kick;

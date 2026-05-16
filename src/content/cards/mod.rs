@@ -312,6 +312,7 @@ pub enum CardId {
     CutThroughFate,
     ThirdEye,
     Prostrate,
+    WheelKick,
     // Add more as we expand
 }
 
@@ -657,6 +658,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::CutThroughFate => watcher::cut_through_fate::definition(),
         CardId::ThirdEye => watcher::third_eye::definition(),
         CardId::Prostrate => watcher::prostrate::definition(),
+        CardId::WheelKick => watcher::wheel_kick::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1247,7 +1249,7 @@ pub const WATCHER_COMMON_POOL: &[CardId] = &[
     CardId::Prostrate,
 ];
 
-pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[CardId::EmptyMind];
+pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[CardId::EmptyMind, CardId::WheelKick];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[];
 
@@ -1458,6 +1460,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::CutThroughFate => "CutThroughFate",
         CardId::ThirdEye => "ThirdEye",
         CardId::Prostrate => "Prostrate",
+        CardId::WheelKick => "WheelKick",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1853,6 +1856,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         CutThroughFate,
         ThirdEye,
         Prostrate,
+        WheelKick,
         Neutralize,
         Survivor,
         Anger,
