@@ -793,6 +793,7 @@ fn handle_channel_orb(orb_id: crate::runtime::combat::OrbId, state: &mut CombatS
         .position(|orb| orb.id == crate::runtime::combat::OrbId::Empty)
     {
         state.entities.player.orbs[empty_slot] = new_orb;
+        state.turn.record_orb_channeled(orb_id);
     } else {
         state.queue_action_front(Action::ChannelOrb(orb_id));
         state.queue_action_front(Action::EvokeOrb);
@@ -820,6 +821,7 @@ fn handle_channel_random_orbs(amount: u8, state: &mut CombatState) {
 }
 
 fn handle_channel_orb_entity(orb: crate::runtime::combat::OrbEntity, state: &mut CombatState) {
+    let orb_id = orb.id;
     if state.entities.player.max_orbs == 0 {
         return;
     }
@@ -840,6 +842,7 @@ fn handle_channel_orb_entity(orb: crate::runtime::combat::OrbEntity, state: &mut
         .position(|existing| existing.id == crate::runtime::combat::OrbId::Empty)
     {
         state.entities.player.orbs[empty_slot] = orb;
+        state.turn.record_orb_channeled(orb_id);
     }
 }
 

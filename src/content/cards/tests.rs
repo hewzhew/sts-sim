@@ -4540,6 +4540,129 @@ fn genetic_algorithm_definition_runtime_and_misc_growth_match_java_sources() {
 }
 
 #[test]
+fn defect_channel_history_blizzard_and_thunder_strike_match_java_sources() {
+    let mut history_state = crate::test_support::blank_test_combat();
+    history_state.entities.player.max_orbs = 2;
+    history_state.entities.player.orbs =
+        vec![OrbEntity::new(OrbId::Empty), OrbEntity::new(OrbId::Empty)];
+    crate::engine::action_handlers::execute_action(
+        Action::ChannelOrb(OrbId::Frost),
+        &mut history_state,
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::ChannelOrbEntity {
+            orb: OrbEntity::new(OrbId::Lightning),
+        },
+        &mut history_state,
+    );
+    assert_eq!(
+        history_state.turn.counters.orbs_channeled_this_turn,
+        vec![OrbId::Frost, OrbId::Lightning]
+    );
+    assert_eq!(
+        history_state.turn.counters.orbs_channeled_this_combat,
+        vec![OrbId::Frost, OrbId::Lightning]
+    );
+    history_state.turn.begin_next_player_turn(3);
+    assert!(history_state
+        .turn
+        .counters
+        .orbs_channeled_this_turn
+        .is_empty());
+    assert_eq!(
+        history_state.turn.counters.orbs_channeled_this_combat,
+        vec![OrbId::Frost, OrbId::Lightning],
+        "Java GameActionManager clears orbsChanneledThisTurn each turn but keeps combat history"
+    );
+
+    let blizzard = get_card_definition(CardId::Blizzard);
+    assert_eq!(blizzard.name, "Blizzard");
+    assert_eq!(blizzard.card_type, CardType::Attack);
+    assert_eq!(blizzard.rarity, CardRarity::Uncommon);
+    assert_eq!(blizzard.cost, 1);
+    assert_eq!(blizzard.base_damage, 0);
+    assert_eq!(blizzard.base_magic, 2);
+    assert_eq!(blizzard.target, CardTarget::AllEnemy);
+    assert!(blizzard.is_multi_damage);
+    assert_eq!(blizzard.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Blizzard), "Blizzard");
+
+    let thunder = get_card_definition(CardId::ThunderStrike);
+    assert_eq!(thunder.name, "Thunder Strike");
+    assert_eq!(thunder.card_type, CardType::Attack);
+    assert_eq!(thunder.rarity, CardRarity::Rare);
+    assert_eq!(thunder.cost, 3);
+    assert_eq!(thunder.base_damage, 7);
+    assert_eq!(thunder.target, CardTarget::AllEnemy);
+    assert!(thunder.tags.contains(&CardTag::Strike));
+    assert_eq!(thunder.upgrade_damage, 2);
+    assert_eq!(java_id(CardId::ThunderStrike), "Thunder Strike");
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut left = crate::test_support::test_monster(EnemyId::JawWorm);
+    left.id = 501;
+    let mut right = crate::test_support::test_monster(EnemyId::Cultist);
+    right.id = 502;
+    state.entities.monsters = vec![left, right];
+    state.turn.counters.orbs_channeled_this_combat =
+        vec![OrbId::Frost, OrbId::Lightning, OrbId::Frost];
+
+    match &resolve_card_play(
+        CardId::Blizzard,
+        &state,
+        &CombatCard::new(CardId::Blizzard, 415),
+        None,
+    )[0]
+    .action
+    {
+        Action::DamageAllEnemies { damages, .. } => {
+            assert_eq!(damages.as_slice(), &[4, 4]);
+        }
+        other => panic!("Blizzard should emit DamageAllEnemiesAction, got {other:?}"),
+    }
+
+    let mut blizzard_plus = CombatCard::new(CardId::Blizzard, 416);
+    blizzard_plus.upgrades = 1;
+    match &resolve_card_play(CardId::Blizzard, &state, &blizzard_plus, None)[0].action {
+        Action::DamageAllEnemies { damages, .. } => {
+            assert_eq!(damages.as_slice(), &[6, 6]);
+        }
+        other => panic!("Blizzard+ should emit DamageAllEnemiesAction, got {other:?}"),
+    }
+
+    let thunder_actions = resolve_card_play(
+        CardId::ThunderStrike,
+        &state,
+        &CombatCard::new(CardId::ThunderStrike, 417),
+        None,
+    );
+    assert_eq!(
+        thunder_actions.len(),
+        1,
+        "Java Thunder Strike queues one NewThunderStrikeAction per Lightning channeled this combat"
+    );
+    match &thunder_actions[0].action {
+        Action::AttackDamageRandomEnemyCard { card } => {
+            assert_eq!(card.id, CardId::ThunderStrike);
+            assert_eq!(card.upgrades, 0);
+        }
+        other => panic!("Thunder Strike should emit AttackDamageRandomEnemyCard, got {other:?}"),
+    }
+
+    let mut thunder_plus = CombatCard::new(CardId::ThunderStrike, 418);
+    thunder_plus.upgrades = 1;
+    match &resolve_card_play(CardId::ThunderStrike, &state, &thunder_plus, None)[0].action {
+        Action::AttackDamageRandomEnemyCard { card } => {
+            assert_eq!(card.id, CardId::ThunderStrike);
+            assert_eq!(card.upgrades, 1);
+        }
+        other => {
+            panic!("Thunder Strike+ should preserve upgraded damage in queued card, got {other:?}")
+        }
+    }
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

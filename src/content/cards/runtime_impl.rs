@@ -118,6 +118,8 @@ pub fn resolve_card_play_with_context(
         CardId::GeneticAlgorithm => {
             defect::genetic_algorithm::genetic_algorithm_play(_state, _card)
         }
+        CardId::Blizzard => defect::blizzard::blizzard_play(_state, _card),
+        CardId::ThunderStrike => defect::thunder_strike::thunder_strike_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),

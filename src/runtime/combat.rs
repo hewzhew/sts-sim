@@ -264,6 +264,8 @@ pub struct EphemeralCounters {
     pub attacks_played_this_turn: u8,
     pub cards_discarded_this_turn: u16,
     pub card_ids_played_this_turn: Vec<CardId>,
+    pub orbs_channeled_this_turn: Vec<OrbId>,
+    pub orbs_channeled_this_combat: Vec<OrbId>,
     pub times_damaged_this_combat: u8,
     pub victory_triggered: bool,
     pub discovery_cost_for_turn: Option<u8>,
@@ -479,6 +481,11 @@ impl TurnRuntime {
         self.counters.card_ids_played_this_turn.push(card_id);
     }
 
+    pub fn record_orb_channeled(&mut self, orb_id: OrbId) {
+        self.counters.orbs_channeled_this_turn.push(orb_id);
+        self.counters.orbs_channeled_this_combat.push(orb_id);
+    }
+
     pub fn increment_attacks_played(&mut self) {
         self.counters.attacks_played_this_turn += 1;
     }
@@ -544,6 +551,7 @@ impl TurnRuntime {
         self.counters.attacks_played_this_turn = 0;
         self.counters.cards_discarded_this_turn = 0;
         self.counters.card_ids_played_this_turn.clear();
+        self.counters.orbs_channeled_this_turn.clear();
     }
 }
 
@@ -1925,6 +1933,8 @@ mod tests {
                 attacks_played_this_turn: 2,
                 cards_discarded_this_turn: 3,
                 card_ids_played_this_turn: vec![CardId::Strike, CardId::Defend],
+                orbs_channeled_this_turn: vec![OrbId::Lightning],
+                orbs_channeled_this_combat: vec![OrbId::Lightning, OrbId::Frost],
                 times_damaged_this_combat: 3,
                 victory_triggered: false,
                 discovery_cost_for_turn: None,
@@ -1943,6 +1953,12 @@ mod tests {
         assert_eq!(turn.counters.attacks_played_this_turn, 0);
         assert_eq!(turn.counters.cards_discarded_this_turn, 0);
         assert!(turn.counters.card_ids_played_this_turn.is_empty());
+        assert!(turn.counters.orbs_channeled_this_turn.is_empty());
+        assert_eq!(
+            turn.counters.orbs_channeled_this_combat,
+            vec![OrbId::Lightning, OrbId::Frost],
+            "combat-wide orb channel history should remain untouched"
+        );
         assert_eq!(
             turn.counters.times_damaged_this_combat, 3,
             "combat-wide counters should remain untouched"

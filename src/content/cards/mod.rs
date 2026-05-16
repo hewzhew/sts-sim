@@ -287,6 +287,8 @@ pub enum CardId {
     MultiCast,
     AllForOne,
     GeneticAlgorithm,
+    Blizzard,
+    ThunderStrike,
     // Add more as we expand
 }
 
@@ -601,6 +603,8 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::MultiCast => defect::multi_cast::definition(),
         CardId::AllForOne => defect::all_for_one::definition(),
         CardId::GeneticAlgorithm => defect::genetic_algorithm::definition(),
+        CardId::Blizzard => defect::blizzard::definition(),
+        CardId::ThunderStrike => defect::thunder_strike::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1314,6 +1318,8 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::MultiCast => "Multi-Cast",
         CardId::AllForOne => "All For One",
         CardId::GeneticAlgorithm => "Genetic Algorithm",
+        CardId::Blizzard => "Blizzard",
+        CardId::ThunderStrike => "Thunder Strike",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1613,6 +1619,8 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         MultiCast,
         AllForOne,
         GeneticAlgorithm,
+        Blizzard,
+        ThunderStrike,
         Neutralize,
         Survivor,
         Anger,
