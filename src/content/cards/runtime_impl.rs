@@ -128,6 +128,8 @@ pub fn resolve_card_play_with_context(
         CardId::Alpha => watcher::alpha::alpha_play(_state, _card),
         CardId::Beta => colorless::beta::beta_play(_state, _card),
         CardId::Omega => colorless::omega::omega_play(_state, _card),
+        CardId::ConjureBlade => watcher::conjure_blade::conjure_blade_play(_state, _card),
+        CardId::Expunger => colorless::expunger::expunger_play(_state, _card, t),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -526,6 +528,8 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         } else {
             def.base_block as f32
         };
+    } else if card.id == CardId::Expunger {
+        card.base_magic_num_mut = card.misc_value.max(0);
     } else if card.id == CardId::Stack {
         block = state.zones.discard_pile.len() as f32;
         if card.upgrades > 0 {

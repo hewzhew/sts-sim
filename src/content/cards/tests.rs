@@ -3107,6 +3107,110 @@ fn watcher_alpha_beta_omega_chain_matches_java_sources() {
 }
 
 #[test]
+fn watcher_conjure_blade_and_expunger_match_java_sources() {
+    let java_map = build_java_id_map();
+    for (id, java) in [
+        (CardId::ConjureBlade, "ConjureBlade"),
+        (CardId::Expunger, "Expunger"),
+    ] {
+        assert_eq!(java_id(id), java);
+        assert_eq!(java_map.get(java), Some(&id));
+    }
+
+    let conjure = get_card_definition(CardId::ConjureBlade);
+    assert_eq!(conjure.name, "Conjure Blade");
+    assert_eq!(conjure.card_type, CardType::Skill);
+    assert_eq!(conjure.rarity, CardRarity::Rare);
+    assert_eq!(conjure.cost, -1);
+    assert_eq!(conjure.target, CardTarget::SelfTarget);
+    assert!(conjure.exhaust);
+    assert!(WATCHER_RARE_POOL.contains(&CardId::ConjureBlade));
+
+    let expunger = get_card_definition(CardId::Expunger);
+    assert_eq!(expunger.name, "Expunger");
+    assert_eq!(expunger.card_type, CardType::Attack);
+    assert_eq!(expunger.rarity, CardRarity::Special);
+    assert_eq!(expunger.cost, 1);
+    assert_eq!(expunger.base_damage, 9);
+    assert_eq!(expunger.upgrade_damage, 6);
+    assert_eq!(expunger.target, CardTarget::Enemy);
+
+    let mut state = crate::test_support::blank_test_combat();
+    state.turn.energy = 2;
+    let mut conjure_plus = CombatCard::new(CardId::ConjureBlade, 1030);
+    conjure_plus.upgrades = 1;
+    conjure_plus.energy_on_use = 2;
+    let conjure_actions = resolve_card_play(CardId::ConjureBlade, &state, &conjure_plus, None);
+    assert_eq!(
+        conjure_actions[0].action,
+        Action::ConjureBlade {
+            free_to_play_once: false,
+            energy_on_use: 3,
+        },
+        "Java ConjureBlade+ passes energyOnUse + 1 into ConjureBladeAction"
+    );
+
+    crate::engine::action_handlers::execute_action(conjure_actions[0].action.clone(), &mut state);
+    assert_eq!(
+        state.turn.energy, 0,
+        "Java ConjureBladeAction spends current energy even though generated Expunger stores the boosted X"
+    );
+    assert_eq!(state.zones.draw_pile.len(), 1);
+    assert_eq!(state.zones.draw_pile[0].id, CardId::Expunger);
+    assert_eq!(
+        state.zones.draw_pile[0].misc_value, 3,
+        "Rust stores Java Expunger.setX(effect) in misc_value so stat-equivalent copies preserve it"
+    );
+
+    let mut expunge_state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    expunge_state.entities.monsters = vec![target];
+    let expunger_card = state.zones.draw_pile[0].clone();
+    let expunger_actions =
+        resolve_card_play(CardId::Expunger, &expunge_state, &expunger_card, Some(7));
+    assert_eq!(expunger_actions.len(), 3);
+    for action in expunger_actions {
+        match action.action {
+            Action::Damage(info) => {
+                assert_eq!(info.target, 7);
+                assert_eq!(info.base, 9);
+                assert_eq!(info.output, 9);
+            }
+            other => panic!("Expunger should emit repeated DamageAction, got {other:?}"),
+        }
+    }
+
+    let mut master_state = crate::test_support::blank_test_combat();
+    master_state.turn.energy = 1;
+    crate::content::powers::store::set_powers_for(
+        &mut master_state,
+        0,
+        vec![Power {
+            power_type: PowerId::MasterRealityPower,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::ConjureBlade {
+            free_to_play_once: false,
+            energy_on_use: 1,
+        },
+        &mut master_state,
+    );
+    assert_eq!(master_state.zones.draw_pile[0].id, CardId::Expunger);
+    assert_eq!(master_state.zones.draw_pile[0].upgrades, 1);
+    assert_eq!(
+        master_state.zones.draw_pile[0].misc_value, 1,
+        "Java Master Reality upgrades Expunger damage after setX; it does not add a hit"
+    );
+}
+
+#[test]
 fn watcher_scry_card_runtime_actions_match_java_use_methods() {
     let state = crate::test_support::blank_test_combat();
 

@@ -6,6 +6,7 @@ pub mod brilliance;
 pub mod carve_reality;
 pub mod collect;
 pub mod conclude;
+pub mod conjure_blade;
 pub mod consecrate;
 pub mod crescendo;
 pub mod crush_joints;

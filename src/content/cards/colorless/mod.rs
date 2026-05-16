@@ -10,6 +10,7 @@ pub mod deep_breath;
 pub mod discovery;
 pub mod dramatic_entrance;
 pub mod enlightenment;
+pub mod expunger;
 pub mod finesse;
 pub mod flash_of_steel;
 pub mod forethought;

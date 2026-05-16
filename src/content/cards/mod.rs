@@ -373,6 +373,8 @@ pub enum CardId {
     Alpha,
     Beta,
     Omega,
+    ConjureBlade,
+    Expunger,
     // Add more as we expand
 }
 
@@ -781,6 +783,8 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Alpha => watcher::alpha::definition(),
         CardId::Beta => colorless::beta::definition(),
         CardId::Omega => colorless::omega::definition(),
+        CardId::ConjureBlade => watcher::conjure_blade::definition(),
+        CardId::Expunger => colorless::expunger::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1432,6 +1436,7 @@ pub const WATCHER_RARE_POOL: &[CardId] = &[
     CardId::Blasphemy,
     CardId::DeusExMachina,
     CardId::Alpha,
+    CardId::ConjureBlade,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1701,6 +1706,8 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Alpha => "Alpha",
         CardId::Beta => "Beta",
         CardId::Omega => "Omega",
+        CardId::ConjureBlade => "ConjureBlade",
+        CardId::Expunger => "Expunger",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -2143,6 +2150,8 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Alpha,
         Beta,
         Omega,
+        ConjureBlade,
+        Expunger,
         Neutralize,
         Survivor,
         Anger,

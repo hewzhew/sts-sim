@@ -215,6 +215,10 @@ pub enum Action {
         free_to_play_once: bool,
         energy_on_use: i32,
     },
+    ConjureBlade {
+        free_to_play_once: bool,
+        energy_on_use: i32,
+    },
     GainBlock {
         target: EntityId,
         amount: i32,

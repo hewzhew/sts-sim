@@ -1725,6 +1725,31 @@ pub fn handle_multicast(
     }
 }
 
+pub fn handle_conjure_blade(free_to_play_once: bool, energy_on_use: i32, state: &mut CombatState) {
+    let mut effect = if energy_on_use != -1 {
+        energy_on_use
+    } else {
+        state.turn.energy as i32
+    };
+    if state
+        .entities
+        .player
+        .has_relic(crate::content::relics::RelicId::ChemicalX)
+    {
+        effect += 2;
+    }
+
+    let mut card =
+        make_generated_card_from_id(CardId::Expunger, state.next_card_uuid(), false, state);
+    card.misc_value = effect.max(0);
+    apply_master_reality_to_generated_card(&mut card, state, 2);
+    state.add_card_to_draw_pile_random_spot(card);
+
+    if !free_to_play_once {
+        state.turn.spend_energy(state.turn.energy as i32);
+    }
+}
+
 pub fn handle_reinforced_body(
     block_amount: i32,
     free_to_play_once: bool,

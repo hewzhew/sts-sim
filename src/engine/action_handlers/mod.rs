@@ -267,6 +267,10 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             free_to_play_once,
             energy_on_use,
         } => powers::handle_collect(upgraded, free_to_play_once, energy_on_use, state),
+        Action::ConjureBlade {
+            free_to_play_once,
+            energy_on_use,
+        } => cards::handle_conjure_blade(free_to_play_once, energy_on_use, state),
         Action::FiendFire {
             target,
             damage_info,
