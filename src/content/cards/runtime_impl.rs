@@ -64,6 +64,7 @@ pub fn resolve_card_play_with_context(
         CardId::CompileDriver => defect::compile_driver::compile_driver_play(_state, _card, t),
         CardId::Barrage => defect::barrage::barrage_play(_state, _card, t),
         CardId::GoForTheEyes => defect::go_for_the_eyes::go_for_the_eyes_play(_state, _card, t),
+        CardId::Recursion => defect::recursion::recursion_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
@@ -645,6 +646,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::ToolsOfTheTrade if card.upgrades > 0 => Some(0),
         CardId::Dualcast if card.upgrades > 0 => Some(0),
         CardId::Zap if card.upgrades > 0 => Some(0),
+        CardId::Recursion if card.upgrades > 0 => Some(0),
         _ => None,
     }
 }

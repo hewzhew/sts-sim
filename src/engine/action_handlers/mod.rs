@@ -620,10 +620,12 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
 
         Action::IncreaseMaxOrb(amount) => handle_increase_max_orb(amount, state),
         Action::ChannelOrb(orb_id) => handle_channel_orb(orb_id, state),
+        Action::ChannelOrbEntity { orb } => handle_channel_orb_entity(orb, state),
         Action::EvokeOrb => crate::content::orbs::hooks::evoke_next_orb_now(state),
         Action::EvokeOrbWithoutRemoving => {
             crate::content::orbs::hooks::evoke_next_orb_without_removing_now(state)
         }
+        Action::RedoOrb => handle_redo_orb(state),
         Action::TriggerStartOfTurnOrbs => {
             crate::content::orbs::hooks::trigger_start_of_turn_orbs_now(state)
         }
@@ -713,6 +715,41 @@ fn handle_channel_orb(orb_id: crate::runtime::combat::OrbId, state: &mut CombatS
         state.queue_action_front(Action::ChannelOrb(orb_id));
         state.queue_action_front(Action::EvokeOrb);
     }
+}
+
+fn handle_channel_orb_entity(orb: crate::runtime::combat::OrbEntity, state: &mut CombatState) {
+    if state.entities.player.max_orbs == 0 {
+        return;
+    }
+    while state.entities.player.orbs.len() < state.entities.player.max_orbs as usize {
+        state
+            .entities
+            .player
+            .orbs
+            .push(crate::runtime::combat::OrbEntity::new(
+                crate::runtime::combat::OrbId::Empty,
+            ));
+    }
+    if let Some(empty_slot) = state
+        .entities
+        .player
+        .orbs
+        .iter()
+        .position(|existing| existing.id == crate::runtime::combat::OrbId::Empty)
+    {
+        state.entities.player.orbs[empty_slot] = orb;
+    }
+}
+
+fn handle_redo_orb(state: &mut CombatState) {
+    let Some(orb) = state.entities.player.orbs.first().cloned() else {
+        return;
+    };
+    if orb.id == crate::runtime::combat::OrbId::Empty {
+        return;
+    }
+    state.queue_action_front(Action::ChannelOrbEntity { orb });
+    state.queue_action_front(Action::EvokeOrb);
 }
 
 fn handle_enter_stance(stance: &str, state: &mut CombatState) {

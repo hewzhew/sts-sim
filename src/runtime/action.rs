@@ -674,8 +674,16 @@ pub enum Action {
         used_up: bool,
     },
     ChannelOrb(crate::runtime::combat::OrbId),
+    /// Java `ChannelAction(existingOrb, false)`: channel the concrete orb
+    /// instance into an empty slot without auto-evoking.
+    ChannelOrbEntity {
+        orb: crate::runtime::combat::OrbEntity,
+    },
     EvokeOrb,
     EvokeOrbWithoutRemoving,
+    /// Java Defect `RedoAction`: snapshot the front orb instance, evoke it,
+    /// then channel the same orb instance back into the empty slot.
+    RedoOrb,
     TriggerStartOfTurnOrbs,
     TriggerEndOfTurnOrbs,
     TriggerImpulseOrbs,

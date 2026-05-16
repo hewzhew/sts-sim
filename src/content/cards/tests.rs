@@ -527,6 +527,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             0,
             1,
         ),
+        (
+            CardId::Recursion,
+            "Redo",
+            CardType::Skill,
+            1,
+            0,
+            0,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -547,7 +560,11 @@ fn defect_first_common_batch_definitions_match_java_sources() {
         assert_eq!(java_id(id), java_id_value);
         assert_eq!(java_map.get(java_id_value), Some(&id));
         let def = get_card_definition(id);
-        assert_eq!(def.name, java_id_value);
+        if id == CardId::Recursion {
+            assert_eq!(def.name, "Recursion");
+        } else {
+            assert_eq!(def.name, java_id_value);
+        }
         assert_eq!(def.card_type, card_type);
         assert_eq!(def.rarity, CardRarity::Common);
         assert_eq!(def.cost, cost);
@@ -939,6 +956,18 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
             amount: 2,
         }
     );
+
+    let recursion = resolve_card_play(
+        CardId::Recursion,
+        &state,
+        &CombatCard::new(CardId::Recursion, 134),
+        None,
+    );
+    assert_eq!(recursion.len(), 1);
+    assert_eq!(recursion[0].action, Action::RedoOrb);
+    let mut recursion_plus = CombatCard::new(CardId::Recursion, 135);
+    recursion_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&recursion_plus), Some(0));
 }
 
 #[test]
@@ -1046,6 +1075,43 @@ fn go_for_the_eyes_action_checks_target_attack_intent_when_it_resolves() {
         &mut state,
     );
     assert_eq!(state.pop_next_action(), None);
+}
+
+#[test]
+fn recursion_redo_action_evokes_then_rechannels_same_orb_instance() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::Cultist);
+    target.id = 44;
+    target.current_hp = 10;
+    state.entities.monsters = vec![target];
+    state.entities.player.max_orbs = 1;
+    let mut dark = OrbEntity::new(OrbId::Dark);
+    dark.evoke_amount = 18;
+    state.entities.player.orbs = vec![dark.clone()];
+
+    crate::engine::action_handlers::execute_action(Action::RedoOrb, &mut state);
+    assert_eq!(state.pop_next_action(), Some(Action::EvokeOrb));
+    let channel = state.pop_next_action();
+    assert_eq!(
+        channel,
+        Some(Action::ChannelOrbEntity { orb: dark.clone() }),
+        "Java RedoAction channels the same orb object it captured before evoking"
+    );
+
+    crate::content::orbs::hooks::evoke_next_orb_now(&mut state);
+    assert_eq!(state.entities.player.orbs[0].id, OrbId::Empty);
+    let queued_dark_damage = state.pop_next_action();
+    assert!(matches!(
+        queued_dark_damage,
+        Some(Action::Damage(DamageInfo {
+            target: 44,
+            base: 18,
+            ..
+        }))
+    ));
+
+    crate::engine::action_handlers::execute_action(channel.unwrap(), &mut state);
+    assert_eq!(state.entities.player.orbs[0], dark);
 }
 
 #[test]

@@ -239,6 +239,7 @@ pub enum CardId {
     CompileDriver,
     Barrage,
     GoForTheEyes,
+    Recursion,
     // Add more as we expand
 }
 
@@ -502,6 +503,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::CompileDriver => defect::compile_driver::definition(),
         CardId::Barrage => defect::barrage::definition(),
         CardId::GoForTheEyes => defect::go_for_the_eyes::definition(),
+        CardId::Recursion => defect::recursion::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1167,6 +1169,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::CompileDriver => "Compile Driver",
         CardId::Barrage => "Barrage",
         CardId::GoForTheEyes => "Go for the Eyes",
+        CardId::Recursion => "Redo",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1418,6 +1421,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         CompileDriver,
         Barrage,
         GoForTheEyes,
+        Recursion,
         Neutralize,
         Survivor,
         Anger,
