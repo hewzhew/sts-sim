@@ -202,6 +202,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             free_to_play_once,
             energy_on_use,
         } => damage::handle_skewer(target, damage_info, free_to_play_once, energy_on_use, state),
+        Action::Sunder {
+            target,
+            damage_info,
+            energy_gain,
+        } => damage::handle_sunder(target, damage_info, energy_gain, state),
         Action::DamageRandomEnemy {
             source,
             base_damage,

@@ -264,6 +264,7 @@ pub enum CardId {
     ReinforcedBody,
     DoomAndGloom,
     Consume,
+    Sunder,
     // Add more as we expand
 }
 
@@ -553,6 +554,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::ReinforcedBody => defect::reinforced_body::definition(),
         CardId::DoomAndGloom => defect::doom_and_gloom::definition(),
         CardId::Consume => defect::consume::definition(),
+        CardId::Sunder => defect::sunder::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1243,6 +1245,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::ReinforcedBody => "Reinforced Body",
         CardId::DoomAndGloom => "Doom and Gloom",
         CardId::Consume => "Consume",
+        CardId::Sunder => "Sunder",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1519,6 +1522,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         ReinforcedBody,
         DoomAndGloom,
         Consume,
+        Sunder,
         Neutralize,
         Survivor,
         Anger,

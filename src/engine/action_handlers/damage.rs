@@ -727,6 +727,29 @@ pub fn handle_skewer(
     }
 }
 
+pub fn handle_sunder(
+    target: usize,
+    mut damage_info: DamageInfo,
+    energy_gain: i32,
+    state: &mut CombatState,
+) {
+    damage_info.target = target;
+    let final_damage = damage_info.output.max(0);
+    let _ = apply_damage_to_monster_via_pipeline(state, &damage_info, final_damage);
+    let killed_or_zero_hp = state
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.id == target)
+        .is_some_and(|monster| monster.is_dying || monster.current_hp <= 0);
+    if killed_or_zero_hp && energy_gain > 0 {
+        state.queue_action_back(Action::GainEnergy {
+            amount: energy_gain,
+        });
+    }
+    clear_post_combat_actions_if_ready(state);
+}
+
 pub fn handle_damage_random_enemy(
     source: usize,
     base_damage: i32,

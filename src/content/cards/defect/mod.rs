@@ -36,6 +36,7 @@ pub mod stack;
 pub mod steam_barrier;
 pub mod streamline;
 pub mod strike_blue;
+pub mod sunder;
 pub mod sweeping_beam;
 pub mod tempest;
 pub mod turbo;

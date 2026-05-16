@@ -160,6 +160,11 @@ pub enum Action {
         free_to_play_once: bool,
         energy_on_use: i32,
     },
+    Sunder {
+        target: EntityId,
+        damage_info: DamageInfo,
+        energy_gain: i32,
+    },
     Doppelganger {
         upgraded: bool,
         free_to_play_once: bool,

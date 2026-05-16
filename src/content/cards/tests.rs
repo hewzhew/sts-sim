@@ -2588,6 +2588,111 @@ fn reinforced_body_and_decrease_max_orb_actions_match_java_execution_semantics()
 }
 
 #[test]
+fn sunder_definition_and_runtime_action_match_java_sources() {
+    let sunder = get_card_definition(CardId::Sunder);
+    assert_eq!(sunder.name, "Sunder");
+    assert_eq!(sunder.card_type, CardType::Attack);
+    assert_eq!(sunder.rarity, CardRarity::Uncommon);
+    assert_eq!(sunder.cost, 3);
+    assert_eq!(sunder.base_damage, 24);
+    assert_eq!(sunder.target, CardTarget::Enemy);
+    assert_eq!(sunder.upgrade_damage, 8);
+    assert_eq!(java_id(CardId::Sunder), "Sunder");
+
+    let state = crate::test_support::blank_test_combat();
+    let sunder_actions = resolve_card_play(
+        CardId::Sunder,
+        &state,
+        &CombatCard::new(CardId::Sunder, 288),
+        Some(289),
+    );
+    assert_eq!(sunder_actions.len(), 1);
+    match &sunder_actions[0].action {
+        Action::Sunder {
+            target,
+            damage_info,
+            energy_gain,
+        } => {
+            assert_eq!(*target, 289);
+            assert_eq!(damage_info.base, 24);
+            assert_eq!(damage_info.output, 24);
+            assert_eq!(*energy_gain, 3);
+        }
+        other => panic!("Sunder should emit SunderAction equivalent, got {other:?}"),
+    }
+    let mut sunder_plus = CombatCard::new(CardId::Sunder, 290);
+    sunder_plus.upgrades = 1;
+    let sunder_plus_actions = resolve_card_play(CardId::Sunder, &state, &sunder_plus, Some(289));
+    match &sunder_plus_actions[0].action {
+        Action::Sunder { damage_info, .. } => {
+            assert_eq!(damage_info.base, 32);
+            assert_eq!(damage_info.output, 32);
+        }
+        other => panic!("Sunder+ should emit SunderAction equivalent, got {other:?}"),
+    }
+}
+
+#[test]
+fn sunder_action_grants_energy_only_when_target_dies_and_not_cleared_by_combat_end() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 291;
+    target.current_hp = 10;
+    let mut other = crate::test_support::test_monster(EnemyId::Cultist);
+    other.id = 292;
+    other.current_hp = 30;
+    state.entities.monsters = vec![target, other];
+
+    crate::engine::action_handlers::execute_action(
+        Action::Sunder {
+            target: 291,
+            damage_info: DamageInfo {
+                source: 0,
+                target: 291,
+                base: 24,
+                output: 24,
+                damage_type: DamageType::Normal,
+                is_modified: true,
+            },
+            energy_gain: 3,
+        },
+        &mut state,
+    );
+    assert_eq!(state.entities.monsters[0].current_hp, 0);
+    let queued: Vec<_> = std::iter::from_fn(|| state.pop_next_action()).collect();
+    assert!(
+        queued.contains(&Action::GainEnergy { amount: 3 }),
+        "Java SunderAction queues GainEnergyAction when the target dies and combat continues"
+    );
+
+    let mut final_enemy = crate::test_support::blank_test_combat();
+    let mut only = crate::test_support::test_monster(EnemyId::JawWorm);
+    only.id = 293;
+    only.current_hp = 10;
+    final_enemy.entities.monsters = vec![only];
+    crate::engine::action_handlers::execute_action(
+        Action::Sunder {
+            target: 293,
+            damage_info: DamageInfo {
+                source: 0,
+                target: 293,
+                base: 24,
+                output: 24,
+                damage_type: DamageType::Normal,
+                is_modified: true,
+            },
+            energy_gain: 3,
+        },
+        &mut final_enemy,
+    );
+    assert_eq!(
+        final_enemy.pop_next_action(),
+        None,
+        "Java clearPostCombatActions runs after Sunder queues energy, so final-kill energy is not retained"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;
