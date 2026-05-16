@@ -1,4 +1,7 @@
 use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
+use smallvec::SmallVec;
 
 pub fn definition() -> CardDefinition {
     CardDefinition {
@@ -20,4 +23,17 @@ pub fn definition() -> CardDefinition {
         upgrade_block: 0,
         upgrade_magic: 2,
     }
+}
+
+pub fn purity_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
+    smallvec::smallvec![ActionInfo {
+        action: Action::ExhaustFromHand {
+            amount: evaluated.base_magic_num_mut.max(0) as usize,
+            random: false,
+            any_number: true,
+            can_pick_zero: true,
+        },
+        insertion_mode: AddTo::Bottom,
+    }]
 }

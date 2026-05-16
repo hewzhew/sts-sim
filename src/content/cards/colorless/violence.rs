@@ -1,4 +1,7 @@
 use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
+use smallvec::SmallVec;
 
 pub fn definition() -> CardDefinition {
     CardDefinition {
@@ -20,4 +23,15 @@ pub fn definition() -> CardDefinition {
         upgrade_block: 0,
         upgrade_magic: 1,
     }
+}
+
+pub fn violence_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
+    smallvec::smallvec![ActionInfo {
+        action: Action::DrawPileToHandByType {
+            amount: evaluated.base_magic_num_mut.max(0) as u8,
+            card_type: CardType::Attack,
+        },
+        insertion_mode: AddTo::Bottom,
+    }]
 }

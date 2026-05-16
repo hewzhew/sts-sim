@@ -239,21 +239,31 @@ pub fn resolve_card_play_with_context(
         CardId::PanicButton => colorless::panic_button::panic_button_play(_state, _card),
         CardId::SwiftStrike => colorless::swift_strike::swift_strike_play(_state, _card, t),
         CardId::Trip => colorless::trip::trip_play(_state, _card, t),
+        CardId::DeepBreath => colorless::deep_breath::deep_breath_play(_state, _card),
+        CardId::Discovery => colorless::discovery::discovery_play(_state, _card),
+        CardId::DramaticEntrance => {
+            colorless::dramatic_entrance::dramatic_entrance_play(_state, _card)
+        }
+        CardId::Forethought => colorless::forethought::forethought_play(_state, _card),
+        CardId::Impatience => colorless::impatience::impatience_play(_state, _card),
+        CardId::JackOfAllTrades => {
+            colorless::jack_of_all_trades::jack_of_all_trades_play(_state, _card)
+        }
+        CardId::MindBlast => colorless::mind_blast::mind_blast_play(_state, _card, t),
+        CardId::Purity => colorless::purity::purity_play(_state, _card),
+        CardId::MasterOfStrategy => {
+            colorless::master_of_strategy::master_of_strategy_play(_state, _card)
+        }
+        CardId::ThinkingAhead => {
+            colorless::thinking_ahead::thinking_ahead_play(_state, _card, context)
+        }
+        CardId::Violence => colorless::violence::violence_play(_state, _card),
         CardId::DarkShackles
-        | CardId::DeepBreath
-        | CardId::Discovery
-        | CardId::DramaticEntrance
         | CardId::Enlightenment
-        | CardId::Forethought
-        | CardId::Impatience
-        | CardId::JackOfAllTrades
-        | CardId::MindBlast
-        | CardId::Purity
         | CardId::Apotheosis
         | CardId::Chrysalis
         | CardId::HandOfGreed
         | CardId::Magnetism
-        | CardId::MasterOfStrategy
         | CardId::Mayhem
         | CardId::Metamorphosis
         | CardId::Panache
@@ -261,9 +271,7 @@ pub fn resolve_card_play_with_context(
         | CardId::SecretTechnique
         | CardId::SecretWeapon
         | CardId::TheBomb
-        | CardId::ThinkingAhead
         | CardId::Transmutation
-        | CardId::Violence
         | CardId::JAX
         | CardId::RitualDagger => colorless::play_colorless(_state, _card, t, context),
         // Unplayable stubs — curses, status, and special cards

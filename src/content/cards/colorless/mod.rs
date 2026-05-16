@@ -49,7 +49,7 @@ pub fn play_colorless(
     state: &CombatState,
     card: &CombatCard,
     target: Option<EntityId>,
-    context: crate::content::cards::CardUseContext,
+    _context: crate::content::cards::CardUseContext,
 ) -> SmallVec<[ActionInfo; 4]> {
     let dmg = card.base_damage_mut;
     let mag = card.base_magic_num_mut;
@@ -99,75 +99,9 @@ pub fn play_colorless(
                 });
             }
         }
-        CardId::DeepBreath => {
-            if !state.zones.discard_pile.is_empty() {
-                acts.push(Action::ShuffleDiscardIntoDraw);
-            }
-            acts.push(Action::DrawCards(mag as u32));
-        }
-        CardId::Discovery => {
-            acts.push(Action::SuspendForDiscovery {
-                colorless: false,
-                card_type: None,
-                cost_for_turn: Some(0),
-                can_skip: false,
-            });
-        }
-        CardId::DramaticEntrance => {
-            let damages: smallvec::SmallVec<[i32; 5]> =
-                state.entities.monsters.iter().map(|_| dmg).collect();
-            acts.push(Action::DamageAllEnemies {
-                source: 0,
-                damages,
-                damage_type: DamageType::Normal,
-                is_modified: false,
-            });
-        }
         CardId::Enlightenment => {
             acts.push(Action::Enlightenment {
                 permanent: card.upgrades > 0,
-            });
-        }
-        CardId::Forethought => {
-            acts.push(Action::Forethought {
-                upgraded: card.upgrades > 0,
-            });
-        }
-        CardId::Impatience => {
-            let has_attack = state
-                .zones
-                .hand
-                .iter()
-                .any(|c| get_card_definition(c.id).card_type == CardType::Attack);
-            if !has_attack {
-                acts.push(Action::DrawCards(mag as u32));
-            }
-        }
-        CardId::JackOfAllTrades => {
-            for _ in 0..card.base_magic_num_mut.max(1) {
-                acts.push(Action::MakeRandomColorlessCardInHand {
-                    cost_for_turn: None,
-                    upgraded: false,
-                });
-            }
-        }
-        CardId::MindBlast => {
-            let target_id = target.expect("Mind Blast requires a target!");
-            acts.push(Action::Damage(DamageInfo {
-                source: 0,
-                target: target_id,
-                base: state.zones.draw_pile.len() as i32,
-                output: dmg,
-                damage_type: DamageType::Normal,
-                is_modified: dmg != state.zones.draw_pile.len() as i32,
-            }));
-        }
-        CardId::Purity => {
-            acts.push(Action::ExhaustFromHand {
-                amount: mag.max(0) as usize,
-                random: false,
-                any_number: true,
-                can_pick_zero: true,
             });
         }
         CardId::JAX => {
@@ -232,7 +166,6 @@ pub fn play_colorless(
                 amount: 1,
             });
         }
-        CardId::MasterOfStrategy => acts.push(Action::DrawCards(mag as u32)),
         CardId::Mayhem => {
             acts.push(Action::ApplyPower {
                 source: 0,
@@ -326,29 +259,11 @@ pub fn play_colorless(
                 extra_data: Some(mag),
             });
         }
-        CardId::ThinkingAhead => {
-            acts.push(Action::DrawCards(2));
-            if context.played_from_hand || !state.zones.hand.is_empty() {
-                acts.push(Action::SuspendForHandSelect {
-                    min: 1,
-                    max: 1,
-                    can_cancel: false,
-                    filter: crate::state::HandSelectFilter::Any,
-                    reason: crate::state::HandSelectReason::PutOnDrawPile,
-                });
-            }
-        }
         CardId::Transmutation => {
             acts.push(Action::Transmutation {
                 upgraded: card.upgrades > 0,
                 free_to_play_once: card.free_to_play_once,
                 energy_on_use: card.energy_on_use.max(state.turn.energy as i32),
-            });
-        }
-        CardId::Violence => {
-            acts.push(Action::DrawPileToHandByType {
-                amount: mag as u8,
-                card_type: CardType::Attack,
             });
         }
         _ => {}

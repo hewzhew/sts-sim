@@ -1,4 +1,7 @@
 use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
+use smallvec::SmallVec;
 
 pub fn definition() -> CardDefinition {
     CardDefinition {
@@ -20,4 +23,22 @@ pub fn definition() -> CardDefinition {
         upgrade_block: 0,
         upgrade_magic: 1,
     }
+}
+
+pub fn jack_of_all_trades_play(
+    state: &CombatState,
+    card: &CombatCard,
+) -> SmallVec<[ActionInfo; 4]> {
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
+    let mut actions = SmallVec::new();
+    for _ in 0..evaluated.base_magic_num_mut.max(1) {
+        actions.push(ActionInfo {
+            action: Action::MakeRandomColorlessCardInHand {
+                cost_for_turn: None,
+                upgraded: false,
+            },
+            insertion_mode: AddTo::Bottom,
+        });
+    }
+    actions
 }
