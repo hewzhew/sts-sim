@@ -4229,6 +4229,30 @@ fn watcher_conclude_runtime_actions_match_java_use_method() {
         other => panic!("Conclude first action should be DamageAllEnemiesAction, got {other:?}"),
     }
     assert_eq!(actions[1].action, Action::QueueEarlyEndTurn);
+
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        8,
+        vec![Power {
+            power_type: PowerId::Vulnerable,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let vulnerable_actions = resolve_card_play(CardId::Conclude, &state, &conclude_plus, None);
+    match &vulnerable_actions[0].action {
+        Action::DamageAllEnemies { damages, .. } => {
+            assert_eq!(
+                damages.as_slice(),
+                &[16, 24],
+                "Java Conclude passes this.multiDamage, so target-specific damage modifiers must be preserved"
+            );
+        }
+        other => panic!("Conclude first action should remain DamageAllEnemiesAction, got {other:?}"),
+    }
 }
 
 #[test]
@@ -16531,6 +16555,59 @@ fn character_reward_pools_preserve_java_hashmap_runtime_order_for_implemented_ca
                 "Java returnTrulyRandomCardInCombat filters HEALING cards out of {class} combat random pool"
             );
         }
+    }
+}
+
+#[test]
+fn colorless_dramatic_entrance_uses_java_multi_damage_array() {
+    let definition = get_card_definition(CardId::DramaticEntrance);
+    assert!(
+        definition.is_multi_damage,
+        "Java DramaticEntrance constructor sets isMultiDamage = true"
+    );
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    state.entities.monsters = vec![first, second];
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        8,
+        vec![Power {
+            power_type: PowerId::Vulnerable,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    let actions = resolve_card_play(
+        CardId::DramaticEntrance,
+        &state,
+        &CombatCard::new(CardId::DramaticEntrance, 910),
+        None,
+    );
+    match &actions[0].action {
+        Action::DamageAllEnemies { damages, .. } => assert_eq!(
+            damages.as_slice(),
+            &[8, 12],
+            "Java DramaticEntrance passes this.multiDamage, preserving target-specific modifiers"
+        ),
+        other => panic!("Dramatic Entrance should emit DamageAllEnemiesAction, got {other:?}"),
+    }
+
+    let mut upgraded = CombatCard::new(CardId::DramaticEntrance, 911);
+    upgraded.upgrades = 1;
+    let upgraded_actions = resolve_card_play(CardId::DramaticEntrance, &state, &upgraded, None);
+    match &upgraded_actions[0].action {
+        Action::DamageAllEnemies { damages, .. } => {
+            assert_eq!(damages.as_slice(), &[12, 18]);
+        }
+        other => panic!("Dramatic Entrance+ should emit DamageAllEnemiesAction, got {other:?}"),
     }
 }
 

@@ -14,7 +14,7 @@ pub fn definition() -> CardDefinition {
         base_block: 0,
         base_magic: 0,
         target: CardTarget::AllEnemy,
-        is_multi_damage: false,
+        is_multi_damage: true,
         exhaust: true,
         ethereal: false,
         innate: true,
@@ -27,16 +27,10 @@ pub fn definition() -> CardDefinition {
 
 pub fn dramatic_entrance_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
     let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
-    let damages = state
-        .entities
-        .monsters
-        .iter()
-        .map(|_| evaluated.base_damage_mut)
-        .collect();
     smallvec::smallvec![ActionInfo {
         action: Action::DamageAllEnemies {
             source: 0,
-            damages,
+            damages: evaluated.multi_damage.clone(),
             damage_type: DamageType::Normal,
             is_modified: evaluated.base_damage_mut
                 != crate::content::cards::get_card_definition(card.id).base_damage,
