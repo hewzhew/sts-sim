@@ -2,7 +2,7 @@ use crate::content::cards::{CardId, CardTag};
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
@@ -181,7 +181,7 @@ fn replace_attacks(run_state: &mut RunState) {
 
     // Add 5 Bites through the DeckManager pipeline
     for _ in 0..5 {
-        run_state.add_card_to_deck(CardId::Bite);
+        super::obtain_event_card(run_state, EventId::Vampires, CardId::Bite);
     }
 }
 

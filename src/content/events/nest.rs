@@ -55,7 +55,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         dmg -= 1;
                     }
                     run_state.current_hp = (run_state.current_hp - dmg).max(0);
-                    run_state.add_card_to_deck(CardId::RitualDagger);
+                    super::obtain_event_card(run_state, EventId::Nest, CardId::RitualDagger);
                     event_state.current_screen = 2;
                 }
             }

@@ -21,7 +21,8 @@ Rust currently has 52 event modules, but the counts are not one-to-one:
   `bonfire_elementals`.
 - Rust includes `neow`, which is not under Java `events`.
 - Java has `beyond/SecretPortal.java` and `beyond/SpireHeart.java`; these are
-  not represented as normal Rust event modules yet.
+  not normal Rust event modules. They are classified below instead of being
+  counted as ordinary event-content parity.
 - Java `shrines/GremlinMatchGame.java` maps to Rust `match_and_keep`.
 - Java `exordium/GoldenIdolEvent.java` maps to Rust `golden_idol`.
 - Java `exordium/GoopPuddle.java` maps to Rust `goop_puddle` / EventId
@@ -362,15 +363,65 @@ Tests:
 - `first_fight_returns_to_event_room_without_rewards_or_elite_trigger`
 - `second_fight_preserves_java_elite_trigger_without_normal_elite_rewards`
 
+### SecretPortal and SpireHeart classification
+
+Java `events/beyond/SecretPortal.java` is a special one-time Act 3 portal event,
+available only in The Beyond after `CardCrawlGame.playtime >= 800.0f`. Accepting
+it does not behave like a normal event reward or combat. It marks the current
+room complete, constructs a `MonsterRoomBoss` at map node `(-1, 15)`, appends
+`pathX/pathY`, and starts the next-room transition.
+
+Rust currently does not model player playtime or boss-room teleport nodes in
+the event generator, and `EventId` deliberately has no `SecretPortal` variant.
+This is an explicit unsupported special event, not an accidental missing normal
+event module. To implement it later, add a run-level transition primitive rather
+than an ordinary `src/content/events/*` choice handler.
+
+Java `events/beyond/SpireHeart.java` is the post-Act-3 heart scene and final-act
+gate. It computes score/heart damage, either sends the player to death/game-over
+when the keys are missing, or opens the Door Unlock screen when all keys are
+present. It is UI/stat heavy; the mechanics-relevant part is the run transition.
+
+Rust compresses this into run-loop state:
+
+- Act 3 boss with all three keys and final act enabled directly creates the
+  Act 4 map.
+- Act 3 boss without the full key set ends the run as victory in the current
+  simplified outcome model.
+- Act 4 `TrueVictoryRoom` ends the run as victory after the Heart.
+
+This preserves the run-progression boundary needed by the simulator, but does
+not model Java score upload, heart damage animation, death screen text, or Door
+Unlock UI.
+
+### Event card obtain source unification
+
+Several event modules still used `RunState::add_card_to_deck`, which defaults
+to `DomainEventSource::RewardScreen`. That is wrong for event choices: it makes
+event curses/cards look like normal combat or reward-screen claims in trace
+data, even when the mechanical obtain pipeline itself is otherwise correct.
+
+Fixes:
+
+- Added `content::events::obtain_event_card(run_state, event_id, card_id)` as a
+  narrow helper for event-owned card obtains.
+- Replaced all production `src/content/events/*` direct `add_card_to_deck`
+  calls with the event-source helper.
+- The only remaining direct event-module `add_card_to_deck` occurrence is a
+  `falling.rs` unit-test setup helper, not production event logic.
+
+Validation:
+
+- Static scan: `rg "run_state\\.add_card_to_deck\\(|\\.add_card_to_deck\\(" src/content/events`
+- `cargo test --all-targets`
+
 ## Current High-Risk Event Areas
 
 - Selection choice preconditions still need deeper event-by-event review.
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
-- `SecretPortal` and `SpireHeart` need an explicit classification: unsupported,
-  modeled elsewhere, or normal event module.
-- Event reward generation and domain-event source tagging must remain separate
-  from combat reward generation.
+- Event HP/max-HP/gold direct mutations still need the same domain-source pass
+  that card obtains just received.
 
 ## Validation
 

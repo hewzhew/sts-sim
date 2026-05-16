@@ -52,7 +52,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             // Confirm: gain gold + receive curse
             let gold = gold_reward(run_state);
             run_state.change_gold_with_source(gold, DomainEventSource::Event(EventId::Ssssserpent));
-            run_state.add_card_to_deck(CardId::Doubt);
+            super::obtain_event_card(run_state, EventId::Ssssserpent, CardId::Doubt);
             event_state.current_screen = 99;
         }
         _ => {

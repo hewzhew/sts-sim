@@ -93,7 +93,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                 }
                 3 => {
                     // Obtain Decay curse
-                    run_state.add_card_to_deck(crate::content::cards::CardId::Decay);
+                    super::obtain_event_card(
+                        run_state,
+                        crate::state::events::EventId::GremlinWheelGame,
+                        crate::content::cards::CardId::Decay,
+                    );
                 }
                 4 => {
                     // Remove a card (Java: grid-select purge)

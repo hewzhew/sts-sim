@@ -2,7 +2,7 @@ use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::core::EngineState;
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
 };
 use crate::state::run::RunState;
@@ -153,7 +153,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 }
                 _ => {
                     // Desecrate: Decay curse
-                    run_state.add_card_to_deck(CardId::Decay);
+                    super::obtain_event_card(run_state, EventId::ForgottenAltar, CardId::Decay);
                     event_state.current_screen = 1;
                 }
             }

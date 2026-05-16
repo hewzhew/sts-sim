@@ -61,7 +61,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 1 => {
                     // Rummage: obtain Pain curse + WarpedTongs relic
-                    run_state.add_card_to_deck(crate::content::cards::CardId::Pain);
+                    super::obtain_event_card(
+                        run_state,
+                        crate::state::events::EventId::AccursedBlacksmith,
+                        crate::content::cards::CardId::Pain,
+                    );
                     run_state
                         .relics
                         .push(crate::content::relics::RelicState::new(

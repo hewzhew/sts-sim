@@ -57,7 +57,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Obtain J.A.X.
-                    run_state.add_card_to_deck(crate::content::cards::CardId::JAX);
+                    super::obtain_event_card(
+                        run_state,
+                        crate::state::events::EventId::DrugDealer,
+                        crate::content::cards::CardId::JAX,
+                    );
                     event_state.current_screen = 1;
                 }
                 1 => {

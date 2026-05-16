@@ -334,7 +334,11 @@ fn apply_drawback(run_state: &mut RunState, drawback: NeowDrawback) {
         NeowDrawback::Curse => {
             // Add a random curse to deck
             // Java: AbstractDungeon.getCardWithoutRng(CardRarity.CURSE)
-            run_state.add_card_to_deck(crate::content::cards::CardId::Regret);
+            super::obtain_event_card(
+                run_state,
+                crate::state::events::EventId::Neow,
+                crate::content::cards::CardId::Regret,
+            );
         }
         NeowDrawback::PercentDamage => {
             let dmg = run_state.current_hp / 10 * 3;
@@ -443,7 +447,7 @@ fn apply_reward(
                     .rng_pool
                     .card_rng
                     .random_range(0, (pool.len() - 1) as i32) as usize;
-                run_state.add_card_to_deck(pool[idx]);
+                super::obtain_event_card(run_state, crate::state::events::EventId::Neow, pool[idx]);
             }
         }
         NeowRewardType::RemoveCard => {

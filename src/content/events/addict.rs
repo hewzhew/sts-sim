@@ -65,7 +65,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     ) {
                         *_engine_state = next_state;
                     }
-                    run_state.add_card_to_deck(CardId::Shame);
+                    super::obtain_event_card(run_state, EventId::Addict, CardId::Shame);
                     event_state.current_screen = 1;
                 }
                 _ => {

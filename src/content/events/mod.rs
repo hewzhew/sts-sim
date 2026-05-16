@@ -4,6 +4,18 @@ pub mod golden_shrine;
 pub mod living_wall;
 pub mod vampires;
 
+pub(crate) fn obtain_event_card(
+    run_state: &mut crate::state::run::RunState,
+    event_id: crate::state::events::EventId,
+    card_id: crate::content::cards::CardId,
+) -> bool {
+    run_state.add_card_to_deck_with_upgrades_from(
+        card_id,
+        0,
+        crate::state::selection::DomainEventSource::Event(event_id),
+    )
+}
+
 // Phase 1: Exordium Events
 pub mod big_fish;
 pub mod golden_wing;

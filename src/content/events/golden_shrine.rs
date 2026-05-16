@@ -56,7 +56,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         275,
                         DomainEventSource::Event(EventId::GoldenShrine),
                     );
-                    run_state.add_card_to_deck(CardId::Regret);
+                    super::obtain_event_card(run_state, EventId::GoldenShrine, CardId::Regret);
 
                     if let Some(es) = &mut run_state.event_state {
                         es.current_screen = 1;

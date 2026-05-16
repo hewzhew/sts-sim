@@ -159,7 +159,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             match choice_idx {
                 0 => {
                     // Run: obtain Injury curse
-                    run_state.add_card_to_deck(CardId::Injury);
+                    super::obtain_event_card(run_state, EventId::GoldenIdol, CardId::Injury);
                 }
                 1 => {
                     // Fight: take damage (DEFAULT type — Tungsten Rod reduces by 1)

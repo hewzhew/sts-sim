@@ -1,7 +1,7 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionSemantics, EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
@@ -134,8 +134,8 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         hp_loss = (hp_loss - 1).max(0);
                     }
                     run_state.current_hp = (run_state.current_hp - hp_loss).max(0);
-                    run_state.add_card_to_deck(CardId::Madness);
-                    run_state.add_card_to_deck(CardId::Madness);
+                    super::obtain_event_card(run_state, EventId::WindingHalls, CardId::Madness);
+                    super::obtain_event_card(run_state, EventId::WindingHalls, CardId::Madness);
                     event_state.current_screen = 2;
                 }
                 1 => {
@@ -147,7 +147,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     };
                     let heal_amt = (run_state.max_hp as f32 * heal_pct).round() as i32;
                     run_state.current_hp = (run_state.current_hp + heal_amt).min(run_state.max_hp);
-                    run_state.add_card_to_deck(CardId::Writhe);
+                    super::obtain_event_card(run_state, EventId::WindingHalls, CardId::Writhe);
                     event_state.current_screen = 2;
                 }
                 _ => {

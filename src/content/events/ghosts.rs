@@ -1,7 +1,7 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionSemantics, EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
@@ -92,7 +92,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         5
                     };
                     for _ in 0..count {
-                        run_state.add_card_to_deck(CardId::Apparition);
+                        super::obtain_event_card(run_state, EventId::Ghosts, CardId::Apparition);
                     }
                     event_state.current_screen = 1;
                 }

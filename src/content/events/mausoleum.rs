@@ -38,7 +38,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         gets_curse = true;
                     }
                     if gets_curse {
-                        run_state.add_card_to_deck(CardId::Writhe);
+                        super::obtain_event_card(run_state, EventId::Mausoleum, CardId::Writhe);
                     }
                     let relic_id = run_state.random_screenless_relic_reward();
                     if let Some(next_state) = run_state.obtain_relic_with_source(

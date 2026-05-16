@@ -183,12 +183,12 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             999,
                             DomainEventSource::Event(EventId::MindBloom),
                         );
-                        run_state.add_card_to_deck(CardId::Normality);
-                        run_state.add_card_to_deck(CardId::Normality);
+                        super::obtain_event_card(run_state, EventId::MindBloom, CardId::Normality);
+                        super::obtain_event_card(run_state, EventId::MindBloom, CardId::Normality);
                     } else {
                         // High floor path: heal to full + Doubt curse
                         run_state.current_hp = run_state.max_hp;
-                        run_state.add_card_to_deck(CardId::Doubt);
+                        super::obtain_event_card(run_state, EventId::MindBloom, CardId::Doubt);
                     }
                     event_state.current_screen = 1;
                 }

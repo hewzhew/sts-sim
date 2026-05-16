@@ -45,7 +45,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     ) {
                         *engine_state = next_state;
                     }
-                    run_state.add_card_to_deck(CardId::Regret);
+                    super::obtain_event_card(run_state, EventId::BigFish, CardId::Regret);
                 }
             }
             event_state.current_screen = 1;
