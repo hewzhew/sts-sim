@@ -862,6 +862,57 @@ pub fn handle_sunder(
     clear_post_combat_actions_if_ready(state);
 }
 
+pub fn handle_judgement(target: usize, cutoff: i32, state: &mut CombatState) {
+    let should_kill = state
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.id == target)
+        .is_some_and(|monster| monster.current_hp <= cutoff);
+    if should_kill {
+        state.queue_action_front(Action::InstantKill { target });
+    }
+}
+
+pub fn handle_instant_kill(target: usize, state: &mut CombatState) {
+    if target == 0 {
+        state.entities.player.current_hp = 0;
+        super::try_revive(state);
+        return;
+    }
+    if let Some(monster) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
+        monster.current_hp = 0;
+    }
+    super::check_and_trigger_monster_death(state, target);
+    clear_post_combat_actions_if_ready(state);
+}
+
+pub fn handle_trigger_marks(card_id: crate::content::cards::CardId, state: &mut CombatState) {
+    if card_id != crate::content::cards::CardId::PressurePoints {
+        return;
+    }
+    let targets: Vec<(usize, i32)> = state
+        .entities
+        .monsters
+        .iter()
+        .filter_map(|monster| {
+            let amount = crate::content::powers::store::power_amount(
+                state,
+                monster.id,
+                crate::content::powers::PowerId::MarkPower,
+            );
+            (amount > 0).then_some((monster.id, amount))
+        })
+        .collect();
+    for (target, amount) in targets {
+        state.queue_action_back(Action::LoseHp {
+            target,
+            amount,
+            triggers_rupture: false,
+        });
+    }
+}
+
 pub fn handle_damage_random_enemy(
     source: usize,
     base_damage: i32,

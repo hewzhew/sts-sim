@@ -1238,6 +1238,62 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
         ),
         (
+            CardId::PressurePoints,
+            "Pressure Points",
+            CardType::Skill,
+            CardRarity::Common,
+            1,
+            0,
+            0,
+            8,
+            CardTarget::Enemy,
+            0,
+            0,
+            3,
+        ),
+        (
+            CardId::ReachHeaven,
+            "Reach Heaven",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            2,
+            10,
+            0,
+            0,
+            CardTarget::Enemy,
+            5,
+            0,
+            0,
+        ),
+        (
+            CardId::Judgement,
+            "Judgment",
+            CardType::Skill,
+            CardRarity::Rare,
+            1,
+            0,
+            0,
+            30,
+            CardTarget::Enemy,
+            0,
+            0,
+            10,
+        ),
+        (
+            CardId::ThroughViolence,
+            "Through Violence",
+            CardType::Attack,
+            CardRarity::Special,
+            0,
+            20,
+            0,
+            0,
+            CardTarget::Enemy,
+            10,
+            0,
+            0,
+        ),
+        (
             CardId::Smite,
             "Smite",
             CardType::Attack,
@@ -1330,6 +1386,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::Evaluate));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::FlyingSleeves));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::Halt));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::PressurePoints));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
@@ -1359,12 +1416,14 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Foresight));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Nirvana));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Weave));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::ReachHeaven));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
     assert!(WATCHER_RARE_POOL.contains(&CardId::SpiritShield));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Scrawl));
     assert!(WATCHER_RARE_POOL.contains(&CardId::MasterReality));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Devotion));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Judgement));
 }
 
 #[test]
@@ -2238,6 +2297,154 @@ fn watcher_scry_hook_batch_matches_java_sources() {
         }],
         "Java Weave.triggerOnScry queues DiscardToHandAction from discard pile"
     );
+}
+
+#[test]
+fn watcher_mark_judgement_and_reach_heaven_match_java_sources() {
+    let state = crate::test_support::blank_test_combat();
+
+    assert_eq!(java_id(CardId::PressurePoints), "PathToVictory");
+    assert!(crate::content::powers::is_debuff(PowerId::MarkPower, 8));
+    assert!(crate::content::powers::is_debuff_application(
+        PowerId::MarkPower,
+        8
+    ));
+
+    let mut pressure_plus = CombatCard::new(CardId::PressurePoints, 990);
+    pressure_plus.upgrades = 1;
+    let pressure = resolve_card_play(CardId::PressurePoints, &state, &pressure_plus, Some(7));
+    assert_eq!(
+        pressure.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![
+            &Action::ApplyPower {
+                source: 0,
+                target: 7,
+                power_id: PowerId::MarkPower,
+                amount: 11,
+            },
+            &Action::TriggerMarks {
+                card_id: CardId::PressurePoints,
+            },
+        ],
+        "Java PressurePoints applies MarkPower, then TriggerMarksAction"
+    );
+
+    let mut mark_state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    first.current_hp = 50;
+    first.max_hp = 50;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    second.current_hp = 50;
+    second.max_hp = 50;
+    mark_state.entities.monsters = vec![first, second];
+    crate::content::powers::store::set_powers_for(
+        &mut mark_state,
+        8,
+        vec![Power {
+            power_type: PowerId::MarkPower,
+            instance_id: None,
+            amount: 5,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(pressure[0].action.clone(), &mut mark_state);
+    crate::engine::action_handlers::execute_action(pressure[1].action.clone(), &mut mark_state);
+    assert_eq!(
+        mark_state.pop_next_action(),
+        Some(Action::LoseHp {
+            target: 7,
+            amount: 11,
+            triggers_rupture: false,
+        })
+    );
+    assert_eq!(
+        mark_state.pop_next_action(),
+        Some(Action::LoseHp {
+            target: 8,
+            amount: 5,
+            triggers_rupture: false,
+        })
+    );
+
+    let mut judgement_plus = CombatCard::new(CardId::Judgement, 991);
+    judgement_plus.upgrades = 1;
+    let judgement = resolve_card_play(CardId::Judgement, &state, &judgement_plus, Some(7));
+    assert_eq!(
+        judgement[0].action,
+        Action::Judgement {
+            target: 7,
+            cutoff: 40,
+        }
+    );
+
+    let mut kill_state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    target.current_hp = 40;
+    target.max_hp = 50;
+    kill_state.entities.monsters = vec![target];
+    crate::engine::action_handlers::execute_action(judgement[0].action.clone(), &mut kill_state);
+    assert_eq!(
+        kill_state.pop_next_action(),
+        Some(Action::InstantKill { target: 7 }),
+        "Java JudgementAction queues InstantKillAction only when currentHealth <= cutoff"
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::InstantKill { target: 7 },
+        &mut kill_state,
+    );
+    assert_eq!(kill_state.entities.monsters[0].current_hp, 0);
+    assert!(kill_state.entities.monsters[0].is_dying);
+
+    let mut survive_state = crate::test_support::blank_test_combat();
+    let mut survivor = crate::test_support::test_monster(EnemyId::JawWorm);
+    survivor.id = 7;
+    survivor.current_hp = 41;
+    survive_state.entities.monsters = vec![survivor];
+    crate::engine::action_handlers::execute_action(judgement[0].action.clone(), &mut survive_state);
+    assert_eq!(survive_state.pop_next_action(), None);
+
+    let mut reach_plus = CombatCard::new(CardId::ReachHeaven, 992);
+    reach_plus.upgrades = 1;
+    let reach = resolve_card_play(CardId::ReachHeaven, &state, &reach_plus, Some(7));
+    assert_eq!(reach.len(), 2);
+    match &reach[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 15);
+            assert_eq!(info.output, 15);
+        }
+        other => panic!("Reach Heaven+ should first emit DamageAction, got {other:?}"),
+    }
+    assert_eq!(
+        reach[1].action,
+        Action::MakeTempCardInDrawPile {
+            card_id: CardId::ThroughViolence,
+            amount: 1,
+            random_spot: true,
+            to_bottom: false,
+            upgraded: false,
+        },
+        "Java ReachHeaven uses MakeTempCardInDrawPileAction(ThroughViolence, 1, true, true)"
+    );
+
+    let mut through_plus = CombatCard::new(CardId::ThroughViolence, 993);
+    through_plus.upgrades = 1;
+    assert!(crate::content::cards::is_self_retain(&through_plus));
+    assert!(crate::content::cards::exhausts_when_played(&through_plus));
+    let through = resolve_card_play(CardId::ThroughViolence, &state, &through_plus, Some(7));
+    match &through[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 30);
+            assert_eq!(info.output, 30);
+        }
+        other => panic!("Through Violence+ should emit DamageAction, got {other:?}"),
+    }
 }
 
 #[test]

@@ -84,6 +84,7 @@ pub enum PowerId {
     RushdownPower,
     ForesightPower,
     NirvanaPower,
+    MarkPower,
     Focus,
     DexterityDown,
     PenNibPower,
@@ -264,6 +265,7 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::Choked
         | PowerId::CorpseExplosion
         | PowerId::BlockReturnPower
+        | PowerId::MarkPower
         | PowerId::WraithForm => true,
         // Everything else is BUFF
         _ => false,
@@ -303,7 +305,8 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         | PowerId::DrawReduction
         | PowerId::Choked
         | PowerId::CorpseExplosion
-        | PowerId::BlockReturnPower => amount > 0,
+        | PowerId::BlockReturnPower
+        | PowerId::MarkPower => amount > 0,
         _ => false,
     }
 }
@@ -582,6 +585,7 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Nirvana",
         },
+        PowerId::MarkPower => PowerDefinition { id, name: "Mark" },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
         PowerId::DexterityDown => PowerDefinition {
             id,

@@ -37,6 +37,7 @@ pub mod smite;
 pub mod swift_strike;
 pub mod the_bomb;
 pub mod thinking_ahead;
+pub mod through_violence;
 pub mod transmutation;
 pub mod trip;
 pub mod violence;

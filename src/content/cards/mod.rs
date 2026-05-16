@@ -358,6 +358,10 @@ pub enum CardId {
     Foresight,
     Nirvana,
     Weave,
+    ReachHeaven,
+    ThroughViolence,
+    Judgement,
+    PressurePoints,
     // Add more as we expand
 }
 
@@ -749,6 +753,10 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Foresight => watcher::foresight::definition(),
         CardId::Nirvana => watcher::nirvana::definition(),
         CardId::Weave => watcher::weave::definition(),
+        CardId::ReachHeaven => watcher::reach_heaven::definition(),
+        CardId::ThroughViolence => colorless::through_violence::definition(),
+        CardId::Judgement => watcher::judgement::definition(),
+        CardId::PressurePoints => watcher::pressure_points::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1347,6 +1355,7 @@ pub const WATCHER_COMMON_POOL: &[CardId] = &[
     CardId::Evaluate,
     CardId::FlyingSleeves,
     CardId::Halt,
+    CardId::PressurePoints,
 ];
 
 pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
@@ -1379,6 +1388,7 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::Foresight,
     CardId::Nirvana,
     CardId::Weave,
+    CardId::ReachHeaven,
 ];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[
@@ -1388,6 +1398,7 @@ pub const WATCHER_RARE_POOL: &[CardId] = &[
     CardId::Scrawl,
     CardId::MasterReality,
     CardId::Devotion,
+    CardId::Judgement,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1642,6 +1653,10 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Foresight => "Wireheading",
         CardId::Nirvana => "Nirvana",
         CardId::Weave => "Weave",
+        CardId::ReachHeaven => "ReachHeaven",
+        CardId::ThroughViolence => "ThroughViolence",
+        CardId::Judgement => "Judgement",
+        CardId::PressurePoints => "PathToVictory",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -2069,6 +2084,10 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Foresight,
         Nirvana,
         Weave,
+        ReachHeaven,
+        ThroughViolence,
+        Judgement,
+        PressurePoints,
         Neutralize,
         Survivor,
         Anger,

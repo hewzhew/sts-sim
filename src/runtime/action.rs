@@ -108,6 +108,22 @@ pub enum Action {
     /// Java `WallopAction`: after damage resolves, gain block equal to the
     /// target's actual HP lost from this hit.
     WallopDamage(DamageInfo),
+    /// Java Watcher `JudgementAction`: if the target monster is at or below
+    /// the cutoff when this action resolves, queue an `InstantKillAction`.
+    Judgement {
+        target: EntityId,
+        cutoff: i32,
+    },
+    /// Java `InstantKillAction`: set the target HP to zero and run the normal
+    /// monster death path.
+    InstantKill {
+        target: EntityId,
+    },
+    /// Java Watcher `TriggerMarksAction`: trigger every monster MarkPower for
+    /// the calling card.
+    TriggerMarks {
+        card_id: crate::content::cards::CardId,
+    },
     /// Java `DamagePerAttackPlayedAction` used by Finisher.
     ///
     /// Execution reads the current attack count from the action manager state,
