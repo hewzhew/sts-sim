@@ -755,6 +755,15 @@ pub enum Action {
     },
     EvokeOrb,
     EvokeOrbWithoutRemoving,
+    /// Java Defect `FissionAction`: reads filled orb count at execution time,
+    /// then queues RemoveAll/EvokeAll, GainEnergy, and DrawCards to the top.
+    Fission {
+        upgraded: bool,
+    },
+    /// Java Defect `RemoveAllOrbsAction`: removes filled orbs without evoking.
+    RemoveAllOrbs,
+    /// Java Defect `EvokeAllOrbsAction`: queues one EvokeOrb per orb slot.
+    EvokeAllOrbs,
     /// Java Defect `RedoAction`: snapshot the front orb instance, evoke it,
     /// then channel the same orb instance back into the empty slot.
     RedoOrb,

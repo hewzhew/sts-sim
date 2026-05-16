@@ -25,6 +25,7 @@ pub mod double_energy;
 pub mod dualcast;
 pub mod electrodynamics;
 pub mod equilibrium;
+pub mod fission;
 pub mod ftl;
 pub mod fusion;
 pub mod glacier;

@@ -4126,6 +4126,93 @@ fn amplify_definition_runtime_and_power_copy_hook_match_java_sources() {
 }
 
 #[test]
+fn fission_definition_runtime_and_orb_actions_match_java_sources() {
+    let fission = get_card_definition(CardId::Fission);
+    assert_eq!(fission.name, "Fission");
+    assert_eq!(fission.card_type, CardType::Skill);
+    assert_eq!(fission.rarity, CardRarity::Rare);
+    assert_eq!(fission.cost, 0);
+    assert_eq!(fission.base_magic, 1);
+    assert_eq!(fission.target, CardTarget::None);
+    assert!(fission.exhaust);
+    assert_eq!(fission.upgrade_magic, 0);
+    assert_eq!(java_id(CardId::Fission), "Fission");
+
+    let state = crate::test_support::blank_test_combat();
+    assert_eq!(
+        resolve_card_play(
+            CardId::Fission,
+            &state,
+            &CombatCard::new(CardId::Fission, 346),
+            None,
+        )[0]
+        .action,
+        Action::Fission { upgraded: false }
+    );
+    assert!(exhausts_when_played(&CombatCard::new(CardId::Fission, 347)));
+
+    let mut plus = CombatCard::new(CardId::Fission, 348);
+    plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::Fission, &state, &plus, None)[0].action,
+        Action::Fission { upgraded: true },
+        "Java Fission+ changes FissionAction mode only; card still exhausts"
+    );
+    assert!(exhausts_when_played(&plus));
+
+    let mut remove_state = crate::test_support::blank_test_combat();
+    remove_state.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Lightning),
+        OrbEntity::new(OrbId::Frost),
+        OrbEntity::new(OrbId::Empty),
+    ];
+    crate::engine::action_handlers::execute_action(
+        Action::Fission { upgraded: false },
+        &mut remove_state,
+    );
+    assert_eq!(remove_state.pop_next_action(), Some(Action::RemoveAllOrbs));
+    crate::engine::action_handlers::execute_action(Action::RemoveAllOrbs, &mut remove_state);
+    assert_eq!(
+        remove_state.entities.player.orbs,
+        vec![
+            OrbEntity::new(OrbId::Empty),
+            OrbEntity::new(OrbId::Empty),
+            OrbEntity::new(OrbId::Empty),
+        ],
+        "Java RemoveAllOrbsAction removes filled orb slots without evoking"
+    );
+    assert_eq!(
+        remove_state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 2 })
+    );
+    assert_eq!(remove_state.pop_next_action(), Some(Action::DrawCards(2)));
+
+    let mut evoke_state = crate::test_support::blank_test_combat();
+    evoke_state.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Frost),
+        OrbEntity::new(OrbId::Lightning),
+        OrbEntity::new(OrbId::Empty),
+    ];
+    crate::engine::action_handlers::execute_action(
+        Action::Fission { upgraded: true },
+        &mut evoke_state,
+    );
+    assert_eq!(evoke_state.pop_next_action(), Some(Action::EvokeAllOrbs));
+    crate::engine::action_handlers::execute_action(Action::EvokeAllOrbs, &mut evoke_state);
+    assert_eq!(
+        std::iter::from_fn(|| evoke_state.pop_next_action()).collect::<Vec<_>>(),
+        vec![
+            Action::EvokeOrb,
+            Action::EvokeOrb,
+            Action::EvokeOrb,
+            Action::GainEnergy { amount: 2 },
+            Action::DrawCards(2),
+        ],
+        "Java EvokeAllOrbsAction queues one EvokeOrbAction per orb slot, not per filled orb"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

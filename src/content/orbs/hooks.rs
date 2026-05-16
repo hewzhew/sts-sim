@@ -317,3 +317,36 @@ pub fn evoke_next_orb_now(state: &mut CombatState) {
 pub fn evoke_next_orb_without_removing_now(state: &mut CombatState) {
     evoke_next_orb(state, false);
 }
+
+pub fn filled_orb_count(state: &CombatState) -> usize {
+    state
+        .entities
+        .player
+        .orbs
+        .iter()
+        .filter(|orb| orb.id != OrbId::Empty)
+        .count()
+}
+
+pub fn remove_all_orbs_now(state: &mut CombatState) {
+    while state
+        .entities
+        .player
+        .orbs
+        .first()
+        .is_some_and(|orb| orb.id != OrbId::Empty)
+    {
+        state.entities.player.orbs.remove(0);
+        state
+            .entities
+            .player
+            .orbs
+            .push(OrbEntity::new(OrbId::Empty));
+    }
+}
+
+pub fn queue_evoke_all_orbs_now(state: &mut CombatState) {
+    for _ in 0..state.entities.player.orbs.len() {
+        state.queue_action_front(Action::EvokeOrb);
+    }
+}

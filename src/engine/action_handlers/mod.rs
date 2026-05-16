@@ -676,6 +676,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::EvokeOrbWithoutRemoving => {
             crate::content::orbs::hooks::evoke_next_orb_without_removing_now(state)
         }
+        Action::Fission { upgraded } => handle_fission(upgraded, state),
+        Action::RemoveAllOrbs => crate::content::orbs::hooks::remove_all_orbs_now(state),
+        Action::EvokeAllOrbs => crate::content::orbs::hooks::queue_evoke_all_orbs_now(state),
         Action::RedoOrb => handle_redo_orb(state),
         Action::TriggerStartOfTurnOrbs => {
             crate::content::orbs::hooks::trigger_start_of_turn_orbs_now(state)
@@ -827,6 +830,17 @@ fn handle_channel_orb_entity(orb: crate::runtime::combat::OrbEntity, state: &mut
         .position(|existing| existing.id == crate::runtime::combat::OrbId::Empty)
     {
         state.entities.player.orbs[empty_slot] = orb;
+    }
+}
+
+fn handle_fission(upgraded: bool, state: &mut CombatState) {
+    let orb_count = crate::content::orbs::hooks::filled_orb_count(state) as i32;
+    state.queue_action_front(Action::DrawCards(orb_count.max(0) as u32));
+    state.queue_action_front(Action::GainEnergy { amount: orb_count });
+    if upgraded {
+        state.queue_action_front(Action::EvokeAllOrbs);
+    } else {
+        state.queue_action_front(Action::RemoveAllOrbs);
     }
 }
 
