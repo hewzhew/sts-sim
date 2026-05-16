@@ -319,6 +319,7 @@ pub enum CardId {
     FollowUp,
     Sanctity,
     CrushJoints,
+    SashWhip,
     // Add more as we expand
 }
 
@@ -671,6 +672,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::FollowUp => watcher::follow_up::definition(),
         CardId::Sanctity => watcher::sanctity::definition(),
         CardId::CrushJoints => watcher::crush_joints::definition(),
+        CardId::SashWhip => watcher::sash_whip::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1261,6 +1263,7 @@ pub const WATCHER_COMMON_POOL: &[CardId] = &[
     CardId::Prostrate,
     CardId::FollowUp,
     CardId::CrushJoints,
+    CardId::SashWhip,
 ];
 
 pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
@@ -1488,6 +1491,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::FollowUp => "FollowUp",
         CardId::Sanctity => "Sanctity",
         CardId::CrushJoints => "CrushJoints",
+        CardId::SashWhip => "SashWhip",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1890,6 +1894,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         FollowUp,
         Sanctity,
         CrushJoints,
+        SashWhip,
         Neutralize,
         Survivor,
         Anger,

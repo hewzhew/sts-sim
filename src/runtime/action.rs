@@ -258,6 +258,12 @@ pub enum Action {
         target: EntityId,
         amount: i32,
     },
+    /// Java Watcher `HeadStompAction` used by Sash Whip: at execution time,
+    /// apply Weak to the target if the previous card in combat was an Attack.
+    SashWhip {
+        target: EntityId,
+        amount: i32,
+    },
     /// Java `ExpertiseAction`: draw until the current hand size reaches this
     /// amount, evaluated when the queued action resolves.
     ExpertiseDraw {

@@ -492,6 +492,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::FollowUp, "FollowUp"),
         (CardId::Sanctity, "Sanctity"),
         (CardId::CrushJoints, "CrushJoints"),
+        (CardId::SashWhip, "SashWhip"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -722,6 +723,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             1,
         ),
+        (
+            CardId::SashWhip,
+            "Sash Whip",
+            CardType::Attack,
+            CardRarity::Common,
+            1,
+            8,
+            0,
+            1,
+            CardTarget::Enemy,
+            2,
+            0,
+            1,
+        ),
     ];
 
     for (
@@ -766,6 +781,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::Prostrate));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::FollowUp));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::CrushJoints));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::SashWhip));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
@@ -1267,6 +1283,64 @@ fn watcher_crush_joints_runtime_action_reads_previous_played_card_when_it_resolv
         &mut attack_previous,
     );
     assert_eq!(attack_previous.pop_next_action(), None);
+}
+
+#[test]
+fn watcher_sash_whip_runtime_action_reads_previous_played_card_when_it_resolves() {
+    let state = crate::test_support::blank_test_combat();
+    let mut sash_whip_plus = CombatCard::new(CardId::SashWhip, 328);
+    sash_whip_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::SashWhip, &state, &sash_whip_plus, Some(7));
+
+    assert_eq!(actions.len(), 2);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 10);
+            assert_eq!(info.output, 10);
+        }
+        other => panic!("Sash Whip first action should be DamageAction, got {other:?}"),
+    }
+    assert_eq!(
+        actions[1].action,
+        Action::SashWhip {
+            target: 7,
+            amount: 2,
+        }
+    );
+
+    let mut attack_previous = crate::test_support::blank_test_combat();
+    attack_previous.turn.counters.card_ids_played_this_combat =
+        vec![CardId::StrikeP, CardId::SashWhip];
+    crate::engine::action_handlers::execute_action(
+        Action::SashWhip {
+            target: 7,
+            amount: 2,
+        },
+        &mut attack_previous,
+    );
+    assert_eq!(
+        attack_previous.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Weak,
+            amount: 2,
+        })
+    );
+
+    let mut skill_previous = crate::test_support::blank_test_combat();
+    skill_previous.turn.counters.card_ids_played_this_combat =
+        vec![CardId::DefendP, CardId::SashWhip];
+    crate::engine::action_handlers::execute_action(
+        Action::SashWhip {
+            target: 7,
+            amount: 2,
+        },
+        &mut skill_previous,
+    );
+    assert_eq!(skill_previous.pop_next_action(), None);
 }
 
 #[test]
