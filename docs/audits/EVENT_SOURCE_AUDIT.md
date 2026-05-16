@@ -291,6 +291,31 @@ Tests:
 - `remove_path_damage_uses_event_source_before_purge_selection`
 - `remove_path_damage_respects_tungsten_rod_like_java_player_damage`
 
+### Face Trader touch and relic trade
+
+Java `events/shrines/FaceTrader.java` has two relevant resource boundaries:
+
+- `Touch` calls `gainGold(goldReward)` and then
+  `damage(new DamageInfo(null, damage))`.
+- `Trade` calls `spawnRelicAndObtain(...)` with a face relic selected by
+  shuffling the available face relic ids with `miscRng.randomLong()`, or
+  `Circlet` when all face relics are already owned.
+
+Fixes:
+
+- Touch damage now emits `HpChanged` with `Event(FaceTrader)` source and
+  preserves the Java `Tungsten Rod` one-point reduction path.
+- Trade now routes the selected face relic or Circlet through
+  `RunState::obtain_relic_with_source(..., Event(FaceTrader))` instead of
+  directly pushing into `run_state.relics`.
+
+Tests:
+
+- `touch_uses_event_hp_and_gold_sources`
+- `touch_damage_respects_tungsten_rod`
+- `trade_obtains_face_relic_through_event_source_pipeline`
+- `trade_grants_circlet_when_all_face_relics_are_owned`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -498,11 +523,11 @@ Validation:
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
-  that card obtains just received. `BigFish`, `Cleric`, and `GoldenWing` are
-  now covered; the remaining direct writes should be handled event-by-event
-  against Java source.
+  that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`, and
+  `FaceTrader` are now covered; the remaining direct writes should be handled
+  event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `810 passed`.
+- Current result after this pass: `814 passed`.
