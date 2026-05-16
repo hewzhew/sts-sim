@@ -219,6 +219,9 @@ pub enum Action {
         free_to_play_once: bool,
         energy_on_use: i32,
     },
+    Meditate {
+        amount: u8,
+    },
     GainBlock {
         target: EntityId,
         amount: i32,

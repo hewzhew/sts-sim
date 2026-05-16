@@ -3211,6 +3211,75 @@ fn watcher_conjure_blade_and_expunger_match_java_sources() {
 }
 
 #[test]
+fn watcher_meditate_matches_java_sources() {
+    let java_map = build_java_id_map();
+    assert_eq!(java_id(CardId::Meditate), "Meditate");
+    assert_eq!(java_map.get("Meditate"), Some(&CardId::Meditate));
+
+    let meditate = get_card_definition(CardId::Meditate);
+    assert_eq!(meditate.name, "Meditate");
+    assert_eq!(meditate.card_type, CardType::Skill);
+    assert_eq!(meditate.rarity, CardRarity::Uncommon);
+    assert_eq!(meditate.cost, 1);
+    assert_eq!(meditate.base_magic, 1);
+    assert_eq!(meditate.upgrade_magic, 1);
+    assert_eq!(meditate.target, CardTarget::None);
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Meditate));
+
+    let state = crate::test_support::blank_test_combat();
+    let mut meditate_plus = CombatCard::new(CardId::Meditate, 1040);
+    meditate_plus.upgrades = 1;
+    let actions = resolve_card_play(CardId::Meditate, &state, &meditate_plus, None);
+    assert_eq!(
+        actions.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![
+            &Action::Meditate { amount: 2 },
+            &Action::EnterStance("Calm".to_string()),
+            &Action::QueueEarlyEndTurn,
+        ],
+        "Java Meditate.use queues MeditateAction, ChangeStanceAction(Calm), then PressEndTurnButtonAction"
+    );
+
+    let mut all_state = crate::test_support::blank_test_combat();
+    all_state.zones.discard_pile = vec![
+        CombatCard::new(CardId::StrikeP, 1041),
+        CombatCard::new(CardId::DefendP, 1042),
+    ];
+    crate::engine::action_handlers::execute_action(Action::Meditate { amount: 2 }, &mut all_state);
+    assert!(all_state.zones.discard_pile.is_empty());
+    assert_eq!(all_state.zones.hand.len(), 2);
+    assert!(
+        all_state
+            .zones
+            .hand
+            .iter()
+            .all(|card| card.retain_override == Some(true)),
+        "Java MeditateAction marks returned cards retain=true"
+    );
+
+    let mut select_state = crate::test_support::blank_test_combat();
+    select_state.zones.discard_pile = vec![
+        CombatCard::new(CardId::StrikeP, 1043),
+        CombatCard::new(CardId::DefendP, 1044),
+    ];
+    crate::engine::action_handlers::execute_action(
+        Action::Meditate { amount: 1 },
+        &mut select_state,
+    );
+    assert_eq!(
+        select_state.pop_next_action(),
+        Some(Action::SuspendForGridSelect {
+            source_pile: crate::state::PileType::Discard,
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::GridSelectFilter::Any,
+            reason: crate::state::GridSelectReason::DiscardToHandRetain,
+        })
+    );
+}
+
+#[test]
 fn watcher_scry_card_runtime_actions_match_java_use_methods() {
     let state = crate::test_support::blank_test_combat();
 

@@ -1750,6 +1750,45 @@ pub fn handle_conjure_blade(free_to_play_once: bool, energy_on_use: i32, state: 
     }
 }
 
+pub fn handle_meditate(amount: u8, state: &mut CombatState) {
+    if amount == 0 || state.zones.discard_pile.is_empty() {
+        return;
+    }
+
+    if state.zones.discard_pile.len() <= amount as usize {
+        let uuids: Vec<u32> = state
+            .zones
+            .discard_pile
+            .iter()
+            .map(|card| card.uuid)
+            .collect();
+        for uuid in uuids {
+            if let Some(pos) = state
+                .zones
+                .discard_pile
+                .iter()
+                .position(|card| card.uuid == uuid)
+            {
+                state.zones.discard_pile[pos].retain_override = Some(true);
+                if state.zones.hand.len() < 10 {
+                    let card = state.zones.discard_pile.remove(pos);
+                    state.zones.hand.push(card);
+                }
+            }
+        }
+        return;
+    }
+
+    state.queue_action_front(Action::SuspendForGridSelect {
+        source_pile: crate::state::PileType::Discard,
+        min: amount,
+        max: amount,
+        can_cancel: false,
+        filter: crate::state::GridSelectFilter::Any,
+        reason: crate::state::GridSelectReason::DiscardToHandRetain,
+    });
+}
+
 pub fn handle_reinforced_body(
     block_amount: i32,
     free_to_play_once: bool,

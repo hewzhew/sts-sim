@@ -35,6 +35,7 @@ pub mod judgement;
 pub mod just_lucky;
 pub mod like_water;
 pub mod master_reality;
+pub mod meditate;
 pub mod mental_fortress;
 pub mod nirvana;
 pub mod perseverance;

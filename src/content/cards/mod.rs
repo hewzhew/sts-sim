@@ -375,6 +375,7 @@ pub enum CardId {
     Omega,
     ConjureBlade,
     Expunger,
+    Meditate,
     // Add more as we expand
 }
 
@@ -785,6 +786,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Omega => colorless::omega::definition(),
         CardId::ConjureBlade => watcher::conjure_blade::definition(),
         CardId::Expunger => colorless::expunger::definition(),
+        CardId::Meditate => watcher::meditate::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1421,6 +1423,7 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::WaveOfTheHand,
     CardId::Fasting,
     CardId::Collect,
+    CardId::Meditate,
 ];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[
@@ -1708,6 +1711,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Omega => "Omega",
         CardId::ConjureBlade => "ConjureBlade",
         CardId::Expunger => "Expunger",
+        CardId::Meditate => "Meditate",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -2152,6 +2156,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Omega,
         ConjureBlade,
         Expunger,
+        Meditate,
         Neutralize,
         Survivor,
         Anger,

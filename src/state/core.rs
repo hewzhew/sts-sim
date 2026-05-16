@@ -157,6 +157,7 @@ pub enum GridSelectReason {
     AttackFromDeckToHand,      // SecretWeapon: pick Attack from draw → hand
     DiscardToHand,             // LiquidMemories: pick from discard → hand (cost 0)
     DiscardToHandNoCostChange, // Hologram: pick from discard → hand without changing cost
+    DiscardToHandRetain,       // Meditate: pick from discard → hand and retain for one turn
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -272,6 +273,7 @@ impl From<GridSelectReason> for SelectionReason {
             GridSelectReason::DiscardToHandNoCostChange => {
                 SelectionReason::DiscardToHandNoCostChange
             }
+            GridSelectReason::DiscardToHandRetain => SelectionReason::DiscardToHandRetain,
         }
     }
 }

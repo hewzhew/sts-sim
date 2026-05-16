@@ -406,6 +406,7 @@ pub fn tick_engine(
                                     reason,
                                     crate::state::GridSelectReason::DiscardToHand
                                         | crate::state::GridSelectReason::DiscardToHandNoCostChange
+                                        | crate::state::GridSelectReason::DiscardToHandRetain
                                 ));
                         record_engine_diagnostic(
                             combat_state,

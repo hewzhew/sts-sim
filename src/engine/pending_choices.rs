@@ -437,7 +437,9 @@ pub fn handle_grid_select(
                 return Err("Too many cards selected");
             }
             match reason {
-                GridSelectReason::DiscardToHand | GridSelectReason::DiscardToHandNoCostChange => {
+                GridSelectReason::DiscardToHand
+                | GridSelectReason::DiscardToHandNoCostChange
+                | GridSelectReason::DiscardToHandRetain => {
                     // Java BetterDiscardPileToHandAction has both cost-preserving
                     // and setCostForTurn(newCost) constructors. Liquid Memories
                     // uses the cost-setting path; Hologram does not.
@@ -458,6 +460,8 @@ pub fn handle_grid_select(
                             let mut card = combat_state.zones.discard_pile.remove(pos);
                             if reason == GridSelectReason::DiscardToHand {
                                 card.set_cost_for_turn_java(0);
+                            } else if reason == GridSelectReason::DiscardToHandRetain {
+                                card.retain_override = Some(true);
                             }
                             combat_state.zones.hand.push(card);
                         }
@@ -1026,6 +1030,41 @@ mod tests {
             "Hologram's BetterDiscardPileToHandAction constructor does not set a new cost"
         );
         assert_eq!(combat_state.zones.hand[0].cost_for_turn, None);
+    }
+
+    #[test]
+    fn discard_to_hand_retain_marks_selected_card_for_meditate() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+                source_pile: PileType::Discard,
+                candidate_uuids: vec![22],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: GridSelectReason::DiscardToHandRetain,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 22)];
+
+        handle_grid_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[22],
+            PileType::Discard,
+            1,
+            1,
+            false,
+            GridSelectReason::DiscardToHandRetain,
+            ClientInput::SubmitGridSelect(vec![22]),
+        )
+        .expect("Meditate-style discard-to-hand selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert!(combat_state.zones.discard_pile.is_empty());
+        assert_eq!(combat_state.zones.hand.len(), 1);
+        assert_eq!(combat_state.zones.hand[0].id, CardId::Bash);
+        assert_eq!(combat_state.zones.hand[0].cost_for_turn_java(), 2);
+        assert_eq!(combat_state.zones.hand[0].retain_override, Some(true));
     }
 
     #[test]
