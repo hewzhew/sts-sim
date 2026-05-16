@@ -1,7 +1,30 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::HeavyBlade,
+        name: "Heavy Blade",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Common,
+        cost: 2,
+        base_damage: 14,
+        base_block: 0,
+        base_magic: 3,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 0,
+        upgrade_block: 0,
+        upgrade_magic: 2,
+    }
+}
 
 pub fn heavy_blade_play(
     state: &CombatState,

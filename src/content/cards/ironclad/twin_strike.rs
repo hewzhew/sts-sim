@@ -1,7 +1,30 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTag, CardTarget, CardType};
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::TwinStrike,
+        name: "Twin Strike",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Common,
+        cost: 1,
+        base_damage: 5,
+        base_block: 0,
+        base_magic: 0,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[CardTag::Strike],
+        upgrade_damage: 2,
+        upgrade_block: 0,
+        upgrade_magic: 0,
+    }
+}
 
 pub fn twin_strike_play(
     state: &CombatState,

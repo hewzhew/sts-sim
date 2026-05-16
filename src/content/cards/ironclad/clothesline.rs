@@ -1,7 +1,30 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::Clothesline,
+        name: "Clothesline",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Common,
+        cost: 2,
+        base_damage: 12,
+        base_block: 0,
+        base_magic: 2,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 2,
+        upgrade_block: 0,
+        upgrade_magic: 1,
+    }
+}
 
 pub fn clothesline_play(
     state: &CombatState,

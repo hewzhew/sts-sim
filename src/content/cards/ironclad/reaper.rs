@@ -1,6 +1,29 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTag, CardTarget, CardType};
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::Reaper,
+        name: "Reaper",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Rare,
+        cost: 2,
+        base_damage: 4,
+        base_block: 0,
+        base_magic: 0,
+        target: CardTarget::AllEnemy,
+        is_multi_damage: true,
+        exhaust: true,
+        ethereal: false,
+        innate: false,
+        tags: &[CardTag::Healing],
+        upgrade_damage: 1,
+        upgrade_block: 0,
+        upgrade_magic: 0,
+    }
+}
 
 pub fn reaper_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
     let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);

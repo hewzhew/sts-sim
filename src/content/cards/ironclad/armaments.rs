@@ -1,8 +1,31 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use crate::state::HandSelectFilter;
 use crate::state::HandSelectReason;
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::Armaments,
+        name: "Armaments",
+        card_type: CardType::Skill,
+        rarity: CardRarity::Common,
+        cost: 1,
+        base_damage: 0,
+        base_block: 5,
+        base_magic: 0,
+        target: CardTarget::SelfTarget,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 0,
+        upgrade_block: 0,
+        upgrade_magic: 0,
+    }
+}
 
 fn can_armaments_upgrade(card: &CombatCard) -> bool {
     let def = crate::content::cards::get_card_definition(card.id);

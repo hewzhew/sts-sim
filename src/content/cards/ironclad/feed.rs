@@ -1,7 +1,30 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTag, CardTarget, CardType};
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::Feed,
+        name: "Feed",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Rare,
+        cost: 1,
+        base_damage: 10,
+        base_block: 0,
+        base_magic: 3,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: true,
+        ethereal: false,
+        innate: false,
+        tags: &[CardTag::Healing],
+        upgrade_damage: 2,
+        upgrade_block: 0,
+        upgrade_magic: 1,
+    }
+}
 
 pub fn feed_play(
     state: &CombatState,
