@@ -370,6 +370,9 @@ pub enum CardId {
     Blasphemy,
     Collect,
     DeusExMachina,
+    Alpha,
+    Beta,
+    Omega,
     // Add more as we expand
 }
 
@@ -530,6 +533,7 @@ pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
         || matches!(card.id, CardId::Storm) && card.upgrades > 0
         || matches!(card.id, CardId::BattleHymn) && card.upgrades > 0
         || matches!(card.id, CardId::Establishment) && card.upgrades > 0
+        || matches!(card.id, CardId::Alpha) && card.upgrades > 0
 }
 
 pub fn get_card_definition(id: CardId) -> CardDefinition {
@@ -774,6 +778,9 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Blasphemy => watcher::blasphemy::definition(),
         CardId::Collect => watcher::collect::definition(),
         CardId::DeusExMachina => watcher::deus_ex_machina::definition(),
+        CardId::Alpha => watcher::alpha::definition(),
+        CardId::Beta => colorless::beta::definition(),
+        CardId::Omega => colorless::omega::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1424,6 +1431,7 @@ pub const WATCHER_RARE_POOL: &[CardId] = &[
     CardId::DevaForm,
     CardId::Blasphemy,
     CardId::DeusExMachina,
+    CardId::Alpha,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1690,6 +1698,9 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Blasphemy => "Blasphemy",
         CardId::Collect => "Collect",
         CardId::DeusExMachina => "DeusExMachina",
+        CardId::Alpha => "Alpha",
+        CardId::Beta => "Beta",
+        CardId::Omega => "Omega",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -2129,6 +2140,9 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Blasphemy,
         Collect,
         DeusExMachina,
+        Alpha,
+        Beta,
+        Omega,
         Neutralize,
         Survivor,
         Anger,

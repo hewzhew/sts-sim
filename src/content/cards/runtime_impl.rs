@@ -125,6 +125,9 @@ pub fn resolve_card_play_with_context(
         CardId::Blasphemy => watcher::blasphemy::blasphemy_play(_state, _card),
         CardId::Collect => watcher::collect::collect_play(_state, _card),
         CardId::DeusExMachina => watcher::deus_ex_machina::deus_ex_machina_play(_state, _card),
+        CardId::Alpha => watcher::alpha::alpha_play(_state, _card),
+        CardId::Beta => colorless::beta::beta_play(_state, _card),
+        CardId::Omega => colorless::omega::omega_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -895,6 +898,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Scrawl if card.upgrades > 0 => Some(0),
         CardId::MasterReality if card.upgrades > 0 => Some(0),
         CardId::Rushdown if card.upgrades > 0 => Some(0),
+        CardId::Beta if card.upgrades > 0 => Some(1),
         _ => None,
     }
 }

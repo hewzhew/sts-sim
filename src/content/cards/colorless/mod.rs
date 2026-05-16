@@ -1,6 +1,7 @@
 pub mod apotheosis;
 pub mod apparition;
 pub mod bandage_up;
+pub mod beta;
 pub mod bite;
 pub mod blind;
 pub mod chrysalis;
@@ -24,6 +25,7 @@ pub mod master_of_strategy;
 pub mod mayhem;
 pub mod metamorphosis;
 pub mod mind_blast;
+pub mod omega;
 pub mod panacea;
 pub mod panache;
 pub mod panic_button;

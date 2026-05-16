@@ -91,6 +91,7 @@ pub enum PowerId {
     DevaForm,
     EndTurnDeathPower,
     CollectPower,
+    OmegaPower,
     Focus,
     DexterityDown,
     PenNibPower,
@@ -619,6 +620,7 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Collect",
         },
+        PowerId::OmegaPower => PowerDefinition { id, name: "Omega" },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
         PowerId::DexterityDown => PowerDefinition {
             id,
@@ -1242,6 +1244,21 @@ pub fn resolve_power_at_end_of_turn(
                 to_bottom: false,
                 upgraded: false,
             }]
+        }
+        PowerId::OmegaPower => {
+            if owner == 0 {
+                smallvec::smallvec![crate::runtime::action::Action::DamageAllEnemies {
+                    source: owner,
+                    damages: crate::runtime::action::repeated_damage_matrix(
+                        _state.entities.monsters.len(),
+                        amount.max(0),
+                    ),
+                    damage_type: crate::runtime::action::DamageType::Thorns,
+                    is_modified: false,
+                }]
+            } else {
+                smallvec::smallvec![]
+            }
         }
         PowerId::Rebound => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
             target: owner,

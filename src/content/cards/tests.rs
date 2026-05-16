@@ -2985,6 +2985,128 @@ fn watcher_delayed_energy_batch_matches_java_sources() {
 }
 
 #[test]
+fn watcher_alpha_beta_omega_chain_matches_java_sources() {
+    let java_map = build_java_id_map();
+    for (id, java) in [
+        (CardId::Alpha, "Alpha"),
+        (CardId::Beta, "Beta"),
+        (CardId::Omega, "Omega"),
+    ] {
+        assert_eq!(java_id(id), java);
+        assert_eq!(java_map.get(java), Some(&id));
+    }
+
+    let alpha = get_card_definition(CardId::Alpha);
+    assert_eq!(alpha.name, "Alpha");
+    assert_eq!(alpha.card_type, CardType::Skill);
+    assert_eq!(alpha.rarity, CardRarity::Rare);
+    assert_eq!(alpha.cost, 1);
+    assert_eq!(alpha.target, CardTarget::None);
+    assert!(alpha.exhaust);
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Alpha));
+    assert!(!crate::content::cards::is_innate_card(&CombatCard::new(
+        CardId::Alpha,
+        1020
+    )));
+    let mut alpha_plus = CombatCard::new(CardId::Alpha, 1021);
+    alpha_plus.upgrades = 1;
+    assert!(
+        crate::content::cards::is_innate_card(&alpha_plus),
+        "Java Alpha.upgrade sets isInnate"
+    );
+
+    let beta = get_card_definition(CardId::Beta);
+    assert_eq!(beta.name, "Beta");
+    assert_eq!(beta.card_type, CardType::Skill);
+    assert_eq!(beta.rarity, CardRarity::Special);
+    assert_eq!(beta.cost, 2);
+    assert_eq!(beta.target, CardTarget::None);
+    assert!(beta.exhaust);
+    let mut beta_plus = CombatCard::new(CardId::Beta, 1022);
+    beta_plus.upgrades = 1;
+    assert_eq!(
+        beta_plus.get_cost(),
+        1,
+        "Java Beta.upgrade uses upgradeBaseCost(1)"
+    );
+
+    let omega = get_card_definition(CardId::Omega);
+    assert_eq!(omega.name, "Omega");
+    assert_eq!(omega.card_type, CardType::Power);
+    assert_eq!(omega.rarity, CardRarity::Special);
+    assert_eq!(omega.cost, 3);
+    assert_eq!(omega.base_magic, 50);
+    assert_eq!(omega.upgrade_magic, 10);
+    assert_eq!(omega.target, CardTarget::SelfTarget);
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    state.entities.monsters = vec![first, second];
+
+    let alpha_actions = resolve_card_play(CardId::Alpha, &state, &alpha_plus, None);
+    assert_eq!(
+        alpha_actions[0].action,
+        Action::MakeTempCardInDrawPile {
+            card_id: CardId::Beta,
+            amount: 1,
+            random_spot: true,
+            to_bottom: false,
+            upgraded: false,
+        },
+        "Java Alpha.use queues MakeTempCardInDrawPileAction(Beta, 1, true, true)"
+    );
+
+    let beta_actions = resolve_card_play(CardId::Beta, &state, &beta_plus, None);
+    assert_eq!(
+        beta_actions[0].action,
+        Action::MakeTempCardInDrawPile {
+            card_id: CardId::Omega,
+            amount: 1,
+            random_spot: true,
+            to_bottom: false,
+            upgraded: false,
+        },
+        "Java Beta.use queues MakeTempCardInDrawPileAction(Omega, 1, true, true)"
+    );
+
+    let mut omega_plus = CombatCard::new(CardId::Omega, 1023);
+    omega_plus.upgrades = 1;
+    let omega_actions = resolve_card_play(CardId::Omega, &state, &omega_plus, None);
+    assert_eq!(
+        omega_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::OmegaPower,
+            amount: 60,
+        }
+    );
+    let omega_power = Power {
+        power_type: PowerId::OmegaPower,
+        instance_id: None,
+        amount: 60,
+        extra_data: 0,
+        payload: PowerPayload::None,
+        just_applied: false,
+    };
+    let end_turn = crate::content::powers::resolve_power_at_end_of_turn(&omega_power, &state, 0);
+    assert_eq!(end_turn.len(), 1);
+    assert_eq!(
+        end_turn[0],
+        Action::DamageAllEnemies {
+            source: 0,
+            damages: smallvec::smallvec![60, 60],
+            damage_type: DamageType::Thorns,
+            is_modified: false,
+        },
+        "Java OmegaPower.atEndOfTurn queues DamageAllEnemiesAction with THORNS damage"
+    );
+}
+
+#[test]
 fn watcher_scry_card_runtime_actions_match_java_use_methods() {
     let state = crate::test_support::blank_test_combat();
 

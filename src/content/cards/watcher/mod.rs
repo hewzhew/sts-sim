@@ -1,3 +1,4 @@
+pub mod alpha;
 pub mod battle_hymn;
 pub mod blasphemy;
 pub mod bowling_bash;
