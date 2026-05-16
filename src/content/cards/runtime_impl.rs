@@ -33,7 +33,8 @@ pub fn resolve_card_play_with_context(
 ) -> SmallVec<[ActionInfo; 4]> {
     let t = target;
     match card_id {
-        CardId::Strike | CardId::StrikeG => ironclad::strike::strike_play(_state, _card, t),
+        CardId::Strike => ironclad::strike::strike_play(_state, _card, t),
+        CardId::StrikeG => silent::strike_green::strike_green_play(_state, _card, t),
         CardId::Bash => ironclad::bash::bash_play(_state, _card, t),
         CardId::Cleave => ironclad::cleave::cleave_play(_state, _card),
         CardId::IronWave => ironclad::iron_wave::iron_wave_play(_state, _card, t),
@@ -42,7 +43,8 @@ pub fn resolve_card_play_with_context(
         }
         CardId::TwinStrike => ironclad::twin_strike::twin_strike_play(_state, _card, t),
         CardId::ThunderClap => ironclad::thunderclap::thunderclap_play(_state, _card),
-        CardId::Defend | CardId::DefendG => ironclad::defend::defend_play(_state, _card),
+        CardId::Defend => ironclad::defend::defend_play(_state, _card),
+        CardId::DefendG => silent::defend_green::defend_green_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
@@ -282,9 +284,9 @@ pub fn resolve_card_play_with_context(
         | CardId::Normality
         | CardId::Pain
         | CardId::Shame
-        | CardId::Writhe
-        | CardId::Reflex
-        | CardId::Tactician => smallvec::smallvec![], // Unplayable / Stub
+        | CardId::Writhe => smallvec::smallvec![], // Unplayable / Stub
+        CardId::Reflex => silent::reflex::reflex_play(_state, _card),
+        CardId::Tactician => silent::tactician::tactician_play(_state, _card),
         CardId::Madness => smallvec::smallvec![ActionInfo {
             action: Action::Madness,
             insertion_mode: crate::runtime::action::AddTo::Bottom,
@@ -757,21 +759,9 @@ pub fn resolve_card_on_manual_discard(
     card: &CombatCard,
     _state: &CombatState,
 ) -> SmallVec<[ActionInfo; 4]> {
-    let def = get_card_definition(card.id);
-    let upgraded = if card.upgrades > 0 { 1 } else { 0 };
-    let magic = def.base_magic + upgraded * def.upgrade_magic;
-
     match card.id {
-        CardId::Reflex => smallvec::smallvec![ActionInfo {
-            action: Action::DrawCards(magic.max(0) as u32),
-            insertion_mode: crate::runtime::action::AddTo::Bottom,
-        }],
-        CardId::Tactician => smallvec::smallvec![ActionInfo {
-            action: Action::GainEnergy {
-                amount: magic.max(0),
-            },
-            insertion_mode: crate::runtime::action::AddTo::Top,
-        }],
+        CardId::Reflex => silent::reflex::reflex_manual_discard(card),
+        CardId::Tactician => silent::tactician::tactician_manual_discard(card),
         _ => smallvec::smallvec![],
     }
 }
