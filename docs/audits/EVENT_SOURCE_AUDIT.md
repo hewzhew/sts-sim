@@ -213,12 +213,38 @@ Tests:
 - `sleep_heals_through_player_heal_semantics_and_event_source`
 - `sleep_is_blocked_by_mark_of_the_bloom_like_java_player_heal`
 
+### N'loth relic trade
+
+Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
+`miscRng.randomLong()`, stores two offered relic objects, and then handles trade
+clicks asymmetrically:
+
+- if the player does not already have `Nloth's Gift`, Java calls
+  `player.loseRelic(choice.relicId)` and then obtains `Nloth's Gift`;
+- if the player already has `Nloth's Gift`, Java obtains a `Circlet` and does
+  not call `loseRelic` on the offered relic.
+
+Fixes:
+
+- N'loth trades now remove the offered relic through
+  `remove_relic_at_with_source(..., Event(Nloth))`, preserving relic-lost
+  events and unequip hooks.
+- Existing `Nloth's Gift` now grants `Circlet` without losing the offered relic,
+  matching Java's branch.
+- The obtained Gift/Circlet now uses `obtain_relic_with_source(...,
+  Event(Nloth))`.
+
+Tests:
+
+- `trade_removes_offered_relic_and_obtains_gift_with_event_source`
+- `trade_with_existing_gift_grants_circlet_without_losing_offered_relic`
+
 ## Current High-Risk Event Areas
 
 - `Match and Keep` still deserves deeper review for board serialization,
   duplicate-card handling, and how upgraded/generated card instances are
   represented after a match.
-- Selection-heavy events need source-by-source checks: `Nloth` and remaining
+- Selection-heavy events need source-by-source checks for remaining
   `Note For Yourself` persistence gaps.
 - Selection choice preconditions still need deeper event-by-event review.
   Some Java handlers check candidate availability only when clicked, not when
