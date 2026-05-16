@@ -28,6 +28,25 @@ pub fn apply_player_turn_energy_recharge_hooks(state: &mut CombatState) {
                     deva.extra_data += deva.amount;
                 });
             }
+            PowerId::CollectPower => {
+                state.queue_action_back(Action::MakeTempCardInHand {
+                    card_id: crate::content::cards::CardId::Miracle,
+                    amount: 1,
+                    upgraded: true,
+                });
+                if power.amount <= 1 {
+                    state.queue_action_back(Action::RemovePower {
+                        target: 0,
+                        power_id: PowerId::CollectPower,
+                    });
+                } else {
+                    state.queue_action_back(Action::ReducePower {
+                        target: 0,
+                        power_id: PowerId::CollectPower,
+                        amount: 1,
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -140,6 +159,26 @@ pub fn handle_malaise(
             source: 0,
             target,
             power_id: PowerId::Weak,
+            amount: effect,
+        });
+        if !free_to_play_once {
+            state.turn.spend_energy(state.turn.energy as i32);
+        }
+    }
+}
+
+pub fn handle_collect(
+    upgraded: bool,
+    free_to_play_once: bool,
+    energy_on_use: i32,
+    state: &mut CombatState,
+) {
+    let effect = x_cost_effect(state, upgraded, energy_on_use);
+    if effect > 0 {
+        state.queue_action_back(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::CollectPower,
             amount: effect,
         });
         if !free_to_play_once {
@@ -396,6 +435,8 @@ fn handle_apply_power_detailed_internal(
         } else if power_id == PowerId::DevaForm && amount > 0 {
             existing.amount += amount;
             existing.extra_data += 1;
+        } else if power_id == PowerId::CollectPower && amount > 0 {
+            existing.amount = (existing.amount + amount).min(999);
         } else {
             existing.amount += amount;
         }
@@ -413,6 +454,7 @@ fn handle_apply_power_detailed_internal(
                 PowerId::Malleable => (amount, amount),
                 PowerId::Flight => (amount, amount),
                 PowerId::DevaForm => (amount, 1),
+                PowerId::CollectPower => (amount.min(999), 0),
                 PowerId::Rebound => (amount, extra_data.unwrap_or(1)),
                 _ if extra_data.is_some() => (amount, extra_data.unwrap_or(0)),
                 _ => (amount, 0),

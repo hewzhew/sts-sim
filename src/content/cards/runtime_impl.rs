@@ -122,6 +122,9 @@ pub fn resolve_card_play_with_context(
         CardId::WaveOfTheHand => watcher::wave_of_the_hand::wave_of_the_hand_play(_state, _card),
         CardId::Fasting => watcher::fasting::fasting_play(_state, _card),
         CardId::DevaForm => watcher::deva_form::deva_form_play(_state, _card),
+        CardId::Blasphemy => watcher::blasphemy::blasphemy_play(_state, _card),
+        CardId::Collect => watcher::collect::collect_play(_state, _card),
+        CardId::DeusExMachina => watcher::deus_ex_machina::deus_ex_machina_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -823,6 +826,7 @@ pub fn is_self_retain(card: &CombatCard) -> bool {
         | CardId::Perseverance
         | CardId::WindmillStrike => true,
         CardId::Worship => card.upgrades > 0,
+        CardId::Blasphemy => card.upgrades > 0,
         _ => false,
     }
 }

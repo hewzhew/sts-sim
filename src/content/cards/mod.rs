@@ -367,6 +367,9 @@ pub enum CardId {
     WaveOfTheHand,
     Fasting,
     DevaForm,
+    Blasphemy,
+    Collect,
+    DeusExMachina,
     // Add more as we expand
 }
 
@@ -768,6 +771,9 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::WaveOfTheHand => watcher::wave_of_the_hand::definition(),
         CardId::Fasting => watcher::fasting::definition(),
         CardId::DevaForm => watcher::deva_form::definition(),
+        CardId::Blasphemy => watcher::blasphemy::definition(),
+        CardId::Collect => watcher::collect::definition(),
+        CardId::DeusExMachina => watcher::deus_ex_machina::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1403,6 +1409,7 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::ReachHeaven,
     CardId::WaveOfTheHand,
     CardId::Fasting,
+    CardId::Collect,
 ];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[
@@ -1415,6 +1422,8 @@ pub const WATCHER_RARE_POOL: &[CardId] = &[
     CardId::Judgement,
     CardId::Establishment,
     CardId::DevaForm,
+    CardId::Blasphemy,
+    CardId::DeusExMachina,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1678,6 +1687,9 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::WaveOfTheHand => "WaveOfTheHand",
         CardId::Fasting => "Fasting2",
         CardId::DevaForm => "DevaForm",
+        CardId::Blasphemy => "Blasphemy",
+        CardId::Collect => "Collect",
+        CardId::DeusExMachina => "DeusExMachina",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -2114,6 +2126,9 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         WaveOfTheHand,
         Fasting,
         DevaForm,
+        Blasphemy,
+        Collect,
+        DeusExMachina,
         Neutralize,
         Survivor,
         Anger,

@@ -1,7 +1,9 @@
 pub mod battle_hymn;
+pub mod blasphemy;
 pub mod bowling_bash;
 pub mod brilliance;
 pub mod carve_reality;
+pub mod collect;
 pub mod conclude;
 pub mod consecrate;
 pub mod crescendo;
@@ -9,6 +11,7 @@ pub mod crush_joints;
 pub mod cut_through_fate;
 pub mod deceive_reality;
 pub mod defend_watcher;
+pub mod deus_ex_machina;
 pub mod deva_form;
 pub mod devotion;
 pub mod empty_body;

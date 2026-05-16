@@ -140,6 +140,18 @@ fn apply_card_trigger_when_drawn(
             original: Box::new(card.clone()),
             amount: 1,
         });
+    } else if card.id == CardId::DeusExMachina {
+        let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
+        let amount = evaluated.base_magic_num_mut.max(0).min(u8::MAX as i32) as u8;
+        state.queue_action_front(Action::MakeTempCardInHand {
+            card_id: CardId::Miracle,
+            amount,
+            upgraded: false,
+        });
+        state.queue_action_front(Action::ExhaustCard {
+            card_uuid: card.uuid,
+            source_pile: crate::state::PileType::Hand,
+        });
     }
 }
 

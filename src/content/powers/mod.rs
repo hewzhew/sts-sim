@@ -89,6 +89,8 @@ pub enum PowerId {
     WaveOfTheHandPower,
     EnergyDownPower,
     DevaForm,
+    EndTurnDeathPower,
+    CollectPower,
     Focus,
     DexterityDown,
     PenNibPower,
@@ -196,6 +198,7 @@ pub fn uses_sentinel_amount(id: PowerId) -> bool {
             | PowerId::Unawakened
             | PowerId::Confusion
             | PowerId::WrathNextTurn
+            | PowerId::EndTurnDeathPower
     )
 }
 
@@ -608,6 +611,14 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Deva Form",
         },
+        PowerId::EndTurnDeathPower => PowerDefinition {
+            id,
+            name: "Blasphemer",
+        },
+        PowerId::CollectPower => PowerDefinition {
+            id,
+            name: "Collect",
+        },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
         PowerId::DexterityDown => PowerDefinition {
             id,
@@ -1008,6 +1019,17 @@ pub fn resolve_power_instance_at_turn_start(
         PowerId::EnergyDownPower => {
             smallvec::smallvec![crate::runtime::action::Action::GainEnergy { amount: -amount }]
         }
+        PowerId::EndTurnDeathPower => smallvec::smallvec![
+            crate::runtime::action::Action::LoseHp {
+                target: owner,
+                amount: 99_999,
+                triggers_rupture: true,
+            },
+            crate::runtime::action::Action::RemovePower {
+                target: owner,
+                power_id: PowerId::EndTurnDeathPower,
+            },
+        ],
         PowerId::MagnetismPower => {
             let mut acts = smallvec::SmallVec::new();
             if state.are_monsters_basically_dead_java() {

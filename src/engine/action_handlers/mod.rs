@@ -262,6 +262,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             free_to_play_once,
             energy_on_use,
         } => powers::handle_malaise(target, upgraded, free_to_play_once, energy_on_use, state),
+        Action::Collect {
+            upgraded,
+            free_to_play_once,
+            energy_on_use,
+        } => powers::handle_collect(upgraded, free_to_play_once, energy_on_use, state),
         Action::FiendFire {
             target,
             damage_info,

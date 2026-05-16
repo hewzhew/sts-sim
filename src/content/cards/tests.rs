@@ -2756,6 +2756,235 @@ fn watcher_energy_retain_and_block_hook_powers_match_java_sources() {
 }
 
 #[test]
+fn watcher_delayed_energy_batch_matches_java_sources() {
+    let java_map = build_java_id_map();
+    for (id, java) in [
+        (CardId::Blasphemy, "Blasphemy"),
+        (CardId::Collect, "Collect"),
+        (CardId::DeusExMachina, "DeusExMachina"),
+    ] {
+        assert_eq!(java_id(id), java);
+        assert_eq!(java_map.get(java), Some(&id));
+    }
+
+    let blasphemy = get_card_definition(CardId::Blasphemy);
+    assert_eq!(blasphemy.name, "Blasphemy");
+    assert_eq!(blasphemy.card_type, CardType::Skill);
+    assert_eq!(blasphemy.rarity, CardRarity::Rare);
+    assert_eq!(blasphemy.cost, 1);
+    assert_eq!(blasphemy.target, CardTarget::SelfTarget);
+    assert!(blasphemy.exhaust);
+    assert!(!crate::content::cards::is_self_retain(&CombatCard::new(
+        CardId::Blasphemy,
+        1010
+    )));
+    let mut blasphemy_plus = CombatCard::new(CardId::Blasphemy, 1011);
+    blasphemy_plus.upgrades = 1;
+    assert!(crate::content::cards::is_self_retain(&blasphemy_plus));
+
+    let collect = get_card_definition(CardId::Collect);
+    assert_eq!(collect.name, "Collect");
+    assert_eq!(collect.card_type, CardType::Skill);
+    assert_eq!(collect.rarity, CardRarity::Uncommon);
+    assert_eq!(collect.cost, -1);
+    assert_eq!(collect.target, CardTarget::SelfTarget);
+    assert!(collect.exhaust);
+
+    let deus = get_card_definition(CardId::DeusExMachina);
+    assert_eq!(deus.name, "Deus Ex Machina");
+    assert_eq!(deus.card_type, CardType::Skill);
+    assert_eq!(deus.rarity, CardRarity::Rare);
+    assert_eq!(deus.cost, -2);
+    assert_eq!(deus.base_magic, 2);
+    assert_eq!(deus.upgrade_magic, 1);
+    assert_eq!(deus.target, CardTarget::SelfTarget);
+    assert!(deus.exhaust);
+
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Collect));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Blasphemy));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::DeusExMachina));
+
+    let state = crate::test_support::blank_test_combat();
+    let blasphemy_actions = resolve_card_play(CardId::Blasphemy, &state, &blasphemy_plus, None);
+    assert_eq!(
+        blasphemy_actions
+            .iter()
+            .map(|info| &info.action)
+            .collect::<Vec<_>>(),
+        vec![
+            &Action::EnterStance("Divinity".to_string()),
+            &Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::EndTurnDeathPower,
+                amount: -1,
+            },
+        ]
+    );
+    assert_eq!(
+        crate::content::powers::resolve_power_at_turn_start(
+            PowerId::EndTurnDeathPower,
+            &mut crate::test_support::blank_test_combat(),
+            0,
+            -1,
+        )
+        .as_slice(),
+        &[
+            Action::LoseHp {
+                target: 0,
+                amount: 99_999,
+                triggers_rupture: true,
+            },
+            Action::RemovePower {
+                target: 0,
+                power_id: PowerId::EndTurnDeathPower,
+            },
+        ]
+    );
+
+    let mut collect_card = CombatCard::new(CardId::Collect, 1012);
+    collect_card.upgrades = 1;
+    collect_card.energy_on_use = 2;
+    let collect_actions = resolve_card_play(CardId::Collect, &state, &collect_card, None);
+    assert_eq!(
+        collect_actions[0].action,
+        Action::Collect {
+            upgraded: true,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        }
+    );
+
+    let mut collect_state = crate::test_support::blank_test_combat();
+    collect_state.turn.energy = 2;
+    crate::engine::action_handlers::execute_action(
+        collect_actions[0].action.clone(),
+        &mut collect_state,
+    );
+    assert_eq!(
+        collect_state.turn.energy, 0,
+        "Java CollectAction only spends current energy after a positive effect"
+    );
+    let apply_collect = collect_state
+        .pop_next_action()
+        .expect("Collect should queue CollectPower when effect is positive");
+    assert_eq!(
+        apply_collect,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::CollectPower,
+            amount: 3,
+        }
+    );
+    crate::engine::action_handlers::execute_action(apply_collect, &mut collect_state);
+    assert_eq!(
+        crate::content::powers::store::power_amount(&collect_state, 0, PowerId::CollectPower),
+        3
+    );
+
+    crate::engine::action_handlers::powers::apply_player_turn_energy_recharge_hooks(
+        &mut collect_state,
+    );
+    assert_eq!(
+        collect_state.pop_next_action(),
+        Some(Action::MakeTempCardInHand {
+            card_id: CardId::Miracle,
+            amount: 1,
+            upgraded: true,
+        }),
+        "Java CollectPower.onEnergyRecharge creates an upgraded Miracle"
+    );
+    assert_eq!(
+        collect_state.pop_next_action(),
+        Some(Action::ReducePower {
+            target: 0,
+            power_id: PowerId::CollectPower,
+            amount: 1,
+        })
+    );
+
+    let mut collect_remove_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut collect_remove_state,
+        0,
+        vec![Power {
+            power_type: PowerId::CollectPower,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::powers::apply_player_turn_energy_recharge_hooks(
+        &mut collect_remove_state,
+    );
+    assert_eq!(
+        collect_remove_state.pop_next_action(),
+        Some(Action::MakeTempCardInHand {
+            card_id: CardId::Miracle,
+            amount: 1,
+            upgraded: true,
+        })
+    );
+    assert_eq!(
+        collect_remove_state.pop_next_action(),
+        Some(Action::RemovePower {
+            target: 0,
+            power_id: PowerId::CollectPower,
+        })
+    );
+
+    let mut deus_plus = CombatCard::new(CardId::DeusExMachina, 1013);
+    deus_plus.upgrades = 1;
+    assert!(
+        can_play_card(&deus_plus, &state).is_err(),
+        "Java DeusExMachina.canUse always returns false"
+    );
+    let deus_play = resolve_card_play(CardId::DeusExMachina, &state, &deus_plus, None);
+    assert!(deus_play.is_empty());
+
+    let mut draw_state = crate::test_support::blank_test_combat();
+    draw_state.zones.draw_pile = vec![deus_plus.clone()];
+    crate::engine::action_handlers::execute_action(Action::DrawCards(1), &mut draw_state);
+    assert_eq!(draw_state.zones.hand.len(), 1);
+    assert_eq!(draw_state.zones.hand[0].id, CardId::DeusExMachina);
+    let exhaust = draw_state
+        .pop_next_action()
+        .expect("Deus Ex Machina should queue ExhaustSpecificCardAction first");
+    assert_eq!(
+        exhaust,
+        Action::ExhaustCard {
+            card_uuid: 1013,
+            source_pile: crate::state::PileType::Hand,
+        },
+        "Java DeusExMachina.triggerWhenDrawn addToTop order makes ExhaustSpecificCardAction execute first"
+    );
+    let make_miracles = draw_state
+        .pop_next_action()
+        .expect("Deus Ex Machina should queue MakeTempCardInHandAction after exhaust");
+    assert_eq!(
+        make_miracles,
+        Action::MakeTempCardInHand {
+            card_id: CardId::Miracle,
+            amount: 3,
+            upgraded: false,
+        }
+    );
+    crate::engine::action_handlers::execute_action(exhaust, &mut draw_state);
+    crate::engine::action_handlers::execute_action(make_miracles, &mut draw_state);
+    assert_eq!(draw_state.zones.exhaust_pile.len(), 1);
+    assert_eq!(draw_state.zones.exhaust_pile[0].id, CardId::DeusExMachina);
+    assert_eq!(draw_state.zones.hand.len(), 3);
+    assert!(draw_state
+        .zones
+        .hand
+        .iter()
+        .all(|card| card.id == CardId::Miracle && card.upgrades == 0));
+}
+
+#[test]
 fn watcher_scry_card_runtime_actions_match_java_use_methods() {
     let state = crate::test_support::blank_test_combat();
 
