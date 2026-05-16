@@ -27,6 +27,81 @@ const SUMMON_POOL: [EnemyId; 8] = [
     EnemyId::GremlinWizard,
 ];
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn alive_gremlin_count_counts_zero_hp_non_dying_minions_like_java() {
+        let leader = crate::test_support::test_monster(EnemyId::GremlinLeader);
+        let mut minion = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+        minion.id = 2;
+        minion.current_hp = 0;
+        minion.is_dying = false;
+        minion.is_escaped = true;
+
+        assert_eq!(alive_gremlin_count(&[leader.clone(), minion], leader.id), 1);
+    }
+
+    #[test]
+    fn encourage_burns_java_quote_rng_and_targets_zero_hp_non_dying_allies() {
+        let leader = crate::test_support::test_monster(EnemyId::GremlinLeader);
+        let mut minion = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+        minion.id = 2;
+        minion.current_hp = 0;
+        minion.is_dying = false;
+        minion.is_escaped = true;
+        let mut state = crate::test_support::combat_with_monsters(vec![leader.clone(), minion]);
+        let before_counter = state.rng.ai_rng.counter;
+        let plan = encourage_plan(state.meta.ascension_level);
+
+        let actions = GremlinLeader::take_turn_plan(&mut state, &leader, &plan);
+
+        assert_eq!(
+            state.rng.ai_rng.counter,
+            before_counter + 1,
+            "Java GremlinLeader.getEncourageQuote consumes aiRng even though the quote is UI text"
+        );
+        assert!(
+            actions.iter().any(|action| matches!(
+                action,
+                Action::ApplyPower {
+                    target: 2,
+                    power_id: PowerId::Strength,
+                    ..
+                }
+            )),
+            "Java Encourage applies Strength to every non-dying ally, without checking HP or escaped state"
+        );
+        assert!(
+            actions.iter().any(|action| matches!(
+                action,
+                Action::GainBlock {
+                    target: 2,
+                    ..
+                }
+            )),
+            "Java Encourage applies block to every non-dying ally, without checking HP or escaped state"
+        );
+    }
+
+    #[test]
+    fn leader_death_escapes_zero_hp_non_dying_allies_like_java() {
+        let leader = crate::test_support::test_monster(EnemyId::GremlinLeader);
+        let mut minion = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+        minion.id = 2;
+        minion.current_hp = 0;
+        minion.is_dying = false;
+        minion.is_escaped = true;
+        let mut state = crate::test_support::combat_with_monsters(vec![leader.clone(), minion]);
+
+        let actions = GremlinLeader::on_death(&mut state, &leader);
+
+        assert!(matches!(actions.as_slice(), [Action::Escape { target: 2 }]));
+    }
+}
+
 fn stab_plan() -> MonsterTurnPlan {
     MonsterTurnPlan::from_spec(
         STAB,
@@ -94,12 +169,7 @@ fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
 fn alive_gremlin_count(monsters: &[MonsterEntity], leader_id: usize) -> usize {
     monsters
         .iter()
-        .filter(|monster| {
-            monster.id != leader_id
-                && !monster.is_dying
-                && !monster.is_escaped
-                && monster.current_hp > 0
-        })
+        .filter(|monster| monster.id != leader_id && !monster.is_dying)
         .count()
 }
 
@@ -221,11 +291,7 @@ impl GremlinLeader {
         let mut occupied = [false; 3];
         let slot_draw_xs = Self::gremlin_slot_draw_xs(state, leader_id);
         for monster in &state.entities.monsters {
-            if monster.id == leader_id
-                || monster.is_dying
-                || monster.is_escaped
-                || monster.current_hp <= 0
-            {
+            if monster.id == leader_id || monster.is_dying {
                 continue;
             }
             let draw_x = state
@@ -248,12 +314,7 @@ impl GremlinLeader {
             .entities
             .monsters
             .iter()
-            .filter(|monster| {
-                monster.id != leader_id
-                    && !monster.is_dying
-                    && !monster.is_escaped
-                    && monster.current_hp > 0
-            })
+            .filter(|monster| monster.id != leader_id && !monster.is_dying)
             .map(|monster| monster.id)
             .collect()
     }
@@ -336,6 +397,7 @@ impl MonsterBehavior for GremlinLeader {
                 actions
             }
             ENCOURAGE => {
+                let _quote_idx = state.rng.ai_rng.random(2);
                 let mut actions = vec![Action::ApplyPower {
                     source: entity.id,
                     target: entity.id,
@@ -381,12 +443,7 @@ impl MonsterBehavior for GremlinLeader {
             .entities
             .monsters
             .iter()
-            .filter(|monster| {
-                monster.id != entity.id
-                    && !monster.is_dying
-                    && !monster.is_escaped
-                    && monster.current_hp > 0
-            })
+            .filter(|monster| monster.id != entity.id && !monster.is_dying)
             .map(|monster| Action::Escape { target: monster.id })
             .collect()
     }
