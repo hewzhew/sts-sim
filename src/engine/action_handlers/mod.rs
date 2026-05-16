@@ -528,6 +528,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             free_to_play_once,
             energy_on_use,
         } => cards::handle_transmutation(upgraded, free_to_play_once, energy_on_use, state),
+        Action::Tempest {
+            upgraded,
+            free_to_play_once,
+            energy_on_use,
+        } => cards::handle_tempest(upgraded, free_to_play_once, energy_on_use, state),
         Action::UseCardDone { should_exhaust } => {
             cards::handle_use_card_done(should_exhaust, state)
         }
@@ -650,6 +655,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             crate::content::orbs::hooks::trigger_end_of_turn_orbs_now(state)
         }
         Action::TriggerImpulseOrbs => crate::content::orbs::hooks::trigger_impulse_orbs_now(state),
+        Action::TriggerDarkImpulseOrbs => {
+            crate::content::orbs::hooks::trigger_dark_impulse_orbs_now(state)
+        }
         Action::EnterStance(stance) => handle_enter_stance(&stance, state),
 
         // === Pass-through / unhandled ===

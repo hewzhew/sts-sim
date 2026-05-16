@@ -79,6 +79,8 @@ pub fn resolve_card_play_with_context(
         CardId::Melter => defect::melter::melter_play(_state, _card, t),
         CardId::Ftl => defect::ftl::ftl_play(_state, _card, t),
         CardId::RipAndTear => defect::rip_and_tear::rip_and_tear_play(_state, _card),
+        CardId::Tempest => defect::tempest::tempest_play(_state, _card),
+        CardId::Darkness => defect::darkness::darkness_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),

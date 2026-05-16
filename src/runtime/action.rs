@@ -560,6 +560,11 @@ pub enum Action {
         free_to_play_once: bool,
         energy_on_use: i32,
     },
+    Tempest {
+        upgraded: bool,
+        free_to_play_once: bool,
+        energy_on_use: i32,
+    },
     ReduceAllHandCosts {
         amount: u8,
     },
@@ -716,6 +721,10 @@ pub enum Action {
     TriggerStartOfTurnOrbs,
     TriggerEndOfTurnOrbs,
     TriggerImpulseOrbs,
+    /// Java Defect `DarkImpulseAction`: trigger start/end turn callbacks only
+    /// for Dark orbs, with Gold Plated Cables repeating only if the first orb
+    /// is a non-empty Dark orb.
+    TriggerDarkImpulseOrbs,
     Scry(usize),
     EnterStance(String), // Watcher stance: "Wrath", "Calm", "Divinity", "Neutral"
     ObtainPotion,

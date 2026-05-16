@@ -247,6 +247,34 @@ pub fn trigger_impulse_orbs_now(state: &mut CombatState) {
     }
 }
 
+pub fn trigger_dark_impulse_orbs_now(state: &mut CombatState) {
+    refresh_orb_focus_values(state);
+    let len = state.entities.player.orbs.len();
+    for i in 0..len {
+        if state
+            .entities
+            .player
+            .orbs
+            .get(i)
+            .is_some_and(|orb| orb.id == OrbId::Dark)
+        {
+            trigger_orb_start_of_turn(state, i);
+            trigger_orb_end_of_turn(state, i);
+        }
+    }
+    if state.entities.player.has_relic(RelicId::GoldPlatedCables)
+        && state
+            .entities
+            .player
+            .orbs
+            .first()
+            .is_some_and(|orb| orb.id == OrbId::Dark)
+    {
+        trigger_orb_start_of_turn(state, 0);
+        trigger_orb_end_of_turn(state, 0);
+    }
+}
+
 fn evoke_next_orb(state: &mut CombatState, remove: bool) {
     refresh_orb_focus_values(state);
     let Some(orb) = state.entities.player.orbs.first().cloned() else {

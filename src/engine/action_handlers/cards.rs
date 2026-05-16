@@ -1433,6 +1433,32 @@ pub fn handle_transmutation(
     }
 }
 
+pub fn handle_tempest(
+    upgraded: bool,
+    free_to_play_once: bool,
+    energy_on_use: i32,
+    state: &mut CombatState,
+) {
+    let base_effect = if energy_on_use != -1 {
+        energy_on_use
+    } else {
+        state.turn.energy as i32
+    };
+    let mut effect = crate::content::relics::hooks::on_calculate_x_cost(state, base_effect);
+    if upgraded {
+        effect += 1;
+    }
+
+    if effect > 0 {
+        for _ in 0..effect {
+            state.queue_action_back(Action::ChannelOrb(crate::runtime::combat::OrbId::Lightning));
+        }
+        if !free_to_play_once {
+            state.turn.spend_energy(state.turn.energy as i32);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct UseCardPlacementOverrides {
     rebound: bool,

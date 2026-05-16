@@ -1998,6 +1998,202 @@ fn defect_energy_and_remove_block_actions_read_execution_state() {
 }
 
 #[test]
+fn defect_tempest_and_darkness_definitions_match_java_sources() {
+    let tempest = get_card_definition(CardId::Tempest);
+    assert_eq!(tempest.name, "Tempest");
+    assert_eq!(tempest.card_type, CardType::Skill);
+    assert_eq!(tempest.rarity, CardRarity::Uncommon);
+    assert_eq!(tempest.cost, -1);
+    assert_eq!(tempest.base_magic, 0);
+    assert_eq!(tempest.target, CardTarget::SelfTarget);
+    assert!(tempest.exhaust);
+    assert_eq!(tempest.upgrade_damage, 0);
+    assert_eq!(tempest.upgrade_block, 0);
+    assert_eq!(tempest.upgrade_magic, 0);
+
+    let darkness = get_card_definition(CardId::Darkness);
+    assert_eq!(darkness.name, "Darkness");
+    assert_eq!(darkness.card_type, CardType::Skill);
+    assert_eq!(darkness.rarity, CardRarity::Uncommon);
+    assert_eq!(darkness.cost, 1);
+    assert_eq!(darkness.base_magic, 1);
+    assert_eq!(darkness.target, CardTarget::SelfTarget);
+    assert!(!darkness.exhaust);
+    assert_eq!(darkness.upgrade_damage, 0);
+    assert_eq!(darkness.upgrade_block, 0);
+    assert_eq!(darkness.upgrade_magic, 0);
+
+    assert_eq!(java_id(CardId::Tempest), "Tempest");
+    assert_eq!(java_id(CardId::Darkness), "Darkness");
+    assert_eq!(build_java_id_map().get("Tempest"), Some(&CardId::Tempest));
+    assert_eq!(build_java_id_map().get("Darkness"), Some(&CardId::Darkness));
+}
+
+#[test]
+fn defect_tempest_and_darkness_runtime_actions_match_java_use_methods() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut tempest_card = CombatCard::new(CardId::Tempest, 261);
+    tempest_card.energy_on_use = 2;
+    let tempest = resolve_card_play(CardId::Tempest, &state, &tempest_card, None);
+    assert_eq!(tempest.len(), 1);
+    assert_eq!(
+        tempest[0].action,
+        Action::Tempest {
+            upgraded: false,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        }
+    );
+
+    let darkness = resolve_card_play(
+        CardId::Darkness,
+        &state,
+        &CombatCard::new(CardId::Darkness, 262),
+        None,
+    );
+    assert_eq!(darkness.len(), 1);
+    assert_eq!(darkness[0].action, Action::ChannelOrb(OrbId::Dark));
+
+    let mut darkness_plus = CombatCard::new(CardId::Darkness, 263);
+    darkness_plus.upgrades = 1;
+    let darkness_plus_actions = resolve_card_play(CardId::Darkness, &state, &darkness_plus, None);
+    assert_eq!(darkness_plus_actions.len(), 2);
+    assert_eq!(
+        darkness_plus_actions[0].action,
+        Action::ChannelOrb(OrbId::Dark)
+    );
+    assert_eq!(
+        darkness_plus_actions[1].action,
+        Action::TriggerDarkImpulseOrbs
+    );
+}
+
+#[test]
+fn tempest_action_uses_x_cost_relic_upgrade_and_free_to_play_semantics() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.turn.energy = 2;
+    crate::engine::action_handlers::execute_action(
+        Action::Tempest {
+            upgraded: false,
+            free_to_play_once: false,
+            energy_on_use: 2,
+        },
+        &mut state,
+    );
+    assert_eq!(state.turn.energy, 0);
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning))
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning))
+    );
+    assert_eq!(state.pop_next_action(), None);
+
+    let mut upgraded_zero = crate::test_support::blank_test_combat();
+    upgraded_zero.turn.energy = 0;
+    crate::engine::action_handlers::execute_action(
+        Action::Tempest {
+            upgraded: true,
+            free_to_play_once: false,
+            energy_on_use: 0,
+        },
+        &mut upgraded_zero,
+    );
+    assert_eq!(
+        upgraded_zero.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning)),
+        "Java TempestAction adds the upgrade bonus after reading zero X energy"
+    );
+    assert_eq!(upgraded_zero.pop_next_action(), None);
+
+    let mut chemical_x = crate::test_support::blank_test_combat();
+    chemical_x
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::ChemicalX,
+        ));
+    crate::engine::action_handlers::execute_action(
+        Action::Tempest {
+            upgraded: false,
+            free_to_play_once: false,
+            energy_on_use: 0,
+        },
+        &mut chemical_x,
+    );
+    assert_eq!(
+        chemical_x.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning))
+    );
+    assert_eq!(
+        chemical_x.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning))
+    );
+    assert_eq!(chemical_x.pop_next_action(), None);
+
+    let mut free_to_play = crate::test_support::blank_test_combat();
+    free_to_play.turn.energy = 3;
+    crate::engine::action_handlers::execute_action(
+        Action::Tempest {
+            upgraded: false,
+            free_to_play_once: true,
+            energy_on_use: 3,
+        },
+        &mut free_to_play,
+    );
+    assert_eq!(free_to_play.turn.energy, 3);
+}
+
+#[test]
+fn dark_impulse_action_only_triggers_dark_orbs_and_dark_first_cables() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.max_orbs = 3;
+    state.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Dark),
+        OrbEntity::new(OrbId::Plasma),
+        OrbEntity::new(OrbId::Dark),
+    ];
+    state
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::GoldPlatedCables,
+        ));
+
+    crate::engine::action_handlers::execute_action(Action::TriggerDarkImpulseOrbs, &mut state);
+    assert_eq!(state.entities.player.orbs[0].evoke_amount, 18);
+    assert_eq!(state.entities.player.orbs[1].evoke_amount, 2);
+    assert_eq!(state.entities.player.orbs[2].evoke_amount, 12);
+    assert_eq!(
+        state.pop_next_action(),
+        None,
+        "DarkImpulseAction must not trigger Plasma/Frost/Lightning passive effects"
+    );
+
+    let mut first_not_dark = crate::test_support::blank_test_combat();
+    first_not_dark.entities.player.max_orbs = 2;
+    first_not_dark.entities.player.orbs =
+        vec![OrbEntity::new(OrbId::Frost), OrbEntity::new(OrbId::Dark)];
+    first_not_dark
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::GoldPlatedCables,
+        ));
+
+    crate::engine::action_handlers::execute_action(
+        Action::TriggerDarkImpulseOrbs,
+        &mut first_not_dark,
+    );
+    assert_eq!(first_not_dark.entities.player.orbs[0].evoke_amount, 5);
+    assert_eq!(first_not_dark.entities.player.orbs[1].evoke_amount, 12);
+    assert_eq!(first_not_dark.pop_next_action(), None);
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;
