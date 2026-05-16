@@ -528,6 +528,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             free_to_play_once,
             energy_on_use,
         } => cards::handle_transmutation(upgraded, free_to_play_once, energy_on_use, state),
+        Action::AggregateEnergy { divide_amount } => {
+            cards::handle_aggregate_energy(divide_amount, state)
+        }
         Action::Tempest {
             upgraded,
             free_to_play_once,

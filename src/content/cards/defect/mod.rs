@@ -1,6 +1,11 @@
+pub mod aggregate;
+pub mod auto_shields;
 pub mod ball_lightning;
 pub mod barrage;
 pub mod beam_cell;
+pub mod boot_sequence;
+pub mod capacitor;
+pub mod chill;
 pub mod claw;
 pub mod cold_snap;
 pub mod compile_driver;

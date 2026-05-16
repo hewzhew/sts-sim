@@ -560,6 +560,9 @@ pub enum Action {
         free_to_play_once: bool,
         energy_on_use: i32,
     },
+    AggregateEnergy {
+        divide_amount: i32,
+    },
     Tempest {
         upgraded: bool,
         free_to_play_once: bool,

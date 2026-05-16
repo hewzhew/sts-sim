@@ -2194,6 +2194,199 @@ fn dark_impulse_action_only_triggers_dark_orbs_and_dark_first_cables() {
 }
 
 #[test]
+fn defect_more_uncommon_definitions_match_java_sources() {
+    let aggregate = get_card_definition(CardId::Aggregate);
+    assert_eq!(aggregate.name, "Aggregate");
+    assert_eq!(aggregate.card_type, CardType::Skill);
+    assert_eq!(aggregate.rarity, CardRarity::Uncommon);
+    assert_eq!(aggregate.cost, 1);
+    assert_eq!(aggregate.base_magic, 4);
+    assert_eq!(aggregate.upgrade_magic, -1);
+    assert_eq!(java_id(CardId::Aggregate), "Aggregate");
+
+    let auto = get_card_definition(CardId::AutoShields);
+    assert_eq!(auto.name, "Auto-Shields");
+    assert_eq!(auto.card_type, CardType::Skill);
+    assert_eq!(auto.rarity, CardRarity::Uncommon);
+    assert_eq!(auto.cost, 1);
+    assert_eq!(auto.base_block, 11);
+    assert_eq!(auto.upgrade_block, 4);
+    assert_eq!(java_id(CardId::AutoShields), "Auto Shields");
+
+    let boot = get_card_definition(CardId::BootSequence);
+    assert_eq!(boot.name, "Boot Sequence");
+    assert_eq!(boot.card_type, CardType::Skill);
+    assert_eq!(boot.rarity, CardRarity::Uncommon);
+    assert_eq!(boot.cost, 0);
+    assert_eq!(boot.base_block, 10);
+    assert_eq!(boot.upgrade_block, 3);
+    assert!(boot.exhaust);
+    assert!(boot.innate);
+    assert_eq!(java_id(CardId::BootSequence), "BootSequence");
+
+    let capacitor = get_card_definition(CardId::Capacitor);
+    assert_eq!(capacitor.name, "Capacitor");
+    assert_eq!(capacitor.card_type, CardType::Power);
+    assert_eq!(capacitor.rarity, CardRarity::Uncommon);
+    assert_eq!(capacitor.cost, 1);
+    assert_eq!(capacitor.base_magic, 2);
+    assert_eq!(capacitor.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Capacitor), "Capacitor");
+
+    let chill = get_card_definition(CardId::Chill);
+    assert_eq!(chill.name, "Chill");
+    assert_eq!(chill.card_type, CardType::Skill);
+    assert_eq!(chill.rarity, CardRarity::Uncommon);
+    assert_eq!(chill.cost, 0);
+    assert_eq!(chill.base_magic, 1);
+    assert!(chill.exhaust);
+    assert!(!chill.innate);
+    assert_eq!(java_id(CardId::Chill), "Chill");
+
+    let mut chill_plus = CombatCard::new(CardId::Chill, 264);
+    chill_plus.upgrades = 1;
+    assert!(is_innate_card(&chill_plus));
+    assert_eq!(
+        build_java_id_map().get("Auto Shields"),
+        Some(&CardId::AutoShields)
+    );
+    assert_eq!(
+        build_java_id_map().get("BootSequence"),
+        Some(&CardId::BootSequence)
+    );
+}
+
+#[test]
+fn defect_more_uncommon_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+
+    let aggregate = resolve_card_play(
+        CardId::Aggregate,
+        &state,
+        &CombatCard::new(CardId::Aggregate, 265),
+        None,
+    );
+    assert_eq!(
+        aggregate[0].action,
+        Action::AggregateEnergy { divide_amount: 4 }
+    );
+    let mut aggregate_plus = CombatCard::new(CardId::Aggregate, 266);
+    aggregate_plus.upgrades = 1;
+    let aggregate_plus_actions =
+        resolve_card_play(CardId::Aggregate, &state, &aggregate_plus, None);
+    assert_eq!(
+        aggregate_plus_actions[0].action,
+        Action::AggregateEnergy { divide_amount: 3 }
+    );
+
+    let auto = resolve_card_play(
+        CardId::AutoShields,
+        &state,
+        &CombatCard::new(CardId::AutoShields, 267),
+        None,
+    );
+    assert_eq!(
+        auto[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 11,
+        }
+    );
+    state.entities.player.block = 1;
+    let blocked_auto = resolve_card_play(
+        CardId::AutoShields,
+        &state,
+        &CombatCard::new(CardId::AutoShields, 268),
+        None,
+    );
+    assert!(
+        blocked_auto.is_empty(),
+        "Java AutoShields.use queues no GainBlockAction when currentBlock is nonzero"
+    );
+    state.entities.player.block = 0;
+    let mut auto_plus = CombatCard::new(CardId::AutoShields, 269);
+    auto_plus.upgrades = 1;
+    let auto_plus_actions = resolve_card_play(CardId::AutoShields, &state, &auto_plus, None);
+    assert_eq!(
+        auto_plus_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 15,
+        }
+    );
+
+    let boot = resolve_card_play(
+        CardId::BootSequence,
+        &state,
+        &CombatCard::new(CardId::BootSequence, 270),
+        None,
+    );
+    assert_eq!(
+        boot[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 10,
+        }
+    );
+
+    let capacitor = resolve_card_play(
+        CardId::Capacitor,
+        &state,
+        &CombatCard::new(CardId::Capacitor, 271),
+        None,
+    );
+    assert_eq!(capacitor[0].action, Action::IncreaseMaxOrb(2));
+    let mut capacitor_plus = CombatCard::new(CardId::Capacitor, 272);
+    capacitor_plus.upgrades = 1;
+    let capacitor_plus_actions =
+        resolve_card_play(CardId::Capacitor, &state, &capacitor_plus, None);
+    assert_eq!(capacitor_plus_actions[0].action, Action::IncreaseMaxOrb(3));
+
+    let mut alive = crate::test_support::test_monster(EnemyId::JawWorm);
+    alive.id = 273;
+    let mut escaped = crate::test_support::test_monster(EnemyId::Cultist);
+    escaped.id = 274;
+    escaped.is_escaped = true;
+    let mut half_dead = crate::test_support::test_monster(EnemyId::Darkling);
+    half_dead.id = 275;
+    half_dead.half_dead = true;
+    state.entities.monsters = vec![alive, escaped, half_dead];
+    let chill = resolve_card_play(
+        CardId::Chill,
+        &state,
+        &CombatCard::new(CardId::Chill, 276),
+        None,
+    );
+    assert_eq!(chill.len(), 1);
+    assert_eq!(chill[0].action, Action::ChannelOrb(OrbId::Frost));
+}
+
+#[test]
+fn aggregate_energy_reads_draw_pile_size_when_action_executes() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.turn.energy = 0;
+    state.zones.draw_pile = (0..9)
+        .map(|offset| CombatCard::new(CardId::StrikeB, 300 + offset))
+        .collect();
+
+    crate::engine::action_handlers::execute_action(
+        Action::AggregateEnergy { divide_amount: 4 },
+        &mut state,
+    );
+    assert_eq!(state.turn.energy, 2);
+
+    state
+        .zones
+        .draw_pile
+        .push(CombatCard::new(CardId::StrikeB, 400));
+    crate::engine::action_handlers::execute_action(
+        Action::AggregateEnergy { divide_amount: 3 },
+        &mut state,
+    );
+    assert_eq!(state.turn.energy, 5);
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

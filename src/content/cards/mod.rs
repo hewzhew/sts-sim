@@ -256,6 +256,11 @@ pub enum CardId {
     RipAndTear,
     Tempest,
     Darkness,
+    Aggregate,
+    AutoShields,
+    BootSequence,
+    Capacitor,
+    Chill,
     // Add more as we expand
 }
 
@@ -404,6 +409,7 @@ pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
         || matches!(card.id, CardId::Brutality) && card.upgrades > 0
         || matches!(card.id, CardId::AfterImage) && card.upgrades > 0
         || matches!(card.id, CardId::InfiniteBlades) && card.upgrades > 0
+        || matches!(card.id, CardId::Chill) && card.upgrades > 0
 }
 
 pub fn get_card_definition(id: CardId) -> CardDefinition {
@@ -536,6 +542,11 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::RipAndTear => defect::rip_and_tear::definition(),
         CardId::Tempest => defect::tempest::definition(),
         CardId::Darkness => defect::darkness::definition(),
+        CardId::Aggregate => defect::aggregate::definition(),
+        CardId::AutoShields => defect::auto_shields::definition(),
+        CardId::BootSequence => defect::boot_sequence::definition(),
+        CardId::Capacitor => defect::capacitor::definition(),
+        CardId::Chill => defect::chill::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1218,6 +1229,11 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::RipAndTear => "Rip and Tear",
         CardId::Tempest => "Tempest",
         CardId::Darkness => "Darkness",
+        CardId::Aggregate => "Aggregate",
+        CardId::AutoShields => "Auto Shields",
+        CardId::BootSequence => "BootSequence",
+        CardId::Capacitor => "Capacitor",
+        CardId::Chill => "Chill",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1486,6 +1502,11 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         RipAndTear,
         Tempest,
         Darkness,
+        Aggregate,
+        AutoShields,
+        BootSequence,
+        Capacitor,
+        Chill,
         Neutralize,
         Survivor,
         Anger,

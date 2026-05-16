@@ -1433,6 +1433,16 @@ pub fn handle_transmutation(
     }
 }
 
+pub fn handle_aggregate_energy(divide_amount: i32, state: &mut CombatState) {
+    if divide_amount <= 0 {
+        return;
+    }
+    let amount = state.zones.draw_pile.len() as i32 / divide_amount;
+    if amount > 0 {
+        state.turn.adjust_energy(amount);
+    }
+}
+
 pub fn handle_tempest(
     upgraded: bool,
     free_to_play_once: bool,
