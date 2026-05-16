@@ -321,6 +321,7 @@ pub enum CardId {
     CrushJoints,
     SashWhip,
     Conclude,
+    Brilliance,
     // Add more as we expand
 }
 
@@ -675,6 +676,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::CrushJoints => watcher::crush_joints::definition(),
         CardId::SashWhip => watcher::sash_whip::definition(),
         CardId::Conclude => watcher::conclude::definition(),
+        CardId::Brilliance => watcher::brilliance::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1278,7 +1280,7 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::Conclude,
 ];
 
-pub const WATCHER_RARE_POOL: &[CardId] = &[];
+pub const WATCHER_RARE_POOL: &[CardId] = &[CardId::Brilliance];
 
 /// Returns the pool for a given rarity (Ironclad).
 /// Returns the pool of randomly obtainable curse cards.
@@ -1496,6 +1498,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::CrushJoints => "CrushJoints",
         CardId::SashWhip => "SashWhip",
         CardId::Conclude => "Conclude",
+        CardId::Brilliance => "Brilliance",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1900,6 +1903,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         CrushJoints,
         SashWhip,
         Conclude,
+        Brilliance,
         Neutralize,
         Survivor,
         Anger,

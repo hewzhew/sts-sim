@@ -274,6 +274,7 @@ pub struct EphemeralCounters {
     pub card_ids_played_this_combat: Vec<CardId>,
     pub orbs_channeled_this_turn: Vec<OrbId>,
     pub orbs_channeled_this_combat: Vec<OrbId>,
+    pub mantra_gained_this_combat: i32,
     pub times_damaged_this_combat: u8,
     pub victory_triggered: bool,
     pub discovery_cost_for_turn: Option<u8>,
@@ -1955,6 +1956,7 @@ mod tests {
                 card_ids_played_this_combat: vec![CardId::Zap],
                 orbs_channeled_this_turn: vec![OrbId::Lightning],
                 orbs_channeled_this_combat: vec![OrbId::Lightning, OrbId::Frost],
+                mantra_gained_this_combat: 4,
                 times_damaged_this_combat: 3,
                 victory_triggered: false,
                 discovery_cost_for_turn: None,
@@ -1983,6 +1985,10 @@ mod tests {
             turn.counters.orbs_channeled_this_combat,
             vec![OrbId::Lightning, OrbId::Frost],
             "combat-wide orb channel history should remain untouched"
+        );
+        assert_eq!(
+            turn.counters.mantra_gained_this_combat, 4,
+            "combat-wide mantra history should remain untouched"
         );
         assert_eq!(
             turn.counters.times_damaged_this_combat, 3,

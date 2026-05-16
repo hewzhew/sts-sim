@@ -494,6 +494,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::CrushJoints, "CrushJoints"),
         (CardId::SashWhip, "SashWhip"),
         (CardId::Conclude, "Conclude"),
+        (CardId::Brilliance, "Brilliance"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -752,6 +753,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Brilliance,
+            "Brilliance",
+            CardType::Attack,
+            CardRarity::Rare,
+            1,
+            12,
+            0,
+            0,
+            CardTarget::Enemy,
+            4,
+            0,
+            0,
+        ),
     ];
 
     for (
@@ -804,6 +819,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Indignation));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Sanctity));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Conclude));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
 }
 
 #[test]
@@ -1387,6 +1403,42 @@ fn watcher_conclude_runtime_actions_match_java_use_method() {
         other => panic!("Conclude first action should be DamageAllEnemiesAction, got {other:?}"),
     }
     assert_eq!(actions[1].action, Action::QueueEarlyEndTurn);
+}
+
+#[test]
+fn watcher_brilliance_uses_combat_mantra_gained_before_damage_modifiers() {
+    let mut counter_state = crate::test_support::blank_test_combat();
+    crate::engine::action_handlers::execute_action(
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Mantra,
+            amount: 4,
+        },
+        &mut counter_state,
+    );
+    assert_eq!(counter_state.turn.counters.mantra_gained_this_combat, 4);
+
+    let mut state = crate::test_support::blank_test_combat();
+    state.turn.counters.mantra_gained_this_combat = 4;
+    state.entities.player.stance = StanceId::Wrath;
+    let mut brilliance_plus = CombatCard::new(CardId::Brilliance, 330);
+    brilliance_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::Brilliance, &state, &brilliance_plus, Some(7));
+
+    assert_eq!(actions.len(), 1);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(
+                info.base, 40,
+                "Java adds mantra gained to Brilliance base damage before Wrath"
+            );
+            assert_eq!(info.output, 40);
+        }
+        other => panic!("Brilliance should emit DamageAction, got {other:?}"),
+    }
 }
 
 #[test]

@@ -1,4 +1,5 @@
 pub mod bowling_bash;
+pub mod brilliance;
 pub mod conclude;
 pub mod consecrate;
 pub mod crush_joints;

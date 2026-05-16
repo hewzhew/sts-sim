@@ -313,6 +313,9 @@ fn handle_apply_power_detailed_internal(
     }
 
     let had_existing_power = store::has_power(state, target, power_id);
+    if power_id == PowerId::Mantra && target == 0 {
+        state.turn.counters.mantra_gained_this_combat += amount;
+    }
 
     // Core power application
     let powers = store::ensure_powers_for_mut(state, target);
