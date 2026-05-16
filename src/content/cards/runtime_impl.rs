@@ -809,6 +809,22 @@ pub fn can_upgrade_card_once(card: &CombatCard) -> bool {
     card.upgrades == 0 && def.card_type != CardType::Status && def.card_type != CardType::Curse
 }
 
+pub fn upgrade_card_once_java(card: &mut CombatCard) -> bool {
+    if !can_upgrade_card_once(card) {
+        return false;
+    }
+
+    let def = get_card_definition(card.id);
+    if let Some(base_damage) = &mut card.base_damage_override {
+        *base_damage += def.upgrade_damage;
+    }
+    if let Some(base_block) = &mut card.base_block_override {
+        *base_block += def.upgrade_block;
+    }
+    card.upgrades += 1;
+    true
+}
+
 /// Applies Java Master Reality upgrade semantics to generated cards.
 ///
 /// Java routes generated cards through action constructors and card-manipulation
@@ -832,9 +848,7 @@ pub fn apply_master_reality_to_generated_card(
         return;
     }
     for _ in 0..upgrade_call_sites {
-        if can_upgrade_card_once(card) {
-            card.upgrades += 1;
-        }
+        upgrade_card_once_java(card);
     }
 }
 

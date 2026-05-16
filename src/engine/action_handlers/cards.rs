@@ -1013,8 +1013,8 @@ pub fn handle_exhume_card(card_uuid: u32, upgrade: bool, state: &mut CombatState
     };
 
     let mut card = state.zones.exhaust_pile.remove(pos);
-    if upgrade && crate::content::cards::can_upgrade_card_once(&card) {
-        card.upgrades += 1;
+    if upgrade {
+        crate::content::cards::upgrade_card_once_java(&mut card);
     }
     if store::has_power(state, 0, PowerId::Corruption)
         && crate::content::cards::get_card_definition(card.id).card_type
@@ -1349,9 +1349,7 @@ pub fn handle_madness(state: &mut CombatState) {
 
 pub fn handle_upgrade_all_in_hand(state: &mut CombatState) {
     for card in state.zones.hand.iter_mut() {
-        if crate::content::cards::can_upgrade_card_once(card) {
-            card.upgrades += 1;
-        }
+        crate::content::cards::upgrade_card_once_java(card);
     }
 }
 
@@ -1364,9 +1362,7 @@ pub fn handle_upgrade_all_cards_in_combat(state: &mut CombatState) {
         .chain(state.zones.discard_pile.iter_mut())
         .chain(state.zones.exhaust_pile.iter_mut())
     {
-        if crate::content::cards::can_upgrade_card_once(card) {
-            card.upgrades += 1;
-        }
+        crate::content::cards::upgrade_card_once_java(card);
     }
 }
 
@@ -1393,9 +1389,7 @@ pub fn handle_upgrade_card(card_uuid: u32, state: &mut CombatState) {
         .chain(state.zones.discard_pile.iter_mut())
     {
         if card.uuid == card_uuid {
-            if crate::content::cards::can_upgrade_card_once(card) {
-                card.upgrades += 1;
-            }
+            crate::content::cards::upgrade_card_once_java(card);
             break;
         }
     }
@@ -1414,7 +1408,7 @@ pub fn handle_upgrade_random_card(state: &mut CombatState) {
         crate::runtime::rng::shuffle_with_random_long(&mut shuffled, &mut state.rng.shuffle_rng);
         let target_uuid = shuffled[0];
         if let Some(card) = state.zones.hand.iter_mut().find(|c| c.uuid == target_uuid) {
-            card.upgrades += 1;
+            crate::content::cards::upgrade_card_once_java(card);
         }
     }
 }

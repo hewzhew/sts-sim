@@ -2019,6 +2019,30 @@ fn watcher_retained_block_and_strike_growth_match_java_on_retained() {
         "Perseverance+ starts at 7 block and gains 3 block per retain"
     );
 
+    let mut retained_then_upgraded_perseverance = CombatCard::new(CardId::Perseverance, 952);
+    crate::content::cards::trigger_on_retained(&mut retained_then_upgraded_perseverance);
+    let mut upgrade_state = crate::test_support::blank_test_combat();
+    upgrade_state.zones.hand = vec![retained_then_upgraded_perseverance];
+    crate::engine::action_handlers::execute_action(
+        Action::UpgradeAllCardsInCombat,
+        &mut upgrade_state,
+    );
+    crate::content::cards::trigger_on_retained(&mut upgrade_state.zones.hand[0]);
+    let perseverance_after_upgrade = resolve_card_play(
+        CardId::Perseverance,
+        &state,
+        &upgrade_state.zones.hand[0],
+        None,
+    );
+    assert_eq!(
+        perseverance_after_upgrade[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 12,
+        },
+        "Java onRetained mutates baseBlock, so a later upgrade adds +2 to the retained base and future retains use upgraded magic"
+    );
+
     let mut windmill_plus = CombatCard::new(CardId::WindmillStrike, 951);
     windmill_plus.upgrades = 1;
     assert!(get_card_definition(CardId::WindmillStrike)
@@ -2035,6 +2059,30 @@ fn watcher_retained_block_and_strike_growth_match_java_on_retained() {
             assert_eq!(info.output, 20);
         }
         other => panic!("Windmill Strike+ should emit retained DamageAction, got {other:?}"),
+    }
+
+    let mut retained_then_upgraded_windmill = CombatCard::new(CardId::WindmillStrike, 953);
+    crate::content::cards::trigger_on_retained(&mut retained_then_upgraded_windmill);
+    let mut upgrade_state = crate::test_support::blank_test_combat();
+    upgrade_state.zones.hand = vec![retained_then_upgraded_windmill];
+    crate::engine::action_handlers::execute_action(
+        Action::UpgradeAllCardsInCombat,
+        &mut upgrade_state,
+    );
+    let windmill_after_upgrade = resolve_card_play(
+        CardId::WindmillStrike,
+        &state,
+        &upgrade_state.zones.hand[0],
+        Some(7),
+    );
+    match &windmill_after_upgrade[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 14);
+            assert_eq!(info.output, 14);
+        }
+        other => {
+            panic!("Windmill Strike retained-then-upgraded should emit DamageAction, got {other:?}")
+        }
     }
 }
 

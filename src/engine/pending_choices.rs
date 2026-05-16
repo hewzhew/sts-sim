@@ -354,7 +354,7 @@ pub fn handle_hand_select(
                                 upgrades: card.upgrades,
                                 uuid: card.uuid,
                             };
-                            card.upgrades += 1;
+                            crate::content::cards::upgrade_card_once_java(&mut card);
                             combat_state.zones.hand.push(card);
                             combat_state.emit_event(DomainEvent::CardUpgraded {
                                 before,
@@ -376,7 +376,7 @@ pub fn handle_hand_select(
                                     upgrades: card.upgrades,
                                     uuid: card.uuid,
                                 };
-                                card.upgrades += 1;
+                                crate::content::cards::upgrade_card_once_java(card);
                                 combat_state.emit_event(DomainEvent::CardUpgraded {
                                     before,
                                     after: before.upgraded(),
