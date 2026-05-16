@@ -69,6 +69,11 @@ pub fn resolve_card_play_with_context(
         CardId::Rebound => defect::rebound::rebound_play(_state, _card, t),
         CardId::Claw => defect::claw::claw_play(_state, _card, t),
         CardId::SteamBarrier => defect::steam_barrier::steam_barrier_play(_state, _card),
+        CardId::Defragment => defect::defragment::defragment_play(_state, _card),
+        CardId::Fusion => defect::fusion::fusion_play(_state, _card),
+        CardId::Glacier => defect::glacier::glacier_play(_state, _card),
+        CardId::Skim => defect::skim::skim_play(_state, _card),
+        CardId::Overclock => defect::overclock::overclock_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
@@ -653,6 +658,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Dualcast if card.upgrades > 0 => Some(0),
         CardId::Zap if card.upgrades > 0 => Some(0),
         CardId::Recursion if card.upgrades > 0 => Some(0),
+        CardId::Fusion if card.upgrades > 0 => Some(1),
         _ => None,
     }
 }

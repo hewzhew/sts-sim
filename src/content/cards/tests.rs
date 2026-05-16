@@ -1540,6 +1540,220 @@ fn steam_barrier_modify_block_action_persists_combat_base_block_changes() {
 }
 
 #[test]
+fn defect_low_risk_uncommon_definitions_match_java_sources() {
+    let cases = [
+        (
+            CardId::Defragment,
+            "Defragment",
+            CardType::Power,
+            1,
+            0,
+            0,
+            1,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::Fusion,
+            "Fusion",
+            CardType::Skill,
+            2,
+            0,
+            0,
+            1,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
+            CardId::Glacier,
+            "Glacier",
+            CardType::Skill,
+            2,
+            0,
+            7,
+            2,
+            CardTarget::SelfTarget,
+            0,
+            3,
+            0,
+        ),
+        (
+            CardId::Skim,
+            "Skim",
+            CardType::Skill,
+            1,
+            0,
+            0,
+            3,
+            CardTarget::None,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::Overclock,
+            "Steam Power",
+            CardType::Skill,
+            0,
+            0,
+            0,
+            2,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
+    ];
+
+    let java_map = build_java_id_map();
+    for (
+        id,
+        java_id_value,
+        card_type,
+        cost,
+        base_damage,
+        base_block,
+        base_magic,
+        target,
+        upgrade_damage,
+        upgrade_block,
+        upgrade_magic,
+    ) in cases
+    {
+        assert_eq!(java_id(id), java_id_value);
+        assert_eq!(java_map.get(java_id_value), Some(&id));
+        let def = get_card_definition(id);
+        if id == CardId::Overclock {
+            assert_eq!(def.name, "Overclock");
+        } else {
+            assert_eq!(def.name, java_id_value);
+        }
+        assert_eq!(def.card_type, card_type);
+        assert_eq!(def.rarity, CardRarity::Uncommon);
+        assert_eq!(def.cost, cost);
+        assert_eq!(def.base_damage, base_damage);
+        assert_eq!(def.base_block, base_block);
+        assert_eq!(def.base_magic, base_magic);
+        assert_eq!(def.target, target);
+        assert_eq!(def.upgrade_damage, upgrade_damage);
+        assert_eq!(def.upgrade_block, upgrade_block);
+        assert_eq!(def.upgrade_magic, upgrade_magic);
+    }
+
+    let mut fusion_plus = CombatCard::new(CardId::Fusion, 241);
+    fusion_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&fusion_plus), Some(1));
+}
+
+#[test]
+fn defect_low_risk_uncommon_runtime_actions_match_java_use_methods() {
+    let state = crate::test_support::blank_test_combat();
+
+    let defrag = resolve_card_play(
+        CardId::Defragment,
+        &state,
+        &CombatCard::new(CardId::Defragment, 242),
+        None,
+    );
+    assert_eq!(
+        defrag[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: 1,
+        }
+    );
+    let mut defrag_plus = CombatCard::new(CardId::Defragment, 243);
+    defrag_plus.upgrades = 1;
+    let defrag_plus_actions = resolve_card_play(CardId::Defragment, &state, &defrag_plus, None);
+    assert_eq!(
+        defrag_plus_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: 2,
+        }
+    );
+
+    let fusion = resolve_card_play(
+        CardId::Fusion,
+        &state,
+        &CombatCard::new(CardId::Fusion, 244),
+        None,
+    );
+    assert_eq!(fusion.len(), 1);
+    assert_eq!(fusion[0].action, Action::ChannelOrb(OrbId::Plasma));
+
+    let glacier = resolve_card_play(
+        CardId::Glacier,
+        &state,
+        &CombatCard::new(CardId::Glacier, 245),
+        None,
+    );
+    assert_eq!(glacier.len(), 3);
+    assert_eq!(
+        glacier[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 7,
+        }
+    );
+    assert_eq!(glacier[1].action, Action::ChannelOrb(OrbId::Frost));
+    assert_eq!(glacier[2].action, Action::ChannelOrb(OrbId::Frost));
+    let mut glacier_plus = CombatCard::new(CardId::Glacier, 246);
+    glacier_plus.upgrades = 1;
+    let glacier_plus_actions = resolve_card_play(CardId::Glacier, &state, &glacier_plus, None);
+    assert_eq!(
+        glacier_plus_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 10,
+        }
+    );
+
+    let skim = resolve_card_play(
+        CardId::Skim,
+        &state,
+        &CombatCard::new(CardId::Skim, 247),
+        None,
+    );
+    assert_eq!(skim[0].action, Action::DrawCards(3));
+    let mut skim_plus = CombatCard::new(CardId::Skim, 248);
+    skim_plus.upgrades = 1;
+    let skim_plus_actions = resolve_card_play(CardId::Skim, &state, &skim_plus, None);
+    assert_eq!(skim_plus_actions[0].action, Action::DrawCards(4));
+
+    let overclock = resolve_card_play(
+        CardId::Overclock,
+        &state,
+        &CombatCard::new(CardId::Overclock, 249),
+        None,
+    );
+    assert_eq!(overclock.len(), 2);
+    assert_eq!(overclock[0].action, Action::DrawCards(2));
+    assert_eq!(
+        overclock[1].action,
+        Action::MakeTempCardInDiscard {
+            card_id: CardId::Burn,
+            amount: 1,
+            upgraded: false,
+        }
+    );
+    let mut overclock_plus = CombatCard::new(CardId::Overclock, 250);
+    overclock_plus.upgrades = 1;
+    let overclock_plus_actions =
+        resolve_card_play(CardId::Overclock, &state, &overclock_plus, None);
+    assert_eq!(overclock_plus_actions[0].action, Action::DrawCards(3));
+    assert_eq!(overclock_plus_actions[1].action, overclock[1].action);
+}
+
+#[test]
 fn ironclad_common_utility_definitions_match_java_sources() {
     let anger = get_card_definition(CardId::Anger);
     assert_eq!(anger.name, "Anger");
