@@ -484,7 +484,7 @@ impl RunState {
             return 0;
         }
         self.max_hp += amount;
-        self.current_hp = (self.current_hp + heal_amount).min(self.max_hp);
+        self.heal_with_source(heal_amount, source);
         self.emit_event(DomainEvent::MaxHpChanged {
             delta: amount,
             current_hp: self.current_hp,

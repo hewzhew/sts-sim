@@ -214,6 +214,34 @@ Tests:
 - `sleep_heals_through_player_heal_semantics_and_event_source`
 - `sleep_is_blocked_by_mark_of_the_bloom_like_java_player_heal`
 
+### Big Fish HP rewards
+
+Java `events/exordium/BigFish.java` handles the two HP options through player
+resource methods, not direct field writes:
+
+- `Banana` calls `AbstractDungeon.player.heal(maxHealth / 3, true)`.
+- `Donut` calls `AbstractDungeon.player.increaseMaxHp(5, true)`.
+
+`AbstractCreature.increaseMaxHp` first increments max HP and then calls
+`heal(amount, true)`, so healing hooks such as `Mark of the Bloom` can block
+the attached heal without blocking the max-HP gain itself.
+
+Fixes:
+
+- `BigFish` Banana now calls `RunState::heal_with_source(...,
+  Event(BigFish))`.
+- `BigFish` Donut now calls `RunState::gain_max_hp_with_source(...,
+  Event(BigFish))`.
+- `RunState::gain_max_hp_with_source` now follows Java's increase-then-heal
+  shape instead of hard-mutating current HP.
+
+Tests:
+
+- `banana_uses_java_player_heal_semantics_and_event_source`
+- `banana_heal_is_blocked_by_mark_of_the_bloom`
+- `donut_increase_max_hp_uses_java_increase_then_heal_semantics`
+- `donut_max_hp_gain_survives_mark_but_attached_heal_is_blocked`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -421,9 +449,10 @@ Validation:
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
-  that card obtains just received.
+  that card obtains just received. `BigFish` is now covered; the remaining
+  direct writes should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `802 passed`.
+- Current result after this pass: `806 passed`.
