@@ -406,6 +406,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
                 powers::handle_gain_energy(amount, state);
             }
         }
+        Action::FollowUp => handle_follow_up(state),
         Action::GainMaxHp { amount } => powers::handle_gain_max_hp(amount, state),
         Action::LoseMaxHp { target, amount } => powers::handle_lose_max_hp(target, amount, state),
 
@@ -909,6 +910,19 @@ fn handle_indignation(amount: i32, state: &mut CombatState) {
         }
     } else {
         state.queue_action_back(Action::EnterStance("Wrath".to_string()));
+    }
+}
+
+fn handle_follow_up(state: &mut CombatState) {
+    let played = &state.turn.counters.card_ids_played_this_combat;
+    if played.len() < 2 {
+        return;
+    }
+    let previous_card_id = played[played.len() - 2];
+    if crate::content::cards::get_card_definition(previous_card_id).card_type
+        == crate::content::cards::CardType::Attack
+    {
+        state.queue_action_front(Action::GainEnergy { amount: 1 });
     }
 }
 

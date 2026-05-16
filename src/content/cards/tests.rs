@@ -489,6 +489,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::InnerPeace, "InnerPeace"),
         (CardId::FearNoEvil, "FearNoEvil"),
         (CardId::Indignation, "Indignation"),
+        (CardId::FollowUp, "FollowUp"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -677,6 +678,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             2,
         ),
+        (
+            CardId::FollowUp,
+            "Follow-Up",
+            CardType::Attack,
+            CardRarity::Common,
+            1,
+            7,
+            0,
+            0,
+            CardTarget::Enemy,
+            4,
+            0,
+            0,
+        ),
     ];
 
     for (
@@ -719,6 +734,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::CutThroughFate));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::ThirdEye));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::Prostrate));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::FollowUp));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
@@ -1088,6 +1104,41 @@ fn watcher_indignation_runtime_action_reads_stance_when_it_resolves() {
         neutral_state.pop_next_action(),
         Some(Action::EnterStance("Wrath".to_string()))
     );
+}
+
+#[test]
+fn watcher_follow_up_runtime_action_reads_previous_played_card_when_it_resolves() {
+    let state = crate::test_support::blank_test_combat();
+    let mut follow_up_plus = CombatCard::new(CardId::FollowUp, 325);
+    follow_up_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::FollowUp, &state, &follow_up_plus, Some(7));
+
+    assert_eq!(actions.len(), 2);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 11);
+            assert_eq!(info.output, 11);
+        }
+        other => panic!("Follow-Up first action should be DamageAction, got {other:?}"),
+    }
+    assert_eq!(actions[1].action, Action::FollowUp);
+
+    let mut attack_previous = crate::test_support::blank_test_combat();
+    attack_previous.turn.counters.card_ids_played_this_combat =
+        vec![CardId::StrikeP, CardId::FollowUp];
+    crate::engine::action_handlers::execute_action(Action::FollowUp, &mut attack_previous);
+    assert_eq!(
+        attack_previous.pop_next_action(),
+        Some(Action::GainEnergy { amount: 1 })
+    );
+
+    let mut skill_previous = crate::test_support::blank_test_combat();
+    skill_previous.turn.counters.card_ids_played_this_combat =
+        vec![CardId::DefendP, CardId::FollowUp];
+    crate::engine::action_handlers::execute_action(Action::FollowUp, &mut skill_previous);
+    assert_eq!(skill_previous.pop_next_action(), None);
 }
 
 #[test]

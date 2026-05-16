@@ -244,6 +244,9 @@ pub enum Action {
     GainEnergyIfDiscardedThisTurn {
         amount: i32,
     },
+    /// Java Watcher `FollowUpAction`: at execution time, gain 1 energy if the
+    /// previous card in `cardsPlayedThisCombat` was an Attack.
+    FollowUp,
     /// Java `ExpertiseAction`: draw until the current hand size reaches this
     /// amount, evaluated when the queued action resolves.
     ExpertiseDraw {

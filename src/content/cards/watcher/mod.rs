@@ -7,6 +7,7 @@ pub mod empty_fist;
 pub mod empty_mind;
 pub mod eruption;
 pub mod fear_no_evil;
+pub mod follow_up;
 pub mod indignation;
 pub mod inner_peace;
 pub mod just_lucky;
