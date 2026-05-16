@@ -159,6 +159,24 @@ pub fn handle_draw_cards(amount: u32, state: &mut CombatState) {
     handle_draw_cards_inner(amount, DrawHistoryMode::Untouched, state);
 }
 
+pub fn handle_draw_for_unique_orb_types(amount_per_orb_type: u32, state: &mut CombatState) {
+    if amount_per_orb_type == 0 {
+        return;
+    }
+
+    let mut seen = Vec::new();
+    for orb in &state.entities.player.orbs {
+        if orb.id != crate::runtime::combat::OrbId::Empty && !seen.contains(&orb.id) {
+            seen.push(orb.id);
+        }
+    }
+
+    let to_draw = seen.len() as u32 * amount_per_orb_type;
+    if to_draw > 0 {
+        state.queue_action_front(Action::DrawCards(to_draw));
+    }
+}
+
 pub fn handle_draw_cards_with_history(amount: u32, clear_history: bool, state: &mut CombatState) {
     handle_draw_cards_inner(amount, DrawHistoryMode::Track { clear_history }, state);
 }

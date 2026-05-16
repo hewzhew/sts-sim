@@ -488,6 +488,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             3,
             0,
         ),
+        (
+            CardId::CompileDriver,
+            "Compile Driver",
+            CardType::Attack,
+            1,
+            7,
+            0,
+            1,
+            CardTarget::Enemy,
+            3,
+            0,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -794,6 +807,70 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
         },
         "Stack's discard-count base block must still flow through normal block modifiers"
     );
+
+    let compile = resolve_card_play(
+        CardId::CompileDriver,
+        &state,
+        &CombatCard::new(CardId::CompileDriver, 128),
+        Some(13),
+    );
+    assert_eq!(compile.len(), 2);
+    match &compile[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 13);
+            assert_eq!(info.base, 7);
+            assert_eq!(info.output, 7);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Compile Driver first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        compile[1].action,
+        Action::DrawForUniqueOrbTypes {
+            amount_per_orb_type: 1,
+        }
+    );
+
+    let mut compile_plus = CombatCard::new(CardId::CompileDriver, 129);
+    compile_plus.upgrades = 1;
+    let compile_plus_actions =
+        resolve_card_play(CardId::CompileDriver, &state, &compile_plus, Some(13));
+    match &compile_plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 10);
+            assert_eq!(info.output, 10);
+        }
+        other => panic!("Compile Driver+ first action should damage, got {other:?}"),
+    }
+    assert_eq!(compile_plus_actions[1].action, compile[1].action);
+}
+
+#[test]
+fn compile_driver_action_draws_for_unique_non_empty_orb_types_at_execution_time() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Lightning),
+        OrbEntity::new(OrbId::Frost),
+        OrbEntity::new(OrbId::Lightning),
+        OrbEntity::new(OrbId::Empty),
+    ];
+
+    crate::engine::action_handlers::execute_action(
+        Action::DrawForUniqueOrbTypes {
+            amount_per_orb_type: 1,
+        },
+        &mut state,
+    );
+    assert_eq!(state.pop_next_action(), Some(Action::DrawCards(2)));
+
+    state.entities.player.orbs = vec![OrbEntity::new(OrbId::Empty)];
+    crate::engine::action_handlers::execute_action(
+        Action::DrawForUniqueOrbTypes {
+            amount_per_orb_type: 1,
+        },
+        &mut state,
+    );
+    assert_eq!(state.pop_next_action(), None);
 }
 
 #[test]

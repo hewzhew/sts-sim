@@ -295,6 +295,11 @@ pub enum Action {
     },
     LimitBreak,
     DrawCards(u32),
+    /// Java `CompileDriverAction`: at action execution time, draw
+    /// `amount_per_orb_type` for each unique non-empty orb type.
+    DrawForUniqueOrbTypes {
+        amount_per_orb_type: u32,
+    },
     /// Java `DrawCardAction` path that exposes its static `drawnCards`
     /// history to a queued follow-up action. Generic draw actions intentionally
     /// do not mutate this history; actions that need it must opt in.

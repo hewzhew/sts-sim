@@ -378,6 +378,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
 
         // === Card domain ===
         Action::DrawCards(amount) => cards::handle_draw_cards(amount, state),
+        Action::DrawForUniqueOrbTypes {
+            amount_per_orb_type,
+        } => cards::handle_draw_for_unique_orb_types(amount_per_orb_type, state),
         Action::DrawCardsWithHistory {
             amount,
             clear_history,
