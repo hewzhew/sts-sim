@@ -291,6 +291,12 @@ fn pending_choice_descriptor(before_engine: &EngineState, after_engine: &EngineS
         }
         EngineState::PendingChoice(PendingChoice::DiscoverySelect(_)) => "discovery".to_string(),
         EngineState::PendingChoice(PendingChoice::CardRewardSelect { .. }) => "reward".to_string(),
+        EngineState::PendingChoice(PendingChoice::ForeignInfluenceSelect { .. }) => {
+            "foreign_influence".to_string()
+        }
+        EngineState::PendingChoice(PendingChoice::ChooseOneSelect { .. }) => {
+            "choose_one".to_string()
+        }
         EngineState::PendingChoice(PendingChoice::StanceChoice) => "stance".to_string(),
         _ => "none".to_string(),
     }

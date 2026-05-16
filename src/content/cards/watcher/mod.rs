@@ -27,6 +27,7 @@ pub mod fear_no_evil;
 pub mod flurry_of_blows;
 pub mod flying_sleeves;
 pub mod follow_up;
+pub mod foreign_influence;
 pub mod foresight;
 pub mod halt;
 pub mod indignation;

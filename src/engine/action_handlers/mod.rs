@@ -759,6 +759,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::SuspendForHandSelect { .. }
         | Action::SuspendForGridSelect { .. }
         | Action::SuspendForDiscovery { .. }
+        | Action::SuspendForForeignInfluence { .. }
         | Action::SuspendForStanceChoice
         | Action::SuspendForChooseOne { .. }
         | Action::SuspendForCardReward { .. } => {

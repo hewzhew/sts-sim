@@ -103,6 +103,16 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
                     moves.push(ClientInput::Cancel);
                 }
             }
+            PendingChoice::ForeignInfluenceSelect { cards, .. } => {
+                for index in 0..cards.len() {
+                    moves.push(ClientInput::SubmitDiscoverChoice(index));
+                }
+            }
+            PendingChoice::ChooseOneSelect { choices } => {
+                for index in 0..choices.len() {
+                    moves.push(ClientInput::SubmitDiscoverChoice(index));
+                }
+            }
             PendingChoice::StanceChoice => {
                 moves.push(ClientInput::SubmitDiscoverChoice(0));
                 moves.push(ClientInput::SubmitDiscoverChoice(1));

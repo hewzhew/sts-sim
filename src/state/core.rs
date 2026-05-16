@@ -104,6 +104,13 @@ pub enum PendingChoice {
         destination: crate::runtime::action::CardDestination,
         can_skip: bool,
     },
+    /// Java Watcher `ForeignInfluenceAction`: pick one generated any-color
+    /// attack. This is not `DiscoveryAction`; it has different RNG and resume
+    /// semantics.
+    ForeignInfluenceSelect {
+        cards: Vec<CardId>,
+        upgraded: bool,
+    },
     ChooseOneSelect {
         choices: Vec<ChooseOneCardChoice>,
     },

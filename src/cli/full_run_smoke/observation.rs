@@ -338,6 +338,7 @@ pub fn build_map_observation_if_relevant(
         | EngineState::PendingChoice(PendingChoice::DiscoverySelect(_))
         | EngineState::PendingChoice(PendingChoice::ScrySelect { .. })
         | EngineState::PendingChoice(PendingChoice::CardRewardSelect { .. })
+        | EngineState::PendingChoice(PendingChoice::ForeignInfluenceSelect { .. })
         | EngineState::PendingChoice(PendingChoice::ChooseOneSelect { .. })
         | EngineState::PendingChoice(PendingChoice::StanceChoice)
         | EngineState::GameOver(_) => None,
@@ -523,6 +524,7 @@ fn run_pending_choice_kind(engine_state: &EngineState) -> Option<String> {
                 PendingChoice::DiscoverySelect(_) => "discovery_select",
                 PendingChoice::ScrySelect { .. } => "scry_select",
                 PendingChoice::CardRewardSelect { .. } => "card_reward_select",
+                PendingChoice::ForeignInfluenceSelect { .. } => "foreign_influence_select",
                 PendingChoice::ChooseOneSelect { .. } => "choose_one_select",
                 PendingChoice::StanceChoice => "stance_choice",
             }
@@ -593,6 +595,32 @@ fn build_run_pending_choice_observation(
                 )
                 .collect(),
         }),
+        PendingChoice::ForeignInfluenceSelect { cards, upgraded } => {
+            Some(RunPendingChoiceObservationV0 {
+                kind: "foreign_influence_select".to_string(),
+                min_select: 1,
+                max_select: 1,
+                can_cancel: false,
+                reason: Some(format!("upgraded={upgraded}")),
+                source_pile: None,
+                options: cards
+                    .iter()
+                    .enumerate()
+                    .map(
+                        |(option_index, card_id)| RunPendingChoiceOptionObservationV0 {
+                            option_index,
+                            label: crate::content::cards::get_card_definition(*card_id)
+                                .name
+                                .to_string(),
+                            card_id: Some(format!("{card_id:?}")),
+                            card_uuid: None,
+                            selection_uuids: Vec::new(),
+                            source_pile: None,
+                        },
+                    )
+                    .collect(),
+            })
+        }
         PendingChoice::ChooseOneSelect { choices } => Some(RunPendingChoiceObservationV0 {
             kind: "choose_one_select".to_string(),
             min_select: 1,

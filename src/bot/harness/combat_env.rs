@@ -1021,6 +1021,9 @@ fn enumerate_pending_choice_actions(
             }
             actions
         }
+        PendingChoice::ForeignInfluenceSelect { cards, .. } => (0..cards.len())
+            .map(|index| CombatAction::SubmitDiscoverChoice { index })
+            .collect(),
         PendingChoice::ChooseOneSelect { choices } => (0..choices.len())
             .map(|index| CombatAction::SubmitDiscoverChoice { index })
             .collect(),
@@ -1215,6 +1218,7 @@ fn pending_choice_kind(engine_state: &EngineState) -> Option<String> {
                 PendingChoice::DiscoverySelect(_) => "discovery_select",
                 PendingChoice::ScrySelect { .. } => "scry_select",
                 PendingChoice::CardRewardSelect { .. } => "card_reward_select",
+                PendingChoice::ForeignInfluenceSelect { .. } => "foreign_influence_select",
                 PendingChoice::ChooseOneSelect { .. } => "choose_one_select",
                 PendingChoice::StanceChoice => "stance_choice",
             }
@@ -1281,6 +1285,30 @@ fn build_pending_choice_observation(
                 )
                 .collect(),
         }),
+        PendingChoice::ForeignInfluenceSelect { cards, upgraded } => {
+            Some(CombatObservationPendingChoice {
+                kind: "foreign_influence_select".to_string(),
+                min_select: 1,
+                max_select: 1,
+                can_cancel: false,
+                reason: Some(format!("upgraded={upgraded}")),
+                source_pile: None,
+                options: cards
+                    .iter()
+                    .enumerate()
+                    .map(
+                        |(option_index, card_id)| CombatObservationPendingChoiceOption {
+                            option_index,
+                            label: get_card_definition(*card_id).name.to_string(),
+                            card_id: Some(format!("{card_id:?}")),
+                            card_uuid: None,
+                            selection_uuids: Vec::new(),
+                            source_pile: None,
+                        },
+                    )
+                    .collect(),
+            })
+        }
         PendingChoice::ChooseOneSelect { choices } => Some(CombatObservationPendingChoice {
             kind: "choose_one_select".to_string(),
             min_select: 1,

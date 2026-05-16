@@ -558,6 +558,11 @@ pub enum Action {
         cost_for_turn: Option<u8>,
         can_skip: bool,
     },
+    /// Java Watcher `ForeignInfluenceAction`: generate three unique any-color
+    /// attacks, then add the selected stat-equivalent copy to hand or discard.
+    SuspendForForeignInfluence {
+        upgraded: bool,
+    },
     /// StancePotion: Java ChooseOneAction(ChooseWrath, ChooseCalm)
     SuspendForStanceChoice,
     /// Java Watcher `ChooseOneAction`: open an option-card choice and run the

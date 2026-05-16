@@ -219,6 +219,10 @@ pub(in crate::bot::combat) enum StablePendingChoiceKey {
         can_skip: bool,
         cards: Vec<String>,
     },
+    ForeignInfluence {
+        upgraded: bool,
+        cards: Vec<String>,
+    },
     ChooseOne(Vec<String>),
     StanceChoice,
 }
@@ -570,6 +574,9 @@ impl StablePendingChoiceKey {
                 can_skip,
                 cards,
             } => format!("card_reward:{destination}:{can_skip}:{}", cards.join("|")),
+            StablePendingChoiceKey::ForeignInfluence { upgraded, cards } => {
+                format!("foreign_influence:{upgraded}:{}", cards.join("|"))
+            }
             StablePendingChoiceKey::ChooseOne(cards) => format!("choose_one:{}", cards.join("|")),
             StablePendingChoiceKey::StanceChoice => "stance_choice".to_string(),
         }

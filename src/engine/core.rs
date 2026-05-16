@@ -97,6 +97,111 @@ fn generate_discovery_choices(
     cards
 }
 
+fn any_color_attack_pool_sorted(
+    rarity: crate::content::cards::CardRarity,
+) -> Vec<crate::content::cards::CardId> {
+    use crate::content::cards::{
+        get_card_definition, java_id, CardTag, CardType, COLORLESS_RARE_POOL,
+        COLORLESS_UNCOMMON_POOL, DEFECT_COMMON_POOL, DEFECT_RARE_POOL, DEFECT_UNCOMMON_POOL,
+        IRONCLAD_COMMON_POOL, IRONCLAD_RARE_POOL, IRONCLAD_UNCOMMON_POOL, SILENT_COMMON_POOL,
+        SILENT_RARE_POOL, SILENT_UNCOMMON_POOL, WATCHER_COMMON_POOL, WATCHER_RARE_POOL,
+        WATCHER_UNCOMMON_POOL,
+    };
+
+    let mut pool = [
+        IRONCLAD_COMMON_POOL,
+        IRONCLAD_UNCOMMON_POOL,
+        IRONCLAD_RARE_POOL,
+        SILENT_COMMON_POOL,
+        SILENT_UNCOMMON_POOL,
+        SILENT_RARE_POOL,
+        DEFECT_COMMON_POOL,
+        DEFECT_UNCOMMON_POOL,
+        DEFECT_RARE_POOL,
+        WATCHER_COMMON_POOL,
+        WATCHER_UNCOMMON_POOL,
+        WATCHER_RARE_POOL,
+        COLORLESS_UNCOMMON_POOL,
+        COLORLESS_RARE_POOL,
+    ]
+    .into_iter()
+    .flatten()
+    .copied()
+    .filter(|id| {
+        let def = get_card_definition(*id);
+        def.rarity == rarity
+            && def.card_type == CardType::Attack
+            && !def.tags.contains(&CardTag::Healing)
+    })
+    .collect::<Vec<_>>();
+    pool.sort_by_key(|id| java_id(*id));
+    pool
+}
+
+fn random_foreign_influence_card(
+    combat_state: &mut CombatState,
+) -> Option<crate::content::cards::CardId> {
+    let roll = combat_state.rng.card_random_rng.random(99);
+    let rarity = if roll < 55 {
+        crate::content::cards::CardRarity::Common
+    } else if roll < 85 {
+        crate::content::cards::CardRarity::Uncommon
+    } else {
+        crate::content::cards::CardRarity::Rare
+    };
+    // Java CardLibrary.getAnyColorCard(type, rarity) shuffles the temporary
+    // CardGroup with cardRandomRng.randomLong(), then CardGroup.getRandomCard
+    // sorts by cardID and selects with AbstractDungeon.cardRng.
+    let _shuffle_seed = combat_state.rng.card_random_rng.random_long();
+    let pool = any_color_attack_pool_sorted(rarity);
+    if pool.is_empty() {
+        return None;
+    }
+    let idx = combat_state.rng.card_rng.random(pool.len() as i32 - 1) as usize;
+    Some(pool[idx])
+}
+
+fn generate_foreign_influence_choices(
+    combat_state: &mut CombatState,
+) -> Vec<crate::content::cards::CardId> {
+    let mut cards = Vec::new();
+    while cards.len() < 3 {
+        let Some(id) = random_foreign_influence_card(combat_state) else {
+            break;
+        };
+        if !cards.contains(&id) {
+            cards.push(id);
+        }
+    }
+    cards
+}
+
+fn add_foreign_influence_choice_to_zone(
+    combat_state: &mut CombatState,
+    card_id: crate::content::cards::CardId,
+    upgraded_foreign_influence: bool,
+) {
+    let uuid = combat_state.next_card_uuid();
+    let mut card =
+        crate::content::cards::make_fresh_card_copy_for_combat(card_id, uuid, combat_state);
+    if upgraded_foreign_influence {
+        card.set_cost_for_turn_java(0);
+    }
+
+    if combat_state.zones.hand.len() < 10 {
+        // ShowCardAndAddToHandEffect upgrades the actual generated card under
+        // Master Reality.
+        crate::content::cards::apply_master_reality_to_generated_card(&mut card, combat_state, 1);
+        crate::content::cards::evaluate_card(&mut card, combat_state, None);
+        combat_state.zones.hand.push(card);
+    } else {
+        // ForeignInfluenceAction uses ShowCardAndAddToDiscardEffect(src, x, y).
+        // That Java constructor upgrades only its visual copy under Master
+        // Reality, then adds the original srcCard to the discard pile.
+        combat_state.add_card_to_discard_pile_top(card);
+    }
+}
+
 fn resolve_victory_hooks_immediately(combat_state: &mut CombatState) {
     let mut actions = crate::content::relics::hooks::on_victory(combat_state);
     for power in crate::content::powers::store::powers_snapshot_for(combat_state, 0) {
@@ -508,6 +613,16 @@ pub fn tick_engine(
                             can_skip,
                         },
                     ));
+                    return true;
+                }
+                Action::SuspendForForeignInfluence { upgraded } => {
+                    let cards = generate_foreign_influence_choices(combat_state);
+                    update_monster_intents(combat_state);
+                    *engine_state =
+                        EngineState::PendingChoice(PendingChoice::ForeignInfluenceSelect {
+                            cards,
+                            upgraded,
+                        });
                     return true;
                 }
                 Action::SuspendForCardReward {
@@ -1255,6 +1370,21 @@ fn resolve_pending_choice(
                 _ => Err("Invalid input for card reward selection"),
             }
         }
+        PendingChoice::ForeignInfluenceSelect {
+            ref cards,
+            upgraded,
+        } => {
+            if let ClientInput::SubmitDiscoverChoice(idx) = input {
+                let Some(&card_id) = cards.get(idx) else {
+                    return Err("Invalid foreign influence choice index");
+                };
+                add_foreign_influence_choice_to_zone(combat_state, card_id, upgraded);
+                *engine_state = EngineState::CombatProcessing;
+                Ok(())
+            } else {
+                Err("Expected SubmitDiscoverChoice for foreign influence selection")
+            }
+        }
         PendingChoice::ChooseOneSelect { ref choices } => {
             if let ClientInput::SubmitDiscoverChoice(idx) = input {
                 let Some(choice) = choices.get(idx).copied() else {
@@ -1574,6 +1704,132 @@ mod tests {
         let ironclad_pool = class_combat_card_pool("Ironclad");
         assert!(ironclad_pool.contains(&CardId::PommelStrike));
         assert!(!ironclad_pool.contains(&CardId::Acrobatics));
+    }
+
+    #[test]
+    fn foreign_influence_any_color_attack_pool_matches_java_shape() {
+        let common = super::any_color_attack_pool_sorted(crate::content::cards::CardRarity::Common);
+        assert!(common.contains(&CardId::PommelStrike));
+        assert!(common.contains(&CardId::QuickSlash));
+        assert!(common.contains(&CardId::BeamCell));
+        assert!(common.contains(&CardId::BowlingBash));
+        assert!(common
+            .windows(2)
+            .all(|pair| crate::content::cards::java_id(pair[0])
+                <= crate::content::cards::java_id(pair[1])));
+
+        let uncommon =
+            super::any_color_attack_pool_sorted(crate::content::cards::CardRarity::Uncommon);
+        assert!(uncommon.contains(&CardId::FlashOfSteel));
+        assert!(uncommon.contains(&CardId::Tantrum));
+
+        let rare = super::any_color_attack_pool_sorted(crate::content::cards::CardRarity::Rare);
+        assert!(rare.contains(&CardId::HandOfGreed));
+        assert!(!rare.contains(&CardId::Feed));
+    }
+
+    #[test]
+    fn foreign_influence_generation_uses_java_rng_sources() {
+        let mut combat_state = blank_test_combat();
+        let card_random_before = combat_state.rng.card_random_rng.counter;
+        let card_before = combat_state.rng.card_rng.counter;
+
+        let choices = super::generate_foreign_influence_choices(&mut combat_state);
+
+        assert_eq!(choices.len(), 3);
+        assert!(choices
+            .iter()
+            .enumerate()
+            .all(|(idx, id)| !choices[..idx].contains(id)));
+        assert!(
+            combat_state.rng.card_random_rng.counter >= card_random_before + 6,
+            "each Java ForeignInfluence candidate consumes rarity roll + getAnyColorCard shuffle seed"
+        );
+        assert!(
+            combat_state.rng.card_rng.counter >= card_before + 3,
+            "CardGroup.getRandomCard(true, rarity) selects with AbstractDungeon.cardRng"
+        );
+        for id in choices {
+            let def = crate::content::cards::get_card_definition(id);
+            assert_eq!(def.card_type, crate::content::cards::CardType::Attack);
+            assert!(!def.tags.contains(&crate::content::cards::CardTag::Healing));
+        }
+    }
+
+    #[test]
+    fn foreign_influence_selection_matches_java_hand_and_discard_effect_paths() {
+        let mut hand_state = blank_test_combat();
+        hand_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        let mut hand_engine = EngineState::PendingChoice(PendingChoice::ForeignInfluenceSelect {
+            cards: vec![CardId::SearingBlow],
+            upgraded: true,
+        });
+
+        resolve_pending_choice(
+            &mut hand_engine,
+            &mut hand_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("valid Foreign Influence choice should resolve");
+
+        assert_eq!(hand_engine, EngineState::CombatProcessing);
+        assert_eq!(hand_state.zones.hand.len(), 1);
+        assert_eq!(hand_state.zones.hand[0].id, CardId::SearingBlow);
+        assert_eq!(
+            hand_state.zones.hand[0].upgrades, 1,
+            "ShowCardAndAddToHandEffect upgrades the actual generated card under Master Reality"
+        );
+        assert_eq!(
+            hand_state.zones.hand[0].get_cost(),
+            0,
+            "ForeignInfluence+ applies setCostForTurn(0) to the selected copy"
+        );
+
+        let mut discard_state = blank_test_combat();
+        discard_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        discard_state.zones.hand = (0..10)
+            .map(|uuid| CombatCard::new(CardId::Strike, 10_000 + uuid))
+            .collect();
+        let mut discard_engine =
+            EngineState::PendingChoice(PendingChoice::ForeignInfluenceSelect {
+                cards: vec![CardId::SearingBlow],
+                upgraded: true,
+            });
+
+        resolve_pending_choice(
+            &mut discard_engine,
+            &mut discard_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("valid full-hand Foreign Influence choice should resolve");
+
+        assert_eq!(discard_state.zones.discard_pile.len(), 1);
+        assert_eq!(discard_state.zones.discard_pile[0].id, CardId::SearingBlow);
+        assert_eq!(
+            discard_state.zones.discard_pile[0].upgrades, 0,
+            "ForeignInfluenceAction uses ShowCardAndAddToDiscardEffect(src, x, y), whose Java constructor upgrades only the visual copy"
+        );
+        assert_eq!(discard_state.zones.discard_pile[0].get_cost(), 0);
     }
 
     #[test]

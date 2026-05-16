@@ -3352,6 +3352,36 @@ fn watcher_omniscience_matches_java_sources() {
 }
 
 #[test]
+fn watcher_foreign_influence_matches_java_sources() {
+    let java_map = build_java_id_map();
+    assert_eq!(java_id(CardId::ForeignInfluence), "ForeignInfluence");
+    assert_eq!(
+        java_map.get("ForeignInfluence"),
+        Some(&CardId::ForeignInfluence)
+    );
+
+    let foreign = get_card_definition(CardId::ForeignInfluence);
+    assert_eq!(foreign.name, "Foreign Influence");
+    assert_eq!(foreign.card_type, CardType::Skill);
+    assert_eq!(foreign.rarity, CardRarity::Uncommon);
+    assert_eq!(foreign.cost, 0);
+    assert_eq!(foreign.target, CardTarget::None);
+    assert!(foreign.exhaust);
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::ForeignInfluence));
+
+    let state = crate::test_support::blank_test_combat();
+    let mut foreign_plus = CombatCard::new(CardId::ForeignInfluence, 1048);
+    foreign_plus.upgrades = 1;
+    let actions = resolve_card_play(CardId::ForeignInfluence, &state, &foreign_plus, None);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::SuspendForForeignInfluence { upgraded: true },
+        "Java ForeignInfluence.use queues ForeignInfluenceAction(this.upgraded)"
+    );
+}
+
+#[test]
 fn watcher_wish_and_option_cards_match_java_sources() {
     let java_map = build_java_id_map();
     assert_eq!(java_id(CardId::Wish), "Wish");

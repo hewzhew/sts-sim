@@ -76,6 +76,12 @@ pub(super) fn pending_choice_key(
             can_skip: *can_skip,
             cards: sorted_debug_values(cards),
         },
+        PendingChoice::ForeignInfluenceSelect { cards, upgraded } => {
+            StablePendingChoiceKey::ForeignInfluence {
+                upgraded: *upgraded,
+                cards: sorted_debug_values(cards),
+            }
+        }
         PendingChoice::ChooseOneSelect { choices } => {
             StablePendingChoiceKey::ChooseOne(sorted_debug_values(choices))
         }
