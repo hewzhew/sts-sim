@@ -18,6 +18,82 @@ const MEGA_DEBUFF: u8 = 4;
 const REVIVE: u8 = 5;
 const TORCH_DRAW_X: [i32; 2] = [770, 647];
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn buff_targets_zero_hp_non_dying_non_escaping_monsters_like_java() {
+        let collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        let mut torch = crate::test_support::test_monster(EnemyId::TorchHead);
+        torch.id = 2;
+        torch.current_hp = 0;
+        torch.is_dying = false;
+        torch.is_escaped = false;
+        let mut state = crate::test_support::combat_with_monsters(vec![collector.clone(), torch]);
+        let plan = buff_plan(state.meta.ascension_level);
+
+        let actions = TheCollector::take_turn_plan(&mut state, &collector, &plan);
+
+        assert!(
+            actions.iter().any(|action| matches!(
+                action,
+                Action::ApplyPower {
+                    target: 2,
+                    power_id: PowerId::Strength,
+                    ..
+                }
+            )),
+            "Java Collector buff skips isDead/isDying/isEscaping only; zero currentHealth alone is not a filter"
+        );
+    }
+
+    #[test]
+    fn death_cleanup_suicides_zero_hp_or_escaped_non_dying_minions_like_java() {
+        let collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        let mut torch = crate::test_support::test_monster(EnemyId::TorchHead);
+        torch.id = 2;
+        torch.current_hp = 0;
+        torch.is_dying = false;
+        torch.is_escaped = true;
+        let mut state = crate::test_support::combat_with_monsters(vec![collector.clone(), torch]);
+
+        let actions = TheCollector::on_death(&mut state, &collector);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Suicide { target: 2 }]
+        ));
+    }
+
+    #[test]
+    fn revive_considers_dying_torch_even_if_escape_flag_is_set_like_java_enemy_slots() {
+        let collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        let mut torch = crate::test_support::test_monster(EnemyId::TorchHead);
+        torch.id = 2;
+        torch.is_dying = true;
+        torch.is_escaped = true;
+        torch.logical_position = 647;
+        let mut state = crate::test_support::combat_with_monsters(vec![collector.clone(), torch]);
+        state.monster_protocol_identity_mut(2).draw_x = Some(647);
+
+        let actions = TheCollector::take_turn_plan(&mut state, &collector, &revive_plan());
+
+        assert!(
+            actions.iter().any(|action| matches!(
+                action,
+                Action::SpawnMonsterSmart {
+                    monster_id: EnemyId::TorchHead,
+                    protocol_draw_x: Some(647),
+                    ..
+                }
+            )),
+            "Java Collector revive only checks the stored TorchHead isDying flag"
+        );
+    }
+}
+
 fn fireball_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 4 {
         21
@@ -205,7 +281,7 @@ fn living_monster_ids(state: &CombatState) -> Vec<usize> {
         .entities
         .monsters
         .iter()
-        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
+        .filter(|monster| !monster.is_dying && !monster.is_escaped)
         .map(|monster| monster.id)
         .collect()
 }
@@ -215,11 +291,7 @@ fn dying_torch_draw_xs(state: &CombatState) -> Vec<i32> {
         .entities
         .monsters
         .iter()
-        .filter(|monster| {
-            monster.monster_type == EnemyId::TorchHead as usize
-                && monster.is_dying
-                && !monster.is_escaped
-        })
+        .filter(|monster| monster.monster_type == EnemyId::TorchHead as usize && monster.is_dying)
         .map(|monster| {
             state
                 .monster_protocol_identity(monster.id)
@@ -392,12 +464,7 @@ impl MonsterBehavior for TheCollector {
             .entities
             .monsters
             .iter()
-            .filter(|monster| {
-                monster.id != entity.id
-                    && !monster.is_dying
-                    && !monster.is_escaped
-                    && monster.current_hp > 0
-            })
+            .filter(|monster| monster.id != entity.id && !monster.is_dying)
             .map(|monster| Action::Suicide { target: monster.id })
             .collect()
     }
