@@ -5,7 +5,7 @@ use crate::runtime::combat::{
     BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
     CorruptHeartRuntimeState, DarklingRuntimeState, GuardianRuntimeState, HexaghostRuntimeState,
     JawWormRuntimeState, LagavulinRuntimeState, LouseRuntimeState, MonsterEntity, MonsterMoveState,
-    ShelledParasiteRuntimeState, SneckoRuntimeState, ThiefRuntimeState,
+    ShelledParasiteRuntimeState, SneckoRuntimeState, ThiefRuntimeState, WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
@@ -91,6 +91,12 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
         Some(EnemyId::Darkling) => {
             format!("darkling:{}", stable_darkling_signature(&monster.darkling))
         }
+        Some(EnemyId::WrithingMass) => {
+            format!(
+                "writhing_mass:{}",
+                stable_writhing_mass_signature(&monster.writhing_mass)
+            )
+        }
         Some(EnemyId::Lagavulin) => {
             format!(
                 "lagavulin:{}",
@@ -110,7 +116,7 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         concat!(
             "hex={}:louse={}:jaw={}:thief={}:byrd={}:chosen={}:",
             "snecko={}:parasite={}:bronze_auto={}:bronze_orb={}:book={}:",
-            "collector={}:champ={}:awakened={}:heart={}:darkling={}:lagavulin={}:guardian={}"
+            "collector={}:champ={}:awakened={}:heart={}:writhing_mass={}:darkling={}:lagavulin={}:guardian={}"
         ),
         stable_hexaghost_signature(&monster.hexaghost),
         stable_louse_signature(&monster.louse),
@@ -127,6 +133,7 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         stable_champ_signature(&monster.champ),
         stable_awakened_one_signature(&monster.awakened_one),
         stable_corrupt_heart_signature(&monster.corrupt_heart),
+        stable_writhing_mass_signature(&monster.writhing_mass),
         stable_darkling_signature(&monster.darkling),
         stable_lagavulin_signature(&monster.lagavulin),
         stable_guardian_signature(&monster.guardian),
@@ -438,6 +445,13 @@ fn stable_corrupt_heart_signature(state: &CorruptHeartRuntimeState) -> String {
 
 fn stable_darkling_signature(state: &DarklingRuntimeState) -> String {
     format!("first{}:nip{}", state.first_move, state.nip_dmg)
+}
+
+fn stable_writhing_mass_signature(state: &WrithingMassRuntimeState) -> String {
+    format!(
+        "seed{}:used_mega{}",
+        state.protocol_seeded, state.used_mega_debuff
+    )
 }
 
 fn stable_lagavulin_signature(state: &LagavulinRuntimeState) -> String {

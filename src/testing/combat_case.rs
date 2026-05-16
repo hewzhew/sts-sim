@@ -1771,6 +1771,7 @@ fn runtime_prefix_for_monster(java_id: &str) -> Option<&'static str> {
         "snecko" => Some("snecko"),
         "thecollector" => Some("collector"),
         "theguardian" => Some("guardian"),
+        "writhingmass" => Some("writhing_mass"),
         _ => None,
     }
 }
@@ -2166,6 +2167,12 @@ fn apply_monster_runtime_delta(
             }
             "corrupt_heart.move_count" => monster.corrupt_heart.move_count = json_u8(value, field)?,
             "corrupt_heart.buff_count" => monster.corrupt_heart.buff_count = json_u8(value, field)?,
+            "writhing_mass.protocol_seeded" => {
+                monster.writhing_mass.protocol_seeded = json_bool(value, field)?
+            }
+            "writhing_mass.used_mega_debuff" => {
+                monster.writhing_mass.used_mega_debuff = json_bool(value, field)?
+            }
             "darkling.first_move" => monster.darkling.first_move = json_bool(value, field)?,
             "darkling.nip_dmg" => monster.darkling.nip_dmg = json_i32(value, field)?,
             "lagavulin.is_out" => monster.lagavulin.is_out = json_bool(value, field)?,
@@ -2669,6 +2676,12 @@ fn extract_monster_runtime_value(
         }
         "corrupt_heart.buff_count" => {
             ActualFieldValue::Number(monster.corrupt_heart.buff_count as i64)
+        }
+        "writhing_mass.protocol_seeded" => {
+            ActualFieldValue::Bool(monster.writhing_mass.protocol_seeded)
+        }
+        "writhing_mass.used_mega_debuff" => {
+            ActualFieldValue::Bool(monster.writhing_mass.used_mega_debuff)
         }
         "darkling.first_move" => ActualFieldValue::Bool(monster.darkling.first_move),
         "darkling.nip_dmg" => ActualFieldValue::Number(monster.darkling.nip_dmg as i64),

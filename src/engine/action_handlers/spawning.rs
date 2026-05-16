@@ -135,6 +135,7 @@ pub fn handle_spawn_monster(
         champ: Default::default(),
         awakened_one: Default::default(),
         corrupt_heart: Default::default(),
+        writhing_mass: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -217,6 +218,10 @@ pub fn handle_spawn_monster(
         new_monster.corrupt_heart.first_move = true;
         new_monster.corrupt_heart.move_count = 0;
         new_monster.corrupt_heart.buff_count = 0;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::WrithingMass {
+        new_monster.writhing_mass.protocol_seeded = true;
+        new_monster.writhing_mass.used_mega_debuff = false;
     }
     if matches!(
         enemy_id,
@@ -790,6 +795,27 @@ fn handle_update_corrupt_heart_state(
     }
 }
 
+fn handle_update_writhing_mass_state(
+    monster_id: usize,
+    used_mega_debuff: Option<bool>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = used_mega_debuff {
+            monster.writhing_mass.used_mega_debuff = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.writhing_mass.protocol_seeded = value;
+        }
+    }
+}
+
 pub fn handle_update_monster_runtime(
     monster_id: usize,
     patch: MonsterRuntimePatch,
@@ -922,6 +948,12 @@ pub fn handle_update_monster_runtime(
             protocol_seeded,
             state,
         ),
+        MonsterRuntimePatch::WrithingMass {
+            used_mega_debuff,
+            protocol_seeded,
+        } => {
+            handle_update_writhing_mass_state(monster_id, used_mega_debuff, protocol_seeded, state)
+        }
     }
 }
 

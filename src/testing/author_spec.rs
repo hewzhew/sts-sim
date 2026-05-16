@@ -665,6 +665,9 @@ fn compile_monster_runtime_state(monster: &AuthorMonsterSpec, move_id: i32) -> V
             "first_move": false,
             "nip_dmg": 7,
         }),
+        "writhingmass" => json!({
+            "used_mega_debuff": false,
+        }),
         "chosen" => json!({
             "first_turn": false,
             "used_hex": false,

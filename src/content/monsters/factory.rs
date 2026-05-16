@@ -140,6 +140,7 @@ pub fn build_encounter(
             champ: Default::default(),
             awakened_one: Default::default(),
             corrupt_heart: Default::default(),
+            writhing_mass: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
@@ -199,6 +200,10 @@ pub fn build_encounter(
             monster.corrupt_heart.first_move = true;
             monster.corrupt_heart.move_count = 0;
             monster.corrupt_heart.buff_count = 0;
+        }
+        if enemy_id == EnemyId::WrithingMass {
+            monster.writhing_mass.protocol_seeded = true;
+            monster.writhing_mass.used_mega_debuff = false;
         }
         if matches!(enemy_id, EnemyId::Looter | EnemyId::Mugger) {
             monster.thief.protocol_seeded = true;

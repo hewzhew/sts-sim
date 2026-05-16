@@ -190,6 +190,7 @@ pub fn build_combat_state_from_snapshots(
             champ: Default::default(),
             awakened_one: Default::default(),
             corrupt_heart: Default::default(),
+            writhing_mass: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),

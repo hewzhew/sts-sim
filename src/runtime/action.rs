@@ -90,6 +90,10 @@ pub enum MonsterRuntimePatch {
         buff_count: Option<u8>,
         protocol_seeded: Option<bool>,
     },
+    WrithingMass {
+        used_mega_debuff: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

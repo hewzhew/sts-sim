@@ -4,7 +4,7 @@ use crate::content::monsters::exordium::{
 };
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     AttackSpec, DamageKind, DebuffSpec, DefendSpec, EffectStrength, MonsterMoveSpec,
@@ -156,10 +156,17 @@ fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
 }
 
 fn used_mega_debuff(entity: &MonsterEntity) -> bool {
-    entity
-        .move_history()
-        .iter()
-        .any(|&move_id| move_id == MEGA_DEBUFF)
+    entity.writhing_mass.used_mega_debuff
+}
+
+fn writhing_mass_runtime_update(entity: &MonsterEntity, used_mega_debuff: bool) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::WrithingMass {
+            used_mega_debuff: Some(used_mega_debuff),
+            protocol_seeded: Some(true),
+        },
+    }
 }
 
 fn roll_move_recursive(
@@ -281,9 +288,12 @@ impl MonsterBehavior for WrithingMass {
                 actions.push(apply_power_action(entity, vulnerable));
                 actions
             }
-            (MEGA_DEBUFF, []) => vec![Action::AddCardToMasterDeck {
-                card_id: CardId::Parasite,
-            }],
+            (MEGA_DEBUFF, []) => vec![
+                writhing_mass_runtime_update(entity, true),
+                Action::AddCardToMasterDeck {
+                    card_id: CardId::Parasite,
+                },
+            ],
             (move_id, steps) => {
                 panic!("writhing mass plan/steps mismatch: {} {:?}", move_id, steps)
             }
@@ -293,5 +303,59 @@ impl MonsterBehavior for WrithingMass {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn mega_debuff_eligibility_uses_execution_flag_not_move_history() {
+        let mut mass = crate::test_support::test_monster(EnemyId::WrithingMass);
+        mass.move_history_mut().push_back(MEGA_DEBUFF);
+        mass.move_history_mut().push_back(BIG_HIT);
+        mass.writhing_mass.used_mega_debuff = false;
+
+        let plan =
+            <WrithingMass as MonsterBehavior>::roll_move_plan(&mut StsRng::new(0), &mass, 20, 15);
+
+        assert_eq!(
+            plan.move_id, MEGA_DEBUFF,
+            "Java only sets usedMegaDebuff when Parasite actually executes; a Reactive reroll through move 4 must not consume it"
+        );
+    }
+
+    #[test]
+    fn mega_debuff_execution_marks_runtime_state_before_parasite() {
+        let mut state = crate::test_support::combat_with_monsters(vec![]);
+        let mut mass = crate::test_support::test_monster(EnemyId::WrithingMass);
+        mass.id = 42;
+
+        let actions = <WrithingMass as MonsterBehavior>::take_turn_plan(
+            &mut state,
+            &mass,
+            &mega_debuff_plan(),
+        );
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::UpdateMonsterRuntime {
+                    monster_id: 42,
+                    patch: MonsterRuntimePatch::WrithingMass {
+                        used_mega_debuff: Some(true),
+                        protocol_seeded: Some(true),
+                    },
+                },
+                Action::AddCardToMasterDeck {
+                    card_id: CardId::Parasite,
+                },
+                Action::RollMonsterMove { monster_id: 42 },
+            ],
+            "Java sets usedMegaDebuff=true inside takeTurn before queuing AddCardToDeckAction"
+        );
     }
 }

@@ -936,6 +936,7 @@ pub struct MonsterEntity {
     pub champ: ChampRuntimeState,
     pub awakened_one: AwakenedOneRuntimeState,
     pub corrupt_heart: CorruptHeartRuntimeState,
+    pub writhing_mass: WrithingMassRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
@@ -1219,6 +1220,12 @@ impl Default for CorruptHeartRuntimeState {
             buff_count: 0,
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct WrithingMassRuntimeState {
+    pub protocol_seeded: bool,
+    pub used_mega_debuff: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2096,6 +2103,7 @@ mod tests {
             champ: ChampRuntimeState::default(),
             awakened_one: AwakenedOneRuntimeState::default(),
             corrupt_heart: CorruptHeartRuntimeState::default(),
+            writhing_mass: WrithingMassRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2159,6 +2167,7 @@ mod tests {
             champ: ChampRuntimeState::default(),
             awakened_one: AwakenedOneRuntimeState::default(),
             corrupt_heart: CorruptHeartRuntimeState::default(),
+            writhing_mass: WrithingMassRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2219,6 +2228,7 @@ mod tests {
             champ: ChampRuntimeState::default(),
             awakened_one: AwakenedOneRuntimeState::default(),
             corrupt_heart: CorruptHeartRuntimeState::default(),
+            writhing_mass: WrithingMassRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),

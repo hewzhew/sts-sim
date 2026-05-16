@@ -1,5 +1,5 @@
 use crate::content::cards::CardId;
-use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
+use crate::content::monsters::exordium::{attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 use crate::runtime::action::Action;
@@ -153,11 +153,13 @@ impl MonsterBehavior for OrbWalker {
             (CLAW, [MoveStep::Attack(attack)]) => attack_actions(entity.id, PLAYER, &attack.attack),
             (
                 LASER,
-                [MoveStep::Attack(attack), MoveStep::AddCard(discard_burn), MoveStep::AddCard(draw_burn)],
+                [MoveStep::Attack(attack), MoveStep::AddCard(_discard_burn), MoveStep::AddCard(_draw_burn)],
             ) => {
                 let mut actions = attack_actions(entity.id, PLAYER, &attack.attack);
-                actions.push(add_card_action(discard_burn));
-                actions.push(add_card_action(draw_burn));
+                actions.push(Action::MakeTempCardInDiscardAndDeck {
+                    card_id: CardId::Burn,
+                    amount: 1,
+                });
                 actions
             }
             (move_id, steps) => panic!("orb walker plan/steps mismatch: {} {:?}", move_id, steps),
@@ -166,5 +168,33 @@ impl MonsterBehavior for OrbWalker {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{laser_plan, OrbWalker};
+    use crate::content::cards::CardId;
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn laser_uses_java_discard_and_deck_action_not_two_expanded_add_cards() {
+        let mut state = crate::test_support::blank_test_combat();
+        let walker = crate::test_support::test_monster(EnemyId::OrbWalker);
+
+        let actions = OrbWalker::take_turn_plan(&mut state, &walker, &laser_plan(0));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack { source: 1, .. },
+                Action::MakeTempCardInDiscardAndDeck {
+                    card_id: CardId::Burn,
+                    amount: 1
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
     }
 }
