@@ -300,13 +300,44 @@ Tests:
 - `matching_cards_obtain_previewed_copy_with_event_source`
 - `matching_uses_card_id_not_board_type_index_like_java`
 
+### Mushrooms and Masked Bandits event-combat boundaries
+
+Java `events/exordium/Mushrooms.java` does not enter combat on the first
+fight click. It first changes to the fight confirmation text, then generates
+gold/relic rewards and calls `enterCombat()` on the next click. The eat path
+uses `AbstractPlayer.heal()` and `ShowCardAndObtainEffect(new Parasite())`.
+
+Java `events/city/MaskedBandits.java` uses event id `Masked Bandits` as the
+monster encounter key. Paying gold advances through three dialogue screens and
+the third continue opens the map immediately; it does not add an extra leave
+screen.
+
+Fixes:
+
+- `Mushrooms` now preserves the Java two-step fight confirmation boundary.
+- `Mushrooms` now heals through `RunState::heal_with_source`, so Mark of the
+  Bloom blocks the heal, and obtains `Parasite` through the normal event card
+  obtain pipeline.
+- `Mushrooms` and `Masked Bandits` event-combat keys now use the Java encounter
+  names, while CLI/full-run adapters still accept the older local aliases.
+- `Masked Bandits` paid dialogue now completes on the same click Java uses to
+  open the map instead of requiring one extra `[Leave]`.
+
+Tests:
+
+- `fight_path_requires_java_confirm_screen_before_combat`
+- `eat_uses_player_heal_and_show_card_obtain_semantics`
+- `eat_heal_is_blocked_by_mark_of_the_bloom_but_curse_obtain_still_runs`
+- `pay_path_opens_map_after_java_dialog_sequence_without_extra_leave_click`
+- `fight_uses_java_event_encounter_key_and_event_rewards`
+
 ## Current High-Risk Event Areas
 
 - Selection choice preconditions still need deeper event-by-event review.
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
-- Event combat return states need continued scrutiny: `Colosseum`,
-  `Masked Bandits`, `Mushrooms`, and `Mysterious Sphere`.
+- Event combat return states need continued scrutiny: `Colosseum` and
+  `Mysterious Sphere`.
 - `SecretPortal` and `SpireHeart` need an explicit classification: unsupported,
   modeled elsewhere, or normal event module.
 - Event reward generation and domain-event source tagging must remain separate
@@ -315,4 +346,4 @@ Tests:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `782 passed`.
+- Current result after this pass: `798 passed`.

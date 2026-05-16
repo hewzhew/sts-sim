@@ -1274,9 +1274,9 @@ fn encounter_key_to_id(
     match key {
         "Colosseum Slavers" => Some(EncounterId::ColosseumSlavers),
         "Colosseum Nobs" => Some(EncounterId::ColosseumNobs),
-        "3 Bandits" => Some(EncounterId::MaskedBandits),
+        "Masked Bandits" | "3 Bandits" => Some(EncounterId::MaskedBandits),
         "Dead Adventurer" => Some(EncounterId::LagavulinEvent),
-        "3 Fungi Beasts" => Some(EncounterId::TheMushroomLair),
+        "The Mushroom Lair" | "3 Fungi Beasts" => Some(EncounterId::TheMushroomLair),
         "2 Orb Walkers" => Some(EncounterId::TwoOrbWalkers),
         "Mind Bloom Boss" => Some(EncounterId::AwakenedOne), // MindBloom spawns a random act 1 boss; fallback
         _ => None,
