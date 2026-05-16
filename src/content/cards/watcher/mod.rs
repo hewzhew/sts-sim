@@ -18,6 +18,7 @@ pub mod prostrate;
 pub mod ragnarok;
 pub mod sanctity;
 pub mod sash_whip;
+pub mod signature_move;
 pub mod strike_purple;
 pub mod third_eye;
 pub mod vigilance;

@@ -497,6 +497,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::Brilliance, "Brilliance"),
         (CardId::Ragnarok, "Ragnarok"),
         (CardId::WreathOfFlame, "WreathOfFlame"),
+        (CardId::SignatureMove, "SignatureMove"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -797,6 +798,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             3,
         ),
+        (
+            CardId::SignatureMove,
+            "Signature Move",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            2,
+            30,
+            0,
+            0,
+            CardTarget::Enemy,
+            10,
+            0,
+            0,
+        ),
     ];
 
     for (
@@ -850,6 +865,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Sanctity));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Conclude));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WreathOfFlame));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::SignatureMove));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
 }
@@ -1514,6 +1530,40 @@ fn watcher_wreath_of_flame_runtime_actions_match_java_use_method() {
             amount: 8,
         }]
     );
+}
+
+#[test]
+fn watcher_signature_move_can_use_requires_no_other_attacks_but_forced_use_still_runs() {
+    let mut allowed = crate::test_support::blank_test_combat();
+    allowed.zones.hand = vec![
+        CombatCard::new(CardId::SignatureMove, 333),
+        CombatCard::new(CardId::DefendP, 334),
+    ];
+    assert!(can_play_card(&allowed.zones.hand[0], &allowed).is_ok());
+
+    let mut blocked = allowed.clone();
+    blocked
+        .zones
+        .hand
+        .push(CombatCard::new(CardId::StrikeP, 335));
+    assert!(
+        can_play_card(&blocked.zones.hand[0], &blocked).is_err(),
+        "Java SignatureMove.canUse rejects other Attack cards in hand"
+    );
+
+    let mut signature_plus = CombatCard::new(CardId::SignatureMove, 336);
+    signature_plus.upgrades = 1;
+    let forced_actions =
+        resolve_card_play(CardId::SignatureMove, &blocked, &signature_plus, Some(7));
+    assert_eq!(forced_actions.len(), 1);
+    match &forced_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 40);
+            assert_eq!(info.output, 40);
+        }
+        other => panic!("Signature Move should emit DamageAction, got {other:?}"),
+    }
 }
 
 #[test]

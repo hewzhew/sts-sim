@@ -74,6 +74,7 @@ pub fn resolve_card_play_with_context(
         CardId::Brilliance => watcher::brilliance::brilliance_play(_state, _card, t),
         CardId::Ragnarok => watcher::ragnarok::ragnarok_play(_state, _card),
         CardId::WreathOfFlame => watcher::wreath_of_flame::wreath_of_flame_play(_state, _card),
+        CardId::SignatureMove => watcher::signature_move::signature_move_play(_state, _card, t),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -907,6 +908,15 @@ fn can_play_card_internal(
         CardId::GrandFinale => {
             if !state.zones.draw_pile.is_empty() {
                 return Err("Can only play Grand Finale if the draw pile is empty.");
+            }
+        }
+        CardId::SignatureMove => {
+            let has_other_attack = state.zones.hand.iter().any(|c| {
+                c.uuid != card.uuid
+                    && get_card_definition(c.id).card_type == CardType::Attack
+            });
+            if has_other_attack {
+                return Err("Can only play Signature Move if there are no other Attacks in hand.");
             }
         }
         _ => {}
