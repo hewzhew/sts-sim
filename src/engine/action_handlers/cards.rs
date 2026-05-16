@@ -1256,6 +1256,17 @@ pub fn handle_reduce_all_hand_costs(amount: u8, state: &mut CombatState) {
     }
 }
 
+pub fn handle_reduce_retained_hand_costs(amount: i32, state: &mut CombatState) {
+    if amount <= 0 {
+        return;
+    }
+    for card in state.zones.hand.iter_mut() {
+        if card.retain_override == Some(true) || crate::content::cards::is_self_retain(card) {
+            card.modify_cost_for_combat_java(-amount);
+        }
+    }
+}
+
 pub fn handle_enlightenment(permanent: bool, state: &mut CombatState) {
     for card in state.zones.hand.iter_mut() {
         let base_cost = card.base_cost_for_combat_java();

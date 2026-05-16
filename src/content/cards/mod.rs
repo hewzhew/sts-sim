@@ -362,6 +362,11 @@ pub enum CardId {
     ThroughViolence,
     Judgement,
     PressurePoints,
+    FlurryOfBlows,
+    Establishment,
+    WaveOfTheHand,
+    Fasting,
+    DevaForm,
     // Add more as we expand
 }
 
@@ -521,6 +526,7 @@ pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
         || matches!(card.id, CardId::MachineLearning) && card.upgrades > 0
         || matches!(card.id, CardId::Storm) && card.upgrades > 0
         || matches!(card.id, CardId::BattleHymn) && card.upgrades > 0
+        || matches!(card.id, CardId::Establishment) && card.upgrades > 0
 }
 
 pub fn get_card_definition(id: CardId) -> CardDefinition {
@@ -757,6 +763,11 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::ThroughViolence => colorless::through_violence::definition(),
         CardId::Judgement => watcher::judgement::definition(),
         CardId::PressurePoints => watcher::pressure_points::definition(),
+        CardId::FlurryOfBlows => watcher::flurry_of_blows::definition(),
+        CardId::Establishment => watcher::establishment::definition(),
+        CardId::WaveOfTheHand => watcher::wave_of_the_hand::definition(),
+        CardId::Fasting => watcher::fasting::definition(),
+        CardId::DevaForm => watcher::deva_form::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1356,6 +1367,7 @@ pub const WATCHER_COMMON_POOL: &[CardId] = &[
     CardId::FlyingSleeves,
     CardId::Halt,
     CardId::PressurePoints,
+    CardId::FlurryOfBlows,
 ];
 
 pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
@@ -1389,6 +1401,8 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::Nirvana,
     CardId::Weave,
     CardId::ReachHeaven,
+    CardId::WaveOfTheHand,
+    CardId::Fasting,
 ];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[
@@ -1399,6 +1413,8 @@ pub const WATCHER_RARE_POOL: &[CardId] = &[
     CardId::MasterReality,
     CardId::Devotion,
     CardId::Judgement,
+    CardId::Establishment,
+    CardId::DevaForm,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1657,6 +1673,11 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::ThroughViolence => "ThroughViolence",
         CardId::Judgement => "Judgement",
         CardId::PressurePoints => "PathToVictory",
+        CardId::FlurryOfBlows => "FlurryOfBlows",
+        CardId::Establishment => "Establishment",
+        CardId::WaveOfTheHand => "WaveOfTheHand",
+        CardId::Fasting => "Fasting2",
+        CardId::DevaForm => "DevaForm",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -2088,6 +2109,11 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         ThroughViolence,
         Judgement,
         PressurePoints,
+        FlurryOfBlows,
+        Establishment,
+        WaveOfTheHand,
+        Fasting,
+        DevaForm,
         Neutralize,
         Survivor,
         Anger,

@@ -117,6 +117,11 @@ pub fn resolve_card_play_with_context(
         }
         CardId::Judgement => watcher::judgement::judgement_play(_state, _card, t),
         CardId::PressurePoints => watcher::pressure_points::pressure_points_play(_state, _card, t),
+        CardId::FlurryOfBlows => watcher::flurry_of_blows::flurry_of_blows_play(_state, _card, t),
+        CardId::Establishment => watcher::establishment::establishment_play(_state, _card),
+        CardId::WaveOfTheHand => watcher::wave_of_the_hand::wave_of_the_hand_play(_state, _card),
+        CardId::Fasting => watcher::fasting::fasting_play(_state, _card),
+        CardId::DevaForm => watcher::deva_form::deva_form_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -798,6 +803,7 @@ pub fn is_ethereal(card: &CombatCard) -> bool {
     match card.id {
         CardId::Apparition => card.upgrades == 0,
         CardId::EchoForm => card.upgrades == 0,
+        CardId::DevaForm => card.upgrades == 0,
         _ => get_card_definition(card.id).ethereal,
     }
 }

@@ -689,6 +689,11 @@ pub enum Action {
     ReduceAllHandCosts {
         amount: u8,
     },
+    /// Java `EstablishmentPowerAction`: reduce combat cost of hand cards that
+    /// are retained by selfRetain or the one-turn retain flag.
+    ReduceRetainedHandCosts {
+        amount: i32,
+    },
     Enlightenment {
         permanent: bool,
     },

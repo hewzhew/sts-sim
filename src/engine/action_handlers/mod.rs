@@ -527,6 +527,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             cards::handle_make_temp_card_in_discard_and_deck(card_id, amount, state)
         }
         Action::ReduceAllHandCosts { amount } => cards::handle_reduce_all_hand_costs(amount, state),
+        Action::ReduceRetainedHandCosts { amount } => {
+            cards::handle_reduce_retained_hand_costs(amount, state)
+        }
         Action::Enlightenment { permanent } => cards::handle_enlightenment(permanent, state),
         Action::Halt { block, additional } => cards::handle_halt(block, additional, state),
         Action::Madness => cards::handle_madness(state),
@@ -1043,6 +1046,8 @@ fn handle_enter_stance(stance: &str, state: &mut CombatState) {
         state.turn.adjust_energy(3);
     }
     state.entities.player.stance = new_stance;
+    let card_actions = crate::content::cards::hooks::on_change_stance_from_discard(state);
+    state.queue_actions(card_actions);
 }
 
 #[cfg(test)]

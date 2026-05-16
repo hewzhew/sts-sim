@@ -1294,6 +1294,76 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
         ),
         (
+            CardId::FlurryOfBlows,
+            "Flurry of Blows",
+            CardType::Attack,
+            CardRarity::Common,
+            0,
+            4,
+            0,
+            0,
+            CardTarget::Enemy,
+            2,
+            0,
+            0,
+        ),
+        (
+            CardId::Establishment,
+            "Establishment",
+            CardType::Power,
+            CardRarity::Rare,
+            1,
+            0,
+            0,
+            1,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
+            CardId::WaveOfTheHand,
+            "Wave of the Hand",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            1,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::Fasting,
+            "Fasting",
+            CardType::Power,
+            CardRarity::Uncommon,
+            2,
+            0,
+            0,
+            3,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::DevaForm,
+            "Deva Form",
+            CardType::Power,
+            CardRarity::Rare,
+            3,
+            0,
+            0,
+            1,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
             CardId::Smite,
             "Smite",
             CardType::Attack,
@@ -1387,6 +1457,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::FlyingSleeves));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::Halt));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::PressurePoints));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::FlurryOfBlows));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
@@ -1417,6 +1488,8 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Nirvana));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Weave));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::ReachHeaven));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WaveOfTheHand));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Fasting));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
     assert!(WATCHER_RARE_POOL.contains(&CardId::SpiritShield));
@@ -1424,6 +1497,8 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_RARE_POOL.contains(&CardId::MasterReality));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Devotion));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Judgement));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Establishment));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::DevaForm));
 }
 
 #[test]
@@ -2445,6 +2520,239 @@ fn watcher_mark_judgement_and_reach_heaven_match_java_sources() {
         }
         other => panic!("Through Violence+ should emit DamageAction, got {other:?}"),
     }
+}
+
+#[test]
+fn watcher_energy_retain_and_block_hook_powers_match_java_sources() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut flurry_plus = CombatCard::new(CardId::FlurryOfBlows, 1000);
+    flurry_plus.upgrades = 1;
+    let flurry = resolve_card_play(CardId::FlurryOfBlows, &state, &flurry_plus, Some(7));
+    match &flurry[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 6);
+            assert_eq!(info.output, 6);
+        }
+        other => panic!("Flurry of Blows+ should emit DamageAction, got {other:?}"),
+    }
+
+    let mut stance_state = crate::test_support::blank_test_combat();
+    stance_state.zones.discard_pile = vec![CombatCard::new(CardId::FlurryOfBlows, 1001)];
+    crate::engine::action_handlers::execute_action(
+        Action::EnterStance("Wrath".to_string()),
+        &mut stance_state,
+    );
+    assert_eq!(
+        stance_state.pop_next_action(),
+        Some(Action::DiscardToHand {
+            card_uuid: 1001,
+            cost_for_turn: None,
+        }),
+        "Java ChangeStanceAction calls triggerExhaustedCardsOnStanceChange for discard pile cards"
+    );
+
+    let mut establishment_plus = CombatCard::new(CardId::Establishment, 1002);
+    establishment_plus.upgrades = 1;
+    assert!(crate::content::cards::is_innate_card(&establishment_plus));
+    let establishment = resolve_card_play(CardId::Establishment, &state, &establishment_plus, None);
+    assert_eq!(
+        establishment[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::EstablishmentPower,
+            amount: 1,
+        }
+    );
+    assert_eq!(
+        crate::content::powers::resolve_power_at_end_of_turn(
+            &Power {
+                power_type: PowerId::EstablishmentPower,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            },
+            &state,
+            0,
+        )
+        .as_slice(),
+        &[Action::ReduceRetainedHandCosts { amount: 1 }]
+    );
+    let mut reduce_state = crate::test_support::blank_test_combat();
+    let mut retained = CombatCard::new(CardId::Strike, 1003);
+    retained.retain_override = Some(true);
+    let normal = CombatCard::new(CardId::Bash, 1004);
+    let self_retain = CombatCard::new(CardId::Protect, 1005);
+    reduce_state.zones.hand = vec![retained, normal, self_retain];
+    crate::engine::action_handlers::execute_action(
+        Action::ReduceRetainedHandCosts { amount: 1 },
+        &mut reduce_state,
+    );
+    assert_eq!(reduce_state.zones.hand[0].get_cost(), 0);
+    assert_eq!(
+        reduce_state.zones.hand[1].get_cost(),
+        2,
+        "Java EstablishmentPowerAction ignores non-retained hand cards"
+    );
+    assert_eq!(reduce_state.zones.hand[2].get_cost(), 1);
+
+    let mut wave_plus = CombatCard::new(CardId::WaveOfTheHand, 1006);
+    wave_plus.upgrades = 1;
+    let wave = resolve_card_play(CardId::WaveOfTheHand, &state, &wave_plus, None);
+    assert_eq!(
+        wave[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::WaveOfTheHandPower,
+            amount: 2,
+        }
+    );
+    let mut block_state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    block_state.entities.monsters = vec![first, second];
+    crate::content::powers::store::set_powers_for(
+        &mut block_state,
+        0,
+        vec![Power {
+            power_type: PowerId::WaveOfTheHandPower,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::GainBlock {
+            target: 0,
+            amount: 5,
+        },
+        &mut block_state,
+    );
+    assert_eq!(
+        block_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Weak,
+            amount: 2,
+        })
+    );
+    assert_eq!(
+        block_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 8,
+            power_id: PowerId::Weak,
+            amount: 2,
+        })
+    );
+    assert_eq!(
+        crate::content::powers::resolve_power_at_end_of_round(
+            PowerId::WaveOfTheHandPower,
+            &state,
+            0,
+            2,
+            false,
+        )
+        .as_slice(),
+        &[Action::RemovePower {
+            target: 0,
+            power_id: PowerId::WaveOfTheHandPower,
+        }]
+    );
+
+    let mut fasting_plus = CombatCard::new(CardId::Fasting, 1007);
+    fasting_plus.upgrades = 1;
+    assert_eq!(java_id(CardId::Fasting), "Fasting2");
+    assert!(crate::content::powers::is_debuff(
+        PowerId::EnergyDownPower,
+        1
+    ));
+    let fasting = resolve_card_play(CardId::Fasting, &state, &fasting_plus, None);
+    assert_eq!(
+        fasting.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![
+            &Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::Strength,
+                amount: 4,
+            },
+            &Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::Dexterity,
+                amount: 4,
+            },
+            &Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::EnergyDownPower,
+                amount: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        crate::content::powers::resolve_power_at_turn_start(
+            PowerId::EnergyDownPower,
+            &mut crate::test_support::blank_test_combat(),
+            0,
+            1,
+        )
+        .as_slice(),
+        &[Action::GainEnergy { amount: -1 }]
+    );
+
+    let mut deva_plus = CombatCard::new(CardId::DevaForm, 1008);
+    deva_plus.upgrades = 1;
+    assert!(crate::content::cards::is_ethereal(&CombatCard::new(
+        CardId::DevaForm,
+        1009
+    )));
+    assert!(!crate::content::cards::is_ethereal(&deva_plus));
+    let deva = resolve_card_play(CardId::DevaForm, &state, &deva_plus, None);
+    assert_eq!(
+        deva[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::DevaForm,
+            amount: 1,
+        }
+    );
+    let mut deva_state = crate::test_support::blank_test_combat();
+    crate::engine::action_handlers::execute_action(deva[0].action.clone(), &mut deva_state);
+    crate::engine::action_handlers::execute_action(deva[0].action.clone(), &mut deva_state);
+    let deva_power = crate::content::powers::store::powers_for(&deva_state, 0)
+        .unwrap()
+        .iter()
+        .find(|power| power.power_type == PowerId::DevaForm)
+        .unwrap();
+    assert_eq!(deva_power.amount, 2);
+    assert_eq!(
+        deva_power.extra_data, 2,
+        "Java DevaPower.stackPower increments energyGainAmount separately from amount"
+    );
+    deva_state.turn.energy = 3;
+    crate::engine::action_handlers::powers::apply_player_turn_energy_recharge_hooks(
+        &mut deva_state,
+    );
+    assert_eq!(deva_state.turn.energy, 5);
+    let deva_power = crate::content::powers::store::powers_for(&deva_state, 0)
+        .unwrap()
+        .iter()
+        .find(|power| power.power_type == PowerId::DevaForm)
+        .unwrap();
+    assert_eq!(deva_power.extra_data, 4);
 }
 
 #[test]

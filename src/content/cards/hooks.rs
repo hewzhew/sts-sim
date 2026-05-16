@@ -38,3 +38,19 @@ pub fn on_scry(state: &CombatState) -> smallvec::SmallVec<[ActionInfo; 4]> {
     }
     actions
 }
+
+pub fn on_change_stance_from_discard(state: &CombatState) -> smallvec::SmallVec<[ActionInfo; 4]> {
+    let mut actions = smallvec::SmallVec::new();
+    for card in &state.zones.discard_pile {
+        if card.id == crate::content::cards::CardId::FlurryOfBlows {
+            actions.push(ActionInfo {
+                action: crate::runtime::action::Action::DiscardToHand {
+                    card_uuid: card.uuid,
+                    cost_for_turn: None,
+                },
+                insertion_mode: crate::runtime::action::AddTo::Bottom,
+            });
+        }
+    }
+    actions
+}

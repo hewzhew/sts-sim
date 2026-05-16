@@ -21,6 +21,13 @@ pub fn apply_player_turn_energy_recharge_hooks(state: &mut CombatState) {
                     power_id: PowerId::Energized,
                 });
             }
+            PowerId::DevaForm => {
+                let energy_gain = power.extra_data.max(1);
+                state.turn.adjust_energy(energy_gain);
+                let _ = store::with_power_mut(state, 0, PowerId::DevaForm, |deva| {
+                    deva.extra_data += deva.amount;
+                });
+            }
             _ => {}
         }
     }
@@ -386,6 +393,9 @@ fn handle_apply_power_detailed_internal(
         } else if power_id == PowerId::Flight && amount > 0 {
             existing.amount += amount;
             existing.extra_data = existing.amount.max(existing.extra_data);
+        } else if power_id == PowerId::DevaForm && amount > 0 {
+            existing.amount += amount;
+            existing.extra_data += 1;
         } else {
             existing.amount += amount;
         }
@@ -402,6 +412,7 @@ fn handle_apply_power_detailed_internal(
                 PowerId::Combust => (amount, 1),
                 PowerId::Malleable => (amount, amount),
                 PowerId::Flight => (amount, amount),
+                PowerId::DevaForm => (amount, 1),
                 PowerId::Rebound => (amount, extra_data.unwrap_or(1)),
                 _ if extra_data.is_some() => (amount, extra_data.unwrap_or(0)),
                 _ => (amount, 0),

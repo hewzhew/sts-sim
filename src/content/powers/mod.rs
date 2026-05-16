@@ -85,6 +85,10 @@ pub enum PowerId {
     ForesightPower,
     NirvanaPower,
     MarkPower,
+    EstablishmentPower,
+    WaveOfTheHandPower,
+    EnergyDownPower,
+    DevaForm,
     Focus,
     DexterityDown,
     PenNibPower,
@@ -266,6 +270,7 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::CorpseExplosion
         | PowerId::BlockReturnPower
         | PowerId::MarkPower
+        | PowerId::EnergyDownPower
         | PowerId::WraithForm => true,
         // Everything else is BUFF
         _ => false,
@@ -287,6 +292,7 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         // blocks the application even when the constructor amount is -1.
         PowerId::NoDraw | PowerId::Confusion | PowerId::WraithForm => amount != 0,
         PowerId::CannotChangeStance => amount != 0,
+        PowerId::EnergyDownPower => amount > 0,
         PowerId::NoBlock => amount > 0,
         PowerId::Vulnerable
         | PowerId::Weak
@@ -586,6 +592,22 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             name: "Nirvana",
         },
         PowerId::MarkPower => PowerDefinition { id, name: "Mark" },
+        PowerId::EstablishmentPower => PowerDefinition {
+            id,
+            name: "Establishment",
+        },
+        PowerId::WaveOfTheHandPower => PowerDefinition {
+            id,
+            name: "Wave of the Hand",
+        },
+        PowerId::EnergyDownPower => PowerDefinition {
+            id,
+            name: "Energy Down",
+        },
+        PowerId::DevaForm => PowerDefinition {
+            id,
+            name: "Deva Form",
+        },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
         PowerId::DexterityDown => PowerDefinition {
             id,
@@ -983,6 +1005,9 @@ pub fn resolve_power_instance_at_turn_start(
         }
         PowerId::BattleHymnPower => watcher::battle_hymn_at_turn_start(state, amount),
         PowerId::ForesightPower => watcher::foresight_at_turn_start(state, amount),
+        PowerId::EnergyDownPower => {
+            smallvec::smallvec![crate::runtime::action::Action::GainEnergy { amount: -amount }]
+        }
         PowerId::MagnetismPower => {
             let mut acts = smallvec::SmallVec::new();
             if state.are_monsters_basically_dead_java() {
@@ -1165,6 +1190,9 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::Combust => ironclad::combust::at_end_of_turn(_state, owner, amount),
         PowerId::Metallicize => ironclad::metallicize::at_end_of_turn(owner, amount),
         PowerId::LikeWaterPower => watcher::like_water_at_end_of_turn(_state, owner, amount),
+        PowerId::EstablishmentPower => {
+            smallvec::smallvec![crate::runtime::action::Action::ReduceRetainedHandCosts { amount }]
+        }
         PowerId::Entangle => core::entangle::at_end_of_turn(owner),
         PowerId::Malleable => core::malleable::on_monster_turn_ended(_state, owner, amount),
         PowerId::PlatedArmor => core::plated_armor::on_monster_turn_ended(_state, owner, amount),
@@ -1311,6 +1339,12 @@ pub fn resolve_power_at_end_of_round(
             core::draw_reduction::at_end_of_round(owner, amount, just_applied)
         }
         PowerId::Blur => silent::blur::at_end_of_round(owner, amount),
+        PowerId::WaveOfTheHandPower => {
+            smallvec::smallvec![crate::runtime::action::Action::RemovePower {
+                target: owner,
+                power_id: PowerId::WaveOfTheHandPower,
+            }]
+        }
         PowerId::Equilibrium => {
             if amount == 0 {
                 smallvec::smallvec![crate::runtime::action::Action::RemovePower {
@@ -1426,6 +1460,9 @@ pub fn resolve_power_on_block_gained(
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::Juggernaut => ironclad::juggernaut::on_block_gained(amount),
+        PowerId::WaveOfTheHandPower => {
+            watcher::wave_of_the_hand_on_block_gained(_state, _owner, amount, _block_amount)
+        }
         _ => smallvec::smallvec![],
     }
 }

@@ -98,3 +98,24 @@ pub fn rushdown_on_change_stance(
         smallvec::smallvec![]
     }
 }
+
+pub fn wave_of_the_hand_on_block_gained(
+    state: &CombatState,
+    owner: usize,
+    amount: i32,
+    block_amount: i32,
+) -> SmallVec<[Action; 2]> {
+    let mut actions = SmallVec::new();
+    if owner != 0 || block_amount <= 0 || amount <= 0 {
+        return actions;
+    }
+    for monster in &state.entities.monsters {
+        actions.push(Action::ApplyPower {
+            source: owner,
+            target: monster.id,
+            power_id: crate::content::powers::PowerId::Weak,
+            amount,
+        });
+    }
+    actions
+}
