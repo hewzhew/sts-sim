@@ -4,6 +4,7 @@ pub mod ball_lightning;
 pub mod barrage;
 pub mod beam_cell;
 pub mod boot_sequence;
+pub mod buffer;
 pub mod capacitor;
 pub mod chaos;
 pub mod chill;

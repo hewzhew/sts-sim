@@ -2761,6 +2761,50 @@ fn chaos_materializes_all_random_orbs_before_channeling_any_of_them() {
 }
 
 #[test]
+fn buffer_definition_and_runtime_action_match_java_sources() {
+    let buffer = get_card_definition(CardId::Buffer);
+    assert_eq!(buffer.name, "Buffer");
+    assert_eq!(buffer.card_type, CardType::Power);
+    assert_eq!(buffer.rarity, CardRarity::Rare);
+    assert_eq!(buffer.cost, 2);
+    assert_eq!(buffer.base_magic, 1);
+    assert_eq!(buffer.target, CardTarget::SelfTarget);
+    assert_eq!(buffer.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Buffer), "Buffer");
+
+    let state = crate::test_support::blank_test_combat();
+    let buffer_actions = resolve_card_play(
+        CardId::Buffer,
+        &state,
+        &CombatCard::new(CardId::Buffer, 296),
+        None,
+    );
+    assert_eq!(buffer_actions.len(), 1);
+    assert_eq!(
+        buffer_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: crate::content::powers::PowerId::Buffer,
+            amount: 1,
+        }
+    );
+
+    let mut buffer_plus = CombatCard::new(CardId::Buffer, 297);
+    buffer_plus.upgrades = 1;
+    let buffer_plus_actions = resolve_card_play(CardId::Buffer, &state, &buffer_plus, None);
+    assert_eq!(
+        buffer_plus_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: crate::content::powers::PowerId::Buffer,
+            amount: 2,
+        }
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;
