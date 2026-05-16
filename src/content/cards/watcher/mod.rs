@@ -1,5 +1,6 @@
 pub mod bowling_bash;
 pub mod consecrate;
+pub mod crush_joints;
 pub mod cut_through_fate;
 pub mod defend_watcher;
 pub mod empty_body;

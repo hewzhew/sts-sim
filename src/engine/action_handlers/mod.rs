@@ -408,6 +408,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         }
         Action::FollowUp => handle_follow_up(state),
         Action::Sanctity { draw_amount } => handle_sanctity(draw_amount, state),
+        Action::CrushJoints { target, amount } => handle_crush_joints(target, amount, state),
         Action::GainMaxHp { amount } => powers::handle_gain_max_hp(amount, state),
         Action::LoseMaxHp { target, amount } => powers::handle_lose_max_hp(target, amount, state),
 
@@ -923,6 +924,17 @@ fn handle_follow_up(state: &mut CombatState) {
 fn handle_sanctity(draw_amount: u32, state: &mut CombatState) {
     if previous_played_card_type(state) == Some(crate::content::cards::CardType::Skill) {
         state.queue_action_front(Action::DrawCards(draw_amount));
+    }
+}
+
+fn handle_crush_joints(target: usize, amount: i32, state: &mut CombatState) {
+    if previous_played_card_type(state) == Some(crate::content::cards::CardType::Skill) {
+        state.queue_action_front(Action::ApplyPower {
+            source: 0,
+            target,
+            power_id: crate::content::powers::PowerId::Vulnerable,
+            amount,
+        });
     }
 }
 

@@ -491,6 +491,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::Indignation, "Indignation"),
         (CardId::FollowUp, "FollowUp"),
         (CardId::Sanctity, "Sanctity"),
+        (CardId::CrushJoints, "CrushJoints"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -707,6 +708,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             3,
             0,
         ),
+        (
+            CardId::CrushJoints,
+            "Crush Joints",
+            CardType::Attack,
+            CardRarity::Common,
+            1,
+            8,
+            0,
+            1,
+            CardTarget::Enemy,
+            2,
+            0,
+            1,
+        ),
     ];
 
     for (
@@ -750,6 +765,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::ThirdEye));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::Prostrate));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::FollowUp));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::CrushJoints));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
@@ -1190,6 +1206,64 @@ fn watcher_sanctity_runtime_action_reads_previous_played_card_when_it_resolves()
         vec![CardId::StrikeP, CardId::Sanctity];
     crate::engine::action_handlers::execute_action(
         Action::Sanctity { draw_amount: 2 },
+        &mut attack_previous,
+    );
+    assert_eq!(attack_previous.pop_next_action(), None);
+}
+
+#[test]
+fn watcher_crush_joints_runtime_action_reads_previous_played_card_when_it_resolves() {
+    let state = crate::test_support::blank_test_combat();
+    let mut crush_joints_plus = CombatCard::new(CardId::CrushJoints, 327);
+    crush_joints_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::CrushJoints, &state, &crush_joints_plus, Some(7));
+
+    assert_eq!(actions.len(), 2);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 10);
+            assert_eq!(info.output, 10);
+        }
+        other => panic!("Crush Joints first action should be DamageAction, got {other:?}"),
+    }
+    assert_eq!(
+        actions[1].action,
+        Action::CrushJoints {
+            target: 7,
+            amount: 2,
+        }
+    );
+
+    let mut skill_previous = crate::test_support::blank_test_combat();
+    skill_previous.turn.counters.card_ids_played_this_combat =
+        vec![CardId::DefendP, CardId::CrushJoints];
+    crate::engine::action_handlers::execute_action(
+        Action::CrushJoints {
+            target: 7,
+            amount: 2,
+        },
+        &mut skill_previous,
+    );
+    assert_eq!(
+        skill_previous.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Vulnerable,
+            amount: 2,
+        })
+    );
+
+    let mut attack_previous = crate::test_support::blank_test_combat();
+    attack_previous.turn.counters.card_ids_played_this_combat =
+        vec![CardId::StrikeP, CardId::CrushJoints];
+    crate::engine::action_handlers::execute_action(
+        Action::CrushJoints {
+            target: 7,
+            amount: 2,
+        },
         &mut attack_previous,
     );
     assert_eq!(attack_previous.pop_next_action(), None);

@@ -252,6 +252,12 @@ pub enum Action {
     Sanctity {
         draw_amount: u32,
     },
+    /// Java Watcher `CrushJointsAction`: at execution time, apply Vulnerable
+    /// to the target if the previous card in combat was a Skill.
+    CrushJoints {
+        target: EntityId,
+        amount: i32,
+    },
     /// Java `ExpertiseAction`: draw until the current hand size reaches this
     /// amount, evaluated when the queued action resolves.
     ExpertiseDraw {
