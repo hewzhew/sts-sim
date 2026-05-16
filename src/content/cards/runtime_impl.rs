@@ -106,6 +106,7 @@ pub fn resolve_card_play_with_context(
             defect::electrodynamics::electrodynamics_play(_state, _card)
         }
         CardId::Rainbow => defect::rainbow::rainbow_play(_state, _card),
+        CardId::Reboot => defect::reboot::reboot_play(_state, _card),
         CardId::Impulse => defect::impulse::impulse_play(_state, _card),
         CardId::MachineLearning => defect::machine_learning::machine_learning_play(_state, _card),
         CardId::ForceField => defect::force_field::force_field_play(_state, _card),

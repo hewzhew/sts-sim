@@ -4399,6 +4399,132 @@ fn force_field_definition_runtime_and_cost_hooks_match_java_sources() {
 }
 
 #[test]
+fn reboot_definition_runtime_and_shuffle_actions_match_java_sources() {
+    let reboot = get_card_definition(CardId::Reboot);
+    assert_eq!(reboot.name, "Reboot");
+    assert_eq!(reboot.card_type, CardType::Skill);
+    assert_eq!(reboot.rarity, CardRarity::Rare);
+    assert_eq!(reboot.cost, 0);
+    assert_eq!(reboot.base_magic, 4);
+    assert!(reboot.exhaust);
+    assert_eq!(reboot.target, CardTarget::SelfTarget);
+    assert_eq!(reboot.upgrade_magic, 2);
+    assert_eq!(java_id(CardId::Reboot), "Reboot");
+    assert!(exhausts_when_played(&CombatCard::new(CardId::Reboot, 360)));
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::Reboot,
+        &state,
+        &CombatCard::new(CardId::Reboot, 361),
+        None,
+    );
+    assert_eq!(actions.len(), 3);
+    assert_eq!(actions[0].action, Action::ShuffleAllIntoDraw);
+    assert_eq!(
+        actions[1].action,
+        Action::ShuffleDrawPile {
+            trigger_relics: false
+        }
+    );
+    assert_eq!(actions[2].action, Action::DrawCards(4));
+
+    let mut plus = CombatCard::new(CardId::Reboot, 362);
+    plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::Reboot, &state, &plus, None)[2].action,
+        Action::DrawCards(6)
+    );
+
+    let mut shuffle_all_state = crate::test_support::blank_test_combat();
+    shuffle_all_state.zones.hand = vec![
+        CombatCard::new(CardId::StrikeB, 363),
+        CombatCard::new(CardId::DefendB, 364),
+    ];
+    shuffle_all_state.zones.draw_pile = vec![CombatCard::new(CardId::Zap, 365)];
+    shuffle_all_state.zones.discard_pile = vec![
+        CombatCard::new(CardId::Dualcast, 366),
+        CombatCard::new(CardId::BallLightning, 367),
+    ];
+    let mut expected_rng = shuffle_all_state.rng.clone();
+    let mut expected_discard = shuffle_all_state.zones.discard_pile.clone();
+    crate::runtime::rng::shuffle_with_random_long(
+        &mut expected_discard,
+        &mut expected_rng.shuffle_rng,
+    );
+    expected_discard.reverse();
+    let mut expected_draw = expected_discard;
+    expected_draw.append(&mut shuffle_all_state.zones.draw_pile.clone());
+
+    crate::engine::action_handlers::execute_action(
+        Action::ShuffleAllIntoDraw,
+        &mut shuffle_all_state,
+    );
+    assert_eq!(
+        shuffle_all_state.pop_next_action(),
+        Some(Action::PutOnDeck {
+            amount: 99,
+            random: true,
+        }),
+        "Java ShuffleAllAction queues PutOnDeckAction(99, true) to top"
+    );
+    assert!(shuffle_all_state.zones.discard_pile.is_empty());
+    assert_eq!(
+        shuffle_all_state
+            .zones
+            .draw_pile
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        expected_draw.iter().map(|card| card.uuid).collect::<Vec<_>>(),
+        "ShuffleAllAction shuffles discard with shuffleRng, then adds those cards to Java draw-pile top"
+    );
+    assert_eq!(
+        shuffle_all_state.rng.shuffle_rng.counter,
+        expected_rng.shuffle_rng.counter
+    );
+
+    let mut shuffle_draw_state = crate::test_support::blank_test_combat();
+    shuffle_draw_state.zones.draw_pile = vec![
+        CombatCard::new(CardId::Zap, 368),
+        CombatCard::new(CardId::Dualcast, 369),
+        CombatCard::new(CardId::StrikeB, 370),
+    ];
+    let mut expected_rng = shuffle_draw_state.rng.clone();
+    let mut expected_java_draw = shuffle_draw_state.zones.draw_pile.clone();
+    expected_java_draw.reverse();
+    crate::runtime::rng::shuffle_with_random_long(
+        &mut expected_java_draw,
+        &mut expected_rng.shuffle_rng,
+    );
+    expected_java_draw.reverse();
+
+    crate::engine::action_handlers::execute_action(
+        Action::ShuffleDrawPile {
+            trigger_relics: false,
+        },
+        &mut shuffle_draw_state,
+    );
+    assert_eq!(
+        shuffle_draw_state
+            .zones
+            .draw_pile
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        expected_java_draw
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        "Java ShuffleAction shuffles drawPile.group, whose top maps to Rust index 0 after reversing"
+    );
+    assert_eq!(
+        shuffle_draw_state.rng.shuffle_rng.counter,
+        expected_rng.shuffle_rng.counter
+    );
+}
+
+#[test]
 fn fission_definition_runtime_and_orb_actions_match_java_sources() {
     let fission = get_card_definition(CardId::Fission);
     assert_eq!(fission.name, "Fission");

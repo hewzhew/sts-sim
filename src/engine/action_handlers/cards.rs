@@ -438,6 +438,45 @@ pub fn handle_shuffle_discard_into_draw(state: &mut CombatState) {
     state.queue_actions(shuffle_actions);
 }
 
+pub fn handle_shuffle_all_into_draw(state: &mut CombatState) {
+    let shuffle_actions = crate::content::relics::hooks::on_shuffle(state);
+    state.queue_actions(shuffle_actions);
+
+    state.queue_action_front(Action::PutOnDeck {
+        amount: 99,
+        random: true,
+    });
+
+    if state.zones.discard_pile.is_empty() {
+        return;
+    }
+
+    crate::runtime::rng::shuffle_with_random_long(
+        &mut state.zones.discard_pile,
+        &mut state.rng.shuffle_rng,
+    );
+    let mut moved = std::mem::take(&mut state.zones.discard_pile);
+    moved.reverse();
+    moved.append(&mut state.zones.draw_pile);
+    state.zones.draw_pile = moved;
+}
+
+pub fn handle_shuffle_draw_pile(trigger_relics: bool, state: &mut CombatState) {
+    if trigger_relics {
+        let shuffle_actions = crate::content::relics::hooks::on_shuffle(state);
+        state.queue_actions(shuffle_actions);
+    }
+    if state.zones.draw_pile.len() <= 1 {
+        return;
+    }
+    state.zones.draw_pile.reverse();
+    crate::runtime::rng::shuffle_with_random_long(
+        &mut state.zones.draw_pile,
+        &mut state.rng.shuffle_rng,
+    );
+    state.zones.draw_pile.reverse();
+}
+
 pub fn handle_discard_card(card_uuid: u32, state: &mut CombatState) {
     handle_discard_card_with_order(card_uuid, DiscardHookOrder::RelicsThenCard, state);
 }

@@ -429,6 +429,10 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::RetainNonEtherealHandCards => cards::handle_retain_non_ethereal_hand_cards(state),
         Action::EmptyDeckShuffle => cards::handle_empty_deck_shuffle(state),
         Action::ShuffleDiscardIntoDraw => cards::handle_shuffle_discard_into_draw(state),
+        Action::ShuffleAllIntoDraw => cards::handle_shuffle_all_into_draw(state),
+        Action::ShuffleDrawPile { trigger_relics } => {
+            cards::handle_shuffle_draw_pile(trigger_relics, state)
+        }
         Action::DiscardCard { card_uuid } => cards::handle_discard_card(card_uuid, state),
         Action::DiscardFromHand {
             amount,

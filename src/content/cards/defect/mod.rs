@@ -48,6 +48,7 @@ pub mod meteor_strike;
 pub mod multi_cast;
 pub mod overclock;
 pub mod rainbow;
+pub mod reboot;
 pub mod rebound;
 pub mod recursion;
 pub mod reinforced_body;

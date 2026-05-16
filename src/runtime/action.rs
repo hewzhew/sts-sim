@@ -372,6 +372,14 @@ pub enum Action {
     RetainNonEtherealHandCards,
     EmptyDeckShuffle,
     ShuffleDiscardIntoDraw,
+    /// Java Defect `ShuffleAllAction`: shuffle discard pile, move it onto
+    /// draw pile, then queue random PutOnDeck for the current hand.
+    ShuffleAllIntoDraw,
+    /// Java `ShuffleAction(drawPile, triggerRelics)`: shuffle the current draw
+    /// pile without moving discard cards.
+    ShuffleDrawPile {
+        trigger_relics: bool,
+    },
     PlayCard {
         card_index: usize,
         target: Option<EntityId>,
