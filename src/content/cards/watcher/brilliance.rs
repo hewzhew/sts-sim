@@ -32,16 +32,7 @@ pub fn brilliance_play(
     target: Option<EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Brilliance requires a valid target");
-    let mut dynamic_card = card.clone();
-    let def = definition();
-    let upgraded = if dynamic_card.upgrades > 0 { 1 } else { 0 };
-    dynamic_card.base_damage_override = Some(
-        def.base_damage
-            + upgraded * def.upgrade_damage
-            + state.turn.counters.mantra_gained_this_combat,
-    );
-    let evaluated =
-        crate::content::cards::evaluate_card_for_play(&dynamic_card, state, Some(target));
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
     smallvec::smallvec![ActionInfo {
         action: Action::Damage(DamageInfo {
             source: 0,

@@ -495,6 +495,18 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         .base_block_override
         .unwrap_or(def.base_block + u * def.upgrade_block) as f32;
     card.base_magic_num_mut = def.base_magic + u * def.upgrade_magic;
+    let mut halt_wrath_block = if card.id == CardId::Halt {
+        Some(card.base_magic_num_mut as f32)
+    } else {
+        None
+    };
+
+    if card.id == CardId::Wish {
+        card.base_damage_mut = damage.max(0.0) as i32;
+        card.base_block_mut = block.max(0.0) as i32;
+        card.multi_damage.clear();
+        return;
+    }
 
     // 1. Card specific base overrides (Perfected Strike)
     if card.id == CardId::PerfectedStrike {
@@ -539,6 +551,18 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         } else {
             def.base_block as f32
         };
+    } else if card.id == CardId::SpiritShield {
+        let other_hand_cards = state
+            .zones
+            .hand
+            .iter()
+            .filter(|hand_card| hand_card.uuid != card.uuid)
+            .count() as i32;
+        block = (other_hand_cards * card.base_magic_num_mut).max(0) as f32;
+    } else if card.id == CardId::Brilliance {
+        let mantra_gained = state.turn.counters.mantra_gained_this_combat.max(0);
+        card.base_magic_num_mut = mantra_gained;
+        damage += mantra_gained as f32;
     } else if card.id == CardId::Expunger {
         card.base_magic_num_mut = card.misc_value.max(0);
     } else if card.id == CardId::Stack {
@@ -571,6 +595,15 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
                 block,
                 power.amount,
             );
+            if let Some(wrath_block) = &mut halt_wrath_block {
+                *wrath_block = crate::content::powers::resolve_power_on_calculate_block(
+                    power.power_type,
+                    state,
+                    card,
+                    *wrath_block,
+                    power.amount,
+                );
+            }
         }
     }
 
@@ -652,6 +685,9 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
 
     card.base_damage_mut = damage as i32;
     card.base_block_mut = block as i32;
+    if let Some(wrath_block) = halt_wrath_block {
+        card.base_magic_num_mut = wrath_block.max(0.0) as i32;
+    }
 }
 
 /// Produces a freshly evaluated combat card for actual play execution.

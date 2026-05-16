@@ -26,18 +26,7 @@ pub fn definition() -> CardDefinition {
 }
 
 pub fn spirit_shield_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
-    let other_hand_cards = state
-        .zones
-        .hand
-        .iter()
-        .filter(|hand_card| hand_card.uuid != card.uuid)
-        .count() as i32;
-    let magic = crate::content::cards::evaluate_card_for_play(card, state, None)
-        .base_magic_num_mut
-        .max(0);
-    let mut dynamic_card = card.clone();
-    dynamic_card.base_block_override = Some(other_hand_cards * magic);
-    let evaluated = crate::content::cards::evaluate_card_for_play(&dynamic_card, state, None);
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
     smallvec::smallvec![ActionInfo {
         action: Action::GainBlock {
             target: 0,

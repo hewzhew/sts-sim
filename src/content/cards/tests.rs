@@ -1855,6 +1855,14 @@ fn watcher_evaluate_flying_sleeves_and_halt_match_java_sources() {
         },
         "Java Halt.applyPowers applies block modifiers to both normal block and the Wrath block value"
     );
+    let mut halt_hand_state = dex_state.clone();
+    halt_hand_state.zones.hand = vec![halt_plus.clone()];
+    halt_hand_state.update_hand_cards();
+    assert_eq!(halt_hand_state.zones.hand[0].base_block_mut, 6);
+    assert_eq!(
+        halt_hand_state.zones.hand[0].base_magic_num_mut, 16,
+        "Java Halt.applyPowers leaves magicNumber as the modified Wrath block value for rendering/observation"
+    );
 }
 
 #[test]
@@ -3520,6 +3528,47 @@ fn watcher_wish_and_option_cards_match_java_sources() {
 }
 
 #[test]
+fn watcher_wish_evaluation_matches_empty_java_apply_powers() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![
+            Power {
+                power_type: PowerId::Strength,
+                instance_id: None,
+                amount: 9,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            },
+            Power {
+                power_type: PowerId::Dexterity,
+                instance_id: None,
+                amount: 9,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            },
+        ],
+    );
+
+    let mut wish_plus = CombatCard::new(CardId::Wish, 1048);
+    wish_plus.upgrades = 1;
+    let evaluated = evaluate_card_for_play(&wish_plus, &state, None);
+
+    assert_eq!(
+        evaluated.base_damage_mut, 4,
+        "Java Wish.applyPowers is empty, so Strength must not modify its option damage value"
+    );
+    assert_eq!(
+        evaluated.base_block_mut, 8,
+        "Java Wish.applyPowers is empty, so Dexterity must not modify its option block value"
+    );
+    assert_eq!(evaluated.base_magic_num_mut, 30);
+}
+
+#[test]
 fn watcher_wish_option_callbacks_match_java_on_chose_this_option() {
     let state = crate::test_support::blank_test_combat();
 
@@ -4062,6 +4111,18 @@ fn watcher_brilliance_uses_combat_mantra_gained_before_damage_modifiers() {
         }
         other => panic!("Brilliance should emit DamageAction, got {other:?}"),
     }
+
+    let mut hand_state = state.clone();
+    hand_state.zones.hand = vec![brilliance_plus.clone()];
+    hand_state.update_hand_cards();
+    assert_eq!(
+        hand_state.zones.hand[0].base_damage_mut, 40,
+        "Java Brilliance.applyPowers also updates rendered/observed damage, not only play-time damage"
+    );
+    assert_eq!(
+        hand_state.zones.hand[0].base_magic_num_mut, 4,
+        "Java Brilliance.applyPowers mirrors actionManager.mantraGained into baseMagicNumber"
+    );
 }
 
 #[test]
@@ -4281,6 +4342,12 @@ fn watcher_spirit_shield_runtime_actions_match_java_apply_powers_count() {
             amount: 14,
         },
         "Java SpiritShield.applyPowers sets dynamic baseBlock, then super.applyPowers applies Dexterity"
+    );
+    let mut shield_hand_state = dex_state.clone();
+    shield_hand_state.update_hand_cards();
+    assert_eq!(
+        shield_hand_state.zones.hand[1].base_block_mut, 14,
+        "Java SpiritShield.applyPowers also updates rendered/observed block"
     );
 }
 
