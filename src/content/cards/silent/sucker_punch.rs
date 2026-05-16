@@ -1,8 +1,31 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::SuckerPunch,
+        name: "Sucker Punch",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Common,
+        cost: 1,
+        base_damage: 7,
+        base_block: 0,
+        base_magic: 1,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 2,
+        upgrade_block: 0,
+        upgrade_magic: 1,
+    }
+}
 
 pub fn sucker_punch_play(
     state: &CombatState,
