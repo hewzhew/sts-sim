@@ -672,6 +672,74 @@ pub fn handle_damage_all_enemies(
     }
 }
 
+fn orb_damage_amount_for_target(state: &CombatState, target: usize, base_damage: i32) -> i32 {
+    if store::power_amount(state, target, PowerId::LockOn) > 0 {
+        base_damage.saturating_mul(3) / 2
+    } else {
+        base_damage
+    }
+}
+
+pub fn handle_orb_damage(source: usize, target: usize, base_damage: i32, state: &mut CombatState) {
+    let output = orb_damage_amount_for_target(state, target, base_damage);
+    handle_damage(
+        crate::runtime::action::DamageInfo {
+            source,
+            target,
+            base: base_damage,
+            output,
+            damage_type: DamageType::Thorns,
+            is_modified: output != base_damage,
+        },
+        state,
+    );
+}
+
+pub fn handle_orb_damage_random_enemy(source: usize, base_damage: i32, state: &mut CombatState) {
+    let alive: Vec<usize> = state
+        .entities
+        .monsters
+        .iter()
+        .filter(|m| m.is_random_target_candidate())
+        .map(|m| m.id)
+        .collect();
+    if alive.is_empty() {
+        return;
+    }
+    let idx = state.rng.card_random_rng.random(alive.len() as i32 - 1) as usize;
+    let target = alive[idx];
+    let output = orb_damage_amount_for_target(state, target, base_damage);
+    state.queue_action_front(Action::Damage(crate::runtime::action::DamageInfo {
+        source,
+        target,
+        base: base_damage,
+        output,
+        damage_type: DamageType::Thorns,
+        is_modified: output != base_damage,
+    }));
+}
+
+pub fn handle_orb_damage_all_enemies(source: usize, base_damage: i32, state: &mut CombatState) {
+    let mut individual_damages: smallvec::SmallVec<[Action; 5]> = smallvec::SmallVec::new();
+    for monster in &state.entities.monsters {
+        if monster.is_dead_or_escaped() {
+            continue;
+        }
+        let output = orb_damage_amount_for_target(state, monster.id, base_damage);
+        individual_damages.push(Action::Damage(crate::runtime::action::DamageInfo {
+            source,
+            target: monster.id,
+            base: base_damage,
+            output,
+            damage_type: DamageType::Thorns,
+            is_modified: output != base_damage,
+        }));
+    }
+    for action in individual_damages.into_iter().rev() {
+        state.queue_action_front(action);
+    }
+}
+
 pub fn handle_whirlwind(
     damages: smallvec::SmallVec<[i32; 5]>,
     damage_type: DamageType,

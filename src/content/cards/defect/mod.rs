@@ -27,6 +27,7 @@ pub mod glacier;
 pub mod go_for_the_eyes;
 pub mod hologram;
 pub mod leap;
+pub mod lock_on;
 pub mod melter;
 pub mod overclock;
 pub mod rebound;

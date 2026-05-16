@@ -148,6 +148,21 @@ pub enum Action {
         damage_type: DamageType,
         is_modified: bool,
     },
+    /// Defect orb damage path. Java applies Lock-On only through
+    /// AbstractOrb.applyLockOn / orb damage matrices, not to every THORNS hit.
+    OrbDamage {
+        source: EntityId,
+        target: EntityId,
+        base_damage: i32,
+    },
+    OrbDamageRandomEnemy {
+        source: EntityId,
+        base_damage: i32,
+    },
+    OrbDamageAllEnemies {
+        source: EntityId,
+        base_damage: i32,
+    },
     Whirlwind {
         damages: smallvec::SmallVec<[i32; 5]>,
         damage_type: DamageType,
@@ -774,6 +789,9 @@ impl Action {
                 | Action::MonsterAttack { .. }
                 | Action::DamagePerAttackPlayed(_)
                 | Action::DamageAllEnemies { .. }
+                | Action::OrbDamage { .. }
+                | Action::OrbDamageRandomEnemy { .. }
+                | Action::OrbDamageAllEnemies { .. }
                 | Action::DamageRandomEnemy { .. }
                 | Action::Feed { .. }
                 | Action::HandOfGreed { .. }

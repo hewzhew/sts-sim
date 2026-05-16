@@ -184,6 +184,19 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             damage_type,
             is_modified,
         } => damage::handle_damage_all_enemies(source, damages, damage_type, is_modified, state),
+        Action::OrbDamage {
+            source,
+            target,
+            base_damage,
+        } => damage::handle_orb_damage(source, target, base_damage, state),
+        Action::OrbDamageRandomEnemy {
+            source,
+            base_damage,
+        } => damage::handle_orb_damage_random_enemy(source, base_damage, state),
+        Action::OrbDamageAllEnemies {
+            source,
+            base_damage,
+        } => damage::handle_orb_damage_all_enemies(source, base_damage, state),
         Action::Whirlwind {
             damages,
             damage_type,

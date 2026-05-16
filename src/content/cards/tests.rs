@@ -344,14 +344,14 @@ fn dualcast_runtime_evoke_without_removing_preserves_front_orb_until_second_evok
     assert_eq!(state.entities.player.orbs[0].id, OrbId::Lightning);
     assert!(matches!(
         state.pop_next_action(),
-        Some(Action::DamageRandomEnemy { base_damage: 8, .. })
+        Some(Action::OrbDamageRandomEnemy { base_damage: 8, .. })
     ));
 
     crate::engine::action_handlers::execute_action(Action::EvokeOrb, &mut state);
     assert_eq!(state.entities.player.orbs[0].id, OrbId::Empty);
     assert!(matches!(
         state.pop_next_action(),
-        Some(Action::DamageRandomEnemy { base_damage: 8, .. })
+        Some(Action::OrbDamageRandomEnemy { base_damage: 8, .. })
     ));
 }
 
@@ -1301,11 +1301,11 @@ fn recursion_redo_action_evokes_then_rechannels_same_orb_instance() {
     let queued_dark_damage = state.pop_next_action();
     assert!(matches!(
         queued_dark_damage,
-        Some(Action::Damage(DamageInfo {
+        Some(Action::OrbDamage {
             target: 44,
-            base: 18,
+            base_damage: 18,
             ..
-        }))
+        })
     ));
 
     crate::engine::action_handlers::execute_action(channel.unwrap(), &mut state);
@@ -2984,6 +2984,166 @@ fn self_repair_definition_runtime_and_victory_power_match_java_sources() {
         crate::content::powers::resolve_power_on_victory(PowerId::Repair, &dead, 0, 7).is_empty(),
         "Java RepairPower checks p.currentHealth > 0 before healing"
     );
+}
+
+#[test]
+fn lock_on_definition_runtime_and_power_decay_match_java_sources() {
+    let lock_on = get_card_definition(CardId::LockOn);
+    assert_eq!(lock_on.name, "Lock-On");
+    assert_eq!(lock_on.card_type, CardType::Attack);
+    assert_eq!(lock_on.rarity, CardRarity::Uncommon);
+    assert_eq!(lock_on.cost, 1);
+    assert_eq!(lock_on.base_damage, 8);
+    assert_eq!(lock_on.base_magic, 2);
+    assert_eq!(lock_on.target, CardTarget::Enemy);
+    assert_eq!(lock_on.upgrade_damage, 3);
+    assert_eq!(lock_on.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::LockOn), "Lockon");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::LockOn,
+        &state,
+        &CombatCard::new(CardId::LockOn, 305),
+        Some(306),
+    );
+    assert_eq!(actions.len(), 2);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 306);
+            assert_eq!(info.base, 8);
+            assert_eq!(info.output, 8);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Lock-On should damage before applying Lock-On, got {other:?}"),
+    }
+    assert_eq!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 306,
+            power_id: PowerId::LockOn,
+            amount: 2,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::LockOn, 307);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::LockOn, &state, &plus, Some(306));
+    match &plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 11);
+            assert_eq!(info.output, 11);
+        }
+        other => panic!("Lock-On+ should damage before applying Lock-On, got {other:?}"),
+    }
+    assert_eq!(
+        plus_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 306,
+            power_id: PowerId::LockOn,
+            amount: 3,
+        }
+    );
+
+    assert!(crate::content::powers::is_debuff(PowerId::LockOn, 2));
+    assert!(crate::content::powers::is_debuff_application(
+        PowerId::LockOn,
+        2
+    ));
+    let decay = crate::content::powers::resolve_power_at_end_of_round(
+        PowerId::LockOn,
+        &state,
+        306,
+        2,
+        false,
+    );
+    assert_eq!(
+        decay.as_slice(),
+        &[Action::ReducePower {
+            target: 306,
+            power_id: PowerId::LockOn,
+            amount: 1,
+        }]
+    );
+}
+
+#[test]
+fn lock_on_multiplier_applies_only_to_orb_damage_paths() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut locked = crate::test_support::test_monster(EnemyId::JawWorm);
+    locked.id = 308;
+    locked.current_hp = 50;
+    let mut plain = crate::test_support::test_monster(EnemyId::Cultist);
+    plain.id = 309;
+    plain.current_hp = 50;
+    state.entities.monsters = vec![locked, plain];
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        308,
+        vec![Power {
+            power_type: PowerId::LockOn,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    crate::engine::action_handlers::execute_action(
+        Action::OrbDamage {
+            source: 0,
+            target: 308,
+            base_damage: 8,
+        },
+        &mut state,
+    );
+    assert_eq!(state.entities.monsters[0].current_hp, 38);
+
+    crate::engine::action_handlers::execute_action(
+        Action::OrbDamageAllEnemies {
+            source: 0,
+            base_damage: 8,
+        },
+        &mut state,
+    );
+    let all_enemy_actions: Vec<_> = std::iter::from_fn(|| state.pop_next_action()).collect();
+    assert!(all_enemy_actions.contains(&Action::Damage(DamageInfo {
+        source: 0,
+        target: 308,
+        base: 8,
+        output: 12,
+        damage_type: DamageType::Thorns,
+        is_modified: true,
+    })));
+    assert!(all_enemy_actions.contains(&Action::Damage(DamageInfo {
+        source: 0,
+        target: 309,
+        base: 8,
+        output: 8,
+        damage_type: DamageType::Thorns,
+        is_modified: false,
+    })));
+
+    crate::engine::action_handlers::execute_action(
+        Action::DamageRandomEnemy {
+            source: 0,
+            base_damage: 8,
+            damage_type: DamageType::Thorns,
+        },
+        &mut state,
+    );
+    match state.pop_next_action() {
+        Some(Action::Damage(info)) => {
+            assert_eq!(
+                info.output, 8,
+                "non-orb THORNS actions such as Tingsha/Juggernaut must not inherit Lock-On"
+            );
+        }
+        other => panic!("expected queued non-orb random damage, got {other:?}"),
+    }
 }
 
 #[test]

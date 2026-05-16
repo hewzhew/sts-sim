@@ -80,6 +80,7 @@ pub enum PowerId {
     Energized,
     Equilibrium,
     Repair,
+    LockOn,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -189,6 +190,7 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::Entangle
         | PowerId::NoDraw
         | PowerId::NoBlock
+        | PowerId::LockOn
         | PowerId::Constricted
         | PowerId::Confusion
         | PowerId::Hex
@@ -230,6 +232,7 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         | PowerId::Constricted
         | PowerId::Hex
         | PowerId::Slow
+        | PowerId::LockOn
         | PowerId::LoseStrength
         | PowerId::DexterityDown
         | PowerId::NoSkills
@@ -497,6 +500,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             name: "Equilibrium",
         },
         PowerId::Repair => PowerDefinition { id, name: "Repair" },
+        PowerId::LockOn => PowerDefinition {
+            id,
+            name: "Lock-On",
+        },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -1042,6 +1049,20 @@ pub fn resolve_power_at_end_of_round(
                 smallvec::smallvec![crate::runtime::action::Action::ReducePower {
                     target: owner,
                     power_id: PowerId::Equilibrium,
+                    amount: 1,
+                }]
+            }
+        }
+        PowerId::LockOn => {
+            if amount == 0 {
+                smallvec::smallvec![crate::runtime::action::Action::RemovePower {
+                    target: owner,
+                    power_id: PowerId::LockOn,
+                }]
+            } else {
+                smallvec::smallvec![crate::runtime::action::Action::ReducePower {
+                    target: owner,
+                    power_id: PowerId::LockOn,
                     amount: 1,
                 }]
             }

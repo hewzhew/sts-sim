@@ -1,6 +1,6 @@
 use crate::content::powers::{store, PowerId};
 use crate::content::relics::RelicId;
-use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatState, OrbEntity, OrbId};
 
 pub fn at_turn_start(
@@ -89,29 +89,20 @@ fn queue_lightning_damage(state: &mut CombatState, amount: i32, to_front: bool) 
         return;
     }
     if store::power_amount(state, 0, PowerId::Electro) > 0 {
-        let damages = state
-            .entities
-            .monsters
-            .iter()
-            .map(|_| amount)
-            .collect::<smallvec::SmallVec<[i32; 5]>>();
         queue_orb_action(
             state,
-            Action::DamageAllEnemies {
+            Action::OrbDamageAllEnemies {
                 source: 0,
-                damages,
-                damage_type: DamageType::Thorns,
-                is_modified: false,
+                base_damage: amount,
             },
             to_front,
         );
     } else {
         queue_orb_action(
             state,
-            Action::DamageRandomEnemy {
+            Action::OrbDamageRandomEnemy {
                 source: 0,
                 base_damage: amount,
-                damage_type: DamageType::Thorns,
             },
             to_front,
         );
@@ -134,14 +125,11 @@ fn queue_dark_damage(state: &mut CombatState, amount: i32, to_front: bool) {
     };
     queue_orb_action(
         state,
-        Action::Damage(crate::runtime::action::DamageInfo {
+        Action::OrbDamage {
             source: 0,
             target,
-            base: amount,
-            output: amount,
-            damage_type: DamageType::Thorns,
-            is_modified: false,
-        }),
+            base_damage: amount,
+        },
         to_front,
     );
 }
