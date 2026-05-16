@@ -436,6 +436,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             3,
             0,
         ),
+        (
+            CardId::Turbo,
+            "Turbo",
+            CardType::Skill,
+            0,
+            0,
+            0,
+            2,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -582,6 +595,32 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
             amount: 1,
         }
     );
+
+    let turbo = resolve_card_play(
+        CardId::Turbo,
+        &state,
+        &CombatCard::new(CardId::Turbo, 116),
+        None,
+    );
+    assert_eq!(turbo.len(), 2);
+    assert_eq!(turbo[0].action, Action::GainEnergy { amount: 2 });
+    assert_eq!(
+        turbo[1].action,
+        Action::MakeTempCardInDiscard {
+            card_id: CardId::Void,
+            amount: 1,
+            upgraded: false,
+        }
+    );
+
+    let mut turbo_plus = CombatCard::new(CardId::Turbo, 117);
+    turbo_plus.upgrades = 1;
+    let turbo_plus_actions = resolve_card_play(CardId::Turbo, &state, &turbo_plus, None);
+    assert_eq!(
+        turbo_plus_actions[0].action,
+        Action::GainEnergy { amount: 3 }
+    );
+    assert_eq!(turbo_plus_actions[1].action, turbo[1].action);
 }
 
 #[test]
