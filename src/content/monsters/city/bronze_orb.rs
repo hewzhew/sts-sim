@@ -11,6 +11,36 @@ const STASIS: u8 = 3;
 const BLOCK_AMOUNT: i32 = 12;
 const BEAM_DAMAGE: i32 = 8;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn support_beam_targets_automaton_by_id_without_hp_or_escape_filter_like_java() {
+        let mut automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        automaton.current_hp = 0;
+        automaton.is_dying = false;
+        automaton.is_escaped = true;
+        let mut orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+        orb.id = 2;
+        let mut state = crate::test_support::combat_with_monsters(vec![automaton, orb.clone()]);
+
+        let actions = BronzeOrb::take_turn_plan(&mut state, &orb, &support_beam_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::GainBlock {
+                    target: 1,
+                    amount: BLOCK_AMOUNT
+                },
+                Action::RollMonsterMove { monster_id: 2 }
+            ]
+        ));
+    }
+}
+
 fn current_used_stasis(entity: &MonsterEntity) -> bool {
     assert!(
         entity.bronze_orb.protocol_seeded,
@@ -79,12 +109,9 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
     )
 }
 
-fn living_automaton_id(state: &CombatState) -> Option<usize> {
+fn automaton_id(state: &CombatState) -> Option<usize> {
     state.entities.monsters.iter().find_map(|monster| {
-        (monster.monster_type == crate::content::monsters::EnemyId::BronzeAutomaton as usize
-            && !monster.is_dying
-            && !monster.is_escaped
-            && monster.current_hp > 0)
+        (monster.monster_type == crate::content::monsters::EnemyId::BronzeAutomaton as usize)
             .then_some(monster.id)
     })
 }
@@ -137,7 +164,7 @@ impl MonsterBehavior for BronzeOrb {
                 base_damage: BEAM_DAMAGE,
                 damage_kind: crate::semantics::combat::DamageKind::Normal,
             }],
-            SUPPORT_BEAM => living_automaton_id(state)
+            SUPPORT_BEAM => automaton_id(state)
                 .map(|target| {
                     vec![Action::GainBlock {
                         target,

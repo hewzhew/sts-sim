@@ -17,8 +17,58 @@ const HYPER_BEAM: u8 = 2;
 const STUNNED: u8 = 3;
 const SPAWN_ORBS: u8 = 4;
 const BOOST: u8 = 5;
-const LEFT_ORB_OFFSET: i32 = -167;
-const RIGHT_ORB_OFFSET: i32 = 166;
+const LEFT_ORB_DRAW_X: i32 = -300;
+const RIGHT_ORB_DRAW_X: i32 = 200;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn spawn_orbs_uses_java_absolute_draw_positions() {
+        let mut state = crate::test_support::blank_test_combat();
+        let automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        let actions = BronzeAutomaton::take_turn_plan(&mut state, &automaton, &spawn_orbs_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::SpawnMonsterSmart {
+                    monster_id: EnemyId::BronzeOrb,
+                    logical_position: LEFT_ORB_DRAW_X,
+                    protocol_draw_x: Some(LEFT_ORB_DRAW_X),
+                    ..
+                },
+                Action::SpawnMonsterSmart {
+                    monster_id: EnemyId::BronzeOrb,
+                    logical_position: RIGHT_ORB_DRAW_X,
+                    protocol_draw_x: Some(RIGHT_ORB_DRAW_X),
+                    ..
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn death_cleanup_suicides_zero_hp_or_escaped_non_dying_minions_like_java() {
+        let automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        let mut orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+        orb.id = 2;
+        orb.current_hp = 0;
+        orb.is_dying = false;
+        orb.is_escaped = true;
+        let mut state = crate::test_support::combat_with_monsters(vec![automaton.clone(), orb]);
+
+        let actions = BronzeAutomaton::on_death(&mut state, &automaton);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Suicide { target: 2 }]
+        ));
+    }
+}
 
 fn flail_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 4 {
@@ -151,13 +201,6 @@ fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
     entity.move_history().back().copied() == Some(move_id)
 }
 
-fn automaton_draw_x(state: &CombatState, entity: &MonsterEntity) -> i32 {
-    state
-        .monster_protocol_identity(entity.id)
-        .and_then(|identity| identity.draw_x)
-        .unwrap_or(entity.logical_position)
-}
-
 fn spawn_orb_action(draw_x: i32) -> Action {
     Action::SpawnMonsterSmart {
         monster_id: crate::content::monsters::EnemyId::BronzeOrb,
@@ -245,10 +288,9 @@ impl MonsterBehavior for BronzeAutomaton {
     ) -> Vec<Action> {
         match plan.move_id {
             SPAWN_ORBS => {
-                let center = automaton_draw_x(state, entity);
                 vec![
-                    spawn_orb_action(center + LEFT_ORB_OFFSET),
-                    spawn_orb_action(center + RIGHT_ORB_OFFSET),
+                    spawn_orb_action(LEFT_ORB_DRAW_X),
+                    spawn_orb_action(RIGHT_ORB_DRAW_X),
                     Action::RollMonsterMove {
                         monster_id: entity.id,
                     },
@@ -314,12 +356,7 @@ impl MonsterBehavior for BronzeAutomaton {
             .entities
             .monsters
             .iter()
-            .filter(|monster| {
-                monster.id != entity.id
-                    && !monster.is_dying
-                    && !monster.is_escaped
-                    && monster.current_hp > 0
-            })
+            .filter(|monster| monster.id != entity.id && !monster.is_dying)
             .map(|monster| Action::Suicide { target: monster.id })
             .collect()
     }
