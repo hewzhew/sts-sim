@@ -1938,7 +1938,7 @@ fn watcher_pray_worship_and_scrawl_match_java_sources() {
             source: 0,
             target: 0,
             power_id: PowerId::MasterRealityPower,
-            amount: 1,
+            amount: -1,
         }
     );
 }
@@ -3373,7 +3373,7 @@ fn watcher_conjure_blade_and_expunger_match_java_sources() {
         vec![Power {
             power_type: PowerId::MasterRealityPower,
             instance_id: None,
-            amount: 1,
+            amount: -1,
             extra_data: 0,
             payload: PowerPayload::None,
             just_applied: false,
@@ -7934,8 +7934,8 @@ fn electrodynamics_definition_runtime_and_sentinel_power_match_java_sources() {
     crate::engine::action_handlers::execute_action(actions[0].action.clone(), &mut apply_state);
     assert_eq!(
         crate::content::powers::store::power_amount(&apply_state, 0, PowerId::Electro),
-        -1,
-        "Java sentinel powers do not stack when ApplyPowerAction sees the same power ID"
+        -2,
+        "Java ElectroPower uses default AbstractPower.stackPower(-1) when reapplied"
     );
 
     apply_state.entities.player.orbs = vec![OrbEntity::new(OrbId::Lightning)];

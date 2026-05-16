@@ -350,8 +350,9 @@ fn handle_apply_power_detailed_internal(
         }
     }
 
-    // Java ApplyPowerAction: No Draw does not stack and reapplying it is a no-op.
-    if crate::content::powers::uses_sentinel_amount(power_id)
+    // Java ApplyPowerAction: NoDrawPower is the duplicate-application special
+    // case. Other sentinel amount powers still flow through stackPower(-1).
+    if crate::content::powers::reapplying_existing_power_is_noop(power_id)
         && store::powers_for(state, target)
             .is_some_and(|powers| powers.iter().any(|p| p.power_type == power_id))
     {
@@ -1019,6 +1020,27 @@ mod tests {
         assert_eq!(
             state.pop_next_action(),
             Some(Action::EnterStance("Divinity".to_string()))
+        );
+    }
+
+    #[test]
+    fn sentinel_power_reapplication_matches_java_apply_power_special_cases() {
+        let mut no_draw_state = blank_test_combat();
+        handle_apply_power(0, 0, PowerId::NoDraw, 1, &mut no_draw_state);
+        handle_apply_power(0, 0, PowerId::NoDraw, 1, &mut no_draw_state);
+        assert_eq!(
+            store::power_amount(&no_draw_state, 0, PowerId::NoDraw),
+            -1,
+            "Java ApplyPowerAction explicitly no-ops duplicate NoDrawPower applications"
+        );
+
+        let mut master_reality_state = blank_test_combat();
+        handle_apply_power(0, 0, PowerId::MasterRealityPower, -1, &mut master_reality_state);
+        handle_apply_power(0, 0, PowerId::MasterRealityPower, -1, &mut master_reality_state);
+        assert_eq!(
+            store::power_amount(&master_reality_state, 0, PowerId::MasterRealityPower),
+            -2,
+            "Java MasterRealityPower has AbstractPower.amount == -1 and duplicate ApplyPowerAction uses default stackPower(-1)"
         );
     }
 

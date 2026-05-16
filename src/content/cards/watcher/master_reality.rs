@@ -32,7 +32,7 @@ pub fn master_reality_play(_state: &CombatState, _card: &CombatCard) -> SmallVec
             source: 0,
             target: 0,
             power_id: PowerId::MasterRealityPower,
-            amount: 1,
+            amount: -1,
         },
         insertion_mode: AddTo::Bottom,
     }]

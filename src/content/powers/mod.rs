@@ -215,7 +215,15 @@ pub fn uses_sentinel_amount(id: PowerId) -> bool {
             | PowerId::Confusion
             | PowerId::WrathNextTurn
             | PowerId::EndTurnDeathPower
+            | PowerId::MasterRealityPower
     )
+}
+
+/// Java `ApplyPowerAction` only has a special duplicate-application early return
+/// for `NoDrawPower`. Other powers with sentinel `amount == -1` still use the
+/// default `stackPower(-1)` path when they are reapplied.
+pub fn reapplying_existing_power_is_noop(id: PowerId) -> bool {
+    matches!(id, PowerId::NoDraw)
 }
 
 pub fn uses_distinct_instances(id: PowerId) -> bool {
