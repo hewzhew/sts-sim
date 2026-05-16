@@ -648,6 +648,11 @@ pub enum Action {
     UseCardDone {
         should_exhaust: bool,
     },
+    /// Java `UseCardAction.update()` after-use power hook path for cards that
+    /// do not enter the normal non-Power discard/exhaust cleanup.
+    UseCardAfterUseHooks {
+        card: Box<crate::runtime::combat::CombatCard>,
+    },
     QueueEarlyEndTurn,
     TriggerTimeWarpEndTurn {
         owner: EntityId,
@@ -725,6 +730,7 @@ impl Action {
                 | Action::GainBlock { .. }
                 | Action::Heal { .. }
                 | Action::UseCardDone { .. }
+                | Action::UseCardAfterUseHooks { .. }
         )
     }
 }

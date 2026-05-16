@@ -553,6 +553,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Rebound,
+            "Rebound",
+            CardType::Attack,
+            1,
+            9,
+            0,
+            0,
+            CardTarget::Enemy,
+            3,
+            0,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -1016,6 +1029,42 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
         }
         other => panic!("Streamline+ first action should damage, got {other:?}"),
     }
+
+    let rebound = resolve_card_play(
+        CardId::Rebound,
+        &state,
+        &CombatCard::new(CardId::Rebound, 138),
+        Some(17),
+    );
+    assert_eq!(rebound.len(), 2);
+    match &rebound[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 17);
+            assert_eq!(info.base, 9);
+            assert_eq!(info.output, 9);
+        }
+        other => panic!("Rebound first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        rebound[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Rebound,
+            amount: 1,
+        }
+    );
+
+    let mut rebound_plus = CombatCard::new(CardId::Rebound, 139);
+    rebound_plus.upgrades = 1;
+    let rebound_plus_actions = resolve_card_play(CardId::Rebound, &state, &rebound_plus, Some(17));
+    match &rebound_plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 12);
+            assert_eq!(info.output, 12);
+        }
+        other => panic!("Rebound+ first action should damage, got {other:?}"),
+    }
 }
 
 #[test]
@@ -1189,6 +1238,119 @@ fn streamline_reduce_cost_action_mutates_matching_combat_instances() {
         state.zones.discard_pile[0].combat_cost_without_turn_override_java(),
         2,
         "ReduceCostAction targets GetAllInBattleInstances for the used card UUID only"
+    );
+}
+
+#[test]
+fn rebound_power_skips_card_that_created_it_like_java_just_evoked() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.limbo = vec![CombatCard::new(CardId::Rebound, 210)];
+    crate::engine::action_handlers::execute_action(
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Rebound,
+            amount: 1,
+        },
+        &mut state,
+    );
+    let rebound_power = crate::content::powers::store::powers_for(&state, 0)
+        .unwrap()
+        .iter()
+        .find(|p| p.power_type == PowerId::Rebound)
+        .unwrap();
+    assert_eq!(rebound_power.extra_data, 1);
+
+    crate::engine::action_handlers::execute_action(
+        Action::UseCardDone {
+            should_exhaust: false,
+        },
+        &mut state,
+    );
+
+    assert!(state.zones.draw_pile.is_empty());
+    assert_eq!(state.zones.discard_pile.len(), 1);
+    assert_eq!(state.zones.discard_pile[0].id, CardId::Rebound);
+    assert_eq!(state.pop_next_action(), None);
+    let rebound_power = crate::content::powers::store::powers_for(&state, 0)
+        .unwrap()
+        .iter()
+        .find(|p| p.power_type == PowerId::Rebound)
+        .unwrap();
+    assert_eq!(rebound_power.extra_data, 0);
+}
+
+#[test]
+fn rebound_power_moves_next_non_power_card_to_draw_pile_top() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.limbo = vec![CombatCard::new(CardId::StrikeB, 211)];
+    state.zones.draw_pile = vec![CombatCard::new(CardId::DefendB, 212)];
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Rebound,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    crate::engine::action_handlers::execute_action(
+        Action::UseCardDone {
+            should_exhaust: false,
+        },
+        &mut state,
+    );
+
+    assert!(state.zones.discard_pile.is_empty());
+    assert_eq!(state.zones.draw_pile[0].id, CardId::StrikeB);
+    assert_eq!(state.zones.draw_pile[0].uuid, 211);
+    assert_eq!(state.zones.draw_pile[1].id, CardId::DefendB);
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ReducePower {
+            target: 0,
+            power_id: PowerId::Rebound,
+            amount: 1,
+        })
+    );
+}
+
+#[test]
+fn rebound_power_consumes_on_power_card_without_rebounding_it() {
+    let mut state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::Rebound,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    crate::engine::action_handlers::execute_action(
+        Action::UseCardAfterUseHooks {
+            card: Box::new(CombatCard::new(CardId::Inflame, 213)),
+        },
+        &mut state,
+    );
+
+    assert!(state.zones.draw_pile.is_empty());
+    assert!(state.zones.discard_pile.is_empty());
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ReducePower {
+            target: 0,
+            power_id: PowerId::Rebound,
+            amount: 1,
+        })
     );
 }
 

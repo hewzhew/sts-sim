@@ -1,4 +1,5 @@
 pub mod core;
+pub mod defect;
 pub mod ironclad;
 pub mod silent;
 pub mod store;
@@ -108,6 +109,7 @@ pub enum PowerId {
     ToolsOfTheTrade,
     RetainCards,
     Nightmare,
+    Rebound,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -578,6 +580,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Nightmare",
         },
+        PowerId::Rebound => PowerDefinition {
+            id,
+            name: "Rebound",
+        },
     }
 }
 
@@ -909,6 +915,10 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::DexterityDown => core::dexterity_down::at_end_of_turn(owner, amount),
         PowerId::WraithForm => silent::wraith_form::at_end_of_turn(owner, amount),
         PowerId::RetainCards => silent::retain_cards::at_end_of_turn(_state, owner, amount),
+        PowerId::Rebound => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
+            target: owner,
+            power_id: PowerId::Rebound,
+        }],
         PowerId::NoDraw => core::no_draw::at_end_of_turn(owner),
         PowerId::Ritual => core::ritual::at_end_of_turn(owner, amount, power.extra_data),
         PowerId::Shackled => core::shackled::at_end_of_turn(owner, amount),

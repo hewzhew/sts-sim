@@ -1400,8 +1400,38 @@ pub fn handle_transmutation(
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct UseCardPlacementOverrides {
+    rebound: bool,
+}
+
+fn apply_use_card_after_use_hooks(
+    card: &crate::runtime::combat::CombatCard,
+    state: &mut CombatState,
+) -> UseCardPlacementOverrides {
+    let mut overrides = UseCardPlacementOverrides::default();
+    let player_powers = crate::content::powers::store::powers_snapshot_for(state, 0);
+    for power in player_powers {
+        if power.power_type == PowerId::Rebound {
+            overrides.rebound |=
+                crate::content::powers::defect::rebound::on_after_use_card(state, card);
+        }
+    }
+    overrides
+}
+
+pub fn handle_use_card_after_use_hooks(
+    mut card: crate::runtime::combat::CombatCard,
+    state: &mut CombatState,
+) {
+    card.free_to_play_once = false;
+    apply_use_card_after_use_hooks(&card, state);
+}
+
 pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
     if let Some(mut card) = state.zones.limbo.pop() {
+        let placement_overrides = apply_use_card_after_use_hooks(&card, state);
+
         // Java UseCardAction clears this before moving the card to discard or
         // exhaust. Keeping it on a saved/discarded card makes later draws free.
         card.free_to_play_once = false;
@@ -1421,7 +1451,11 @@ pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
             if spoon_saves_exhaust {
                 card.exhaust_override = None;
             }
-            state.add_card_to_discard_pile_top(card);
+            if placement_overrides.rebound {
+                state.add_card_to_draw_pile_top(card);
+            } else {
+                state.add_card_to_discard_pile_top(card);
+            }
         }
     }
 
@@ -1565,6 +1599,10 @@ fn execute_played_card(
     if def.card_type != crate::content::cards::CardType::Power && !purge {
         state.zones.limbo.push(played_card);
         state.queue_action_back(Action::UseCardDone { should_exhaust });
+    } else {
+        state.queue_action_back(Action::UseCardAfterUseHooks {
+            card: Box::new(played_card),
+        });
     }
 }
 

@@ -397,6 +397,7 @@ fn handle_apply_power_detailed_internal(
                 PowerId::Combust => (amount, 1),
                 PowerId::Malleable => (amount, amount),
                 PowerId::Flight => (amount, amount),
+                PowerId::Rebound => (amount, extra_data.unwrap_or(1)),
                 _ if extra_data.is_some() => (amount, extra_data.unwrap_or(0)),
                 _ => (amount, 0),
             };

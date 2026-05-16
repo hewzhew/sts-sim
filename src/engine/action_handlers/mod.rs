@@ -520,6 +520,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::UseCardDone { should_exhaust } => {
             cards::handle_use_card_done(should_exhaust, state)
         }
+        Action::UseCardAfterUseHooks { card } => {
+            cards::handle_use_card_after_use_hooks(*card, state)
+        }
         Action::QueueEarlyEndTurn => cards::handle_queue_early_end_turn(state),
         Action::EnqueueCardPlay { item, in_front } => {
             cards::handle_enqueue_card_play(*item, in_front, state)

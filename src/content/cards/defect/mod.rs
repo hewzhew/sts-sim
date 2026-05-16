@@ -10,6 +10,7 @@ pub mod dualcast;
 pub mod go_for_the_eyes;
 pub mod hologram;
 pub mod leap;
+pub mod rebound;
 pub mod recursion;
 pub mod stack;
 pub mod streamline;
