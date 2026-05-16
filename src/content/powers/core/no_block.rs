@@ -10,7 +10,7 @@ pub fn at_end_of_round(
     if just_applied {
         return smallvec::smallvec![];
     }
-    if amount <= 1 {
+    if amount == 0 {
         smallvec::smallvec![Action::RemovePower {
             target: owner,
             power_id: PowerId::NoBlock,

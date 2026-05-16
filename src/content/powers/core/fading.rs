@@ -8,11 +8,10 @@ pub fn at_end_of_turn(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Actio
     if amount <= 1 {
         actions.push(Action::Suicide { target: owner });
     } else {
-        actions.push(Action::ApplyPower {
-            source: owner,
+        actions.push(Action::ReducePower {
             target: owner,
             power_id: PowerId::Fading,
-            amount: -1,
+            amount: 1,
         });
     }
 

@@ -1291,6 +1291,70 @@ pub fn handle_lose_hp(target: usize, amount: i32, triggers_rupture: bool, state:
     }
 }
 
+pub fn handle_poison_lose_hp(target: usize, amount: i32, state: &mut CombatState) {
+    if target == 0 {
+        if state.entities.player.current_hp > 0 {
+            let final_amount = crate::content::relics::hooks::on_lose_hp_last(state, amount.max(0));
+            let previous_hp = state.entities.player.current_hp;
+            state.entities.player.current_hp =
+                (state.entities.player.current_hp - final_amount).max(0);
+            if final_amount > 0 {
+                update_player_cards_on_damage(state);
+                state.turn.increment_times_damaged_this_combat();
+                queue_red_skull_threshold_actions(
+                    state,
+                    previous_hp,
+                    state.entities.player.current_hp,
+                );
+                queue_player_hp_loss_hooks(state, final_amount, None, DamageType::HpLoss, false);
+            }
+            if state.entities.player.current_hp <= 0 {
+                super::try_revive(state);
+            }
+        }
+    } else if state
+        .entities
+        .monsters
+        .iter()
+        .any(|m| m.id == target && m.current_hp > 0)
+    {
+        let mut actual_lost = 0;
+        if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
+            let prev = m.current_hp;
+            m.current_hp = (m.current_hp - amount).max(0);
+            actual_lost = prev - m.current_hp;
+        }
+        super::check_and_trigger_monster_death(state, target);
+
+        if actual_lost > 0 {
+            if let Some(m) = state
+                .entities
+                .monsters
+                .iter()
+                .find(|m| m.id == target)
+                .cloned()
+            {
+                if let Some(eid) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
+                    let monster_actions =
+                        crate::content::monsters::dispatch_on_damaged(eid, state, &m, actual_lost);
+                    state.queue_actions(monster_actions);
+                }
+            }
+        }
+    }
+
+    let should_remove_poison = store::with_power_mut(state, target, PowerId::Poison, |power| {
+        power.amount -= 1;
+        power.amount == 0
+    })
+    .unwrap_or(false);
+    if should_remove_poison {
+        store::remove_power_type(state, target, PowerId::Poison);
+    }
+
+    clear_post_combat_actions_if_ready(state);
+}
+
 pub fn handle_set_current_hp(target: usize, hp: i32, state: &mut CombatState) {
     let clamped_hp = hp.max(0);
     if target == 0 {
@@ -1690,6 +1754,47 @@ mod tests {
             "Java LoseHPAction checks clearPostCombatActions even when the target is the player"
         );
         assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn poison_lose_hp_decrements_poison_before_post_combat_cleanup() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 70;
+        monster.current_hp = 3;
+        state.entities.monsters = vec![monster];
+        store::set_powers_for(
+            &mut state,
+            70,
+            vec![Power {
+                power_type: PowerId::Poison,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        state.queue_action_back(Action::ApplyPower {
+            source: 0,
+            target: 70,
+            power_id: PowerId::Weak,
+            amount: 1,
+        });
+
+        handle_poison_lose_hp(70, 3, &mut state);
+
+        assert!(state.entities.monsters[0].is_dying);
+        assert_eq!(
+            store::power_amount(&state, 70, PowerId::Poison),
+            1,
+            "Java PoisonLoseHpAction decrements Poison before clearPostCombatActions"
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            None,
+            "non-retained queued actions are still cleared after the atomic PoisonLoseHpAction"
+        );
     }
 
     #[test]

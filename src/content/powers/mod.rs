@@ -1274,7 +1274,7 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::Ritual => core::ritual::at_end_of_turn(owner, amount, power.extra_data),
         PowerId::Shackled => core::shackled::at_end_of_turn(owner, amount),
         PowerId::Shifting => core::shifting::at_end_of_turn(owner),
-        PowerId::Intangible => core::intangible::at_end_of_turn(owner, amount),
+        PowerId::Intangible => core::intangible::at_end_of_turn(owner, amount, power.just_applied),
         PowerId::TheBombPower => {
             let mut acts = smallvec::SmallVec::new();
             if amount == 1 {
@@ -1356,17 +1356,16 @@ pub fn resolve_power_at_end_of_round(
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::DuplicationPower => {
-            if amount <= 1 {
+            if amount == 0 {
                 smallvec::smallvec![crate::runtime::action::Action::RemovePower {
                     target: owner,
                     power_id: PowerId::DuplicationPower,
                 }]
             } else {
-                smallvec::smallvec![crate::runtime::action::Action::ApplyPower {
-                    source: owner,
+                smallvec::smallvec![crate::runtime::action::Action::ReducePower {
                     target: owner,
                     power_id: PowerId::DuplicationPower,
-                    amount: -1,
+                    amount: 1,
                 }]
             }
         }
@@ -1884,5 +1883,175 @@ pub fn resolve_power_at_damage_final_receive(
         }
         PowerId::Flight => core::flight::at_damage_final_receive(damage, amount, damage_type),
         _ => damage,
+    }
+}
+
+#[cfg(test)]
+mod java_decay_tests {
+    use super::*;
+    use crate::runtime::action::{Action, DamageInfo, DamageType};
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    fn power(power_type: PowerId, amount: i32, just_applied: bool) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied,
+        }
+    }
+
+    #[test]
+    fn turn_based_round_cleanup_uses_java_reduce_power_actions() {
+        let state = crate::test_support::blank_test_combat();
+
+        for power_id in [
+            PowerId::Vulnerable,
+            PowerId::Weak,
+            PowerId::Frail,
+            PowerId::NoBlock,
+            PowerId::DrawReduction,
+            PowerId::DuplicationPower,
+            PowerId::IntangiblePlayer,
+        ] {
+            let actions = resolve_power_at_end_of_round(power_id, &state, 0, 1, false);
+            assert_eq!(
+                actions.as_slice(),
+                &[Action::ReducePower {
+                    target: 0,
+                    power_id,
+                    amount: 1,
+                }],
+                "{power_id:?} should decay through Java ReducePowerAction"
+            );
+        }
+    }
+
+    #[test]
+    fn zero_amount_round_cleanup_uses_java_remove_specific_power_actions() {
+        let state = crate::test_support::blank_test_combat();
+
+        for power_id in [
+            PowerId::Vulnerable,
+            PowerId::Weak,
+            PowerId::Frail,
+            PowerId::NoBlock,
+            PowerId::DuplicationPower,
+            PowerId::IntangiblePlayer,
+        ] {
+            let actions = resolve_power_at_end_of_round(power_id, &state, 0, 0, false);
+            assert_eq!(
+                actions.as_slice(),
+                &[Action::RemovePower {
+                    target: 0,
+                    power_id,
+                }],
+                "{power_id:?} amount == 0 should map to Java RemoveSpecificPowerAction"
+            );
+        }
+    }
+
+    #[test]
+    fn just_applied_round_cleanup_skips_java_turn_based_debuffs() {
+        let state = crate::test_support::blank_test_combat();
+
+        for power_id in [
+            PowerId::Vulnerable,
+            PowerId::Weak,
+            PowerId::Frail,
+            PowerId::NoBlock,
+            PowerId::DrawReduction,
+        ] {
+            let actions = resolve_power_at_end_of_round(power_id, &state, 0, 1, true);
+            assert!(
+                actions.is_empty(),
+                "{power_id:?} justApplied should skip this round"
+            );
+        }
+    }
+
+    #[test]
+    fn monster_intangible_respects_java_just_applied_and_reduce_power() {
+        let state = crate::test_support::blank_test_combat();
+
+        let just_applied = power(PowerId::Intangible, 1, true);
+        assert!(resolve_power_at_end_of_turn(&just_applied, &state, 1).is_empty());
+
+        let decaying = power(PowerId::Intangible, 1, false);
+        let actions = resolve_power_at_end_of_turn(&decaying, &state, 1);
+        assert_eq!(
+            actions.as_slice(),
+            &[Action::ReducePower {
+                target: 1,
+                power_id: PowerId::Intangible,
+                amount: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn explosive_and_fading_countdowns_match_java_action_order() {
+        let state = crate::test_support::blank_test_combat();
+
+        let explosive_two = power(PowerId::Explosive, 2, false);
+        let actions = resolve_power_at_end_of_turn(&explosive_two, &state, 1);
+        assert_eq!(
+            actions.as_slice(),
+            &[Action::ReducePower {
+                target: 1,
+                power_id: PowerId::Explosive,
+                amount: 1,
+            }]
+        );
+
+        let explosive_one = power(PowerId::Explosive, 1, false);
+        let actions = resolve_power_at_end_of_turn(&explosive_one, &state, 1);
+        assert_eq!(
+            actions.as_slice(),
+            &[
+                Action::Suicide { target: 1 },
+                Action::Damage(DamageInfo {
+                    source: 1,
+                    target: 0,
+                    base: 30,
+                    output: 30,
+                    damage_type: DamageType::Thorns,
+                    is_modified: false,
+                }),
+            ],
+            "Java ExplosivePower queues SuicideAction before DamageAction"
+        );
+
+        let fading_two = power(PowerId::Fading, 2, false);
+        let actions = resolve_power_at_end_of_turn(&fading_two, &state, 1);
+        assert_eq!(
+            actions.as_slice(),
+            &[Action::ReducePower {
+                target: 1,
+                power_id: PowerId::Fading,
+                amount: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn poison_uses_atomic_java_poison_lose_hp_action() {
+        let actions = resolve_power_at_turn_start(
+            PowerId::Poison,
+            &mut crate::test_support::blank_test_combat(),
+            70,
+            3,
+        );
+
+        assert_eq!(
+            actions.as_slice(),
+            &[Action::PoisonLoseHp {
+                target: 70,
+                amount: 3,
+            }],
+            "Java PoisonLoseHpAction combines damage and poison countdown before post-combat cleanup"
+        );
     }
 }

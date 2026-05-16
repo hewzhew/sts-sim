@@ -252,6 +252,12 @@ pub enum Action {
         amount: i32,
         triggers_rupture: bool,
     },
+    /// Java PoisonLoseHpAction: HP_LOSS damage and Poison countdown happen
+    /// inside one action before clearPostCombatActions.
+    PoisonLoseHp {
+        target: EntityId,
+        amount: i32,
+    },
     SetCurrentHp {
         target: EntityId,
         hp: i32,
@@ -943,6 +949,7 @@ impl Action {
                 | Action::VampireDamage(_)
                 | Action::VampireDamageAllEnemies { .. }
                 | Action::LoseHp { .. }
+                | Action::PoisonLoseHp { .. }
                 | Action::GainBlock { .. }
                 | Action::Heal { .. }
                 | Action::UseCardDone { .. }
