@@ -4303,6 +4303,102 @@ fn echo_form_definition_runtime_and_power_copy_hook_match_java_sources() {
 }
 
 #[test]
+fn force_field_definition_runtime_and_cost_hooks_match_java_sources() {
+    let force = get_card_definition(CardId::ForceField);
+    assert_eq!(force.name, "Force Field");
+    assert_eq!(force.card_type, CardType::Skill);
+    assert_eq!(force.rarity, CardRarity::Uncommon);
+    assert_eq!(force.cost, 4);
+    assert_eq!(force.base_block, 12);
+    assert_eq!(force.target, CardTarget::SelfTarget);
+    assert_eq!(force.upgrade_block, 4);
+    assert_eq!(java_id(CardId::ForceField), "Force Field");
+
+    let state = crate::test_support::blank_test_combat();
+    assert_eq!(
+        resolve_card_play(
+            CardId::ForceField,
+            &state,
+            &CombatCard::new(CardId::ForceField, 352),
+            None,
+        )[0]
+        .action,
+        Action::GainBlock {
+            target: 0,
+            amount: 12,
+        }
+    );
+    let mut plus = CombatCard::new(CardId::ForceField, 353);
+    plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::ForceField, &state, &plus, None)[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 16,
+        }
+    );
+
+    let mut generated_state = crate::test_support::blank_test_combat();
+    generated_state.turn.counters.card_ids_played_this_combat =
+        vec![CardId::Defragment, CardId::StrikeB, CardId::EchoForm];
+    let generated = crate::content::cards::make_fresh_card_copy_for_combat(
+        CardId::ForceField,
+        354,
+        &generated_state,
+    );
+    assert_eq!(
+        generated.combat_cost_without_turn_override_java(),
+        2,
+        "Java ForceField.configureCostsOnNewCard calls updateCost(-1) for each Power played this combat"
+    );
+    assert_eq!(generated.cost_for_turn_java(), 2);
+
+    let mut hook_state = crate::test_support::blank_test_combat();
+    hook_state.zones.hand = vec![CombatCard::new(CardId::ForceField, 355)];
+    hook_state.zones.discard_pile = vec![CombatCard::new(CardId::ForceField, 356)];
+    hook_state.zones.draw_pile = vec![CombatCard::new(CardId::ForceField, 357)];
+    crate::engine::action_handlers::execute_action(
+        Action::PlayCardDirect {
+            card: Box::new(CombatCard::new(CardId::Defragment, 358)),
+            target: None,
+            purge: false,
+        },
+        &mut hook_state,
+    );
+    assert_eq!(
+        hook_state.zones.hand[0].combat_cost_without_turn_override_java(),
+        3
+    );
+    assert_eq!(
+        hook_state.zones.discard_pile[0].combat_cost_without_turn_override_java(),
+        3
+    );
+    assert_eq!(
+        hook_state.zones.draw_pile[0].combat_cost_without_turn_override_java(),
+        3
+    );
+    assert_eq!(
+        hook_state.turn.counters.card_ids_played_this_combat,
+        vec![CardId::Defragment],
+        "Rust combat-wide played-card history mirrors Java cardsPlayedThisCombat for Force Field"
+    );
+
+    crate::engine::action_handlers::execute_action(
+        Action::PlayCardDirect {
+            card: Box::new(CombatCard::new(CardId::StrikeB, 359)),
+            target: Some(7),
+            purge: false,
+        },
+        &mut hook_state,
+    );
+    assert_eq!(
+        hook_state.zones.hand[0].combat_cost_without_turn_override_java(),
+        3,
+        "ForceField.triggerOnCardPlayed only reacts to Power cards"
+    );
+}
+
+#[test]
 fn fission_definition_runtime_and_orb_actions_match_java_sources() {
     let fission = get_card_definition(CardId::Fission);
     assert_eq!(fission.name, "Fission");

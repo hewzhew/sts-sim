@@ -108,6 +108,7 @@ pub fn resolve_card_play_with_context(
         CardId::Rainbow => defect::rainbow::rainbow_play(_state, _card),
         CardId::Impulse => defect::impulse::impulse_play(_state, _card),
         CardId::MachineLearning => defect::machine_learning::machine_learning_play(_state, _card),
+        CardId::ForceField => defect::force_field::force_field_play(_state, _card),
         CardId::StaticDischarge => defect::static_discharge::static_discharge_play(_state, _card),
         CardId::Heatsinks => defect::heatsinks::heatsinks_play(_state, _card),
         CardId::Storm => defect::storm::storm_play(_state, _card),
@@ -581,7 +582,41 @@ pub fn make_fresh_card_copy_for_combat(
         let damaged = state.turn.counters.times_damaged_this_combat as i32;
         card.update_cost_java(-damaged);
     }
+    configure_costs_on_new_card(&mut card, state);
     card
+}
+
+pub fn configure_costs_on_new_card(card: &mut CombatCard, state: &CombatState) {
+    if card.id == CardId::ForceField {
+        let powers_played = state
+            .turn
+            .counters
+            .card_ids_played_this_combat
+            .iter()
+            .filter(|&&id| get_card_definition(id).card_type == CardType::Power)
+            .count() as i32;
+        if powers_played > 0 {
+            card.update_cost_java(-powers_played);
+        }
+    }
+}
+
+pub fn trigger_cards_on_card_played(played_card: &CombatCard, state: &mut CombatState) {
+    if get_card_definition(played_card.id).card_type != CardType::Power {
+        return;
+    }
+
+    for card in state
+        .zones
+        .hand
+        .iter_mut()
+        .chain(state.zones.discard_pile.iter_mut())
+        .chain(state.zones.draw_pile.iter_mut())
+    {
+        if card.id == CardId::ForceField {
+            card.update_cost_java(-1);
+        }
+    }
 }
 
 pub fn class_combat_card_pool_for_type(

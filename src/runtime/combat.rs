@@ -265,6 +265,7 @@ pub struct EphemeralCounters {
     pub attacks_played_this_turn: u8,
     pub cards_discarded_this_turn: u16,
     pub card_ids_played_this_turn: Vec<CardId>,
+    pub card_ids_played_this_combat: Vec<CardId>,
     pub orbs_channeled_this_turn: Vec<OrbId>,
     pub orbs_channeled_this_combat: Vec<OrbId>,
     pub times_damaged_this_combat: u8,
@@ -480,6 +481,7 @@ impl TurnRuntime {
     pub fn record_card_played(&mut self, card_id: CardId) {
         self.increment_cards_played();
         self.counters.card_ids_played_this_turn.push(card_id);
+        self.counters.card_ids_played_this_combat.push(card_id);
     }
 
     pub fn record_orb_channeled(&mut self, orb_id: OrbId) {
@@ -1934,6 +1936,7 @@ mod tests {
                 attacks_played_this_turn: 2,
                 cards_discarded_this_turn: 3,
                 card_ids_played_this_turn: vec![CardId::Strike, CardId::Defend],
+                card_ids_played_this_combat: vec![CardId::Zap],
                 orbs_channeled_this_turn: vec![OrbId::Lightning],
                 orbs_channeled_this_combat: vec![OrbId::Lightning, OrbId::Frost],
                 times_damaged_this_combat: 3,
@@ -1954,6 +1957,11 @@ mod tests {
         assert_eq!(turn.counters.attacks_played_this_turn, 0);
         assert_eq!(turn.counters.cards_discarded_this_turn, 0);
         assert!(turn.counters.card_ids_played_this_turn.is_empty());
+        assert_eq!(
+            turn.counters.card_ids_played_this_combat,
+            vec![CardId::Zap],
+            "combat-wide played-card history should remain untouched"
+        );
         assert!(turn.counters.orbs_channeled_this_turn.is_empty());
         assert_eq!(
             turn.counters.orbs_channeled_this_combat,

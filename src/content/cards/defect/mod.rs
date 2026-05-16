@@ -29,6 +29,7 @@ pub mod echo_form;
 pub mod electrodynamics;
 pub mod equilibrium;
 pub mod fission;
+pub mod force_field;
 pub mod ftl;
 pub mod fusion;
 pub mod genetic_algorithm;

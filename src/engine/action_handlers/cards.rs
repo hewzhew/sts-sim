@@ -767,11 +767,13 @@ fn make_generated_card_from_id(
     card_id: CardId,
     uuid: u32,
     upgraded: bool,
+    state: &CombatState,
 ) -> crate::runtime::combat::CombatCard {
     let mut card = crate::runtime::combat::CombatCard::new(card_id, uuid);
     if upgraded {
         card.upgrades = 1;
     }
+    crate::content::cards::configure_costs_on_new_card(&mut card, state);
     card
 }
 
@@ -955,7 +957,7 @@ pub fn handle_make_temp_card_in_hand(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        let card = make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded);
+        let card = make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded, state);
         add_generated_card_to_hand_or_discard(card, state);
     }
 }
@@ -967,7 +969,8 @@ pub fn handle_make_temp_card_in_discard(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        let mut card = make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded);
+        let mut card =
+            make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded, state);
         apply_master_reality_to_generated_card(&mut card, state, 1);
         state.add_card_to_discard_pile_top(card);
     }
@@ -982,7 +985,8 @@ pub fn handle_make_temp_card_in_draw_pile(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        let mut card = make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded);
+        let mut card =
+            make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded, state);
         let upgrade_call_sites = if amount < 6 { 2 } else { 1 };
         apply_master_reality_to_generated_card(&mut card, state, upgrade_call_sites);
         if to_bottom {
@@ -1091,11 +1095,13 @@ pub fn handle_make_temp_card_in_discard_and_deck(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        let mut discard_card = make_generated_card_from_id(card_id, state.next_card_uuid(), false);
+        let mut discard_card =
+            make_generated_card_from_id(card_id, state.next_card_uuid(), false, state);
         apply_master_reality_to_generated_card(&mut discard_card, state, 1);
         state.add_card_to_discard_pile_top(discard_card);
 
-        let mut draw_card = make_generated_card_from_id(card_id, state.next_card_uuid(), false);
+        let mut draw_card =
+            make_generated_card_from_id(card_id, state.next_card_uuid(), false, state);
         apply_master_reality_to_generated_card(&mut draw_card, state, 1);
         state.add_card_to_draw_pile_random_spot(draw_card);
     }
@@ -1702,6 +1708,7 @@ fn execute_played_card(
 
     let passive_card_actions = crate::content::cards::on_play_card(&played_card, state);
     state.queue_actions(passive_card_actions);
+    crate::content::cards::trigger_cards_on_card_played(&played_card, state);
 
     let relic_actions = crate::content::relics::hooks::on_use_card(state, &played_card, target);
     state.queue_actions(relic_actions);
