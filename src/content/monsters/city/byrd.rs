@@ -19,6 +19,34 @@ const STUNNED: u8 = 4;
 const HEADBUTT: u8 = 5;
 const CAW: u8 = 6;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn first_roll_marks_byrd_first_move_false_like_java_get_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        let byrd = crate::test_support::test_monster(EnemyId::Byrd);
+        state.entities.monsters = vec![byrd];
+
+        crate::engine::action_handlers::execute_action(
+            Action::RollMonsterMove { monster_id: 1 },
+            &mut state,
+        );
+
+        let byrd = &state.entities.monsters[0];
+        assert!(
+            byrd.planned_move_id() == PECK || byrd.planned_move_id() == CAW,
+            "Java Byrd.getMove rolls the opening CAW/PECK move"
+        );
+        assert!(
+            !byrd.byrd.first_move,
+            "Java Byrd.getMove clears firstMove while rolling the opening move, before takeTurn executes"
+        );
+    }
+}
+
 enum ByrdTurn<'a> {
     Peck(&'a AttackSpec),
     GoAirborne(&'a ApplyPowerStep),
@@ -267,6 +295,19 @@ impl MonsterBehavior for Byrd {
         }
     }
 
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if entity.byrd.first_move {
+            vec![byrd_runtime_update(entity, Some(false), None)]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
         plan_for(entity.planned_move_id(), state.meta.ascension_level)
     }
@@ -279,31 +320,33 @@ impl MonsterBehavior for Byrd {
         match decode_turn(plan) {
             ByrdTurn::Peck(attack) | ByrdTurn::Swoop(attack) => {
                 let mut actions = attack_actions(entity.id, PLAYER, attack);
-                actions.push(byrd_runtime_update(entity, Some(false), Some(true)));
                 actions.push(Action::RollMonsterMove {
                     monster_id: entity.id,
                 });
                 actions
             }
-            ByrdTurn::GoAirborne(power) | ByrdTurn::Caw(power) => {
+            ByrdTurn::GoAirborne(power) => {
                 let mut actions = vec![
+                    byrd_runtime_update(entity, None, Some(true)),
                     apply_power_action(entity, power),
-                    byrd_runtime_update(entity, Some(false), Some(true)),
                 ];
                 actions.push(Action::RollMonsterMove {
                     monster_id: entity.id,
                 });
                 actions
             }
-            ByrdTurn::Stunned => vec![
-                byrd_runtime_update(entity, Some(false), Some(false)),
-                Action::RollMonsterMove {
+            ByrdTurn::Caw(power) => {
+                let mut actions = vec![apply_power_action(entity, power)];
+                actions.push(Action::RollMonsterMove {
                     monster_id: entity.id,
-                },
-            ],
+                });
+                actions
+            }
+            ByrdTurn::Stunned => vec![Action::RollMonsterMove {
+                monster_id: entity.id,
+            }],
             ByrdTurn::Headbutt(attack) => {
                 let mut actions = attack_actions(entity.id, PLAYER, attack);
-                actions.push(byrd_runtime_update(entity, Some(false), Some(false)));
                 actions.push(set_next_move_action(
                     entity,
                     go_airborne_plan(state.meta.ascension_level),
