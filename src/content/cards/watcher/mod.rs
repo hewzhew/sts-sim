@@ -1,9 +1,12 @@
 pub mod bowling_bash;
 pub mod consecrate;
+pub mod cut_through_fate;
 pub mod defend_watcher;
 pub mod empty_body;
 pub mod empty_fist;
 pub mod empty_mind;
 pub mod eruption;
+pub mod just_lucky;
 pub mod strike_purple;
+pub mod third_eye;
 pub mod vigilance;

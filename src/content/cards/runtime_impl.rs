@@ -56,6 +56,11 @@ pub fn resolve_card_play_with_context(
         CardId::EmptyBody => watcher::empty_body::empty_body_play(_state, _card),
         CardId::EmptyFist => watcher::empty_fist::empty_fist_play(_state, _card, t),
         CardId::EmptyMind => watcher::empty_mind::empty_mind_play(_state, _card),
+        CardId::JustLucky => watcher::just_lucky::just_lucky_play(_state, _card, t),
+        CardId::CutThroughFate => {
+            watcher::cut_through_fate::cut_through_fate_play(_state, _card, t)
+        }
+        CardId::ThirdEye => watcher::third_eye::third_eye_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),

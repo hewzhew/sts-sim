@@ -308,6 +308,9 @@ pub enum CardId {
     EmptyBody,
     EmptyFist,
     EmptyMind,
+    JustLucky,
+    CutThroughFate,
+    ThirdEye,
     // Add more as we expand
 }
 
@@ -649,6 +652,9 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::EmptyBody => watcher::empty_body::definition(),
         CardId::EmptyFist => watcher::empty_fist::definition(),
         CardId::EmptyMind => watcher::empty_mind::definition(),
+        CardId::JustLucky => watcher::just_lucky::definition(),
+        CardId::CutThroughFate => watcher::cut_through_fate::definition(),
+        CardId::ThirdEye => watcher::third_eye::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1233,6 +1239,9 @@ pub const WATCHER_COMMON_POOL: &[CardId] = &[
     CardId::BowlingBash,
     CardId::EmptyBody,
     CardId::EmptyFist,
+    CardId::JustLucky,
+    CardId::CutThroughFate,
+    CardId::ThirdEye,
 ];
 
 pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[CardId::EmptyMind];
@@ -1442,6 +1451,9 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::EmptyBody => "EmptyBody",
         CardId::EmptyFist => "EmptyFist",
         CardId::EmptyMind => "EmptyMind",
+        CardId::JustLucky => "JustLucky",
+        CardId::CutThroughFate => "CutThroughFate",
+        CardId::ThirdEye => "ThirdEye",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1833,6 +1845,9 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         EmptyBody,
         EmptyFist,
         EmptyMind,
+        JustLucky,
+        CutThroughFate,
+        ThirdEye,
         Neutralize,
         Survivor,
         Anger,

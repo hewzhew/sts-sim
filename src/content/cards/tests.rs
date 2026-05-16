@@ -479,6 +479,9 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::EmptyBody, "EmptyBody"),
         (CardId::EmptyFist, "EmptyFist"),
         (CardId::EmptyMind, "EmptyMind"),
+        (CardId::JustLucky, "JustLucky"),
+        (CardId::CutThroughFate, "CutThroughFate"),
+        (CardId::ThirdEye, "ThirdEye"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -555,6 +558,48 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             1,
         ),
+        (
+            CardId::JustLucky,
+            "Just Lucky",
+            CardType::Attack,
+            CardRarity::Common,
+            0,
+            3,
+            2,
+            1,
+            CardTarget::Enemy,
+            1,
+            1,
+            1,
+        ),
+        (
+            CardId::CutThroughFate,
+            "Cut Through Fate",
+            CardType::Attack,
+            CardRarity::Common,
+            1,
+            7,
+            0,
+            2,
+            CardTarget::Enemy,
+            2,
+            0,
+            1,
+        ),
+        (
+            CardId::ThirdEye,
+            "Third Eye",
+            CardType::Skill,
+            CardRarity::Common,
+            1,
+            0,
+            7,
+            3,
+            CardTarget::SelfTarget,
+            0,
+            2,
+            2,
+        ),
     ];
 
     for (
@@ -593,6 +638,9 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::BowlingBash));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::EmptyBody));
     assert!(WATCHER_COMMON_POOL.contains(&CardId::EmptyFist));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::JustLucky));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::CutThroughFate));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::ThirdEye));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
 }
 
@@ -702,6 +750,67 @@ fn watcher_first_common_batch_runtime_actions_match_java_use_methods() {
         vec![
             &Action::DrawCards(3),
             &Action::EnterStance("Neutral".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn watcher_scry_card_runtime_actions_match_java_use_methods() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut just_lucky_plus = CombatCard::new(CardId::JustLucky, 310);
+    just_lucky_plus.upgrades = 1;
+    let just_lucky = resolve_card_play(CardId::JustLucky, &state, &just_lucky_plus, Some(7));
+    assert_eq!(just_lucky.len(), 3);
+    assert_eq!(just_lucky[0].action, Action::Scry(2));
+    assert_eq!(
+        just_lucky[1].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 3,
+        }
+    );
+    match &just_lucky[2].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 4);
+            assert_eq!(info.output, 4);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Just Lucky final action should be DamageAction, got {other:?}"),
+    }
+
+    let cut = resolve_card_play(
+        CardId::CutThroughFate,
+        &state,
+        &CombatCard::new(CardId::CutThroughFate, 311),
+        Some(7),
+    );
+    assert_eq!(cut.len(), 3);
+    match &cut[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 7);
+        }
+        other => panic!("Cut Through Fate first action should be DamageAction, got {other:?}"),
+    }
+    assert_eq!(cut[1].action, Action::Scry(2));
+    assert_eq!(cut[2].action, Action::DrawCards(1));
+
+    let mut third_eye_plus = CombatCard::new(CardId::ThirdEye, 312);
+    third_eye_plus.upgrades = 1;
+    let third_eye = resolve_card_play(CardId::ThirdEye, &state, &third_eye_plus, None);
+    assert_eq!(
+        third_eye
+            .iter()
+            .map(|info| &info.action)
+            .collect::<Vec<_>>(),
+        vec![
+            &Action::GainBlock {
+                target: 0,
+                amount: 9,
+            },
+            &Action::Scry(5),
         ]
     );
 }
