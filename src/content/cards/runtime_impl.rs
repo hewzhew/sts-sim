@@ -73,6 +73,7 @@ pub fn resolve_card_play_with_context(
         CardId::Conclude => watcher::conclude::conclude_play(_state, _card),
         CardId::Brilliance => watcher::brilliance::brilliance_play(_state, _card, t),
         CardId::Ragnarok => watcher::ragnarok::ragnarok_play(_state, _card),
+        CardId::WreathOfFlame => watcher::wreath_of_flame::wreath_of_flame_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),

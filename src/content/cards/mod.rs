@@ -323,6 +323,7 @@ pub enum CardId {
     Conclude,
     Brilliance,
     Ragnarok,
+    WreathOfFlame,
     // Add more as we expand
 }
 
@@ -679,6 +680,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Conclude => watcher::conclude::definition(),
         CardId::Brilliance => watcher::brilliance::definition(),
         CardId::Ragnarok => watcher::ragnarok::definition(),
+        CardId::WreathOfFlame => watcher::wreath_of_flame::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1280,6 +1282,7 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::Indignation,
     CardId::Sanctity,
     CardId::Conclude,
+    CardId::WreathOfFlame,
 ];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[CardId::Brilliance, CardId::Ragnarok];
@@ -1502,6 +1505,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Conclude => "Conclude",
         CardId::Brilliance => "Brilliance",
         CardId::Ragnarok => "Ragnarok",
+        CardId::WreathOfFlame => "WreathOfFlame",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1908,6 +1912,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Conclude,
         Brilliance,
         Ragnarok,
+        WreathOfFlame,
         Neutralize,
         Survivor,
         Anger,

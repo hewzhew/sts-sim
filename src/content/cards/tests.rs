@@ -496,6 +496,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::Conclude, "Conclude"),
         (CardId::Brilliance, "Brilliance"),
         (CardId::Ragnarok, "Ragnarok"),
+        (CardId::WreathOfFlame, "WreathOfFlame"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -782,6 +783,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             1,
         ),
+        (
+            CardId::WreathOfFlame,
+            "Wreath of Flame",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            5,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            3,
+        ),
     ];
 
     for (
@@ -834,6 +849,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Indignation));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Sanctity));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Conclude));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WreathOfFlame));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
 }
@@ -1479,6 +1495,25 @@ fn watcher_ragnarok_runtime_actions_match_java_use_method() {
             other => panic!("Ragnarok should emit AttackDamageRandomEnemyCard, got {other:?}"),
         }
     }
+}
+
+#[test]
+fn watcher_wreath_of_flame_runtime_actions_match_java_use_method() {
+    let state = crate::test_support::blank_test_combat();
+    let mut wreath_plus = CombatCard::new(CardId::WreathOfFlame, 332);
+    wreath_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::WreathOfFlame, &state, &wreath_plus, None);
+
+    assert_eq!(
+        actions.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![&Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Vigor,
+            amount: 8,
+        }]
+    );
 }
 
 #[test]
