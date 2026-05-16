@@ -108,6 +108,9 @@ pub fn resolve_card_play_with_context(
             watcher::mental_fortress::mental_fortress_play(_state, _card)
         }
         CardId::Rushdown => watcher::rushdown::rushdown_play(_state, _card),
+        CardId::Foresight => watcher::foresight::foresight_play(_state, _card),
+        CardId::Nirvana => watcher::nirvana::nirvana_play(_state, _card),
+        CardId::Weave => watcher::weave::weave_play(_state, _card, t),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),

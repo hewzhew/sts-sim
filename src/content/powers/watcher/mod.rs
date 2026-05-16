@@ -14,6 +14,15 @@ pub fn battle_hymn_at_turn_start(state: &CombatState, amount: i32) -> SmallVec<[
     }
 }
 
+pub fn foresight_at_turn_start(state: &CombatState, amount: i32) -> SmallVec<[Action; 2]> {
+    let mut actions = SmallVec::new();
+    if state.zones.draw_pile.is_empty() {
+        actions.push(Action::EmptyDeckShuffle);
+    }
+    actions.push(Action::Scry(amount.max(0) as usize));
+    actions
+}
+
 pub fn devotion_on_post_draw(
     owner: usize,
     amount: i32,
@@ -37,6 +46,13 @@ pub fn devotion_on_post_draw(
             amount,
         }]
     }
+}
+
+pub fn nirvana_on_scry(owner: usize, amount: i32) -> SmallVec<[Action; 2]> {
+    smallvec::smallvec![Action::GainBlock {
+        target: owner,
+        amount,
+    }]
 }
 
 pub fn like_water_at_end_of_turn(

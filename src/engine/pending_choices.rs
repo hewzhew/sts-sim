@@ -103,6 +103,9 @@ pub fn handle_scry(
                     return Err("Scry candidate no longer in draw pile");
                 }
             }
+            for action in crate::content::cards::hooks::on_scry(combat_state) {
+                combat_state.queue_action_back(action.action);
+            }
 
             *engine_state = EngineState::CombatProcessing;
             Ok(())

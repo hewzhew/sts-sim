@@ -82,6 +82,8 @@ pub enum PowerId {
     LikeWaterPower,
     MentalFortressPower,
     RushdownPower,
+    ForesightPower,
+    NirvanaPower,
     Focus,
     DexterityDown,
     PenNibPower,
@@ -572,6 +574,14 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Rushdown",
         },
+        PowerId::ForesightPower => PowerDefinition {
+            id,
+            name: "Foresight",
+        },
+        PowerId::NirvanaPower => PowerDefinition {
+            id,
+            name: "Nirvana",
+        },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
         PowerId::DexterityDown => PowerDefinition {
             id,
@@ -968,6 +978,7 @@ pub fn resolve_power_instance_at_turn_start(
             }
         }
         PowerId::BattleHymnPower => watcher::battle_hymn_at_turn_start(state, amount),
+        PowerId::ForesightPower => watcher::foresight_at_turn_start(state, amount),
         PowerId::MagnetismPower => {
             let mut acts = smallvec::SmallVec::new();
             if state.are_monsters_basically_dead_java() {
@@ -1094,6 +1105,17 @@ pub fn resolve_power_on_post_draw(
                 power_id: PowerId::DrawCardNextTurn,
             },
         ],
+        _ => smallvec::smallvec![],
+    }
+}
+
+pub fn resolve_power_on_scry(
+    id: PowerId,
+    owner: crate::core::EntityId,
+    amount: i32,
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
+    match id {
+        PowerId::NirvanaPower => watcher::nirvana_on_scry(owner, amount),
         _ => smallvec::smallvec![],
     }
 }

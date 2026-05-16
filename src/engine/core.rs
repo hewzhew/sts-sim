@@ -566,6 +566,20 @@ pub fn tick_engine(
 
                 Action::Scry(amount) => {
                     let amount = crate::content::relics::hooks::on_scry(combat_state, amount);
+                    if combat_state.are_monsters_basically_dead_java() {
+                        return true;
+                    }
+                    for power in
+                        &crate::content::powers::store::powers_snapshot_for(combat_state, 0)
+                    {
+                        for action in crate::content::powers::resolve_power_on_scry(
+                            power.power_type,
+                            0,
+                            power.amount,
+                        ) {
+                            combat_state.queue_action_back(action);
+                        }
+                    }
                     if amount == 0 || combat_state.zones.draw_pile.is_empty() {
                         return true;
                     }
@@ -584,6 +598,9 @@ pub fn tick_engine(
                         .take(limit)
                         .map(|card| card.uuid)
                         .collect();
+                    for action in crate::content::cards::hooks::on_scry(combat_state) {
+                        combat_state.queue_action_back(action.action);
+                    }
 
                     update_monster_intents(combat_state);
                     *engine_state =

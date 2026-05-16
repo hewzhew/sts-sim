@@ -22,3 +22,19 @@ pub fn at_turn_start_in_hand(state: &mut CombatState) -> smallvec::SmallVec<[Act
     }
     smallvec::smallvec![]
 }
+
+pub fn on_scry(state: &CombatState) -> smallvec::SmallVec<[ActionInfo; 4]> {
+    let mut actions = smallvec::SmallVec::new();
+    for card in &state.zones.discard_pile {
+        if card.id == crate::content::cards::CardId::Weave {
+            actions.push(ActionInfo {
+                action: crate::runtime::action::Action::DiscardToHand {
+                    card_uuid: card.uuid,
+                    cost_for_turn: None,
+                },
+                insertion_mode: crate::runtime::action::AddTo::Bottom,
+            });
+        }
+    }
+    actions
+}

@@ -1196,6 +1196,48 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
         ),
         (
+            CardId::Foresight,
+            "Foresight",
+            CardType::Power,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            3,
+            CardTarget::None,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::Nirvana,
+            "Nirvana",
+            CardType::Power,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            3,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::Weave,
+            "Weave",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            0,
+            4,
+            0,
+            0,
+            CardTarget::Enemy,
+            2,
+            0,
+            0,
+        ),
+        (
             CardId::Smite,
             "Smite",
             CardType::Attack,
@@ -1314,6 +1356,9 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::LikeWater));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::MentalFortress));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Rushdown));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Foresight));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Nirvana));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Weave));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
     assert!(WATCHER_RARE_POOL.contains(&CardId::SpiritShield));
@@ -2110,6 +2155,89 @@ fn watcher_power_hook_batch_matches_java_sources() {
         })
     );
     assert_eq!(stance_state.pop_next_action(), Some(Action::DrawCards(2)));
+}
+
+#[test]
+fn watcher_scry_hook_batch_matches_java_sources() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut foresight_plus = CombatCard::new(CardId::Foresight, 980);
+    foresight_plus.upgrades = 1;
+    let foresight = resolve_card_play(CardId::Foresight, &state, &foresight_plus, None);
+    assert_eq!(
+        foresight[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::ForesightPower,
+            amount: 4,
+        }
+    );
+    let foresight_power = Power {
+        power_type: PowerId::ForesightPower,
+        instance_id: None,
+        amount: 4,
+        extra_data: 0,
+        payload: PowerPayload::None,
+        just_applied: false,
+    };
+    let mut empty_draw_state = crate::test_support::blank_test_combat();
+    assert_eq!(
+        crate::content::powers::resolve_power_instance_at_turn_start(
+            &foresight_power,
+            &mut empty_draw_state,
+            0,
+        )
+        .as_slice(),
+        &[Action::EmptyDeckShuffle, Action::Scry(4)],
+        "Java ForesightPower queues EmptyDeckShuffleAction before ScryAction when draw pile is empty"
+    );
+
+    let mut nirvana_plus = CombatCard::new(CardId::Nirvana, 981);
+    nirvana_plus.upgrades = 1;
+    let nirvana = resolve_card_play(CardId::Nirvana, &state, &nirvana_plus, None);
+    assert_eq!(
+        nirvana[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::NirvanaPower,
+            amount: 4,
+        }
+    );
+    assert_eq!(
+        crate::content::powers::resolve_power_on_scry(PowerId::NirvanaPower, 0, 4).as_slice(),
+        &[Action::GainBlock {
+            target: 0,
+            amount: 4,
+        }]
+    );
+
+    let mut weave_plus = CombatCard::new(CardId::Weave, 982);
+    weave_plus.upgrades = 1;
+    let weave = resolve_card_play(CardId::Weave, &state, &weave_plus, Some(7));
+    match &weave[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 6);
+            assert_eq!(info.output, 6);
+        }
+        other => panic!("Weave+ should emit DamageAction, got {other:?}"),
+    }
+
+    let mut hook_state = crate::test_support::blank_test_combat();
+    hook_state.zones.discard_pile = vec![CombatCard::new(CardId::Weave, 983)];
+    assert_eq!(
+        crate::content::cards::hooks::on_scry(&hook_state).as_slice(),
+        &[ActionInfo {
+            action: Action::DiscardToHand {
+                card_uuid: 983,
+                cost_for_turn: None,
+            },
+            insertion_mode: AddTo::Bottom,
+        }],
+        "Java Weave.triggerOnScry queues DiscardToHandAction from discard pile"
+    );
 }
 
 #[test]
