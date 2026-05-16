@@ -34,6 +34,7 @@ pub mod impulse;
 pub mod leap;
 pub mod lock_on;
 pub mod loop_card;
+pub mod machine_learning;
 pub mod melter;
 pub mod meteor_strike;
 pub mod overclock;

@@ -77,6 +77,7 @@ pub enum PowerId {
     PenNibPower,
     NextTurnBlock,
     DrawCardNextTurn,
+    Draw,
     Energized,
     Equilibrium,
     Repair,
@@ -158,7 +159,11 @@ pub fn canonicalize_applied_amount(id: PowerId, amount: i32) -> i32 {
 pub fn allows_negative_amount(id: PowerId) -> bool {
     matches!(
         id,
-        PowerId::Strength | PowerId::Dexterity | PowerId::Focus | PowerId::WraithForm
+        PowerId::Strength
+            | PowerId::Dexterity
+            | PowerId::Focus
+            | PowerId::WraithForm
+            | PowerId::Draw
     ) || uses_sentinel_amount(id)
 }
 
@@ -184,7 +189,7 @@ pub fn should_keep_power_instance(id: PowerId, amount: i32) -> bool {
 pub fn is_debuff(id: PowerId, amount: i32) -> bool {
     match id {
         // Dynamic: DEBUFF when amount < 0
-        PowerId::Strength | PowerId::Focus | PowerId::Dexterity => amount < 0,
+        PowerId::Strength | PowerId::Focus | PowerId::Dexterity | PowerId::Draw => amount < 0,
         // Fixed DEBUFFs (from Java constructor: this.type = PowerType.DEBUFF)
         PowerId::Vulnerable
         | PowerId::Weak
@@ -496,6 +501,7 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Draw Card",
         },
+        PowerId::Draw => PowerDefinition { id, name: "Draw" },
         PowerId::Energized => PowerDefinition {
             id,
             name: "Energized",

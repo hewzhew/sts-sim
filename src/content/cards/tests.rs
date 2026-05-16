@@ -3693,6 +3693,70 @@ fn impulse_definition_runtime_and_upgrade_exhaust_match_java_sources() {
 }
 
 #[test]
+fn machine_learning_definition_runtime_and_draw_power_match_java_sources() {
+    let machine = get_card_definition(CardId::MachineLearning);
+    assert_eq!(machine.name, "Machine Learning");
+    assert_eq!(machine.card_type, CardType::Power);
+    assert_eq!(machine.rarity, CardRarity::Rare);
+    assert_eq!(machine.cost, 1);
+    assert_eq!(machine.base_magic, 1);
+    assert_eq!(machine.target, CardTarget::SelfTarget);
+    assert!(!machine.innate);
+    assert_eq!(machine.upgrade_magic, 0);
+    assert_eq!(java_id(CardId::MachineLearning), "Machine Learning");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::MachineLearning,
+        &state,
+        &CombatCard::new(CardId::MachineLearning, 332),
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Draw,
+            amount: 1,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::MachineLearning, 333);
+    plus.upgrades = 1;
+    assert!(
+        is_innate_card(&plus),
+        "Java Machine Learning+ changes innate only; DrawPower amount remains 1"
+    );
+    assert_eq!(
+        resolve_card_play(CardId::MachineLearning, &state, &plus, None)[0].action,
+        actions[0].action
+    );
+
+    let mut draw_state = crate::test_support::blank_test_combat();
+    assert_eq!(draw_state.turn.turn_start_draw_modifier, 0);
+    crate::engine::action_handlers::execute_action(actions[0].action.clone(), &mut draw_state);
+    assert_eq!(
+        crate::content::powers::store::power_amount(&draw_state, 0, PowerId::Draw),
+        1
+    );
+    assert_eq!(
+        draw_state.turn.turn_start_draw_modifier, 1,
+        "Java DrawPower mutates player.gameHandSize immediately"
+    );
+    crate::engine::action_handlers::execute_action(actions[0].action.clone(), &mut draw_state);
+    assert_eq!(
+        crate::content::powers::store::power_amount(&draw_state, 0, PowerId::Draw),
+        2
+    );
+    assert_eq!(
+        draw_state.turn.turn_start_draw_modifier, 2,
+        "Stacking DrawPower should add to the derived turn-start draw modifier"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

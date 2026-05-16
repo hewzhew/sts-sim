@@ -1442,8 +1442,8 @@ impl CombatState {
         if let Some(powers) = crate::content::powers::store::powers_for(self, 0) {
             for power in powers {
                 match power.power_type {
+                    PowerId::Draw => modifier += power.amount,
                     PowerId::DrawReduction => modifier -= power.amount,
-                    // Future DrawPower / similar effects should add their contribution here.
                     _ => {}
                 }
             }

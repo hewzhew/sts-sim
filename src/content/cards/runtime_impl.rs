@@ -107,6 +107,7 @@ pub fn resolve_card_play_with_context(
         }
         CardId::Rainbow => defect::rainbow::rainbow_play(_state, _card),
         CardId::Impulse => defect::impulse::impulse_play(_state, _card),
+        CardId::MachineLearning => defect::machine_learning::machine_learning_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
