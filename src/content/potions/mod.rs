@@ -450,7 +450,7 @@ pub fn get_potion_definition(id: PotionId) -> PotionDefinition {
             id,
             name: "Ambrosia",
             rarity: PotionRarity::Rare,
-            base_potency: 0,
+            base_potency: 2,
             target_required: false,
             is_thrown: false,
             class: PotionClass::Watcher,
@@ -689,4 +689,70 @@ pub fn random_potion_any(rng: &mut crate::runtime::rng::StsRng, class: PotionCla
     let pool = potions_for_class(class);
     let idx = rng.random(pool.len() as i32 - 1) as usize;
     pool[idx]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::runtime::action::{Action, AddTo};
+
+    #[test]
+    fn watcher_potion_metadata_matches_java_sources() {
+        let bottled = get_potion_definition(PotionId::BottledMiracle);
+        assert_eq!(bottled.rarity, PotionRarity::Common);
+        assert_eq!(bottled.base_potency, 2);
+        assert!(!bottled.target_required);
+        assert!(!bottled.is_thrown);
+        assert_eq!(bottled.class, PotionClass::Watcher);
+
+        let stance = get_potion_definition(PotionId::StancePotion);
+        assert_eq!(stance.rarity, PotionRarity::Uncommon);
+        assert_eq!(stance.base_potency, 0);
+        assert!(!stance.target_required);
+        assert!(!stance.is_thrown);
+        assert_eq!(stance.class, PotionClass::Watcher);
+
+        let ambrosia = get_potion_definition(PotionId::Ambrosia);
+        assert_eq!(ambrosia.rarity, PotionRarity::Rare);
+        assert_eq!(ambrosia.base_potency, 2);
+        assert!(!ambrosia.target_required);
+        assert!(!ambrosia.is_thrown);
+        assert_eq!(ambrosia.class, PotionClass::Watcher);
+
+        let watcher_pool = potions_for_class(PotionClass::Watcher);
+        assert_eq!(
+            &watcher_pool[..3],
+            &[
+                PotionId::BottledMiracle,
+                PotionId::StancePotion,
+                PotionId::Ambrosia
+            ]
+        );
+    }
+
+    #[test]
+    fn watcher_potion_actions_match_java_sources() {
+        let bottled = potion_effects::get_potion_actions(0, PotionId::BottledMiracle, None, 2);
+        assert_eq!(bottled.len(), 1);
+        assert_eq!(bottled[0].insertion_mode, AddTo::Bottom);
+        assert!(matches!(
+            bottled[0].action,
+            Action::MakeTempCardInHand {
+                card_id: CardId::Miracle,
+                amount: 2,
+                upgraded: false
+            }
+        ));
+
+        let stance = potion_effects::get_potion_actions(0, PotionId::StancePotion, None, 0);
+        assert_eq!(stance.len(), 1);
+        assert_eq!(stance[0].insertion_mode, AddTo::Bottom);
+        assert!(matches!(stance[0].action, Action::SuspendForStanceChoice));
+
+        let ambrosia = potion_effects::get_potion_actions(0, PotionId::Ambrosia, None, 2);
+        assert_eq!(ambrosia.len(), 1);
+        assert_eq!(ambrosia[0].insertion_mode, AddTo::Bottom);
+        assert!(matches!(&ambrosia[0].action, Action::EnterStance(stance) if stance == "Divinity"));
+    }
 }
