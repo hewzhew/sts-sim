@@ -432,6 +432,8 @@ fn handle_apply_power_detailed_internal(
         } else if power_id == PowerId::Flight && amount > 0 {
             existing.amount += amount;
             existing.extra_data = existing.amount.max(existing.extra_data);
+        } else if power_id == PowerId::LikeWaterPower && amount > 0 {
+            existing.amount = (existing.amount + amount).min(999);
         } else if power_id == PowerId::DevaForm && amount > 0 {
             existing.amount += amount;
             existing.extra_data += 1;

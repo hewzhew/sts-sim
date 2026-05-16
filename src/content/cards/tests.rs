@@ -2304,6 +2304,37 @@ fn watcher_power_hook_batch_matches_java_sources() {
             amount: 7,
         }
     );
+    let mut like_water_stack_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut like_water_stack_state,
+        0,
+        vec![Power {
+            power_type: PowerId::LikeWaterPower,
+            instance_id: None,
+            amount: 995,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::LikeWaterPower,
+            amount: 10,
+        },
+        &mut like_water_stack_state,
+    );
+    assert_eq!(
+        crate::content::powers::store::power_amount(
+            &like_water_stack_state,
+            0,
+            PowerId::LikeWaterPower,
+        ),
+        999,
+        "Java LikeWaterPower.stackPower caps stacked amount at 999"
+    );
 
     let mut mental_plus = CombatCard::new(CardId::MentalFortress, 973);
     mental_plus.upgrades = 1;
