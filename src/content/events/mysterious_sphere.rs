@@ -29,8 +29,9 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     event_state.current_screen = 1;
                 }
                 _ => {
-                    // Leave
-                    event_state.completed = true;
+                    // Java first moves to END text, then opens the map on the
+                    // next click.
+                    event_state.current_screen = 2;
                 }
             }
         }
@@ -57,6 +58,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 rewards,
                 reward_allowed: true,
                 no_cards_in_rewards: false,
+                elite_trigger: false,
                 post_combat_return: PostCombatReturn::MapNavigation,
                 encounter_key: "2 Orb Walkers",
             });
@@ -68,4 +70,59 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leave_path_preserves_java_end_screen_before_map() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(EventState::new(
+            crate::state::events::EventId::MysteriousSphere,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let event_state = run_state.event_state.as_ref().unwrap();
+        assert_eq!(event_state.current_screen, 2);
+        assert!(!event_state.completed);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(run_state.event_state.as_ref().unwrap().completed);
+    }
+
+    #[test]
+    fn fight_path_generates_java_event_rewards_before_event_combat() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(EventState::new(
+            crate::state::events::EventId::MysteriousSphere,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::EventCombat(combat) = engine_state else {
+            panic!("confirmed Mysterious Sphere fight should enter EventCombat");
+        };
+        assert_eq!(combat.encounter_key, "2 Orb Walkers");
+        assert!(combat.reward_allowed);
+        assert!(combat
+            .rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, crate::rewards::state::RewardItem::Gold { amount } if (45..=55).contains(amount))));
+        assert!(combat
+            .rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, crate::rewards::state::RewardItem::Relic { .. })));
+    }
 }

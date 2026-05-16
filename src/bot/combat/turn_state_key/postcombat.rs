@@ -144,6 +144,7 @@ pub(super) fn stable_event_combat_key(state: &EventCombatState) -> StableEventCo
         encounter_key: state.encounter_key.to_string(),
         reward_allowed: state.reward_allowed,
         no_cards_in_rewards: state.no_cards_in_rewards,
+        elite_trigger: state.elite_trigger,
         post_combat_return: stable_post_combat_return_key(&state.post_combat_return),
         rewards: stable_reward_key(&state.rewards),
     }

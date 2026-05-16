@@ -586,8 +586,14 @@ fn init_combat(run_state: &mut RunState) -> CombatState {
     combat
 }
 
-fn init_event_combat(run_state: &mut RunState, encounter_id: EncounterId) -> CombatState {
-    build_combat_state(run_state, encounter_id)
+fn init_event_combat(
+    run_state: &mut RunState,
+    encounter_id: EncounterId,
+    elite_trigger: bool,
+) -> CombatState {
+    let mut combat = build_combat_state(run_state, encounter_id);
+    combat.meta.is_elite_fight = elite_trigger;
+    combat
 }
 
 fn build_combat_state(run_state: &mut RunState, encounter_id: EncounterId) -> CombatState {

@@ -50,6 +50,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 rewards: RewardState::new(),
                 reward_allowed: false,
                 no_cards_in_rewards: true,
+                elite_trigger: false,
                 post_combat_return: PostCombatReturn::EventRoom,
                 encounter_key: "Colosseum Slavers",
             });
@@ -88,6 +89,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         rewards,
                         reward_allowed: true,
                         no_cards_in_rewards: false,
+                        elite_trigger: true,
                         post_combat_return: PostCombatReturn::MapNavigation,
                         encounter_key: "Colosseum Nobs",
                     });
@@ -102,4 +104,69 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_fight_returns_to_event_room_without_rewards_or_elite_trigger() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(crate::state::events::EventState::new(
+            crate::state::events::EventId::Colosseum,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::EventCombat(combat) = engine_state else {
+            panic!("first Colosseum fight should enter EventCombat");
+        };
+        assert_eq!(combat.encounter_key, "Colosseum Slavers");
+        assert!(!combat.reward_allowed);
+        assert!(combat.no_cards_in_rewards);
+        assert!(!combat.elite_trigger);
+        assert!(matches!(
+            combat.post_combat_return,
+            PostCombatReturn::EventRoom
+        ));
+    }
+
+    #[test]
+    fn second_fight_preserves_java_elite_trigger_without_normal_elite_rewards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(crate::state::events::EventState::new(
+            crate::state::events::EventId::Colosseum,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        run_state.event_state.as_mut().unwrap().current_screen = 2;
+        engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let EngineState::EventCombat(combat) = engine_state else {
+            panic!("second Colosseum fight should enter EventCombat");
+        };
+        assert_eq!(combat.encounter_key, "Colosseum Nobs");
+        assert!(combat.reward_allowed);
+        assert!(combat.elite_trigger);
+        assert_eq!(combat.rewards.items.len(), 3);
+        assert!(combat
+            .rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, RewardItem::Gold { amount: 100 })));
+        assert!(combat
+            .rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, RewardItem::Relic { .. })));
+    }
 }

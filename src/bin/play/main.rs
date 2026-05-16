@@ -574,11 +574,13 @@ fn main() {
                     if app.current_display >= DisplayMode::Summary {
                         println!("  [Event Combat: {:?}]", encounter_id);
                     }
+                    let elite_trigger = ecs.elite_trigger;
                     // Stash the event combat state for post-combat handling
                     app.stashed_event_combat = Some(ecs);
                     combat_state = Some(init_event_combat(
                         &mut run_state,
                         encounter_id,
+                        elite_trigger,
                         app.current_display,
                     ));
                     app.combat_start_hp = run_state.current_hp;
@@ -1286,6 +1288,7 @@ fn encounter_key_to_id(
 fn init_event_combat(
     run_state: &mut RunState,
     encounter_id: sts_simulator::content::monsters::factory::EncounterId,
+    elite_trigger: bool,
     current_display: DisplayMode,
 ) -> CombatState {
     use sts_simulator::content::monsters::factory;
@@ -1307,7 +1310,7 @@ fn init_event_combat(
             ascension_level: run_state.ascension_level,
             player_class: run_state.player_class,
             is_boss_fight: false,
-            is_elite_fight: false,
+            is_elite_fight: elite_trigger,
             master_deck_snapshot: run_state.master_deck.clone(),
             meta_changes: Vec::new(),
         },

@@ -715,8 +715,13 @@ pub fn init_combat_if_needed(ctx: &mut EpisodeContext) -> Result<(), String> {
                 encounter_key_to_id(event_combat.encounter_key).ok_or_else(|| {
                     format!("unknown event combat key '{}'", event_combat.encounter_key)
                 })?;
+            let elite_trigger = event_combat.elite_trigger;
             ctx.stashed_event_combat = Some(event_combat);
-            ctx.combat_state = Some(init_event_combat(&mut ctx.run_state, encounter_id));
+            ctx.combat_state = Some(init_event_combat(
+                &mut ctx.run_state,
+                encounter_id,
+                elite_trigger,
+            ));
             ctx.engine_state = EngineState::CombatProcessing;
         }
     }

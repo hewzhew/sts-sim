@@ -33,6 +33,10 @@ pub struct EventCombatState {
     pub reward_allowed: bool,
     /// If true, suppress card rewards in the reward screen.
     pub no_cards_in_rewards: bool,
+    /// Java `AbstractRoom.eliteTrigger` for event combats. This is a combat
+    /// semantics flag for relics/powers, not permission to generate normal
+    /// elite rewards.
+    pub elite_trigger: bool,
     /// Where to transition after combat + rewards are done.
     pub post_combat_return: PostCombatReturn,
     /// Monster encounter key (e.g., "2 Orb Walkers") for identification.

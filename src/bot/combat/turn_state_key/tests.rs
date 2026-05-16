@@ -650,6 +650,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         },
         reward_allowed: true,
         no_cards_in_rewards: false,
+        elite_trigger: false,
         post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
         encounter_key: "test",
     };
@@ -665,6 +666,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         },
         reward_allowed: true,
         no_cards_in_rewards: false,
+        elite_trigger: false,
         post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
         encounter_key: "test",
     };

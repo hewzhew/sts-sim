@@ -331,13 +331,42 @@ Tests:
 - `pay_path_opens_map_after_java_dialog_sequence_without_extra_leave_click`
 - `fight_uses_java_event_encounter_key_and_event_rewards`
 
+### Mysterious Sphere and Colosseum event-combat boundaries
+
+Java `events/beyond/MysteriousSphere.java` moves from INTRO to END text when
+the player ignores the sphere; only the following click opens the map. Its
+fight path generates gold plus a rare screenless relic immediately before
+`enterCombat()`.
+
+Java `events/city/Colosseum.java` uses two distinct event combats. The Slavers
+fight has `rewardAllowed = false` and reopens the event afterward. The Nobs
+fight preloads a rare relic, an uncommon relic, and 100 gold, then sets
+`AbstractDungeon.getCurrRoom().eliteTrigger = true` before combat.
+
+Fixes:
+
+- `Mysterious Sphere` now preserves the Java END screen on the ignore path.
+- `Mysterious Sphere` has tests for the preloaded event rewards before
+  `EventCombat`.
+- `EventCombatState` now carries `elite_trigger` separately from reward
+  generation. This lets Colosseum Nobs behave like Java for combat-start relics
+  such as Preserved Insect, Sling, and Slaver's Collar without generating
+  ordinary elite rewards.
+- CLI/full-run event combat initialization now passes `elite_trigger` into
+  `CombatMeta::is_elite_fight`.
+
+Tests:
+
+- `leave_path_preserves_java_end_screen_before_map`
+- `fight_path_generates_java_event_rewards_before_event_combat`
+- `first_fight_returns_to_event_room_without_rewards_or_elite_trigger`
+- `second_fight_preserves_java_elite_trigger_without_normal_elite_rewards`
+
 ## Current High-Risk Event Areas
 
 - Selection choice preconditions still need deeper event-by-event review.
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
-- Event combat return states need continued scrutiny: `Colosseum` and
-  `Mysterious Sphere`.
 - `SecretPortal` and `SpireHeart` need an explicit classification: unsupported,
   modeled elsewhere, or normal event module.
 - Event reward generation and domain-event source tagging must remain separate
@@ -346,4 +375,4 @@ Tests:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `798 passed`.
+- Current result after this pass: `802 passed`.

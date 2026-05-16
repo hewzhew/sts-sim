@@ -181,6 +181,7 @@ pub(in crate::bot::combat) struct StableEventCombatKey {
     pub encounter_key: String,
     pub reward_allowed: bool,
     pub no_cards_in_rewards: bool,
+    pub elite_trigger: bool,
     pub post_combat_return: StablePostCombatReturnKey,
     pub rewards: StableRewardKey,
 }
@@ -520,10 +521,11 @@ impl StableRunPendingReturnKey {
 impl StableEventCombatKey {
     fn diagnostic_string(&self) -> String {
         format!(
-            "encounter{}:reward_allowed{}:no_cards{}:return{}:rewards{}",
+            "encounter{}:reward_allowed{}:no_cards{}:elite{}:return{}:rewards{}",
             self.encounter_key,
             self.reward_allowed,
             self.no_cards_in_rewards,
+            self.elite_trigger,
             self.post_combat_return.diagnostic_string(),
             self.rewards.diagnostic_string(),
         )
