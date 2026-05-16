@@ -1,7 +1,30 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::Dash,
+        name: "Dash",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Uncommon,
+        cost: 2,
+        base_damage: 10,
+        base_block: 10,
+        base_magic: 0,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 3,
+        upgrade_block: 3,
+        upgrade_magic: 0,
+    }
+}
 
 pub fn dash_play(
     state: &CombatState,
