@@ -4016,6 +4016,116 @@ fn heatsinks_and_storm_power_use_card_hooks_match_java_queue_order() {
 }
 
 #[test]
+fn amplify_definition_runtime_and_power_copy_hook_match_java_sources() {
+    let amplify = get_card_definition(CardId::Amplify);
+    assert_eq!(amplify.name, "Amplify");
+    assert_eq!(amplify.card_type, CardType::Skill);
+    assert_eq!(amplify.rarity, CardRarity::Rare);
+    assert_eq!(amplify.cost, 1);
+    assert_eq!(amplify.base_magic, 1);
+    assert_eq!(amplify.target, CardTarget::SelfTarget);
+    assert_eq!(amplify.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Amplify), "Amplify");
+
+    let state = crate::test_support::blank_test_combat();
+    assert_eq!(
+        resolve_card_play(
+            CardId::Amplify,
+            &state,
+            &CombatCard::new(CardId::Amplify, 343),
+            None,
+        )[0]
+        .action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Amplify,
+            amount: 1,
+        }
+    );
+    let mut plus = CombatCard::new(CardId::Amplify, 344);
+    plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::Amplify, &state, &plus, None)[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Amplify,
+            amount: 2,
+        }
+    );
+
+    let mut copy_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut copy_state,
+        0,
+        vec![Power {
+            power_type: PowerId::Amplify,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::PlayCardDirect {
+            card: Box::new(CombatCard::new(CardId::Defragment, 345)),
+            target: None,
+            purge: false,
+        },
+        &mut copy_state,
+    );
+    assert_eq!(
+        copy_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: 1,
+        })
+    );
+    match copy_state.pop_next_action() {
+        Some(Action::EnqueueCardPlay { item, in_front }) => {
+            assert!(in_front);
+            assert_eq!(item.card.id, CardId::Defragment);
+            assert_eq!(
+                item.card.uuid, 345,
+                "Java AmplifyPower uses makeSameInstanceOf(), preserving UUID"
+            );
+            assert!(item.purge_on_use);
+            assert_eq!(
+                item.source,
+                crate::runtime::combat::QueuedCardSource::Amplify
+            );
+        }
+        other => panic!("Amplify should enqueue same-instance power copy, got {other:?}"),
+    }
+    assert_eq!(
+        crate::content::powers::store::power_amount(&copy_state, 0, PowerId::Amplify),
+        0,
+        "AmplifyPower consumes one stack when it queues a copied power"
+    );
+
+    let turn_end_power = Power {
+        power_type: PowerId::Amplify,
+        instance_id: None,
+        amount: 2,
+        extra_data: 0,
+        payload: crate::runtime::combat::PowerPayload::None,
+        just_applied: false,
+    };
+    assert_eq!(
+        crate::content::powers::resolve_power_at_end_of_turn(&turn_end_power, &state, 0).as_slice(),
+        &[Action::RemovePower {
+            target: 0,
+            power_id: PowerId::Amplify,
+        }],
+        "Java AmplifyPower removes itself at player end of turn"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

@@ -87,6 +87,7 @@ pub enum PowerId {
     StaticDischarge,
     Heatsink,
     Storm,
+    Amplify,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -529,6 +530,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             name: "Heatsink",
         },
         PowerId::Storm => PowerDefinition { id, name: "Storm" },
+        PowerId::Amplify => PowerDefinition {
+            id,
+            name: "Amplify",
+        },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -662,6 +667,7 @@ pub fn resolve_power_on_use_card(
         PowerId::DuplicationPower => {
             core::duplication_power::on_use_card(state, card, purge, target)
         }
+        PowerId::Amplify => defect::amplify::on_use_card(state, card, purge, target),
         PowerId::Heatsink => {
             let amount = store::power_amount(state, 0, PowerId::Heatsink);
             defect::heatsink::on_use_card(state, card, amount);
@@ -953,6 +959,10 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::Burst => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
             target: owner,
             power_id: PowerId::Burst,
+        }],
+        PowerId::Amplify => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
+            target: owner,
+            power_id: PowerId::Amplify,
         }],
         PowerId::Combust => ironclad::combust::at_end_of_turn(_state, owner, amount),
         PowerId::Metallicize => ironclad::metallicize::at_end_of_turn(owner, amount),

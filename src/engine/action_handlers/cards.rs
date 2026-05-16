@@ -1654,6 +1654,7 @@ fn execute_played_card(
             match power.power_type {
                 PowerId::DoubleTap
                 | PowerId::DuplicationPower
+                | PowerId::Amplify
                 | PowerId::Burst
                 | PowerId::Corruption
                 | PowerId::Heatsink
