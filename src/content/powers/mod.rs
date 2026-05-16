@@ -73,6 +73,8 @@ pub enum PowerId {
     BeatOfDeath,
     Mantra,
     CannotChangeStance,
+    WrathNextTurn,
+    FreeAttackPower,
     Focus,
     DexterityDown,
     PenNibPower,
@@ -123,6 +125,7 @@ pub enum PowerId {
     RetainCards,
     Nightmare,
     Rebound,
+    Study,
 }
 
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -178,6 +181,7 @@ pub fn uses_sentinel_amount(id: PowerId) -> bool {
             | PowerId::Surrounded
             | PowerId::Unawakened
             | PowerId::Confusion
+            | PowerId::WrathNextTurn
     )
 }
 
@@ -527,6 +531,14 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Cannot Change Stance",
         },
+        PowerId::WrathNextTurn => PowerDefinition {
+            id,
+            name: "Wrath Next Turn",
+        },
+        PowerId::FreeAttackPower => PowerDefinition {
+            id,
+            name: "Free Attack",
+        },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
         PowerId::DexterityDown => PowerDefinition {
             id,
@@ -671,6 +683,7 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Rebound",
         },
+        PowerId::Study => PowerDefinition { id, name: "Study" },
     }
 }
 
@@ -739,6 +752,16 @@ pub fn resolve_power_on_use_card(
                 state.queue_action_back(crate::runtime::action::Action::RemovePower {
                     target: 0, // Player
                     power_id: PowerId::Vigor,
+                });
+            }
+        }
+        PowerId::FreeAttackPower => {
+            let def = crate::content::cards::get_card_definition(card.id);
+            if def.card_type == crate::content::cards::CardType::Attack && !purge {
+                state.queue_action_back(crate::runtime::action::Action::ReducePower {
+                    target: 0,
+                    power_id: PowerId::FreeAttackPower,
+                    amount: 1,
                 });
             }
         }
@@ -893,6 +916,13 @@ pub fn resolve_power_instance_at_turn_start(
             smallvec::smallvec![crate::runtime::action::Action::GainEnergy { amount }]
         }
         PowerId::NextTurnBlock => core::next_turn_block::at_turn_start(owner, amount),
+        PowerId::WrathNextTurn => smallvec::smallvec![
+            crate::runtime::action::Action::EnterStance("Wrath".to_string()),
+            crate::runtime::action::Action::RemovePower {
+                target: owner,
+                power_id: PowerId::WrathNextTurn,
+            },
+        ],
         PowerId::InfiniteBladesPower => {
             if state.are_monsters_basically_dead_java() {
                 smallvec::smallvec![]
@@ -1074,6 +1104,15 @@ pub fn resolve_power_at_end_of_turn(
             smallvec::smallvec![crate::runtime::action::Action::RetainNonEtherealHandCards]
         }
         PowerId::RetainCards => silent::retain_cards::at_end_of_turn(_state, owner, amount),
+        PowerId::Study => {
+            smallvec::smallvec![crate::runtime::action::Action::MakeTempCardInDrawPile {
+                card_id: crate::content::cards::CardId::Insight,
+                amount: amount.max(0).min(u8::MAX as i32) as u8,
+                random_spot: true,
+                to_bottom: false,
+                upgraded: false,
+            }]
+        }
         PowerId::Rebound => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
             target: owner,
             power_id: PowerId::Rebound,

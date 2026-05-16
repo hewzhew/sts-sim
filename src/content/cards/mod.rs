@@ -106,6 +106,7 @@ pub enum CardId {
     Shame,
     Writhe,
     Miracle,
+    Insight,
     Shiv,
     Bite,
     Apparition,
@@ -325,6 +326,10 @@ pub enum CardId {
     Ragnarok,
     WreathOfFlame,
     SignatureMove,
+    SimmeringFury,
+    SpiritShield,
+    Study,
+    Swivel,
     // Add more as we expand
 }
 
@@ -683,6 +688,10 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Ragnarok => watcher::ragnarok::definition(),
         CardId::WreathOfFlame => watcher::wreath_of_flame::definition(),
         CardId::SignatureMove => watcher::signature_move::definition(),
+        CardId::SimmeringFury => watcher::simmering_fury::definition(),
+        CardId::SpiritShield => watcher::spirit_shield::definition(),
+        CardId::Study => watcher::study::definition(),
+        CardId::Swivel => watcher::swivel::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -865,13 +874,14 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
             target: CardTarget::None,
             is_multi_damage: false,
             exhaust: true,
-            ethereal: true,
+            ethereal: false,
             innate: false,
-            tags: &[], // In game, Retain is actually hardcoded on Miracle,
+            tags: &[],
             upgrade_damage: 0,
             upgrade_block: 0,
             upgrade_magic: 0,
         },
+        CardId::Insight => colorless::insight::definition(),
         CardId::Shiv => CardDefinition {
             id: CardId::Shiv,
             name: "Shiv",
@@ -1286,9 +1296,13 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::Conclude,
     CardId::WreathOfFlame,
     CardId::SignatureMove,
+    CardId::SimmeringFury,
+    CardId::Study,
+    CardId::Swivel,
 ];
 
-pub const WATCHER_RARE_POOL: &[CardId] = &[CardId::Brilliance, CardId::Ragnarok];
+pub const WATCHER_RARE_POOL: &[CardId] =
+    &[CardId::Brilliance, CardId::Ragnarok, CardId::SpiritShield];
 
 /// Returns the pool for a given rarity (Ironclad).
 /// Returns the pool of randomly obtainable curse cards.
@@ -1510,6 +1524,10 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Ragnarok => "Ragnarok",
         CardId::WreathOfFlame => "WreathOfFlame",
         CardId::SignatureMove => "SignatureMove",
+        CardId::SimmeringFury => "Vengeance",
+        CardId::SpiritShield => "SpiritShield",
+        CardId::Study => "Study",
+        CardId::Swivel => "Swivel",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1688,6 +1706,7 @@ pub fn java_id(id: CardId) -> &'static str {
 
         // --- Special / Temp ---
         CardId::Miracle => "Miracle",
+        CardId::Insight => "Insight",
         CardId::Shiv => "Shiv",
         CardId::Bite => "Bite",
         CardId::Apparition => "Ghostly",
@@ -1918,6 +1937,10 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Ragnarok,
         WreathOfFlame,
         SignatureMove,
+        SimmeringFury,
+        SpiritShield,
+        Study,
+        Swivel,
         Neutralize,
         Survivor,
         Anger,
@@ -2012,6 +2035,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Shame,
         Writhe,
         Miracle,
+        Insight,
         Shiv,
         Bite,
         Apparition,

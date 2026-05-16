@@ -1,9 +1,9 @@
 use super::*;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageInfo, DamageType, NO_SOURCE};
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use crate::runtime::combat::{
-    CombatCard, DrawnCardRecord, Intent, OrbEntity, OrbId, Power, StanceId,
+    CombatCard, DrawnCardRecord, Intent, OrbEntity, OrbId, Power, PowerPayload, StanceId,
 };
 
 #[test]
@@ -498,6 +498,11 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::Ragnarok, "Ragnarok"),
         (CardId::WreathOfFlame, "WreathOfFlame"),
         (CardId::SignatureMove, "SignatureMove"),
+        (CardId::SimmeringFury, "Vengeance"),
+        (CardId::SpiritShield, "SpiritShield"),
+        (CardId::Study, "Study"),
+        (CardId::Swivel, "Swivel"),
+        (CardId::Insight, "Insight"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -812,6 +817,76 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::SimmeringFury,
+            "Simmering Fury",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            2,
+            CardTarget::None,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::SpiritShield,
+            "Spirit Shield",
+            CardType::Skill,
+            CardRarity::Rare,
+            2,
+            0,
+            0,
+            3,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::Study,
+            "Study",
+            CardType::Power,
+            CardRarity::Uncommon,
+            2,
+            0,
+            0,
+            1,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
+            CardId::Swivel,
+            "Swivel",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            2,
+            0,
+            8,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            3,
+            0,
+        ),
+        (
+            CardId::Insight,
+            "Insight",
+            CardType::Skill,
+            CardRarity::Special,
+            0,
+            0,
+            0,
+            2,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
     ];
 
     for (
@@ -866,8 +941,12 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Conclude));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WreathOfFlame));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::SignatureMove));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::SimmeringFury));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Study));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Swivel));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::SpiritShield));
 }
 
 #[test]
@@ -1533,7 +1612,7 @@ fn watcher_wreath_of_flame_runtime_actions_match_java_use_method() {
 }
 
 #[test]
-fn watcher_signature_move_can_use_requires_no_other_attacks_but_forced_use_still_runs() {
+fn watcher_signature_move_can_use_requires_no_other_attacks_and_use_matches_java() {
     let mut allowed = crate::test_support::blank_test_combat();
     allowed.zones.hand = vec![
         CombatCard::new(CardId::SignatureMove, 333),
@@ -1553,10 +1632,20 @@ fn watcher_signature_move_can_use_requires_no_other_attacks_but_forced_use_still
 
     let mut signature_plus = CombatCard::new(CardId::SignatureMove, 336);
     signature_plus.upgrades = 1;
-    let forced_actions =
-        resolve_card_play(CardId::SignatureMove, &blocked, &signature_plus, Some(7));
-    assert_eq!(forced_actions.len(), 1);
-    match &forced_actions[0].action {
+    let mut playable_plus = crate::test_support::blank_test_combat();
+    playable_plus.zones.hand = vec![
+        signature_plus.clone(),
+        CombatCard::new(CardId::DefendP, 337),
+    ];
+    assert!(can_play_card(&playable_plus.zones.hand[0], &playable_plus).is_ok());
+    let play_actions = resolve_card_play(
+        CardId::SignatureMove,
+        &playable_plus,
+        &signature_plus,
+        Some(7),
+    );
+    assert_eq!(play_actions.len(), 1);
+    match &play_actions[0].action {
         Action::Damage(info) => {
             assert_eq!(info.target, 7);
             assert_eq!(info.base, 40);
@@ -1564,6 +1653,241 @@ fn watcher_signature_move_can_use_requires_no_other_attacks_but_forced_use_still
         }
         other => panic!("Signature Move should emit DamageAction, got {other:?}"),
     }
+
+    let mut autoplay_blocked = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    autoplay_blocked.entities.monsters = vec![target];
+    autoplay_blocked.zones.hand = vec![CombatCard::new(CardId::StrikeP, 338)];
+    autoplay_blocked.enqueue_card_play(
+        crate::runtime::combat::QueuedCardPlay {
+            card: CombatCard::new(CardId::SignatureMove, 339),
+            target: Some(7),
+            energy_on_use: 0,
+            ignore_energy_total: true,
+            autoplay: true,
+            random_target: false,
+            is_end_turn_autoplay: false,
+            purge_on_use: false,
+            source: crate::runtime::combat::QueuedCardSource::Normal,
+        },
+        false,
+    );
+    let flush = autoplay_blocked
+        .pop_next_action()
+        .expect("queued autoplay Signature Move should schedule queue flush");
+    crate::engine::action_handlers::execute_action(flush, &mut autoplay_blocked);
+    assert!(
+        matches!(
+            autoplay_blocked.pop_next_action(),
+            Some(Action::UseCardDone {
+                should_exhaust: false
+            })
+        ),
+        "Java queued/autoplay cards still call canUse; Signature Move is blocked by another Attack in hand"
+    );
+}
+
+#[test]
+fn watcher_simmering_fury_runtime_actions_match_java_use_and_power_hooks() {
+    let state = crate::test_support::blank_test_combat();
+    let mut simmering_plus = CombatCard::new(CardId::SimmeringFury, 340);
+    simmering_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::SimmeringFury, &state, &simmering_plus, None);
+
+    assert_eq!(
+        actions.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![
+            &Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::WrathNextTurn,
+                amount: -1,
+            },
+            &Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::DrawCardNextTurn,
+                amount: 3,
+            },
+        ]
+    );
+
+    let mut hook_state = crate::test_support::blank_test_combat();
+    let hook_actions = crate::content::powers::resolve_power_at_turn_start(
+        PowerId::WrathNextTurn,
+        &mut hook_state,
+        0,
+        -1,
+    );
+    assert_eq!(
+        hook_actions.as_slice(),
+        &[
+            Action::EnterStance("Wrath".to_string()),
+            Action::RemovePower {
+                target: 0,
+                power_id: PowerId::WrathNextTurn,
+            },
+        ]
+    );
+}
+
+#[test]
+fn watcher_spirit_shield_runtime_actions_match_java_apply_powers_count() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut spirit_plus = CombatCard::new(CardId::SpiritShield, 341);
+    spirit_plus.upgrades = 1;
+    state.zones.hand = vec![
+        CombatCard::new(CardId::StrikeP, 342),
+        spirit_plus.clone(),
+        CombatCard::new(CardId::DefendP, 343),
+        CombatCard::new(CardId::Vigilance, 344),
+    ];
+
+    let actions = resolve_card_play(CardId::SpiritShield, &state, &spirit_plus, None);
+
+    assert_eq!(
+        actions.as_slice(),
+        &[ActionInfo {
+            action: Action::GainBlock {
+                target: 0,
+                amount: 12,
+            },
+            insertion_mode: AddTo::Bottom,
+        }],
+        "Java SpiritShield.applyPowers counts cards in hand except itself, then multiplies by magic"
+    );
+
+    let mut already_removed = state.clone();
+    already_removed.zones.hand.retain(|card| card.uuid != 341);
+    let actions_after_hand_removal =
+        resolve_card_play(CardId::SpiritShield, &already_removed, &spirit_plus, None);
+    assert_eq!(actions_after_hand_removal[0].action, actions[0].action);
+}
+
+#[test]
+fn watcher_study_and_insight_match_java_use_power_and_self_retain() {
+    let state = crate::test_support::blank_test_combat();
+    let study = CombatCard::new(CardId::Study, 345);
+    let study_actions = resolve_card_play(CardId::Study, &state, &study, None);
+    assert_eq!(
+        study_actions.as_slice(),
+        &[ActionInfo {
+            action: Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::Study,
+                amount: 1,
+            },
+            insertion_mode: AddTo::Bottom,
+        }]
+    );
+
+    let mut study_plus = CombatCard::new(CardId::Study, 346);
+    study_plus.upgrades = 1;
+    assert_eq!(study_plus.get_cost(), 1);
+
+    let hook_state = crate::test_support::blank_test_combat();
+    let power = Power {
+        power_type: PowerId::Study,
+        instance_id: None,
+        amount: 2,
+        extra_data: 0,
+        payload: PowerPayload::None,
+        just_applied: false,
+    };
+    let hook_actions = crate::content::powers::resolve_power_at_end_of_turn(&power, &hook_state, 0);
+    assert_eq!(
+        hook_actions.as_slice(),
+        &[Action::MakeTempCardInDrawPile {
+            card_id: CardId::Insight,
+            amount: 2,
+            random_spot: true,
+            to_bottom: false,
+            upgraded: false,
+        }]
+    );
+
+    let mut insight_plus = CombatCard::new(CardId::Insight, 347);
+    insight_plus.upgrades = 1;
+    let insight_actions = resolve_card_play(CardId::Insight, &hook_state, &insight_plus, None);
+    assert_eq!(insight_actions[0].action, Action::DrawCards(3));
+
+    assert!(crate::content::cards::is_self_retain(&CombatCard::new(
+        CardId::Insight,
+        349
+    )));
+    assert!(crate::content::cards::is_self_retain(&CombatCard::new(
+        CardId::Miracle,
+        350
+    )));
+}
+
+#[test]
+fn watcher_swivel_matches_java_free_attack_power() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut swivel_plus = CombatCard::new(CardId::Swivel, 351);
+    swivel_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::Swivel, &state, &swivel_plus, None);
+
+    assert_eq!(
+        actions.as_slice(),
+        &[
+            ActionInfo {
+                action: Action::GainBlock {
+                    target: 0,
+                    amount: 11,
+                },
+                insertion_mode: AddTo::Bottom,
+            },
+            ActionInfo {
+                action: Action::ApplyPower {
+                    source: 0,
+                    target: 0,
+                    power_id: PowerId::FreeAttackPower,
+                    amount: 1,
+                },
+                insertion_mode: AddTo::Bottom,
+            },
+        ]
+    );
+
+    crate::engine::action_handlers::execute_action(
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::FreeAttackPower,
+            amount: 1,
+        },
+        &mut state,
+    );
+    state.turn.energy = 0;
+    state.zones.hand = vec![CombatCard::new(CardId::StrikeP, 352)];
+    assert!(
+        can_play_card(&state.zones.hand[0], &state).is_ok(),
+        "Java AbstractCard.freeToPlay treats attacks as playable while FreeAttackPower is active"
+    );
+    let attack = state.zones.hand[0].clone();
+    let mut exhaust_override = false;
+    crate::content::powers::resolve_power_on_use_card(
+        PowerId::FreeAttackPower,
+        &mut state,
+        &attack,
+        &mut exhaust_override,
+        false,
+        Some(7),
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ReducePower {
+            target: 0,
+            power_id: PowerId::FreeAttackPower,
+            amount: 1,
+        }),
+        "Java FreeAttackPower.onUseCard decrements after a non-purge Attack is used"
+    );
 }
 
 #[test]
@@ -7517,24 +7841,6 @@ fn ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_method
         CombatCard::new(CardId::Defend, 104),
     ];
     assert!(can_play_card(&state.zones.hand[0], &state).is_err());
-    let forced_clash = CombatCard::new(CardId::Clash, 105);
-    let forced_clash_actions = resolve_card_play(CardId::Clash, &state, &forced_clash, Some(7));
-    assert_eq!(
-        forced_clash_actions.len(),
-        1,
-        "Clash.canUse gates manual play only; forced play still runs Clash.use()"
-    );
-    assert!(matches!(
-        forced_clash_actions[0].action,
-        Action::Damage(DamageInfo {
-            source: 0,
-            target: 7,
-            base: 14,
-            output: 14,
-            damage_type: DamageType::Normal,
-            ..
-        })
-    ));
 
     let mut autoplay_clash_state = crate::test_support::blank_test_combat();
     let mut clash_target = crate::test_support::test_monster(EnemyId::JawWorm);

@@ -15,6 +15,7 @@ pub mod forethought;
 pub mod good_instincts;
 pub mod hand_of_greed;
 pub mod impatience;
+pub mod insight;
 pub mod jack_of_all_trades;
 pub mod jax;
 pub mod madness;

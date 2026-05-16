@@ -75,6 +75,10 @@ pub fn resolve_card_play_with_context(
         CardId::Ragnarok => watcher::ragnarok::ragnarok_play(_state, _card),
         CardId::WreathOfFlame => watcher::wreath_of_flame::wreath_of_flame_play(_state, _card),
         CardId::SignatureMove => watcher::signature_move::signature_move_play(_state, _card, t),
+        CardId::SimmeringFury => watcher::simmering_fury::simmering_fury_play(_state, _card),
+        CardId::SpiritShield => watcher::spirit_shield::spirit_shield_play(_state, _card),
+        CardId::Study => watcher::study::study_play(_state, _card),
+        CardId::Swivel => watcher::swivel::swivel_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -366,6 +370,7 @@ pub fn resolve_card_play_with_context(
         CardId::MasterOfStrategy => {
             colorless::master_of_strategy::master_of_strategy_play(_state, _card)
         }
+        CardId::Insight => colorless::insight::insight_play(_state, _card),
         CardId::ThinkingAhead => {
             colorless::thinking_ahead::thinking_ahead_play(_state, _card, context)
         }
@@ -759,6 +764,10 @@ pub fn is_ethereal(card: &CombatCard) -> bool {
     }
 }
 
+pub fn is_self_retain(card: &CombatCard) -> bool {
+    matches!(card.id, CardId::Miracle | CardId::Insight)
+}
+
 pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
     match card.id {
         CardId::Alchemize if card.upgrades > 0 => Some(0),
@@ -781,6 +790,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Recycle if card.upgrades > 0 => Some(0),
         CardId::SeeingRed if card.upgrades > 0 => Some(0),
         CardId::Setup if card.upgrades > 0 => Some(0),
+        CardId::Study if card.upgrades > 0 => Some(1),
         CardId::Terror if card.upgrades > 0 => Some(0),
         CardId::ToolsOfTheTrade if card.upgrades > 0 => Some(0),
         CardId::WhiteNoise if card.upgrades > 0 => Some(0),
@@ -923,7 +933,17 @@ fn can_play_card_internal(
     }
 
     // Default cost validation
-    if !ignore_energy && cost >= 0 && state.turn.energy < (cost as u8) {
+    let free_attack_power_applies = def.card_type == CardType::Attack
+        && crate::content::powers::store::power_amount(
+            state,
+            0,
+            PowerId::FreeAttackPower,
+        ) > 0;
+    if !ignore_energy
+        && !free_attack_power_applies
+        && cost >= 0
+        && state.turn.energy < (cost as u8)
+    {
         return Err("Not enough energy.");
     }
 

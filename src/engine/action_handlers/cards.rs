@@ -1886,7 +1886,8 @@ fn execute_played_card(
                 | PowerId::Heatsink
                 | PowerId::PenNibPower
                 | PowerId::Storm
-                | PowerId::Vigor => {
+                | PowerId::Vigor
+                | PowerId::FreeAttackPower => {
                     crate::content::powers::resolve_power_on_use_card(
                         power.power_type,
                         state,
@@ -1969,7 +1970,13 @@ pub fn handle_play_card_from_hand(
     )?;
 
     let base_cost = crate::content::cards::upgraded_base_cost_override(card).unwrap_or(def.cost);
-    let effective_cost = if card.free_to_play_once {
+    let free_attack_power_applies = def.card_type == crate::content::cards::CardType::Attack
+        && crate::content::powers::store::power_amount(
+            state,
+            0,
+            crate::content::powers::PowerId::FreeAttackPower,
+        ) > 0;
+    let effective_cost = if card.free_to_play_once || free_attack_power_applies {
         0
     } else if let Some(cft) = card.cost_for_turn {
         cft as i32
@@ -2343,7 +2350,10 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
         // hand before calling triggerOnEndOfPlayerTurn(), so explicit retain
         // wins over ethereal. Runic Pyramid does not set per-card retain and
         // therefore still allows ethereal cards to exhaust.
-        if card.retain_override != Some(true) && crate::content::cards::is_ethereal(card) {
+        if card.retain_override != Some(true)
+            && !crate::content::cards::is_self_retain(card)
+            && crate::content::cards::is_ethereal(card)
+        {
             actions.push(ActionInfo {
                 action: Action::ExhaustCard {
                     card_uuid: card.uuid,

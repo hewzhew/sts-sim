@@ -216,7 +216,7 @@ fn discard_hand_for_turn_transition(combat_state: &mut CombatState) {
     let mut retained = Vec::new();
     let mut discarded = Vec::new();
     for mut card in combat_state.zones.hand.drain(..) {
-        if card.retain_override == Some(true) {
+        if card.retain_override == Some(true) || crate::content::cards::is_self_retain(&card) {
             card.retain_override = None;
             retained.push(card);
         } else {
@@ -1853,6 +1853,38 @@ mod tests {
                 .map(|card| (card.id, card.uuid))
                 .collect::<Vec<_>>(),
             vec![(CardId::Strike, 10)]
+        );
+    }
+
+    #[test]
+    fn turn_transition_preserves_intrinsic_self_retain_cards() {
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.hand = vec![
+            CombatCard::new(CardId::StrikeP, 30),
+            CombatCard::new(CardId::Insight, 31),
+            CombatCard::new(CardId::Miracle, 32),
+        ];
+
+        discard_hand_for_turn_transition(&mut combat_state);
+
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .map(|card| (card.id, card.uuid))
+                .collect::<Vec<_>>(),
+            vec![(CardId::Insight, 31), (CardId::Miracle, 32)],
+            "Java selfRetain cards remain in hand during end-of-turn discard"
+        );
+        assert_eq!(
+            combat_state
+                .zones
+                .discard_pile
+                .iter()
+                .map(|card| (card.id, card.uuid))
+                .collect::<Vec<_>>(),
+            vec![(CardId::StrikeP, 30)]
         );
     }
 
