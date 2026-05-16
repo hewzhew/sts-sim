@@ -1,4 +1,4 @@
-use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTag, CardTarget, CardType};
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
@@ -15,10 +15,10 @@ pub fn definition() -> CardDefinition {
         base_magic: 4,
         target: CardTarget::SelfTarget,
         is_multi_damage: false,
-        exhaust: false,
+        exhaust: true,
         ethereal: false,
         innate: false,
-        tags: &[],
+        tags: &[CardTag::Healing],
         upgrade_damage: 0,
         upgrade_block: 0,
         upgrade_magic: 2,

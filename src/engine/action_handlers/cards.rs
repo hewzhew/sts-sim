@@ -1200,15 +1200,17 @@ pub fn handle_make_temp_card_in_discard_and_deck(
     state: &mut CombatState,
 ) {
     for _ in 0..amount {
-        let mut discard_card =
-            make_generated_card_from_id(card_id, state.next_card_uuid(), false, state);
-        apply_master_reality_to_generated_card(&mut discard_card, state, 1);
-        state.add_card_to_discard_pile_top(discard_card);
-
+        // Java MakeTempCardInDiscardAndDeckAction queues the draw-pile effect
+        // before the discard effect. Preserve that order for UUID/replay parity.
         let mut draw_card =
             make_generated_card_from_id(card_id, state.next_card_uuid(), false, state);
         apply_master_reality_to_generated_card(&mut draw_card, state, 1);
         state.add_card_to_draw_pile_random_spot(draw_card);
+
+        let mut discard_card =
+            make_generated_card_from_id(card_id, state.next_card_uuid(), false, state);
+        apply_master_reality_to_generated_card(&mut discard_card, state, 1);
+        state.add_card_to_discard_pile_top(discard_card);
     }
 }
 
@@ -2730,6 +2732,11 @@ mod tests {
         assert_eq!(state.zones.draw_pile.len(), 1);
         assert_eq!(state.zones.discard_pile[0].id, CardId::Burn);
         assert_eq!(state.zones.draw_pile[0].id, CardId::Burn);
+        assert_eq!(
+            state.zones.draw_pile[0].uuid, 31,
+            "Java creates the draw-pile copy before the discard copy"
+        );
+        assert_eq!(state.zones.discard_pile[0].uuid, 32);
         assert_ne!(
             state.zones.discard_pile[0].uuid, state.zones.draw_pile[0].uuid,
             "Java MakeTempCardInDiscardAndDeckAction uses separate stat-equivalent copies"

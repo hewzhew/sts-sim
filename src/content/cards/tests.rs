@@ -4896,6 +4896,95 @@ fn defect_random_card_pools_are_complete_and_exclude_unregistered_impulse() {
     assert_eq!(DEFECT_COMMON_POOL.len(), 18);
     assert_eq!(DEFECT_UNCOMMON_POOL.len(), 36);
     assert_eq!(DEFECT_RARE_POOL.len(), 17);
+    assert_eq!(
+        DEFECT_COMMON_POOL,
+        &[
+            CardId::GoForTheEyes,
+            CardId::BallLightning,
+            CardId::Streamline,
+            CardId::Recursion,
+            CardId::CompileDriver,
+            CardId::Barrage,
+            CardId::Stack,
+            CardId::Rebound,
+            CardId::Claw,
+            CardId::Coolheaded,
+            CardId::Turbo,
+            CardId::SweepingBeam,
+            CardId::ConserveBattery,
+            CardId::Hologram,
+            CardId::BeamCell,
+            CardId::Leap,
+            CardId::ColdSnap,
+            CardId::SteamBarrier,
+        ],
+        "Defect common pool order must match Java CardLibrary HashMap traversal"
+    );
+    assert_eq!(
+        DEFECT_UNCOMMON_POOL,
+        &[
+            CardId::Storm,
+            CardId::GeneticAlgorithm,
+            CardId::Overclock,
+            CardId::HelloWorld,
+            CardId::Sunder,
+            CardId::Glacier,
+            CardId::Consume,
+            CardId::Fusion,
+            CardId::Aggregate,
+            CardId::Blizzard,
+            CardId::Chaos,
+            CardId::Melter,
+            CardId::SelfRepair,
+            CardId::Loop,
+            CardId::Chill,
+            CardId::BootSequence,
+            CardId::StaticDischarge,
+            CardId::Heatsinks,
+            CardId::Tempest,
+            CardId::Equilibrium,
+            CardId::ForceField,
+            CardId::Ftl,
+            CardId::RipAndTear,
+            CardId::Darkness,
+            CardId::DoubleEnergy,
+            CardId::ReinforcedBody,
+            CardId::AutoShields,
+            CardId::Reprogram,
+            CardId::LockOn,
+            CardId::Scrape,
+            CardId::Recycle,
+            CardId::Skim,
+            CardId::WhiteNoise,
+            CardId::Capacitor,
+            CardId::Defragment,
+            CardId::DoomAndGloom,
+        ],
+        "Defect uncommon pool order must match Java CardLibrary HashMap traversal"
+    );
+    assert_eq!(
+        DEFECT_RARE_POOL,
+        &[
+            CardId::CoreSurge,
+            CardId::Fission,
+            CardId::CreativeAI,
+            CardId::Amplify,
+            CardId::Reboot,
+            CardId::AllForOne,
+            CardId::EchoForm,
+            CardId::MeteorStrike,
+            CardId::Seek,
+            CardId::Rainbow,
+            CardId::Buffer,
+            CardId::Electrodynamics,
+            CardId::MachineLearning,
+            CardId::BiasedCognition,
+            CardId::ThunderStrike,
+            CardId::Hyperbeam,
+            CardId::MultiCast,
+        ],
+        "Defect rare pool order must match Java CardLibrary HashMap traversal"
+    );
     assert!(!DEFECT_COMMON_POOL.contains(&CardId::Impulse));
     assert!(!DEFECT_UNCOMMON_POOL.contains(&CardId::Impulse));
     assert!(!DEFECT_RARE_POOL.contains(&CardId::Impulse));
@@ -10380,7 +10469,16 @@ fn transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing() {
                 assert_eq!(amount, 1);
                 assert!(state.colorless_combat_pool().contains(&original.id));
                 assert_eq!(original.upgrades, 1);
-                assert_eq!(original.cost_for_turn_java(), 0);
+                let expected_cost_for_turn = if original.combat_cost_without_turn_override_java() >= 0 {
+                    0
+                } else {
+                    -1
+                };
+                assert_eq!(
+                    original.cost_for_turn_java(),
+                    expected_cost_for_turn,
+                    "Java setCostForTurn(0) is ignored by X-cost colorless cards"
+                );
             }
             other => panic!(
                 "TransmutationAction should queue concrete MakeTempCardInHandAction cards, got {other:?}"
@@ -11837,93 +11935,293 @@ fn silent_direct_attack_batch_matches_java_sources() {
 }
 
 #[test]
-fn silent_reward_pools_preserve_java_registration_order_for_implemented_cards() {
+fn character_reward_pools_preserve_java_hashmap_runtime_order_for_implemented_cards() {
+    assert_eq!(
+        IRONCLAD_COMMON_POOL,
+        &[
+            CardId::Anger,
+            CardId::Cleave,
+            CardId::Warcry,
+            CardId::Flex,
+            CardId::IronWave,
+            CardId::BodySlam,
+            CardId::TrueGrit,
+            CardId::ShrugItOff,
+            CardId::Clash,
+            CardId::ThunderClap,
+            CardId::PommelStrike,
+            CardId::TwinStrike,
+            CardId::Clothesline,
+            CardId::Armaments,
+            CardId::Havoc,
+            CardId::Headbutt,
+            CardId::WildStrike,
+            CardId::HeavyBlade,
+            CardId::PerfectedStrike,
+            CardId::SwordBoomerang,
+        ]
+    );
+    assert_eq!(
+        IRONCLAD_UNCOMMON_POOL,
+        &[
+            CardId::SpotWeakness,
+            CardId::Inflame,
+            CardId::PowerThrough,
+            CardId::DualWield,
+            CardId::InfernalBlade,
+            CardId::RecklessCharge,
+            CardId::Hemokinesis,
+            CardId::Intimidate,
+            CardId::BloodForBlood,
+            CardId::FlameBarrier,
+            CardId::Pummel,
+            CardId::BurningPact,
+            CardId::Metallicize,
+            CardId::Shockwave,
+            CardId::Rampage,
+            CardId::SeverSoul,
+            CardId::Whirlwind,
+            CardId::Combust,
+            CardId::DarkEmbrace,
+            CardId::SeeingRed,
+            CardId::Disarm,
+            CardId::FeelNoPain,
+            CardId::Rage,
+            CardId::Entrench,
+            CardId::Sentinel,
+            CardId::BattleTrance,
+            CardId::SearingBlow,
+            CardId::SecondWind,
+            CardId::Rupture,
+            CardId::Bloodletting,
+            CardId::Carnage,
+            CardId::Dropkick,
+            CardId::FireBreathing,
+            CardId::GhostlyArmor,
+            CardId::Uppercut,
+            CardId::Evolve,
+        ]
+    );
+    assert_eq!(
+        IRONCLAD_RARE_POOL,
+        &[
+            CardId::Immolate,
+            CardId::Offering,
+            CardId::Exhume,
+            CardId::Reaper,
+            CardId::Brutality,
+            CardId::Juggernaut,
+            CardId::Impervious,
+            CardId::Berserk,
+            CardId::FiendFire,
+            CardId::Barricade,
+            CardId::Corruption,
+            CardId::LimitBreak,
+            CardId::Feed,
+            CardId::Bludgeon,
+            CardId::DemonForm,
+            CardId::DoubleTap,
+        ]
+    );
     assert_eq!(
         SILENT_COMMON_POOL,
         &[
-            CardId::Acrobatics,
-            CardId::Backflip,
+            CardId::CloakAndDagger,
+            CardId::SneakyStrike,
+            CardId::DeadlyPoison,
+            CardId::DaggerSpray,
             CardId::Bane,
             CardId::BladeDance,
-            CardId::CloakAndDagger,
-            CardId::DaggerSpray,
-            CardId::DaggerThrow,
-            CardId::DeadlyPoison,
             CardId::Deflect,
-            CardId::DodgeAndRoll,
-            CardId::FlyingKnee,
-            CardId::Outmaneuver,
-            CardId::PiercingWail,
+            CardId::DaggerThrow,
             CardId::PoisonedStab,
-            CardId::Prepared,
+            CardId::Acrobatics,
             CardId::QuickSlash,
             CardId::Slice,
+            CardId::Backflip,
+            CardId::Outmaneuver,
+            CardId::Prepared,
+            CardId::PiercingWail,
             CardId::SuckerPunch,
-            CardId::SneakyStrike,
+            CardId::DodgeAndRoll,
+            CardId::FlyingKnee,
         ]
     );
     assert_eq!(
         SILENT_UNCOMMON_POOL,
         &[
-            CardId::Accuracy,
-            CardId::AllOutAttack,
-            CardId::Backstab,
-            CardId::Blur,
-            CardId::BouncingFlask,
-            CardId::CalculatedGamble,
-            CardId::Caltrops,
-            CardId::Catalyst,
-            CardId::Choke,
-            CardId::Concentrate,
             CardId::CripplingPoison,
-            CardId::Dash,
-            CardId::Distraction,
-            CardId::EndlessAgony,
-            CardId::EscapePlan,
-            CardId::Eviscerate,
-            CardId::Expertise,
-            CardId::Finisher,
-            CardId::Flechettes,
-            CardId::Footwork,
-            CardId::HeelHook,
-            CardId::InfiniteBlades,
             CardId::LegSweep,
-            CardId::MasterfulStab,
-            CardId::NoxiousFumes,
-            CardId::Predator,
-            CardId::Reflex,
-            CardId::RiddleWithHoles,
-            CardId::Setup,
-            CardId::Skewer,
+            CardId::Catalyst,
             CardId::Tactician,
-            CardId::Terror,
+            CardId::Expertise,
+            CardId::Choke,
+            CardId::Caltrops,
+            CardId::Blur,
+            CardId::Setup,
+            CardId::EndlessAgony,
+            CardId::RiddleWithHoles,
+            CardId::Skewer,
+            CardId::CalculatedGamble,
+            CardId::EscapePlan,
+            CardId::Finisher,
             CardId::WellLaidPlans,
+            CardId::Terror,
+            CardId::HeelHook,
+            CardId::NoxiousFumes,
+            CardId::InfiniteBlades,
+            CardId::Reflex,
+            CardId::Eviscerate,
+            CardId::Dash,
+            CardId::Backstab,
+            CardId::BouncingFlask,
+            CardId::Concentrate,
+            CardId::Flechettes,
+            CardId::MasterfulStab,
+            CardId::Accuracy,
+            CardId::Footwork,
+            CardId::Distraction,
+            CardId::AllOutAttack,
+            CardId::Predator,
         ]
     );
     assert_eq!(
         SILENT_RARE_POOL,
         &[
-            CardId::Adrenaline,
-            CardId::AfterImage,
-            CardId::Alchemize,
+            CardId::GrandFinale,
             CardId::AThousandCuts,
+            CardId::GlassKnife,
+            CardId::StormOfSteel,
             CardId::BulletTime,
+            CardId::AfterImage,
+            CardId::Unload,
+            CardId::Nightmare,
+            CardId::ToolsOfTheTrade,
+            CardId::WraithForm,
             CardId::Burst,
-            CardId::CorpseExplosion,
-            CardId::DieDieDie,
             CardId::Doppelganger,
             CardId::Envenom,
-            CardId::GlassKnife,
-            CardId::GrandFinale,
-            CardId::Malaise,
-            CardId::Nightmare,
+            CardId::Adrenaline,
+            CardId::DieDieDie,
             CardId::PhantasmalKiller,
-            CardId::StormOfSteel,
-            CardId::ToolsOfTheTrade,
-            CardId::Unload,
-            CardId::WraithForm,
+            CardId::Malaise,
+            CardId::CorpseExplosion,
+            CardId::Alchemize,
         ]
     );
+    assert_eq!(
+        COLORLESS_UNCOMMON_POOL,
+        &[
+            CardId::DarkShackles,
+            CardId::PanicButton,
+            CardId::Trip,
+            CardId::DramaticEntrance,
+            CardId::Impatience,
+            CardId::Blind,
+            CardId::BandageUp,
+            CardId::DeepBreath,
+            CardId::FlashOfSteel,
+            CardId::Forethought,
+            CardId::Enlightenment,
+            CardId::Purity,
+            CardId::Panacea,
+            CardId::Discovery,
+            CardId::Finesse,
+            CardId::GoodInstincts,
+            CardId::SwiftStrike,
+            CardId::JackOfAllTrades,
+            CardId::MindBlast,
+            CardId::Madness,
+        ]
+    );
+    assert_eq!(
+        COLORLESS_RARE_POOL,
+        &[
+            CardId::SadisticNature,
+            CardId::TheBomb,
+            CardId::SecretTechnique,
+            CardId::Violence,
+            CardId::Panache,
+            CardId::SecretWeapon,
+            CardId::Apotheosis,
+            CardId::Mayhem,
+            CardId::HandOfGreed,
+            CardId::Transmutation,
+            CardId::Chrysalis,
+            CardId::Magnetism,
+            CardId::MasterOfStrategy,
+            CardId::Metamorphosis,
+            CardId::ThinkingAhead,
+        ]
+    );
+    assert_eq!(
+        random_colorless_in_combat_pool(),
+        vec![
+            CardId::DarkShackles,
+            CardId::SadisticNature,
+            CardId::PanicButton,
+            CardId::Trip,
+            CardId::DramaticEntrance,
+            CardId::Impatience,
+            CardId::TheBomb,
+            CardId::Blind,
+            CardId::SecretTechnique,
+            CardId::DeepBreath,
+            CardId::Violence,
+            CardId::Panache,
+            CardId::SecretWeapon,
+            CardId::Apotheosis,
+            CardId::Mayhem,
+            CardId::HandOfGreed,
+            CardId::FlashOfSteel,
+            CardId::Forethought,
+            CardId::Enlightenment,
+            CardId::Purity,
+            CardId::Panacea,
+            CardId::Transmutation,
+            CardId::Chrysalis,
+            CardId::Discovery,
+            CardId::Finesse,
+            CardId::Magnetism,
+            CardId::MasterOfStrategy,
+            CardId::GoodInstincts,
+            CardId::SwiftStrike,
+            CardId::JackOfAllTrades,
+            CardId::Metamorphosis,
+            CardId::MindBlast,
+            CardId::ThinkingAhead,
+            CardId::Madness,
+        ],
+        "Java random colorless combat pool filters HEALING cards after HashMap-order colorless pool construction"
+    );
+    assert_eq!(
+        get_curse_pool(),
+        &[
+            CardId::Regret,
+            CardId::Writhe,
+            CardId::Decay,
+            CardId::Pain,
+            CardId::Parasite,
+            CardId::Doubt,
+            CardId::Injury,
+            CardId::Clumsy,
+            CardId::Normality,
+            CardId::Shame,
+        ]
+    );
+    for (class, healing_cards) in [
+        ("Ironclad", &[CardId::Feed, CardId::Reaper][..]),
+        ("Silent", &[CardId::Alchemize][..]),
+        ("Defect", &[CardId::SelfRepair][..]),
+    ] {
+        let pool = class_combat_card_pool_for_type(class, None);
+        for healing_card in healing_cards {
+            assert!(
+                !pool.contains(healing_card),
+                "Java returnTrulyRandomCardInCombat filters HEALING cards out of {class} combat random pool"
+            );
+        }
+    }
 }
 
 #[test]
