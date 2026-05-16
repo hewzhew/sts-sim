@@ -347,6 +347,11 @@ pub enum Action {
     InnerPeace {
         draw_amount: u32,
     },
+    /// Java Watcher `IndignationAction`: at execution time, enter Wrath unless
+    /// already in Wrath; in Wrath, apply Vulnerable to all current monsters.
+    Indignation {
+        amount: i32,
+    },
     /// Java `CompileDriverAction`: at action execution time, draw
     /// `amount_per_orb_type` for each unique non-empty orb type.
     DrawForUniqueOrbTypes {

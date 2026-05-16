@@ -488,6 +488,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::WheelKick, "WheelKick"),
         (CardId::InnerPeace, "InnerPeace"),
         (CardId::FearNoEvil, "FearNoEvil"),
+        (CardId::Indignation, "Indignation"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -662,6 +663,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Indignation,
+            "Indignation",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            3,
+            CardTarget::None,
+            0,
+            0,
+            2,
+        ),
     ];
 
     for (
@@ -708,6 +723,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::FearNoEvil));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Indignation));
 }
 
 #[test]
@@ -1018,6 +1034,60 @@ fn watcher_fear_no_evil_runtime_action_reads_target_intent_when_it_resolves() {
         Some(Action::Damage(damage_info))
     );
     assert_eq!(defend_state.pop_next_action(), None);
+}
+
+#[test]
+fn watcher_indignation_runtime_action_reads_stance_when_it_resolves() {
+    let state = crate::test_support::blank_test_combat();
+    let mut indignation_plus = CombatCard::new(CardId::Indignation, 324);
+    indignation_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::Indignation, &state, &indignation_plus, None);
+
+    assert_eq!(
+        actions.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![&Action::Indignation { amount: 5 }]
+    );
+
+    let mut wrath_state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    wrath_state.entities.monsters = vec![first, second];
+    wrath_state.entities.player.stance = StanceId::Wrath;
+    crate::engine::action_handlers::execute_action(
+        Action::Indignation { amount: 5 },
+        &mut wrath_state,
+    );
+    assert_eq!(
+        wrath_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Vulnerable,
+            amount: 5,
+        })
+    );
+    assert_eq!(
+        wrath_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 8,
+            power_id: PowerId::Vulnerable,
+            amount: 5,
+        })
+    );
+
+    let mut neutral_state = crate::test_support::blank_test_combat();
+    crate::engine::action_handlers::execute_action(
+        Action::Indignation { amount: 5 },
+        &mut neutral_state,
+    );
+    assert_eq!(
+        neutral_state.pop_next_action(),
+        Some(Action::EnterStance("Wrath".to_string()))
+    );
 }
 
 #[test]

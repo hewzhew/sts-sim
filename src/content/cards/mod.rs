@@ -315,6 +315,7 @@ pub enum CardId {
     WheelKick,
     InnerPeace,
     FearNoEvil,
+    Indignation,
     // Add more as we expand
 }
 
@@ -663,6 +664,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::WheelKick => watcher::wheel_kick::definition(),
         CardId::InnerPeace => watcher::inner_peace::definition(),
         CardId::FearNoEvil => watcher::fear_no_evil::definition(),
+        CardId::Indignation => watcher::indignation::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1258,6 +1260,7 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::WheelKick,
     CardId::InnerPeace,
     CardId::FearNoEvil,
+    CardId::Indignation,
 ];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[];
@@ -1472,6 +1475,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::WheelKick => "WheelKick",
         CardId::InnerPeace => "InnerPeace",
         CardId::FearNoEvil => "FearNoEvil",
+        CardId::Indignation => "Indignation",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1870,6 +1874,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         WheelKick,
         InnerPeace,
         FearNoEvil,
+        Indignation,
         Neutralize,
         Survivor,
         Anger,
