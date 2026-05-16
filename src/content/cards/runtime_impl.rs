@@ -49,6 +49,14 @@ pub fn resolve_card_play_with_context(
         CardId::DefendB => defect::defend_blue::defend_blue_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
+        CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
+        CardId::BeamCell => defect::beam_cell::beam_cell_play(_state, _card, t),
+        CardId::ColdSnap => defect::cold_snap::cold_snap_play(_state, _card, t),
+        CardId::ConserveBattery => {
+            defect::conserve_battery::conserve_battery_play(_state, _card)
+        }
+        CardId::Coolheaded => defect::coolheaded::coolheaded_play(_state, _card),
+        CardId::Leap => defect::leap::leap_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),

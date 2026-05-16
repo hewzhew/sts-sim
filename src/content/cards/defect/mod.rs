@@ -1,4 +1,10 @@
+pub mod ball_lightning;
+pub mod beam_cell;
+pub mod cold_snap;
+pub mod conserve_battery;
+pub mod coolheaded;
 pub mod defend_blue;
 pub mod dualcast;
+pub mod leap;
 pub mod strike_blue;
 pub mod zap;

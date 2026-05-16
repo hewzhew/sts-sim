@@ -356,6 +356,235 @@ fn dualcast_runtime_evoke_without_removing_preserves_front_orb_until_second_evok
 }
 
 #[test]
+fn defect_first_common_batch_definitions_match_java_sources() {
+    let cases = [
+        (
+            CardId::BallLightning,
+            "Ball Lightning",
+            CardType::Attack,
+            1,
+            7,
+            0,
+            1,
+            CardTarget::Enemy,
+            3,
+            0,
+            0,
+        ),
+        (
+            CardId::BeamCell,
+            "Beam Cell",
+            CardType::Attack,
+            0,
+            3,
+            0,
+            1,
+            CardTarget::Enemy,
+            1,
+            0,
+            1,
+        ),
+        (
+            CardId::ColdSnap,
+            "Cold Snap",
+            CardType::Attack,
+            1,
+            6,
+            0,
+            1,
+            CardTarget::Enemy,
+            3,
+            0,
+            0,
+        ),
+        (
+            CardId::ConserveBattery,
+            "Conserve Battery",
+            CardType::Skill,
+            1,
+            0,
+            7,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            3,
+            0,
+        ),
+        (
+            CardId::Coolheaded,
+            "Coolheaded",
+            CardType::Skill,
+            1,
+            0,
+            0,
+            1,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::Leap,
+            "Leap",
+            CardType::Skill,
+            1,
+            0,
+            9,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            3,
+            0,
+        ),
+    ];
+
+    let java_map = build_java_id_map();
+    for (
+        id,
+        java_id_value,
+        card_type,
+        cost,
+        base_damage,
+        base_block,
+        base_magic,
+        target,
+        upgrade_damage,
+        upgrade_block,
+        upgrade_magic,
+    ) in cases
+    {
+        assert_eq!(java_id(id), java_id_value);
+        assert_eq!(java_map.get(java_id_value), Some(&id));
+        let def = get_card_definition(id);
+        assert_eq!(def.name, java_id_value);
+        assert_eq!(def.card_type, card_type);
+        assert_eq!(def.rarity, CardRarity::Common);
+        assert_eq!(def.cost, cost);
+        assert_eq!(def.base_damage, base_damage);
+        assert_eq!(def.base_block, base_block);
+        assert_eq!(def.base_magic, base_magic);
+        assert_eq!(def.target, target);
+        assert_eq!(def.upgrade_damage, upgrade_damage);
+        assert_eq!(def.upgrade_block, upgrade_block);
+        assert_eq!(def.upgrade_magic, upgrade_magic);
+    }
+}
+
+#[test]
+fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
+    let state = crate::test_support::blank_test_combat();
+
+    let ball = resolve_card_play(
+        CardId::BallLightning,
+        &state,
+        &CombatCard::new(CardId::BallLightning, 110),
+        Some(7),
+    );
+    assert_eq!(ball.len(), 2);
+    match &ball[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 7);
+            assert_eq!(info.output, 7);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Ball Lightning first action should damage, got {other:?}"),
+    }
+    assert_eq!(ball[1].action, Action::ChannelOrb(OrbId::Lightning));
+
+    let cold = resolve_card_play(
+        CardId::ColdSnap,
+        &state,
+        &CombatCard::new(CardId::ColdSnap, 111),
+        Some(8),
+    );
+    assert_eq!(cold.len(), 2);
+    match &cold[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 8);
+            assert_eq!(info.base, 6);
+            assert_eq!(info.output, 6);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Cold Snap first action should damage, got {other:?}"),
+    }
+    assert_eq!(cold[1].action, Action::ChannelOrb(OrbId::Frost));
+
+    let beam = resolve_card_play(
+        CardId::BeamCell,
+        &state,
+        &CombatCard::new(CardId::BeamCell, 112),
+        Some(9),
+    );
+    assert_eq!(beam.len(), 2);
+    match &beam[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 9);
+            assert_eq!(info.base, 3);
+            assert_eq!(info.output, 3);
+        }
+        other => panic!("Beam Cell first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        beam[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 9,
+            power_id: PowerId::Vulnerable,
+            amount: 1,
+        }
+    );
+
+    let coolheaded = resolve_card_play(
+        CardId::Coolheaded,
+        &state,
+        &CombatCard::new(CardId::Coolheaded, 113),
+        None,
+    );
+    assert_eq!(coolheaded.len(), 2);
+    assert_eq!(coolheaded[0].action, Action::ChannelOrb(OrbId::Frost));
+    assert_eq!(coolheaded[1].action, Action::DrawCards(1));
+
+    let leap = resolve_card_play(
+        CardId::Leap,
+        &state,
+        &CombatCard::new(CardId::Leap, 114),
+        None,
+    );
+    assert_eq!(
+        leap[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 9,
+        }
+    );
+
+    let battery = resolve_card_play(
+        CardId::ConserveBattery,
+        &state,
+        &CombatCard::new(CardId::ConserveBattery, 115),
+        None,
+    );
+    assert_eq!(battery.len(), 2);
+    assert_eq!(
+        battery[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 7,
+        }
+    );
+    assert_eq!(
+        battery[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Energized,
+            amount: 1,
+        }
+    );
+}
+
+#[test]
 fn ironclad_common_utility_definitions_match_java_sources() {
     let anger = get_card_definition(CardId::Anger);
     assert_eq!(anger.name, "Anger");
