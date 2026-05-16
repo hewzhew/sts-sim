@@ -348,6 +348,8 @@ pub enum CardId {
     SandsOfTime,
     Perseverance,
     WindmillStrike,
+    Wallop,
+    TalkToTheHand,
     // Add more as we expand
 }
 
@@ -728,6 +730,8 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::SandsOfTime => watcher::sands_of_time::definition(),
         CardId::Perseverance => watcher::perseverance::definition(),
         CardId::WindmillStrike => watcher::windmill_strike::definition(),
+        CardId::Wallop => watcher::wallop::definition(),
+        CardId::TalkToTheHand => watcher::talk_to_the_hand::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1349,6 +1353,8 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::SandsOfTime,
     CardId::Perseverance,
     CardId::WindmillStrike,
+    CardId::Wallop,
+    CardId::TalkToTheHand,
 ];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[
@@ -1601,6 +1607,8 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::SandsOfTime => "SandsOfTime",
         CardId::Perseverance => "Perseverance",
         CardId::WindmillStrike => "WindmillStrike",
+        CardId::Wallop => "Wallop",
+        CardId::TalkToTheHand => "TalkToTheHand",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -2018,6 +2026,8 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         SandsOfTime,
         Perseverance,
         WindmillStrike,
+        Wallop,
+        TalkToTheHand,
         Neutralize,
         Survivor,
         Anger,

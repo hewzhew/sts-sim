@@ -97,6 +97,10 @@ pub fn resolve_card_play_with_context(
         CardId::SandsOfTime => watcher::sands_of_time::sands_of_time_play(_state, _card, t),
         CardId::Perseverance => watcher::perseverance::perseverance_play(_state, _card),
         CardId::WindmillStrike => watcher::windmill_strike::windmill_strike_play(_state, _card, t),
+        CardId::Wallop => watcher::wallop::wallop_play(_state, _card, t),
+        CardId::TalkToTheHand => {
+            watcher::talk_to_the_hand::talk_to_the_hand_play(_state, _card, t)
+        }
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),

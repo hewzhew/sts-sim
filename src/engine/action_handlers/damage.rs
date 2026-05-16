@@ -395,11 +395,10 @@ fn should_cancel_java_damage_action(
         || damage_action_source_is_dying_or_half_dead(state, info.source)
 }
 
-pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
-    if should_cancel_java_damage_action(state, &info) {
-        return;
-    }
-
+fn calculate_damage_action_output(
+    state: &CombatState,
+    info: &crate::runtime::action::DamageInfo,
+) -> (i32, bool) {
     let target_id = info.target;
     let source_id = info.source;
 
@@ -407,7 +406,7 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
     // - Player-origin Normal damage arrives pre-evaluated in `output`.
     // - Monster-origin Normal damage is re-resolved here from `base`.
     // - Non-Normal damage kinds (`HpLoss`, `Thorns`, etc.) use the supplied numeric value.
-    let (calculated_output, damage_already_includes_final_receive) = if !info.is_modified
+    if !info.is_modified
         && source_id != 0
         && source_id != NO_SOURCE
         && info.damage_type == DamageType::Normal
@@ -422,7 +421,19 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
         (info.output.max(0), true)
     } else {
         (info.output.max(0), false)
-    };
+    }
+}
+
+pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
+    if should_cancel_java_damage_action(state, &info) {
+        return;
+    }
+
+    let target_id = info.target;
+    let source_id = info.source;
+
+    let (calculated_output, damage_already_includes_final_receive) =
+        calculate_damage_action_output(state, &info);
 
     let mut final_damage = calculated_output;
     let target_is_player = target_id == 0;
@@ -564,6 +575,39 @@ pub fn handle_bane_damage(info: crate::runtime::action::DamageInfo, state: &mut 
         let final_damage = info.output.max(0);
         let _ = apply_damage_to_monster_via_pipeline(state, &info, final_damage);
         clear_post_combat_actions_if_ready(state);
+    }
+}
+
+pub fn handle_wallop_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
+    if should_cancel_java_damage_action(state, &info) {
+        return;
+    }
+    if info.target == 0 {
+        handle_damage(info, state);
+        return;
+    }
+
+    let (calculated_output, damage_already_includes_final_receive) =
+        calculate_damage_action_output(state, &info);
+    let mut final_damage = calculated_output;
+
+    if !damage_already_includes_final_receive {
+        for power in &store::powers_snapshot_for(state, info.target) {
+            final_damage = crate::content::powers::resolve_power_at_damage_final_receive(
+                power.power_type,
+                final_damage,
+                power.amount,
+                info.damage_type,
+            );
+        }
+    }
+
+    let outcome = apply_damage_to_monster_via_pipeline(state, &info, final_damage);
+    if outcome.hp_lost > 0 {
+        state.queue_action_front(Action::GainBlock {
+            target: info.source,
+            amount: outcome.hp_lost,
+        });
     }
 }
 

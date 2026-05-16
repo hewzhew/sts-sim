@@ -75,6 +75,7 @@ pub enum PowerId {
     CannotChangeStance,
     WrathNextTurn,
     FreeAttackPower,
+    BlockReturnPower,
     Focus,
     DexterityDown,
     PenNibPower,
@@ -254,6 +255,7 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::DrawReduction
         | PowerId::Choked
         | PowerId::CorpseExplosion
+        | PowerId::BlockReturnPower
         | PowerId::WraithForm => true,
         // Everything else is BUFF
         _ => false,
@@ -292,7 +294,8 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         | PowerId::Fading
         | PowerId::DrawReduction
         | PowerId::Choked
-        | PowerId::CorpseExplosion => amount > 0,
+        | PowerId::CorpseExplosion
+        | PowerId::BlockReturnPower => amount > 0,
         _ => false,
     }
 }
@@ -538,6 +541,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         PowerId::FreeAttackPower => PowerDefinition {
             id,
             name: "Free Attack",
+        },
+        PowerId::BlockReturnPower => PowerDefinition {
+            id,
+            name: "Talk to the Hand",
         },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
         PowerId::DexterityDown => PowerDefinition {
@@ -1370,6 +1377,20 @@ pub fn resolve_power_on_attacked(
         PowerId::Malleable => core::malleable::on_attacked(state, owner, damage, power_amount),
         PowerId::StaticDischarge => {
             defect::static_discharge::on_attacked(owner, source, damage, damage_type, power_amount)
+        }
+        PowerId::BlockReturnPower => {
+            if damage_type != crate::runtime::action::DamageType::Thorns
+                && damage_type != crate::runtime::action::DamageType::HpLoss
+                && source != crate::runtime::action::NO_SOURCE
+                && source != owner
+            {
+                smallvec::smallvec![crate::runtime::action::Action::GainBlock {
+                    target: 0,
+                    amount: power_amount,
+                }]
+            } else {
+                smallvec::smallvec![]
+            }
         }
         PowerId::Thorns => core::thorns::on_attacked(state, owner, damage, source, power_amount),
         PowerId::Shifting => {

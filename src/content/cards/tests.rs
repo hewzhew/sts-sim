@@ -1098,6 +1098,34 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             1,
         ),
         (
+            CardId::Wallop,
+            "Wallop",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            2,
+            9,
+            0,
+            0,
+            CardTarget::Enemy,
+            3,
+            0,
+            0,
+        ),
+        (
+            CardId::TalkToTheHand,
+            "Talk to the Hand",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            1,
+            5,
+            0,
+            2,
+            CardTarget::Enemy,
+            2,
+            0,
+            1,
+        ),
+        (
             CardId::Smite,
             "Smite",
             CardType::Attack,
@@ -1210,6 +1238,8 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::SandsOfTime));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Perseverance));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WindmillStrike));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Wallop));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::TalkToTheHand));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
     assert!(WATCHER_RARE_POOL.contains(&CardId::SpiritShield));
@@ -1721,6 +1751,124 @@ fn watcher_retained_block_and_strike_growth_match_java_on_retained() {
         }
         other => panic!("Windmill Strike+ should emit retained DamageAction, got {other:?}"),
     }
+}
+
+#[test]
+fn watcher_wallop_and_talk_to_the_hand_match_java_execution_hooks() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut wallop_plus = CombatCard::new(CardId::Wallop, 960);
+    wallop_plus.upgrades = 1;
+    let wallop = resolve_card_play(CardId::Wallop, &state, &wallop_plus, Some(7));
+    assert_eq!(wallop.len(), 1);
+    match &wallop[0].action {
+        Action::WallopDamage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 12);
+            assert_eq!(info.output, 12);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Wallop+ should emit WallopAction-equivalent damage, got {other:?}"),
+    }
+
+    let mut wallop_state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    target.current_hp = 40;
+    target.max_hp = 40;
+    target.block = 5;
+    wallop_state.entities.monsters = vec![target];
+    crate::engine::action_handlers::execute_action(wallop[0].action.clone(), &mut wallop_state);
+    assert_eq!(
+        wallop_state.entities.monsters[0].current_hp, 33,
+        "Wallop actual HP loss should be after target block"
+    );
+    assert_eq!(
+        wallop_state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 7,
+        }),
+        "Java WallopAction gains block equal to target.lastDamageTaken"
+    );
+
+    let mut talk_plus = CombatCard::new(CardId::TalkToTheHand, 961);
+    talk_plus.upgrades = 1;
+    let talk = resolve_card_play(CardId::TalkToTheHand, &state, &talk_plus, Some(7));
+    assert_eq!(talk.len(), 2);
+    assert!(get_card_definition(CardId::TalkToTheHand).exhaust);
+    match &talk[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 7);
+            assert_eq!(info.output, 7);
+        }
+        other => panic!("Talk to the Hand+ first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        talk[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::BlockReturnPower,
+            amount: 3,
+        }
+    );
+
+    let mut return_state = crate::test_support::blank_test_combat();
+    let mut marked = crate::test_support::test_monster(EnemyId::JawWorm);
+    marked.id = 7;
+    marked.current_hp = 40;
+    marked.max_hp = 40;
+    return_state.entities.monsters = vec![marked];
+    crate::content::powers::store::set_powers_for(
+        &mut return_state,
+        7,
+        vec![Power {
+            power_type: PowerId::BlockReturnPower,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: 0,
+            target: 7,
+            base: 1,
+            output: 1,
+            damage_type: DamageType::Normal,
+            is_modified: true,
+        }),
+        &mut return_state,
+    );
+    assert_eq!(
+        return_state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 3,
+        }),
+        "Java BlockReturnPower grants player block when a different non-null source attacks"
+    );
+
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: 0,
+            target: 7,
+            base: 1,
+            output: 1,
+            damage_type: DamageType::Thorns,
+            is_modified: true,
+        }),
+        &mut return_state,
+    );
+    assert_eq!(
+        return_state.pop_next_action(),
+        None,
+        "Java BlockReturnPower ignores THORNS and HP_LOSS damage"
+    );
 }
 
 #[test]

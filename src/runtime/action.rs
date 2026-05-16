@@ -105,6 +105,9 @@ pub enum Action {
     /// Java `BaneAction`: execute a second attack only if the target is alive
     /// and still has Poison when this queued action resolves.
     BaneDamage(DamageInfo),
+    /// Java `WallopAction`: after damage resolves, gain block equal to the
+    /// target's actual HP lost from this hit.
+    WallopDamage(DamageInfo),
     /// Java `DamagePerAttackPlayedAction` used by Finisher.
     ///
     /// Execution reads the current attack count from the action manager state,
@@ -875,6 +878,7 @@ impl Action {
             self,
             Action::Damage(_)
                 | Action::PummelDamage(_)
+                | Action::WallopDamage(_)
                 | Action::MonsterAttack { .. }
                 | Action::DamagePerAttackPlayed(_)
                 | Action::DamageAllEnemies { .. }
