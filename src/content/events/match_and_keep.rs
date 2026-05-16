@@ -83,6 +83,8 @@ pub fn init_match_game_board(run_state: &mut RunState, extra_data: &mut Vec<i32>
     card_types[5] = match run_state.player_class {
         "Ironclad" => CardId::Bash,
         "Silent" => CardId::Neutralize,
+        "Defect" => CardId::Zap,
+        "Watcher" => CardId::Eruption,
         _ => CardId::Strike,
     };
 
@@ -324,4 +326,33 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn match_and_keep_start_card_matches_java_player_get_start_card_for_event() {
+        let cases = [
+            ("Ironclad", CardId::Bash),
+            ("Silent", CardId::Neutralize),
+            ("Defect", CardId::Zap),
+            ("Watcher", CardId::Eruption),
+        ];
+
+        for (player_class, expected_start_card) in cases {
+            let mut run_state = RunState::new(12345, 0, false, player_class);
+            let mut extra_data = Vec::new();
+
+            init_match_game_board(&mut run_state, &mut extra_data);
+
+            assert_eq!(
+                card_id_from_i32(extra_data[CARD_LOOKUP_OFFSET + 5]),
+                expected_start_card,
+                "Java {}.getStartCardForEvent() must feed GremlinMatchGame.initializeCards",
+                player_class
+            );
+        }
+    }
 }

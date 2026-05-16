@@ -1284,18 +1284,38 @@ impl RunState {
         rarity: crate::content::cards::CardRarity,
     ) -> crate::content::cards::CardId {
         use crate::content::cards::*;
-        let pool = match rarity {
-            CardRarity::Rare => COLORLESS_RARE_POOL,
-            _ => COLORLESS_UNCOMMON_POOL,
-        };
-        let idx = self
-            .rng_pool
-            .misc_rng
-            .random_range(0, pool.len() as i32 - 1) as usize;
-        pool[idx]
+        let mut pool = COLORLESS_UNCOMMON_POOL
+            .iter()
+            .copied()
+            .chain(COLORLESS_RARE_POOL.iter().copied())
+            .collect::<Vec<_>>();
+        let seed = self.rng_pool.shuffle_rng.random_long();
+        let mut jur = crate::runtime::rng::JavaUtilRandom::new(seed);
+        for i in (1..pool.len()).rev() {
+            let j = jur.next_int((i + 1) as i32) as usize;
+            pool.swap(i, j);
+        }
+
+        if let Some(card_id) = pool
+            .iter()
+            .copied()
+            .find(|card_id| get_card_definition(*card_id).rarity == rarity)
+        {
+            return card_id;
+        }
+        if rarity == CardRarity::Rare {
+            if let Some(card_id) = pool
+                .iter()
+                .copied()
+                .find(|card_id| get_card_definition(*card_id).rarity == CardRarity::Uncommon)
+            {
+                return card_id;
+            }
+        }
+        CardId::SwiftStrike
     }
 
-    /// Returns a random card from the Ironclad pool of the given rarity.
+    /// Returns a random card from the current class pool of the given rarity.
     /// Mirrors Java `getCard(rarity)` — picks from the rarity-specific pool.
     pub fn random_card_by_rarity(
         &mut self,
@@ -1316,7 +1336,7 @@ impl RunState {
         }
         let idx = self
             .rng_pool
-            .misc_rng
+            .card_rng
             .random_range(0, pool.len() as i32 - 1) as usize;
         pool[idx]
     }
@@ -1571,7 +1591,7 @@ impl RunState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::cards::CardId;
+    use crate::content::cards::{CardId, CardRarity};
     use crate::content::relics::RelicId;
 
     fn deck_ids(run: &RunState) -> Vec<CardId> {
@@ -1653,6 +1673,41 @@ mod tests {
             ]
         );
         assert_eq!(watcher.relics[0].id, RelicId::PureWater);
+    }
+
+    #[test]
+    fn event_random_card_helpers_use_java_rng_streams() {
+        let mut run = RunState::new(11, 0, false, "Ironclad");
+        let card_before = run.rng_pool.card_rng.counter;
+        let misc_before = run.rng_pool.misc_rng.counter;
+        let shuffle_before = run.rng_pool.shuffle_rng.counter;
+
+        let _ = run.random_card_by_rarity(CardRarity::Rare);
+
+        assert_eq!(
+            run.rng_pool.card_rng.counter,
+            card_before + 1,
+            "Java AbstractDungeon.getCard(rarity) uses cardRng via CardGroup.getRandomCard(true)"
+        );
+        assert_eq!(
+            run.rng_pool.misc_rng.counter, misc_before,
+            "rarity card selection must not consume miscRng; Match and Keep uses miscRng later for board shuffle"
+        );
+        assert_eq!(run.rng_pool.shuffle_rng.counter, shuffle_before);
+
+        let card_after = run.rng_pool.card_rng.counter;
+        let misc_after = run.rng_pool.misc_rng.counter;
+        let shuffle_after = run.rng_pool.shuffle_rng.counter;
+
+        let _ = run.random_colorless_card(CardRarity::Uncommon);
+
+        assert_eq!(run.rng_pool.card_rng.counter, card_after);
+        assert_eq!(run.rng_pool.misc_rng.counter, misc_after);
+        assert_eq!(
+            run.rng_pool.shuffle_rng.counter,
+            shuffle_after + 1,
+            "Java returnColorlessCard(rarity) shuffles colorlessCardPool with shuffleRng.randomLong()"
+        );
     }
 
     #[test]
