@@ -455,6 +455,7 @@ fn handle_apply_power_detailed_internal(
                 PowerId::Flight => (amount, amount),
                 PowerId::DevaForm => (amount, 1),
                 PowerId::CollectPower => (amount.min(999), 0),
+                PowerId::Invincible => (amount, amount),
                 PowerId::Rebound => (amount, extra_data.unwrap_or(1)),
                 _ if extra_data.is_some() => (amount, extra_data.unwrap_or(0)),
                 _ => (amount, 0),
@@ -977,6 +978,26 @@ mod tests {
             store::power_amount(&state, 47, PowerId::Weak),
             2,
             "Java ApplyPowerAction checks isDeadOrEscaped(), not currentHealth <= 0"
+        );
+    }
+
+    #[test]
+    fn apply_invincible_stores_turn_reset_amount_like_java_max_amt() {
+        let mut state = blank_test_combat();
+        let mut target = crate::test_support::test_monster(EnemyId::CorruptHeart);
+        target.id = 48;
+        state.entities.monsters = vec![target];
+
+        handle_apply_power(48, 48, PowerId::Invincible, 200, &mut state);
+
+        let power = store::powers_snapshot_for(&state, 48)
+            .into_iter()
+            .find(|p| p.power_type == PowerId::Invincible)
+            .expect("Invincible should be applied");
+        assert_eq!(power.amount, 200);
+        assert_eq!(
+            power.extra_data, 200,
+            "Java InvinciblePower keeps maxAmt for start-of-turn reset; Rust stores that in extra_data"
         );
     }
 

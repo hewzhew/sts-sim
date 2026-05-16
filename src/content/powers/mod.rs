@@ -1625,6 +1625,15 @@ pub fn resolve_power_on_attacked_to_change_damage(
                 current_damage
             }
         }
+        PowerId::Invincible => {
+            let target = info.target;
+            let capped_damage = store::with_power_mut(state, target, PowerId::Invincible, |power| {
+                let capped = current_damage.min(power.amount).max(0);
+                power.amount = (power.amount - capped).max(0);
+                capped
+            });
+            capped_damage.unwrap_or(current_damage)
+        }
         _ => current_damage,
     }
 }

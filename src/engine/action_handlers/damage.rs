@@ -187,13 +187,16 @@ fn apply_damage_to_monster_via_pipeline(
         .find(|m| m.id == target_id)
         .cloned()
     {
-        if m.is_dying {
+        if m.is_dying || m.is_escaped {
             return outcome;
         }
 
         let target_hp_before_damage = m.current_hp;
-        let had_block = m.block > 0;
-        final_damage = deduct_block(&mut m.block, final_damage);
+        let hp_loss_damage = info.damage_type == DamageType::HpLoss;
+        let had_block = !hp_loss_damage && m.block > 0;
+        if !hp_loss_damage {
+            final_damage = deduct_block(&mut m.block, final_damage);
+        }
 
         if source_id == 0
             && info.damage_type == DamageType::Normal
@@ -1263,31 +1266,25 @@ pub fn handle_lose_hp(target: usize, amount: i32, triggers_rupture: bool, state:
         }
         clear_post_combat_actions_if_ready(state);
     } else {
-        let mut actual_lost = 0;
-        if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
-            let prev = m.current_hp;
-            m.current_hp = (m.current_hp - amount).max(0);
-            actual_lost = prev - m.current_hp;
+        let mut final_amount = amount.max(0);
+        if crate::content::powers::store::power_amount(
+            state,
+            target,
+            crate::content::powers::PowerId::IntangiblePlayer,
+        ) > 0
+            && final_amount > 1
+        {
+            final_amount = 1;
         }
-        super::check_and_trigger_monster_death(state, target);
-
-        if actual_lost > 0 {
-            // Trait hook for Wakeup by Poison/Thorns (equivalent of calling damage() in Java)
-            if let Some(m) = state
-                .entities
-                .monsters
-                .iter()
-                .find(|m| m.id == target)
-                .cloned()
-            {
-                if let Some(eid) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
-                    let monster_actions =
-                        crate::content::monsters::dispatch_on_damaged(eid, state, &m, actual_lost);
-                    state.queue_actions(monster_actions);
-                }
-            }
-        }
-        clear_post_combat_actions_if_ready(state);
+        let info = DamageInfo {
+            source: NO_SOURCE,
+            target,
+            base: final_amount,
+            output: final_amount,
+            damage_type: DamageType::HpLoss,
+            is_modified: false,
+        };
+        let _ = apply_damage_to_monster_via_pipeline(state, &info, final_amount);
     }
 }
 
@@ -1754,6 +1751,97 @@ mod tests {
             "Java LoseHPAction checks clearPostCombatActions even when the target is the player"
         );
         assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn monster_lose_hp_action_skips_dying_and_escaping_like_java_damage() {
+        for (is_dying, is_escaped) in [(true, false), (false, true)] {
+            let mut state = blank_test_combat();
+            let mut monster = test_monster(EnemyId::JawWorm);
+            monster.id = 71;
+            monster.current_hp = 20;
+            monster.is_dying = is_dying;
+            monster.is_escaped = is_escaped;
+            state.entities.monsters = vec![monster];
+
+            handle_lose_hp(71, 7, false, &mut state);
+
+            assert_eq!(
+                state.entities.monsters[0].current_hp, 20,
+                "Java AbstractMonster.damage returns before HP_LOSS when the target is isDying or isEscaping"
+            );
+            assert_eq!(state.pop_next_action(), None);
+        }
+    }
+
+    #[test]
+    fn monster_lose_hp_action_ignores_block_but_respects_invincible_like_java() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::CorruptHeart);
+        monster.id = 72;
+        monster.current_hp = 300;
+        monster.max_hp = 300;
+        monster.block = 30;
+        state.entities.monsters = vec![monster];
+        store::set_powers_for(
+            &mut state,
+            72,
+            vec![Power {
+                power_type: PowerId::Invincible,
+                instance_id: None,
+                amount: 5,
+                extra_data: 5,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        handle_lose_hp(72, 20, false, &mut state);
+
+        let monster = &state.entities.monsters[0];
+        assert_eq!(monster.block, 30, "Java HP_LOSS does not decrement block");
+        assert_eq!(
+            monster.current_hp, 295,
+            "Java InvinciblePower.onAttackedToChangeDamage caps HP_LOSS as well as ordinary damage"
+        );
+        assert_eq!(store::power_amount(&state, 72, PowerId::Invincible), 0);
+    }
+
+    #[test]
+    fn ordinary_monster_damage_respects_invincible_like_java() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::CorruptHeart);
+        monster.id = 73;
+        monster.current_hp = 300;
+        monster.max_hp = 300;
+        state.entities.monsters = vec![monster];
+        store::set_powers_for(
+            &mut state,
+            73,
+            vec![Power {
+                power_type: PowerId::Invincible,
+                instance_id: None,
+                amount: 6,
+                extra_data: 6,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        handle_damage(
+            DamageInfo {
+                source: 0,
+                target: 73,
+                base: 50,
+                output: 50,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut state,
+        );
+
+        assert_eq!(state.entities.monsters[0].current_hp, 294);
+        assert_eq!(store::power_amount(&state, 73, PowerId::Invincible), 0);
     }
 
     #[test]
