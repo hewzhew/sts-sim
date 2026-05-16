@@ -53,7 +53,19 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Remove card: take damage, then purge
-                    run_state.current_hp = (run_state.current_hp - DAMAGE).max(0);
+                    let damage = if run_state
+                        .relics
+                        .iter()
+                        .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
+                    {
+                        (DAMAGE - 1).max(0)
+                    } else {
+                        DAMAGE
+                    };
+                    run_state.change_hp_with_source(
+                        -damage,
+                        DomainEventSource::Event(EventId::GoldenWing),
+                    );
                     event_state.current_screen = 1;
                     run_state.event_state = Some(event_state);
                     *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
@@ -87,4 +99,67 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::core::{EngineState, RunPendingChoiceReason};
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    fn golden_wing_run() -> RunState {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 20;
+        run_state.max_hp = 80;
+        run_state.event_state = Some(EventState::new(EventId::GoldenWing));
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    #[test]
+    fn remove_path_damage_uses_event_source_before_purge_selection() {
+        let mut run_state = golden_wing_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 13);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -7,
+                current_hp: 13,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::GoldenWing),
+            }
+        )));
+        assert!(matches!(
+            engine_state,
+            EngineState::RunPendingChoice(ref pending)
+                if pending.reason == RunPendingChoiceReason::PurgeNonBottled
+        ));
+    }
+
+    #[test]
+    fn remove_path_damage_respects_tungsten_rod_like_java_player_damage() {
+        let mut run_state = golden_wing_run();
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 14);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -6,
+                current_hp: 14,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::GoldenWing),
+            }
+        )));
+    }
 }
