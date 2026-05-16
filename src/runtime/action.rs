@@ -587,6 +587,12 @@ pub enum Action {
         card_uuid: u32,
         amount: i32,
     },
+    /// Java Defect `GashAction`: increase the used Claw and all Claw cards in
+    /// hand/draw/discard by the current magic amount.
+    Gash {
+        card_uuid: u32,
+        amount: i32,
+    },
     ReduceCardCostForCombat {
         card_uuid: u32,
         amount: i32,

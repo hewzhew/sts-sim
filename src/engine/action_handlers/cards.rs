@@ -1232,6 +1232,28 @@ pub fn handle_modify_card_damage(card_uuid: u32, amount: i32, state: &mut Combat
         });
 }
 
+pub fn handle_gash(card_uuid: u32, amount: i32, state: &mut CombatState) {
+    let apply = |card: &mut crate::runtime::combat::CombatCard| {
+        let def = crate::content::cards::get_card_definition(card.id);
+        let upgraded_base = def.base_damage + (card.upgrades as i32) * def.upgrade_damage;
+        let current = card.base_damage_override.unwrap_or(upgraded_base);
+        card.base_damage_override = Some((current + amount).max(0));
+    };
+
+    for card in state
+        .zones
+        .hand
+        .iter_mut()
+        .chain(state.zones.draw_pile.iter_mut())
+        .chain(state.zones.discard_pile.iter_mut())
+        .chain(state.zones.limbo.iter_mut())
+    {
+        if card.id == CardId::Claw || card.uuid == card_uuid {
+            apply(card);
+        }
+    }
+}
+
 pub fn handle_reduce_card_cost_for_combat(card_uuid: u32, amount: i32, state: &mut CombatState) {
     if amount <= 0 {
         return;

@@ -67,6 +67,7 @@ pub fn resolve_card_play_with_context(
         CardId::Recursion => defect::recursion::recursion_play(_state, _card),
         CardId::Streamline => defect::streamline::streamline_play(_state, _card, t),
         CardId::Rebound => defect::rebound::rebound_play(_state, _card, t),
+        CardId::Claw => defect::claw::claw_play(_state, _card, t),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),

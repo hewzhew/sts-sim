@@ -486,6 +486,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::ModifyCardDamage { card_uuid, amount } => {
             cards::handle_modify_card_damage(card_uuid, amount, state)
         }
+        Action::Gash { card_uuid, amount } => cards::handle_gash(card_uuid, amount, state),
         Action::ReduceCardCostForCombat { card_uuid, amount } => {
             cards::handle_reduce_card_cost_for_combat(card_uuid, amount, state)
         }

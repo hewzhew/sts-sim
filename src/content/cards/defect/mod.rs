@@ -1,6 +1,7 @@
 pub mod ball_lightning;
 pub mod barrage;
 pub mod beam_cell;
+pub mod claw;
 pub mod cold_snap;
 pub mod compile_driver;
 pub mod conserve_battery;

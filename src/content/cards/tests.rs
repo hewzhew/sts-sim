@@ -566,6 +566,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Claw,
+            "Gash",
+            CardType::Attack,
+            0,
+            3,
+            0,
+            2,
+            CardTarget::Enemy,
+            2,
+            0,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -586,10 +599,10 @@ fn defect_first_common_batch_definitions_match_java_sources() {
         assert_eq!(java_id(id), java_id_value);
         assert_eq!(java_map.get(java_id_value), Some(&id));
         let def = get_card_definition(id);
-        if id == CardId::Recursion {
-            assert_eq!(def.name, "Recursion");
-        } else {
-            assert_eq!(def.name, java_id_value);
+        match id {
+            CardId::Recursion => assert_eq!(def.name, "Recursion"),
+            CardId::Claw => assert_eq!(def.name, "Claw"),
+            _ => assert_eq!(def.name, java_id_value),
         }
         assert_eq!(def.card_type, card_type);
         assert_eq!(def.rarity, CardRarity::Common);
@@ -1065,6 +1078,47 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
         }
         other => panic!("Rebound+ first action should damage, got {other:?}"),
     }
+
+    let claw = resolve_card_play(
+        CardId::Claw,
+        &state,
+        &CombatCard::new(CardId::Claw, 140),
+        Some(18),
+    );
+    assert_eq!(claw.len(), 2);
+    match &claw[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 18);
+            assert_eq!(info.base, 3);
+            assert_eq!(info.output, 3);
+        }
+        other => panic!("Claw first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        claw[1].action,
+        Action::Gash {
+            card_uuid: 140,
+            amount: 2,
+        }
+    );
+
+    let mut claw_plus = CombatCard::new(CardId::Claw, 141);
+    claw_plus.upgrades = 1;
+    let claw_plus_actions = resolve_card_play(CardId::Claw, &state, &claw_plus, Some(18));
+    match &claw_plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 5);
+            assert_eq!(info.output, 5);
+        }
+        other => panic!("Claw+ first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        claw_plus_actions[1].action,
+        Action::Gash {
+            card_uuid: 141,
+            amount: 2,
+        }
+    );
 }
 
 #[test]
@@ -1352,6 +1406,49 @@ fn rebound_power_consumes_on_power_card_without_rebounding_it() {
             amount: 1,
         })
     );
+}
+
+#[test]
+fn gash_action_increases_current_and_visible_claw_cards_only() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![
+        CombatCard::new(CardId::Claw, 221),
+        CombatCard::new(CardId::StrikeB, 222),
+    ];
+    let mut upgraded_claw = CombatCard::new(CardId::Claw, 223);
+    upgraded_claw.upgrades = 1;
+    state.zones.draw_pile = vec![upgraded_claw];
+    let mut damaged_claw = CombatCard::new(CardId::Claw, 224);
+    damaged_claw.base_damage_override = Some(10);
+    state.zones.discard_pile = vec![damaged_claw];
+    state.zones.exhaust_pile = vec![CombatCard::new(CardId::Claw, 225)];
+    state.zones.limbo = vec![CombatCard::new(CardId::Claw, 226)];
+
+    crate::engine::action_handlers::execute_action(
+        Action::Gash {
+            card_uuid: 226,
+            amount: 2,
+        },
+        &mut state,
+    );
+
+    assert_eq!(state.zones.hand[0].base_damage_override, Some(5));
+    assert_eq!(state.zones.hand[1].base_damage_override, None);
+    assert_eq!(
+        state.zones.draw_pile[0].base_damage_override,
+        Some(7),
+        "upgraded Claw should grow from its upgraded base damage"
+    );
+    assert_eq!(
+        state.zones.discard_pile[0].base_damage_override,
+        Some(12),
+        "existing combat damage mutations should keep stacking"
+    );
+    assert_eq!(
+        state.zones.exhaust_pile[0].base_damage_override, None,
+        "Java GashAction does not loop the exhaust pile"
+    );
+    assert_eq!(state.zones.limbo[0].base_damage_override, Some(5));
 }
 
 #[test]
