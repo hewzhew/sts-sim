@@ -1548,7 +1548,7 @@ pub fn resolve_power_on_attacked(
             core::shifting::on_attacked(state, owner, damage, source, power_amount)
         }
         PowerId::Reactive => {
-            core::reactive::on_attacked(state, owner, damage, source, power_amount)
+            core::reactive::on_attacked(state, owner, damage, source, damage_type, power_amount)
         }
         _ => smallvec::smallvec![],
     }

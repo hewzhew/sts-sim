@@ -21,6 +21,51 @@ const RIPPLE: u8 = 3;
 const HEAD_SLAM: u8 = 4;
 const HASTE: u8 = 5;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn haste_heal_amount_is_read_at_execution_time_like_java() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.id = 1;
+        time_eater.max_hp = 456;
+        time_eater.current_hp = 220;
+        let plan = haste_plan(&time_eater, 19);
+
+        time_eater.current_hp = 100;
+        let mut state = crate::test_support::combat_with_monsters(vec![time_eater.clone()]);
+
+        let actions = TimeEater::take_turn_plan(&mut state, &time_eater, &plan);
+
+        assert!(matches!(
+            actions.iter().find(|action| matches!(action, Action::Heal { .. })),
+            Some(Action::Heal {
+                target: 1,
+                amount: 128
+            })
+        ));
+    }
+
+    #[test]
+    fn haste_visible_spec_does_not_freeze_hidden_heal_amount() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.max_hp = 456;
+        time_eater.current_hp = 220;
+
+        let plan = haste_plan(&time_eater, 19);
+
+        assert_eq!(
+            plan.visible_spec,
+            Some(MonsterMoveSpec::Heal(HealSpec {
+                target: MoveTarget::SelfTarget,
+                amount: 0,
+            }))
+        );
+    }
+}
+
 fn reverberate_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 4 {
         8
@@ -157,7 +202,7 @@ fn head_slam_plan(ascension_level: u8) -> MonsterTurnPlan {
     )
 }
 
-fn haste_plan(entity: &MonsterEntity, ascension_level: u8) -> MonsterTurnPlan {
+fn haste_plan(_entity: &MonsterEntity, ascension_level: u8) -> MonsterTurnPlan {
     let mut steps = smallvec![
         MoveStep::Utility(UtilityStep::RemoveAllDebuffs {
             target: MoveTarget::SelfTarget,
@@ -167,13 +212,10 @@ fn haste_plan(entity: &MonsterEntity, ascension_level: u8) -> MonsterTurnPlan {
             power_id: PowerId::Shackled,
         }),
     ];
-    let heal_amount = haste_heal_amount(entity);
-    if heal_amount > 0 {
-        steps.push(MoveStep::Heal(crate::semantics::combat::HealStep {
-            target: MoveTarget::SelfTarget,
-            amount: heal_amount,
-        }));
-    }
+    steps.push(MoveStep::Heal(crate::semantics::combat::HealStep {
+        target: MoveTarget::SelfTarget,
+        amount: 0,
+    }));
     if ascension_level >= 19 {
         steps.push(MoveStep::GainBlock(BlockStep {
             target: MoveTarget::SelfTarget,
@@ -185,7 +227,7 @@ fn haste_plan(entity: &MonsterEntity, ascension_level: u8) -> MonsterTurnPlan {
         steps,
         MonsterMoveSpec::Heal(HealSpec {
             target: MoveTarget::SelfTarget,
-            amount: heal_amount,
+            amount: 0,
         }),
     )
 }
@@ -333,11 +375,16 @@ impl MonsterBehavior for TimeEater {
                         ) => actions.push(remove_power_action(entity, step)),
                         MoveStep::Heal(crate::semantics::combat::HealStep {
                             target: MoveTarget::SelfTarget,
-                            amount,
-                        }) => actions.push(Action::Heal {
-                            target: entity.id,
-                            amount: *amount,
-                        }),
+                            ..
+                        }) => {
+                            let amount = haste_heal_amount(entity);
+                            if amount > 0 {
+                                actions.push(Action::Heal {
+                                    target: entity.id,
+                                    amount,
+                                });
+                            }
+                        }
                         MoveStep::GainBlock(
                             block @ BlockStep {
                                 target: MoveTarget::SelfTarget,
