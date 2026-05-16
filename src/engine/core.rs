@@ -1946,7 +1946,7 @@ mod tests {
             min_cards: 1,
             max_cards: 1,
             can_cancel: false,
-            reason: GridSelectReason::Omniscience { play_amount: 2 },
+            reason: GridSelectReason::Omniscience { play_amount: 3 },
         });
 
         resolve_pending_choice(
@@ -1978,7 +1978,7 @@ mod tests {
 
         let second = combat_state
             .pop_next_action()
-            .expect("Omniscience should queue a purge-on-use stat-equivalent copy");
+            .expect("Omniscience should queue the first purge-on-use stat-equivalent copy");
         match second {
             Action::EnqueueCardPlay { item, in_front } => {
                 assert!(!in_front);
@@ -1986,12 +1986,36 @@ mod tests {
                 assert_ne!(item.card.uuid, 10);
                 assert_eq!(item.card.exhaust_override, None);
                 assert_eq!(item.energy_on_use, 1);
+                assert!(!item.ignore_energy_total);
                 assert!(item.autoplay);
                 assert!(item.random_target);
                 assert!(item.purge_on_use);
             }
             other => panic!("expected second Omniscience queued play, got {other:?}"),
         }
+
+        let third = combat_state
+            .pop_next_action()
+            .expect("Omniscience should queue play_amount - 1 purge-on-use copies");
+        match third {
+            Action::EnqueueCardPlay { item, in_front } => {
+                assert!(!in_front);
+                assert_eq!(item.card.id, CardId::StrikeP);
+                assert_ne!(item.card.uuid, 10);
+                assert_eq!(item.card.exhaust_override, None);
+                assert_eq!(item.energy_on_use, 1);
+                assert!(!item.ignore_energy_total);
+                assert!(item.autoplay);
+                assert!(item.random_target);
+                assert!(item.purge_on_use);
+            }
+            other => panic!("expected third Omniscience queued play, got {other:?}"),
+        }
+        assert_eq!(
+            combat_state.pop_next_action(),
+            None,
+            "Java OmniscienceAction queues the selected original once plus playAmt - 1 copies"
+        );
     }
 
     #[test]
