@@ -493,6 +493,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::Sanctity, "Sanctity"),
         (CardId::CrushJoints, "CrushJoints"),
         (CardId::SashWhip, "SashWhip"),
+        (CardId::Conclude, "Conclude"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -737,6 +738,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             1,
         ),
+        (
+            CardId::Conclude,
+            "Conclude",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            1,
+            12,
+            0,
+            0,
+            CardTarget::AllEnemy,
+            4,
+            0,
+            0,
+        ),
     ];
 
     for (
@@ -788,6 +803,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::FearNoEvil));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Indignation));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Sanctity));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Conclude));
 }
 
 #[test]
@@ -1341,6 +1357,36 @@ fn watcher_sash_whip_runtime_action_reads_previous_played_card_when_it_resolves(
         &mut skill_previous,
     );
     assert_eq!(skill_previous.pop_next_action(), None);
+}
+
+#[test]
+fn watcher_conclude_runtime_actions_match_java_use_method() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    state.entities.monsters = vec![first, second];
+    let mut conclude_plus = CombatCard::new(CardId::Conclude, 329);
+    conclude_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::Conclude, &state, &conclude_plus, None);
+
+    assert_eq!(actions.len(), 2);
+    match &actions[0].action {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            ..
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(damages.as_slice(), &[16, 16]);
+            assert_eq!(*damage_type, DamageType::Normal);
+        }
+        other => panic!("Conclude first action should be DamageAllEnemiesAction, got {other:?}"),
+    }
+    assert_eq!(actions[1].action, Action::QueueEarlyEndTurn);
 }
 
 #[test]
