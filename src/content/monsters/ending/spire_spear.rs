@@ -16,6 +16,33 @@ const BURN_STRIKE: u8 = 1;
 const PIERCER: u8 = 2;
 const SKEWER: u8 = 3;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn asc18_burn_strike_adds_burns_to_draw_pile_top_like_java() {
+        let mut spear = crate::test_support::test_monster(EnemyId::SpireSpear);
+        spear.id = 1;
+        let plan = burn_strike_plan(18);
+        let mut state = crate::test_support::combat_with_monsters(vec![spear.clone()]);
+
+        let actions = SpireSpear::take_turn_plan(&mut state, &spear, &plan);
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            Action::MakeTempCardInDrawPile {
+                card_id: CardId::Burn,
+                amount: 2,
+                random_spot: false,
+                to_bottom: false,
+                upgraded: false,
+            }
+        )));
+    }
+}
+
 fn burn_strike_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 3 {
         6
@@ -34,7 +61,7 @@ fn skewer_hits(ascension_level: u8) -> u8 {
 
 fn burn_destination(ascension_level: u8) -> crate::semantics::combat::CardDestination {
     if ascension_level >= 18 {
-        crate::semantics::combat::CardDestination::DrawPileRandom
+        crate::semantics::combat::CardDestination::DrawPileTop
     } else {
         crate::semantics::combat::CardDestination::Discard
     }

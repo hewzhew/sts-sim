@@ -20,6 +20,33 @@ const DEBILITATE: u8 = 3;
 const GAIN_ONE_STRENGTH: u8 = 4;
 const DEBUFF_AMOUNT: i32 = 2;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn painful_stabs_followup_uses_java_sentinel_amount() {
+        let mut heart = crate::test_support::test_monster(EnemyId::CorruptHeart);
+        heart.id = 1;
+        heart.corrupt_heart.buff_count = 2;
+        let plan = buff_plan(&heart, 2);
+        let mut state = crate::test_support::combat_with_monsters(vec![heart.clone()]);
+
+        let actions = CorruptHeart::take_turn_plan(&mut state, &heart, &plan);
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::PainfulStabs,
+                amount: -1,
+            }
+        )));
+    }
+}
+
 fn echo_attack_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 4 {
         45
@@ -179,7 +206,7 @@ fn buff_followup_step(buff_count: u8) -> MoveStep {
         2 => MoveStep::ApplyPower(ApplyPowerStep {
             target: MoveTarget::SelfTarget,
             power_id: PowerId::PainfulStabs,
-            amount: 1,
+            amount: -1,
             effect: PowerEffectKind::Buff,
             visible_strength: EffectStrength::Normal,
         }),

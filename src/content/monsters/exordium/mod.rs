@@ -58,6 +58,13 @@ pub fn add_card_action(step: &AddCardStep) -> Action {
             amount: step.amount,
             upgraded: step.upgraded,
         },
+        CardDestination::DrawPileTop => Action::MakeTempCardInDrawPile {
+            card_id: step.card_id,
+            amount: step.amount,
+            random_spot: false,
+            to_bottom: false,
+            upgraded: step.upgraded,
+        },
         CardDestination::DrawPileRandom => Action::MakeTempCardInDrawPile {
             card_id: step.card_id,
             amount: step.amount,

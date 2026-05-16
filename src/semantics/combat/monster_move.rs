@@ -34,6 +34,7 @@ pub enum PowerEffectKind {
 pub enum CardDestination {
     Hand,
     Discard,
+    DrawPileTop,
     DrawPileRandom,
 }
 

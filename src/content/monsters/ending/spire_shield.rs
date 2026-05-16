@@ -1,4 +1,4 @@
-use crate::content::monsters::exordium::{attack_actions, gain_block_action, PLAYER};
+use crate::content::monsters::exordium::{attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 use crate::runtime::action::Action;
@@ -14,6 +14,43 @@ pub struct SpireShield;
 const BASH: u8 = 1;
 const FORTIFY: u8 = 2;
 const SMASH: u8 = 3;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    #[test]
+    fn non_asc18_smash_block_uses_current_damage_output_like_java() {
+        let mut shield = crate::test_support::test_monster(EnemyId::SpireShield);
+        shield.id = 1;
+        let mut state = crate::test_support::combat_with_monsters(vec![shield.clone()]);
+        state.meta.ascension_level = 3;
+        state.entities.power_db.insert(
+            1,
+            vec![Power {
+                power_type: PowerId::Strength,
+                instance_id: None,
+                amount: 5,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        let plan = smash_plan(3);
+
+        let actions = SpireShield::take_turn_plan(&mut state, &shield, &plan);
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            Action::GainBlock {
+                target: 1,
+                amount: 43,
+            }
+        )));
+    }
+}
 
 fn bash_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 3 {
@@ -223,7 +260,20 @@ impl MonsterBehavior for SpireShield {
                 )],
             ) => {
                 let mut actions = attack_actions(entity.id, PLAYER, attack);
-                actions.push(gain_block_action(entity, block));
+                let block_amount = if state.meta.ascension_level >= 18 {
+                    block.amount
+                } else {
+                    crate::content::powers::calculate_monster_damage(
+                        attack.base_damage,
+                        entity.id,
+                        PLAYER,
+                        state,
+                    )
+                };
+                actions.push(Action::GainBlock {
+                    target: entity.id,
+                    amount: block_amount,
+                });
                 actions
             }
             (_, []) => panic!("spire shield plan missing locked truth"),
