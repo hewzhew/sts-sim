@@ -81,6 +81,7 @@ pub enum PowerId {
     Equilibrium,
     Repair,
     LockOn,
+    Bias,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -191,6 +192,7 @@ pub fn is_debuff(id: PowerId, amount: i32) -> bool {
         | PowerId::NoDraw
         | PowerId::NoBlock
         | PowerId::LockOn
+        | PowerId::Bias
         | PowerId::Constricted
         | PowerId::Confusion
         | PowerId::Hex
@@ -233,6 +235,7 @@ pub fn is_debuff_application(id: PowerId, amount: i32) -> bool {
         | PowerId::Hex
         | PowerId::Slow
         | PowerId::LockOn
+        | PowerId::Bias
         | PowerId::LoseStrength
         | PowerId::DexterityDown
         | PowerId::NoSkills
@@ -504,6 +507,7 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Lock-On",
         },
+        PowerId::Bias => PowerDefinition { id, name: "Bias" },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -859,6 +863,12 @@ pub fn resolve_power_instance_at_turn_start(
                 }]
             }
         }
+        PowerId::Bias => smallvec::smallvec![crate::runtime::action::Action::ApplyPower {
+            source: owner,
+            target: owner,
+            power_id: PowerId::Focus,
+            amount: -amount,
+        }],
         PowerId::Poison => core::poison::at_turn_start(owner, amount),
         PowerId::Choked => silent::choked::at_turn_start(owner),
         PowerId::Phantasmal => silent::phantasmal::at_start_of_turn(owner),

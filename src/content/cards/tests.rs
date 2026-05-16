@@ -3209,6 +3209,113 @@ fn core_surge_definition_and_runtime_action_match_java_sources() {
 }
 
 #[test]
+fn biased_cognition_definition_runtime_and_bias_power_match_java_sources() {
+    let biased = get_card_definition(CardId::BiasedCognition);
+    assert_eq!(biased.name, "Biased Cognition");
+    assert_eq!(biased.card_type, CardType::Power);
+    assert_eq!(biased.rarity, CardRarity::Rare);
+    assert_eq!(biased.cost, 1);
+    assert_eq!(biased.base_magic, 4);
+    assert_eq!(biased.target, CardTarget::SelfTarget);
+    assert_eq!(biased.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::BiasedCognition), "Biased Cognition");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::BiasedCognition,
+        &state,
+        &CombatCard::new(CardId::BiasedCognition, 313),
+        None,
+    );
+    assert_eq!(actions.len(), 2);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: 4,
+        }
+    );
+    assert_eq!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Bias,
+            amount: 1,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::BiasedCognition, 314);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::BiasedCognition, &state, &plus, None);
+    assert_eq!(
+        plus_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: 5,
+        }
+    );
+    assert_eq!(plus_actions[1].action, actions[1].action);
+
+    assert!(crate::content::powers::is_debuff(PowerId::Bias, 1));
+    assert!(crate::content::powers::is_debuff_application(
+        PowerId::Bias,
+        1
+    ));
+
+    let mut start_state = crate::test_support::blank_test_combat();
+    let start_actions =
+        crate::content::powers::resolve_power_at_turn_start(PowerId::Bias, &mut start_state, 0, 1);
+    assert_eq!(
+        start_actions.as_slice(),
+        &[Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: -1,
+        }],
+        "Java BiasPower.atStartOfTurn applies negative Focus through ApplyPowerAction"
+    );
+
+    let mut artifact_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut artifact_state,
+        0,
+        vec![Power {
+            power_type: PowerId::Artifact,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Bias,
+            amount: 1,
+        },
+        &mut artifact_state,
+    );
+    assert_eq!(
+        crate::content::powers::store::power_amount(&artifact_state, 0, PowerId::Bias),
+        0,
+        "BiasPower is a Java DEBUFF and should be blockable by Artifact"
+    );
+    assert_eq!(
+        crate::content::powers::store::power_amount(&artifact_state, 0, PowerId::Artifact),
+        0,
+        "blocking Bias consumes one Artifact stack"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

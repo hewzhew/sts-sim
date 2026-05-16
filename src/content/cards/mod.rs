@@ -271,6 +271,7 @@ pub enum CardId {
     SelfRepair,
     LockOn,
     CoreSurge,
+    BiasedCognition,
     // Add more as we expand
 }
 
@@ -567,6 +568,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::SelfRepair => defect::self_repair::definition(),
         CardId::LockOn => defect::lock_on::definition(),
         CardId::CoreSurge => defect::core_surge::definition(),
+        CardId::BiasedCognition => defect::biased_cognition::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1264,6 +1266,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::SelfRepair => "Self Repair",
         CardId::LockOn => "Lockon",
         CardId::CoreSurge => "Core Surge",
+        CardId::BiasedCognition => "Biased Cognition",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1547,6 +1550,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         SelfRepair,
         LockOn,
         CoreSurge,
+        BiasedCognition,
         Neutralize,
         Survivor,
         Anger,

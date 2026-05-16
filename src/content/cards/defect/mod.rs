@@ -3,6 +3,7 @@ pub mod auto_shields;
 pub mod ball_lightning;
 pub mod barrage;
 pub mod beam_cell;
+pub mod biased_cognition;
 pub mod boot_sequence;
 pub mod buffer;
 pub mod capacitor;
