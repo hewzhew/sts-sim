@@ -1,4 +1,9 @@
 use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
+use crate::content::powers::PowerId;
+use crate::core::EntityId;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
+use smallvec::SmallVec;
 
 pub fn definition() -> CardDefinition {
     CardDefinition {
@@ -20,4 +25,35 @@ pub fn definition() -> CardDefinition {
         upgrade_block: 0,
         upgrade_magic: 6,
     }
+}
+
+pub fn dark_shackles_play(
+    state: &CombatState,
+    card: &CombatCard,
+    target: Option<EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Dark Shackles requires a valid target");
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
+    let amount = evaluated.base_magic_num_mut;
+    let mut actions = smallvec::smallvec![ActionInfo {
+        action: Action::ApplyPower {
+            source: 0,
+            target,
+            power_id: PowerId::Strength,
+            amount: -amount,
+        },
+        insertion_mode: AddTo::Bottom,
+    }];
+    if !crate::content::powers::store::has_power(state, target, PowerId::Artifact) {
+        actions.push(ActionInfo {
+            action: Action::ApplyPower {
+                source: 0,
+                target,
+                power_id: PowerId::Shackled,
+                amount,
+            },
+            insertion_mode: AddTo::Bottom,
+        });
+    }
+    actions
 }

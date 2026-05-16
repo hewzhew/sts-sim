@@ -258,21 +258,21 @@ pub fn resolve_card_play_with_context(
             colorless::thinking_ahead::thinking_ahead_play(_state, _card, context)
         }
         CardId::Violence => colorless::violence::violence_play(_state, _card),
-        CardId::DarkShackles
-        | CardId::Enlightenment
-        | CardId::Apotheosis
-        | CardId::Chrysalis
-        | CardId::HandOfGreed
-        | CardId::Magnetism
-        | CardId::Mayhem
-        | CardId::Metamorphosis
-        | CardId::Panache
-        | CardId::SadisticNature
+        CardId::DarkShackles => colorless::dark_shackles::dark_shackles_play(_state, _card, t),
+        CardId::Enlightenment => colorless::enlightenment::enlightenment_play(_state, _card),
+        CardId::JAX => colorless::jax::jax_play(_state, _card),
+        CardId::Apotheosis => colorless::apotheosis::apotheosis_play(_state, _card),
+        CardId::Chrysalis => colorless::chrysalis::chrysalis_play(_state, _card),
+        CardId::Magnetism => colorless::magnetism::magnetism_play(_state, _card),
+        CardId::Mayhem => colorless::mayhem::mayhem_play(_state, _card),
+        CardId::Metamorphosis => colorless::metamorphosis::metamorphosis_play(_state, _card),
+        CardId::Panache => colorless::panache::panache_play(_state, _card),
+        CardId::SadisticNature => colorless::sadistic_nature::sadistic_nature_play(_state, _card),
+        CardId::TheBomb => colorless::the_bomb::the_bomb_play(_state, _card),
+        CardId::HandOfGreed
         | CardId::SecretTechnique
         | CardId::SecretWeapon
-        | CardId::TheBomb
         | CardId::Transmutation
-        | CardId::JAX
         | CardId::RitualDagger => colorless::play_colorless(_state, _card, t, context),
         // Unplayable stubs — curses, status, and special cards
         CardId::Wound

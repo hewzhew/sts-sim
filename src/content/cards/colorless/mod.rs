@@ -39,7 +39,6 @@ pub mod trip;
 pub mod violence;
 
 use crate::content::cards::{get_card_definition, CardId, CardType};
-use crate::content::powers::PowerId;
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -82,51 +81,6 @@ pub fn play_colorless(
                 }
             ];
         }
-        CardId::DarkShackles => {
-            let target_id = target.expect("Dark Shackles requires a target!");
-            acts.push(Action::ApplyPower {
-                source: 0,
-                target: target_id,
-                power_id: PowerId::Strength,
-                amount: -mag,
-            });
-            if !crate::content::powers::store::has_power(state, target_id, PowerId::Artifact) {
-                acts.push(Action::ApplyPower {
-                    source: 0,
-                    target: target_id,
-                    power_id: PowerId::Shackled,
-                    amount: mag,
-                });
-            }
-        }
-        CardId::Enlightenment => {
-            acts.push(Action::Enlightenment {
-                permanent: card.upgrades > 0,
-            });
-        }
-        CardId::JAX => {
-            acts.push(Action::LoseHp {
-                target: 0,
-                amount: 3,
-                triggers_rupture: true,
-            });
-            acts.push(Action::ApplyPower {
-                source: 0,
-                target: 0,
-                power_id: PowerId::Strength,
-                amount: mag,
-            });
-        }
-        CardId::Apotheosis => acts.push(Action::UpgradeAllCardsInCombat),
-        CardId::Chrysalis => {
-            for _ in 0..mag {
-                acts.push(Action::MakeRandomCardInDrawPile {
-                    card_type: Some(CardType::Skill),
-                    cost_for_turn: Some(0),
-                    random_spot: true,
-                });
-            }
-        }
         CardId::HandOfGreed => {
             let target_id = target.expect("Hand of Greed requires a target!");
             acts.push(Action::HandOfGreed {
@@ -156,47 +110,6 @@ pub fn play_colorless(
                 },
                 misc_amount: mag,
                 card_uuid: card.uuid,
-            });
-        }
-        CardId::Magnetism => {
-            acts.push(Action::ApplyPower {
-                source: 0,
-                target: 0,
-                power_id: PowerId::MagnetismPower,
-                amount: 1,
-            });
-        }
-        CardId::Mayhem => {
-            acts.push(Action::ApplyPower {
-                source: 0,
-                target: 0,
-                power_id: PowerId::MayhemPower,
-                amount: 1,
-            });
-        }
-        CardId::Metamorphosis => {
-            for _ in 0..mag {
-                acts.push(Action::MakeRandomCardInDrawPile {
-                    card_type: Some(CardType::Attack),
-                    cost_for_turn: Some(0),
-                    random_spot: true,
-                });
-            }
-        }
-        CardId::Panache => {
-            acts.push(Action::ApplyPower {
-                source: 0,
-                target: 0,
-                power_id: PowerId::PanachePower,
-                amount: mag,
-            });
-        }
-        CardId::SadisticNature => {
-            acts.push(Action::ApplyPower {
-                source: 0,
-                target: 0,
-                power_id: PowerId::SadisticPower,
-                amount: mag,
             });
         }
         CardId::SecretTechnique => {
@@ -248,16 +161,6 @@ pub fn play_colorless(
                     reason: crate::state::GridSelectReason::AttackFromDeckToHand,
                 });
             }
-        }
-        CardId::TheBomb => {
-            acts.push(Action::ApplyPowerDetailed {
-                source: 0,
-                target: 0,
-                power_id: PowerId::TheBombPower,
-                amount: 3,
-                instance_id: Some(card.uuid),
-                extra_data: Some(mag),
-            });
         }
         CardId::Transmutation => {
             acts.push(Action::Transmutation {
