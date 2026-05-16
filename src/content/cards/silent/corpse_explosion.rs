@@ -1,8 +1,31 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::CorpseExplosion,
+        name: "Corpse Explosion",
+        card_type: CardType::Skill,
+        rarity: CardRarity::Rare,
+        cost: 2,
+        base_damage: 0,
+        base_block: 0,
+        base_magic: 6,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 0,
+        upgrade_block: 0,
+        upgrade_magic: 3,
+    }
+}
 
 pub fn corpse_explosion_play(
     state: &CombatState,
