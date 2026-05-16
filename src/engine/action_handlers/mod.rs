@@ -1057,12 +1057,12 @@ fn handle_enter_stance(stance: &str, state: &mut CombatState) {
     }
     crate::content::relics::hooks::on_change_stance(state, old_stance, new_stance);
     if old_stance == crate::runtime::combat::StanceId::Calm {
-        state.turn.adjust_energy(2);
-    }
-    if new_stance == crate::runtime::combat::StanceId::Divinity {
-        state.turn.adjust_energy(3);
+        state.queue_action_back(Action::GainEnergy { amount: 2 });
     }
     state.entities.player.stance = new_stance;
+    if new_stance == crate::runtime::combat::StanceId::Divinity {
+        state.queue_action_back(Action::GainEnergy { amount: 3 });
+    }
     let card_actions = crate::content::cards::hooks::on_change_stance_from_discard(state);
     state.queue_actions(card_actions);
 }
@@ -1070,7 +1070,9 @@ fn handle_enter_stance(stance: &str, state: &mut CombatState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::cards::CardId;
     use crate::content::powers::PowerId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::{Power, PowerPayload, StanceId};
     use crate::test_support::blank_test_combat;
 
@@ -1098,5 +1100,75 @@ mod tests {
             state.turn.energy, 0,
             "Java ChangeStanceAction returns before oldStance.onExitStance when CannotChangeStancePower is present"
         );
+    }
+
+    #[test]
+    fn stance_energy_is_queued_in_java_change_stance_order() {
+        let mut state = blank_test_combat();
+        state.entities.player.stance = StanceId::Calm;
+        state.turn.energy = 0;
+        state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::VioletLotus));
+        state.zones.discard_pile = vec![crate::runtime::combat::CombatCard::new(
+            CardId::FlurryOfBlows,
+            91001,
+        )];
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::RushdownPower,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        handle_enter_stance("Wrath", &mut state);
+
+        assert_eq!(state.entities.player.stance, StanceId::Wrath);
+        assert_eq!(
+            state.turn.energy, 0,
+            "Java CalmStance.onExitStance queues GainEnergyAction instead of mutating energy immediately"
+        );
+        assert_eq!(state.pop_next_action(), Some(Action::DrawCards(2)));
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::GainEnergy { amount: 1 })
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::GainEnergy { amount: 2 })
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::DiscardToHand {
+                card_uuid: 91001,
+                cost_for_turn: None,
+            })
+        );
+        assert!(state.pop_next_action().is_none());
+    }
+
+    #[test]
+    fn divinity_enter_energy_is_queued_after_stance_changes() {
+        let mut state = blank_test_combat();
+        state.turn.energy = 0;
+
+        handle_enter_stance("Divinity", &mut state);
+
+        assert_eq!(state.entities.player.stance, StanceId::Divinity);
+        assert_eq!(
+            state.turn.energy, 0,
+            "Java DivinityStance.onEnterStance queues GainEnergyAction instead of mutating energy immediately"
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::GainEnergy { amount: 3 })
+        );
+        assert!(state.pop_next_action().is_none());
     }
 }
