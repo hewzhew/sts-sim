@@ -596,6 +596,7 @@ pub fn tick_engine(
                 Action::SuspendForDiscovery {
                     colorless,
                     card_type,
+                    amount,
                     cost_for_turn,
                     can_skip,
                 } => {
@@ -610,6 +611,7 @@ pub fn tick_engine(
                             cards,
                             colorless,
                             card_type,
+                            amount,
                             can_skip,
                         },
                     ));
@@ -1255,36 +1257,45 @@ fn resolve_pending_choice(
                         choice.card_type,
                     );
                     let card_id = choice.cards[idx];
-                    let uuid = combat_state.next_card_uuid();
-                    let mut card = crate::content::cards::make_fresh_card_copy_for_combat(
-                        card_id,
-                        uuid,
-                        combat_state,
-                    );
-                    // Apply cost override from the SuspendForDiscovery action
-                    if let Some(cost) = combat_state.turn.take_discovery_cost_for_turn() {
-                        card.set_cost_for_turn_java(cost as i32);
-                    }
-                    crate::content::cards::apply_master_reality_to_generated_card(
-                        &mut card,
-                        combat_state,
-                        2,
-                    );
-                    if combat_state.zones.hand.len() < 10 {
-                        if crate::content::powers::store::has_power(
+                    let amount = choice.amount.max(1);
+                    let cost_for_turn = combat_state.turn.take_discovery_cost_for_turn();
+                    let initial_hand_len = combat_state.zones.hand.len();
+                    let hand_copies =
+                        (10usize.saturating_sub(initial_hand_len)).min(amount as usize);
+
+                    for copy_idx in 0..amount as usize {
+                        let uuid = combat_state.next_card_uuid();
+                        let mut card = crate::content::cards::make_fresh_card_copy_for_combat(
+                            card_id,
+                            uuid,
                             combat_state,
-                            0,
-                            crate::content::powers::PowerId::Corruption,
-                        ) {
-                            crate::content::cards::ironclad::corruption::corruption_on_card_draw(
-                                combat_state,
-                                &mut card,
-                            );
+                        );
+                        crate::content::cards::apply_master_reality_to_generated_card(
+                            &mut card,
+                            combat_state,
+                            2,
+                        );
+                        // Java DiscoveryAction applies setCostForTurn(0) after
+                        // Master Reality upgrades the generated copies.
+                        if let Some(cost) = cost_for_turn {
+                            card.set_cost_for_turn_java(cost as i32);
                         }
-                        crate::content::cards::evaluate_card(&mut card, combat_state, None);
-                        combat_state.zones.hand.push(card);
-                    } else {
-                        combat_state.add_card_to_discard_pile_top(card);
+                        if copy_idx < hand_copies {
+                            if crate::content::powers::store::has_power(
+                                combat_state,
+                                0,
+                                crate::content::powers::PowerId::Corruption,
+                            ) {
+                                crate::content::cards::ironclad::corruption::corruption_on_card_draw(
+                                    combat_state,
+                                    &mut card,
+                                );
+                            }
+                            crate::content::cards::evaluate_card(&mut card, combat_state, None);
+                            combat_state.zones.hand.push(card);
+                        } else {
+                            combat_state.add_card_to_discard_pile_top(card);
+                        }
                     }
                     *engine_state = EngineState::CombatProcessing;
                     Ok(())
@@ -2122,6 +2133,7 @@ mod tests {
         combat_state.queue_action_back(crate::runtime::action::Action::SuspendForDiscovery {
             colorless: false,
             card_type: None,
+            amount: 1,
             cost_for_turn: Some(0),
             can_skip: false,
         });
@@ -2164,6 +2176,7 @@ mod tests {
         combat_state.queue_action_back(crate::runtime::action::Action::SuspendForDiscovery {
             colorless: false,
             card_type: Some(crate::content::cards::CardType::Attack),
+            amount: 1,
             cost_for_turn: Some(0),
             can_skip: true,
         });
@@ -2199,6 +2212,52 @@ mod tests {
     }
 
     #[test]
+    fn sacred_bark_discovery_potion_adds_two_selected_copies_with_java_hand_capacity_split() {
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.hand = (0..9)
+            .map(|idx| CombatCard::new(CardId::Defend, 10 + idx))
+            .collect();
+        let mut engine_state = EngineState::CombatProcessing;
+        combat_state.queue_action_back(crate::runtime::action::Action::SuspendForDiscovery {
+            colorless: false,
+            card_type: Some(crate::content::cards::CardType::Attack),
+            amount: 2,
+            cost_for_turn: Some(0),
+            can_skip: true,
+        });
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+        let selected_id = match &engine_state {
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(choice)) => {
+                assert_eq!(choice.amount, 2);
+                choice.cards[0]
+            }
+            other => {
+                panic!("Sacred Bark potion DiscoveryAction should open a choice, got {other:?}")
+            }
+        };
+
+        resolve_pending_choice(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("valid discovery choice should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(combat_state.zones.hand.len(), 10);
+        assert_eq!(combat_state.zones.discard_pile.len(), 1);
+        assert_eq!(combat_state.zones.hand[9].id, selected_id);
+        assert_eq!(combat_state.zones.discard_pile[0].id, selected_id);
+        assert_eq!(combat_state.zones.hand[9].cost_for_turn_java(), 0);
+        assert_eq!(combat_state.zones.discard_pile[0].cost_for_turn_java(), 0);
+    }
+
+    #[test]
     fn discovery_selection_uses_java_make_copy_and_master_reality_path() {
         let mut combat_state = blank_test_combat();
         combat_state.turn.counters.times_damaged_this_combat = 2;
@@ -2218,6 +2277,7 @@ mod tests {
                 cards: vec![CardId::BloodForBlood],
                 colorless: false,
                 card_type: None,
+                amount: 1,
                 can_skip: false,
             }));
 
@@ -2254,6 +2314,7 @@ mod tests {
                 cards: vec![CardId::Strike],
                 colorless: false,
                 card_type: None,
+                amount: 1,
                 can_skip: false,
             }));
         resolve_pending_choice(
@@ -2268,6 +2329,7 @@ mod tests {
                 cards: vec![CardId::Defend],
                 colorless: false,
                 card_type: None,
+                amount: 1,
                 can_skip: false,
             }));
         resolve_pending_choice(

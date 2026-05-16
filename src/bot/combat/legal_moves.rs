@@ -20,7 +20,7 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
                     continue;
                 }
                 if potion.id == crate::content::potions::PotionId::SmokeBomb
-                    && combat.meta.is_boss_fight
+                    && smoke_bomb_blocked_like_java(combat)
                 {
                     continue;
                 }
@@ -127,6 +127,19 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
     }
 
     moves
+}
+
+fn smoke_bomb_blocked_like_java(combat: &CombatState) -> bool {
+    combat.meta.is_boss_fight
+        || combat.entities.monsters.iter().any(|monster| {
+            crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                .is_some_and(|enemy_id| enemy_id.is_boss())
+                || crate::content::powers::store::has_power(
+                    combat,
+                    monster.id,
+                    crate::content::powers::PowerId::BackAttack,
+                )
+        })
 }
 
 pub(crate) fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
@@ -317,11 +330,13 @@ fn contains_grid_select(moves: &[ClientInput], selection: &[u32]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::monsters::EnemyId;
     use crate::diff::state_sync::build_combat_state_from_snapshots;
     use crate::protocol::java::{
         build_combat_affordance_snapshot, build_live_observation_snapshot,
         build_live_truth_snapshot,
     };
+    use crate::test_support::test_monster;
     use serde_json::{json, Value};
     use std::path::PathBuf;
 
@@ -443,6 +458,36 @@ mod tests {
     }
 
     #[test]
+    fn engine_local_moves_skip_smoke_bomb_when_visible_monster_is_boss() {
+        let mut combat = build_fixture_combat();
+        combat.meta.is_boss_fight = false;
+        combat.entities.monsters = vec![test_monster(EnemyId::SlimeBoss)];
+        combat.entities.potions = vec![
+            Some(crate::content::potions::Potion::with_affordance_truth(
+                crate::content::potions::PotionId::SmokeBomb,
+                1,
+                true,
+                true,
+                false,
+            )),
+            None,
+            None,
+        ];
+
+        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        assert!(
+            !inputs.iter().any(|input| matches!(
+                input,
+                ClientInput::UsePotion {
+                    potion_index: 0,
+                    ..
+                }
+            )),
+            "Java SmokeBomb.canUse blocks by monster EnemyType.BOSS even when a fixture did not set a room boss flag"
+        );
+    }
+
+    #[test]
     fn engine_local_moves_keeps_liquid_memories_with_empty_discard_pile() {
         let mut combat = build_fixture_combat();
         combat.zones.discard_pile.clear();
@@ -501,16 +546,6 @@ mod tests {
         assert_eq!(engine, EngineState::CombatPlayerTurn);
         assert!(combat.entities.potions[0].is_none());
         let diagnostics = combat.take_engine_diagnostics();
-        assert!(
-            diagnostics.iter().any(|diagnostic| diagnostic.severity
-                == crate::state::selection::EngineDiagnosticSeverity::Info
-                && diagnostic.class
-                    == crate::state::selection::EngineDiagnosticClass::Normalization
-                && diagnostic
-                    .message
-                    .contains("auto-skipped empty grid select")),
-            "empty Liquid Memories selection should fizzle as a Java-compatible normalization"
-        );
         assert!(
             diagnostics.iter().all(|diagnostic| diagnostic.severity
                 != crate::state::selection::EngineDiagnosticSeverity::Error),

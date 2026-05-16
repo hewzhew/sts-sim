@@ -571,6 +571,7 @@ pub enum Action {
     SuspendForDiscovery {
         colorless: bool,
         card_type: Option<crate::content::cards::CardType>,
+        amount: u8,
         cost_for_turn: Option<u8>,
         can_skip: bool,
     },

@@ -207,6 +207,7 @@ pub fn get_potion_actions(
                 Action::SuspendForDiscovery {
                     colorless: false,
                     card_type: Some(crate::content::cards::CardType::Attack),
+                    amount: potency.max(0) as u8,
                     cost_for_turn: Some(0),
                     can_skip: true,
                 },
@@ -219,6 +220,7 @@ pub fn get_potion_actions(
                 Action::SuspendForDiscovery {
                     colorless: false,
                     card_type: Some(crate::content::cards::CardType::Skill),
+                    amount: potency.max(0) as u8,
                     cost_for_turn: Some(0),
                     can_skip: true,
                 },
@@ -233,6 +235,7 @@ pub fn get_potion_actions(
                 Action::SuspendForDiscovery {
                     colorless: false,
                     card_type: Some(crate::content::cards::CardType::Power),
+                    amount: potency.max(0) as u8,
                     cost_for_turn: Some(0),
                     can_skip: true,
                 },
@@ -247,6 +250,7 @@ pub fn get_potion_actions(
                 Action::SuspendForDiscovery {
                     colorless: true,
                     card_type: None,
+                    amount: potency.max(0) as u8,
                     cost_for_turn: Some(0),
                     can_skip: false,
                 },
@@ -318,6 +322,9 @@ pub fn get_potion_actions(
             );
         }
         PotionId::DistilledChaosPotion => {
+            // Action::UsePotion handles this statefully so Java's
+            // getRandomMonster(cardRandomRng) target rolls happen when the
+            // potion is used, before any queued PlayTopCardAction executes.
             // Java adds one PlayTopCardAction per potency. Each action takes the
             // current top card when it executes, then appends that card to the
             // normal card queue.
@@ -482,6 +489,9 @@ pub fn get_potion_actions(
             bottom(&mut actions, Action::EnterStance("Divinity".to_string()));
         }
         PotionId::EssenceOfDarkness => {
+            // Action::UsePotion handles this statefully because Java
+            // EssenceOfDarknessAction channels `potency` Dark orbs once for
+            // each current orb slot, not just `potency` total.
             for _ in 0..potency.max(0) {
                 bottom(
                     &mut actions,

@@ -2001,6 +2001,15 @@ fn build_engine_state_from_root_meta(
                 cards: offered,
                 colorless: false,
                 card_type: None,
+                amount: if combat
+                    .entities
+                    .player
+                    .has_relic(crate::content::relics::RelicId::SacredBark)
+                {
+                    2
+                } else {
+                    1
+                },
                 can_skip: skip_available,
             },
         ));

@@ -427,6 +427,15 @@ fn build_human_card_reward_replay_context(
                     cards: offered_ids,
                     colorless: false,
                     card_type: None,
+                    amount: if truth
+                        .entities
+                        .player
+                        .has_relic(crate::content::relics::RelicId::SacredBark)
+                    {
+                        2
+                    } else {
+                        1
+                    },
                     can_skip: skip_available,
                 },
             ))

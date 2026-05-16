@@ -1496,10 +1496,12 @@ pub fn handle_reduce_card_cost_for_combat(card_uuid: u32, amount: i32, state: &m
 
 pub fn handle_randomize_hand_costs(state: &mut CombatState) {
     for card in state.zones.hand.iter_mut() {
-        let base_cost = crate::content::cards::get_card_definition(card.id).cost;
-        if base_cost >= 0 {
-            let new_cost = state.rng.card_random_rng.random(3) as u8;
-            card.set_cost_for_turn_java(new_cost as i32);
+        let current_cost = card.combat_cost_without_turn_override_java();
+        if current_cost >= 0 {
+            let new_cost = state.rng.card_random_rng.random(3);
+            if current_cost != new_cost {
+                card.set_combat_and_turn_cost_java(new_cost);
+            }
         }
     }
 }
@@ -2267,7 +2269,9 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
         if potion.id == crate::content::potions::PotionId::FairyPotion {
             return;
         }
-        if potion.id == crate::content::potions::PotionId::SmokeBomb && state.meta.is_boss_fight {
+        if potion.id == crate::content::potions::PotionId::SmokeBomb
+            && smoke_bomb_blocked_like_java(state)
+        {
             return;
         }
         let def = crate::content::potions::get_potion_definition(potion.id);
@@ -2279,18 +2283,74 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
         {
             potency *= 2;
         }
+        if potion.id == crate::content::potions::PotionId::EntropicBrew {
+            let potion_class = potion_class_for_combat(state);
+            let potion_slots = state.entities.potions.len();
+            let mut actions = smallvec::SmallVec::<[ActionInfo; 4]>::new();
+            for _ in 0..potion_slots {
+                let potion_id = crate::content::potions::random_potion(
+                    &mut state.rng.potion_rng,
+                    potion_class,
+                    true,
+                );
+                actions.push(ActionInfo {
+                    action: Action::ObtainSpecificPotion(potion_id),
+                    insertion_mode: AddTo::Bottom,
+                });
+            }
+            actions.extend(crate::content::relics::hooks::on_use_potion(state, 0));
+            state.queue_actions(actions);
+            state.entities.potions[slot] = None;
+            return;
+        }
+        if potion.id == crate::content::potions::PotionId::DistilledChaosPotion {
+            let mut actions = smallvec::SmallVec::<[ActionInfo; 4]>::new();
+            for _ in 0..potency.max(0) {
+                actions.push(ActionInfo {
+                    action: Action::PlayTopCard {
+                        target: targeting::pick_random_target(
+                            state,
+                            crate::state::TargetValidation::AnyEnemy,
+                        ),
+                        exhaust: false,
+                    },
+                    insertion_mode: AddTo::Bottom,
+                });
+            }
+            actions.extend(crate::content::relics::hooks::on_use_potion(state, 0));
+            state.queue_actions(actions);
+            state.entities.potions[slot] = None;
+            return;
+        }
+        if potion.id == crate::content::potions::PotionId::EssenceOfDarkness {
+            let orb_slots =
+                (state.entities.player.max_orbs as usize).max(state.entities.player.orbs.len());
+            let mut actions = smallvec::SmallVec::<[ActionInfo; 4]>::new();
+            for _ in 0..orb_slots {
+                for _ in 0..potency.max(0) {
+                    actions.push(ActionInfo {
+                        action: Action::ChannelOrb(crate::runtime::combat::OrbId::Dark),
+                        insertion_mode: AddTo::Bottom,
+                    });
+                }
+            }
+            actions.extend(crate::content::relics::hooks::on_use_potion(state, 0));
+            state.queue_actions(actions);
+            state.entities.potions[slot] = None;
+            return;
+        }
         if potion.id == crate::content::potions::PotionId::LiquidMemories
-            && !state.zones.discard_pile.is_empty()
-            && state.zones.discard_pile.len() <= potency as usize
+            && state.zones.discard_pile.len() <= potency.max(0) as usize
         {
             let uuids: Vec<u32> = state.zones.discard_pile.iter().map(|c| c.uuid).collect();
             for uuid in uuids {
+                if state.zones.hand.len() >= 10 {
+                    break;
+                }
                 if let Some(pos) = state.zones.discard_pile.iter().position(|c| c.uuid == uuid) {
                     let mut card = state.zones.discard_pile.remove(pos);
                     card.set_cost_for_turn_java(0);
-                    if state.zones.hand.len() < 10 {
-                        state.zones.hand.push(card);
-                    }
+                    state.zones.hand.push(card);
                 }
             }
             let relic_actions = crate::content::relics::hooks::on_use_potion(state, 0);
@@ -2318,6 +2378,28 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
         state.queue_actions(combined);
         state.entities.potions[slot] = None;
     }
+}
+
+fn potion_class_for_combat(state: &CombatState) -> crate::content::potions::PotionClass {
+    match state.meta.player_class {
+        "Silent" => crate::content::potions::PotionClass::Silent,
+        "Defect" => crate::content::potions::PotionClass::Defect,
+        "Watcher" => crate::content::potions::PotionClass::Watcher,
+        _ => crate::content::potions::PotionClass::Ironclad,
+    }
+}
+
+fn smoke_bomb_blocked_like_java(state: &CombatState) -> bool {
+    state.meta.is_boss_fight
+        || state.entities.monsters.iter().any(|monster| {
+            crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                .is_some_and(|enemy_id| enemy_id.is_boss())
+                || crate::content::powers::store::has_power(
+                    state,
+                    monster.id,
+                    crate::content::powers::PowerId::BackAttack,
+                )
+        })
 }
 
 pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut CombatState) {
@@ -2534,9 +2616,9 @@ mod tests {
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
-        handle_queue_early_end_turn, handle_return_stasis_card, handle_upgrade_all_burns,
-        handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand, handle_use_card_done,
-        obtain_specific_potion_if_allowed,
+        handle_queue_early_end_turn, handle_randomize_hand_costs, handle_return_stasis_card,
+        handle_upgrade_all_burns, handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand,
+        handle_use_card_done, handle_use_potion, obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
@@ -2590,6 +2672,42 @@ mod tests {
         assert_eq!(state.pop_next_action(), Some(Action::EmptyDeckShuffle));
         assert_eq!(state.pop_next_action(), Some(Action::DrawCards(1)));
         assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn snecko_oil_randomize_updates_combat_cost_and_turn_cost_like_java() {
+        let mut state = blank_test_combat();
+        let mut modified = CombatCard::new(CardId::Strike, 10);
+        modified.set_combat_and_turn_cost_java(3);
+        modified.set_cost_for_turn_java(0);
+        while {
+            let mut probe = state.rng.card_random_rng.clone();
+            probe.random(3) == modified.combat_cost_without_turn_override_java()
+        } {
+            state.rng.card_random_rng.random(3);
+        }
+        let mut expected_rng = state.rng.card_random_rng.clone();
+        let expected_cost = expected_rng.random(3);
+        assert_ne!(
+            expected_cost,
+            modified.combat_cost_without_turn_override_java()
+        );
+        state.zones.hand = vec![modified, CombatCard::new(CardId::Whirlwind, 11)];
+
+        handle_randomize_hand_costs(&mut state);
+
+        assert_eq!(
+            state.zones.hand[0].combat_cost_without_turn_override_java(),
+            expected_cost,
+            "Java RandomizeHandCostAction mutates AbstractCard.cost, not only costForTurn"
+        );
+        assert_eq!(state.zones.hand[0].cost_for_turn_java(), expected_cost);
+        assert_eq!(
+            state.zones.hand[1].combat_cost_without_turn_override_java(),
+            -1,
+            "X-cost cards short-circuit before consuming a random cost roll"
+        );
+        assert_eq!(state.rng.card_random_rng.counter, expected_rng.counter);
     }
 
     #[test]
@@ -2655,6 +2773,216 @@ mod tests {
         ));
 
         assert_eq!(state.entities.potions, before);
+    }
+
+    #[test]
+    fn entropic_brew_generates_concrete_limited_potions_before_obtain_actions() {
+        let mut state = blank_test_combat();
+        state.entities.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                PotionId::EntropicBrew,
+                1,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::FirePotion,
+                2,
+            )),
+            None,
+        ];
+        let potion_rng_before = state.rng.potion_rng.counter;
+
+        handle_use_potion(0, None, &mut state);
+
+        assert!(state.entities.potions[0].is_none());
+        assert_eq!(
+            state.action_queue_len(),
+            3,
+            "Java Entropic Brew queues one ObtainPotionAction per potion slot"
+        );
+        assert!(
+            state.rng.potion_rng.counter > potion_rng_before,
+            "Java Entropic Brew calls returnRandomPotion(true) while the potion is used, before queued obtains run"
+        );
+        while let Some(action) = state.pop_next_action() {
+            crate::engine::action_handlers::execute_action(action, &mut state);
+        }
+
+        let filled = state
+            .entities
+            .potions
+            .iter()
+            .filter(|slot| slot.is_some())
+            .count();
+        assert_eq!(
+            filled, 3,
+            "after Entropic Brew is destroyed, queued concrete potion obtains fill the newly empty slot and existing empty slots"
+        );
+        assert!(
+            state
+                .entities
+                .potions
+                .iter()
+                .flatten()
+                .all(|potion| potion.id != PotionId::FruitJuice),
+            "Java returnRandomPotion(true) excludes Fruit Juice for Entropic Brew"
+        );
+    }
+
+    #[test]
+    fn distilled_chaos_rolls_random_targets_when_potion_is_used() {
+        let mut state = blank_test_combat();
+        let mut first = test_monster(EnemyId::JawWorm);
+        first.id = 11;
+        let mut second = test_monster(EnemyId::Cultist);
+        second.id = 12;
+        state.entities.monsters = vec![first, second];
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::DistilledChaosPotion,
+            1,
+        ))];
+        let card_random_before = state.rng.card_random_rng.counter;
+
+        handle_use_potion(0, None, &mut state);
+
+        assert!(state.entities.potions[0].is_none());
+        assert_eq!(state.action_queue_len(), 3);
+        assert!(
+            state.rng.card_random_rng.counter >= card_random_before + 3,
+            "Java DistilledChaosPotion calls getRandomMonster once per PlayTopCardAction while the potion is used"
+        );
+        for _ in 0..3 {
+            let Some(Action::PlayTopCard {
+                target: Some(target),
+                exhaust: false,
+            }) = state.pop_next_action()
+            else {
+                panic!("Distilled Chaos should queue targeted PlayTopCard actions");
+            };
+            assert!(
+                target == 11 || target == 12,
+                "queued Java target should be one of the use-time random monster choices"
+            );
+        }
+    }
+
+    #[test]
+    fn essence_of_darkness_channels_for_each_orb_slot_and_sacred_bark_potency() {
+        let mut state = blank_test_combat();
+        state.entities.player.max_orbs = 3;
+        state.entities.player.orbs = vec![
+            crate::runtime::combat::OrbEntity::new(crate::runtime::combat::OrbId::Empty),
+            crate::runtime::combat::OrbEntity::new(crate::runtime::combat::OrbId::Lightning),
+            crate::runtime::combat::OrbEntity::new(crate::runtime::combat::OrbId::Empty),
+        ];
+        state
+            .entities
+            .player
+            .relics
+            .push(RelicState::new(RelicId::SacredBark));
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::EssenceOfDarkness,
+            1,
+        ))];
+
+        handle_use_potion(0, None, &mut state);
+
+        assert!(state.entities.potions[0].is_none());
+        assert_eq!(
+            state.action_queue_len(),
+            6,
+            "Java EssenceOfDarknessAction channels potency Dark orbs for each orb slot"
+        );
+        while let Some(action) = state.pop_next_action() {
+            assert_eq!(
+                action,
+                Action::ChannelOrb(crate::runtime::combat::OrbId::Dark)
+            );
+        }
+    }
+
+    #[test]
+    fn smoke_bomb_is_blocked_by_spire_shield_back_attack_power() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::SpireShield);
+        monster.id = 7;
+        state.entities.monsters = vec![monster];
+        state.entities.power_db.insert(
+            7,
+            vec![Power {
+                power_type: PowerId::BackAttack,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::SmokeBomb,
+            1,
+        ))];
+
+        handle_use_potion(0, None, &mut state);
+
+        assert!(state.entities.potions[0].is_some());
+        assert_eq!(
+            state.action_queue_len(),
+            0,
+            "Java SmokeBomb.canUse returns false when any monster has BackAttack"
+        );
+    }
+
+    #[test]
+    fn smoke_bomb_is_blocked_by_boss_monster_type_even_without_room_flag() {
+        let mut state = blank_test_combat();
+        state.meta.is_boss_fight = false;
+        state.entities.monsters = vec![test_monster(EnemyId::SlimeBoss)];
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::SmokeBomb,
+            1,
+        ))];
+
+        handle_use_potion(0, None, &mut state);
+
+        assert!(state.entities.potions[0].is_some());
+        assert_eq!(
+            state.action_queue_len(),
+            0,
+            "Java SmokeBomb.canUse walks monsters and blocks EnemyType.BOSS, not only room boss flags"
+        );
+    }
+
+    #[test]
+    fn liquid_memories_auto_move_does_not_drop_cards_when_hand_fills() {
+        let mut state = blank_test_combat();
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::LiquidMemories,
+            1,
+        ))];
+        state
+            .entities
+            .player
+            .relics
+            .push(RelicState::new(RelicId::SacredBark));
+        state.zones.hand = (0..9)
+            .map(|idx| CombatCard::new(CardId::Defend, 100 + idx))
+            .collect();
+        state.zones.discard_pile = vec![
+            CombatCard::new(CardId::Strike, 201),
+            CombatCard::new(CardId::Bash, 202),
+        ];
+
+        handle_use_potion(0, None, &mut state);
+
+        assert_eq!(state.zones.hand.len(), 10);
+        assert_eq!(state.zones.discard_pile.len(), 1);
+        assert_eq!(
+            state.zones.discard_pile[0].id,
+            CardId::Bash,
+            "Java BetterDiscardPileToHandAction leaves remaining discard cards in place once hand is full"
+        );
+        assert_eq!(state.zones.hand[9].id, CardId::Strike);
+        assert_eq!(state.zones.hand[9].cost_for_turn_java(), 0);
     }
 
     #[test]

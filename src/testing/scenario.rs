@@ -231,6 +231,15 @@ pub fn build_initial_engine_state(
                 cards: offered,
                 colorless: false,
                 card_type: None,
+                amount: if combat
+                    .entities
+                    .player
+                    .has_relic(crate::content::relics::RelicId::SacredBark)
+                {
+                    2
+                } else {
+                    1
+                },
                 can_skip: skip_available,
             },
         ));

@@ -148,6 +148,7 @@ pub struct DiscoveryChoiceState {
     pub cards: Vec<CardId>,
     pub colorless: bool,
     pub card_type: Option<CardType>,
+    pub amount: u8,
     pub can_skip: bool,
 }
 

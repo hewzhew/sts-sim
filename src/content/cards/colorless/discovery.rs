@@ -30,6 +30,7 @@ pub fn discovery_play(_state: &CombatState, _card: &CombatCard) -> SmallVec<[Act
         action: Action::SuspendForDiscovery {
             colorless: false,
             card_type: None,
+            amount: 1,
             cost_for_turn: Some(0),
             can_skip: false,
         },
