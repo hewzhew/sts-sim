@@ -5369,6 +5369,234 @@ fn discard_cards_queue_java_discard_action_instead_of_prechecking_hand() {
 }
 
 #[test]
+fn silent_upgrade_sensitive_play_paths_evaluate_from_card_definition() {
+    fn upgraded(id: CardId, uuid: u32) -> CombatCard {
+        let mut card = CombatCard::new(id, uuid);
+        card.upgrades = 1;
+        card
+    }
+
+    fn assert_damage(action: &Action, target: usize, amount: i32) {
+        match action {
+            Action::Damage(info) => {
+                assert_eq!(info.target, target);
+                assert_eq!(info.base, amount);
+                assert_eq!(info.output, amount);
+            }
+            other => panic!("expected DamageAction, got {other:?}"),
+        }
+    }
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
+    target.id = 7;
+    state.entities.monsters = vec![target];
+
+    let adrenaline = resolve_card_play(
+        CardId::Adrenaline,
+        &state,
+        &upgraded(CardId::Adrenaline, 900),
+        None,
+    );
+    assert_eq!(adrenaline[0].action, Action::GainEnergy { amount: 2 });
+    assert_eq!(adrenaline[1].action, Action::DrawCards(2));
+
+    let backflip = resolve_card_play(
+        CardId::Backflip,
+        &state,
+        &upgraded(CardId::Backflip, 901),
+        None,
+    );
+    assert_eq!(
+        backflip[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 8,
+        }
+    );
+    assert_eq!(backflip[1].action, Action::DrawCards(2));
+
+    let blade_dance = resolve_card_play(
+        CardId::BladeDance,
+        &state,
+        &upgraded(CardId::BladeDance, 902),
+        None,
+    );
+    assert_eq!(
+        blade_dance[0].action,
+        Action::MakeTempCardInHand {
+            card_id: CardId::Shiv,
+            amount: 4,
+            upgraded: false,
+        }
+    );
+
+    let bouncing_flask = resolve_card_play(
+        CardId::BouncingFlask,
+        &state,
+        &upgraded(CardId::BouncingFlask, 903),
+        None,
+    );
+    assert_eq!(
+        bouncing_flask[0].action,
+        Action::BouncingFlask {
+            target: None,
+            amount: 3,
+            num_times: 4,
+        }
+    );
+
+    let burst = resolve_card_play(CardId::Burst, &state, &upgraded(CardId::Burst, 904), None);
+    assert_eq!(
+        burst[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Burst,
+            amount: 2,
+        }
+    );
+
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        7,
+        vec![Power {
+            power_type: PowerId::Poison,
+            instance_id: None,
+            amount: 5,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let catalyst = resolve_card_play(
+        CardId::Catalyst,
+        &state,
+        &upgraded(CardId::Catalyst, 905),
+        Some(7),
+    );
+    assert_eq!(
+        catalyst[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Poison,
+            amount: 10,
+        }
+    );
+
+    let cloak = resolve_card_play(
+        CardId::CloakAndDagger,
+        &state,
+        &upgraded(CardId::CloakAndDagger, 906),
+        None,
+    );
+    assert_eq!(
+        cloak[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 6,
+        }
+    );
+    assert_eq!(
+        cloak[1].action,
+        Action::MakeTempCardInHand {
+            card_id: CardId::Shiv,
+            amount: 2,
+            upgraded: false,
+        }
+    );
+
+    let dagger_throw = resolve_card_play(
+        CardId::DaggerThrow,
+        &state,
+        &upgraded(CardId::DaggerThrow, 907),
+        Some(7),
+    );
+    assert_damage(&dagger_throw[0].action, 7, 12);
+    assert_eq!(dagger_throw[1].action, Action::DrawCards(1));
+
+    let deadly_poison = resolve_card_play(
+        CardId::DeadlyPoison,
+        &state,
+        &upgraded(CardId::DeadlyPoison, 908),
+        Some(7),
+    );
+    assert_eq!(
+        deadly_poison[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Poison,
+            amount: 7,
+        }
+    );
+
+    let footwork = resolve_card_play(
+        CardId::Footwork,
+        &state,
+        &upgraded(CardId::Footwork, 909),
+        None,
+    );
+    assert_eq!(
+        footwork[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Dexterity,
+            amount: 3,
+        }
+    );
+
+    let noxious = resolve_card_play(
+        CardId::NoxiousFumes,
+        &state,
+        &upgraded(CardId::NoxiousFumes, 910),
+        None,
+    );
+    assert_eq!(
+        noxious[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::NoxiousFumes,
+            amount: 3,
+        }
+    );
+
+    let poisoned_stab = resolve_card_play(
+        CardId::PoisonedStab,
+        &state,
+        &upgraded(CardId::PoisonedStab, 911),
+        Some(7),
+    );
+    assert_damage(&poisoned_stab[0].action, 7, 8);
+    assert_eq!(
+        poisoned_stab[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 7,
+            power_id: PowerId::Poison,
+            amount: 4,
+        }
+    );
+
+    let survivor = resolve_card_play(
+        CardId::Survivor,
+        &state,
+        &upgraded(CardId::Survivor, 912),
+        None,
+    );
+    assert_eq!(
+        survivor[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 11,
+        }
+    );
+}
+
+#[test]
 fn discard_from_hand_auto_discards_all_when_hand_size_is_not_greater_than_amount() {
     let mut state = crate::test_support::blank_test_combat();
     state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];

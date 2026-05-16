@@ -52,9 +52,9 @@ CLASSIFICATIONS: dict[str, Classification] = {
         "改为在 play 内调用 evaluate_card_for_play 或显式从 CardDefinition+upgrades 计算抽牌数；测试应避免手动预填 mutable 渲染字段。",
     ),
     "adrenaline.rs": Classification(
-        "should_evaluate",
-        "GainEnergy 的 card.upgrades 分支符合 Java this.upgraded，但 DrawCards 读取 card.base_magic_num_mut；Java 固定 DrawCardAction(p, 2)，不依赖 mutable 渲染字段。",
-        "保留 energy 的 upgraded 分支；DrawCards 改为 Java 字面量 2 或由统一评价/定义 helper 取得，避免默认 0。",
+        "reasonable_special",
+        "Java Adrenaline.use 根据 this.upgraded 决定 GainEnergyAction(2/1)；抽牌数已由 play 路径本地 evaluate，不再依赖 mutable magic 预填。",
+        "保留 direct upgraded 分支，并用测试覆盖 Adrenaline+ 在未预填 base_magic_num_mut 时仍获得 2 能量、抽 2 张。",
     ),
     "backflip.rs": Classification(
         "should_evaluate",
@@ -325,12 +325,19 @@ def render_report(root: Path, matches_by_file: dict[str, list[Match]]) -> str:
         lines.append(
             "2. Then fix the `应改为 evaluate_card_for_play` group by making ordinary play functions evaluate locally before reading damage/block/magic."
         )
-    else:
+    elif grouped["should_evaluate"]:
         lines.append(
             "1. The `疑似测试掩盖风险` group is empty; continue with the `应改为 evaluate_card_for_play` group."
         )
         lines.append(
             "2. Make ordinary play functions evaluate locally before reading damage/block/magic."
+        )
+    else:
+        lines.append(
+            "1. The `疑似测试掩盖风险` and `应改为 evaluate_card_for_play` groups are empty; ordinary Silent play paths no longer read transient mutable card fields directly."
+        )
+        lines.append(
+            "2. Keep remaining direct `card.upgrades` reads limited to the `合理特殊升级` group."
         )
     lines.extend(
         [

@@ -38,7 +38,8 @@ pub fn catalyst_play(
         return smallvec::smallvec![];
     }
 
-    let extra = poison * (card.base_magic_num_mut - 1).max(1);
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
+    let extra = poison * (evaluated.base_magic_num_mut - 1).max(1);
     smallvec::smallvec![ActionInfo {
         action: Action::ApplyPower {
             source: 0,

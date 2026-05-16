@@ -25,12 +25,13 @@ pub fn definition() -> CardDefinition {
     }
 }
 
-pub fn bouncing_flask_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+pub fn bouncing_flask_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
     smallvec::smallvec![ActionInfo {
         action: Action::BouncingFlask {
             target: None,
             amount: 3,
-            num_times: card.base_magic_num_mut.max(0) as u8,
+            num_times: evaluated.base_magic_num_mut.max(0) as u8,
         },
         insertion_mode: AddTo::Bottom,
     }]

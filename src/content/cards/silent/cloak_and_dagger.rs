@@ -26,18 +26,19 @@ pub fn definition() -> CardDefinition {
 }
 
 pub fn cloak_and_dagger_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, _state, None);
     smallvec::smallvec![
         ActionInfo {
             action: Action::GainBlock {
                 target: 0,
-                amount: card.base_block_mut,
+                amount: evaluated.base_block_mut,
             },
             insertion_mode: AddTo::Bottom,
         },
         ActionInfo {
             action: Action::MakeTempCardInHand {
                 card_id: CardId::Shiv,
-                amount: card.base_magic_num_mut.max(0) as u8,
+                amount: evaluated.base_magic_num_mut.max(0) as u8,
                 upgraded: false,
             },
             insertion_mode: AddTo::Bottom,

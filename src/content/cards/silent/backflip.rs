@@ -25,17 +25,18 @@ pub fn definition() -> CardDefinition {
     }
 }
 
-pub fn backflip_play(_state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+pub fn backflip_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
     smallvec::smallvec![
         ActionInfo {
             action: Action::GainBlock {
                 target: 0,
-                amount: card.base_block_mut,
+                amount: evaluated.base_block_mut,
             },
             insertion_mode: AddTo::Bottom,
         },
         ActionInfo {
-            action: Action::DrawCards(card.base_magic_num_mut as u32),
+            action: Action::DrawCards(evaluated.base_magic_num_mut.max(0) as u32),
             insertion_mode: AddTo::Bottom,
         },
     ]

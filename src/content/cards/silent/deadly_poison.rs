@@ -27,17 +27,18 @@ pub fn definition() -> CardDefinition {
 }
 
 pub fn deadly_poison_play(
-    _state: &CombatState,
+    state: &CombatState,
     card: &CombatCard,
     target: Option<EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Deadly Poison requires a valid target");
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
     smallvec::smallvec![ActionInfo {
         action: Action::ApplyPower {
             source: 0,
             target,
             power_id: crate::content::powers::PowerId::Poison,
-            amount: card.base_magic_num_mut,
+            amount: evaluated.base_magic_num_mut,
         },
         insertion_mode: AddTo::Bottom,
     }]
