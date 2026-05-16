@@ -242,6 +242,30 @@ Tests:
 - `donut_increase_max_hp_uses_java_increase_then_heal_semantics`
 - `donut_max_hp_gain_survives_mark_but_attached_heal_is_blocked`
 
+### Cleric heal payment
+
+Java `events/exordium/Cleric.java` computes the heal amount as
+`(int)(maxHealth * 0.25f)` and then executes the choice as two separate player
+resource calls:
+
+- `AbstractDungeon.player.loseGold(35)`
+- `AbstractDungeon.player.heal(healAmt)`
+
+Rust previously rounded the heal amount and then directly mutated
+`current_hp`.
+
+Fixes:
+
+- Cleric heal amount now uses Java's float-cast truncation.
+- Cleric heal now calls `RunState::heal_with_source(..., Event(Cleric))`.
+- Paying gold remains separate from healing, so `Mark of the Bloom` blocks only
+  the heal and not the gold cost.
+
+Tests:
+
+- `heal_amount_uses_java_float_cast_not_rounding`
+- `heal_cost_is_paid_even_when_mark_of_the_bloom_blocks_heal`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -449,10 +473,10 @@ Validation:
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
-  that card obtains just received. `BigFish` is now covered; the remaining
-  direct writes should be handled event-by-event against Java source.
+  that card obtains just received. `BigFish` and `Cleric` are now covered; the
+  remaining direct writes should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `806 passed`.
+- Current result after this pass: `808 passed`.

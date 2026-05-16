@@ -11,7 +11,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
         0 => {
             let heal_cost = 35;
             let mut choices = Vec::new();
-            let heal = (run_state.max_hp as f32 * 0.25).round() as i32;
+            let heal = (run_state.max_hp as f32 * 0.25) as i32;
 
             if run_state.gold >= heal_cost {
                 choices.push(EventOption::new(
@@ -155,8 +155,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     // Heal
                     run_state
                         .change_gold_with_source(-35, DomainEventSource::Event(EventId::Cleric));
-                    let heal = (run_state.max_hp as f32 * 0.25).round() as i32;
-                    run_state.current_hp = (run_state.current_hp + heal).min(run_state.max_hp);
+                    let heal = (run_state.max_hp as f32 * 0.25) as i32;
+                    run_state.heal_with_source(heal, DomainEventSource::Event(EventId::Cleric));
                     event_state.current_screen = 1;
                     event_state.completed = true;
                 }
@@ -206,6 +206,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::selection::DomainEvent;
 
     #[test]
     fn purify_option_exposes_remove_selection_semantics() {
@@ -217,5 +219,67 @@ mod tests {
             options[1].semantics.transition,
             EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard)
         ));
+    }
+
+    #[test]
+    fn heal_amount_uses_java_float_cast_not_rounding() {
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.gold = 35;
+        rs.current_hp = 1;
+        rs.max_hp = 82;
+        rs.event_state = Some(EventState::new(EventId::Cleric));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.current_hp, 21);
+        let events = rs.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::GoldChanged {
+                delta: -35,
+                source: DomainEventSource::Event(EventId::Cleric),
+                ..
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: 20,
+                current_hp: 21,
+                max_hp: 82,
+                source: DomainEventSource::Event(EventId::Cleric),
+            }
+        )));
+    }
+
+    #[test]
+    fn heal_cost_is_paid_even_when_mark_of_the_bloom_blocks_heal() {
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.gold = 35;
+        rs.current_hp = 1;
+        rs.max_hp = 80;
+        rs.relics.push(RelicState::new(RelicId::MarkOfTheBloom));
+        rs.event_state = Some(EventState::new(EventId::Cleric));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.gold, 0);
+        assert_eq!(rs.current_hp, 1);
+        let events = rs.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::GoldChanged {
+                delta: -35,
+                source: DomainEventSource::Event(EventId::Cleric),
+                ..
+            }
+        )));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, DomainEvent::HpChanged { .. })));
     }
 }
