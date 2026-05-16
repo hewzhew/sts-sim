@@ -57,6 +57,84 @@ fn initial_threshold(asc: u8) -> i32 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    fn drain_actions(state: &mut CombatState) {
+        while let Some(action) = state.pop_next_action() {
+            crate::engine::action_handlers::execute_action(action, state);
+        }
+    }
+
+    fn test_power(power_type: PowerId, amount: i32) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
+
+    #[test]
+    fn twin_slam_keeps_defensive_block_until_after_reflected_damage_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.entities.player.current_hp = 80;
+
+        let mut guardian = crate::test_support::test_monster(EnemyId::TheGuardian);
+        guardian.current_hp = 50;
+        guardian.max_hp = 250;
+        guardian.block = 20;
+        guardian.guardian = GuardianRuntimeState {
+            damage_threshold: 30,
+            damage_taken: 0,
+            is_open: false,
+            close_up_triggered: false,
+        };
+        guardian.set_planned_move_id(TWIN_SLAM);
+        guardian.set_planned_steps(twin_slam_plan(30).steps);
+        state.entities.monsters = vec![guardian.clone()];
+
+        state
+            .entities
+            .power_db
+            .insert(0, vec![test_power(PowerId::FlameBarrier, 4)]);
+        state.entities.power_db.insert(
+            guardian.id,
+            vec![test_power(PowerId::SharpHide, sharp_hide_damage(0))],
+        );
+
+        let plan = twin_slam_plan(guardian.guardian.damage_threshold);
+        for action in <TheGuardian as MonsterBehavior>::take_turn_plan(&mut state, &guardian, &plan)
+        {
+            state.queue_action_back(action);
+        }
+        drain_actions(&mut state);
+
+        let guardian_after = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == guardian.id)
+            .unwrap();
+        assert_eq!(
+            guardian_after.current_hp, 50,
+            "Java ChangeState(Offensive Mode) queues LoseBlock after Twin Slam attacks, so reflected Flame Barrier damage is absorbed by existing defensive block"
+        );
+        assert_eq!(guardian_after.block, 0);
+        assert!(guardian_after.guardian.is_open);
+        assert!(!guardian_after.guardian.close_up_triggered);
+        assert_eq!(
+            crate::content::powers::store::power_amount(&state, guardian.id, PowerId::ModeShift),
+            30
+        );
+    }
+}
+
 fn fierce_bash_damage(asc: u8) -> i32 {
     if asc >= 4 {
         36
@@ -385,18 +463,19 @@ impl MonsterBehavior for TheGuardian {
                 sharp_hide,
             } => {
                 let mut actions = vec![
-                    guardian_runtime_update(entity, None, Some(0), Some(true), Some(false)),
-                    apply_power_action(entity, mode_shift),
+                    guardian_runtime_update(entity, None, None, Some(true), Some(false)),
+                    set_next_move_action(entity, whirlwind_plan()),
                 ];
+                actions.extend(attack_actions(entity.id, PLAYER, attack));
+                actions.push(remove_power_action(entity, sharp_hide));
+                actions.push(apply_power_action(entity, mode_shift));
+                actions.push(guardian_runtime_update(entity, None, Some(0), None, None));
                 if entity.block > 0 {
                     actions.push(Action::LoseBlock {
                         target: entity.id,
                         amount: entity.block,
                     });
                 }
-                actions.extend(attack_actions(entity.id, PLAYER, attack));
-                actions.push(remove_power_action(entity, sharp_hide));
-                actions.push(set_next_move_action(entity, whirlwind_plan()));
                 actions
             }
         }
@@ -435,6 +514,10 @@ impl MonsterBehavior for TheGuardian {
                     insertion_mode: AddTo::Bottom,
                 },
                 ActionInfo {
+                    action: set_next_move_action(entity, close_up_plan(state.meta.ascension_level)),
+                    insertion_mode: AddTo::Bottom,
+                },
+                ActionInfo {
                     action: Action::RemovePower {
                         target: entity.id,
                         power_id: PowerId::ModeShift,
@@ -448,13 +531,17 @@ impl MonsterBehavior for TheGuardian {
                     },
                     insertion_mode: AddTo::Bottom,
                 },
-                ActionInfo {
-                    action: set_next_move_action(entity, close_up_plan(state.meta.ascension_level)),
-                    insertion_mode: AddTo::Bottom,
-                },
             ]
         } else {
             smallvec::smallvec![
+                ActionInfo {
+                    action: Action::ReducePower {
+                        target: entity.id,
+                        power_id: PowerId::ModeShift,
+                        amount,
+                    },
+                    insertion_mode: AddTo::Top,
+                },
                 ActionInfo {
                     action: guardian_runtime_update(
                         entity,
@@ -463,14 +550,6 @@ impl MonsterBehavior for TheGuardian {
                         None,
                         None
                     ),
-                    insertion_mode: AddTo::Top,
-                },
-                ActionInfo {
-                    action: Action::ReducePower {
-                        target: entity.id,
-                        power_id: PowerId::ModeShift,
-                        amount,
-                    },
                     insertion_mode: AddTo::Top,
                 },
             ]

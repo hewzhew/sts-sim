@@ -1,4 +1,4 @@
-use super::{apply_power_action, attack_actions, set_next_move_action, PLAYER};
+use super::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 use crate::runtime::action::Action;
@@ -164,13 +164,34 @@ impl MonsterBehavior for GremlinFat {
                 if let Some(frail) = frail {
                     actions.push(apply_power_action(entity, frail));
                 }
-                actions.push(set_next_move_action(
-                    entity,
-                    blunt_plan(_state.meta.ascension_level),
-                ));
+                actions.push(Action::RollMonsterMove {
+                    monster_id: entity.id,
+                });
                 actions
             }
             GremlinFatTurn::Escape => vec![Action::Escape { target: entity.id }],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{blunt_plan, GremlinFat};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn blunt_rerolls_like_java_even_when_move_is_deterministic() {
+        // GremlinFat.java queues RollMoveAction after BLUNT when not escaping.
+        // That consumes aiRng.random(99); replacing it with SetMonsterMove shifts
+        // later monster RNG even though getMove always chooses BLUNT.
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinFat);
+        let actions = GremlinFat::take_turn_plan(&mut state, &entity, &blunt_plan(0));
+
+        assert!(matches!(
+            actions.last(),
+            Some(Action::RollMonsterMove { monster_id: 1 })
+        ));
     }
 }
