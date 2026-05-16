@@ -449,6 +449,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             0,
             1,
         ),
+        (
+            CardId::SweepingBeam,
+            "Sweeping Beam",
+            CardType::Attack,
+            1,
+            6,
+            0,
+            1,
+            CardTarget::AllEnemy,
+            3,
+            0,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -621,6 +634,41 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
         Action::GainEnergy { amount: 3 }
     );
     assert_eq!(turbo_plus_actions[1].action, turbo[1].action);
+
+    let sweeping = resolve_card_play(
+        CardId::SweepingBeam,
+        &state,
+        &CombatCard::new(CardId::SweepingBeam, 118),
+        None,
+    );
+    assert_eq!(sweeping.len(), 2);
+    match &sweeping[0].action {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            is_modified,
+        } => {
+            assert_eq!(*source, 0);
+            assert!(damages.iter().all(|d| *d == 6));
+            assert_eq!(*damage_type, DamageType::Normal);
+            assert!(!is_modified);
+        }
+        other => panic!("Sweeping Beam first action should damage all enemies, got {other:?}"),
+    }
+    assert_eq!(sweeping[1].action, Action::DrawCards(1));
+
+    let mut sweeping_plus = CombatCard::new(CardId::SweepingBeam, 119);
+    sweeping_plus.upgrades = 1;
+    let sweeping_plus_actions =
+        resolve_card_play(CardId::SweepingBeam, &state, &sweeping_plus, None);
+    match &sweeping_plus_actions[0].action {
+        Action::DamageAllEnemies { damages, .. } => {
+            assert!(damages.iter().all(|d| *d == 9));
+        }
+        other => panic!("Sweeping Beam+ first action should damage all enemies, got {other:?}"),
+    }
+    assert_eq!(sweeping_plus_actions[1].action, Action::DrawCards(1));
 }
 
 #[test]
