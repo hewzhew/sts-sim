@@ -471,6 +471,242 @@ fn watcher_starter_basic_runtime_actions_match_java_use_methods() {
 }
 
 #[test]
+fn watcher_first_common_batch_definitions_match_java_sources() {
+    let java_map = build_java_id_map();
+    for (id, java) in [
+        (CardId::Consecrate, "Consecrate"),
+        (CardId::BowlingBash, "BowlingBash"),
+        (CardId::EmptyBody, "EmptyBody"),
+        (CardId::EmptyFist, "EmptyFist"),
+        (CardId::EmptyMind, "EmptyMind"),
+    ] {
+        assert_eq!(java_id(id), java);
+        assert_eq!(java_map.get(java), Some(&id));
+    }
+
+    let cases = [
+        (
+            CardId::Consecrate,
+            "Consecrate",
+            CardType::Attack,
+            CardRarity::Common,
+            0,
+            5,
+            0,
+            0,
+            CardTarget::AllEnemy,
+            3,
+            0,
+            0,
+        ),
+        (
+            CardId::BowlingBash,
+            "Bowling Bash",
+            CardType::Attack,
+            CardRarity::Common,
+            1,
+            7,
+            0,
+            0,
+            CardTarget::Enemy,
+            3,
+            0,
+            0,
+        ),
+        (
+            CardId::EmptyBody,
+            "Empty Body",
+            CardType::Skill,
+            CardRarity::Common,
+            1,
+            0,
+            7,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            3,
+            0,
+        ),
+        (
+            CardId::EmptyFist,
+            "Empty Fist",
+            CardType::Attack,
+            CardRarity::Common,
+            1,
+            9,
+            0,
+            0,
+            CardTarget::Enemy,
+            5,
+            0,
+            0,
+        ),
+        (
+            CardId::EmptyMind,
+            "Empty Mind",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            2,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
+    ];
+
+    for (
+        id,
+        name,
+        card_type,
+        rarity,
+        cost,
+        base_damage,
+        base_block,
+        base_magic,
+        target,
+        upgrade_damage,
+        upgrade_block,
+        upgrade_magic,
+    ) in cases
+    {
+        let def = get_card_definition(id);
+        assert_eq!(def.name, name);
+        assert_eq!(def.card_type, card_type);
+        assert_eq!(def.rarity, rarity);
+        assert_eq!(def.cost, cost);
+        assert_eq!(def.base_damage, base_damage);
+        assert_eq!(def.base_block, base_block);
+        assert_eq!(def.base_magic, base_magic);
+        assert_eq!(def.target, target);
+        assert_eq!(def.upgrade_damage, upgrade_damage);
+        assert_eq!(def.upgrade_block, upgrade_block);
+        assert_eq!(def.upgrade_magic, upgrade_magic);
+    }
+
+    for empty in [CardId::EmptyBody, CardId::EmptyFist, CardId::EmptyMind] {
+        assert!(get_card_definition(empty).tags.contains(&CardTag::Empty));
+    }
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::Consecrate));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::BowlingBash));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::EmptyBody));
+    assert!(WATCHER_COMMON_POOL.contains(&CardId::EmptyFist));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
+}
+
+#[test]
+fn watcher_first_common_batch_runtime_actions_match_java_use_methods() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 7;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 8;
+    let mut escaped = crate::test_support::test_monster(EnemyId::LouseNormal);
+    escaped.id = 9;
+    escaped.is_escaped = true;
+    state.entities.monsters = vec![first, second, escaped];
+
+    let consecrate_actions = resolve_card_play(
+        CardId::Consecrate,
+        &state,
+        &CombatCard::new(CardId::Consecrate, 300),
+        None,
+    );
+    assert_eq!(consecrate_actions.len(), 1);
+    match &consecrate_actions[0].action {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            ..
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(damages.as_slice(), &[5, 5, 5]);
+            assert_eq!(*damage_type, DamageType::Normal);
+        }
+        other => panic!("Consecrate should emit DamageAllEnemiesAction, got {other:?}"),
+    }
+
+    let bowling_actions = resolve_card_play(
+        CardId::BowlingBash,
+        &state,
+        &CombatCard::new(CardId::BowlingBash, 301),
+        Some(7),
+    );
+    assert_eq!(
+        bowling_actions.len(),
+        2,
+        "Java BowlingBash repeats once per monster that is not dead or escaped"
+    );
+    for action in &bowling_actions {
+        match &action.action {
+            Action::Damage(info) => {
+                assert_eq!(info.target, 7);
+                assert_eq!(info.base, 7);
+                assert_eq!(info.output, 7);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("Bowling Bash should emit repeated DamageAction, got {other:?}"),
+        }
+    }
+
+    let empty_body = resolve_card_play(
+        CardId::EmptyBody,
+        &state,
+        &CombatCard::new(CardId::EmptyBody, 302),
+        None,
+    );
+    assert_eq!(
+        empty_body
+            .iter()
+            .map(|info| &info.action)
+            .collect::<Vec<_>>(),
+        vec![
+            &Action::GainBlock {
+                target: 0,
+                amount: 7,
+            },
+            &Action::EnterStance("Neutral".to_string()),
+        ]
+    );
+
+    let empty_fist = resolve_card_play(
+        CardId::EmptyFist,
+        &state,
+        &CombatCard::new(CardId::EmptyFist, 303),
+        Some(7),
+    );
+    assert_eq!(empty_fist.len(), 2);
+    match &empty_fist[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 9);
+        }
+        other => panic!("Empty Fist first action should be DamageAction, got {other:?}"),
+    }
+    assert_eq!(
+        empty_fist[1].action,
+        Action::EnterStance("Neutral".to_string())
+    );
+
+    let mut empty_mind_plus = CombatCard::new(CardId::EmptyMind, 304);
+    empty_mind_plus.upgrades = 1;
+    let empty_mind = resolve_card_play(CardId::EmptyMind, &state, &empty_mind_plus, None);
+    assert_eq!(
+        empty_mind
+            .iter()
+            .map(|info| &info.action)
+            .collect::<Vec<_>>(),
+        vec![
+            &Action::DrawCards(3),
+            &Action::EnterStance("Neutral".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn dualcast_runtime_evoke_without_removing_preserves_front_orb_until_second_evoke() {
     let mut state = crate::test_support::blank_test_combat();
     state.entities.player.max_orbs = 1;

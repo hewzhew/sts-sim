@@ -1,4 +1,9 @@
+pub mod bowling_bash;
+pub mod consecrate;
 pub mod defend_watcher;
+pub mod empty_body;
+pub mod empty_fist;
+pub mod empty_mind;
 pub mod eruption;
 pub mod strike_purple;
 pub mod vigilance;

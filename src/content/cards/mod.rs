@@ -303,6 +303,11 @@ pub enum CardId {
     DefendP,
     Eruption,
     Vigilance,
+    Consecrate,
+    BowlingBash,
+    EmptyBody,
+    EmptyFist,
+    EmptyMind,
     // Add more as we expand
 }
 
@@ -639,6 +644,11 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::DefendP => watcher::defend_watcher::definition(),
         CardId::Eruption => watcher::eruption::definition(),
         CardId::Vigilance => watcher::vigilance::definition(),
+        CardId::Consecrate => watcher::consecrate::definition(),
+        CardId::BowlingBash => watcher::bowling_bash::definition(),
+        CardId::EmptyBody => watcher::empty_body::definition(),
+        CardId::EmptyFist => watcher::empty_fist::definition(),
+        CardId::EmptyMind => watcher::empty_mind::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1218,6 +1228,17 @@ pub const DEFECT_RARE_POOL: &[CardId] = &[
     CardId::MultiCast,
 ];
 
+pub const WATCHER_COMMON_POOL: &[CardId] = &[
+    CardId::Consecrate,
+    CardId::BowlingBash,
+    CardId::EmptyBody,
+    CardId::EmptyFist,
+];
+
+pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[CardId::EmptyMind];
+
+pub const WATCHER_RARE_POOL: &[CardId] = &[];
+
 /// Returns the pool for a given rarity (Ironclad).
 /// Returns the pool of randomly obtainable curse cards.
 /// Java: AbstractDungeon.returnRandomCurse() draws from this pool.
@@ -1305,13 +1326,29 @@ pub fn defect_pool_for_type(card_type: CardType) -> Vec<CardId> {
     result
 }
 
-/// Returns the pool for a given rarity (Watcher). Stub until Watcher cards are implemented.
-pub fn watcher_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] {
-    &[]
+pub fn watcher_pool_for_rarity(rarity: CardRarity) -> &'static [CardId] {
+    match rarity {
+        CardRarity::Common => WATCHER_COMMON_POOL,
+        CardRarity::Uncommon => WATCHER_UNCOMMON_POOL,
+        CardRarity::Rare => WATCHER_RARE_POOL,
+        _ => WATCHER_COMMON_POOL,
+    }
 }
 
-pub fn watcher_pool_for_type(_card_type: CardType) -> Vec<CardId> {
-    Vec::new()
+pub fn watcher_pool_for_type(card_type: CardType) -> Vec<CardId> {
+    let mut result = Vec::new();
+    for &pool in &[
+        WATCHER_COMMON_POOL,
+        WATCHER_UNCOMMON_POOL,
+        WATCHER_RARE_POOL,
+    ] {
+        for &id in pool {
+            if get_card_definition(id).card_type == card_type {
+                result.push(id);
+            }
+        }
+    }
+    result
 }
 
 /// Returns the colorless pool for a given rarity.
@@ -1400,6 +1437,11 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::DefendP => "Defend_P",
         CardId::Eruption => "Eruption",
         CardId::Vigilance => "Vigilance",
+        CardId::Consecrate => "Consecrate",
+        CardId::BowlingBash => "BowlingBash",
+        CardId::EmptyBody => "EmptyBody",
+        CardId::EmptyFist => "EmptyFist",
+        CardId::EmptyMind => "EmptyMind",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1786,6 +1828,11 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         DefendP,
         Eruption,
         Vigilance,
+        Consecrate,
+        BowlingBash,
+        EmptyBody,
+        EmptyFist,
+        EmptyMind,
         Neutralize,
         Survivor,
         Anger,
