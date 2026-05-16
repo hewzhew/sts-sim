@@ -216,6 +216,30 @@ impl RunState {
                     CardId::Survivor,
                     CardId::Neutralize,
                 ],
+                "Defect" => &[
+                    CardId::StrikeB,
+                    CardId::StrikeB,
+                    CardId::StrikeB,
+                    CardId::StrikeB,
+                    CardId::DefendB,
+                    CardId::DefendB,
+                    CardId::DefendB,
+                    CardId::DefendB,
+                    CardId::Zap,
+                    CardId::Dualcast,
+                ],
+                "Watcher" => &[
+                    CardId::StrikeP,
+                    CardId::StrikeP,
+                    CardId::StrikeP,
+                    CardId::StrikeP,
+                    CardId::DefendP,
+                    CardId::DefendP,
+                    CardId::DefendP,
+                    CardId::DefendP,
+                    CardId::Eruption,
+                    CardId::Vigilance,
+                ],
                 _ => &[
                     CardId::Strike,
                     CardId::Strike,
@@ -1273,6 +1297,8 @@ impl RunState {
         if pool.is_empty() {
             return match self.player_class {
                 "Silent" => CardId::StrikeG,
+                "Defect" => CardId::StrikeB,
+                "Watcher" => CardId::StrikeP,
                 _ => CardId::Strike,
             };
         }
@@ -1292,11 +1318,15 @@ impl RunState {
         use crate::content::cards::*;
         let pool = match self.player_class {
             "Silent" => silent_pool_for_type(card_type),
+            "Defect" => defect_pool_for_type(card_type),
+            "Watcher" => watcher_pool_for_type(card_type),
             _ => ironclad_pool_for_type(card_type),
         };
         if pool.is_empty() {
             return match self.player_class {
                 "Silent" => CardId::StrikeG,
+                "Defect" => CardId::StrikeB,
+                "Watcher" => CardId::StrikeP,
                 _ => CardId::Strike,
             };
         }
@@ -1523,5 +1553,93 @@ impl RunState {
             upgrades: card.upgrades,
             uuid: card.uuid,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::content::relics::RelicId;
+
+    fn deck_ids(run: &RunState) -> Vec<CardId> {
+        run.master_deck.iter().map(|card| card.id).collect()
+    }
+
+    #[test]
+    fn starting_loadouts_use_class_specific_java_starter_decks() {
+        let ironclad = RunState::new(1, 0, false, "Ironclad");
+        assert_eq!(
+            deck_ids(&ironclad),
+            vec![
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Bash,
+            ]
+        );
+        assert_eq!(ironclad.relics[0].id, RelicId::BurningBlood);
+
+        let silent = RunState::new(1, 0, false, "Silent");
+        assert_eq!(
+            deck_ids(&silent),
+            vec![
+                CardId::StrikeG,
+                CardId::StrikeG,
+                CardId::StrikeG,
+                CardId::StrikeG,
+                CardId::StrikeG,
+                CardId::DefendG,
+                CardId::DefendG,
+                CardId::DefendG,
+                CardId::DefendG,
+                CardId::DefendG,
+                CardId::Survivor,
+                CardId::Neutralize,
+            ]
+        );
+        assert_eq!(silent.relics[0].id, RelicId::SnakeRing);
+
+        let defect = RunState::new(1, 0, false, "Defect");
+        assert_eq!(
+            deck_ids(&defect),
+            vec![
+                CardId::StrikeB,
+                CardId::StrikeB,
+                CardId::StrikeB,
+                CardId::StrikeB,
+                CardId::DefendB,
+                CardId::DefendB,
+                CardId::DefendB,
+                CardId::DefendB,
+                CardId::Zap,
+                CardId::Dualcast,
+            ]
+        );
+        assert_eq!(defect.relics[0].id, RelicId::CrackedCore);
+
+        let watcher = RunState::new(1, 0, false, "Watcher");
+        assert_eq!(
+            deck_ids(&watcher),
+            vec![
+                CardId::StrikeP,
+                CardId::StrikeP,
+                CardId::StrikeP,
+                CardId::StrikeP,
+                CardId::DefendP,
+                CardId::DefendP,
+                CardId::DefendP,
+                CardId::DefendP,
+                CardId::Eruption,
+                CardId::Vigilance,
+            ]
+        );
+        assert_eq!(watcher.relics[0].id, RelicId::PureWater);
     }
 }

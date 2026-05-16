@@ -335,6 +335,142 @@ fn defect_starter_basic_runtime_actions_match_java_use_methods() {
 }
 
 #[test]
+fn watcher_starter_basic_cards_are_registered_like_java_sources() {
+    let java_map = build_java_id_map();
+    assert_eq!(java_id(CardId::StrikeP), "Strike_P");
+    assert_eq!(java_id(CardId::DefendP), "Defend_P");
+    assert_eq!(java_id(CardId::Eruption), "Eruption");
+    assert_eq!(java_id(CardId::Vigilance), "Vigilance");
+    assert_eq!(java_map.get("Strike_P"), Some(&CardId::StrikeP));
+    assert_eq!(java_map.get("Defend_P"), Some(&CardId::DefendP));
+    assert_eq!(java_map.get("Eruption"), Some(&CardId::Eruption));
+    assert_eq!(java_map.get("Vigilance"), Some(&CardId::Vigilance));
+
+    let strike_p = get_card_definition(CardId::StrikeP);
+    assert_eq!(strike_p.name, "Strike");
+    assert_eq!(strike_p.card_type, CardType::Attack);
+    assert_eq!(strike_p.rarity, CardRarity::Basic);
+    assert_eq!(strike_p.cost, 1);
+    assert_eq!(strike_p.base_damage, 6);
+    assert_eq!(strike_p.target, CardTarget::Enemy);
+    assert_eq!(strike_p.upgrade_damage, 3);
+    assert!(strike_p.tags.contains(&CardTag::Strike));
+    assert!(strike_p.tags.contains(&CardTag::StarterStrike));
+
+    let defend_p = get_card_definition(CardId::DefendP);
+    assert_eq!(defend_p.name, "Defend");
+    assert_eq!(defend_p.card_type, CardType::Skill);
+    assert_eq!(defend_p.rarity, CardRarity::Basic);
+    assert_eq!(defend_p.cost, 1);
+    assert_eq!(defend_p.base_block, 5);
+    assert_eq!(defend_p.target, CardTarget::SelfTarget);
+    assert_eq!(defend_p.upgrade_block, 3);
+    assert!(defend_p.tags.contains(&CardTag::StarterDefend));
+
+    let eruption = get_card_definition(CardId::Eruption);
+    assert_eq!(eruption.name, "Eruption");
+    assert_eq!(eruption.card_type, CardType::Attack);
+    assert_eq!(eruption.rarity, CardRarity::Basic);
+    assert_eq!(eruption.cost, 2);
+    assert_eq!(eruption.base_damage, 9);
+    assert_eq!(eruption.target, CardTarget::Enemy);
+    let mut eruption_plus = CombatCard::new(CardId::Eruption, 200);
+    eruption_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&eruption_plus), Some(1));
+    assert_eq!(eruption_plus.get_cost(), 1);
+
+    let vigilance = get_card_definition(CardId::Vigilance);
+    assert_eq!(vigilance.name, "Vigilance");
+    assert_eq!(vigilance.card_type, CardType::Skill);
+    assert_eq!(vigilance.rarity, CardRarity::Basic);
+    assert_eq!(vigilance.cost, 2);
+    assert_eq!(vigilance.base_block, 8);
+    assert_eq!(vigilance.target, CardTarget::SelfTarget);
+    assert_eq!(vigilance.upgrade_block, 4);
+
+    assert!(is_starter_strike(CardId::StrikeP));
+    assert!(is_starter_defend(CardId::DefendP));
+    assert!(is_starter_basic(CardId::StrikeP));
+    assert!(is_starter_basic(CardId::DefendP));
+}
+
+#[test]
+fn watcher_starter_basic_runtime_actions_match_java_use_methods() {
+    let state = crate::test_support::blank_test_combat();
+
+    let strike_actions = resolve_card_play(
+        CardId::StrikeP,
+        &state,
+        &CombatCard::new(CardId::StrikeP, 201),
+        Some(7),
+    );
+    assert_eq!(strike_actions.len(), 1);
+    match &strike_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 6);
+            assert_eq!(info.output, 6);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Strike_P should emit DamageAction, got {other:?}"),
+    }
+
+    let defend_actions = resolve_card_play(
+        CardId::DefendP,
+        &state,
+        &CombatCard::new(CardId::DefendP, 202),
+        None,
+    );
+    assert_eq!(
+        defend_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 5,
+        }
+    );
+
+    let eruption_actions = resolve_card_play(
+        CardId::Eruption,
+        &state,
+        &CombatCard::new(CardId::Eruption, 203),
+        Some(7),
+    );
+    assert_eq!(eruption_actions.len(), 2);
+    match &eruption_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 9);
+            assert_eq!(info.output, 9);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Eruption first action should be DamageAction, got {other:?}"),
+    }
+    assert_eq!(
+        eruption_actions[1].action,
+        Action::EnterStance("Wrath".to_string())
+    );
+
+    let vigilance_actions = resolve_card_play(
+        CardId::Vigilance,
+        &state,
+        &CombatCard::new(CardId::Vigilance, 204),
+        None,
+    );
+    assert_eq!(vigilance_actions.len(), 2);
+    assert_eq!(
+        vigilance_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 8,
+        }
+    );
+    assert_eq!(
+        vigilance_actions[1].action,
+        Action::EnterStance("Calm".to_string())
+    );
+}
+
+#[test]
 fn dualcast_runtime_evoke_without_removing_preserves_front_orb_until_second_evoke() {
     let mut state = crate::test_support::blank_test_combat();
     state.entities.player.max_orbs = 1;

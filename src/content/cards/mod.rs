@@ -5,6 +5,7 @@ pub mod hooks;
 pub mod ironclad;
 pub mod silent;
 pub mod status;
+pub mod watcher;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(i32)]
@@ -298,6 +299,10 @@ pub enum CardId {
     HelloWorld,
     WhiteNoise,
     EchoForm,
+    StrikeP,
+    DefendP,
+    Eruption,
+    Vigilance,
     // Add more as we expand
 }
 
@@ -430,11 +435,17 @@ pub fn resolve_card_on_exhaust(
 }
 
 pub fn is_starter_strike(id: CardId) -> bool {
-    matches!(id, CardId::Strike | CardId::StrikeG | CardId::StrikeB)
+    matches!(
+        id,
+        CardId::Strike | CardId::StrikeG | CardId::StrikeB | CardId::StrikeP
+    )
 }
 
 pub fn is_starter_defend(id: CardId) -> bool {
-    matches!(id, CardId::Defend | CardId::DefendG | CardId::DefendB)
+    matches!(
+        id,
+        CardId::Defend | CardId::DefendG | CardId::DefendB | CardId::DefendP
+    )
 }
 
 pub fn is_starter_basic(id: CardId) -> bool {
@@ -624,6 +635,10 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::HelloWorld => defect::hello_world::definition(),
         CardId::WhiteNoise => defect::white_noise::definition(),
         CardId::EchoForm => defect::echo_form::definition(),
+        CardId::StrikeP => watcher::strike_purple::definition(),
+        CardId::DefendP => watcher::defend_watcher::definition(),
+        CardId::Eruption => watcher::eruption::definition(),
+        CardId::Vigilance => watcher::vigilance::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1278,9 +1293,25 @@ pub fn defect_pool_for_rarity(rarity: CardRarity) -> &'static [CardId] {
     }
 }
 
+pub fn defect_pool_for_type(card_type: CardType) -> Vec<CardId> {
+    let mut result = Vec::new();
+    for &pool in &[DEFECT_COMMON_POOL, DEFECT_UNCOMMON_POOL, DEFECT_RARE_POOL] {
+        for &id in pool {
+            if get_card_definition(id).card_type == card_type {
+                result.push(id);
+            }
+        }
+    }
+    result
+}
+
 /// Returns the pool for a given rarity (Watcher). Stub until Watcher cards are implemented.
 pub fn watcher_pool_for_rarity(_rarity: CardRarity) -> &'static [CardId] {
     &[]
+}
+
+pub fn watcher_pool_for_type(_card_type: CardType) -> Vec<CardId> {
+    Vec::new()
 }
 
 /// Returns the colorless pool for a given rarity.
@@ -1365,6 +1396,10 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::DefendB => "Defend_B",
         CardId::Zap => "Zap",
         CardId::Dualcast => "Dualcast",
+        CardId::StrikeP => "Strike_P",
+        CardId::DefendP => "Defend_P",
+        CardId::Eruption => "Eruption",
+        CardId::Vigilance => "Vigilance",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1747,6 +1782,10 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         HelloWorld,
         WhiteNoise,
         EchoForm,
+        StrikeP,
+        DefendP,
+        Eruption,
+        Vigilance,
         Neutralize,
         Survivor,
         Anger,
