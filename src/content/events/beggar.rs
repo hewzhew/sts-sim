@@ -44,7 +44,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                     min_choices: 1,
                     max_choices: 1,
-                    reason: RunPendingChoiceReason::Purge,
+                    reason: RunPendingChoiceReason::PurgeNonBottled,
                     return_state: Box::new(EngineState::EventRoom),
                 });
                 return;

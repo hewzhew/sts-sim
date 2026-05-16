@@ -112,6 +112,38 @@ Tests:
 - `designer_full_service_followup_upgrade_uses_domain_event_source`
 - `designer_run_pending_choice_rejects_invalid_direct_deck_input`
 
+### Non-bottled card selection sweeps
+
+Java frequently opens deck selection through:
+
+```text
+CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())
+```
+
+Rust previously had one generic `RunPendingChoiceReason::Purge` /
+`Transform`, so these event flows could allow bottled cards through the
+selection wrapper. This pass added explicit non-bottled variants and moved the
+shared count helper next to the run pending-choice predicate.
+
+Updated event modules:
+
+- `BackToBasics`
+- `Beggar`
+- `BonfireElementals`
+- `BonfireSpirits`
+- `Cleric`
+- `GoldenWing`
+- `GremlinWheelGame`
+- `LivingWall`
+- `NoteForYourself`
+- `PurificationShrine`
+- `Transmogrifier`
+
+The source distinction matters because Java does not apply the non-bottled
+filter uniformly. `DrugDealer`, Neow transform/remove rewards, `EmptyCage`, and
+`Astrolabe` use `masterDeck.getPurgeableCards()` directly, so they remain on
+the ordinary `Purge` / `Transform` variants.
+
 ## Current High-Risk Event Areas
 
 - `Match and Keep` still deserves deeper review for board serialization,
@@ -119,11 +151,9 @@ Tests:
   represented after a match.
 - Selection-heavy events need source-by-source checks: `Falling`, `WeMeetAgain`,
   `The Library`, `Bonfire Spirits`, `Nloth`, and `Note For Yourself`.
-- Several existing event modules likely need the new non-bottled selection
-  reason after direct Java audit (`Cleric`, `GoldenWing`, `LivingWall`,
-  `Transmogrifier`, `PurificationShrine`, `Beggar`, `GremlinWheelGame`,
-  `NoteForYourself`, and `BackToBasics` all use
-  `CardGroup.getGroupWithoutBottledCards(...)` in Java).
+- Selection choice preconditions still need deeper event-by-event review.
+  Some Java handlers check candidate availability only when clicked, not when
+  drawing the button, and several Rust modules still simplify those UI states.
 - Event combat return states need continued scrutiny: `Colosseum`,
   `Masked Bandits`, `Mushrooms`, and `Mysterious Sphere`.
 - `SecretPortal` and `SpireHeart` need an explicit classification: unsupported,

@@ -13,7 +13,10 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         EventChoiceMeta::new("[Change] Transform a card in your deck."),
     ];
 
-    let has_upgradable = run_state.master_deck.iter().any(|c| c.upgrades == 0);
+    let has_upgradable = run_state
+        .master_deck
+        .iter()
+        .any(crate::state::core::master_deck_card_can_upgrade);
     if has_upgradable {
         choices.push(EventChoiceMeta::new("[Grow] Upgrade a card in your deck."));
     } else {
@@ -28,6 +31,8 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
     if let EngineState::EventRoom = engine_state {
+        let has_non_bottled_purgeable =
+            crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state);
         let event_state = if let Some(es) = &mut run_state.event_state {
             es
         } else {
@@ -40,10 +45,15 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 
         // This event only has 1 interactive screen (screen 0) where you pick one path, then screen 1 is just 'Leave'
         if event_state.current_screen == 0 {
+            if !has_non_bottled_purgeable {
+                event_state.current_screen = 1;
+                return;
+            }
+
             let reason = match choice_idx {
-                0 => RunPendingChoiceReason::Purge,     // [Forget]
-                1 => RunPendingChoiceReason::Transform, // [Change]
-                _ => RunPendingChoiceReason::Upgrade,   // [Grow], it's button index 2
+                0 => RunPendingChoiceReason::PurgeNonBottled, // [Forget]
+                1 => RunPendingChoiceReason::TransformNonBottled, // [Change]
+                _ => RunPendingChoiceReason::Upgrade,         // [Grow], it's button index 2
             };
 
             event_state.current_screen = 1; // Advance to post-choice 'Leave' screen

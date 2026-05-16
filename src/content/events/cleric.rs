@@ -167,18 +167,25 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     } else {
                         50
                     };
-                    run_state.change_gold_with_source(
-                        -purify_cost,
-                        DomainEventSource::Event(EventId::Cleric),
-                    );
-                    *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
-                        min_choices: 1,
-                        max_choices: 1,
-                        reason: RunPendingChoiceReason::Purge,
-                        return_state: Box::new(EngineState::EventRoom),
-                    });
-                    event_state.current_screen = 1;
-                    event_state.completed = true;
+                    if !crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state) {
+                        event_state.current_screen = 1;
+                        event_state.completed = true;
+                    } else {
+                        run_state.change_gold_with_source(
+                            -purify_cost,
+                            DomainEventSource::Event(EventId::Cleric),
+                        );
+                        *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+                            min_choices: 1,
+                            max_choices: 1,
+                            reason: RunPendingChoiceReason::PurgeNonBottled,
+                            return_state: Box::new(EngineState::EventRoom),
+                        });
+                        event_state.current_screen = 1;
+                        event_state.completed = true;
+                        run_state.event_state = Some(event_state);
+                        return;
+                    }
                 }
                 2 => {
                     // Leave

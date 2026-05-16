@@ -1,4 +1,3 @@
-use crate::content::cards::CardId;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
@@ -7,11 +6,8 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     match event_state.current_screen {
         0 => {
             // Simplicity: Purge a card; Basics: Upgrade all Strikes/Defends
-            let has_purgeable = run_state.master_deck.iter().any(|c| {
-                c.id != CardId::AscendersBane
-                    && c.id != CardId::CurseOfTheBell
-                    && c.id != CardId::Necronomicurse
-            });
+            let has_purgeable =
+                crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state);
             vec![
                 if has_purgeable {
                     EventChoiceMeta::new("[Simplicity] Remove a card from your deck.")
@@ -40,7 +36,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                         min_choices: 1,
                         max_choices: 1,
-                        reason: RunPendingChoiceReason::Purge,
+                        reason: RunPendingChoiceReason::PurgeNonBottled,
                         return_state: Box::new(EngineState::EventRoom),
                     });
                     return;

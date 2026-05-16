@@ -19,7 +19,8 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     match event_state.current_screen {
         0 => vec![EventChoiceMeta::new("[Approach] Investigate the bonfire.")],
         1 => {
-            let has_removable = !run_state.master_deck.is_empty();
+            let has_removable =
+                crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state);
             if has_removable {
                 vec![EventChoiceMeta::new(
                     "[Offer] Sacrifice a card to the spirits.",
@@ -52,7 +53,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
             *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                 min_choices: 1,
                 max_choices: 1,
-                reason: RunPendingChoiceReason::Purge,
+                reason: RunPendingChoiceReason::PurgeNonBottled,
                 return_state: Box::new(EngineState::EventRoom),
             });
             return;

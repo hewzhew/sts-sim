@@ -440,3 +440,22 @@ pub(crate) fn master_deck_card_is_bottled(
             ) && relic.amount == card.uuid as i32
         })
 }
+
+pub(crate) fn non_bottled_purgeable_master_deck_count(
+    run_state: &crate::state::run::RunState,
+) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| {
+            master_deck_card_is_purgeable(card)
+                && !master_deck_card_is_bottled(card, &run_state.relics)
+        })
+        .count()
+}
+
+pub(crate) fn has_non_bottled_purgeable_master_deck_card(
+    run_state: &crate::state::run::RunState,
+) -> bool {
+    non_bottled_purgeable_master_deck_count(run_state) > 0
+}
