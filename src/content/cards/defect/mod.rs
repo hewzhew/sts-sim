@@ -25,6 +25,7 @@ pub mod defragment;
 pub mod doom_and_gloom;
 pub mod double_energy;
 pub mod dualcast;
+pub mod echo_form;
 pub mod electrodynamics;
 pub mod equilibrium;
 pub mod fission;

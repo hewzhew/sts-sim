@@ -196,6 +196,7 @@ pub enum QueuedCardSource {
     Duplication,
     Burst,
     Amplify,
+    EchoForm,
 }
 
 #[derive(Clone, Debug, PartialEq)]

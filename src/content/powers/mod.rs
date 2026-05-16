@@ -88,6 +88,7 @@ pub enum PowerId {
     Heatsink,
     Storm,
     Amplify,
+    EchoForm,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -534,6 +535,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Amplify",
         },
+        PowerId::EchoForm => PowerDefinition {
+            id,
+            name: "Echo Form",
+        },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -668,6 +673,7 @@ pub fn resolve_power_on_use_card(
             core::duplication_power::on_use_card(state, card, purge, target)
         }
         PowerId::Amplify => defect::amplify::on_use_card(state, card, purge, target),
+        PowerId::EchoForm => defect::echo_form::on_use_card(state, card, purge, target),
         PowerId::Heatsink => {
             let amount = store::power_amount(state, 0, PowerId::Heatsink);
             defect::heatsink::on_use_card(state, card, amount);
@@ -912,6 +918,14 @@ pub fn resolve_power_instance_at_turn_start(
             } else {
                 smallvec::smallvec![]
             }
+        }
+        PowerId::EchoForm => {
+            if owner == 0 {
+                let _ = store::with_power_mut(state, owner, PowerId::EchoForm, |power| {
+                    power.extra_data = 0;
+                });
+            }
+            smallvec::smallvec![]
         }
         PowerId::Poison => core::poison::at_turn_start(owner, amount),
         PowerId::Choked => silent::choked::at_turn_start(owner),

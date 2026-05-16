@@ -1733,6 +1733,7 @@ fn execute_played_card(
                 PowerId::DoubleTap
                 | PowerId::DuplicationPower
                 | PowerId::Amplify
+                | PowerId::EchoForm
                 | PowerId::Burst
                 | PowerId::Corruption
                 | PowerId::Heatsink

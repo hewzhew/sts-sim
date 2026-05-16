@@ -289,6 +289,7 @@ pub enum CardId {
     GeneticAlgorithm,
     Blizzard,
     ThunderStrike,
+    EchoForm,
     // Add more as we expand
 }
 
@@ -605,6 +606,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::GeneticAlgorithm => defect::genetic_algorithm::definition(),
         CardId::Blizzard => defect::blizzard::definition(),
         CardId::ThunderStrike => defect::thunder_strike::definition(),
+        CardId::EchoForm => defect::echo_form::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1320,6 +1322,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::GeneticAlgorithm => "Genetic Algorithm",
         CardId::Blizzard => "Blizzard",
         CardId::ThunderStrike => "Thunder Strike",
+        CardId::EchoForm => "Echo Form",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1621,6 +1624,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         GeneticAlgorithm,
         Blizzard,
         ThunderStrike,
+        EchoForm,
         Neutralize,
         Survivor,
         Anger,

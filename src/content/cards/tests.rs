@@ -4126,6 +4126,183 @@ fn amplify_definition_runtime_and_power_copy_hook_match_java_sources() {
 }
 
 #[test]
+fn echo_form_definition_runtime_and_power_copy_hook_match_java_sources() {
+    let echo = get_card_definition(CardId::EchoForm);
+    assert_eq!(echo.name, "Echo Form");
+    assert_eq!(echo.card_type, CardType::Power);
+    assert_eq!(echo.rarity, CardRarity::Rare);
+    assert_eq!(echo.cost, 3);
+    assert_eq!(echo.target, CardTarget::SelfTarget);
+    assert!(echo.ethereal);
+    assert_eq!(java_id(CardId::EchoForm), "Echo Form");
+
+    let state = crate::test_support::blank_test_combat();
+    assert!(crate::content::cards::is_ethereal(&CombatCard::new(
+        CardId::EchoForm,
+        346
+    )));
+    let mut upgraded = CombatCard::new(CardId::EchoForm, 347);
+    upgraded.upgrades = 1;
+    assert!(
+        !crate::content::cards::is_ethereal(&upgraded),
+        "Java EchoForm.upgrade() sets isEthereal=false without changing card stats"
+    );
+    assert_eq!(
+        resolve_card_play(
+            CardId::EchoForm,
+            &state,
+            &CombatCard::new(CardId::EchoForm, 348),
+            None,
+        )[0]
+        .action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::EchoForm,
+            amount: 1,
+        }
+    );
+
+    let mut copy_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut copy_state,
+        0,
+        vec![Power {
+            power_type: PowerId::EchoForm,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::PlayCardDirect {
+            card: Box::new(CombatCard::new(CardId::DefendB, 349)),
+            target: None,
+            purge: false,
+        },
+        &mut copy_state,
+    );
+    assert_eq!(
+        copy_state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 5,
+        })
+    );
+    match copy_state.pop_next_action() {
+        Some(Action::EnqueueCardPlay { item, in_front }) => {
+            assert!(in_front);
+            assert_eq!(item.card.id, CardId::DefendB);
+            assert_eq!(
+                item.card.uuid, 349,
+                "Java EchoPower uses makeSameInstanceOf(), preserving UUID"
+            );
+            assert!(item.purge_on_use);
+            assert_eq!(
+                item.source,
+                crate::runtime::combat::QueuedCardSource::EchoForm
+            );
+        }
+        other => panic!("Echo Form should enqueue same-instance copied card, got {other:?}"),
+    }
+    assert_eq!(
+        crate::content::powers::store::powers_for(&copy_state, 0)
+            .unwrap()
+            .iter()
+            .find(|p| p.power_type == PowerId::EchoForm)
+            .unwrap()
+            .extra_data,
+        1,
+        "Rust stores Java EchoPower.cardsDoubledThisTurn in Power.extra_data"
+    );
+
+    let mut limited_state = crate::test_support::blank_test_combat();
+    limited_state.turn.counters.cards_played_this_turn = 2;
+    crate::content::powers::store::set_powers_for(
+        &mut limited_state,
+        0,
+        vec![Power {
+            power_type: PowerId::EchoForm,
+            instance_id: None,
+            amount: 1,
+            extra_data: 1,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::content::powers::defect::echo_form::on_use_card(
+        &mut limited_state,
+        &CombatCard::new(CardId::DefendB, 350),
+        false,
+        None,
+    );
+    assert_eq!(
+        limited_state.pop_next_action(),
+        None,
+        "after one original and its purge copy, Echo Form amount=1 must not copy the next original"
+    );
+
+    let mut purge_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut purge_state,
+        0,
+        vec![Power {
+            power_type: PowerId::EchoForm,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::content::powers::defect::echo_form::on_use_card(
+        &mut purge_state,
+        &CombatCard::new(CardId::DefendB, 351),
+        true,
+        None,
+    );
+    assert_eq!(
+        purge_state.pop_next_action(),
+        None,
+        "Java EchoPower ignores purgeOnUse copied cards"
+    );
+
+    let mut reset_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut reset_state,
+        0,
+        vec![Power {
+            power_type: PowerId::EchoForm,
+            instance_id: None,
+            amount: 2,
+            extra_data: 2,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let power_snapshot =
+        crate::content::powers::store::powers_snapshot_for(&reset_state, 0)[0].clone();
+    let actions = crate::content::powers::resolve_power_instance_at_turn_start(
+        &power_snapshot,
+        &mut reset_state,
+        0,
+    );
+    assert!(actions.is_empty());
+    assert_eq!(
+        crate::content::powers::store::powers_for(&reset_state, 0)
+            .unwrap()
+            .iter()
+            .find(|p| p.power_type == PowerId::EchoForm)
+            .unwrap()
+            .extra_data,
+        0,
+        "Java EchoPower.atStartOfTurn resets cardsDoubledThisTurn"
+    );
+}
+
+#[test]
 fn fission_definition_runtime_and_orb_actions_match_java_sources() {
     let fission = get_card_definition(CardId::Fission);
     assert_eq!(fission.name, "Fission");
