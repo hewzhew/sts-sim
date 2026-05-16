@@ -272,11 +272,36 @@ Tests:
 - `take_manual_obtain_is_not_blocked_by_omamori`
 - `selected_saved_card_updates_note_profile_before_removal`
 
+### Match and Keep board card identity
+
+Java `events/shrines/GremlinMatchGame.java` builds six card objects, calls every
+relic's `onPreviewObtainCard(c)` on each, adds `makeStatEquivalentCopy()` for
+the matching pair, then shuffles the 12 concrete cards. The match check compares
+`chosenCard.cardID` to `hoveredCard.cardID`, not an internal pair index.
+Successful matches obtain `chosenCard.makeCopy()` through
+`ShowCardAndObtainEffect`.
+
+Fixes:
+
+- Board serialization now stores card id plus previewed upgrade count for each
+  of the six generated card types.
+- Matching now compares decoded `CardId`, preserving Java behavior when two
+  generated card types happen to share the same id.
+- Successful matches now obtain the previewed copy with
+  `DomainEventSource::Event(MatchAndKeep)` instead of using the generic reward
+  source.
+- The old unsafe `transmute::<i32, CardId>` path was replaced by decoding
+  against the class, colorless, curse, and event starter-card pools used by this
+  event.
+
+Tests:
+
+- `generated_board_stores_preview_obtain_upgrades_like_java`
+- `matching_cards_obtain_previewed_copy_with_event_source`
+- `matching_uses_card_id_not_board_type_index_like_java`
+
 ## Current High-Risk Event Areas
 
-- `Match and Keep` still deserves deeper review for board serialization,
-  duplicate-card handling, and how upgraded/generated card instances are
-  represented after a match.
 - Selection choice preconditions still need deeper event-by-event review.
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
