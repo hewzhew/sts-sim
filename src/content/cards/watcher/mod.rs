@@ -15,6 +15,7 @@ pub mod indignation;
 pub mod inner_peace;
 pub mod just_lucky;
 pub mod prostrate;
+pub mod ragnarok;
 pub mod sanctity;
 pub mod sash_whip;
 pub mod strike_purple;

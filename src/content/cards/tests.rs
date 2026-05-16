@@ -495,6 +495,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::SashWhip, "SashWhip"),
         (CardId::Conclude, "Conclude"),
         (CardId::Brilliance, "Brilliance"),
+        (CardId::Ragnarok, "Ragnarok"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -767,6 +768,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Ragnarok,
+            "Ragnarok",
+            CardType::Attack,
+            CardRarity::Rare,
+            3,
+            5,
+            0,
+            5,
+            CardTarget::AllEnemy,
+            1,
+            0,
+            1,
+        ),
     ];
 
     for (
@@ -820,6 +835,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Sanctity));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Conclude));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
 }
 
 #[test]
@@ -1438,6 +1454,30 @@ fn watcher_brilliance_uses_combat_mantra_gained_before_damage_modifiers() {
             assert_eq!(info.output, 40);
         }
         other => panic!("Brilliance should emit DamageAction, got {other:?}"),
+    }
+}
+
+#[test]
+fn watcher_ragnarok_runtime_actions_match_java_use_method() {
+    let state = crate::test_support::blank_test_combat();
+    let mut ragnarok_plus = CombatCard::new(CardId::Ragnarok, 331);
+    ragnarok_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::Ragnarok, &state, &ragnarok_plus, None);
+
+    assert_eq!(
+        actions.len(),
+        6,
+        "Java Ragnarok queues one AttackDamageRandomEnemyAction per magicNumber"
+    );
+    for action in &actions {
+        match &action.action {
+            Action::AttackDamageRandomEnemyCard { card } => {
+                assert_eq!(card.id, CardId::Ragnarok);
+                assert_eq!(card.upgrades, 1);
+            }
+            other => panic!("Ragnarok should emit AttackDamageRandomEnemyCard, got {other:?}"),
+        }
     }
 }
 
