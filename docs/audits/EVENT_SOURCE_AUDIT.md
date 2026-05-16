@@ -185,13 +185,41 @@ Tests:
 - `card_trade_option_exposes_specific_remove_effect`
 - `card_trade_removes_card_and_obtains_relic_with_event_source`
 
+### The Library previewed card rewards
+
+Java `events/city/TheLibrary.java` builds a 20-card `CardGroup` using
+`rollRarity()` plus `getCard()`, dedupes by `cardID`, and then calls every
+player relic's `onPreviewObtainCard(card)` before adding each candidate to the
+grid. When the player selects a candidate, Java obtains
+`selectedCards.get(0).makeCopy()`, so preview-time changes such as Egg upgrades
+belong to the selected copy.
+
+Fixes:
+
+- Library offerings now store card id plus previewed upgrade count instead of
+  only a raw `CardId` discriminant.
+- Library card selection now obtains the previewed copy through
+  `add_card_to_deck_with_upgrades_from(..., Event(TheLibrary))`, preserving Egg
+  preview upgrades without re-upgrading the card on obtain.
+- The unsafe `transmute::<i32, CardId>` path was replaced by class-pool-based
+  decoding.
+- Sleep now goes through `RunState::heal_with_source`, giving it an event
+  source and preserving Java `AbstractCreature.heal` behavior for
+  `MarkOfTheBloom`.
+
+Tests:
+
+- `read_preserves_preview_obtain_upgrades_and_event_source`
+- `sleep_heals_through_player_heal_semantics_and_event_source`
+- `sleep_is_blocked_by_mark_of_the_bloom_like_java_player_heal`
+
 ## Current High-Risk Event Areas
 
 - `Match and Keep` still deserves deeper review for board serialization,
   duplicate-card handling, and how upgraded/generated card instances are
   represented after a match.
-- Selection-heavy events need source-by-source checks: `The Library`, `Nloth`,
-  and remaining `Note For Yourself` persistence gaps.
+- Selection-heavy events need source-by-source checks: `Nloth` and remaining
+  `Note For Yourself` persistence gaps.
 - Selection choice preconditions still need deeper event-by-event review.
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.

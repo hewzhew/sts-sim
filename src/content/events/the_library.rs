@@ -1,7 +1,10 @@
 use crate::content::cards::{get_card_definition, CardId, CardRarity};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
+
+const LIBRARY_ENTRY_WIDTH: usize = 2;
 
 /// TheLibrary event.
 /// Java: 2 options:
@@ -29,12 +32,17 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         1 => {
             // Show 20 card offerings from extra_data
             let mut choices = Vec::with_capacity(20);
-            for &card_disc in &event_state.extra_data {
-                let card_id: CardId = unsafe { std::mem::transmute::<i32, CardId>(card_disc) };
+            for idx in 0..library_entry_count(&event_state.extra_data) {
+                let Some((card_id, upgrades)) =
+                    library_card_entry_at(run_state, &event_state.extra_data, idx)
+                else {
+                    continue;
+                };
                 let def = get_card_definition(card_id);
+                let upgrade_suffix = if upgrades > 0 { "+" } else { "" };
                 choices.push(EventChoiceMeta::new(format!(
-                    "{} ({:?} {:?})",
-                    def.name, def.rarity, def.card_type
+                    "{}{} ({:?} {:?})",
+                    def.name, upgrade_suffix, def.rarity, def.card_type
                 )));
             }
             choices
@@ -62,17 +70,22 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         0.33
                     };
                     let heal_amt = (run_state.max_hp as f32 * heal_pct).round() as i32;
-                    run_state.current_hp = (run_state.current_hp + heal_amt).min(run_state.max_hp);
+                    run_state
+                        .heal_with_source(heal_amt, DomainEventSource::Event(EventId::TheLibrary));
                     event_state.current_screen = 2;
                 }
             }
         }
         1 => {
             // Pick one of the 20 cards
-            if choice_idx < event_state.extra_data.len() {
-                let card_disc = event_state.extra_data[choice_idx];
-                let card_id: CardId = unsafe { std::mem::transmute::<i32, CardId>(card_disc) };
-                run_state.add_card_to_deck(card_id);
+            if let Some((card_id, upgrades)) =
+                library_card_entry_at(run_state, &event_state.extra_data, choice_idx)
+            {
+                run_state.add_card_to_deck_with_upgrades_from(
+                    card_id,
+                    upgrades,
+                    DomainEventSource::Event(EventId::TheLibrary),
+                );
             }
             event_state.current_screen = 2;
         }
@@ -115,8 +128,48 @@ fn generate_library_cards(run_state: &mut RunState, extra_data: &mut Vec<i32>) {
         }
 
         selected.push(card_id);
-        extra_data.push(card_id as i32);
+        let upgrades = run_state.preview_obtain_card_upgrades(card_id, 0);
+        push_library_card_entry(extra_data, card_id, upgrades);
     }
+}
+
+fn push_library_card_entry(extra_data: &mut Vec<i32>, card_id: CardId, upgrades: u8) {
+    extra_data.push(card_id as i32);
+    extra_data.push(upgrades as i32);
+}
+
+fn library_entry_count(extra_data: &[i32]) -> usize {
+    extra_data.len() / LIBRARY_ENTRY_WIDTH
+}
+
+fn library_card_entry_at(
+    run_state: &RunState,
+    extra_data: &[i32],
+    idx: usize,
+) -> Option<(CardId, u8)> {
+    let offset = idx.checked_mul(LIBRARY_ENTRY_WIDTH)?;
+    let card_raw = *extra_data.get(offset)?;
+    let upgrades_raw = *extra_data.get(offset + 1)?;
+    if upgrades_raw < 0 {
+        return None;
+    }
+    Some((
+        decode_library_card_id(run_state, card_raw)?,
+        upgrades_raw as u8,
+    ))
+}
+
+fn decode_library_card_id(run_state: &RunState, raw: i32) -> Option<CardId> {
+    for rarity in [CardRarity::Common, CardRarity::Uncommon, CardRarity::Rare] {
+        for &card_id in
+            crate::engine::campfire_handler::card_pool_for_class(run_state.player_class, rarity)
+        {
+            if card_id as i32 == raw {
+                return Some(card_id);
+            }
+        }
+    }
+    None
 }
 
 /// Roll a rarity and get a random card from that rarity pool.
@@ -157,4 +210,101 @@ fn roll_and_get_card(run_state: &mut RunState) -> CardId {
         .card_rng
         .random_range(0, pool.len() as i32 - 1) as usize;
     pool[idx]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardType;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::selection::DomainEvent;
+
+    #[test]
+    fn read_preserves_preview_obtain_upgrades_and_event_source() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.relics.push(RelicState::new(RelicId::MoltenEgg));
+        rs.relics.push(RelicState::new(RelicId::ToxicEgg));
+        rs.relics.push(RelicState::new(RelicId::FrozenEgg));
+        rs.event_state = Some(EventState::new(EventId::TheLibrary));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        let event_state = rs.event_state.as_ref().unwrap();
+        assert_eq!(event_state.current_screen, 1);
+        assert_eq!(library_entry_count(&event_state.extra_data), 20);
+        assert_eq!(get_choices(&rs, event_state).len(), 20);
+
+        for idx in 0..library_entry_count(&event_state.extra_data) {
+            let (card_id, upgrades) =
+                library_card_entry_at(&rs, &event_state.extra_data, idx).unwrap();
+            let def = get_card_definition(card_id);
+            assert!(matches!(
+                def.card_type,
+                CardType::Attack | CardType::Skill | CardType::Power
+            ));
+            assert_eq!(
+                upgrades, 1,
+                "Library must store each candidate after Java onPreviewObtainCard hooks"
+            );
+        }
+
+        let (selected_id, selected_upgrades) =
+            library_card_entry_at(&rs, &event_state.extra_data, 0).unwrap();
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        let obtained = rs.master_deck.last().unwrap();
+        assert_eq!(obtained.id, selected_id);
+        assert_eq!(
+            obtained.upgrades, selected_upgrades,
+            "selected preview-upgraded copy must not be upgraded again on obtain"
+        );
+        assert!(rs.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                card,
+                source: DomainEventSource::Event(EventId::TheLibrary),
+            } if card.id == selected_id && card.upgrades == selected_upgrades
+        )));
+    }
+
+    #[test]
+    fn sleep_heals_through_player_heal_semantics_and_event_source() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.current_hp = 10;
+        rs.max_hp = 80;
+        rs.event_state = Some(EventState::new(EventId::TheLibrary));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert_eq!(rs.current_hp, 36);
+        assert!(rs.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: 26,
+                current_hp: 36,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::TheLibrary),
+            }
+        )));
+    }
+
+    #[test]
+    fn sleep_is_blocked_by_mark_of_the_bloom_like_java_player_heal() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.current_hp = 10;
+        rs.max_hp = 80;
+        rs.relics.push(RelicState::new(RelicId::MarkOfTheBloom));
+        rs.event_state = Some(EventState::new(EventId::TheLibrary));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert_eq!(rs.current_hp, 10);
+        assert!(!rs
+            .take_emitted_events()
+            .iter()
+            .any(|event| matches!(event, DomainEvent::HpChanged { .. })));
+    }
 }

@@ -437,6 +437,20 @@ impl RunState {
         self.set_current_hp_with_source(self.current_hp + delta, source)
     }
 
+    pub fn heal_with_source(&mut self, amount: i32, source: DomainEventSource) -> i32 {
+        if amount <= 0 {
+            return 0;
+        }
+        if self
+            .relics
+            .iter()
+            .any(|r| r.id == crate::content::relics::RelicId::MarkOfTheBloom)
+        {
+            return 0;
+        }
+        self.change_hp_with_source(amount, source)
+    }
+
     pub fn set_current_hp_with_source(
         &mut self,
         new_current_hp: i32,
