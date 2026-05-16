@@ -2,7 +2,7 @@ use super::*;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, DamageInfo, DamageType, NO_SOURCE};
-use crate::runtime::combat::{CombatCard, OrbEntity, OrbId, Power};
+use crate::runtime::combat::{CombatCard, DrawnCardRecord, OrbEntity, OrbId, Power};
 
 #[test]
 fn ironclad_starter_basic_definitions_match_java_sources() {
@@ -4521,6 +4521,144 @@ fn reboot_definition_runtime_and_shuffle_actions_match_java_sources() {
     assert_eq!(
         shuffle_draw_state.rng.shuffle_rng.counter,
         expected_rng.shuffle_rng.counter
+    );
+}
+
+#[test]
+fn scrape_definition_runtime_and_follow_up_match_java_sources() {
+    let scrape = get_card_definition(CardId::Scrape);
+    assert_eq!(scrape.name, "Scrape");
+    assert_eq!(scrape.card_type, CardType::Attack);
+    assert_eq!(scrape.rarity, CardRarity::Uncommon);
+    assert_eq!(scrape.cost, 1);
+    assert_eq!(scrape.base_damage, 7);
+    assert_eq!(scrape.base_magic, 4);
+    assert_eq!(scrape.target, CardTarget::Enemy);
+    assert_eq!(scrape.upgrade_damage, 3);
+    assert_eq!(scrape.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Scrape), "Scrape");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::Scrape,
+        &state,
+        &CombatCard::new(CardId::Scrape, 371),
+        Some(77),
+    );
+    assert_eq!(actions.len(), 3);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 77);
+            assert_eq!(info.base, 7);
+            assert_eq!(info.output, 7);
+        }
+        other => panic!("Scrape should damage before drawing, got {other:?}"),
+    }
+    assert_eq!(
+        actions[1].action,
+        Action::DrawCardsWithHistory {
+            amount: 4,
+            clear_history: true,
+        }
+    );
+    assert_eq!(actions[2].action, Action::ScrapeFollowUp);
+
+    let mut plus = CombatCard::new(CardId::Scrape, 372);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::Scrape, &state, &plus, Some(78));
+    match &plus_actions[0].action {
+        Action::Damage(info) => assert_eq!(info.base, 10),
+        other => panic!("Scrape+ should still damage first, got {other:?}"),
+    }
+    assert_eq!(
+        plus_actions[1].action,
+        Action::DrawCardsWithHistory {
+            amount: 5,
+            clear_history: true,
+        }
+    );
+
+    let mut follow_up = crate::test_support::blank_test_combat();
+    let discard_me = CombatCard::new(CardId::DefendB, 373);
+    let same_id_not_drawn = CombatCard::new(CardId::DefendB, 374);
+    let zero_cost = CombatCard::new(CardId::Turbo, 375);
+    let mut free_nonzero = CombatCard::new(CardId::StrikeB, 376);
+    free_nonzero.free_to_play_once = true;
+    follow_up.zones.hand = vec![
+        discard_me.clone(),
+        same_id_not_drawn.clone(),
+        zero_cost.clone(),
+        free_nonzero.clone(),
+    ];
+    follow_up.runtime.last_drawn_cards = vec![
+        DrawnCardRecord {
+            card_uuid: discard_me.uuid,
+            card_id: discard_me.id,
+        },
+        DrawnCardRecord {
+            card_uuid: zero_cost.uuid,
+            card_id: zero_cost.id,
+        },
+        DrawnCardRecord {
+            card_uuid: free_nonzero.uuid,
+            card_id: free_nonzero.id,
+        },
+        DrawnCardRecord {
+            card_uuid: 9999,
+            card_id: CardId::StrikeB,
+        },
+    ];
+    crate::engine::action_handlers::execute_action(Action::ScrapeFollowUp, &mut follow_up);
+    assert_eq!(
+        follow_up
+            .zones
+            .hand
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        vec![same_id_not_drawn.uuid, zero_cost.uuid, free_nonzero.uuid],
+        "Java ScrapeFollowUpAction iterates DrawCardAction.drawnCards instances, not CardId names"
+    );
+    assert_eq!(
+        follow_up
+            .zones
+            .discard_pile
+            .iter()
+            .map(|card| card.uuid)
+            .collect::<Vec<_>>(),
+        vec![discard_me.uuid]
+    );
+    assert_eq!(follow_up.turn.counters.cards_discarded_this_turn, 1);
+
+    let mut draw_history = crate::test_support::blank_test_combat();
+    draw_history.zones.draw_pile = vec![
+        CombatCard::new(CardId::DefendB, 377),
+        CombatCard::new(CardId::Turbo, 378),
+    ];
+    draw_history.runtime.last_drawn_cards = vec![DrawnCardRecord {
+        card_uuid: 9998,
+        card_id: CardId::StrikeB,
+    }];
+    crate::engine::action_handlers::execute_action(
+        Action::DrawCardsWithHistory {
+            amount: 2,
+            clear_history: true,
+        },
+        &mut draw_history,
+    );
+    assert_eq!(
+        draw_history.runtime.last_drawn_cards,
+        vec![
+            DrawnCardRecord {
+                card_uuid: 377,
+                card_id: CardId::DefendB,
+            },
+            DrawnCardRecord {
+                card_uuid: 378,
+                card_id: CardId::Turbo,
+            },
+        ],
+        "DrawCardAction.drawnCards must preserve concrete drawn card instances for Scrape"
     );
 }
 
@@ -11724,11 +11862,17 @@ fn silent_execution_time_action_cards_match_java_actions() {
     );
     let mut escape_state = crate::test_support::blank_test_combat();
     escape_state.zones.draw_pile = vec![CombatCard::new(CardId::Prepared, 924)];
-    escape_state.runtime.last_drawn_cards = vec![CardId::StrikeG];
+    escape_state.runtime.last_drawn_cards = vec![DrawnCardRecord {
+        card_uuid: 999,
+        card_id: CardId::StrikeG,
+    }];
     crate::engine::action_handlers::execute_action(escape[0].action.clone(), &mut escape_state);
     assert_eq!(
         escape_state.runtime.last_drawn_cards,
-        vec![CardId::Prepared]
+        vec![DrawnCardRecord {
+            card_uuid: 924,
+            card_id: CardId::Prepared,
+        }]
     );
     crate::engine::action_handlers::execute_action(escape[1].action.clone(), &mut escape_state);
     assert_eq!(
@@ -11742,14 +11886,17 @@ fn silent_execution_time_action_cards_match_java_actions() {
     let mut split_escape_state = crate::test_support::blank_test_combat();
     split_escape_state.zones.draw_pile.clear();
     split_escape_state.zones.discard_pile = vec![CombatCard::new(CardId::Prepared, 925)];
-    split_escape_state.runtime.last_drawn_cards = vec![CardId::StrikeG];
+    split_escape_state.runtime.last_drawn_cards = vec![DrawnCardRecord {
+        card_uuid: 999,
+        card_id: CardId::StrikeG,
+    }];
     crate::engine::action_handlers::execute_action(
         escape[0].action.clone(),
         &mut split_escape_state,
     );
     assert_eq!(
         split_escape_state.runtime.last_drawn_cards,
-        Vec::<CardId>::new()
+        Vec::<DrawnCardRecord>::new()
     );
     assert_eq!(
         split_escape_state.pop_next_action(),

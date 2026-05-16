@@ -353,6 +353,9 @@ pub enum Action {
     EscapePlanBlockIfSkill {
         block: i32,
     },
+    /// Java Defect `ScrapeFollowUpAction`: discard every card drawn by the
+    /// preceding DrawCardAction unless it currently costs 0 or is free once.
+    ScrapeFollowUp,
     /// Java `CalculatedGambleAction`: at execution time, discard the current
     /// hand, then draw the same count, optionally plus one.
     CalculatedGamble {

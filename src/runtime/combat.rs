@@ -212,6 +212,12 @@ pub struct QueuedCardPlay {
     pub source: QueuedCardSource,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DrawnCardRecord {
+    pub card_uuid: u32,
+    pub card_id: CardId,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CombatRuntimeHints {
     pub using_card: bool,
@@ -225,7 +231,7 @@ pub struct CombatRuntimeHints {
     ///
     /// It is updated only by draw actions that explicitly opt into draw
     /// history because only Java follow-up actions should observe it.
-    pub last_drawn_cards: Vec<CardId>,
+    pub last_drawn_cards: Vec<DrawnCardRecord>,
     pub monster_protocol: HashMap<EntityId, MonsterProtocolState>,
     /// Java `AbstractRoom.mugged` equivalent at combat scope.
     ///

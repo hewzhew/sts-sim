@@ -266,7 +266,13 @@ fn handle_draw_cards_inner(amount: u32, mode: DrawHistoryMode, state: &mut Comba
         }
 
         if matches!(mode, DrawHistoryMode::Track { .. }) {
-            state.runtime.last_drawn_cards.push(card.id);
+            state
+                .runtime
+                .last_drawn_cards
+                .push(crate::runtime::combat::DrawnCardRecord {
+                    card_uuid: card.uuid,
+                    card_id: card.id,
+                });
         }
 
         // Apply pre-draw powers (like Corruption, Confusion)
@@ -293,14 +299,33 @@ fn handle_draw_cards_inner(amount: u32, mode: DrawHistoryMode, state: &mut Comba
 }
 
 pub fn handle_escape_plan_block_if_skill(block: i32, state: &mut CombatState) {
-    if state.runtime.last_drawn_cards.iter().any(|&card_id| {
-        crate::content::cards::get_card_definition(card_id).card_type
+    if state.runtime.last_drawn_cards.iter().any(|record| {
+        crate::content::cards::get_card_definition(record.card_id).card_type
             == crate::content::cards::CardType::Skill
     }) {
         state.queue_action_front(Action::GainBlock {
             target: 0,
             amount: block,
         });
+    }
+}
+
+pub fn handle_scrape_follow_up(state: &mut CombatState) {
+    let drawn = state.runtime.last_drawn_cards.clone();
+    for record in drawn {
+        let Some(pos) = state
+            .zones
+            .hand
+            .iter()
+            .position(|card| card.uuid == record.card_uuid)
+        else {
+            continue;
+        };
+        let card = &state.zones.hand[pos];
+        if card.cost_for_turn_java() == 0 || card.free_to_play_once {
+            continue;
+        }
+        move_hand_card_to_discard_at(pos, DiscardHookOrder::CardThenRelics, state);
     }
 }
 

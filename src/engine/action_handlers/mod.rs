@@ -417,6 +417,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::EscapePlanBlockIfSkill { block } => {
             cards::handle_escape_plan_block_if_skill(block, state)
         }
+        Action::ScrapeFollowUp => cards::handle_scrape_follow_up(state),
         Action::ExpertiseDraw { target_hand_size } => {
             cards::handle_expertise_draw(target_hand_size, state)
         }
