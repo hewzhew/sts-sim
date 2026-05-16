@@ -171,6 +171,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
     match action {
         // === Damage domain ===
         Action::Damage(info) => damage::handle_damage(info, state),
+        Action::Barrage { damage } => cards::handle_barrage(damage, state),
         Action::PummelDamage(info) => damage::handle_pummel_damage(info, state),
         Action::BaneDamage(info) => damage::handle_bane_damage(info, state),
         Action::DamagePerAttackPlayed(info) => damage::handle_damage_per_attack_played(info, state),

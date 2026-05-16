@@ -237,6 +237,7 @@ pub enum CardId {
     Hologram,
     Stack,
     CompileDriver,
+    Barrage,
     // Add more as we expand
 }
 
@@ -498,6 +499,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Hologram => defect::hologram::definition(),
         CardId::Stack => defect::stack::definition(),
         CardId::CompileDriver => defect::compile_driver::definition(),
+        CardId::Barrage => defect::barrage::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1161,6 +1163,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Hologram => "Hologram",
         CardId::Stack => "Stack",
         CardId::CompileDriver => "Compile Driver",
+        CardId::Barrage => "Barrage",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1410,6 +1413,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Hologram,
         Stack,
         CompileDriver,
+        Barrage,
         Neutralize,
         Survivor,
         Anger,

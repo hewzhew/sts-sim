@@ -177,6 +177,20 @@ pub fn handle_draw_for_unique_orb_types(amount_per_orb_type: u32, state: &mut Co
     }
 }
 
+pub fn handle_barrage(damage: crate::runtime::action::DamageInfo, state: &mut CombatState) {
+    let count = state
+        .entities
+        .player
+        .orbs
+        .iter()
+        .filter(|orb| orb.id != crate::runtime::combat::OrbId::Empty)
+        .count();
+
+    for _ in 0..count {
+        state.queue_action_front(Action::Damage(damage.clone()));
+    }
+}
+
 pub fn handle_draw_cards_with_history(amount: u32, clear_history: bool, state: &mut CombatState) {
     handle_draw_cards_inner(amount, DrawHistoryMode::Track { clear_history }, state);
 }

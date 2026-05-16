@@ -293,6 +293,11 @@ pub enum Action {
         damages: smallvec::SmallVec<[i32; 5]>,
         damage_type: DamageType,
     },
+    /// Java `BarrageAction`: at action execution time, queue one damage action
+    /// for each current non-empty orb slot.
+    Barrage {
+        damage: DamageInfo,
+    },
     LimitBreak,
     DrawCards(u32),
     /// Java `CompileDriverAction`: at action execution time, draw

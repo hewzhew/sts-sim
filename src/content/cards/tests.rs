@@ -501,6 +501,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Barrage,
+            "Barrage",
+            CardType::Attack,
+            1,
+            4,
+            0,
+            0,
+            CardTarget::Enemy,
+            2,
+            0,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -843,6 +856,34 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
         other => panic!("Compile Driver+ first action should damage, got {other:?}"),
     }
     assert_eq!(compile_plus_actions[1].action, compile[1].action);
+
+    let barrage = resolve_card_play(
+        CardId::Barrage,
+        &state,
+        &CombatCard::new(CardId::Barrage, 130),
+        Some(14),
+    );
+    assert_eq!(barrage.len(), 1);
+    match &barrage[0].action {
+        Action::Barrage { damage } => {
+            assert_eq!(damage.target, 14);
+            assert_eq!(damage.base, 4);
+            assert_eq!(damage.output, 4);
+            assert_eq!(damage.damage_type, DamageType::Normal);
+        }
+        other => panic!("Barrage should emit BarrageAction equivalent, got {other:?}"),
+    }
+
+    let mut barrage_plus = CombatCard::new(CardId::Barrage, 131);
+    barrage_plus.upgrades = 1;
+    let barrage_plus_actions = resolve_card_play(CardId::Barrage, &state, &barrage_plus, Some(14));
+    match &barrage_plus_actions[0].action {
+        Action::Barrage { damage } => {
+            assert_eq!(damage.base, 6);
+            assert_eq!(damage.output, 6);
+        }
+        other => panic!("Barrage+ should emit BarrageAction equivalent, got {other:?}"),
+    }
 }
 
 #[test]
@@ -870,6 +911,48 @@ fn compile_driver_action_draws_for_unique_non_empty_orb_types_at_execution_time(
         },
         &mut state,
     );
+    assert_eq!(state.pop_next_action(), None);
+}
+
+#[test]
+fn barrage_action_queues_damage_for_each_non_empty_orb_at_execution_time() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.orbs = vec![
+        OrbEntity::new(OrbId::Lightning),
+        OrbEntity::new(OrbId::Empty),
+        OrbEntity::new(OrbId::Frost),
+    ];
+
+    crate::engine::action_handlers::execute_action(
+        Action::Barrage {
+            damage: DamageInfo {
+                source: 0,
+                target: 42,
+                base: 4,
+                output: 4,
+                damage_type: DamageType::Normal,
+                is_modified: true,
+            },
+        },
+        &mut state,
+    );
+
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::Damage(DamageInfo {
+            target: 42,
+            base: 4,
+            ..
+        }))
+    ));
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::Damage(DamageInfo {
+            target: 42,
+            base: 4,
+            ..
+        }))
+    ));
     assert_eq!(state.pop_next_action(), None);
 }
 
