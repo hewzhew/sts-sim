@@ -89,6 +89,9 @@ pub fn resolve_card_play_with_context(
         CardId::Evaluate => watcher::evaluate::evaluate_play(_state, _card),
         CardId::FlyingSleeves => watcher::flying_sleeves::flying_sleeves_play(_state, _card, t),
         CardId::Halt => watcher::halt::halt_play(_state, _card),
+        CardId::Pray => watcher::pray::pray_play(_state, _card),
+        CardId::Worship => watcher::worship::worship_play(_state, _card),
+        CardId::Scrawl => watcher::scrawl::scrawl_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -775,17 +778,18 @@ pub fn is_ethereal(card: &CombatCard) -> bool {
 }
 
 pub fn is_self_retain(card: &CombatCard) -> bool {
-    matches!(
-        card.id,
+    match card.id {
         CardId::Miracle
-            | CardId::Insight
-            | CardId::Smite
-            | CardId::Safety
-            | CardId::Crescendo
-            | CardId::Tranquility
-            | CardId::Protect
-            | CardId::FlyingSleeves
-    )
+        | CardId::Insight
+        | CardId::Smite
+        | CardId::Safety
+        | CardId::Crescendo
+        | CardId::Tranquility
+        | CardId::Protect
+        | CardId::FlyingSleeves => true,
+        CardId::Worship => card.upgrades > 0,
+        _ => false,
+    }
 }
 
 pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
@@ -822,6 +826,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Eruption if card.upgrades > 0 => Some(1),
         CardId::Crescendo if card.upgrades > 0 => Some(0),
         CardId::Tranquility if card.upgrades > 0 => Some(0),
+        CardId::Scrawl if card.upgrades > 0 => Some(0),
         _ => None,
     }
 }

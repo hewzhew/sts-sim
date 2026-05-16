@@ -986,6 +986,48 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             5,
         ),
         (
+            CardId::Pray,
+            "Pray",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            3,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::Worship,
+            "Worship",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            2,
+            0,
+            0,
+            5,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
+            CardId::Scrawl,
+            "Scrawl",
+            CardType::Skill,
+            CardRarity::Rare,
+            1,
+            0,
+            0,
+            0,
+            CardTarget::None,
+            0,
+            0,
+            0,
+        ),
+        (
             CardId::Smite,
             "Smite",
             CardType::Attack,
@@ -1090,11 +1132,14 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::CarveReality));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::DeceiveReality));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::SimmeringFury));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Pray));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Worship));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Study));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Swivel));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
     assert!(WATCHER_RARE_POOL.contains(&CardId::SpiritShield));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Scrawl));
 }
 
 #[test]
@@ -1428,6 +1473,68 @@ fn watcher_evaluate_flying_sleeves_and_halt_match_java_sources() {
             target: 0,
             amount: 18,
         })
+    );
+}
+
+#[test]
+fn watcher_pray_worship_and_scrawl_match_java_sources() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut pray_plus = CombatCard::new(CardId::Pray, 930);
+    pray_plus.upgrades = 1;
+    let pray = resolve_card_play(CardId::Pray, &state, &pray_plus, None);
+    assert_eq!(
+        pray.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![
+            &Action::ApplyPower {
+                source: 0,
+                target: 0,
+                power_id: PowerId::Mantra,
+                amount: 4,
+            },
+            &Action::MakeTempCardInDrawPile {
+                card_id: CardId::Insight,
+                amount: 1,
+                random_spot: true,
+                to_bottom: false,
+                upgraded: false,
+            },
+        ]
+    );
+
+    let worship = CombatCard::new(CardId::Worship, 931);
+    assert!(
+        !crate::content::cards::is_self_retain(&worship),
+        "Java Worship only gains selfRetain from upgrade()"
+    );
+    let mut worship_plus = worship.clone();
+    worship_plus.upgrades = 1;
+    assert!(crate::content::cards::is_self_retain(&worship_plus));
+    let worship_actions = resolve_card_play(CardId::Worship, &state, &worship_plus, None);
+    assert_eq!(
+        worship_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Mantra,
+            amount: 5,
+        }
+    );
+
+    let mut scrawl_plus = CombatCard::new(CardId::Scrawl, 932);
+    scrawl_plus.upgrades = 1;
+    assert_eq!(
+        crate::content::cards::upgraded_base_cost_override(&scrawl_plus),
+        Some(0)
+    );
+    assert!(crate::content::cards::exhausts_when_played(
+        &CombatCard::new(CardId::Scrawl, 933)
+    ));
+    assert_eq!(
+        resolve_card_play(CardId::Scrawl, &state, &scrawl_plus, None)[0].action,
+        Action::ExpertiseDraw {
+            target_hand_size: 10,
+        }
     );
 }
 

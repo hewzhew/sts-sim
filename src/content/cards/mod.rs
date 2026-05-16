@@ -340,6 +340,9 @@ pub enum CardId {
     Evaluate,
     FlyingSleeves,
     Halt,
+    Pray,
+    Worship,
+    Scrawl,
     // Add more as we expand
 }
 
@@ -712,6 +715,9 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Evaluate => watcher::evaluate::definition(),
         CardId::FlyingSleeves => watcher::flying_sleeves::definition(),
         CardId::Halt => watcher::halt::definition(),
+        CardId::Pray => watcher::pray::definition(),
+        CardId::Worship => watcher::worship::definition(),
+        CardId::Scrawl => watcher::scrawl::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1325,12 +1331,18 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::CarveReality,
     CardId::DeceiveReality,
     CardId::SimmeringFury,
+    CardId::Pray,
+    CardId::Worship,
     CardId::Study,
     CardId::Swivel,
 ];
 
-pub const WATCHER_RARE_POOL: &[CardId] =
-    &[CardId::Brilliance, CardId::Ragnarok, CardId::SpiritShield];
+pub const WATCHER_RARE_POOL: &[CardId] = &[
+    CardId::Brilliance,
+    CardId::Ragnarok,
+    CardId::SpiritShield,
+    CardId::Scrawl,
+];
 
 /// Returns the pool for a given rarity (Ironclad).
 /// Returns the pool of randomly obtainable curse cards.
@@ -1566,6 +1578,9 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Evaluate => "Evaluate",
         CardId::FlyingSleeves => "FlyingSleeves",
         CardId::Halt => "Halt",
+        CardId::Pray => "Pray",
+        CardId::Worship => "Worship",
+        CardId::Scrawl => "Scrawl",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
