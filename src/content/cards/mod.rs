@@ -235,6 +235,7 @@ pub enum CardId {
     Turbo,
     SweepingBeam,
     Hologram,
+    Stack,
     // Add more as we expand
 }
 
@@ -494,6 +495,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Turbo => defect::turbo::definition(),
         CardId::SweepingBeam => defect::sweeping_beam::definition(),
         CardId::Hologram => defect::hologram::definition(),
+        CardId::Stack => defect::stack::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1155,6 +1157,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Turbo => "Turbo",
         CardId::SweepingBeam => "Sweeping Beam",
         CardId::Hologram => "Hologram",
+        CardId::Stack => "Stack",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1402,6 +1405,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Turbo,
         SweepingBeam,
         Hologram,
+        Stack,
         Neutralize,
         Survivor,
         Anger,

@@ -60,6 +60,7 @@ pub fn resolve_card_play_with_context(
         CardId::Turbo => defect::turbo::turbo_play(_state, _card),
         CardId::SweepingBeam => defect::sweeping_beam::sweeping_beam_play(_state, _card),
         CardId::Hologram => defect::hologram::hologram_play(_state, _card),
+        CardId::Stack => defect::stack::stack_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
@@ -367,6 +368,11 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
         } else {
             def.base_damage as f32
         };
+    } else if card.id == CardId::Stack {
+        block = state.zones.discard_pile.len() as f32;
+        if card.upgrades > 0 {
+            block += 3.0;
+        }
     }
 
     // 2. Relic atDamageModify hooks (Java: AbstractCard.applyPowers/calculateCardDamage)

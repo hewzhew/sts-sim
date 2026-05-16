@@ -475,6 +475,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             2,
             0,
         ),
+        (
+            CardId::Stack,
+            "Stack",
+            CardType::Skill,
+            1,
+            0,
+            0,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            3,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -724,6 +737,63 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
         }
     );
     assert!(!exhausts_when_played(&hologram_plus));
+
+    let mut stack_state = state.clone();
+    stack_state.zones.discard_pile = vec![
+        CombatCard::new(CardId::StrikeB, 123),
+        CombatCard::new(CardId::DefendB, 124),
+    ];
+    let stack = resolve_card_play(
+        CardId::Stack,
+        &stack_state,
+        &CombatCard::new(CardId::Stack, 125),
+        None,
+    );
+    assert_eq!(
+        stack[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 2,
+        }
+    );
+
+    let mut stack_plus = CombatCard::new(CardId::Stack, 126);
+    stack_plus.upgrades = 1;
+    let stack_plus_actions = resolve_card_play(CardId::Stack, &stack_state, &stack_plus, None);
+    assert_eq!(
+        stack_plus_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 5,
+        }
+    );
+
+    crate::content::powers::store::set_powers_for(
+        &mut stack_state,
+        0,
+        vec![Power {
+            power_type: PowerId::Dexterity,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let stack_with_dex = resolve_card_play(
+        CardId::Stack,
+        &stack_state,
+        &CombatCard::new(CardId::Stack, 127),
+        None,
+    );
+    assert_eq!(
+        stack_with_dex[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 4,
+        },
+        "Stack's discard-count base block must still flow through normal block modifiers"
+    );
 }
 
 #[test]

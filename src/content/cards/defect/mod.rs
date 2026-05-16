@@ -7,6 +7,7 @@ pub mod defend_blue;
 pub mod dualcast;
 pub mod hologram;
 pub mod leap;
+pub mod stack;
 pub mod strike_blue;
 pub mod sweeping_beam;
 pub mod turbo;
