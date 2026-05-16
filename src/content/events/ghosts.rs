@@ -5,6 +5,7 @@ use crate::state::events::{
     EventOptionSemantics, EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
@@ -82,10 +83,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     if hp_loss >= run_state.max_hp {
                         hp_loss = run_state.max_hp - 1;
                     }
-                    run_state.max_hp -= hp_loss;
-                    if run_state.current_hp > run_state.max_hp {
-                        run_state.current_hp = run_state.max_hp;
-                    }
+                    run_state.lose_max_hp_with_source(
+                        hp_loss,
+                        DomainEventSource::Event(EventId::Ghosts),
+                    );
                     let count = if run_state.ascension_level >= 15 {
                         3
                     } else {
@@ -107,4 +108,79 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::cards::CardId;
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    #[test]
+    fn accept_loses_max_hp_and_obtains_apparitions_with_event_source() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 70;
+        run_state.max_hp = 80;
+        run_state.event_state = Some(EventState::new(EventId::Ghosts));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.max_hp, 40);
+        assert_eq!(run_state.current_hp, 40);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::MaxHpChanged {
+                delta: -40,
+                current_hp: 40,
+                max_hp: 40,
+                source: DomainEventSource::Event(EventId::Ghosts),
+            }
+        )));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::Ghosts),
+                    } if card.id == CardId::Apparition
+                ))
+                .count(),
+            5
+        );
+    }
+
+    #[test]
+    fn accept_on_ascension_fifteen_obtains_three_apparitions() {
+        let mut run_state = RunState::new(1, 15, false, "Ironclad");
+        run_state.current_hp = 70;
+        run_state.max_hp = 80;
+        run_state.event_state = Some(EventState::new(EventId::Ghosts));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(
+            run_state
+                .take_emitted_events()
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::Ghosts),
+                    } if card.id == CardId::Apparition
+                ))
+                .count(),
+            3
+        );
+    }
 }

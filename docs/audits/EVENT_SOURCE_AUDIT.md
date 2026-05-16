@@ -344,6 +344,35 @@ Tests:
 - `shed_blood_increases_max_hp_then_heals_then_takes_java_damage`
 - `shed_blood_damage_respects_tungsten_after_max_hp_heal`
 
+### Ghosts and Vampires max-HP trades
+
+Java `events/city/Ghosts.java` and `events/city/Vampires.java` both reduce
+max HP through `AbstractDungeon.player.decreaseMaxHealth(...)`, not by direct
+field writes. They then obtain cards through `ShowCardAndObtainEffect`.
+
+Additional Vampire-specific Java behavior:
+
+- Accepting without `Blood Vial` removes max HP, removes all starter Strike
+  cards from the master deck, and obtains five `Bite` cards.
+- Giving `Blood Vial` removes the relic, does not reduce max HP, and performs
+  the same starter-Strike replacement.
+
+Fixes:
+
+- `Ghosts` now calls `lose_max_hp_with_source(..., Event(Ghosts))` before
+  obtaining the Apparitions.
+- `Vampires` now calls `lose_max_hp_with_source(..., Event(Vampires))`.
+- `Vampires` Blood Vial removal now calls `remove_relic_at_with_source`.
+- `Vampires` starter Strike removal now uses
+  `remove_card_from_deck_with_source(..., Event(Vampires))`.
+
+Tests:
+
+- `accept_loses_max_hp_and_obtains_apparitions_with_event_source`
+- `accept_on_ascension_fifteen_obtains_three_apparitions`
+- `accept_loses_max_hp_replaces_starter_strikes_with_event_sources`
+- `give_vial_removes_relic_without_max_hp_loss_and_replaces_strikes`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -552,10 +581,10 @@ Validation:
   drawing the button, and several Rust modules still simplify those UI states.
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
   that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`,
-  `FaceTrader`, and `ForgottenAltar` are now covered; the remaining direct
-  writes should be handled event-by-event against Java source.
+  `FaceTrader`, `ForgottenAltar`, `Ghosts`, and `Vampires` are now covered; the
+  remaining direct writes should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `818 passed`.
+- Current result after this pass: `822 passed`.
