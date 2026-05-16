@@ -1254,6 +1254,17 @@ pub fn handle_gash(card_uuid: u32, amount: i32, state: &mut CombatState) {
     }
 }
 
+pub fn handle_modify_card_block(card_uuid: u32, amount: i32, state: &mut CombatState) {
+    state
+        .zones
+        .for_each_java_battle_instance_mut_by_uuid(card_uuid, |card| {
+            let def = crate::content::cards::get_card_definition(card.id);
+            let upgraded_base = def.base_block + (card.upgrades as i32) * def.upgrade_block;
+            let current = card.base_block_override.unwrap_or(upgraded_base);
+            card.base_block_override = Some(current + amount);
+        });
+}
+
 pub fn handle_reduce_card_cost_for_combat(card_uuid: u32, amount: i32, state: &mut CombatState) {
     if amount <= 0 {
         return;

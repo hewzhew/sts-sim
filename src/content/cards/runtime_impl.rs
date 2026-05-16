@@ -68,6 +68,7 @@ pub fn resolve_card_play_with_context(
         CardId::Streamline => defect::streamline::streamline_play(_state, _card, t),
         CardId::Rebound => defect::rebound::rebound_play(_state, _card, t),
         CardId::Claw => defect::claw::claw_play(_state, _card, t),
+        CardId::SteamBarrier => defect::steam_barrier::steam_barrier_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
@@ -335,7 +336,9 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
     let mut damage = card
         .base_damage_override
         .unwrap_or(def.base_damage + u * def.upgrade_damage) as f32;
-    let mut block = (def.base_block + u * def.upgrade_block) as f32;
+    let mut block = card
+        .base_block_override
+        .unwrap_or(def.base_block + u * def.upgrade_block) as f32;
     card.base_magic_num_mut = def.base_magic + u * def.upgrade_magic;
 
     // 1. Card specific base overrides (Perfected Strike)

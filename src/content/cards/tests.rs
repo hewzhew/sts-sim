@@ -579,6 +579,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::SteamBarrier,
+            "Steam",
+            CardType::Skill,
+            0,
+            0,
+            6,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            2,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -602,6 +615,7 @@ fn defect_first_common_batch_definitions_match_java_sources() {
         match id {
             CardId::Recursion => assert_eq!(def.name, "Recursion"),
             CardId::Claw => assert_eq!(def.name, "Claw"),
+            CardId::SteamBarrier => assert_eq!(def.name, "Steam Barrier"),
             _ => assert_eq!(def.name, java_id_value),
         }
         assert_eq!(def.card_type, card_type);
@@ -1119,6 +1133,39 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
             amount: 2,
         }
     );
+
+    let steam = resolve_card_play(
+        CardId::SteamBarrier,
+        &state,
+        &CombatCard::new(CardId::SteamBarrier, 142),
+        None,
+    );
+    assert_eq!(steam.len(), 2);
+    assert_eq!(
+        steam[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 6,
+        }
+    );
+    assert_eq!(
+        steam[1].action,
+        Action::ModifyCardBlock {
+            card_uuid: 142,
+            amount: -1,
+        }
+    );
+
+    let mut steam_plus = CombatCard::new(CardId::SteamBarrier, 143);
+    steam_plus.upgrades = 1;
+    let steam_plus_actions = resolve_card_play(CardId::SteamBarrier, &state, &steam_plus, None);
+    assert_eq!(
+        steam_plus_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 8,
+        }
+    );
 }
 
 #[test]
@@ -1449,6 +1496,47 @@ fn gash_action_increases_current_and_visible_claw_cards_only() {
         "Java GashAction does not loop the exhaust pile"
     );
     assert_eq!(state.zones.limbo[0].base_damage_override, Some(5));
+}
+
+#[test]
+fn steam_barrier_modify_block_action_persists_combat_base_block_changes() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![CombatCard::new(CardId::SteamBarrier, 231)];
+    let mut upgraded = CombatCard::new(CardId::SteamBarrier, 231);
+    upgraded.upgrades = 1;
+    state.zones.draw_pile = vec![upgraded];
+    state.zones.discard_pile = vec![CombatCard::new(CardId::SteamBarrier, 232)];
+    state.zones.limbo = vec![CombatCard::new(CardId::SteamBarrier, 231)];
+
+    crate::engine::action_handlers::execute_action(
+        Action::ModifyCardBlock {
+            card_uuid: 231,
+            amount: -1,
+        },
+        &mut state,
+    );
+
+    assert_eq!(state.zones.hand[0].base_block_override, Some(5));
+    assert_eq!(
+        state.zones.draw_pile[0].base_block_override,
+        Some(7),
+        "upgraded Steam Barrier should decay from its upgraded base block"
+    );
+    assert_eq!(
+        state.zones.discard_pile[0].base_block_override, None,
+        "ModifyBlockAction targets matching UUID instances only"
+    );
+    assert_eq!(state.zones.limbo[0].base_block_override, Some(5));
+
+    let evaluated = evaluate_card_for_play(&state.zones.hand[0], &state, None);
+    assert_eq!(evaluated.base_block_mut, 5);
+
+    state.zones.hand[0].base_block_override = Some(-1);
+    let depleted = evaluate_card_for_play(&state.zones.hand[0], &state, None);
+    assert_eq!(
+        depleted.base_block_mut, 0,
+        "Java applyPowersToBlock floors negative baseBlock to zero output"
+    );
 }
 
 #[test]

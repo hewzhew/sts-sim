@@ -243,6 +243,7 @@ pub enum CardId {
     Streamline,
     Rebound,
     Claw,
+    SteamBarrier,
     // Add more as we expand
 }
 
@@ -510,6 +511,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Streamline => defect::streamline::definition(),
         CardId::Rebound => defect::rebound::definition(),
         CardId::Claw => defect::claw::definition(),
+        CardId::SteamBarrier => defect::steam_barrier::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1179,6 +1181,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Streamline => "Streamline",
         CardId::Rebound => "Rebound",
         CardId::Claw => "Gash",
+        CardId::SteamBarrier => "Steam",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1434,6 +1437,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Streamline,
         Rebound,
         Claw,
+        SteamBarrier,
         Neutralize,
         Survivor,
         Anger,
