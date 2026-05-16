@@ -4,6 +4,7 @@ use crate::state::events::{
     EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 // internal_state packs pre-selected card indices:
 // bits[0..9] = skill card deck index (0x3FF = no skill)
@@ -187,7 +188,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             };
             if card_idx < run_state.master_deck.len() {
                 let uuid = run_state.master_deck[card_idx].uuid;
-                run_state.remove_card_from_deck(uuid);
+                run_state.remove_card_from_deck_with_source(
+                    uuid,
+                    DomainEventSource::Event(crate::state::events::EventId::Falling),
+                );
             }
             event_state.current_screen = 2;
         }
@@ -213,8 +217,9 @@ pub fn init_falling_state(run_state: &mut RunState) -> i32 {
         .iter()
         .enumerate()
         .filter(|(_, c)| {
-            crate::content::cards::get_card_definition(c.id).card_type
-                == crate::content::cards::CardType::Skill
+            !crate::state::core::master_deck_card_is_bottled(c, &run_state.relics)
+                && crate::content::cards::get_card_definition(c.id).card_type
+                    == crate::content::cards::CardType::Skill
         })
         .map(|(i, _)| i)
         .collect();
@@ -232,8 +237,9 @@ pub fn init_falling_state(run_state: &mut RunState) -> i32 {
         .iter()
         .enumerate()
         .filter(|(_, c)| {
-            crate::content::cards::get_card_definition(c.id).card_type
-                == crate::content::cards::CardType::Power
+            !crate::state::core::master_deck_card_is_bottled(c, &run_state.relics)
+                && crate::content::cards::get_card_definition(c.id).card_type
+                    == crate::content::cards::CardType::Power
         })
         .map(|(i, _)| i)
         .collect();
@@ -251,8 +257,9 @@ pub fn init_falling_state(run_state: &mut RunState) -> i32 {
         .iter()
         .enumerate()
         .filter(|(_, c)| {
-            crate::content::cards::get_card_definition(c.id).card_type
-                == crate::content::cards::CardType::Attack
+            !crate::state::core::master_deck_card_is_bottled(c, &run_state.relics)
+                && crate::content::cards::get_card_definition(c.id).card_type
+                    == crate::content::cards::CardType::Attack
         })
         .map(|(i, _)| i)
         .collect();
@@ -271,6 +278,9 @@ pub fn init_falling_state(run_state: &mut RunState) -> i32 {
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::combat::CombatCard;
+    use crate::state::selection::DomainEvent;
 
     #[test]
     fn falling_skill_option_exposes_remove_operation() {
@@ -296,5 +306,50 @@ mod tests {
                 kind: EventCardKind::Specific(CardId::ShrugItOff),
             }]
         ));
+    }
+
+    #[test]
+    fn falling_init_ignores_bottled_cards_like_java_card_helper() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck = vec![
+            CombatCard::new(CardId::Defend, 11),
+            CombatCard::new(CardId::Inflame, 12),
+            CombatCard::new(CardId::Strike, 13),
+        ];
+        let mut bottled_skill = RelicState::new(RelicId::BottledLightning);
+        bottled_skill.amount = 11;
+        rs.relics.push(bottled_skill);
+
+        let state = init_falling_state(&mut rs);
+
+        assert_eq!(skill_idx(state), NO_CARD as usize);
+        assert_eq!(power_idx(state), 1);
+        assert_eq!(attack_idx(state), 2);
+    }
+
+    #[test]
+    fn falling_removal_uses_event_domain_source() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck = vec![CombatCard::new(CardId::Strike, 11)];
+        rs.event_state = Some(EventState {
+            id: crate::state::events::EventId::Falling,
+            current_screen: 1,
+            internal_state: ((NO_CARD & 0x3FF) << 10) | (0 << 20) | (NO_CARD & 0x3FF),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        assert!(rs.master_deck.is_empty());
+        assert!(rs.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(crate::state::events::EventId::Falling),
+            } if card.uuid == 11
+        )));
     }
 }

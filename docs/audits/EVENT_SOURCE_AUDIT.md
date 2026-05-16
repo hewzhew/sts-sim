@@ -144,13 +144,33 @@ filter uniformly. `DrugDealer`, Neow transform/remove rewards, `EmptyCage`, and
 `Astrolabe` use `masterDeck.getPurgeableCards()` directly, so they remain on
 the ordinary `Purge` / `Transform` variants.
 
+### Falling card preselection
+
+Java `events/beyond/Falling.java` calls `CardHelper.hasCardWithType()` and
+`CardHelper.returnCardOfType()`. Both helpers iterate
+`CardGroup.getGroupWithoutBottledCards(masterDeck)`, so bottled Attack/Skill/
+Power cards must not be preselected for the event's remove choices.
+
+Fixes:
+
+- `init_falling_state()` now excludes cards attached to Bottled Flame,
+  Bottled Lightning, or Bottled Tornado when sampling the Skill / Power /
+  Attack candidates with `miscRng`.
+- Falling removal now emits `DomainEventSource::Event(Falling)` instead of
+  using the generic deck-mutation source.
+
+Tests:
+
+- `falling_init_ignores_bottled_cards_like_java_card_helper`
+- `falling_removal_uses_event_domain_source`
+
 ## Current High-Risk Event Areas
 
 - `Match and Keep` still deserves deeper review for board serialization,
   duplicate-card handling, and how upgraded/generated card instances are
   represented after a match.
-- Selection-heavy events need source-by-source checks: `Falling`, `WeMeetAgain`,
-  `The Library`, `Bonfire Spirits`, `Nloth`, and `Note For Yourself`.
+- Selection-heavy events need source-by-source checks: `WeMeetAgain`,
+  `The Library`, `Nloth`, and remaining `Note For Yourself` persistence gaps.
 - Selection choice preconditions still need deeper event-by-event review.
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
@@ -164,4 +184,4 @@ the ordinary `Purge` / `Transform` variants.
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `778 passed`.
+- Current result after this pass: `780 passed`.
