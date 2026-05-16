@@ -51,6 +51,8 @@ pub struct RunState {
     pub reward_state: Option<crate::rewards::state::RewardState>,
     pub shop_state: Option<crate::shop::ShopState>,
     pub event_state: Option<crate::state::events::EventState>,
+    pub note_for_yourself_card: crate::content::cards::CardId,
+    pub note_for_yourself_upgrades: u8,
 
     pub event_generator: crate::events::generator::EventGenerator,
     /// Java `AbstractRoom.mugged` equivalent for the current room.
@@ -135,6 +137,8 @@ impl RunState {
             reward_state: None,
             shop_state: None,
             event_state: None,
+            note_for_yourself_card: crate::content::cards::CardId::IronWave,
+            note_for_yourself_upgrades: 0,
 
             // Subsystems
             event_generator: crate::events::generator::EventGenerator::new(1),
@@ -730,6 +734,39 @@ impl RunState {
         let mut target_uuid = self.next_card_uuid();
 
         let result = crate::deck::manager::DeckManager::obtain_card(
+            &ctx,
+            card_id,
+            &mut target_uuid,
+            pre_upgrades,
+        );
+        let mut was_added = false;
+
+        if !result.final_cards.is_empty() {
+            was_added = true;
+            for card in result.final_cards {
+                self.emit_event(DomainEvent::CardObtained {
+                    card: Self::snapshot_card(&card),
+                    source,
+                });
+                self.master_deck.push(card);
+            }
+            self.dispatch_on_master_deck_change();
+        }
+
+        self.resolve_deck_actions(result.actions, source);
+        was_added
+    }
+
+    pub fn add_card_to_deck_without_interception_from(
+        &mut self,
+        card_id: crate::content::cards::CardId,
+        pre_upgrades: u8,
+        source: DomainEventSource,
+    ) -> bool {
+        let ctx = self.build_deck_context();
+        let mut target_uuid = self.next_card_uuid();
+
+        let result = crate::deck::manager::DeckManager::obtain_card_without_interception(
             &ctx,
             card_id,
             &mut target_uuid,

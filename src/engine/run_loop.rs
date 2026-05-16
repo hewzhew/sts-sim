@@ -320,6 +320,13 @@ pub fn tick_run(
                                         crate::content::cards::CardRarity::Rare => 5,
                                     };
                                 }
+                                if run_state.event_state.as_ref().is_some_and(|es| {
+                                    es.id == crate::state::events::EventId::NoteForYourself
+                                }) {
+                                    let saved_card = &run_state.master_deck[idx];
+                                    run_state.note_for_yourself_card = saved_card.id;
+                                    run_state.note_for_yourself_upgrades = saved_card.upgrades;
+                                }
                                 let uuid = run_state.master_deck[idx].uuid;
                                 run_state.remove_card_from_deck_with_source(uuid, source);
                             }

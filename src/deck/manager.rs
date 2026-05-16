@@ -51,13 +51,35 @@ impl DeckManager {
         next_uuid: &mut u32,
         pre_upgrades: u8,
     ) -> ObtainResult {
+        Self::obtain_card_impl(ctx, card_id, next_uuid, pre_upgrades, true)
+    }
+
+    /// Simulates Java paths that manually call relic `onObtainCard` and then
+    /// add the card to the master deck, without the Soul/obtain interception
+    /// layer. Notably, Omamori does not block these cards in Java.
+    pub fn obtain_card_without_interception(
+        ctx: &DeckContext,
+        card_id: CardId,
+        next_uuid: &mut u32,
+        pre_upgrades: u8,
+    ) -> ObtainResult {
+        Self::obtain_card_impl(ctx, card_id, next_uuid, pre_upgrades, false)
+    }
+
+    fn obtain_card_impl(
+        ctx: &DeckContext,
+        card_id: CardId,
+        next_uuid: &mut u32,
+        pre_upgrades: u8,
+        allow_interception: bool,
+    ) -> ObtainResult {
         let def = get_card_definition(card_id);
         let mut actions = Vec::new();
 
         let is_curse = def.card_type == CardType::Curse;
 
         // --- 1. Interception Phase (Omamori) ---
-        if is_curse && ctx.has_omamori && ctx.omamori_charges > 0 {
+        if allow_interception && is_curse && ctx.has_omamori && ctx.omamori_charges > 0 {
             actions.push(DeckAction::PreventObtain);
             actions.push(DeckAction::UpdateRelicCounter(
                 RelicId::Omamori,

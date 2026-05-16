@@ -239,13 +239,44 @@ Tests:
 - `trade_removes_offered_relic_and_obtains_gift_with_event_source`
 - `trade_with_existing_gift_grants_circlet_without_losing_offered_relic`
 
+### Note For Yourself profile card
+
+Java `events/shrines/NoteForYourself.java` reads the offered card from
+`CardCrawlGame.playerPref` keys `NOTE_CARD` and `NOTE_UPGRADE`, defaulting to
+`Iron Wave`. Taking the card manually calls relic `onObtainCard`, adds the card
+to `masterDeck`, opens
+`CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())`, and
+later stores the removed card back into the same profile preference keys.
+
+Fixes:
+
+- `RunState` now carries explicit `note_for_yourself_card` and
+  `note_for_yourself_upgrades` fields, making the Java profile preference an
+  auditable simulator input/output rather than a hidden global or hardcoded
+  event constant.
+- The event now offers the configured note card instead of always hardcoding
+  unupgraded `Iron Wave`.
+- Taking the card uses a manual-obtain path that runs ordinary relic
+  `onObtainCard` effects but skips Soul/obtain interception. This preserves the
+  Java behavior where `Omamori` does not block a curse received from the note.
+- The obtained card and removed/saved card now use
+  `DomainEventSource::Event(NoteForYourself)` through the existing event
+  selection source path.
+- The card removed by the follow-up grid selection updates
+  `RunState.note_for_yourself_*`, matching Java's delayed profile write without
+  requiring the Rust simulator to touch disk preferences.
+
+Tests:
+
+- `take_uses_profile_note_card_and_event_source`
+- `take_manual_obtain_is_not_blocked_by_omamori`
+- `selected_saved_card_updates_note_profile_before_removal`
+
 ## Current High-Risk Event Areas
 
 - `Match and Keep` still deserves deeper review for board serialization,
   duplicate-card handling, and how upgraded/generated card instances are
   represented after a match.
-- Selection-heavy events need source-by-source checks for remaining
-  `Note For Yourself` persistence gaps.
 - Selection choice preconditions still need deeper event-by-event review.
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
