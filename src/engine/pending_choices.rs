@@ -268,16 +268,44 @@ pub fn handle_hand_select(
                     // hand. Its selected branch queues one extra copy to
                     // replace that original, so Rust must remove the selected
                     // card before applying `amount`.
-                    for uuid in &uuids {
-                        if let Some(pos) =
-                            combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
-                        {
-                            let card = combat_state.zones.hand.remove(pos);
+                    if candidate_uuids.len() > 1 {
+                        let mut remaining_candidates = Vec::new();
+                        let mut selected_cards = Vec::new();
+                        let mut non_candidates = Vec::new();
+
+                        for card in combat_state.zones.hand.drain(..) {
+                            if uuids.contains(&card.uuid) {
+                                selected_cards.push(card);
+                            } else if candidate_uuids.contains(&card.uuid) {
+                                remaining_candidates.push(card);
+                            } else {
+                                non_candidates.push(card);
+                            }
+                        }
+
+                        combat_state.zones.hand = remaining_candidates;
+                        for card in non_candidates {
+                            combat_state.zones.hand.push(card);
+                        }
+                        for card in selected_cards {
                             crate::engine::action_handlers::cards::handle_make_copy_in_hand(
                                 Box::new(card),
                                 amount,
                                 combat_state,
                             );
+                        }
+                    } else {
+                        for uuid in &uuids {
+                            if let Some(pos) =
+                                combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
+                            {
+                                let card = combat_state.zones.hand.remove(pos);
+                                crate::engine::action_handlers::cards::handle_make_copy_in_hand(
+                                    Box::new(card),
+                                    amount,
+                                    combat_state,
+                                );
+                            }
                         }
                     }
                 }
@@ -690,6 +718,56 @@ mod tests {
                 .map(|card| (card.id, card.uuid))
                 .collect::<Vec<_>>(),
             vec![(CardId::Strike, 102), (CardId::Strike, 103),]
+        );
+    }
+
+    #[test]
+    fn hand_select_copy_returns_non_candidates_before_dual_wield_copies() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                reason: HandSelectReason::Copy { amount: 2 },
+                candidate_uuids: vec![20, 30],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.card_uuid_counter = 100;
+        combat_state.zones.hand = vec![
+            CombatCard::new(CardId::Defend, 10),
+            CombatCard::new(CardId::Strike, 20),
+            CombatCard::new(CardId::Inflame, 30),
+            CombatCard::new(CardId::Defend, 40),
+        ];
+
+        handle_hand_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[20, 30],
+            1,
+            true,
+            false,
+            HandSelectReason::Copy { amount: 2 },
+            ClientInput::SubmitHandSelect(vec![20]),
+        )
+        .expect("copy selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(
+            combat_state
+                .zones
+                .hand
+                .iter()
+                .map(|card| (card.id, card.uuid))
+                .collect::<Vec<_>>(),
+            vec![
+                (CardId::Inflame, 30),
+                (CardId::Defend, 10),
+                (CardId::Defend, 40),
+                (CardId::Strike, 101),
+                (CardId::Strike, 102),
+            ],
+            "Java DualWieldAction removes non-candidates before selection, returns them, then queued MakeTempCardInHandAction copies resolve"
         );
     }
 

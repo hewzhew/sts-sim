@@ -390,7 +390,8 @@ pub fn tick_engine(
                     filter,
                     reason,
                 } => {
-                    let candidate_uuids = grid_select_candidates(combat_state, source_pile, filter);
+                    let candidate_uuids =
+                        grid_select_candidates(combat_state, source_pile, filter, reason);
                     let available = candidate_uuids.len() as u8;
                     if available == 0 {
                         let legal_empty_fizzle = min == 0
@@ -1262,10 +1263,39 @@ fn hand_select_can_fizzle_when_empty(reason: crate::state::HandSelectReason) -> 
 }
 
 fn grid_select_candidates(
-    combat_state: &CombatState,
+    combat_state: &mut CombatState,
     source_pile: crate::state::PileType,
     filter: crate::state::GridSelectFilter,
+    reason: crate::state::GridSelectReason,
 ) -> Vec<u32> {
+    match reason {
+        crate::state::GridSelectReason::DrawPileToHand
+            if source_pile == crate::state::PileType::Draw
+                && filter == crate::state::GridSelectFilter::Any =>
+        {
+            return java_better_draw_pile_to_hand_candidates(combat_state);
+        }
+        crate::state::GridSelectReason::SkillFromDeckToHand
+            if source_pile == crate::state::PileType::Draw
+                && filter == crate::state::GridSelectFilter::Skill =>
+        {
+            return java_deck_to_hand_type_candidates(
+                combat_state,
+                crate::content::cards::CardType::Skill,
+            );
+        }
+        crate::state::GridSelectReason::AttackFromDeckToHand
+            if source_pile == crate::state::PileType::Draw
+                && filter == crate::state::GridSelectFilter::Attack =>
+        {
+            return java_deck_to_hand_type_candidates(
+                combat_state,
+                crate::content::cards::CardType::Attack,
+            );
+        }
+        _ => {}
+    }
+
     let pile: &[crate::runtime::combat::CombatCard] = match source_pile {
         crate::state::PileType::Draw => &combat_state.zones.draw_pile,
         crate::state::PileType::Discard => &combat_state.zones.discard_pile,
@@ -1279,6 +1309,72 @@ fn grid_select_candidates(
         .filter(|card| grid_candidate_matches(card, filter))
         .map(|card| card.uuid)
         .collect()
+}
+
+fn java_better_draw_pile_to_hand_candidates(combat_state: &CombatState) -> Vec<u32> {
+    let mut cards: Vec<&crate::runtime::combat::CombatCard> =
+        combat_state.zones.draw_pile.iter().rev().collect();
+
+    cards.sort_by(|a, b| {
+        let a_name = crate::content::cards::get_card_definition(a.id).name;
+        let b_name = crate::content::cards::get_card_definition(b.id).name;
+        a_name.cmp(b_name)
+    });
+    cards.sort_by(|a, b| {
+        let a_rarity =
+            java_card_rarity_ordinal(crate::content::cards::get_card_definition(a.id).rarity);
+        let b_rarity =
+            java_card_rarity_ordinal(crate::content::cards::get_card_definition(b.id).rarity);
+        b_rarity.cmp(&a_rarity)
+    });
+    cards.sort_by(|a, b| {
+        let a_status = crate::content::cards::get_card_definition(a.id).card_type
+            == crate::content::cards::CardType::Status;
+        let b_status = crate::content::cards::get_card_definition(b.id).card_type
+            == crate::content::cards::CardType::Status;
+        a_status.cmp(&b_status)
+    });
+
+    cards.into_iter().map(|card| card.uuid).collect()
+}
+
+fn java_deck_to_hand_type_candidates(
+    combat_state: &mut CombatState,
+    card_type: crate::content::cards::CardType,
+) -> Vec<u32> {
+    let matching_uuids: Vec<u32> = combat_state
+        .zones
+        .draw_pile
+        .iter()
+        .rev()
+        .filter(|card| crate::content::cards::get_card_definition(card.id).card_type == card_type)
+        .map(|card| card.uuid)
+        .collect();
+
+    let mut candidates = Vec::new();
+    for uuid in matching_uuids {
+        if candidates.is_empty() {
+            candidates.push(uuid);
+        } else {
+            let index = combat_state
+                .rng
+                .card_random_rng
+                .random(candidates.len() as i32 - 1) as usize;
+            candidates.insert(index, uuid);
+        }
+    }
+    candidates
+}
+
+fn java_card_rarity_ordinal(rarity: crate::content::cards::CardRarity) -> u8 {
+    match rarity {
+        crate::content::cards::CardRarity::Basic => 0,
+        crate::content::cards::CardRarity::Special => 1,
+        crate::content::cards::CardRarity::Common => 2,
+        crate::content::cards::CardRarity::Uncommon => 3,
+        crate::content::cards::CardRarity::Rare => 4,
+        crate::content::cards::CardRarity::Curse => 5,
+    }
 }
 
 fn grid_candidate_matches(
@@ -1375,9 +1471,12 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
-    use crate::runtime::action::CardDestination;
+    use crate::runtime::action::{Action, CardDestination};
     use crate::runtime::combat::{CombatCard, Power};
-    use crate::state::core::{ClientInput, DiscoveryChoiceState, EngineState, PendingChoice};
+    use crate::state::core::{
+        ClientInput, DiscoveryChoiceState, EngineState, GridSelectFilter, GridSelectReason,
+        PendingChoice, PileType,
+    };
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -1393,6 +1492,99 @@ mod tests {
         let ironclad_pool = class_combat_card_pool("Ironclad");
         assert!(ironclad_pool.contains(&CardId::PommelStrike));
         assert!(!ironclad_pool.contains(&CardId::Acrobatics));
+    }
+
+    #[test]
+    fn seek_grid_candidates_match_java_better_draw_pile_sort_order() {
+        let mut combat_state = blank_test_combat();
+        let mut engine_state = EngineState::CombatProcessing;
+        combat_state.zones.draw_pile = vec![
+            CombatCard::new(CardId::StrikeB, 10),
+            CombatCard::new(CardId::DefendB, 20),
+            CombatCard::new(CardId::Bash, 30),
+        ];
+        combat_state.queue_action_back(Action::SuspendForGridSelect {
+            source_pile: PileType::Draw,
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: GridSelectFilter::Any,
+            reason: GridSelectReason::DrawPileToHand,
+        });
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+
+        match engine_state {
+            EngineState::PendingChoice(PendingChoice::GridSelect {
+                candidate_uuids, ..
+            }) => assert_eq!(
+                candidate_uuids,
+                vec![30, 20, 10],
+                "Java BetterDrawPileToHandAction sorts the temporary draw-pile group before opening grid select"
+            ),
+            other => panic!("Seek-style grid select should remain pending, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn secret_technique_grid_candidates_consume_java_add_to_random_spot_rng() {
+        let mut combat_state = blank_test_combat();
+        let mut engine_state = EngineState::CombatProcessing;
+        combat_state.zones.draw_pile = vec![
+            CombatCard::new(CardId::StrikeB, 10),
+            CombatCard::new(CardId::DefendB, 20),
+            CombatCard::new(CardId::Seek, 30),
+            CombatCard::new(CardId::DefendG, 40),
+        ];
+
+        let mut expected_rng = combat_state.rng.clone();
+        let mut expected_candidates = Vec::new();
+        for uuid in [40_u32, 30, 20] {
+            if expected_candidates.is_empty() {
+                expected_candidates.push(uuid);
+            } else {
+                let index = expected_rng
+                    .card_random_rng
+                    .random(expected_candidates.len() as i32 - 1)
+                    as usize;
+                expected_candidates.insert(index, uuid);
+            }
+        }
+
+        combat_state.queue_action_back(Action::SuspendForGridSelect {
+            source_pile: PileType::Draw,
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: GridSelectFilter::Skill,
+            reason: GridSelectReason::SkillFromDeckToHand,
+        });
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+
+        match engine_state {
+            EngineState::PendingChoice(PendingChoice::GridSelect {
+                candidate_uuids, ..
+            }) => assert_eq!(
+                candidate_uuids, expected_candidates,
+                "Java SkillFromDeckToHandAction builds its temporary group with addToRandomSpot"
+            ),
+            other => {
+                panic!("Secret Technique-style grid select should remain pending, got {other:?}")
+            }
+        }
+        assert_eq!(
+            combat_state.rng.card_random_rng.counter, expected_rng.card_random_rng.counter,
+            "opening Secret Technique's multi-candidate grid select consumes cardRandomRng"
+        );
     }
 
     #[test]
