@@ -47,6 +47,7 @@ pub mod rip_and_tear;
 pub mod self_repair;
 pub mod skim;
 pub mod stack;
+pub mod static_discharge;
 pub mod steam_barrier;
 pub mod streamline;
 pub mod strike_blue;

@@ -279,6 +279,7 @@ pub enum CardId {
     Rainbow,
     Impulse,
     MachineLearning,
+    StaticDischarge,
     // Add more as we expand
 }
 
@@ -584,6 +585,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Rainbow => defect::rainbow::definition(),
         CardId::Impulse => defect::impulse::definition(),
         CardId::MachineLearning => defect::machine_learning::definition(),
+        CardId::StaticDischarge => defect::static_discharge::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1289,6 +1291,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Rainbow => "Rainbow",
         CardId::Impulse => "Impulse",
         CardId::MachineLearning => "Machine Learning",
+        CardId::StaticDischarge => "Static Discharge",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1580,6 +1583,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Rainbow,
         Impulse,
         MachineLearning,
+        StaticDischarge,
         Neutralize,
         Survivor,
         Anger,

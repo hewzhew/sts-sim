@@ -84,6 +84,7 @@ pub enum PowerId {
     LockOn,
     Bias,
     Loop,
+    StaticDischarge,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -517,6 +518,10 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
         },
         PowerId::Bias => PowerDefinition { id, name: "Bias" },
         PowerId::Loop => PowerDefinition { id, name: "Loop" },
+        PowerId::StaticDischarge => PowerDefinition {
+            id,
+            name: "Static Discharge",
+        },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -1204,6 +1209,9 @@ pub fn resolve_power_on_attacked(
         // SharpHide: moved from on_attacked to on_card_played (Java uses onUseCard, not onAttacked)
         PowerId::Flight => core::flight::on_attacked(state, owner, damage, source, power_amount),
         PowerId::Malleable => core::malleable::on_attacked(state, owner, damage, power_amount),
+        PowerId::StaticDischarge => {
+            defect::static_discharge::on_attacked(owner, source, damage, damage_type, power_amount)
+        }
         PowerId::Thorns => core::thorns::on_attacked(state, owner, damage, source, power_amount),
         PowerId::Shifting => {
             core::shifting::on_attacked(state, owner, damage, source, power_amount)

@@ -3757,6 +3757,118 @@ fn machine_learning_definition_runtime_and_draw_power_match_java_sources() {
 }
 
 #[test]
+fn static_discharge_definition_runtime_and_on_attacked_hook_match_java_sources() {
+    let static_discharge = get_card_definition(CardId::StaticDischarge);
+    assert_eq!(static_discharge.name, "Static Discharge");
+    assert_eq!(static_discharge.card_type, CardType::Power);
+    assert_eq!(static_discharge.rarity, CardRarity::Uncommon);
+    assert_eq!(static_discharge.cost, 1);
+    assert_eq!(static_discharge.base_magic, 1);
+    assert_eq!(static_discharge.target, CardTarget::SelfTarget);
+    assert_eq!(static_discharge.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::StaticDischarge), "Static Discharge");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::StaticDischarge,
+        &state,
+        &CombatCard::new(CardId::StaticDischarge, 334),
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::StaticDischarge,
+            amount: 1,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::StaticDischarge, 335);
+    plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::StaticDischarge, &state, &plus, None)[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::StaticDischarge,
+            amount: 2,
+        }
+    );
+
+    let mut hit_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut hit_state,
+        0,
+        vec![Power {
+            power_type: PowerId::StaticDischarge,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: 336,
+            target: 0,
+            base: 5,
+            output: 5,
+            damage_type: DamageType::Normal,
+            is_modified: true,
+        }),
+        &mut hit_state,
+    );
+    assert_eq!(hit_state.entities.player.current_hp, 75);
+    assert_eq!(
+        hit_state.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning))
+    );
+    assert_eq!(
+        hit_state.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning))
+    );
+    assert_eq!(hit_state.pop_next_action(), None);
+
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: 336,
+            target: 0,
+            base: 5,
+            output: 5,
+            damage_type: DamageType::Thorns,
+            is_modified: false,
+        }),
+        &mut hit_state,
+    );
+    assert_eq!(
+        hit_state.pop_next_action(),
+        None,
+        "Java StaticDischargePower ignores THORNS damage"
+    );
+
+    crate::engine::action_handlers::execute_action(
+        Action::Damage(DamageInfo {
+            source: NO_SOURCE,
+            target: 0,
+            base: 5,
+            output: 5,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }),
+        &mut hit_state,
+    );
+    assert_eq!(
+        hit_state.pop_next_action(),
+        None,
+        "Java StaticDischargePower requires info.owner != null"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;
