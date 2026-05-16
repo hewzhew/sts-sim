@@ -2346,6 +2346,11 @@ fn watcher_scry_hook_batch_matches_java_sources() {
         just_applied: false,
     };
     let mut empty_draw_state = crate::test_support::blank_test_combat();
+    empty_draw_state.queue_action_back(Action::MakeTempCardInHand {
+        card_id: CardId::Smite,
+        amount: 1,
+        upgraded: false,
+    });
     assert_eq!(
         crate::content::powers::resolve_power_instance_at_turn_start(
             &foresight_power,
@@ -2353,8 +2358,21 @@ fn watcher_scry_hook_batch_matches_java_sources() {
             0,
         )
         .as_slice(),
-        &[Action::EmptyDeckShuffle, Action::Scry(4)],
-        "Java ForesightPower queues EmptyDeckShuffleAction before ScryAction when draw pile is empty"
+        &[Action::Scry(4)],
+        "Java ForesightPower addToBot queues ScryAction normally"
+    );
+    assert_eq!(
+        empty_draw_state.pop_next_action(),
+        Some(Action::EmptyDeckShuffle),
+        "Java ForesightPower uses addToTop for EmptyDeckShuffleAction, so it must run before already queued start-of-turn actions"
+    );
+    assert_eq!(
+        empty_draw_state.pop_next_action(),
+        Some(Action::MakeTempCardInHand {
+            card_id: CardId::Smite,
+            amount: 1,
+            upgraded: false,
+        })
     );
 
     let mut nirvana_plus = CombatCard::new(CardId::Nirvana, 981);
@@ -4466,13 +4484,39 @@ fn watcher_swivel_matches_java_free_attack_power() {
     );
     assert_eq!(
         state.pop_next_action(),
-        Some(Action::ReducePower {
+        Some(Action::RemovePower {
             target: 0,
             power_id: PowerId::FreeAttackPower,
-            amount: 1,
         }),
-        "Java FreeAttackPower.onUseCard decrements after a non-purge Attack is used"
+        "Java FreeAttackPower.onUseCard decrements immediately and addToTop removes it at zero"
     );
+
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![crate::runtime::combat::Power {
+            power_type: PowerId::FreeAttackPower,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::content::powers::resolve_power_on_use_card(
+        PowerId::FreeAttackPower,
+        &mut state,
+        &attack,
+        &mut exhaust_override,
+        false,
+        Some(7),
+    );
+    assert_eq!(
+        crate::content::powers::store::power_amount(&state, 0, PowerId::FreeAttackPower),
+        1,
+        "Java FreeAttackPower decrements its amount before later queued card effects resolve"
+    );
+    assert_eq!(state.pop_next_action(), None);
 }
 
 #[test]

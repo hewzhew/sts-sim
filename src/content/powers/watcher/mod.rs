@@ -14,10 +14,10 @@ pub fn battle_hymn_at_turn_start(state: &CombatState, amount: i32) -> SmallVec<[
     }
 }
 
-pub fn foresight_at_turn_start(state: &CombatState, amount: i32) -> SmallVec<[Action; 2]> {
+pub fn foresight_at_turn_start(state: &mut CombatState, amount: i32) -> SmallVec<[Action; 2]> {
     let mut actions = SmallVec::new();
     if state.zones.draw_pile.is_empty() {
-        actions.push(Action::EmptyDeckShuffle);
+        state.queue_action_front(Action::EmptyDeckShuffle);
     }
     actions.push(Action::Scry(amount.max(0) as usize));
     actions

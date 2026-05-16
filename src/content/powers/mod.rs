@@ -840,11 +840,16 @@ pub fn resolve_power_on_use_card(
         PowerId::FreeAttackPower => {
             let def = crate::content::cards::get_card_definition(card.id);
             if def.card_type == crate::content::cards::CardType::Attack && !purge {
-                state.queue_action_back(crate::runtime::action::Action::ReducePower {
-                    target: 0,
-                    power_id: PowerId::FreeAttackPower,
-                    amount: 1,
+                let remaining = store::with_power_mut(state, 0, PowerId::FreeAttackPower, |power| {
+                    power.amount -= 1;
+                    power.amount
                 });
+                if remaining.is_some_and(|amount| amount <= 0) {
+                    state.queue_action_front(crate::runtime::action::Action::RemovePower {
+                        target: 0,
+                        power_id: PowerId::FreeAttackPower,
+                    });
+                }
             }
         }
         _ => {}
