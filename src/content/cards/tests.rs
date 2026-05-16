@@ -3147,6 +3147,68 @@ fn lock_on_multiplier_applies_only_to_orb_damage_paths() {
 }
 
 #[test]
+fn core_surge_definition_and_runtime_action_match_java_sources() {
+    let core_surge = get_card_definition(CardId::CoreSurge);
+    assert_eq!(core_surge.name, "Core Surge");
+    assert_eq!(core_surge.card_type, CardType::Attack);
+    assert_eq!(core_surge.rarity, CardRarity::Rare);
+    assert_eq!(core_surge.cost, 1);
+    assert_eq!(core_surge.base_damage, 11);
+    assert_eq!(core_surge.base_magic, 1);
+    assert_eq!(core_surge.target, CardTarget::Enemy);
+    assert!(core_surge.exhaust);
+    assert_eq!(core_surge.upgrade_damage, 4);
+    assert_eq!(core_surge.upgrade_magic, 0);
+    assert_eq!(java_id(CardId::CoreSurge), "Core Surge");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::CoreSurge,
+        &state,
+        &CombatCard::new(CardId::CoreSurge, 310),
+        Some(311),
+    );
+    assert_eq!(actions.len(), 2);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 311);
+            assert_eq!(info.base, 11);
+            assert_eq!(info.output, 11);
+        }
+        other => panic!("Core Surge should damage before Artifact, got {other:?}"),
+    }
+    assert_eq!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Artifact,
+            amount: 1,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::CoreSurge, 312);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::CoreSurge, &state, &plus, Some(311));
+    match &plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 15);
+            assert_eq!(info.output, 15);
+        }
+        other => panic!("Core Surge+ should damage before Artifact, got {other:?}"),
+    }
+    assert_eq!(
+        plus_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Artifact,
+            amount: 1,
+        }
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

@@ -14,6 +14,7 @@ pub mod compile_driver;
 pub mod conserve_battery;
 pub mod consume;
 pub mod coolheaded;
+pub mod core_surge;
 pub mod darkness;
 pub mod defend_blue;
 pub mod defragment;
