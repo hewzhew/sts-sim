@@ -16,6 +16,56 @@ impl Reptomancer {
     pub const DAGGER_DRAW_X: [i32; 4] = [210, -220, 180, -250];
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spawn_dagger_reuses_escaped_dagger_slot_like_java_is_dead_or_escaped() {
+        let reptomancer = crate::test_support::test_monster(EnemyId::Reptomancer);
+        let mut escaped_dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        escaped_dagger.id = 2;
+        escaped_dagger.logical_position = Reptomancer::DAGGER_DRAW_X[0];
+        escaped_dagger.is_escaped = true;
+        escaped_dagger.is_dying = false;
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![reptomancer.clone(), escaped_dagger]);
+
+        let actions = Reptomancer::take_turn_plan(&mut state, &reptomancer, &spawn_dagger_plan());
+
+        assert!(
+            actions.iter().any(|action| matches!(
+                action,
+                Action::SpawnMonsterSmart {
+                    monster_id: EnemyId::SnakeDagger,
+                    logical_position: x,
+                    ..
+                } if *x == Reptomancer::DAGGER_DRAW_X[0]
+            )),
+            "Java Reptomancer checks dagger slot availability with isDeadOrEscaped()"
+        );
+    }
+
+    #[test]
+    fn death_cleanup_suicides_zero_hp_or_escaped_non_dying_minions_like_java() {
+        let reptomancer = crate::test_support::test_monster(EnemyId::Reptomancer);
+        let mut dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        dagger.id = 2;
+        dagger.current_hp = 0;
+        dagger.is_dying = false;
+        dagger.is_escaped = true;
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![reptomancer.clone(), dagger]);
+
+        let actions = Reptomancer::on_death(&mut state, &reptomancer);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Suicide { target: 2 }]
+        ));
+    }
+}
+
 const SNAKE_STRIKE: u8 = 1;
 const SPAWN_DAGGER: u8 = 2;
 const BIG_BITE: u8 = 3;
@@ -127,6 +177,8 @@ fn occupied_dagger_slots(state: &CombatState, reptomancer_id: usize) -> [bool; 4
     for monster in &state.entities.monsters {
         if monster.id == reptomancer_id
             || monster.is_dying
+            || monster.is_escaped
+            || monster.half_dead
             || EnemyId::from_id(monster.monster_type) != Some(EnemyId::SnakeDagger)
         {
             continue;
@@ -259,7 +311,7 @@ impl MonsterBehavior for Reptomancer {
             .entities
             .monsters
             .iter()
-            .filter(|monster| monster.id != entity.id && !monster.is_dying && !monster.is_escaped)
+            .filter(|monster| monster.id != entity.id && !monster.is_dying)
             .map(|monster| Action::Suicide { target: monster.id })
             .collect()
     }

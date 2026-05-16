@@ -14,6 +14,39 @@ pub struct SnakeDagger;
 const WOUND: u8 = 1;
 const EXPLODE: u8 = 2;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn explode_uses_lose_hp_action_not_suicide_like_java() {
+        let mut dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        dagger.current_hp = 7;
+        let mut state = crate::test_support::combat_with_monsters(vec![dagger.clone()]);
+
+        let actions = SnakeDagger::take_turn_plan(&mut state, &dagger, &explode_plan());
+
+        assert!(
+            actions.iter().any(|action| matches!(
+                action,
+                Action::LoseHp {
+                    target: 1,
+                    amount: 7,
+                    ..
+                }
+            )),
+            "Java SnakeDagger explode queues LoseHPAction(this, this, currentHealth)"
+        );
+        assert!(
+            !actions
+                .iter()
+                .any(|action| matches!(action, Action::Suicide { target: 1 })),
+            "SuicideAction bypasses the Java monster damage/death pipeline"
+        );
+    }
+}
+
 fn wound_plan() -> MonsterTurnPlan {
     let wound = AddCardStep {
         card_id: CardId::Wound,
@@ -107,7 +140,11 @@ impl MonsterBehavior for SnakeDagger {
             }
             (EXPLODE, [MoveStep::Attack(attack), MoveStep::Suicide]) => {
                 let mut actions = attack_actions(entity.id, PLAYER, &attack.attack);
-                actions.push(Action::Suicide { target: entity.id });
+                actions.push(Action::LoseHp {
+                    target: entity.id,
+                    amount: entity.current_hp,
+                    triggers_rupture: false,
+                });
                 actions
             }
             (move_id, steps) => panic!("snake dagger plan/steps mismatch: {} {:?}", move_id, steps),

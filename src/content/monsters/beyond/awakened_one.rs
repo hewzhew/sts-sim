@@ -19,6 +19,27 @@ const DARK_ECHO: u8 = 5;
 const SLUDGE: u8 = 6;
 const TACKLE: u8 = 8;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn final_death_escapes_zero_hp_or_escaped_cultists_like_java() {
+        let awakened = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        let mut cultist = crate::test_support::test_monster(EnemyId::Cultist);
+        cultist.id = 2;
+        cultist.current_hp = 0;
+        cultist.is_dying = false;
+        cultist.is_escaped = true;
+        let mut state = crate::test_support::combat_with_monsters(vec![awakened.clone(), cultist]);
+
+        let actions = AwakenedOne::on_death(&mut state, &awakened);
+
+        assert!(matches!(actions.as_slice(), [Action::Escape { target: 2 }]));
+    }
+}
+
 fn current_runtime(entity: &MonsterEntity) -> (bool, bool) {
     (entity.awakened_one.form1, entity.awakened_one.first_turn)
 }
@@ -299,8 +320,6 @@ impl MonsterBehavior for AwakenedOne {
             .filter(|monster| {
                 monster.id != entity.id
                     && !monster.is_dying
-                    && !monster.is_escaped
-                    && monster.current_hp > 0
                     && crate::content::monsters::EnemyId::from_id(monster.monster_type)
                         == Some(crate::content::monsters::EnemyId::Cultist)
             })
