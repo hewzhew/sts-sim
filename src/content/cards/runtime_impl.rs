@@ -109,6 +109,8 @@ pub fn resolve_card_play_with_context(
         CardId::Impulse => defect::impulse::impulse_play(_state, _card),
         CardId::MachineLearning => defect::machine_learning::machine_learning_play(_state, _card),
         CardId::StaticDischarge => defect::static_discharge::static_discharge_play(_state, _card),
+        CardId::Heatsinks => defect::heatsinks::heatsinks_play(_state, _card),
+        CardId::Storm => defect::storm::storm_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),

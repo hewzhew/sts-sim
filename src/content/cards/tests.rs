@@ -3869,6 +3869,153 @@ fn static_discharge_definition_runtime_and_on_attacked_hook_match_java_sources()
 }
 
 #[test]
+fn heatsinks_and_storm_power_use_card_hooks_match_java_queue_order() {
+    let heatsinks = get_card_definition(CardId::Heatsinks);
+    assert_eq!(heatsinks.name, "Heatsinks");
+    assert_eq!(heatsinks.card_type, CardType::Power);
+    assert_eq!(heatsinks.rarity, CardRarity::Uncommon);
+    assert_eq!(heatsinks.cost, 1);
+    assert_eq!(heatsinks.base_magic, 1);
+    assert_eq!(heatsinks.target, CardTarget::SelfTarget);
+    assert_eq!(heatsinks.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Heatsinks), "Heatsinks");
+
+    let storm = get_card_definition(CardId::Storm);
+    assert_eq!(storm.name, "Storm");
+    assert_eq!(storm.card_type, CardType::Power);
+    assert_eq!(storm.rarity, CardRarity::Uncommon);
+    assert_eq!(storm.cost, 1);
+    assert_eq!(storm.base_magic, 1);
+    assert_eq!(storm.target, CardTarget::SelfTarget);
+    assert_eq!(java_id(CardId::Storm), "Storm");
+
+    let state = crate::test_support::blank_test_combat();
+    assert_eq!(
+        resolve_card_play(
+            CardId::Heatsinks,
+            &state,
+            &CombatCard::new(CardId::Heatsinks, 337),
+            None,
+        )[0]
+        .action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Heatsink,
+            amount: 1,
+        }
+    );
+    let mut heatsinks_plus = CombatCard::new(CardId::Heatsinks, 338);
+    heatsinks_plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::Heatsinks, &state, &heatsinks_plus, None)[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Heatsink,
+            amount: 2,
+        }
+    );
+
+    assert_eq!(
+        resolve_card_play(
+            CardId::Storm,
+            &state,
+            &CombatCard::new(CardId::Storm, 339),
+            None,
+        )[0]
+        .action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Storm,
+            amount: 1,
+        }
+    );
+    let mut storm_plus = CombatCard::new(CardId::Storm, 340);
+    storm_plus.upgrades = 1;
+    assert!(
+        is_innate_card(&storm_plus),
+        "Java Storm+ changes innate only; StormPower amount remains 1"
+    );
+
+    let mut heatsink_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut heatsink_state,
+        0,
+        vec![Power {
+            power_type: PowerId::Heatsink,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::PlayCardDirect {
+            card: Box::new(CombatCard::new(CardId::Defragment, 341)),
+            target: None,
+            purge: false,
+        },
+        &mut heatsink_state,
+    );
+    assert_eq!(
+        heatsink_state.pop_next_action(),
+        Some(Action::DrawCards(2)),
+        "Java HeatsinkPower.addToTop draws before the played power's queued ApplyPowerAction"
+    );
+    assert_eq!(
+        heatsink_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: 1,
+        })
+    );
+
+    let mut storm_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut storm_state,
+        0,
+        vec![Power {
+            power_type: PowerId::Storm,
+            instance_id: None,
+            amount: 2,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::PlayCardDirect {
+            card: Box::new(CombatCard::new(CardId::Defragment, 342)),
+            target: None,
+            purge: false,
+        },
+        &mut storm_state,
+    );
+    assert_eq!(
+        storm_state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: 1,
+        })
+    );
+    assert_eq!(
+        storm_state.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning))
+    );
+    assert_eq!(
+        storm_state.pop_next_action(),
+        Some(Action::ChannelOrb(OrbId::Lightning))
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

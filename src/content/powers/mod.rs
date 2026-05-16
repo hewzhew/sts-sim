@@ -85,6 +85,8 @@ pub enum PowerId {
     Bias,
     Loop,
     StaticDischarge,
+    Heatsink,
+    Storm,
     // Colorless card powers
     MagnetismPower,
     MayhemPower,
@@ -522,6 +524,11 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Static Discharge",
         },
+        PowerId::Heatsink => PowerDefinition {
+            id,
+            name: "Heatsink",
+        },
+        PowerId::Storm => PowerDefinition { id, name: "Storm" },
         PowerId::MagnetismPower => PowerDefinition {
             id,
             name: "Magnetism",
@@ -654,6 +661,14 @@ pub fn resolve_power_on_use_card(
         PowerId::DoubleTap => ironclad::double_tap::on_use_card(state, card, purge, target),
         PowerId::DuplicationPower => {
             core::duplication_power::on_use_card(state, card, purge, target)
+        }
+        PowerId::Heatsink => {
+            let amount = store::power_amount(state, 0, PowerId::Heatsink);
+            defect::heatsink::on_use_card(state, card, amount);
+        }
+        PowerId::Storm => {
+            let amount = store::power_amount(state, 0, PowerId::Storm);
+            defect::storm::on_use_card(state, card, amount);
         }
         PowerId::Burst => silent::burst::on_use_card(state, card, purge, target),
         PowerId::PenNibPower => {

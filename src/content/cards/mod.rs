@@ -280,6 +280,8 @@ pub enum CardId {
     Impulse,
     MachineLearning,
     StaticDischarge,
+    Heatsinks,
+    Storm,
     // Add more as we expand
 }
 
@@ -430,6 +432,7 @@ pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
         || matches!(card.id, CardId::InfiniteBlades) && card.upgrades > 0
         || matches!(card.id, CardId::Chill) && card.upgrades > 0
         || matches!(card.id, CardId::MachineLearning) && card.upgrades > 0
+        || matches!(card.id, CardId::Storm) && card.upgrades > 0
 }
 
 pub fn get_card_definition(id: CardId) -> CardDefinition {
@@ -586,6 +589,8 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Impulse => defect::impulse::definition(),
         CardId::MachineLearning => defect::machine_learning::definition(),
         CardId::StaticDischarge => defect::static_discharge::definition(),
+        CardId::Heatsinks => defect::heatsinks::definition(),
+        CardId::Storm => defect::storm::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1292,6 +1297,8 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Impulse => "Impulse",
         CardId::MachineLearning => "Machine Learning",
         CardId::StaticDischarge => "Static Discharge",
+        CardId::Heatsinks => "Heatsinks",
+        CardId::Storm => "Storm",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1584,6 +1591,8 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Impulse,
         MachineLearning,
         StaticDischarge,
+        Heatsinks,
+        Storm,
         Neutralize,
         Survivor,
         Anger,

@@ -1656,7 +1656,9 @@ fn execute_played_card(
                 | PowerId::DuplicationPower
                 | PowerId::Burst
                 | PowerId::Corruption
+                | PowerId::Heatsink
                 | PowerId::PenNibPower
+                | PowerId::Storm
                 | PowerId::Vigor => {
                     crate::content::powers::resolve_power_on_use_card(
                         power.power_type,
