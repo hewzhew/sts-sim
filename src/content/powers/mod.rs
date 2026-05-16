@@ -1522,7 +1522,9 @@ pub fn resolve_power_on_attacked(
         }
         PowerId::CurlUp => core::curl_up::on_attacked(state, owner, damage, source, power_amount),
         // SharpHide: moved from on_attacked to on_card_played (Java uses onUseCard, not onAttacked)
-        PowerId::Flight => core::flight::on_attacked(state, owner, damage, source, power_amount),
+        PowerId::Flight => {
+            core::flight::on_attacked(state, owner, damage, source, damage_type, power_amount)
+        }
         PowerId::Malleable => core::malleable::on_attacked(state, owner, damage, power_amount),
         PowerId::StaticDischarge => {
             defect::static_discharge::on_attacked(owner, source, damage, damage_type, power_amount)
