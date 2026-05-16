@@ -273,6 +273,8 @@ pub enum CardId {
     CoreSurge,
     BiasedCognition,
     Loop,
+    MeteorStrike,
+    Hyperbeam,
     // Add more as we expand
 }
 
@@ -571,6 +573,8 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::CoreSurge => defect::core_surge::definition(),
         CardId::BiasedCognition => defect::biased_cognition::definition(),
         CardId::Loop => defect::loop_card::definition(),
+        CardId::MeteorStrike => defect::meteor_strike::definition(),
+        CardId::Hyperbeam => defect::hyperbeam::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1270,6 +1274,8 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::CoreSurge => "Core Surge",
         CardId::BiasedCognition => "Biased Cognition",
         CardId::Loop => "Loop",
+        CardId::MeteorStrike => "Meteor Strike",
+        CardId::Hyperbeam => "Hyperbeam",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1555,6 +1561,8 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         CoreSurge,
         BiasedCognition,
         Loop,
+        MeteorStrike,
+        Hyperbeam,
         Neutralize,
         Survivor,
         Anger,

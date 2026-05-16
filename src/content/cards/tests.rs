@@ -3403,6 +3403,140 @@ fn loop_definition_runtime_and_first_orb_trigger_match_java_sources() {
 }
 
 #[test]
+fn meteor_strike_definition_and_runtime_action_match_java_sources() {
+    let meteor = get_card_definition(CardId::MeteorStrike);
+    assert_eq!(meteor.name, "Meteor Strike");
+    assert_eq!(meteor.card_type, CardType::Attack);
+    assert_eq!(meteor.rarity, CardRarity::Rare);
+    assert_eq!(meteor.cost, 5);
+    assert_eq!(meteor.base_damage, 24);
+    assert_eq!(meteor.base_magic, 3);
+    assert_eq!(meteor.target, CardTarget::Enemy);
+    assert_eq!(meteor.upgrade_damage, 6);
+    assert_eq!(meteor.upgrade_magic, 0);
+    assert!(meteor.tags.contains(&CardTag::Strike));
+    assert_eq!(java_id(CardId::MeteorStrike), "Meteor Strike");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::MeteorStrike,
+        &state,
+        &CombatCard::new(CardId::MeteorStrike, 317),
+        Some(318),
+    );
+    assert_eq!(actions.len(), 4);
+    match &actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 318);
+            assert_eq!(info.base, 24);
+            assert_eq!(info.output, 24);
+            assert_eq!(info.damage_type, DamageType::Normal);
+        }
+        other => panic!("Meteor Strike should damage before channeling Plasma, got {other:?}"),
+    }
+    assert_eq!(actions[1].action, Action::ChannelOrb(OrbId::Plasma));
+    assert_eq!(actions[2].action, Action::ChannelOrb(OrbId::Plasma));
+    assert_eq!(actions[3].action, Action::ChannelOrb(OrbId::Plasma));
+
+    let mut plus = CombatCard::new(CardId::MeteorStrike, 319);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::MeteorStrike, &state, &plus, Some(318));
+    match &plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 30);
+            assert_eq!(info.output, 30);
+        }
+        other => panic!("Meteor Strike+ should still damage before Plasma, got {other:?}"),
+    }
+    assert_eq!(
+        plus_actions[1..]
+            .iter()
+            .map(|info| &info.action)
+            .collect::<Vec<_>>(),
+        vec![
+            &Action::ChannelOrb(OrbId::Plasma),
+            &Action::ChannelOrb(OrbId::Plasma),
+            &Action::ChannelOrb(OrbId::Plasma),
+        ],
+        "Java Meteor Strike upgrades damage only; it still channels exactly three Plasma"
+    );
+}
+
+#[test]
+fn hyperbeam_definition_and_runtime_action_match_java_sources() {
+    let hyperbeam = get_card_definition(CardId::Hyperbeam);
+    assert_eq!(hyperbeam.name, "Hyperbeam");
+    assert_eq!(hyperbeam.card_type, CardType::Attack);
+    assert_eq!(hyperbeam.rarity, CardRarity::Rare);
+    assert_eq!(hyperbeam.cost, 2);
+    assert_eq!(hyperbeam.base_damage, 26);
+    assert_eq!(hyperbeam.base_magic, 3);
+    assert_eq!(hyperbeam.target, CardTarget::AllEnemy);
+    assert!(hyperbeam.is_multi_damage);
+    assert_eq!(hyperbeam.upgrade_damage, 8);
+    assert_eq!(hyperbeam.upgrade_magic, 0);
+    assert_eq!(java_id(CardId::Hyperbeam), "Hyperbeam");
+
+    let mut state = crate::test_support::blank_test_combat();
+    let mut first = crate::test_support::test_monster(EnemyId::JawWorm);
+    first.id = 320;
+    let mut second = crate::test_support::test_monster(EnemyId::Cultist);
+    second.id = 321;
+    state.entities.monsters = vec![first, second];
+
+    let actions = resolve_card_play(
+        CardId::Hyperbeam,
+        &state,
+        &CombatCard::new(CardId::Hyperbeam, 322),
+        None,
+    );
+    assert_eq!(actions.len(), 2);
+    match &actions[0].action {
+        Action::DamageAllEnemies {
+            source,
+            damages,
+            damage_type,
+            is_modified,
+        } => {
+            assert_eq!(*source, 0);
+            assert_eq!(damages.as_slice(), &[26, 26]);
+            assert_eq!(*damage_type, DamageType::Normal);
+            assert!(!is_modified);
+        }
+        other => panic!("Hyperbeam should damage all enemies first, got {other:?}"),
+    }
+    assert_eq!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: -3,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::Hyperbeam, 323);
+    plus.upgrades = 1;
+    let plus_actions = resolve_card_play(CardId::Hyperbeam, &state, &plus, None);
+    match &plus_actions[0].action {
+        Action::DamageAllEnemies { damages, .. } => {
+            assert_eq!(damages.as_slice(), &[34, 34]);
+        }
+        other => panic!("Hyperbeam+ should damage all enemies first, got {other:?}"),
+    }
+    assert_eq!(
+        plus_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: -3,
+        },
+        "Java Hyperbeam upgrades damage only; Focus loss remains 3"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;
