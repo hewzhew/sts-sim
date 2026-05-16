@@ -34,6 +34,7 @@ pub enum SelectionReason {
     SkillFromDeckToHand,
     AttackFromDeckToHand,
     DiscardToHand,
+    DiscardToHandNoCostChange,
     Discovery,
 }
 

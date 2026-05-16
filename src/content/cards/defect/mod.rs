@@ -5,6 +5,7 @@ pub mod conserve_battery;
 pub mod coolheaded;
 pub mod defend_blue;
 pub mod dualcast;
+pub mod hologram;
 pub mod leap;
 pub mod strike_blue;
 pub mod sweeping_beam;

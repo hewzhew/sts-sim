@@ -381,7 +381,11 @@ pub fn tick_engine(
                     if available == 0 {
                         let legal_empty_fizzle = min == 0
                             || (source_pile == crate::state::PileType::Discard
-                                && reason == crate::state::GridSelectReason::DiscardToHand);
+                                && matches!(
+                                    reason,
+                                    crate::state::GridSelectReason::DiscardToHand
+                                        | crate::state::GridSelectReason::DiscardToHandNoCostChange
+                                ));
                         record_engine_diagnostic(
                             combat_state,
                             EngineDiagnostic {

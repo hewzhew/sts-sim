@@ -398,8 +398,10 @@ pub fn handle_grid_select(
                 return Err("Too many cards selected");
             }
             match reason {
-                GridSelectReason::DiscardToHand => {
-                    // Java BetterDiscardPileToHandAction: move from discard to hand, setCostForTurn(0)
+                GridSelectReason::DiscardToHand | GridSelectReason::DiscardToHandNoCostChange => {
+                    // Java BetterDiscardPileToHandAction has both cost-preserving
+                    // and setCostForTurn(newCost) constructors. Liquid Memories
+                    // uses the cost-setting path; Hologram does not.
                     if !matches!(source_pile, PileType::Discard) {
                         return Err("Discard-to-hand selection must source from discard pile");
                     }
@@ -415,7 +417,9 @@ pub fn handle_grid_select(
                                 .position(|c| c.uuid == *uuid)
                                 .expect("validated discard-to-hand selection must still exist");
                             let mut card = combat_state.zones.discard_pile.remove(pos);
-                            card.set_cost_for_turn_java(0);
+                            if reason == GridSelectReason::DiscardToHand {
+                                card.set_cost_for_turn_java(0);
+                            }
                             combat_state.zones.hand.push(card);
                         }
                     }
@@ -892,6 +896,45 @@ mod tests {
             vec![20],
             "Java leaves selected discard cards in discard when the hand is full"
         );
+    }
+
+    #[test]
+    fn discard_to_hand_no_cost_change_preserves_cost_for_hologram_style_selection() {
+        let mut engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+                source_pile: PileType::Discard,
+                candidate_uuids: vec![21],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: GridSelectReason::DiscardToHandNoCostChange,
+            });
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 21)];
+
+        handle_grid_select(
+            &mut engine_state,
+            &mut combat_state,
+            &[21],
+            PileType::Discard,
+            1,
+            1,
+            false,
+            GridSelectReason::DiscardToHandNoCostChange,
+            ClientInput::SubmitGridSelect(vec![21]),
+        )
+        .expect("Hologram-style discard-to-hand selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert!(combat_state.zones.discard_pile.is_empty());
+        assert_eq!(combat_state.zones.hand.len(), 1);
+        assert_eq!(combat_state.zones.hand[0].id, CardId::Bash);
+        assert_eq!(
+            combat_state.zones.hand[0].cost_for_turn_java(),
+            2,
+            "Hologram's BetterDiscardPileToHandAction constructor does not set a new cost"
+        );
+        assert_eq!(combat_state.zones.hand[0].cost_for_turn, None);
     }
 
     #[test]

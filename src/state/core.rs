@@ -151,9 +151,10 @@ pub enum HandSelectFilter {
 pub enum GridSelectReason {
     MoveToDrawPile,
     Exhume { upgrade: bool },
-    SkillFromDeckToHand,  // SecretTechnique: pick Skill from draw → hand
-    AttackFromDeckToHand, // SecretWeapon: pick Attack from draw → hand
-    DiscardToHand,        // LiquidMemories: pick from discard → hand (cost 0)
+    SkillFromDeckToHand,       // SecretTechnique: pick Skill from draw → hand
+    AttackFromDeckToHand,      // SecretWeapon: pick Attack from draw → hand
+    DiscardToHand,             // LiquidMemories: pick from discard → hand (cost 0)
+    DiscardToHandNoCostChange, // Hologram: pick from discard → hand without changing cost
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -264,6 +265,9 @@ impl From<GridSelectReason> for SelectionReason {
             GridSelectReason::SkillFromDeckToHand => SelectionReason::SkillFromDeckToHand,
             GridSelectReason::AttackFromDeckToHand => SelectionReason::AttackFromDeckToHand,
             GridSelectReason::DiscardToHand => SelectionReason::DiscardToHand,
+            GridSelectReason::DiscardToHandNoCostChange => {
+                SelectionReason::DiscardToHandNoCostChange
+            }
         }
     }
 }

@@ -59,6 +59,7 @@ pub fn resolve_card_play_with_context(
         CardId::Leap => defect::leap::leap_play(_state, _card),
         CardId::Turbo => defect::turbo::turbo_play(_state, _card),
         CardId::SweepingBeam => defect::sweeping_beam::sweeping_beam_play(_state, _card),
+        CardId::Hologram => defect::hologram::hologram_play(_state, _card),
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
@@ -598,6 +599,7 @@ pub fn exhausts_when_played(card: &CombatCard) -> bool {
         CardId::SecretTechnique => card.upgrades == 0,
         CardId::SecretWeapon => card.upgrades == 0,
         CardId::ThinkingAhead => card.upgrades == 0,
+        CardId::Hologram => card.upgrades == 0,
         _ => get_card_definition(card.id).exhaust,
     }
 }

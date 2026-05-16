@@ -462,6 +462,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Hologram,
+            "Hologram",
+            CardType::Skill,
+            1,
+            0,
+            3,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            2,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -669,6 +682,48 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
         other => panic!("Sweeping Beam+ first action should damage all enemies, got {other:?}"),
     }
     assert_eq!(sweeping_plus_actions[1].action, Action::DrawCards(1));
+
+    let hologram = resolve_card_play(
+        CardId::Hologram,
+        &state,
+        &CombatCard::new(CardId::Hologram, 120),
+        None,
+    );
+    assert_eq!(hologram.len(), 2);
+    assert_eq!(
+        hologram[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 3,
+        }
+    );
+    assert_eq!(
+        hologram[1].action,
+        Action::SuspendForGridSelect {
+            source_pile: crate::state::PileType::Discard,
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::GridSelectFilter::Any,
+            reason: crate::state::GridSelectReason::DiscardToHandNoCostChange,
+        }
+    );
+    assert!(exhausts_when_played(&CombatCard::new(
+        CardId::Hologram,
+        121
+    )));
+
+    let mut hologram_plus = CombatCard::new(CardId::Hologram, 122);
+    hologram_plus.upgrades = 1;
+    let hologram_plus_actions = resolve_card_play(CardId::Hologram, &state, &hologram_plus, None);
+    assert_eq!(
+        hologram_plus_actions[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 5,
+        }
+    );
+    assert!(!exhausts_when_played(&hologram_plus));
 }
 
 #[test]
