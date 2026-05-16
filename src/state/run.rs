@@ -361,6 +361,39 @@ impl RunState {
         next_state
     }
 
+    pub fn obtain_relic_at_with_source(
+        &mut self,
+        relic_id: crate::content::relics::RelicId,
+        index: usize,
+        return_state: crate::state::core::EngineState,
+        source: DomainEventSource,
+    ) -> Option<crate::state::core::EngineState> {
+        if relic_id == crate::content::relics::RelicId::Circlet {
+            if let Some(circlet) = self
+                .relics
+                .iter_mut()
+                .find(|relic| relic.id == crate::content::relics::RelicId::Circlet)
+            {
+                circlet.counter += 1;
+                self.emit_event(DomainEvent::RelicObtained { relic_id, source });
+                return None;
+            }
+        }
+
+        let previous_gold = self.gold;
+        let previous_hp = self.current_hp;
+        let previous_max_hp = self.max_hp;
+        let insert_index = index.min(self.relics.len());
+        self.relics.insert(
+            insert_index,
+            crate::content::relics::RelicState::new(relic_id),
+        );
+        self.emit_event(DomainEvent::RelicObtained { relic_id, source });
+        let next_state = crate::engine::relic_manager::on_equip(self, relic_id, return_state);
+        self.emit_run_resource_diffs(previous_gold, previous_hp, previous_max_hp, source);
+        next_state
+    }
+
     pub fn remove_relic_at_with_source(
         &mut self,
         index: usize,

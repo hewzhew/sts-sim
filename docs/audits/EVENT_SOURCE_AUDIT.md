@@ -316,6 +316,34 @@ Tests:
 - `trade_obtains_face_relic_through_event_source_pipeline`
 - `trade_grants_circlet_when_all_face_relics_are_owned`
 
+### Forgotten Altar relic swap and blood choice
+
+Java `events/city/ForgottenAltar.java` has two easy-to-misread mechanics:
+
+- `gainChalice()` replaces `Golden Idol` at its original relic index with
+  `Bloody Idol` only if the player does not already have `Bloody Idol`.
+  If `Bloody Idol` is already owned, Java grants `Circlet` and does not remove
+  `Golden Idol`.
+- `Shed Blood` calls `increaseMaxHp(5, false)` and then
+  `damage(new DamageInfo(null, hpLoss))`. Despite the `false` argument,
+  Java `increaseMaxHp` still calls `heal(amount, true)`.
+
+Fixes:
+
+- Added `RunState::obtain_relic_at_with_source` for Java-style indexed relic
+  insertion/replacement while preserving on-equip hooks and domain events.
+- `Forgotten Altar` now replaces `Golden Idol` with `Bloody Idol` at the same
+  slot, or grants `Circlet` when `Bloody Idol` is already owned.
+- `Shed Blood` now gains max HP through `gain_max_hp_with_source` and then
+  applies sourced normal damage with the Java `Tungsten Rod` reduction path.
+
+Tests:
+
+- `offering_golden_idol_replaces_same_relic_slot_with_bloody_idol`
+- `offering_golden_idol_with_existing_bloody_idol_grants_circlet_without_losing_idol`
+- `shed_blood_increases_max_hp_then_heals_then_takes_java_damage`
+- `shed_blood_damage_respects_tungsten_after_max_hp_heal`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -523,11 +551,11 @@ Validation:
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
-  that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`, and
-  `FaceTrader` are now covered; the remaining direct writes should be handled
-  event-by-event against Java source.
+  that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`,
+  `FaceTrader`, and `ForgottenAltar` are now covered; the remaining direct
+  writes should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `814 passed`.
+- Current result after this pass: `818 passed`.

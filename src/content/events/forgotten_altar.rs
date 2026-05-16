@@ -1,11 +1,12 @@
 use crate::content::cards::CardId;
-use crate::content::relics::{RelicId, RelicState};
+use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::events::{
     EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
@@ -113,7 +114,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         .collect()
 }
 
-pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
+pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
     let mut event_state = run_state.event_state.take().unwrap();
 
     match event_state.current_screen {
@@ -121,18 +122,37 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             match choice_idx {
                 0 => {
                     // Trade Golden Idol for Bloody Idol
+                    let source = DomainEventSource::Event(EventId::ForgottenAltar);
                     if let Some(pos) = run_state
                         .relics
                         .iter()
                         .position(|r| r.id == RelicId::GoldenIdol)
                     {
-                        run_state.relics.remove(pos);
-                        run_state.relics.push(RelicState::new(RelicId::BloodyIdol));
+                        if run_state.relics.iter().any(|r| r.id == RelicId::BloodyIdol) {
+                            if let Some(next_state) = run_state.obtain_relic_with_source(
+                                RelicId::Circlet,
+                                EngineState::EventRoom,
+                                source,
+                            ) {
+                                *engine_state = next_state;
+                            }
+                        } else {
+                            let _ = run_state.remove_relic_at_with_source(pos, source);
+                            if let Some(next_state) = run_state.obtain_relic_at_with_source(
+                                RelicId::BloodyIdol,
+                                pos,
+                                EngineState::EventRoom,
+                                source,
+                            ) {
+                                *engine_state = next_state;
+                            }
+                        }
                     }
                     event_state.current_screen = 1;
                 }
                 1 => {
                     // +5 Max HP, lose HP
+                    let source = DomainEventSource::Event(EventId::ForgottenAltar);
                     let hp_loss_pct = if run_state.ascension_level >= 15 {
                         0.35
                     } else {
@@ -147,8 +167,8 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     {
                         hp_loss = (hp_loss - 1).max(0);
                     }
-                    run_state.max_hp += 5;
-                    run_state.current_hp = (run_state.current_hp - hp_loss).max(0);
+                    run_state.gain_max_hp_with_source(5, 5, source);
+                    run_state.change_hp_with_source(-hp_loss, source);
                     event_state.current_screen = 1;
                 }
                 _ => {
@@ -164,4 +184,145 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    fn forgotten_altar_run() -> RunState {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 50;
+        run_state.max_hp = 80;
+        run_state.event_state = Some(EventState::new(EventId::ForgottenAltar));
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    #[test]
+    fn offering_golden_idol_replaces_same_relic_slot_with_bloody_idol() {
+        let mut run_state = forgotten_altar_run();
+        run_state.relics.push(RelicState::new(RelicId::GoldenIdol));
+        run_state.relics.push(RelicState::new(RelicId::Anchor));
+        let golden_slot = run_state
+            .relics
+            .iter()
+            .position(|relic| relic.id == RelicId::GoldenIdol)
+            .unwrap();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.relics[golden_slot].id, RelicId::BloodyIdol);
+        assert!(run_state
+            .relics
+            .iter()
+            .all(|relic| relic.id != RelicId::GoldenIdol));
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicLost {
+                relic_id: RelicId::GoldenIdol,
+                source: DomainEventSource::Event(EventId::ForgottenAltar),
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicObtained {
+                relic_id: RelicId::BloodyIdol,
+                source: DomainEventSource::Event(EventId::ForgottenAltar),
+            }
+        )));
+    }
+
+    #[test]
+    fn offering_golden_idol_with_existing_bloody_idol_grants_circlet_without_losing_idol() {
+        let mut run_state = forgotten_altar_run();
+        run_state.relics.push(RelicState::new(RelicId::GoldenIdol));
+        run_state.relics.push(RelicState::new(RelicId::BloodyIdol));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::GoldenIdol));
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::BloodyIdol));
+        assert_eq!(run_state.relics.last().unwrap().id, RelicId::Circlet);
+        let events = run_state.take_emitted_events();
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicLost {
+                relic_id: RelicId::GoldenIdol,
+                ..
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicObtained {
+                relic_id: RelicId::Circlet,
+                source: DomainEventSource::Event(EventId::ForgottenAltar),
+            }
+        )));
+    }
+
+    #[test]
+    fn shed_blood_increases_max_hp_then_heals_then_takes_java_damage() {
+        let mut run_state = forgotten_altar_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.max_hp, 85);
+        assert_eq!(run_state.current_hp, 35);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::MaxHpChanged {
+                delta: 5,
+                current_hp: 55,
+                max_hp: 85,
+                source: DomainEventSource::Event(EventId::ForgottenAltar),
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: 5,
+                current_hp: 55,
+                max_hp: 85,
+                source: DomainEventSource::Event(EventId::ForgottenAltar),
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -20,
+                current_hp: 35,
+                max_hp: 85,
+                source: DomainEventSource::Event(EventId::ForgottenAltar),
+            }
+        )));
+    }
+
+    #[test]
+    fn shed_blood_damage_respects_tungsten_after_max_hp_heal() {
+        let mut run_state = forgotten_altar_run();
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.max_hp, 85);
+        assert_eq!(run_state.current_hp, 36);
+    }
 }
