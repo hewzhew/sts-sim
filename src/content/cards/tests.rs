@@ -5287,8 +5287,7 @@ fn thinking_ahead_uses_java_use_time_hand_visibility() {
 fn discard_cards_queue_java_discard_action_instead_of_prechecking_hand() {
     let empty_state = crate::test_support::blank_test_combat();
 
-    let mut acrobatics = CombatCard::new(CardId::Acrobatics, 840);
-    acrobatics.base_magic_num_mut = 3;
+    let acrobatics = CombatCard::new(CardId::Acrobatics, 840);
     let acrobatics_actions = resolve_card_play(CardId::Acrobatics, &empty_state, &acrobatics, None);
     assert_eq!(acrobatics_actions.len(), 2);
     assert!(matches!(acrobatics_actions[0].action, Action::DrawCards(3)));
@@ -5300,6 +5299,20 @@ fn discard_cards_queue_java_discard_action_instead_of_prechecking_hand() {
             end_turn: false,
         },
         "Java Acrobatics.use always queues DiscardAction after DrawCardAction; it does not precheck the hand before drawing"
+    );
+
+    let mut acrobatics_plus = CombatCard::new(CardId::Acrobatics, 8440);
+    acrobatics_plus.upgrades = 1;
+    let acrobatics_plus_actions =
+        resolve_card_play(CardId::Acrobatics, &empty_state, &acrobatics_plus, None);
+    assert_eq!(acrobatics_plus_actions[0].action, Action::DrawCards(4));
+    assert_eq!(
+        acrobatics_plus_actions[1].action,
+        Action::DiscardFromHand {
+            amount: 1,
+            random: false,
+            end_turn: false,
+        }
     );
 
     let survivor = CombatCard::new(CardId::Survivor, 841);
@@ -5314,10 +5327,22 @@ fn discard_cards_queue_java_discard_action_instead_of_prechecking_hand() {
         }
     );
 
+    let prepared = CombatCard::new(CardId::Prepared, 8441);
+    let prepared_base_actions = resolve_card_play(CardId::Prepared, &empty_state, &prepared, None);
+    assert_eq!(prepared_base_actions[0].action, Action::DrawCards(1));
+    assert_eq!(
+        prepared_base_actions[1].action,
+        Action::DiscardFromHand {
+            amount: 1,
+            random: false,
+            end_turn: false,
+        }
+    );
+
     let mut prepared_plus = CombatCard::new(CardId::Prepared, 842);
     prepared_plus.upgrades = 1;
-    prepared_plus.base_magic_num_mut = 2;
     let prepared_actions = resolve_card_play(CardId::Prepared, &empty_state, &prepared_plus, None);
+    assert_eq!(prepared_actions[0].action, Action::DrawCards(2));
     assert_eq!(
         prepared_actions[1].action,
         Action::DiscardFromHand {
@@ -8110,17 +8135,44 @@ fn corpse_explosion_matches_java_poison_then_death_power() {
         1
     ));
 
+    let corpse_base = CombatCard::new(CardId::CorpseExplosion, 10090);
+    let base_actions = resolve_card_play(
+        CardId::CorpseExplosion,
+        &crate::test_support::blank_test_combat(),
+        &corpse_base,
+        Some(1),
+    );
+    assert_eq!(base_actions.len(), 2);
+    assert_eq!(
+        base_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 1,
+            power_id: PowerId::Poison,
+            amount: 6,
+        }
+    );
+    assert_eq!(
+        base_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 1,
+            power_id: PowerId::CorpseExplosion,
+            amount: 1,
+        }
+    );
+
     let mut corpse_plus = CombatCard::new(CardId::CorpseExplosion, 1009);
-    corpse_plus.base_magic_num_mut = 9;
-    let actions = resolve_card_play(
+    corpse_plus.upgrades = 1;
+    let plus_actions = resolve_card_play(
         CardId::CorpseExplosion,
         &crate::test_support::blank_test_combat(),
         &corpse_plus,
         Some(1),
     );
-    assert_eq!(actions.len(), 2);
+    assert_eq!(plus_actions.len(), 2);
     assert_eq!(
-        actions[0].action,
+        plus_actions[0].action,
         Action::ApplyPower {
             source: 0,
             target: 1,
@@ -8129,7 +8181,7 @@ fn corpse_explosion_matches_java_poison_then_death_power() {
         }
     );
     assert_eq!(
-        actions[1].action,
+        plus_actions[1].action,
         Action::ApplyPower {
             source: 0,
             target: 1,
@@ -8290,17 +8342,35 @@ fn well_laid_plans_matches_java_retain_cards_power() {
         Some(&CardId::WellLaidPlans)
     );
 
+    let plans_base_card = CombatCard::new(CardId::WellLaidPlans, 10110);
+    let base_actions = resolve_card_play(
+        CardId::WellLaidPlans,
+        &crate::test_support::blank_test_combat(),
+        &plans_base_card,
+        None,
+    );
+    assert_eq!(base_actions.len(), 1);
+    assert_eq!(
+        base_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::RetainCards,
+            amount: 1,
+        }
+    );
+
     let mut plans_plus = CombatCard::new(CardId::WellLaidPlans, 1011);
-    plans_plus.base_magic_num_mut = 2;
-    let actions = resolve_card_play(
+    plans_plus.upgrades = 1;
+    let plus_actions = resolve_card_play(
         CardId::WellLaidPlans,
         &crate::test_support::blank_test_combat(),
         &plans_plus,
         None,
     );
-    assert_eq!(actions.len(), 1);
+    assert_eq!(plus_actions.len(), 1);
     assert_eq!(
-        actions[0].action,
+        plus_actions[0].action,
         Action::ApplyPower {
             source: 0,
             target: 0,
@@ -8407,18 +8477,27 @@ fn nightmare_matches_java_card_and_power_payload_flow() {
         Some(&CardId::Nightmare)
     );
 
+    let nightmare_base = CombatCard::new(CardId::Nightmare, 10120);
+    let base_actions = resolve_card_play(
+        CardId::Nightmare,
+        &crate::test_support::blank_test_combat(),
+        &nightmare_base,
+        None,
+    );
+    assert_eq!(base_actions.len(), 1);
+    assert_eq!(base_actions[0].action, Action::Nightmare { amount: 3 });
+
     let mut nightmare_plus = CombatCard::new(CardId::Nightmare, 1012);
     nightmare_plus.upgrades = 1;
-    nightmare_plus.base_magic_num_mut = 3;
     assert_eq!(upgraded_base_cost_override(&nightmare_plus), Some(2));
-    let actions = resolve_card_play(
+    let plus_actions = resolve_card_play(
         CardId::Nightmare,
         &crate::test_support::blank_test_combat(),
         &nightmare_plus,
         None,
     );
-    assert_eq!(actions.len(), 1);
-    assert_eq!(actions[0].action, Action::Nightmare { amount: 3 });
+    assert_eq!(plus_actions.len(), 1);
+    assert_eq!(plus_actions[0].action, Action::Nightmare { amount: 3 });
 
     let mut state = crate::test_support::blank_test_combat();
     let mut copied = CombatCard::new(CardId::Bash, 51);

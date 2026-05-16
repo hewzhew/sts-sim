@@ -317,12 +317,23 @@ def render_report(root: Path, matches_by_file: dict[str, list[Match]]) -> str:
             )
     lines.append("")
 
+    lines.extend(["## Immediate Recommendations", ""])
+    if grouped["test_masking_risk"]:
+        lines.append(
+            "1. Fix the `疑似测试掩盖风险` group first because tests may be asserting manually prepared transient fields rather than real play behavior."
+        )
+        lines.append(
+            "2. Then fix the `应改为 evaluate_card_for_play` group by making ordinary play functions evaluate locally before reading damage/block/magic."
+        )
+    else:
+        lines.append(
+            "1. The `疑似测试掩盖风险` group is empty; continue with the `应改为 evaluate_card_for_play` group."
+        )
+        lines.append(
+            "2. Make ordinary play functions evaluate locally before reading damage/block/magic."
+        )
     lines.extend(
         [
-            "## Immediate Recommendations",
-            "",
-            "1. Fix the `疑似测试掩盖风险` group first because tests may be asserting manually prepared transient fields rather than real play behavior.",
-            "2. Then fix the `应改为 evaluate_card_for_play` group by making ordinary play functions evaluate locally before reading damage/block/magic.",
             "3. Keep the `合理特殊升级` group as direct upgrade reads, but add comments/tests where the Java source passes `this.upgraded` directly to an action.",
             "4. Keep this script failing on unclassified files so future direct reads cannot silently enter Silent card code.",
             "",

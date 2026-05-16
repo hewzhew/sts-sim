@@ -1,6 +1,6 @@
 # Silent Card Upgrade Read Audit
 
-Generated: `2026-05-16 10:01:12`
+Generated: `2026-05-16 10:07:54`
 
 Command:
 
@@ -21,8 +21,8 @@ This report is an audit artifact only. It does not modify gameplay code.
 
 ## Summary
 
-- Files with direct reads: `23`
-- Direct read occurrences: `30`
+- Files with direct reads: `18`
+- Direct read occurrences: `24`
 - Unclassified files: `0`
 
 ## Category Definitions
@@ -61,19 +61,12 @@ This report is an audit artifact only. It does not modify gameplay code.
 
 ## 疑似测试掩盖风险
 
-| File | Fields | Lines | Reason | Recommendation |
-| --- | --- | --- | --- | --- |
-| `src/content/cards/silent/acrobatics.rs` | `base_magic_num_mut` | `src/content/cards/silent/acrobatics.rs:8` | 读取 card.base_magic_num_mut 决定抽牌数；当前测试里存在手动预填 acrobatics.base_magic_num_mut 的模式，可能绕过正常出牌前评价。 | 改为在 play 内调用 evaluate_card_for_play 或显式从 CardDefinition+upgrades 计算抽牌数；测试应避免手动预填 mutable 渲染字段。 |
-| `src/content/cards/silent/corpse_explosion.rs` | `base_magic_num_mut` | `src/content/cards/silent/corpse_explosion.rs:19` | 读取 card.base_magic_num_mut 作为 Poison amount；测试中存在 corpse_plus.base_magic_num_mut 手动预填，可能掩盖 play 路径未评价。 | 改为调用 evaluate_card_for_play(card, state, Some(target))；测试用 upgrades 表达升级，不要直接写 mutable magic。 |
-| `src/content/cards/silent/nightmare.rs` | `base_magic_num_mut` | `src/content/cards/silent/nightmare.rs:10` | 读取 card.base_magic_num_mut 作为复制数量；测试中存在 nightmare_plus.base_magic_num_mut 手动预填，可能掩盖正常 play 路径未评价。Java Nightmare+ 主要是费用变化，不应靠 mutable magic 预填。 | 改为使用 evaluate_card_for_play 或定义/literal helper；测试应断言升级费用而不是手写 mutable magic。 |
-| `src/content/cards/silent/prepared.rs` | `base_magic_num_mut` | `src/content/cards/silent/prepared.rs:8`, `src/content/cards/silent/prepared.rs:13` | 读取 card.base_magic_num_mut 决定抽牌和弃牌数；测试中存在 prepared_plus.base_magic_num_mut 手动预填，可能掩盖正常 play 路径未评价。 | 改为调用 evaluate_card_for_play(card, state, None) 或统一 magic helper；测试通过 upgrades 表达 Prepared+。 |
-| `src/content/cards/silent/well_laid_plans.rs` | `base_magic_num_mut` | `src/content/cards/silent/well_laid_plans.rs:12` | 读取 card.base_magic_num_mut 作为 RetainCards amount；测试中存在 plans_plus.base_magic_num_mut 手动预填，可能掩盖正常 play 路径未评价。 | 改为调用 evaluate_card_for_play(card, state, None)；测试通过 upgrades 表达 Well-Laid Plans+。 |
+No files.
 
 ## Raw Matches
 
 | File | Line | Field | Code |
 | --- | --- | --- | --- |
-| `src/content/cards/silent/acrobatics.rs` | 8 | `base_magic_num_mut` | `action: Action::DrawCards(card.base_magic_num_mut as u32),` |
 | `src/content/cards/silent/adrenaline.rs` | 9 | `upgrades` | `amount: if card.upgrades > 0 { 2 } else { 1 },` |
 | `src/content/cards/silent/adrenaline.rs` | 14 | `base_magic_num_mut` | `action: Action::DrawCards(card.base_magic_num_mut.max(0) as u32),` |
 | `src/content/cards/silent/backflip.rs` | 10 | `base_block_mut` | `amount: card.base_block_mut,` |
@@ -84,29 +77,24 @@ This report is an audit artifact only. It does not modify gameplay code.
 | `src/content/cards/silent/catalyst.rs` | 18 | `base_magic_num_mut` | `let extra = poison * (card.base_magic_num_mut - 1).max(1);` |
 | `src/content/cards/silent/cloak_and_dagger.rs` | 11 | `base_block_mut` | `amount: card.base_block_mut,` |
 | `src/content/cards/silent/cloak_and_dagger.rs` | 18 | `base_magic_num_mut` | `amount: card.base_magic_num_mut.max(0) as u8,` |
-| `src/content/cards/silent/corpse_explosion.rs` | 19 | `base_magic_num_mut` | `amount: card.base_magic_num_mut,` |
 | `src/content/cards/silent/dagger_throw.rs` | 20 | `base_damage_mut` | `output: card.base_damage_mut,` |
 | `src/content/cards/silent/dagger_throw.rs` | 22 | `base_damage_mut` | `is_modified: card.base_damage_mut != def.base_damage,` |
 | `src/content/cards/silent/deadly_poison.rs` | 17 | `base_magic_num_mut` | `amount: card.base_magic_num_mut,` |
 | `src/content/cards/silent/doppelganger.rs` | 8 | `upgrades` | `upgraded: card.upgrades > 0,` |
 | `src/content/cards/silent/footwork.rs` | 12 | `base_magic_num_mut` | `amount: card.base_magic_num_mut,` |
 | `src/content/cards/silent/malaise.rs` | 15 | `upgrades` | `upgraded: card.upgrades > 0,` |
-| `src/content/cards/silent/nightmare.rs` | 10 | `base_magic_num_mut` | `amount: card.base_magic_num_mut.max(0).min(u8::MAX as i32) as u8,` |
 | `src/content/cards/silent/noxious_fumes.rs` | 12 | `base_magic_num_mut` | `amount: card.base_magic_num_mut,` |
 | `src/content/cards/silent/poisoned_stab.rs` | 23 | `base_damage_mut` | `output: card.base_damage_mut,` |
 | `src/content/cards/silent/poisoned_stab.rs` | 25 | `base_damage_mut` | `is_modified: card.base_damage_mut != def.base_damage,` |
 | `src/content/cards/silent/poisoned_stab.rs` | 34 | `base_magic_num_mut` | `amount: card.base_magic_num_mut,` |
-| `src/content/cards/silent/prepared.rs` | 8 | `base_magic_num_mut` | `action: Action::DrawCards(card.base_magic_num_mut.max(0) as u32),` |
-| `src/content/cards/silent/prepared.rs` | 13 | `base_magic_num_mut` | `amount: card.base_magic_num_mut.max(0),` |
 | `src/content/cards/silent/reflex.rs` | 11 | `upgrades` | `let upgraded = if card.upgrades > 0 { 1 } else { 0 };` |
 | `src/content/cards/silent/storm_of_steel.rs` | 8 | `upgrades` | `upgraded: card.upgrades > 0,` |
 | `src/content/cards/silent/survivor.rs` | 10 | `base_block_mut` | `amount: card.base_block_mut,` |
 | `src/content/cards/silent/tactician.rs` | 11 | `upgrades` | `let upgraded = if card.upgrades > 0 { 1 } else { 0 };` |
-| `src/content/cards/silent/well_laid_plans.rs` | 12 | `base_magic_num_mut` | `amount: card.base_magic_num_mut,` |
 
 ## Immediate Recommendations
 
-1. Fix the `疑似测试掩盖风险` group first because tests may be asserting manually prepared transient fields rather than real play behavior.
-2. Then fix the `应改为 evaluate_card_for_play` group by making ordinary play functions evaluate locally before reading damage/block/magic.
+1. The `疑似测试掩盖风险` group is empty; continue with the `应改为 evaluate_card_for_play` group.
+2. Make ordinary play functions evaluate locally before reading damage/block/magic.
 3. Keep the `合理特殊升级` group as direct upgrade reads, but add comments/tests where the Java source passes `this.upgraded` directly to an action.
 4. Keep this script failing on unclassified files so future direct reads cannot silently enter Silent card code.
