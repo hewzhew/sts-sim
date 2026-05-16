@@ -2,7 +2,7 @@ use super::*;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, DamageInfo, DamageType, NO_SOURCE};
-use crate::runtime::combat::{CombatCard, DrawnCardRecord, OrbEntity, OrbId, Power};
+use crate::runtime::combat::{CombatCard, DrawnCardRecord, OrbEntity, OrbId, Power, StanceId};
 
 #[test]
 fn ironclad_starter_basic_definitions_match_java_sources() {
@@ -484,6 +484,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::ThirdEye, "ThirdEye"),
         (CardId::Prostrate, "Prostrate"),
         (CardId::WheelKick, "WheelKick"),
+        (CardId::InnerPeace, "InnerPeace"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -630,6 +631,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::InnerPeace,
+            "Inner Peace",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            3,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            1,
+        ),
     ];
 
     for (
@@ -674,6 +689,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_COMMON_POOL.contains(&CardId::Prostrate));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
 }
 
 #[test]
@@ -892,6 +908,38 @@ fn watcher_wheel_kick_runtime_actions_match_java_use_method() {
         other => panic!("Wheel Kick first action should be DamageAction, got {other:?}"),
     }
     assert_eq!(actions[1].action, Action::DrawCards(2));
+}
+
+#[test]
+fn watcher_inner_peace_runtime_action_reads_stance_when_it_resolves() {
+    let state = crate::test_support::blank_test_combat();
+    let mut inner_peace_plus = CombatCard::new(CardId::InnerPeace, 322);
+    inner_peace_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::InnerPeace, &state, &inner_peace_plus, None);
+
+    assert_eq!(
+        actions.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![&Action::InnerPeace { draw_amount: 4 }]
+    );
+
+    let mut calm_state = crate::test_support::blank_test_combat();
+    calm_state.entities.player.stance = StanceId::Calm;
+    crate::engine::action_handlers::execute_action(
+        Action::InnerPeace { draw_amount: 4 },
+        &mut calm_state,
+    );
+    assert_eq!(calm_state.pop_next_action(), Some(Action::DrawCards(4)));
+
+    let mut neutral_state = crate::test_support::blank_test_combat();
+    crate::engine::action_handlers::execute_action(
+        Action::InnerPeace { draw_amount: 4 },
+        &mut neutral_state,
+    );
+    assert_eq!(
+        neutral_state.pop_next_action(),
+        Some(Action::EnterStance("Calm".to_string()))
+    );
 }
 
 #[test]

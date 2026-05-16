@@ -336,6 +336,11 @@ pub enum Action {
     },
     LimitBreak,
     DrawCards(u32),
+    /// Java Watcher `InnerPeaceAction`: at execution time, draw if currently
+    /// in Calm; otherwise queue a Calm stance change.
+    InnerPeace {
+        draw_amount: u32,
+    },
     /// Java `CompileDriverAction`: at action execution time, draw
     /// `amount_per_orb_type` for each unique non-empty orb type.
     DrawForUniqueOrbTypes {

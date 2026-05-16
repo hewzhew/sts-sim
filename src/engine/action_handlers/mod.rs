@@ -407,6 +407,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
 
         // === Card domain ===
         Action::DrawCards(amount) => cards::handle_draw_cards(amount, state),
+        Action::InnerPeace { draw_amount } => handle_inner_peace(draw_amount, state),
         Action::DrawForUniqueOrbTypes {
             amount_per_orb_type,
         } => cards::handle_draw_for_unique_orb_types(amount_per_orb_type, state),
@@ -875,6 +876,14 @@ fn handle_redo_orb(state: &mut CombatState) {
     }
     state.queue_action_front(Action::ChannelOrbEntity { orb });
     state.queue_action_front(Action::EvokeOrb);
+}
+
+fn handle_inner_peace(draw_amount: u32, state: &mut CombatState) {
+    if state.entities.player.stance == crate::runtime::combat::StanceId::Calm {
+        state.queue_action_front(Action::DrawCards(draw_amount));
+    } else {
+        state.queue_action_front(Action::EnterStance("Calm".to_string()));
+    }
 }
 
 fn handle_enter_stance(stance: &str, state: &mut CombatState) {

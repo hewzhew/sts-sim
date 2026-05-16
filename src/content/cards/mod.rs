@@ -313,6 +313,7 @@ pub enum CardId {
     ThirdEye,
     Prostrate,
     WheelKick,
+    InnerPeace,
     // Add more as we expand
 }
 
@@ -659,6 +660,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::ThirdEye => watcher::third_eye::definition(),
         CardId::Prostrate => watcher::prostrate::definition(),
         CardId::WheelKick => watcher::wheel_kick::definition(),
+        CardId::InnerPeace => watcher::inner_peace::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1249,7 +1251,8 @@ pub const WATCHER_COMMON_POOL: &[CardId] = &[
     CardId::Prostrate,
 ];
 
-pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[CardId::EmptyMind, CardId::WheelKick];
+pub const WATCHER_UNCOMMON_POOL: &[CardId] =
+    &[CardId::EmptyMind, CardId::WheelKick, CardId::InnerPeace];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[];
 
@@ -1461,6 +1464,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::ThirdEye => "ThirdEye",
         CardId::Prostrate => "Prostrate",
         CardId::WheelKick => "WheelKick",
+        CardId::InnerPeace => "InnerPeace",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1857,6 +1861,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         ThirdEye,
         Prostrate,
         WheelKick,
+        InnerPeace,
         Neutralize,
         Survivor,
         Anger,
