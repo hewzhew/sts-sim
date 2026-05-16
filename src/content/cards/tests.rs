@@ -3097,12 +3097,12 @@ fn watcher_alpha_beta_omega_chain_matches_java_sources() {
     assert_eq!(
         end_turn[0],
         Action::DamageAllEnemies {
-            source: 0,
+            source: crate::runtime::action::NO_SOURCE,
             damages: smallvec::smallvec![60, 60],
             damage_type: DamageType::Thorns,
             is_modified: false,
         },
-        "Java OmegaPower.atEndOfTurn queues DamageAllEnemiesAction with THORNS damage"
+        "Java OmegaPower.atEndOfTurn queues DamageAllEnemiesAction(null, ...) with THORNS damage"
     );
 }
 

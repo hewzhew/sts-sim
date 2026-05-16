@@ -609,6 +609,7 @@ pub fn handle_wallop_damage(info: crate::runtime::action::DamageInfo, state: &mu
             amount: outcome.hp_lost,
         });
     }
+    clear_post_combat_actions_if_ready(state);
 }
 
 pub fn handle_damage_per_attack_played(
@@ -1587,6 +1588,51 @@ mod tests {
         assert!(
             matches!(state.pop_next_action(), Some(Action::Damage(_))),
             "Java PummelDamageAction calls clearPostCombatActions after a killing hit, retaining only Java-retained post-combat actions"
+        );
+        assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn wallop_damage_action_clears_post_combat_actions_after_killing_hit() {
+        let mut state = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 64;
+        monster.current_hp = 5;
+        state.entities.monsters = vec![monster];
+        state.queue_action_back(Action::DrawCards(1));
+        state.queue_action_back(Action::Damage(DamageInfo {
+            source: 0,
+            target: 64,
+            base: 1,
+            output: 1,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }));
+
+        handle_wallop_damage(
+            DamageInfo {
+                source: 0,
+                target: 64,
+                base: 5,
+                output: 5,
+                damage_type: DamageType::Normal,
+                is_modified: false,
+            },
+            &mut state,
+        );
+
+        assert!(state.entities.monsters[0].is_dying);
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::GainBlock {
+                target: 0,
+                amount: 5,
+            }),
+            "Java WallopAction queues GainBlock for lastDamageTaken before post-combat cleanup"
+        );
+        assert!(
+            matches!(state.pop_next_action(), Some(Action::Damage(_))),
+            "Java WallopAction calls clearPostCombatActions after a killing hit"
         );
         assert_eq!(state.pop_next_action(), None);
     }

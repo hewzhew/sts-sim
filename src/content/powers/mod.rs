@@ -1248,7 +1248,7 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::OmegaPower => {
             if owner == 0 {
                 smallvec::smallvec![crate::runtime::action::Action::DamageAllEnemies {
-                    source: owner,
+                    source: crate::runtime::action::NO_SOURCE,
                     damages: crate::runtime::action::repeated_damage_matrix(
                         _state.entities.monsters.len(),
                         amount.max(0),
@@ -1541,7 +1541,9 @@ pub fn resolve_power_on_attacked(
                 smallvec::smallvec![]
             }
         }
-        PowerId::Thorns => core::thorns::on_attacked(state, owner, damage, source, power_amount),
+        PowerId::Thorns => {
+            core::thorns::on_attacked(state, owner, damage, source, damage_type, power_amount)
+        }
         PowerId::Shifting => {
             core::shifting::on_attacked(state, owner, damage, source, power_amount)
         }
