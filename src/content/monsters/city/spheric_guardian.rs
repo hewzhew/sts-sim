@@ -214,8 +214,8 @@ impl MonsterBehavior for SphericGuardian {
             SphericGuardianTurn::Slam(attack) => attack_actions(entity.id, PLAYER, attack),
             SphericGuardianTurn::Harden(block) => vec![gain_block_action(entity, block)],
             SphericGuardianTurn::BashAndBlock(attack, block) => {
-                let mut actions = attack_actions(entity.id, PLAYER, attack);
-                actions.push(gain_block_action(entity, block));
+                let mut actions = vec![gain_block_action(entity, block)];
+                actions.extend(attack_actions(entity.id, PLAYER, attack));
                 actions
             }
             SphericGuardianTurn::BashAndFrail(attack, power) => {
@@ -228,5 +228,32 @@ impl MonsterBehavior for SphericGuardian {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bash_and_block_plan, SphericGuardian};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn bash_and_block_gains_block_before_attack_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let guardian = crate::test_support::test_monster(EnemyId::SphericGuardian);
+        let actions =
+            SphericGuardian::take_turn_plan(&mut state, &guardian, &bash_and_block_plan(0));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::GainBlock {
+                    target: 1,
+                    amount: 15
+                },
+                Action::MonsterAttack { source: 1, .. },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
     }
 }
