@@ -240,6 +240,7 @@ pub enum CardId {
     Barrage,
     GoForTheEyes,
     Recursion,
+    Streamline,
     // Add more as we expand
 }
 
@@ -504,6 +505,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Barrage => defect::barrage::definition(),
         CardId::GoForTheEyes => defect::go_for_the_eyes::definition(),
         CardId::Recursion => defect::recursion::definition(),
+        CardId::Streamline => defect::streamline::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1170,6 +1172,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Barrage => "Barrage",
         CardId::GoForTheEyes => "Go for the Eyes",
         CardId::Recursion => "Redo",
+        CardId::Streamline => "Streamline",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1422,6 +1425,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Barrage,
         GoForTheEyes,
         Recursion,
+        Streamline,
         Neutralize,
         Survivor,
         Anger,

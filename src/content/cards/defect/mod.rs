@@ -12,6 +12,7 @@ pub mod hologram;
 pub mod leap;
 pub mod recursion;
 pub mod stack;
+pub mod streamline;
 pub mod strike_blue;
 pub mod sweeping_beam;
 pub mod turbo;

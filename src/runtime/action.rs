@@ -587,6 +587,10 @@ pub enum Action {
         card_uuid: u32,
         amount: i32,
     },
+    ReduceCardCostForCombat {
+        card_uuid: u32,
+        amount: i32,
+    },
     UpgradeCard {
         card_uuid: u32,
     },

@@ -1232,6 +1232,23 @@ pub fn handle_modify_card_damage(card_uuid: u32, amount: i32, state: &mut Combat
         });
 }
 
+pub fn handle_reduce_card_cost_for_combat(card_uuid: u32, amount: i32, state: &mut CombatState) {
+    if amount <= 0 {
+        return;
+    }
+    let delta = -amount;
+    state
+        .zones
+        .for_each_java_battle_instance_mut_by_uuid(card_uuid, |card| {
+            card.modify_cost_for_combat_java(delta);
+        });
+    state
+        .zones
+        .for_each_queued_instance_mut_by_uuid(card_uuid, |card| {
+            card.modify_cost_for_combat_java(delta);
+        });
+}
+
 pub fn handle_randomize_hand_costs(state: &mut CombatState) {
     for card in state.zones.hand.iter_mut() {
         let base_cost = crate::content::cards::get_card_definition(card.id).cost;

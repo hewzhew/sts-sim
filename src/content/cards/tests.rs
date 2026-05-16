@@ -540,6 +540,19 @@ fn defect_first_common_batch_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Streamline,
+            "Streamline",
+            CardType::Attack,
+            2,
+            15,
+            0,
+            1,
+            CardTarget::Enemy,
+            5,
+            0,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -968,6 +981,41 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
     let mut recursion_plus = CombatCard::new(CardId::Recursion, 135);
     recursion_plus.upgrades = 1;
     assert_eq!(upgraded_base_cost_override(&recursion_plus), Some(0));
+
+    let streamline = resolve_card_play(
+        CardId::Streamline,
+        &state,
+        &CombatCard::new(CardId::Streamline, 136),
+        Some(16),
+    );
+    assert_eq!(streamline.len(), 2);
+    match &streamline[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 16);
+            assert_eq!(info.base, 15);
+            assert_eq!(info.output, 15);
+        }
+        other => panic!("Streamline first action should damage, got {other:?}"),
+    }
+    assert_eq!(
+        streamline[1].action,
+        Action::ReduceCardCostForCombat {
+            card_uuid: 136,
+            amount: 1,
+        }
+    );
+
+    let mut streamline_plus = CombatCard::new(CardId::Streamline, 137);
+    streamline_plus.upgrades = 1;
+    let streamline_plus_actions =
+        resolve_card_play(CardId::Streamline, &state, &streamline_plus, Some(16));
+    match &streamline_plus_actions[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 20);
+            assert_eq!(info.output, 20);
+        }
+        other => panic!("Streamline+ first action should damage, got {other:?}"),
+    }
 }
 
 #[test]
@@ -1112,6 +1160,36 @@ fn recursion_redo_action_evokes_then_rechannels_same_orb_instance() {
 
     crate::engine::action_handlers::execute_action(channel.unwrap(), &mut state);
     assert_eq!(state.entities.player.orbs[0], dark);
+}
+
+#[test]
+fn streamline_reduce_cost_action_mutates_matching_combat_instances() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.zones.hand = vec![CombatCard::new(CardId::Streamline, 200)];
+    state.zones.draw_pile = vec![CombatCard::new(CardId::Streamline, 200)];
+    state.zones.discard_pile = vec![CombatCard::new(CardId::Streamline, 201)];
+
+    crate::engine::action_handlers::execute_action(
+        Action::ReduceCardCostForCombat {
+            card_uuid: 200,
+            amount: 1,
+        },
+        &mut state,
+    );
+
+    assert_eq!(
+        state.zones.hand[0].combat_cost_without_turn_override_java(),
+        1
+    );
+    assert_eq!(
+        state.zones.draw_pile[0].combat_cost_without_turn_override_java(),
+        1
+    );
+    assert_eq!(
+        state.zones.discard_pile[0].combat_cost_without_turn_override_java(),
+        2,
+        "ReduceCostAction targets GetAllInBattleInstances for the used card UUID only"
+    );
 }
 
 #[test]
