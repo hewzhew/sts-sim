@@ -1139,6 +1139,18 @@ impl RunState {
                 .relics
                 .iter()
                 .any(|relic| relic.id == RelicId::BurningBlood),
+            RelicId::FrozenCore => self
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::CrackedCore),
+            RelicId::HolyWater => self
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::PureWater),
+            RelicId::RingOfTheSerpent => self
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::SnakeRing),
             RelicId::BottledFlame => self.master_deck.iter().any(|card| {
                 let def = crate::content::cards::get_card_definition(card.id);
                 def.card_type == CardType::Attack && def.rarity != CardRarity::Basic
@@ -1641,5 +1653,32 @@ mod tests {
             ]
         );
         assert_eq!(watcher.relics[0].id, RelicId::PureWater);
+    }
+
+    #[test]
+    fn boss_starter_upgrade_relics_require_matching_java_starter_relics() {
+        let ironclad = RunState::new(1, 0, false, "Ironclad");
+        assert!(ironclad.relic_can_spawn_now(RelicId::BlackBlood));
+        assert!(!ironclad.relic_can_spawn_now(RelicId::RingOfTheSerpent));
+        assert!(!ironclad.relic_can_spawn_now(RelicId::FrozenCore));
+        assert!(!ironclad.relic_can_spawn_now(RelicId::HolyWater));
+
+        let silent = RunState::new(1, 0, false, "Silent");
+        assert!(silent.relic_can_spawn_now(RelicId::RingOfTheSerpent));
+        assert!(!silent.relic_can_spawn_now(RelicId::BlackBlood));
+        assert!(!silent.relic_can_spawn_now(RelicId::FrozenCore));
+        assert!(!silent.relic_can_spawn_now(RelicId::HolyWater));
+
+        let defect = RunState::new(1, 0, false, "Defect");
+        assert!(defect.relic_can_spawn_now(RelicId::FrozenCore));
+        assert!(!defect.relic_can_spawn_now(RelicId::BlackBlood));
+        assert!(!defect.relic_can_spawn_now(RelicId::RingOfTheSerpent));
+        assert!(!defect.relic_can_spawn_now(RelicId::HolyWater));
+
+        let watcher = RunState::new(1, 0, false, "Watcher");
+        assert!(watcher.relic_can_spawn_now(RelicId::HolyWater));
+        assert!(!watcher.relic_can_spawn_now(RelicId::BlackBlood));
+        assert!(!watcher.relic_can_spawn_now(RelicId::RingOfTheSerpent));
+        assert!(!watcher.relic_can_spawn_now(RelicId::FrozenCore));
     }
 }

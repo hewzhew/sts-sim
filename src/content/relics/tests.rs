@@ -3,7 +3,7 @@ use crate::content::cards::{evaluate_card_for_play, CardId};
 use crate::content::monsters::EnemyId;
 use crate::content::powers::{store, PowerId};
 use crate::runtime::action::{Action, AddTo, DamageInfo, DamageType, NO_SOURCE};
-use crate::runtime::combat::{CombatCard, OrbEntity, OrbId, Power};
+use crate::runtime::combat::{CombatCard, OrbEntity, OrbId, Power, StanceId};
 use crate::state::events::EventId;
 use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -3721,6 +3721,70 @@ fn golden_eye_adds_two_to_scry_amount_and_melange_queues_scry_three_on_shuffle()
     assert_eq!(actions.len(), 1);
     assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
     assert!(matches!(actions[0].action, Action::Scry(3)));
+}
+
+#[test]
+fn watcher_stance_relic_hooks_match_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::TeardropLocket), RelicTier::Uncommon);
+    assert_eq!(get_relic_tier(RelicId::VioletLotus), RelicTier::Boss);
+
+    assert!(get_relic_subscriptions(RelicId::TeardropLocket).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::Damaru).at_turn_start);
+    assert!(get_relic_subscriptions(RelicId::VioletLotus).on_change_stance);
+
+    let mut teardrop_state = crate::test_support::blank_test_combat();
+    teardrop_state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::TeardropLocket));
+    let teardrop_actions = hooks::at_battle_start(&mut teardrop_state);
+    assert_eq!(teardrop_actions.len(), 1);
+    assert_eq!(teardrop_actions[0].insertion_mode, AddTo::Top);
+    assert_eq!(
+        teardrop_actions[0].action,
+        Action::EnterStance("Calm".to_string()),
+        "Java TeardropLocket.atBattleStart addToTop queues ChangeStanceAction(\"Calm\"); relic VFX is omitted"
+    );
+
+    let mut damaru_state = crate::test_support::blank_test_combat();
+    damaru_state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Damaru));
+    let damaru_actions = hooks::at_turn_start(&mut damaru_state);
+    assert_eq!(damaru_actions.len(), 1);
+    assert_eq!(damaru_actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        damaru_actions[0].action,
+        Action::ApplyPower {
+            target: 0,
+            power_id: PowerId::Mantra,
+            amount: 1,
+            ..
+        }
+    ));
+
+    let mut lotus_state = crate::test_support::blank_test_combat();
+    lotus_state.entities.player.stance = StanceId::Calm;
+    lotus_state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::VioletLotus));
+    crate::engine::action_handlers::execute_action(
+        Action::EnterStance("Wrath".to_string()),
+        &mut lotus_state,
+    );
+    assert_eq!(lotus_state.entities.player.stance, StanceId::Wrath);
+    assert_eq!(
+        lotus_state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 1 }),
+        "Java ChangeStanceAction calls relic onChangeStance before Calm.onExitStance"
+    );
+    assert_eq!(
+        lotus_state.pop_next_action(),
+        Some(Action::GainEnergy { amount: 2 }),
+        "Java CalmStance.onExitStance then queues its normal 2 energy"
+    );
 }
 
 #[test]
