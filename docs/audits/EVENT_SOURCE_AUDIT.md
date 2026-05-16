@@ -164,13 +164,34 @@ Tests:
 - `falling_init_ignores_bottled_cards_like_java_card_helper`
 - `falling_removal_uses_event_domain_source`
 
+### We Meet Again trade sources
+
+Java `events/shrines/WeMeetAgain.java` preselects a potion slot, a gold amount,
+and one non-basic non-curse card, then any accepted trade grants a screenless
+random relic. Rust already had the constructor RNG shape, but the trade effects
+were too generic.
+
+Fixes:
+
+- The card trade option now exposes the selected card UUID and card id in
+  `EventEffect::RemoveCard`.
+- Giving a card removes it with `DomainEventSource::Event(WeMeetAgain)`.
+- The relic obtained from potion / gold / card trades now uses
+  `obtain_relic_with_source(..., Event(WeMeetAgain))` rather than the generic
+  deck-mutation source.
+
+Tests:
+
+- `card_trade_option_exposes_specific_remove_effect`
+- `card_trade_removes_card_and_obtains_relic_with_event_source`
+
 ## Current High-Risk Event Areas
 
 - `Match and Keep` still deserves deeper review for board serialization,
   duplicate-card handling, and how upgraded/generated card instances are
   represented after a match.
-- Selection-heavy events need source-by-source checks: `WeMeetAgain`,
-  `The Library`, `Nloth`, and remaining `Note For Yourself` persistence gaps.
+- Selection-heavy events need source-by-source checks: `The Library`, `Nloth`,
+  and remaining `Note For Yourself` persistence gaps.
 - Selection choice preconditions still need deeper event-by-event review.
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
@@ -184,4 +205,4 @@ Tests:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `780 passed`.
+- Current result after this pass: `782 passed`.

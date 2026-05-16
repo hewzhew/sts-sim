@@ -6,7 +6,7 @@ use crate::state::events::{
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             // Potion option: stored potion slot in byte 2
@@ -94,11 +94,7 @@ pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<Event
                         EventOptionSemantics {
                             action: EventActionKind::Trade,
                             effects: vec![
-                                EventEffect::RemoveCard {
-                                    count: 1,
-                                    target_uuid: None,
-                                    kind: EventCardKind::Unknown,
-                                },
+                                card_remove_effect(run_state, card_idx),
                                 EventEffect::ObtainRelic {
                                     count: 1,
                                     kind: EventRelicKind::RandomRelic,
@@ -153,11 +149,37 @@ pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<Event
     }
 }
 
+fn card_remove_effect(run_state: &RunState, deck_idx: usize) -> EventEffect {
+    match run_state.master_deck.get(deck_idx) {
+        Some(card) => EventEffect::RemoveCard {
+            count: 1,
+            target_uuid: Some(card.uuid),
+            kind: EventCardKind::Specific(card.id),
+        },
+        None => EventEffect::RemoveCard {
+            count: 1,
+            target_uuid: None,
+            kind: EventCardKind::Unknown,
+        },
+    }
+}
+
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     get_options(run_state, event_state)
         .into_iter()
         .map(|option| option.ui)
         .collect()
+}
+
+fn obtain_event_relic(engine_state: &mut EngineState, run_state: &mut RunState) {
+    let relic_id = run_state.random_screenless_relic_reward();
+    if let Some(next_state) = run_state.obtain_relic_with_source(
+        relic_id,
+        EngineState::EventRoom,
+        DomainEventSource::Event(EventId::WeMeetAgain),
+    ) {
+        *engine_state = next_state;
+    }
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -172,13 +194,8 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     if potion_slot < run_state.potions.len() {
                         run_state.potions[potion_slot] = None;
                     }
-                    let relic_id = run_state.random_screenless_relic_reward();
                     event_state.current_screen = 1;
-                    if let Some(next_state) =
-                        run_state.obtain_relic(relic_id, EngineState::EventRoom)
-                    {
-                        *_engine_state = next_state;
-                    }
+                    obtain_event_relic(_engine_state, run_state);
                 }
                 1 => {
                     // Give gold → relic
@@ -187,28 +204,21 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         -amt,
                         DomainEventSource::Event(EventId::WeMeetAgain),
                     );
-                    let relic_id = run_state.random_screenless_relic_reward();
                     event_state.current_screen = 1;
-                    if let Some(next_state) =
-                        run_state.obtain_relic(relic_id, EngineState::EventRoom)
-                    {
-                        *_engine_state = next_state;
-                    }
+                    obtain_event_relic(_engine_state, run_state);
                 }
                 2 => {
                     // Give card → relic
                     let card_idx = ((event_state.internal_state >> 8) & 0xFF) as usize;
                     if card_idx < run_state.master_deck.len() {
                         let uuid = run_state.master_deck[card_idx].uuid;
-                        run_state.remove_card_from_deck(uuid);
+                        run_state.remove_card_from_deck_with_source(
+                            uuid,
+                            DomainEventSource::Event(EventId::WeMeetAgain),
+                        );
                     }
-                    let relic_id = run_state.random_screenless_relic_reward();
                     event_state.current_screen = 1;
-                    if let Some(next_state) =
-                        run_state.obtain_relic(relic_id, EngineState::EventRoom)
-                    {
-                        *_engine_state = next_state;
-                    }
+                    obtain_event_relic(_engine_state, run_state);
                 }
                 _ => {
                     // Attack (leave)
@@ -299,7 +309,10 @@ pub fn init_we_meet_again_state(run_state: &mut RunState) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::cards::CardId;
+    use crate::runtime::combat::CombatCard;
     use crate::state::events::EventOptionConstraint;
+    use crate::state::selection::DomainEvent;
 
     #[test]
     fn gold_trade_option_exposes_required_gold_constraint() {
@@ -317,5 +330,67 @@ mod tests {
             options[1].semantics.constraints,
             vec![EventOptionConstraint::RequiresGold(75)]
         );
+    }
+
+    #[test]
+    fn card_trade_option_exposes_specific_remove_effect() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck = vec![CombatCard::new(CardId::ShrugItOff, 11)];
+        let event_state = EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: (0 << 8) | ((0xFF) << 16),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+
+        let options = get_options(&rs, &event_state);
+
+        assert!(matches!(
+            options[2].semantics.effects.as_slice(),
+            [
+                EventEffect::RemoveCard {
+                    count: 1,
+                    target_uuid: Some(11),
+                    kind: EventCardKind::Specific(CardId::ShrugItOff),
+                },
+                EventEffect::ObtainRelic { .. }
+            ]
+        ));
+    }
+
+    #[test]
+    fn card_trade_removes_card_and_obtains_relic_with_event_source() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck = vec![CombatCard::new(CardId::ShrugItOff, 11)];
+        rs.event_state = Some(EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: (0 << 8) | ((0xFF) << 16),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        assert!(rs.master_deck.is_empty());
+        let events = rs.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(EventId::WeMeetAgain),
+            } if card.uuid == 11
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicObtained {
+                source: DomainEventSource::Event(EventId::WeMeetAgain),
+                ..
+            }
+        )));
     }
 }
