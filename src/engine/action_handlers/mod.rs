@@ -238,6 +238,10 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::ApplyWeakIfTargetAttacking { target, amount } => {
             powers::handle_apply_weak_if_target_attacking(target, amount, state)
         }
+        Action::FearNoEvil {
+            target,
+            damage_info,
+        } => handle_fear_no_evil(target, damage_info, state),
         Action::Ftl {
             target,
             damage_info,
@@ -884,6 +888,48 @@ fn handle_inner_peace(draw_amount: u32, state: &mut CombatState) {
     } else {
         state.queue_action_front(Action::EnterStance("Calm".to_string()));
     }
+}
+
+fn handle_fear_no_evil(
+    target: usize,
+    damage_info: crate::runtime::action::DamageInfo,
+    state: &mut CombatState,
+) {
+    if monster_has_java_attack_intent_for_fear_no_evil(state, target) {
+        state.queue_action_front(Action::EnterStance("Calm".to_string()));
+    }
+    state.queue_action_front(Action::Damage(damage_info));
+}
+
+fn monster_has_java_attack_intent_for_fear_no_evil(state: &CombatState, target: usize) -> bool {
+    if state
+        .monster_protocol_visible_intent(target)
+        .is_java_attack_intent()
+    {
+        return true;
+    }
+
+    state
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.id == target)
+        .is_some_and(|monster| {
+            monster
+                .move_state
+                .planned_visible_spec
+                .as_ref()
+                .is_some_and(|spec| spec.attack().is_some())
+                || monster
+                    .move_state
+                    .planned_steps
+                    .as_ref()
+                    .is_some_and(|steps| {
+                        steps.iter().any(|step| {
+                            matches!(step, crate::semantics::combat::MoveStep::Attack(_))
+                        })
+                    })
+        })
 }
 
 fn handle_enter_stance(stance: &str, state: &mut CombatState) {

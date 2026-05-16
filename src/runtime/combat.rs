@@ -835,6 +835,16 @@ pub enum Intent {
 }
 
 impl Intent {
+    pub fn is_java_attack_intent(&self) -> bool {
+        matches!(
+            self,
+            Intent::Attack { .. }
+                | Intent::AttackBuff { .. }
+                | Intent::AttackDebuff { .. }
+                | Intent::AttackDefend { .. }
+        )
+    }
+
     pub fn base_damage(&self) -> Option<i32> {
         match self {
             Intent::Attack { damage, .. }

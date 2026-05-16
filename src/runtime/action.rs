@@ -294,6 +294,12 @@ pub enum Action {
         target: EntityId,
         amount: i32,
     },
+    /// Java Watcher `FearNoEvilAction`: at execution time, queue damage and
+    /// then Calm if the target's current Java intent is attack-class.
+    FearNoEvil {
+        target: EntityId,
+        damage_info: DamageInfo,
+    },
     Ftl {
         target: EntityId,
         damage_info: DamageInfo,

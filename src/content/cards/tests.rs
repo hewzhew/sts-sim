@@ -2,7 +2,9 @@ use super::*;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, DamageInfo, DamageType, NO_SOURCE};
-use crate::runtime::combat::{CombatCard, DrawnCardRecord, OrbEntity, OrbId, Power, StanceId};
+use crate::runtime::combat::{
+    CombatCard, DrawnCardRecord, Intent, OrbEntity, OrbId, Power, StanceId,
+};
 
 #[test]
 fn ironclad_starter_basic_definitions_match_java_sources() {
@@ -485,6 +487,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
         (CardId::Prostrate, "Prostrate"),
         (CardId::WheelKick, "WheelKick"),
         (CardId::InnerPeace, "InnerPeace"),
+        (CardId::FearNoEvil, "FearNoEvil"),
     ] {
         assert_eq!(java_id(id), java);
         assert_eq!(java_map.get(java), Some(&id));
@@ -645,6 +648,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
             1,
         ),
+        (
+            CardId::FearNoEvil,
+            "Fear No Evil",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            1,
+            8,
+            0,
+            0,
+            CardTarget::Enemy,
+            3,
+            0,
+            0,
+        ),
     ];
 
     for (
@@ -690,6 +707,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::EmptyMind));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WheelKick));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::InnerPeace));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::FearNoEvil));
 }
 
 #[test]
@@ -940,6 +958,66 @@ fn watcher_inner_peace_runtime_action_reads_stance_when_it_resolves() {
         neutral_state.pop_next_action(),
         Some(Action::EnterStance("Calm".to_string()))
     );
+}
+
+#[test]
+fn watcher_fear_no_evil_runtime_action_reads_target_intent_when_it_resolves() {
+    let state = crate::test_support::blank_test_combat();
+    let mut fear_no_evil_plus = CombatCard::new(CardId::FearNoEvil, 323);
+    fear_no_evil_plus.upgrades = 1;
+
+    let actions = resolve_card_play(CardId::FearNoEvil, &state, &fear_no_evil_plus, Some(7));
+
+    assert_eq!(actions.len(), 1);
+    let damage_info = match &actions[0].action {
+        Action::FearNoEvil {
+            target,
+            damage_info,
+        } => {
+            assert_eq!(*target, 7);
+            assert_eq!(damage_info.source, 0);
+            assert_eq!(damage_info.target, 7);
+            assert_eq!(damage_info.base, 11);
+            assert_eq!(damage_info.output, 11);
+            damage_info.clone()
+        }
+        other => panic!("Fear No Evil should emit FearNoEvilAction, got {other:?}"),
+    };
+
+    let mut attack_state = crate::test_support::blank_test_combat();
+    attack_state
+        .set_monster_protocol_visible_intent(7, Intent::AttackDefend { damage: 9, hits: 1 });
+    crate::engine::action_handlers::execute_action(
+        Action::FearNoEvil {
+            target: 7,
+            damage_info: damage_info.clone(),
+        },
+        &mut attack_state,
+    );
+    assert_eq!(
+        attack_state.pop_next_action(),
+        Some(Action::Damage(damage_info.clone())),
+        "Java adds ChangeStance then Damage to top, so Damage resolves first"
+    );
+    assert_eq!(
+        attack_state.pop_next_action(),
+        Some(Action::EnterStance("Calm".to_string()))
+    );
+
+    let mut defend_state = crate::test_support::blank_test_combat();
+    defend_state.set_monster_protocol_visible_intent(7, Intent::Defend);
+    crate::engine::action_handlers::execute_action(
+        Action::FearNoEvil {
+            target: 7,
+            damage_info: damage_info.clone(),
+        },
+        &mut defend_state,
+    );
+    assert_eq!(
+        defend_state.pop_next_action(),
+        Some(Action::Damage(damage_info))
+    );
+    assert_eq!(defend_state.pop_next_action(), None);
 }
 
 #[test]

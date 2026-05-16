@@ -64,6 +64,7 @@ pub fn resolve_card_play_with_context(
         CardId::Prostrate => watcher::prostrate::prostrate_play(_state, _card),
         CardId::WheelKick => watcher::wheel_kick::wheel_kick_play(_state, _card, t),
         CardId::InnerPeace => watcher::inner_peace::inner_peace_play(_state, _card),
+        CardId::FearNoEvil => watcher::fear_no_evil::fear_no_evil_play(_state, _card, t),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
