@@ -1646,6 +1646,32 @@ fn defect_low_risk_uncommon_definitions_match_java_sources() {
             0,
             0,
         ),
+        (
+            CardId::Ftl,
+            "FTL",
+            CardType::Attack,
+            0,
+            5,
+            0,
+            3,
+            CardTarget::Enemy,
+            1,
+            0,
+            1,
+        ),
+        (
+            CardId::RipAndTear,
+            "Rip and Tear",
+            CardType::Attack,
+            1,
+            7,
+            0,
+            2,
+            CardTarget::AllEnemy,
+            2,
+            0,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -1899,6 +1925,58 @@ fn defect_low_risk_uncommon_runtime_actions_match_java_use_methods() {
         }
         other => panic!("Melter+ second action should damage, got {other:?}"),
     }
+
+    let ftl = resolve_card_play(
+        CardId::Ftl,
+        &state,
+        &CombatCard::new(CardId::Ftl, 257),
+        Some(20),
+    );
+    assert_eq!(ftl.len(), 1);
+    match &ftl[0].action {
+        Action::Ftl {
+            target,
+            damage_info,
+            card_play_count,
+        } => {
+            assert_eq!(*target, 20);
+            assert_eq!(damage_info.base, 5);
+            assert_eq!(damage_info.output, 5);
+            assert_eq!(*card_play_count, 3);
+        }
+        other => panic!("FTL should emit FTLAction equivalent, got {other:?}"),
+    }
+    let mut ftl_plus = CombatCard::new(CardId::Ftl, 258);
+    ftl_plus.upgrades = 1;
+    let ftl_plus_actions = resolve_card_play(CardId::Ftl, &state, &ftl_plus, Some(20));
+    match &ftl_plus_actions[0].action {
+        Action::Ftl {
+            damage_info,
+            card_play_count,
+            ..
+        } => {
+            assert_eq!(damage_info.base, 6);
+            assert_eq!(*card_play_count, 4);
+        }
+        other => panic!("FTL+ should emit FTLAction equivalent, got {other:?}"),
+    }
+
+    let rip = resolve_card_play(
+        CardId::RipAndTear,
+        &state,
+        &CombatCard::new(CardId::RipAndTear, 259),
+        None,
+    );
+    assert_eq!(rip.len(), 2);
+    for action in &rip {
+        match &action.action {
+            Action::AttackDamageRandomEnemyCard { card } => {
+                assert_eq!(card.id, CardId::RipAndTear);
+                assert_eq!(card.uuid, 259);
+            }
+            other => panic!("Rip and Tear should queue random enemy attacks, got {other:?}"),
+        }
+    }
 }
 
 #[test]
@@ -1917,6 +1995,48 @@ fn defect_energy_and_remove_block_actions_read_execution_state() {
         &mut state,
     );
     assert_eq!(state.entities.monsters[0].block, 0);
+}
+
+#[test]
+fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.turn.counters.cards_played_this_turn = 3;
+    crate::engine::action_handlers::execute_action(
+        Action::Ftl {
+            target: 260,
+            damage_info: DamageInfo {
+                source: 0,
+                target: 260,
+                base: 5,
+                output: 5,
+                damage_type: DamageType::Normal,
+                is_modified: true,
+            },
+            card_play_count: 3,
+        },
+        &mut state,
+    );
+    assert_eq!(state.pop_next_action(), Some(Action::DrawCards(1)));
+    assert!(matches!(state.pop_next_action(), Some(Action::Damage(_))));
+
+    state.turn.counters.cards_played_this_turn = 4;
+    crate::engine::action_handlers::execute_action(
+        Action::Ftl {
+            target: 260,
+            damage_info: DamageInfo {
+                source: 0,
+                target: 260,
+                base: 5,
+                output: 5,
+                damage_type: DamageType::Normal,
+                is_modified: true,
+            },
+            card_play_count: 3,
+        },
+        &mut state,
+    );
+    assert!(matches!(state.pop_next_action(), Some(Action::Damage(_))));
+    assert_eq!(state.pop_next_action(), None);
 }
 
 #[test]

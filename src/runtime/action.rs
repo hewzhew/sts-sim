@@ -274,6 +274,11 @@ pub enum Action {
         target: EntityId,
         amount: i32,
     },
+    Ftl {
+        target: EntityId,
+        damage_info: DamageInfo,
+        card_play_count: i32,
+    },
     FiendFire {
         target: EntityId,
         damage_info: DamageInfo,

@@ -220,6 +220,11 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::ApplyWeakIfTargetAttacking { target, amount } => {
             powers::handle_apply_weak_if_target_attacking(target, amount, state)
         }
+        Action::Ftl {
+            target,
+            damage_info,
+            card_play_count,
+        } => damage::handle_ftl(target, damage_info, card_play_count, state),
         Action::Doppelganger {
             upgraded,
             free_to_play_once,

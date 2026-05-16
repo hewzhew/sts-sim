@@ -794,6 +794,21 @@ pub fn handle_dropkick(
     state.queue_action_front(Action::Damage(damage_info));
 }
 
+pub fn handle_ftl(
+    target: usize,
+    damage_info: crate::runtime::action::DamageInfo,
+    card_play_count: i32,
+    state: &mut CombatState,
+) {
+    state.queue_action_back(Action::Damage(crate::runtime::action::DamageInfo {
+        target,
+        ..damage_info
+    }));
+    if (state.turn.counters.cards_played_this_turn as i32).saturating_sub(1) < card_play_count {
+        state.queue_action_front(Action::DrawCards(1));
+    }
+}
+
 pub fn handle_fiend_fire(
     target: usize,
     damage_info: crate::runtime::action::DamageInfo,

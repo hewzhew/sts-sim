@@ -252,6 +252,8 @@ pub enum CardId {
     DoubleEnergy,
     Reprogram,
     Melter,
+    Ftl,
+    RipAndTear,
     // Add more as we expand
 }
 
@@ -528,6 +530,8 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::DoubleEnergy => defect::double_energy::definition(),
         CardId::Reprogram => defect::reprogram::definition(),
         CardId::Melter => defect::melter::definition(),
+        CardId::Ftl => defect::ftl::definition(),
+        CardId::RipAndTear => defect::rip_and_tear::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1206,6 +1210,8 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::DoubleEnergy => "Double Energy",
         CardId::Reprogram => "Reprogram",
         CardId::Melter => "Melter",
+        CardId::Ftl => "FTL",
+        CardId::RipAndTear => "Rip and Tear",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1470,6 +1476,8 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         DoubleEnergy,
         Reprogram,
         Melter,
+        Ftl,
+        RipAndTear,
         Neutralize,
         Survivor,
         Anger,
