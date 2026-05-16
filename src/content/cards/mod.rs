@@ -343,6 +343,7 @@ pub enum CardId {
     Pray,
     Worship,
     Scrawl,
+    MasterReality,
     // Add more as we expand
 }
 
@@ -718,6 +719,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Pray => watcher::pray::definition(),
         CardId::Worship => watcher::worship::definition(),
         CardId::Scrawl => watcher::scrawl::definition(),
+        CardId::MasterReality => watcher::master_reality::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1342,6 +1344,7 @@ pub const WATCHER_RARE_POOL: &[CardId] = &[
     CardId::Ragnarok,
     CardId::SpiritShield,
     CardId::Scrawl,
+    CardId::MasterReality,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1581,6 +1584,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Pray => "Pray",
         CardId::Worship => "Worship",
         CardId::Scrawl => "Scrawl",
+        CardId::MasterReality => "MasterReality",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",

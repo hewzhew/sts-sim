@@ -92,6 +92,7 @@ pub fn resolve_card_play_with_context(
         CardId::Pray => watcher::pray::pray_play(_state, _card),
         CardId::Worship => watcher::worship::worship_play(_state, _card),
         CardId::Scrawl => watcher::scrawl::scrawl_play(_state, _card),
+        CardId::MasterReality => watcher::master_reality::master_reality_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -827,6 +828,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Crescendo if card.upgrades > 0 => Some(0),
         CardId::Tranquility if card.upgrades > 0 => Some(0),
         CardId::Scrawl if card.upgrades > 0 => Some(0),
+        CardId::MasterReality if card.upgrades > 0 => Some(0),
         _ => None,
     }
 }

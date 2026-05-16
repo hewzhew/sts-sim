@@ -1028,6 +1028,20 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
         ),
         (
+            CardId::MasterReality,
+            "Master Reality",
+            CardType::Power,
+            CardRarity::Rare,
+            1,
+            0,
+            0,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
             CardId::Smite,
             "Smite",
             CardType::Attack,
@@ -1140,6 +1154,7 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
     assert!(WATCHER_RARE_POOL.contains(&CardId::SpiritShield));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Scrawl));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::MasterReality));
 }
 
 #[test]
@@ -1534,6 +1549,22 @@ fn watcher_pray_worship_and_scrawl_match_java_sources() {
         resolve_card_play(CardId::Scrawl, &state, &scrawl_plus, None)[0].action,
         Action::ExpertiseDraw {
             target_hand_size: 10,
+        }
+    );
+
+    let mut master_reality_plus = CombatCard::new(CardId::MasterReality, 934);
+    master_reality_plus.upgrades = 1;
+    assert_eq!(
+        crate::content::cards::upgraded_base_cost_override(&master_reality_plus),
+        Some(0)
+    );
+    assert_eq!(
+        resolve_card_play(CardId::MasterReality, &state, &master_reality_plus, None)[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::MasterRealityPower,
+            amount: 1,
         }
     );
 }

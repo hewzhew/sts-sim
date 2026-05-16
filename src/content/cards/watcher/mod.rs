@@ -20,6 +20,7 @@ pub mod halt;
 pub mod indignation;
 pub mod inner_peace;
 pub mod just_lucky;
+pub mod master_reality;
 pub mod pray;
 pub mod prostrate;
 pub mod protect;
