@@ -3647,6 +3647,52 @@ fn rainbow_definition_runtime_and_upgrade_exhaust_match_java_sources() {
 }
 
 #[test]
+fn impulse_definition_runtime_and_upgrade_exhaust_match_java_sources() {
+    let impulse = get_card_definition(CardId::Impulse);
+    assert_eq!(impulse.name, "Impulse");
+    assert_eq!(impulse.card_type, CardType::Skill);
+    assert_eq!(impulse.rarity, CardRarity::Uncommon);
+    assert_eq!(impulse.cost, 1);
+    assert_eq!(impulse.target, CardTarget::SelfTarget);
+    assert!(impulse.exhaust);
+    assert_eq!(java_id(CardId::Impulse), "Impulse");
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(
+        CardId::Impulse,
+        &state,
+        &CombatCard::new(CardId::Impulse, 329),
+        None,
+    );
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].action, Action::TriggerImpulseOrbs);
+
+    assert!(exhausts_when_played(&CombatCard::new(CardId::Impulse, 330)));
+    let mut plus = CombatCard::new(CardId::Impulse, 331);
+    plus.upgrades = 1;
+    assert!(
+        !exhausts_when_played(&plus),
+        "Java Impulse+ changes exhaust only; the orb trigger action is unchanged"
+    );
+    let plus_actions = resolve_card_play(CardId::Impulse, &state, &plus, None);
+    assert_eq!(plus_actions[0].action, Action::TriggerImpulseOrbs);
+
+    let mut orb_state = crate::test_support::blank_test_combat();
+    orb_state.entities.player.orbs =
+        vec![OrbEntity::new(OrbId::Frost), OrbEntity::new(OrbId::Dark)];
+    crate::engine::action_handlers::execute_action(Action::TriggerImpulseOrbs, &mut orb_state);
+    assert_eq!(
+        orb_state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 2,
+        }),
+        "Java ImpulseAction triggers each orb's start/end callbacks"
+    );
+    assert_eq!(orb_state.entities.player.orbs[1].evoke_amount, 12);
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

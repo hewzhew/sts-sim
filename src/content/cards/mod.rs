@@ -277,6 +277,7 @@ pub enum CardId {
     Hyperbeam,
     Electrodynamics,
     Rainbow,
+    Impulse,
     // Add more as we expand
 }
 
@@ -579,6 +580,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Hyperbeam => defect::hyperbeam::definition(),
         CardId::Electrodynamics => defect::electrodynamics::definition(),
         CardId::Rainbow => defect::rainbow::definition(),
+        CardId::Impulse => defect::impulse::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1282,6 +1284,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Hyperbeam => "Hyperbeam",
         CardId::Electrodynamics => "Electrodynamics",
         CardId::Rainbow => "Rainbow",
+        CardId::Impulse => "Impulse",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1571,6 +1574,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Hyperbeam,
         Electrodynamics,
         Rainbow,
+        Impulse,
         Neutralize,
         Survivor,
         Anger,
