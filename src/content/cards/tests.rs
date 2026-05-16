@@ -1042,6 +1042,62 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             0,
         ),
         (
+            CardId::Tantrum,
+            "Tantrum",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            1,
+            3,
+            0,
+            3,
+            CardTarget::Enemy,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::SandsOfTime,
+            "Sands of Time",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            4,
+            20,
+            0,
+            0,
+            CardTarget::Enemy,
+            6,
+            0,
+            0,
+        ),
+        (
+            CardId::Perseverance,
+            "Perseverance",
+            CardType::Skill,
+            CardRarity::Uncommon,
+            1,
+            0,
+            5,
+            2,
+            CardTarget::SelfTarget,
+            0,
+            2,
+            1,
+        ),
+        (
+            CardId::WindmillStrike,
+            "Windmill Strike",
+            CardType::Attack,
+            CardRarity::Uncommon,
+            2,
+            7,
+            0,
+            4,
+            CardTarget::Enemy,
+            3,
+            0,
+            1,
+        ),
+        (
             CardId::Smite,
             "Smite",
             CardType::Attack,
@@ -1150,6 +1206,10 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Worship));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Study));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Swivel));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Tantrum));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::SandsOfTime));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Perseverance));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WindmillStrike));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
     assert!(WATCHER_RARE_POOL.contains(&CardId::SpiritShield));
@@ -1567,6 +1627,100 @@ fn watcher_pray_worship_and_scrawl_match_java_sources() {
             amount: 1,
         }
     );
+}
+
+#[test]
+fn watcher_tantrum_and_retained_attack_cards_match_java_sources() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut tantrum_plus = CombatCard::new(CardId::Tantrum, 940);
+    tantrum_plus.upgrades = 1;
+    assert!(crate::content::cards::shuffle_back_into_draw_pile_when_played(&tantrum_plus));
+    let tantrum = resolve_card_play(CardId::Tantrum, &state, &tantrum_plus, Some(7));
+    assert_eq!(
+        tantrum.len(),
+        5,
+        "Java Tantrum+ hits magicNumber times, then enters Wrath"
+    );
+    for action in &tantrum[..4] {
+        match &action.action {
+            Action::Damage(info) => {
+                assert_eq!(info.target, 7);
+                assert_eq!(info.base, 3);
+                assert_eq!(info.output, 3);
+                assert_eq!(info.damage_type, DamageType::Normal);
+            }
+            other => panic!("Tantrum+ should emit repeated DamageAction, got {other:?}"),
+        }
+    }
+    assert_eq!(tantrum[4].action, Action::EnterStance("Wrath".to_string()));
+
+    let mut cleanup_state = crate::test_support::blank_test_combat();
+    cleanup_state
+        .zones
+        .limbo
+        .push(CombatCard::new(CardId::Tantrum, 941));
+    crate::engine::action_handlers::execute_action(
+        Action::UseCardDone {
+            should_exhaust: false,
+        },
+        &mut cleanup_state,
+    );
+    assert!(cleanup_state.zones.discard_pile.is_empty());
+    assert_eq!(cleanup_state.zones.draw_pile.len(), 1);
+    assert_eq!(cleanup_state.zones.draw_pile[0].id, CardId::Tantrum);
+
+    let mut sands_plus = CombatCard::new(CardId::SandsOfTime, 942);
+    sands_plus.upgrades = 1;
+    assert!(crate::content::cards::is_self_retain(&sands_plus));
+    crate::content::cards::trigger_on_retained(&mut sands_plus);
+    assert_eq!(sands_plus.get_cost(), 3);
+    let sands = resolve_card_play(CardId::SandsOfTime, &state, &sands_plus, Some(7));
+    match &sands[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 26);
+        }
+        other => panic!("Sands of Time+ should emit DamageAction, got {other:?}"),
+    }
+}
+
+#[test]
+fn watcher_retained_block_and_strike_growth_match_java_on_retained() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut perseverance_plus = CombatCard::new(CardId::Perseverance, 950);
+    perseverance_plus.upgrades = 1;
+    assert!(crate::content::cards::is_self_retain(&perseverance_plus));
+    crate::content::cards::trigger_on_retained(&mut perseverance_plus);
+    crate::content::cards::trigger_on_retained(&mut perseverance_plus);
+    let perseverance = resolve_card_play(CardId::Perseverance, &state, &perseverance_plus, None);
+    assert_eq!(
+        perseverance[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 13,
+        },
+        "Perseverance+ starts at 7 block and gains 3 block per retain"
+    );
+
+    let mut windmill_plus = CombatCard::new(CardId::WindmillStrike, 951);
+    windmill_plus.upgrades = 1;
+    assert!(get_card_definition(CardId::WindmillStrike)
+        .tags
+        .contains(&CardTag::Strike));
+    assert!(crate::content::cards::is_self_retain(&windmill_plus));
+    crate::content::cards::trigger_on_retained(&mut windmill_plus);
+    crate::content::cards::trigger_on_retained(&mut windmill_plus);
+    let windmill = resolve_card_play(CardId::WindmillStrike, &state, &windmill_plus, Some(7));
+    match &windmill[0].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 7);
+            assert_eq!(info.base, 20);
+            assert_eq!(info.output, 20);
+        }
+        other => panic!("Windmill Strike+ should emit retained DamageAction, got {other:?}"),
+    }
 }
 
 #[test]

@@ -344,6 +344,10 @@ pub enum CardId {
     Worship,
     Scrawl,
     MasterReality,
+    Tantrum,
+    SandsOfTime,
+    Perseverance,
+    WindmillStrike,
     // Add more as we expand
 }
 
@@ -720,6 +724,10 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Worship => watcher::worship::definition(),
         CardId::Scrawl => watcher::scrawl::definition(),
         CardId::MasterReality => watcher::master_reality::definition(),
+        CardId::Tantrum => watcher::tantrum::definition(),
+        CardId::SandsOfTime => watcher::sands_of_time::definition(),
+        CardId::Perseverance => watcher::perseverance::definition(),
+        CardId::WindmillStrike => watcher::windmill_strike::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1337,6 +1345,10 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::Worship,
     CardId::Study,
     CardId::Swivel,
+    CardId::Tantrum,
+    CardId::SandsOfTime,
+    CardId::Perseverance,
+    CardId::WindmillStrike,
 ];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[
@@ -1585,6 +1597,10 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Worship => "Worship",
         CardId::Scrawl => "Scrawl",
         CardId::MasterReality => "MasterReality",
+        CardId::Tantrum => "Tantrum",
+        CardId::SandsOfTime => "SandsOfTime",
+        CardId::Perseverance => "Perseverance",
+        CardId::WindmillStrike => "WindmillStrike",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -1998,6 +2014,10 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         SpiritShield,
         Study,
         Swivel,
+        Tantrum,
+        SandsOfTime,
+        Perseverance,
+        WindmillStrike,
         Neutralize,
         Survivor,
         Anger,

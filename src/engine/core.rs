@@ -203,6 +203,11 @@ fn discard_hand_for_turn_transition(combat_state: &mut CombatState) {
         .player
         .has_relic(crate::content::relics::RelicId::RunicPyramid);
     if has_runic_pyramid {
+        for card in &mut combat_state.zones.hand {
+            if card.retain_override == Some(true) || crate::content::cards::is_self_retain(card) {
+                crate::content::cards::trigger_on_retained(card);
+            }
+        }
         // RunicPyramid keeps the hand, but Java RestoreRetainedCardsAction
         // still clears one-turn retain flags created by RetainCardsAction.
         for card in &mut combat_state.zones.hand {
@@ -217,6 +222,7 @@ fn discard_hand_for_turn_transition(combat_state: &mut CombatState) {
     let mut discarded = Vec::new();
     for mut card in combat_state.zones.hand.drain(..) {
         if card.retain_override == Some(true) || crate::content::cards::is_self_retain(&card) {
+            crate::content::cards::trigger_on_retained(&mut card);
             card.retain_override = None;
             retained.push(card);
         } else {
@@ -1918,6 +1924,29 @@ mod tests {
                 (CardId::Bash, 30, None),
             ],
             "Runic Pyramid's global retention does not keep RetainCardsAction's one-turn retain flag alive"
+        );
+        assert!(combat_state.zones.discard_pile.is_empty());
+    }
+
+    #[test]
+    fn turn_transition_runs_on_retained_hooks_even_under_runic_pyramid() {
+        let mut combat_state = blank_test_combat();
+        combat_state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::RunicPyramid));
+        combat_state.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::SandsOfTime, 20),
+        ];
+
+        discard_hand_for_turn_transition(&mut combat_state);
+
+        assert_eq!(combat_state.zones.hand[1].id, CardId::SandsOfTime,);
+        assert_eq!(
+            combat_state.zones.hand[1].get_cost(),
+            3,
+            "Java DiscardAtEndOfTurnAction still moves selfRetain cards through RestoreRetainedCardsAction under Runic Pyramid, so onRetained fires"
         );
         assert!(combat_state.zones.discard_pile.is_empty());
     }

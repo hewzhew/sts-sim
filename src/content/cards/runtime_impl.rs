@@ -93,6 +93,10 @@ pub fn resolve_card_play_with_context(
         CardId::Worship => watcher::worship::worship_play(_state, _card),
         CardId::Scrawl => watcher::scrawl::scrawl_play(_state, _card),
         CardId::MasterReality => watcher::master_reality::master_reality_play(_state, _card),
+        CardId::Tantrum => watcher::tantrum::tantrum_play(_state, _card, t),
+        CardId::SandsOfTime => watcher::sands_of_time::sands_of_time_play(_state, _card, t),
+        CardId::Perseverance => watcher::perseverance::perseverance_play(_state, _card),
+        CardId::WindmillStrike => watcher::windmill_strike::windmill_strike_play(_state, _card, t),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -787,9 +791,39 @@ pub fn is_self_retain(card: &CombatCard) -> bool {
         | CardId::Crescendo
         | CardId::Tranquility
         | CardId::Protect
-        | CardId::FlyingSleeves => true,
+        | CardId::FlyingSleeves
+        | CardId::SandsOfTime
+        | CardId::Perseverance
+        | CardId::WindmillStrike => true,
         CardId::Worship => card.upgrades > 0,
         _ => false,
+    }
+}
+
+pub fn shuffle_back_into_draw_pile_when_played(card: &CombatCard) -> bool {
+    matches!(card.id, CardId::Tantrum)
+}
+
+pub fn trigger_on_retained(card: &mut CombatCard) {
+    let def = get_card_definition(card.id);
+    let upgraded = i32::from(card.upgrades > 0);
+    match card.id {
+        CardId::SandsOfTime => {
+            card.modify_cost_for_combat_java(-1);
+        }
+        CardId::Perseverance => {
+            let base = def.base_block + upgraded * def.upgrade_block;
+            let current = card.base_block_override.unwrap_or(base);
+            let gain = def.base_magic + upgraded * def.upgrade_magic;
+            card.base_block_override = Some(current + gain);
+        }
+        CardId::WindmillStrike => {
+            let base = def.base_damage + upgraded * def.upgrade_damage;
+            let current = card.base_damage_override.unwrap_or(base);
+            let gain = def.base_magic + upgraded * def.upgrade_magic;
+            card.base_damage_override = Some(current + gain);
+        }
+        _ => {}
     }
 }
 

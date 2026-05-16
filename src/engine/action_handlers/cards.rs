@@ -1781,6 +1781,8 @@ pub fn handle_use_card_done(should_exhaust: bool, state: &mut CombatState) {
             }
             if placement_overrides.rebound {
                 state.add_card_to_draw_pile_top(card);
+            } else if crate::content::cards::shuffle_back_into_draw_pile_when_played(&card) {
+                state.add_card_to_draw_pile_random_spot(card);
             } else {
                 state.add_card_to_discard_pile_top(card);
             }
