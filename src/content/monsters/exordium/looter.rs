@@ -32,6 +32,28 @@ fn gold_amount(asc: u8) -> i32 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn looter_first_mug_burns_java_talk_rng_before_actions() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut entity = crate::test_support::test_monster(EnemyId::Looter);
+        entity.thief.slash_count = 0;
+
+        let before = state.rng.ai_rng.counter;
+        let _ = <Looter as MonsterBehavior>::take_turn_plan(&mut state, &entity, &mug_plan(0));
+
+        assert_eq!(
+            state.rng.ai_rng.counter - before,
+            1,
+            "Looter.java burns aiRng.randomBoolean(0.6) for the first Mug TalkAction; playSfx uses MathUtils and does not burn aiRng"
+        );
+    }
+}
+
 fn swipe_damage(asc: u8) -> i32 {
     if asc >= 2 {
         11
@@ -197,11 +219,17 @@ impl MonsterBehavior for Looter {
     ) -> Vec<Action> {
         match decode_turn(plan) {
             LooterTurn::Mug(steal, attack) => {
+                if current_slash_count(entity) == 0 {
+                    // Java Looter.takeTurn burns aiRng for the first-slash TalkAction
+                    // before the steal/damage actions. The SFX roll uses MathUtils,
+                    // so it does not affect gameplay RNG.
+                    let _ = state.rng.ai_rng.random_boolean_chance(0.6);
+                }
                 let next_slash_count = current_slash_count(entity).saturating_add(1);
                 let mut actions = vec![steal_gold_action(entity, steal)];
                 actions.extend(attack_actions(entity.id, PLAYER, attack));
                 let next_plan = if next_slash_count == 2 {
-                    if state.rng.ai_rng.random_boolean() {
+                    if state.rng.ai_rng.random_boolean_chance(0.5) {
                         smoke_bomb_plan()
                     } else {
                         lunge_plan(state.meta.ascension_level)

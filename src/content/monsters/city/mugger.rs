@@ -33,6 +33,51 @@ fn gold_amount(asc: u8) -> i32 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn mugger_mug_burns_java_audio_talk_and_branch_rng() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut entity = crate::test_support::test_monster(EnemyId::Mugger);
+
+        entity.thief.slash_count = 0;
+        let before_first = state.rng.ai_rng.counter;
+        let _ = <Mugger as MonsterBehavior>::take_turn_plan(&mut state, &entity, &mug_plan(0));
+        assert_eq!(
+            state.rng.ai_rng.counter - before_first,
+            1,
+            "first Mugger Mug burns aiRng.random(2) for Java playSfx"
+        );
+
+        entity.thief.slash_count = 1;
+        let before_second = state.rng.ai_rng.counter;
+        let _ = <Mugger as MonsterBehavior>::take_turn_plan(&mut state, &entity, &mug_plan(0));
+        assert_eq!(
+            state.rng.ai_rng.counter - before_second,
+            3,
+            "second Mugger Mug burns playSfx, TalkAction randomBoolean(0.6), and the smoke-bomb/big-swipe branch"
+        );
+    }
+
+    #[test]
+    fn mugger_big_swipe_burns_java_audio_rng() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::Mugger);
+
+        let before = state.rng.ai_rng.counter;
+        let _ =
+            <Mugger as MonsterBehavior>::take_turn_plan(&mut state, &entity, &big_swipe_plan(0));
+        assert_eq!(
+            state.rng.ai_rng.counter - before,
+            1,
+            "Mugger.java Big Swipe calls playSfx, which burns aiRng.random(2)"
+        );
+    }
+}
+
 fn mug_damage(asc: u8) -> i32 {
     if asc >= 2 {
         11
@@ -206,6 +251,12 @@ impl MonsterBehavior for Mugger {
     ) -> Vec<Action> {
         match decode_turn(plan) {
             MuggerTurn::Mug(steal, attack) => {
+                // Java Mugger.playSfx uses AbstractDungeon.aiRng.random(2), so
+                // even this audio-only branch must burn gameplay RNG.
+                let _ = state.rng.ai_rng.random(2);
+                if current_slash_count(entity) == 1 {
+                    let _ = state.rng.ai_rng.random_boolean_chance(0.6);
+                }
                 let next_slash_count = current_slash_count(entity).saturating_add(1);
                 let mut actions = vec![steal_gold_action(entity, steal)];
                 actions.extend(attack_actions(entity.id, PLAYER, attack));
@@ -222,6 +273,7 @@ impl MonsterBehavior for Mugger {
                 actions
             }
             MuggerTurn::BigSwipe(steal, attack) => {
+                let _ = state.rng.ai_rng.random(2);
                 let mut actions = vec![steal_gold_action(entity, steal)];
                 actions.extend(attack_actions(entity.id, PLAYER, attack));
                 actions.push(set_next_move_action(
