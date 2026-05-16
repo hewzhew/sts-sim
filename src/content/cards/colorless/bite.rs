@@ -1,4 +1,8 @@
 use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTag, CardTarget, CardType};
+use crate::core::EntityId;
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
+use crate::runtime::combat::{CombatCard, CombatState};
+use smallvec::SmallVec;
 
 pub fn definition() -> CardDefinition {
     CardDefinition {
@@ -20,4 +24,34 @@ pub fn definition() -> CardDefinition {
         upgrade_block: 0,
         upgrade_magic: 1,
     }
+}
+
+pub fn bite_play(
+    state: &CombatState,
+    card: &CombatCard,
+    target: Option<EntityId>,
+) -> SmallVec<[ActionInfo; 4]> {
+    let target = target.expect("Bite requires a valid target");
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
+    let def = crate::content::cards::get_card_definition(card.id);
+    smallvec::smallvec![
+        ActionInfo {
+            action: Action::Damage(DamageInfo {
+                source: 0,
+                target,
+                base: evaluated.base_damage_mut,
+                output: evaluated.base_damage_mut,
+                damage_type: DamageType::Normal,
+                is_modified: evaluated.base_damage_mut != def.base_damage,
+            }),
+            insertion_mode: AddTo::Bottom,
+        },
+        ActionInfo {
+            action: Action::Heal {
+                target: 0,
+                amount: evaluated.base_magic_num_mut,
+            },
+            insertion_mode: AddTo::Bottom,
+        }
+    ]
 }

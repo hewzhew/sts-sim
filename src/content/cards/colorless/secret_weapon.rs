@@ -1,4 +1,7 @@
 use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
+use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::{CombatCard, CombatState};
+use smallvec::SmallVec;
 
 pub fn definition() -> CardDefinition {
     CardDefinition {
@@ -19,5 +22,39 @@ pub fn definition() -> CardDefinition {
         upgrade_damage: 0,
         upgrade_block: 0,
         upgrade_magic: 0,
+    }
+}
+
+pub fn secret_weapon_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    let attacks: Vec<_> = state
+        .zones
+        .draw_pile
+        .iter()
+        .filter(|c| crate::content::cards::get_card_definition(c.id).card_type == CardType::Attack)
+        .map(|c| c.uuid)
+        .collect();
+    if attacks.len() == 1 {
+        smallvec::smallvec![ActionInfo {
+            action: Action::MoveCard {
+                card_uuid: attacks[0],
+                from: crate::state::PileType::Draw,
+                to: crate::state::PileType::Hand,
+            },
+            insertion_mode: AddTo::Bottom,
+        }]
+    } else if !attacks.is_empty() {
+        smallvec::smallvec![ActionInfo {
+            action: Action::SuspendForGridSelect {
+                source_pile: crate::state::PileType::Draw,
+                min: 1,
+                max: 1,
+                can_cancel: false,
+                filter: crate::state::GridSelectFilter::Attack,
+                reason: crate::state::GridSelectReason::AttackFromDeckToHand,
+            },
+            insertion_mode: AddTo::Bottom,
+        }]
+    } else {
+        SmallVec::new()
     }
 }

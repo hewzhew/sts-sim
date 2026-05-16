@@ -140,7 +140,7 @@ pub fn resolve_card_play_with_context(
             }
             actions
         }
-        CardId::Bite => colorless::play_colorless(_state, _card, t, context),
+        CardId::Bite => colorless::bite::bite_play(_state, _card, t),
         CardId::Apparition => smallvec::smallvec![ActionInfo {
             action: Action::ApplyPower {
                 source: 0,
@@ -269,11 +269,13 @@ pub fn resolve_card_play_with_context(
         CardId::Panache => colorless::panache::panache_play(_state, _card),
         CardId::SadisticNature => colorless::sadistic_nature::sadistic_nature_play(_state, _card),
         CardId::TheBomb => colorless::the_bomb::the_bomb_play(_state, _card),
-        CardId::HandOfGreed
-        | CardId::SecretTechnique
-        | CardId::SecretWeapon
-        | CardId::Transmutation
-        | CardId::RitualDagger => colorless::play_colorless(_state, _card, t, context),
+        CardId::HandOfGreed => colorless::hand_of_greed::hand_of_greed_play(_state, _card, t),
+        CardId::RitualDagger => colorless::ritual_dagger::ritual_dagger_play(_state, _card, t),
+        CardId::SecretTechnique => {
+            colorless::secret_technique::secret_technique_play(_state, _card)
+        }
+        CardId::SecretWeapon => colorless::secret_weapon::secret_weapon_play(_state, _card),
+        CardId::Transmutation => colorless::transmutation::transmutation_play(_state, _card),
         // Unplayable stubs — curses, status, and special cards
         CardId::Wound
         | CardId::Burn
