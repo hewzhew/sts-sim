@@ -270,6 +270,7 @@ fn card_target_shape(target: CardTarget) -> &'static str {
         CardTarget::Enemy => "single_enemy",
         CardTarget::SelfAndEnemy => "self_and_enemy",
         CardTarget::AllEnemy => "aoe",
+        CardTarget::All => "all",
         CardTarget::SelfTarget => "self",
         CardTarget::None => "none",
     }

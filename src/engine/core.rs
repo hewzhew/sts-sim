@@ -672,88 +672,59 @@ pub fn tick_engine(
                         return true;
                     }
 
-                    // 1.5 === MONSTER PRE-TURN LOGIC ===
-                    // Java: MonsterStartTurnAction calls MonsterGroup.applyPreTurnLogic() -> clears block, etc.
-                    let alive_for_pre: Vec<_> = combat_state
-                        .entities
-                        .monsters
-                        .iter()
-                        .filter(|m| !m.is_dying && !m.is_escaped)
-                        .map(|m| m.id)
-                        .collect();
-
-                    for mid in &alive_for_pre {
-                        // 1. Clear block
-                        let has_barricade = crate::content::powers::store::has_power(
+                    let skip_monster_turn = combat_state.turn.counters.skip_monster_turn_pending;
+                    let player_had_blur_for_block_retention =
+                        crate::content::powers::store::has_power(
                             combat_state,
-                            *mid,
-                            crate::content::powers::PowerId::Barricade,
+                            0,
+                            crate::content::powers::PowerId::Blur,
                         );
-                        if let Some(monster) = combat_state
+
+                    if !skip_monster_turn {
+                        // 1.5 === MONSTER PRE-TURN LOGIC ===
+                        // Java: MonsterStartTurnAction calls MonsterGroup.applyPreTurnLogic() -> clears block, etc.
+                        let alive_for_pre: Vec<_> = combat_state
                             .entities
                             .monsters
-                            .iter_mut()
-                            .find(|m| m.id == *mid)
-                        {
-                            if !has_barricade {
-                                monster.block = 0;
-                            }
-                        }
-                        // 2. Fire Start of Turn Powers (e.g. Poison tick, Flight regain)
-                        for power in
-                            &crate::content::powers::store::powers_snapshot_for(combat_state, *mid)
-                        {
-                            let hook_actions =
-                                crate::content::powers::resolve_power_instance_at_turn_start(
-                                    power,
-                                    combat_state,
-                                    *mid,
-                                );
-                            for a in hook_actions {
-                                combat_state.queue_action_back(a);
-                            }
-                        }
-                    }
-                    // 3. Drain pre-turn actions instantly
-                    while let Some(action) = combat_state.pop_next_action() {
-                        super::action_handlers::execute_action(action, combat_state);
-                        if combat_state.entities.player.current_hp <= 0 {
-                            combat_state.clear_pending_actions();
-                            *engine_state = EngineState::GameOver(RunResult::Defeat);
-                            return false;
-                        }
-                    }
+                            .iter()
+                            .filter(|m| !m.is_dying && !m.is_escaped)
+                            .map(|m| m.id)
+                            .collect();
 
-                    // 2. Execute each alive monster's turn (player block absorbs damage)
-                    combat_state.begin_monster_turn();
-                    let mut monster_snapshots = Vec::new();
-                    let mut dead_ids = Vec::new();
-                    for m in &combat_state.entities.monsters {
-                        if m.is_dying || m.is_escaped {
-                            dead_ids.push(m.id);
-                        } else {
-                            monster_snapshots.push(m.clone());
+                        for mid in &alive_for_pre {
+                            // 1. Clear block
+                            let has_barricade = crate::content::powers::store::has_power(
+                                combat_state,
+                                *mid,
+                                crate::content::powers::PowerId::Barricade,
+                            );
+                            if let Some(monster) = combat_state
+                                .entities
+                                .monsters
+                                .iter_mut()
+                                .find(|m| m.id == *mid)
+                            {
+                                if !has_barricade {
+                                    monster.block = 0;
+                                }
+                            }
+                            // 2. Fire Start of Turn Powers (e.g. Poison tick, Flight regain)
+                            for power in &crate::content::powers::store::powers_snapshot_for(
+                                combat_state,
+                                *mid,
+                            ) {
+                                let hook_actions =
+                                    crate::content::powers::resolve_power_instance_at_turn_start(
+                                        power,
+                                        combat_state,
+                                        *mid,
+                                    );
+                                for a in hook_actions {
+                                    combat_state.queue_action_back(a);
+                                }
+                            }
                         }
-                    }
-                    for id in dead_ids {
-                        store::remove_entity_powers(combat_state, id);
-                    }
-                    for monster in &monster_snapshots {
-                        // Reset monster Invincible limit
-                        let _ = store::with_power_mut(
-                            combat_state,
-                            monster.id,
-                            crate::content::powers::PowerId::Invincible,
-                            |inv| {
-                                inv.amount = inv.extra_data;
-                            },
-                        );
-                        let actions =
-                            crate::content::monsters::resolve_monster_turn(combat_state, monster);
-                        for action in actions {
-                            combat_state.queue_action_back(action);
-                        }
-                        // Drain this monster's turn actions
+                        // 3. Drain pre-turn actions instantly
                         while let Some(action) = combat_state.pop_next_action() {
                             super::action_handlers::execute_action(action, combat_state);
                             if combat_state.entities.player.current_hp <= 0 {
@@ -762,82 +733,96 @@ pub fn tick_engine(
                                 return false;
                             }
                         }
-                    }
-                    // (Monster actions now drained per-monster inside the for-loop above)
 
-                    // 2.3 === COLLECTIVE END OF TURN ===
-                    // Java: MonsterGroup.applyEndOfTurnPowers() calls p.atEndOfTurn(false) across all alive monsters.
-                    let alive_monsters_for_end_turn: Vec<_> = combat_state
-                        .entities
-                        .monsters
-                        .iter()
-                        .filter(|m| !m.is_dying && !m.is_escaped)
-                        .map(|m| m.id)
-                        .collect();
-                    for mid in &alive_monsters_for_end_turn {
-                        for power in
-                            &crate::content::powers::store::powers_snapshot_for(combat_state, *mid)
-                        {
-                            let hook_actions = crate::content::powers::resolve_power_at_end_of_turn(
-                                power,
-                                combat_state,
-                                *mid,
-                            );
-                            for a in hook_actions {
-                                combat_state.queue_action_back(a);
+                        // 2. Execute each alive monster's turn (player block absorbs damage)
+                        combat_state.begin_monster_turn();
+                        let mut monster_snapshots = Vec::new();
+                        let mut dead_ids = Vec::new();
+                        for m in &combat_state.entities.monsters {
+                            if m.is_dying || m.is_escaped {
+                                dead_ids.push(m.id);
+                            } else {
+                                monster_snapshots.push(m.clone());
                             }
                         }
-                    }
-                    // Drain atEndOfTurn collective actions
-                    while let Some(action) = combat_state.pop_next_action() {
-                        super::action_handlers::execute_action(action, combat_state);
-                        if combat_state.entities.player.current_hp <= 0 {
-                            combat_state.clear_pending_actions();
-                            *engine_state = EngineState::GameOver(RunResult::Defeat);
-                            return false;
+                        for id in dead_ids {
+                            store::remove_entity_powers(combat_state, id);
                         }
-                    }
+                        for monster in &monster_snapshots {
+                            // Reset monster Invincible limit
+                            let _ = store::with_power_mut(
+                                combat_state,
+                                monster.id,
+                                crate::content::powers::PowerId::Invincible,
+                                |inv| {
+                                    inv.amount = inv.extra_data;
+                                },
+                            );
+                            let actions = crate::content::monsters::resolve_monster_turn(
+                                combat_state,
+                                monster,
+                            );
+                            for action in actions {
+                                combat_state.queue_action_back(action);
+                            }
+                            // Drain this monster's turn actions
+                            while let Some(action) = combat_state.pop_next_action() {
+                                super::action_handlers::execute_action(action, combat_state);
+                                if combat_state.entities.player.current_hp <= 0 {
+                                    combat_state.clear_pending_actions();
+                                    *engine_state = EngineState::GameOver(RunResult::Defeat);
+                                    return false;
+                                }
+                            }
+                        }
+                        // (Monster actions now drained per-monster inside the for-loop above)
 
-                    // 2.5 === FULL ROUND END ===
-                    // Java: applyEndOfTurnPowers() calls p.atEndOfRound() on player and all monsters
-                    let player_had_blur_for_block_retention =
-                        crate::content::powers::store::has_power(
-                            combat_state,
-                            0,
-                            crate::content::powers::PowerId::Blur,
-                        );
-                    // Player powers:
-                    for power in
-                        &crate::content::powers::store::powers_snapshot_for(combat_state, 0)
-                    {
-                        let hook_actions = crate::content::powers::resolve_power_at_end_of_round(
-                            power.power_type,
-                            combat_state,
-                            0,
-                            power.amount,
-                            power.just_applied,
-                        );
-                        for a in hook_actions {
-                            combat_state.queue_action_back(a);
+                        // 2.3 === COLLECTIVE END OF TURN ===
+                        // Java: MonsterGroup.applyEndOfTurnPowers() calls p.atEndOfTurn(false) across all alive monsters.
+                        let alive_monsters_for_end_turn: Vec<_> = combat_state
+                            .entities
+                            .monsters
+                            .iter()
+                            .filter(|m| !m.is_dying && !m.is_escaped)
+                            .map(|m| m.id)
+                            .collect();
+                        for mid in &alive_monsters_for_end_turn {
+                            for power in &crate::content::powers::store::powers_snapshot_for(
+                                combat_state,
+                                *mid,
+                            ) {
+                                let hook_actions =
+                                    crate::content::powers::resolve_power_at_end_of_turn(
+                                        power,
+                                        combat_state,
+                                        *mid,
+                                    );
+                                for a in hook_actions {
+                                    combat_state.queue_action_back(a);
+                                }
+                            }
                         }
-                    }
-                    // Monster powers:
-                    let alive_monsters: Vec<_> = combat_state
-                        .entities
-                        .monsters
-                        .iter()
-                        .filter(|m| !m.is_dying && !m.is_escaped)
-                        .map(|m| m.id)
-                        .collect();
-                    for mid in alive_monsters {
+                        // Drain atEndOfTurn collective actions
+                        while let Some(action) = combat_state.pop_next_action() {
+                            super::action_handlers::execute_action(action, combat_state);
+                            if combat_state.entities.player.current_hp <= 0 {
+                                combat_state.clear_pending_actions();
+                                *engine_state = EngineState::GameOver(RunResult::Defeat);
+                                return false;
+                            }
+                        }
+
+                        // 2.5 === FULL ROUND END ===
+                        // Java: applyEndOfTurnPowers() calls p.atEndOfRound() on player and all monsters.
+                        // Vault sets room.skipMonsterTurn, and GameActionManager skips this whole call.
                         for power in
-                            &crate::content::powers::store::powers_snapshot_for(combat_state, mid)
+                            &crate::content::powers::store::powers_snapshot_for(combat_state, 0)
                         {
                             let hook_actions =
                                 crate::content::powers::resolve_power_at_end_of_round(
                                     power.power_type,
                                     combat_state,
-                                    mid,
+                                    0,
                                     power.amount,
                                     power.just_applied,
                                 );
@@ -845,14 +830,40 @@ pub fn tick_engine(
                                 combat_state.queue_action_back(a);
                             }
                         }
-                    }
-                    // Drain at_end_of_round actions
-                    while let Some(action) = combat_state.pop_next_action() {
-                        super::action_handlers::execute_action(action, combat_state);
-                    }
+                        // Monster powers:
+                        let alive_monsters: Vec<_> = combat_state
+                            .entities
+                            .monsters
+                            .iter()
+                            .filter(|m| !m.is_dying && !m.is_escaped)
+                            .map(|m| m.id)
+                            .collect();
+                        for mid in alive_monsters {
+                            for power in &crate::content::powers::store::powers_snapshot_for(
+                                combat_state,
+                                mid,
+                            ) {
+                                let hook_actions =
+                                    crate::content::powers::resolve_power_at_end_of_round(
+                                        power.power_type,
+                                        combat_state,
+                                        mid,
+                                        power.amount,
+                                        power.just_applied,
+                                    );
+                                for a in hook_actions {
+                                    combat_state.queue_action_back(a);
+                                }
+                            }
+                        }
+                        // Drain at_end_of_round actions
+                        while let Some(action) = combat_state.pop_next_action() {
+                            super::action_handlers::execute_action(action, combat_state);
+                        }
 
-                    // Clear all just_applied flags globally at the end of the round!
-                    store::clear_just_applied_flags(combat_state);
+                        // Clear all just_applied flags globally at the end of the round!
+                        store::clear_just_applied_flags(combat_state);
+                    }
 
                     // If player died during monster turn, immediate game over
                     if combat_state.entities.player.current_hp <= 0 {
@@ -2010,6 +2021,60 @@ mod tests {
         assert!(
             !crate::content::powers::store::has_power(&combat_state, 0, PowerId::Blur),
             "Java BlurPower ticks down while still preserving that turn's block"
+        );
+    }
+
+    #[test]
+    fn vault_skip_monster_turn_bypasses_monster_actions_and_end_of_round_powers() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.player.current_hp = 50;
+        combat_state.entities.player.block = 0;
+        combat_state.entities.monsters = vec![planned_monster(EnemyId::Cultist, 1)];
+        combat_state.entities.monsters[0].id = 7;
+        combat_state.entities.monsters[0].block = 5;
+        combat_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::Vulnerable,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat_state.turn.mark_skip_monster_turn_pending();
+        combat_state.turn.begin_turn_transition();
+        let mut engine_state = EngineState::CombatProcessing;
+
+        for _ in 0..64 {
+            if engine_state == EngineState::CombatPlayerTurn {
+                break;
+            }
+            assert!(super::tick_engine(
+                &mut engine_state,
+                &mut combat_state,
+                None
+            ));
+        }
+
+        assert_eq!(engine_state, EngineState::CombatPlayerTurn);
+        assert_eq!(
+            combat_state.entities.player.current_hp, 50,
+            "Java Vault sets room.skipMonsterTurn, so queued monster attacks do not run"
+        );
+        assert_eq!(
+            combat_state.entities.monsters[0].block, 5,
+            "Java skips MonsterStartTurnAction as well, so monster pre-turn block loss does not run"
+        );
+        assert_eq!(
+            crate::content::powers::store::power_amount(&combat_state, 0, PowerId::Vulnerable),
+            2,
+            "Java skips MonsterGroup.applyEndOfTurnPowers(), which also skips player atEndOfRound power ticking"
+        );
+        assert!(
+            !combat_state.turn.counters.skip_monster_turn_pending,
+            "Java clears room.skipMonsterTurn once the new player turn begins"
         );
     }
 }

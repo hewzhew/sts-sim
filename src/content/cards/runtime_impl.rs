@@ -131,6 +131,7 @@ pub fn resolve_card_play_with_context(
         CardId::ConjureBlade => watcher::conjure_blade::conjure_blade_play(_state, _card),
         CardId::Expunger => colorless::expunger::expunger_play(_state, _card, t),
         CardId::Meditate => watcher::meditate::meditate_play(_state, _card),
+        CardId::Vault => watcher::vault::vault_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -904,6 +905,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::MasterReality if card.upgrades > 0 => Some(0),
         CardId::Rushdown if card.upgrades > 0 => Some(0),
         CardId::Beta if card.upgrades > 0 => Some(1),
+        CardId::Vault if card.upgrades > 0 => Some(2),
         _ => None,
     }
 }

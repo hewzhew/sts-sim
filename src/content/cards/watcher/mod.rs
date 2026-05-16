@@ -60,6 +60,7 @@ pub mod talk_to_the_hand;
 pub mod tantrum;
 pub mod third_eye;
 pub mod tranquility;
+pub mod vault;
 pub mod vigilance;
 pub mod wallop;
 pub mod wave_of_the_hand;

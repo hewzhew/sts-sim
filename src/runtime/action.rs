@@ -822,6 +822,7 @@ pub enum Action {
         card: Box<crate::runtime::combat::CombatCard>,
     },
     QueueEarlyEndTurn,
+    SkipEnemiesTurn,
     TriggerTimeWarpEndTurn {
         owner: EntityId,
     },

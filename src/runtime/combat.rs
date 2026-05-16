@@ -279,6 +279,7 @@ pub struct EphemeralCounters {
     pub victory_triggered: bool,
     pub discovery_cost_for_turn: Option<u8>,
     pub early_end_turn_pending: bool,
+    pub skip_monster_turn_pending: bool,
     pub player_escaping: bool,
     pub escape_pending_reward: bool,
 }
@@ -517,6 +518,14 @@ impl TurnRuntime {
         self.counters.early_end_turn_pending = false;
     }
 
+    pub fn mark_skip_monster_turn_pending(&mut self) {
+        self.counters.skip_monster_turn_pending = true;
+    }
+
+    pub fn clear_skip_monster_turn_pending(&mut self) {
+        self.counters.skip_monster_turn_pending = false;
+    }
+
     pub fn set_discovery_cost_for_turn(&mut self, cost: Option<u8>) {
         self.counters.discovery_cost_for_turn = cost;
     }
@@ -562,6 +571,7 @@ impl TurnRuntime {
         self.counters.cards_discarded_this_turn = 0;
         self.counters.card_ids_played_this_turn.clear();
         self.counters.orbs_channeled_this_turn.clear();
+        self.counters.skip_monster_turn_pending = false;
     }
 }
 
@@ -1961,6 +1971,7 @@ mod tests {
                 victory_triggered: false,
                 discovery_cost_for_turn: None,
                 early_end_turn_pending: true,
+                skip_monster_turn_pending: true,
                 player_escaping: false,
                 escape_pending_reward: false,
             },
@@ -1997,6 +2008,10 @@ mod tests {
         assert!(
             turn.counters.early_end_turn_pending,
             "unrelated flags should not be reset by turn-start setup"
+        );
+        assert!(
+            !turn.counters.skip_monster_turn_pending,
+            "Java clears room.skipMonsterTurn when the next player turn starts"
         );
         assert_eq!(turn.turn_start_draw_modifier, -1);
     }

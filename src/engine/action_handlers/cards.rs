@@ -1887,6 +1887,10 @@ pub fn handle_queue_early_end_turn(state: &mut CombatState) {
     state.turn.mark_early_end_turn_pending();
 }
 
+pub fn handle_skip_enemies_turn(state: &mut CombatState) {
+    state.turn.mark_skip_monster_turn_pending();
+}
+
 pub fn handle_retain_non_ethereal_hand_cards(state: &mut CombatState) {
     for card in &mut state.zones.hand {
         if !crate::content::cards::is_ethereal(card) {

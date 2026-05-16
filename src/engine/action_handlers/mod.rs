@@ -614,6 +614,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             cards::handle_use_card_after_use_hooks(*card, state)
         }
         Action::QueueEarlyEndTurn => cards::handle_queue_early_end_turn(state),
+        Action::SkipEnemiesTurn => cards::handle_skip_enemies_turn(state),
         Action::EnqueueCardPlay { item, in_front } => {
             cards::handle_enqueue_card_play(*item, in_front, state)
         }

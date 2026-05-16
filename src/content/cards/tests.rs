@@ -3280,6 +3280,41 @@ fn watcher_meditate_matches_java_sources() {
 }
 
 #[test]
+fn watcher_vault_matches_java_sources() {
+    let java_map = build_java_id_map();
+    assert_eq!(java_id(CardId::Vault), "Vault");
+    assert_eq!(java_map.get("Vault"), Some(&CardId::Vault));
+
+    let vault = get_card_definition(CardId::Vault);
+    assert_eq!(vault.name, "Vault");
+    assert_eq!(vault.card_type, CardType::Skill);
+    assert_eq!(vault.rarity, CardRarity::Rare);
+    assert_eq!(vault.cost, 3);
+    assert_eq!(vault.target, CardTarget::All);
+    assert!(vault.exhaust);
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Vault));
+
+    let state = crate::test_support::blank_test_combat();
+    let mut vault_plus = CombatCard::new(CardId::Vault, 1045);
+    vault_plus.upgrades = 1;
+    assert_eq!(vault_plus.get_cost(), 2);
+
+    let actions = resolve_card_play(CardId::Vault, &state, &vault_plus, None);
+    assert_eq!(
+        actions.iter().map(|info| &info.action).collect::<Vec<_>>(),
+        vec![&Action::SkipEnemiesTurn, &Action::QueueEarlyEndTurn],
+        "Java Vault queues SkipEnemiesTurnAction before PressEndTurnButtonAction; VFX is intentionally not simulated"
+    );
+
+    let mut action_state = crate::test_support::blank_test_combat();
+    crate::engine::action_handlers::execute_action(Action::SkipEnemiesTurn, &mut action_state);
+    assert!(
+        action_state.turn.counters.skip_monster_turn_pending,
+        "SkipEnemiesTurnAction sets AbstractRoom.skipMonsterTurn=true"
+    );
+}
+
+#[test]
 fn watcher_scry_card_runtime_actions_match_java_use_methods() {
     let state = crate::test_support::blank_test_combat();
 

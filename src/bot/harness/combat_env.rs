@@ -1523,6 +1523,7 @@ fn card_target_mode_name(target: CardTarget) -> String {
         CardTarget::Enemy => "single_enemy",
         CardTarget::SelfAndEnemy => "self_and_enemy",
         CardTarget::AllEnemy => "all_enemy",
+        CardTarget::All => "all",
         CardTarget::SelfTarget => "self",
         CardTarget::None => "none",
     }
