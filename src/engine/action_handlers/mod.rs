@@ -1021,6 +1021,18 @@ fn handle_enter_stance(stance: &str, state: &mut CombatState) {
     if old_stance == new_stance {
         return;
     }
+    for power in &crate::content::powers::store::powers_snapshot_for(state, 0) {
+        for action in crate::content::powers::resolve_power_on_change_stance(
+            power.power_type,
+            0,
+            power.amount,
+            old_stance,
+            new_stance,
+        ) {
+            state.queue_action_back(action);
+        }
+    }
+    crate::content::relics::hooks::on_change_stance(state, old_stance, new_stance);
     if old_stance == crate::runtime::combat::StanceId::Calm {
         state.turn.adjust_energy(2);
     }
@@ -1028,7 +1040,6 @@ fn handle_enter_stance(stance: &str, state: &mut CombatState) {
         state.turn.adjust_energy(3);
     }
     state.entities.player.stance = new_stance;
-    crate::content::relics::hooks::on_change_stance(state, old_stance, new_stance);
 }
 
 #[cfg(test)]

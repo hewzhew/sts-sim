@@ -101,6 +101,13 @@ pub fn resolve_card_play_with_context(
         CardId::TalkToTheHand => {
             watcher::talk_to_the_hand::talk_to_the_hand_play(_state, _card, t)
         }
+        CardId::BattleHymn => watcher::battle_hymn::battle_hymn_play(_state, _card),
+        CardId::Devotion => watcher::devotion::devotion_play(_state, _card),
+        CardId::LikeWater => watcher::like_water::like_water_play(_state, _card),
+        CardId::MentalFortress => {
+            watcher::mental_fortress::mental_fortress_play(_state, _card)
+        }
+        CardId::Rushdown => watcher::rushdown::rushdown_play(_state, _card),
         CardId::Zap => defect::zap::zap_play(_state, _card),
         CardId::Dualcast => defect::dualcast::dualcast_play(_state, _card),
         CardId::BallLightning => defect::ball_lightning::ball_lightning_play(_state, _card, t),
@@ -867,6 +874,7 @@ pub fn upgraded_base_cost_override(card: &CombatCard) -> Option<i8> {
         CardId::Tranquility if card.upgrades > 0 => Some(0),
         CardId::Scrawl if card.upgrades > 0 => Some(0),
         CardId::MasterReality if card.upgrades > 0 => Some(0),
+        CardId::Rushdown if card.upgrades > 0 => Some(0),
         _ => None,
     }
 }

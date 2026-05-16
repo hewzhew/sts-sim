@@ -1,0 +1,84 @@
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatState, StanceId};
+use smallvec::SmallVec;
+
+pub fn battle_hymn_at_turn_start(state: &CombatState, amount: i32) -> SmallVec<[Action; 2]> {
+    if state.are_monsters_basically_dead_java() {
+        smallvec::smallvec![]
+    } else {
+        smallvec::smallvec![Action::MakeTempCardInHand {
+            card_id: crate::content::cards::CardId::Smite,
+            amount: amount.max(0).min(u8::MAX as i32) as u8,
+            upgraded: false,
+        }]
+    }
+}
+
+pub fn devotion_on_post_draw(
+    owner: usize,
+    amount: i32,
+    state: &CombatState,
+) -> SmallVec<[Action; 2]> {
+    if owner != 0 {
+        return smallvec::smallvec![];
+    }
+    if !crate::content::powers::store::has_power(
+        state,
+        owner,
+        crate::content::powers::PowerId::Mantra,
+    ) && amount >= 10
+    {
+        smallvec::smallvec![Action::EnterStance("Divinity".to_string())]
+    } else {
+        smallvec::smallvec![Action::ApplyPower {
+            source: owner,
+            target: owner,
+            power_id: crate::content::powers::PowerId::Mantra,
+            amount,
+        }]
+    }
+}
+
+pub fn like_water_at_end_of_turn(
+    state: &CombatState,
+    owner: usize,
+    amount: i32,
+) -> SmallVec<[Action; 2]> {
+    if owner == 0 && state.entities.player.stance == StanceId::Calm {
+        smallvec::smallvec![Action::GainBlock {
+            target: owner,
+            amount
+        }]
+    } else {
+        smallvec::smallvec![]
+    }
+}
+
+pub fn mental_fortress_on_change_stance(
+    owner: usize,
+    amount: i32,
+    old_stance: StanceId,
+    new_stance: StanceId,
+) -> SmallVec<[Action; 2]> {
+    if old_stance != new_stance {
+        smallvec::smallvec![Action::GainBlock {
+            target: owner,
+            amount
+        }]
+    } else {
+        smallvec::smallvec![]
+    }
+}
+
+pub fn rushdown_on_change_stance(
+    owner: usize,
+    amount: i32,
+    old_stance: StanceId,
+    new_stance: StanceId,
+) -> SmallVec<[Action; 2]> {
+    if owner == 0 && old_stance != new_stance && new_stance == StanceId::Wrath {
+        smallvec::smallvec![Action::DrawCards(amount.max(0) as u32)]
+    } else {
+        smallvec::smallvec![]
+    }
+}

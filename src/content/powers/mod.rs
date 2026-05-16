@@ -3,6 +3,7 @@ pub mod defect;
 pub mod ironclad;
 pub mod silent;
 pub mod store;
+pub mod watcher;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PowerId {
@@ -76,6 +77,11 @@ pub enum PowerId {
     WrathNextTurn,
     FreeAttackPower,
     BlockReturnPower,
+    BattleHymnPower,
+    DevotionPower,
+    LikeWaterPower,
+    MentalFortressPower,
+    RushdownPower,
     Focus,
     DexterityDown,
     PenNibPower,
@@ -546,6 +552,26 @@ pub fn get_power_definition(id: PowerId) -> PowerDefinition {
             id,
             name: "Talk to the Hand",
         },
+        PowerId::BattleHymnPower => PowerDefinition {
+            id,
+            name: "Battle Hymn",
+        },
+        PowerId::DevotionPower => PowerDefinition {
+            id,
+            name: "Devotion",
+        },
+        PowerId::LikeWaterPower => PowerDefinition {
+            id,
+            name: "Like Water",
+        },
+        PowerId::MentalFortressPower => PowerDefinition {
+            id,
+            name: "Mental Fortress",
+        },
+        PowerId::RushdownPower => PowerDefinition {
+            id,
+            name: "Rushdown",
+        },
         PowerId::Focus => PowerDefinition { id, name: "Focus" },
         PowerId::DexterityDown => PowerDefinition {
             id,
@@ -941,6 +967,7 @@ pub fn resolve_power_instance_at_turn_start(
                 }]
             }
         }
+        PowerId::BattleHymnPower => watcher::battle_hymn_at_turn_start(state, amount),
         PowerId::MagnetismPower => {
             let mut acts = smallvec::SmallVec::new();
             if state.are_monsters_basically_dead_java() {
@@ -1059,6 +1086,7 @@ pub fn resolve_power_on_post_draw(
         PowerId::DemonForm => ironclad::demon_form::on_post_draw(owner, amount),
         PowerId::NoxiousFumes => silent::noxious_fumes::on_post_draw(_state, owner, amount),
         PowerId::ToolsOfTheTrade => silent::tools_of_the_trade::on_post_draw(owner, amount),
+        PowerId::DevotionPower => watcher::devotion_on_post_draw(owner, amount, _state),
         PowerId::DrawCardNextTurn => smallvec::smallvec![
             crate::runtime::action::Action::DrawCards(amount.max(0) as u32),
             crate::runtime::action::Action::RemovePower {
@@ -1066,6 +1094,24 @@ pub fn resolve_power_on_post_draw(
                 power_id: PowerId::DrawCardNextTurn,
             },
         ],
+        _ => smallvec::smallvec![],
+    }
+}
+
+pub fn resolve_power_on_change_stance(
+    id: PowerId,
+    owner: crate::core::EntityId,
+    amount: i32,
+    old_stance: crate::runtime::combat::StanceId,
+    new_stance: crate::runtime::combat::StanceId,
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
+    match id {
+        PowerId::MentalFortressPower => {
+            watcher::mental_fortress_on_change_stance(owner, amount, old_stance, new_stance)
+        }
+        PowerId::RushdownPower => {
+            watcher::rushdown_on_change_stance(owner, amount, old_stance, new_stance)
+        }
         _ => smallvec::smallvec![],
     }
 }
@@ -1092,6 +1138,7 @@ pub fn resolve_power_at_end_of_turn(
         }],
         PowerId::Combust => ironclad::combust::at_end_of_turn(_state, owner, amount),
         PowerId::Metallicize => ironclad::metallicize::at_end_of_turn(owner, amount),
+        PowerId::LikeWaterPower => watcher::like_water_at_end_of_turn(_state, owner, amount),
         PowerId::Entangle => core::entangle::at_end_of_turn(owner),
         PowerId::Malleable => core::malleable::on_monster_turn_ended(_state, owner, amount),
         PowerId::PlatedArmor => core::plated_armor::on_monster_turn_ended(_state, owner, amount),

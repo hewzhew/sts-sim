@@ -350,6 +350,11 @@ pub enum CardId {
     WindmillStrike,
     Wallop,
     TalkToTheHand,
+    BattleHymn,
+    Devotion,
+    LikeWater,
+    MentalFortress,
+    Rushdown,
     // Add more as we expand
 }
 
@@ -508,6 +513,7 @@ pub fn is_innate_card(card: &crate::runtime::combat::CombatCard) -> bool {
         || matches!(card.id, CardId::HelloWorld) && card.upgrades > 0
         || matches!(card.id, CardId::MachineLearning) && card.upgrades > 0
         || matches!(card.id, CardId::Storm) && card.upgrades > 0
+        || matches!(card.id, CardId::BattleHymn) && card.upgrades > 0
 }
 
 pub fn get_card_definition(id: CardId) -> CardDefinition {
@@ -732,6 +738,11 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::WindmillStrike => watcher::windmill_strike::definition(),
         CardId::Wallop => watcher::wallop::definition(),
         CardId::TalkToTheHand => watcher::talk_to_the_hand::definition(),
+        CardId::BattleHymn => watcher::battle_hymn::definition(),
+        CardId::Devotion => watcher::devotion::definition(),
+        CardId::LikeWater => watcher::like_water::definition(),
+        CardId::MentalFortress => watcher::mental_fortress::definition(),
+        CardId::Rushdown => watcher::rushdown::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1355,6 +1366,10 @@ pub const WATCHER_UNCOMMON_POOL: &[CardId] = &[
     CardId::WindmillStrike,
     CardId::Wallop,
     CardId::TalkToTheHand,
+    CardId::BattleHymn,
+    CardId::LikeWater,
+    CardId::MentalFortress,
+    CardId::Rushdown,
 ];
 
 pub const WATCHER_RARE_POOL: &[CardId] = &[
@@ -1363,6 +1378,7 @@ pub const WATCHER_RARE_POOL: &[CardId] = &[
     CardId::SpiritShield,
     CardId::Scrawl,
     CardId::MasterReality,
+    CardId::Devotion,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1609,6 +1625,11 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::WindmillStrike => "WindmillStrike",
         CardId::Wallop => "Wallop",
         CardId::TalkToTheHand => "TalkToTheHand",
+        CardId::BattleHymn => "BattleHymn",
+        CardId::Devotion => "Devotion",
+        CardId::LikeWater => "LikeWater",
+        CardId::MentalFortress => "MentalFortress",
+        CardId::Rushdown => "Adaptation",
         CardId::BallLightning => "Ball Lightning",
         CardId::BeamCell => "Beam Cell",
         CardId::ColdSnap => "Cold Snap",
@@ -2028,6 +2049,11 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         WindmillStrike,
         Wallop,
         TalkToTheHand,
+        BattleHymn,
+        Devotion,
+        LikeWater,
+        MentalFortress,
+        Rushdown,
         Neutralize,
         Survivor,
         Anger,

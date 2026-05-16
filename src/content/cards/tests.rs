@@ -1126,6 +1126,76 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
             1,
         ),
         (
+            CardId::BattleHymn,
+            "Battle Hymn",
+            CardType::Power,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            1,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
+            CardId::Devotion,
+            "Devotion",
+            CardType::Power,
+            CardRarity::Rare,
+            1,
+            0,
+            0,
+            2,
+            CardTarget::None,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::LikeWater,
+            "Like Water",
+            CardType::Power,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            5,
+            CardTarget::None,
+            0,
+            0,
+            2,
+        ),
+        (
+            CardId::MentalFortress,
+            "Mental Fortress",
+            CardType::Power,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            4,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            2,
+        ),
+        (
+            CardId::Rushdown,
+            "Rushdown",
+            CardType::Power,
+            CardRarity::Uncommon,
+            1,
+            0,
+            0,
+            2,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
             CardId::Smite,
             "Smite",
             CardType::Attack,
@@ -1240,11 +1310,16 @@ fn watcher_first_common_batch_definitions_match_java_sources() {
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::WindmillStrike));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Wallop));
     assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::TalkToTheHand));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::BattleHymn));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::LikeWater));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::MentalFortress));
+    assert!(WATCHER_UNCOMMON_POOL.contains(&CardId::Rushdown));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Brilliance));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Ragnarok));
     assert!(WATCHER_RARE_POOL.contains(&CardId::SpiritShield));
     assert!(WATCHER_RARE_POOL.contains(&CardId::Scrawl));
     assert!(WATCHER_RARE_POOL.contains(&CardId::MasterReality));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Devotion));
 }
 
 #[test]
@@ -1869,6 +1944,172 @@ fn watcher_wallop_and_talk_to_the_hand_match_java_execution_hooks() {
         None,
         "Java BlockReturnPower ignores THORNS and HP_LOSS damage"
     );
+}
+
+#[test]
+fn watcher_power_hook_batch_matches_java_sources() {
+    let state = crate::test_support::blank_test_combat();
+
+    let mut battle_hymn_plus = CombatCard::new(CardId::BattleHymn, 970);
+    battle_hymn_plus.upgrades = 1;
+    assert!(
+        is_innate_card(&battle_hymn_plus),
+        "Java Battle Hymn+ changes only innate"
+    );
+    let battle_hymn = resolve_card_play(CardId::BattleHymn, &state, &battle_hymn_plus, None);
+    assert_eq!(
+        battle_hymn[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::BattleHymnPower,
+            amount: 1,
+        }
+    );
+    let mut hymn_state = crate::test_support::blank_test_combat();
+    hymn_state
+        .entities
+        .monsters
+        .push(crate::test_support::test_monster(EnemyId::JawWorm));
+    assert_eq!(
+        crate::content::powers::resolve_power_at_turn_start(
+            PowerId::BattleHymnPower,
+            &mut hymn_state,
+            0,
+            2
+        )
+        .as_slice(),
+        &[Action::MakeTempCardInHand {
+            card_id: CardId::Smite,
+            amount: 2,
+            upgraded: false,
+        }]
+    );
+
+    let mut devotion_plus = CombatCard::new(CardId::Devotion, 971);
+    devotion_plus.upgrades = 1;
+    let devotion = resolve_card_play(CardId::Devotion, &state, &devotion_plus, None);
+    assert_eq!(
+        devotion[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::DevotionPower,
+            amount: 3,
+        }
+    );
+    assert_eq!(
+        crate::content::powers::resolve_power_on_post_draw(PowerId::DevotionPower, &state, 0, 3)
+            .as_slice(),
+        &[Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Mantra,
+            amount: 3,
+        }]
+    );
+    assert_eq!(
+        crate::content::powers::resolve_power_on_post_draw(PowerId::DevotionPower, &state, 0, 10)
+            .as_slice(),
+        &[Action::EnterStance("Divinity".to_string())],
+        "Java DevotionPower directly enters Divinity if no Mantra exists and amount >= 10"
+    );
+
+    let mut calm_state = crate::test_support::blank_test_combat();
+    calm_state.entities.player.stance = StanceId::Calm;
+    let like_water_power = Power {
+        power_type: PowerId::LikeWaterPower,
+        instance_id: None,
+        amount: 7,
+        extra_data: 0,
+        payload: PowerPayload::None,
+        just_applied: false,
+    };
+    assert_eq!(
+        crate::content::powers::resolve_power_at_end_of_turn(&like_water_power, &calm_state, 0)
+            .as_slice(),
+        &[Action::GainBlock {
+            target: 0,
+            amount: 7,
+        }]
+    );
+
+    let mut like_water_plus = CombatCard::new(CardId::LikeWater, 972);
+    like_water_plus.upgrades = 1;
+    let like_water = resolve_card_play(CardId::LikeWater, &state, &like_water_plus, None);
+    assert_eq!(
+        like_water[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::LikeWaterPower,
+            amount: 7,
+        }
+    );
+
+    let mut mental_plus = CombatCard::new(CardId::MentalFortress, 973);
+    mental_plus.upgrades = 1;
+    let mental = resolve_card_play(CardId::MentalFortress, &state, &mental_plus, None);
+    assert_eq!(
+        mental[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::MentalFortressPower,
+            amount: 6,
+        }
+    );
+
+    let mut rushdown_plus = CombatCard::new(CardId::Rushdown, 974);
+    rushdown_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&rushdown_plus), Some(0));
+    let rushdown = resolve_card_play(CardId::Rushdown, &state, &rushdown_plus, None);
+    assert_eq!(
+        rushdown[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::RushdownPower,
+            amount: 2,
+        }
+    );
+
+    let mut stance_state = crate::test_support::blank_test_combat();
+    crate::content::powers::store::set_powers_for(
+        &mut stance_state,
+        0,
+        vec![
+            Power {
+                power_type: PowerId::MentalFortressPower,
+                instance_id: None,
+                amount: 6,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            },
+            Power {
+                power_type: PowerId::RushdownPower,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            },
+        ],
+    );
+    crate::engine::action_handlers::execute_action(
+        Action::EnterStance("Wrath".to_string()),
+        &mut stance_state,
+    );
+    assert_eq!(stance_state.entities.player.stance, StanceId::Wrath);
+    assert_eq!(
+        stance_state.pop_next_action(),
+        Some(Action::GainBlock {
+            target: 0,
+            amount: 6,
+        })
+    );
+    assert_eq!(stance_state.pop_next_action(), Some(Action::DrawCards(2)));
 }
 
 #[test]
