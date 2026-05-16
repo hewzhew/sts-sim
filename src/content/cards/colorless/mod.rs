@@ -82,39 +82,6 @@ pub fn play_colorless(
                 }
             ];
         }
-        CardId::BandageUp => {
-            acts.push(Action::Heal {
-                target: 0,
-                amount: mag,
-            });
-        }
-        CardId::Finesse => {
-            acts.push(Action::GainBlock {
-                target: 0,
-                amount: card.base_block_mut,
-            });
-            acts.push(Action::DrawCards(1));
-        }
-        CardId::Blind => {
-            if card.upgrades > 0 {
-                for monster in &state.entities.monsters {
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: monster.id,
-                        power_id: PowerId::Weak,
-                        amount: mag,
-                    });
-                }
-            } else {
-                let target_id = target.expect("Blind requires a target!");
-                acts.push(Action::ApplyPower {
-                    source: 0,
-                    target: target_id,
-                    power_id: PowerId::Weak,
-                    amount: mag,
-                });
-            }
-        }
         CardId::DarkShackles => {
             let target_id = target.expect("Dark Shackles requires a target!");
             acts.push(Action::ApplyPower {
@@ -161,27 +128,9 @@ pub fn play_colorless(
                 permanent: card.upgrades > 0,
             });
         }
-        CardId::FlashOfSteel => {
-            let target_id = target.expect("Flash of Steel requires a target!");
-            acts.push(Action::Damage(DamageInfo {
-                source: 0,
-                target: target_id,
-                base: dmg,
-                output: dmg,
-                damage_type: DamageType::Normal,
-                is_modified: false,
-            }));
-            acts.push(Action::DrawCards(1));
-        }
         CardId::Forethought => {
             acts.push(Action::Forethought {
                 upgraded: card.upgrades > 0,
-            });
-        }
-        CardId::GoodInstincts => {
-            acts.push(Action::GainBlock {
-                target: 0,
-                amount: card.base_block_mut,
             });
         }
         CardId::Impatience => {
@@ -213,26 +162,6 @@ pub fn play_colorless(
                 is_modified: dmg != state.zones.draw_pile.len() as i32,
             }));
         }
-        CardId::Panacea => {
-            acts.push(Action::ApplyPower {
-                source: 0,
-                target: 0,
-                power_id: PowerId::Artifact,
-                amount: mag,
-            });
-        }
-        CardId::PanicButton => {
-            acts.push(Action::GainBlock {
-                target: 0,
-                amount: card.base_block_mut,
-            });
-            acts.push(Action::ApplyPower {
-                source: 0,
-                target: 0,
-                power_id: PowerId::NoBlock,
-                amount: card.base_magic_num_mut,
-            });
-        }
         CardId::Purity => {
             acts.push(Action::ExhaustFromHand {
                 amount: mag.max(0) as usize,
@@ -240,37 +169,6 @@ pub fn play_colorless(
                 any_number: true,
                 can_pick_zero: true,
             });
-        }
-        CardId::SwiftStrike => {
-            let target_id = target.expect("Swift Strike requires a target!");
-            acts.push(Action::Damage(DamageInfo {
-                source: 0,
-                target: target_id,
-                base: dmg,
-                output: dmg,
-                damage_type: DamageType::Normal,
-                is_modified: false,
-            }));
-        }
-        CardId::Trip => {
-            if card.upgrades > 0 {
-                for monster in &state.entities.monsters {
-                    acts.push(Action::ApplyPower {
-                        source: 0,
-                        target: monster.id,
-                        power_id: PowerId::Vulnerable,
-                        amount: mag,
-                    });
-                }
-            } else {
-                let target_id = target.expect("Trip requires a target!");
-                acts.push(Action::ApplyPower {
-                    source: 0,
-                    target: target_id,
-                    power_id: PowerId::Vulnerable,
-                    amount: mag,
-                });
-            }
         }
         CardId::JAX => {
             acts.push(Action::LoseHp {

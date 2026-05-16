@@ -230,25 +230,25 @@ pub fn resolve_card_play_with_context(
         CardId::BulletTime => silent::bullet_time::bullet_time_play(_state, _card),
         CardId::Burst => silent::burst::burst_play(_state, _card),
         CardId::Pride => smallvec::smallvec![], // Coast 1 but does nothing on play
-        CardId::Finesse
-        | CardId::BandageUp
-        | CardId::Blind
-        | CardId::DarkShackles
+        CardId::BandageUp => colorless::bandage_up::bandage_up_play(_state, _card),
+        CardId::Finesse => colorless::finesse::finesse_play(_state, _card),
+        CardId::Blind => colorless::blind::blind_play(_state, _card, t),
+        CardId::FlashOfSteel => colorless::flash_of_steel::flash_of_steel_play(_state, _card, t),
+        CardId::GoodInstincts => colorless::good_instincts::good_instincts_play(_state, _card),
+        CardId::Panacea => colorless::panacea::panacea_play(_state, _card),
+        CardId::PanicButton => colorless::panic_button::panic_button_play(_state, _card),
+        CardId::SwiftStrike => colorless::swift_strike::swift_strike_play(_state, _card, t),
+        CardId::Trip => colorless::trip::trip_play(_state, _card, t),
+        CardId::DarkShackles
         | CardId::DeepBreath
         | CardId::Discovery
         | CardId::DramaticEntrance
         | CardId::Enlightenment
-        | CardId::FlashOfSteel
         | CardId::Forethought
-        | CardId::GoodInstincts
         | CardId::Impatience
         | CardId::JackOfAllTrades
         | CardId::MindBlast
-        | CardId::Panacea
-        | CardId::PanicButton
         | CardId::Purity
-        | CardId::SwiftStrike
-        | CardId::Trip
         | CardId::Apotheosis
         | CardId::Chrysalis
         | CardId::HandOfGreed
