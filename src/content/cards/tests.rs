@@ -4465,6 +4465,81 @@ fn all_for_one_definition_runtime_and_discard_to_hand_match_java_sources() {
 }
 
 #[test]
+fn genetic_algorithm_definition_runtime_and_misc_growth_match_java_sources() {
+    let genetic = get_card_definition(CardId::GeneticAlgorithm);
+    assert_eq!(genetic.name, "Genetic Algorithm");
+    assert_eq!(genetic.card_type, CardType::Skill);
+    assert_eq!(genetic.rarity, CardRarity::Uncommon);
+    assert_eq!(genetic.cost, 1);
+    assert_eq!(genetic.base_block, 1);
+    assert_eq!(genetic.base_magic, 2);
+    assert_eq!(genetic.target, CardTarget::SelfTarget);
+    assert!(genetic.exhaust);
+    assert_eq!(genetic.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::GeneticAlgorithm), "Genetic Algorithm");
+
+    let state = crate::test_support::blank_test_combat();
+    let card = CombatCard::new(CardId::GeneticAlgorithm, 412);
+    assert_eq!(
+        card.misc_value, 1,
+        "Java GeneticAlgorithm constructor initializes misc/baseBlock to 1"
+    );
+    let actions = resolve_card_play(CardId::GeneticAlgorithm, &state, &card, None);
+    assert_eq!(
+        actions[0].action,
+        Action::ModifyCardMisc {
+            card_uuid: 412,
+            amount: 2,
+        }
+    );
+    assert_eq!(
+        actions[1].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 1,
+        }
+    );
+
+    let mut plus = CombatCard::new(CardId::GeneticAlgorithm, 413);
+    plus.upgrades = 1;
+    assert_eq!(
+        resolve_card_play(CardId::GeneticAlgorithm, &state, &plus, None)[0].action,
+        Action::ModifyCardMisc {
+            card_uuid: 413,
+            amount: 3,
+        }
+    );
+
+    let mut grown = crate::test_support::blank_test_combat();
+    grown.zones.hand = vec![CombatCard::new(CardId::GeneticAlgorithm, 414)];
+    grown.zones.draw_pile = vec![CombatCard::new(CardId::GeneticAlgorithm, 414)];
+    crate::engine::action_handlers::execute_action(
+        Action::ModifyCardMisc {
+            card_uuid: 414,
+            amount: 2,
+        },
+        &mut grown,
+    );
+    assert_eq!(grown.zones.hand[0].misc_value, 3);
+    assert_eq!(grown.zones.draw_pile[0].misc_value, 3);
+    assert_eq!(
+        grown.meta.meta_changes,
+        vec![crate::runtime::combat::MetaChange::ModifyCardMisc {
+            card_uuid: 414,
+            amount: 2,
+        }],
+        "Java IncreaseMiscAction mutates the matching masterDeck card before battle instances"
+    );
+
+    let evaluated =
+        crate::content::cards::evaluate_card_for_play(&grown.zones.hand[0], &grown, None);
+    assert_eq!(
+        evaluated.base_block_mut, 3,
+        "Java GeneticAlgorithm.applyPowers uses misc as baseBlock"
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;
@@ -6385,11 +6460,11 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
         900,
         &mut dagger_normal,
     );
-    assert_eq!(dagger_normal.zones.hand[0].misc_value, 3);
-    assert_eq!(dagger_normal.zones.draw_pile[0].misc_value, 3);
-    assert_eq!(dagger_normal.zones.discard_pile[0].misc_value, 3);
-    assert_eq!(dagger_normal.zones.exhaust_pile[0].misc_value, 3);
-    assert_eq!(dagger_normal.zones.limbo[0].misc_value, 3);
+    assert_eq!(dagger_normal.zones.hand[0].misc_value, 18);
+    assert_eq!(dagger_normal.zones.draw_pile[0].misc_value, 18);
+    assert_eq!(dagger_normal.zones.discard_pile[0].misc_value, 18);
+    assert_eq!(dagger_normal.zones.exhaust_pile[0].misc_value, 18);
+    assert_eq!(dagger_normal.zones.limbo[0].misc_value, 18);
     assert_eq!(
         dagger_normal.meta.meta_changes,
         vec![crate::runtime::combat::MetaChange::ModifyCardMisc {

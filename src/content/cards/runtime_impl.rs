@@ -115,6 +115,9 @@ pub fn resolve_card_play_with_context(
         CardId::Fission => defect::fission::fission_play(_state, _card),
         CardId::MultiCast => defect::multi_cast::multi_cast_play(_state, _card),
         CardId::AllForOne => defect::all_for_one::all_for_one_play(_state, _card, t),
+        CardId::GeneticAlgorithm => {
+            defect::genetic_algorithm::genetic_algorithm_play(_state, _card)
+        }
         CardId::Neutralize => silent::neutralize::neutralize_play(_state, _card, t),
         CardId::Survivor => silent::survivor::survivor_play(_state, _card),
         CardId::ShrugItOff => ironclad::shrug_it_off::shrug_it_off_play(_state, _card),
@@ -423,6 +426,12 @@ pub fn evaluate_card(card: &mut CombatCard, state: &CombatState, target: Option<
             card.misc_value as f32
         } else {
             def.base_damage as f32
+        };
+    } else if card.id == CardId::GeneticAlgorithm {
+        block = if card.misc_value > 0 {
+            card.misc_value as f32
+        } else {
+            def.base_block as f32
         };
     } else if card.id == CardId::Stack {
         block = state.zones.discard_pile.len() as f32;

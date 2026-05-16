@@ -1236,11 +1236,16 @@ pub struct CombatCard {
 
 impl CombatCard {
     pub fn new(id: CardId, uuid: u32) -> Self {
+        let misc_value = match id {
+            CardId::RitualDagger => 15,
+            CardId::GeneticAlgorithm => 1,
+            _ => 0,
+        };
         Self {
             id,
             uuid,
             upgrades: 0,
-            misc_value: 0,
+            misc_value,
             base_damage_override: None,
             base_block_override: None,
             cost_modifier: 0,

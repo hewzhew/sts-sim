@@ -1741,8 +1741,8 @@ mod tests {
 
         handle_ritual_dagger(68, player_damage(68), 3, 680, &mut state);
 
-        assert_eq!(state.zones.hand[0].misc_value, 3);
-        assert_eq!(state.zones.limbo[0].misc_value, 3);
+        assert_eq!(state.zones.hand[0].misc_value, 18);
+        assert_eq!(state.zones.limbo[0].misc_value, 18);
         assert_eq!(
             state.meta.meta_changes,
             vec![crate::runtime::combat::MetaChange::ModifyCardMisc {

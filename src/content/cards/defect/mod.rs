@@ -29,6 +29,7 @@ pub mod equilibrium;
 pub mod fission;
 pub mod ftl;
 pub mod fusion;
+pub mod genetic_algorithm;
 pub mod glacier;
 pub mod go_for_the_eyes;
 pub mod heatsinks;
