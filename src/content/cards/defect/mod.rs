@@ -5,6 +5,7 @@ pub mod barrage;
 pub mod beam_cell;
 pub mod boot_sequence;
 pub mod capacitor;
+pub mod chaos;
 pub mod chill;
 pub mod claw;
 pub mod cold_snap;

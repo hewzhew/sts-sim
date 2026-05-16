@@ -722,6 +722,14 @@ pub enum Action {
         used_up: bool,
     },
     ChannelOrb(crate::runtime::combat::OrbId),
+    /// Java `AbstractOrb.getRandomOrb(true)` from Chaos.
+    ///
+    /// The handler materializes all requested orb ids before channeling any of
+    /// them, because upgraded Chaos calls getRandomOrb twice during card use
+    /// before either queued ChannelAction resolves.
+    ChannelRandomOrbs {
+        amount: u8,
+    },
     /// Java `ChannelAction(existingOrb, false)`: channel the concrete orb
     /// instance into an empty slot without auto-evoking.
     ChannelOrbEntity {

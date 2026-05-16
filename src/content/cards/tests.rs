@@ -2693,6 +2693,74 @@ fn sunder_action_grants_energy_only_when_target_dies_and_not_cleared_by_combat_e
 }
 
 #[test]
+fn chaos_definition_and_runtime_action_match_java_sources() {
+    let chaos = get_card_definition(CardId::Chaos);
+    assert_eq!(chaos.name, "Chaos");
+    assert_eq!(chaos.card_type, CardType::Skill);
+    assert_eq!(chaos.rarity, CardRarity::Uncommon);
+    assert_eq!(chaos.cost, 1);
+    assert_eq!(chaos.base_magic, 1);
+    assert_eq!(chaos.target, CardTarget::SelfTarget);
+    assert_eq!(chaos.upgrade_magic, 1);
+    assert_eq!(java_id(CardId::Chaos), "Chaos");
+
+    let state = crate::test_support::blank_test_combat();
+    let chaos_actions = resolve_card_play(
+        CardId::Chaos,
+        &state,
+        &CombatCard::new(CardId::Chaos, 294),
+        None,
+    );
+    assert_eq!(chaos_actions.len(), 1);
+    assert_eq!(
+        chaos_actions[0].action,
+        Action::ChannelRandomOrbs { amount: 1 }
+    );
+
+    let mut chaos_plus = CombatCard::new(CardId::Chaos, 295);
+    chaos_plus.upgrades = 1;
+    let chaos_plus_actions = resolve_card_play(CardId::Chaos, &state, &chaos_plus, None);
+    assert_eq!(
+        chaos_plus_actions[0].action,
+        Action::ChannelRandomOrbs { amount: 2 }
+    );
+}
+
+#[test]
+fn chaos_materializes_all_random_orbs_before_channeling_any_of_them() {
+    use crate::runtime::combat::OrbId;
+
+    let mut state = crate::test_support::blank_test_combat();
+    state.rng.card_random_rng = crate::runtime::rng::StsRng::new(42);
+    let mut expected_rng = state.rng.card_random_rng.clone();
+    let expected: Vec<OrbId> = (0..2)
+        .map(|_| match expected_rng.random(3) {
+            0 => OrbId::Dark,
+            1 => OrbId::Frost,
+            2 => OrbId::Lightning,
+            _ => OrbId::Plasma,
+        })
+        .collect();
+
+    crate::engine::action_handlers::execute_action(
+        Action::ChannelRandomOrbs { amount: 2 },
+        &mut state,
+    );
+    assert_eq!(
+        state.rng.card_random_rng.counter, expected_rng.counter,
+        "Java Chaos calls AbstractOrb.getRandomOrb(true) once per channel during card use"
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ChannelOrb(expected[0]))
+    );
+    assert_eq!(
+        state.pop_next_action(),
+        Some(Action::ChannelOrb(expected[1]))
+    );
+}
+
+#[test]
 fn ftl_action_draws_before_damage_only_below_play_count_threshold() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.counters.cards_played_this_turn = 3;

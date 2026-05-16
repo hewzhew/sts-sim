@@ -656,6 +656,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::IncreaseMaxOrb(amount) => handle_increase_max_orb(amount, state),
         Action::DecreaseMaxOrb(amount) => handle_decrease_max_orb(amount, state),
         Action::ChannelOrb(orb_id) => handle_channel_orb(orb_id, state),
+        Action::ChannelRandomOrbs { amount } => handle_channel_random_orbs(amount, state),
         Action::ChannelOrbEntity { orb } => handle_channel_orb_entity(orb, state),
         Action::EvokeOrb => crate::content::orbs::hooks::evoke_next_orb_now(state),
         Action::EvokeOrbWithoutRemoving => {
@@ -765,6 +766,26 @@ fn handle_channel_orb(orb_id: crate::runtime::combat::OrbId, state: &mut CombatS
     } else {
         state.queue_action_front(Action::ChannelOrb(orb_id));
         state.queue_action_front(Action::EvokeOrb);
+    }
+}
+
+fn handle_channel_random_orbs(amount: u8, state: &mut CombatState) {
+    use crate::runtime::combat::OrbId;
+
+    let mut orbs = Vec::with_capacity(amount as usize);
+    for _ in 0..amount {
+        let roll = state.rng.card_random_rng.random(3);
+        let orb = match roll {
+            0 => OrbId::Dark,
+            1 => OrbId::Frost,
+            2 => OrbId::Lightning,
+            _ => OrbId::Plasma,
+        };
+        orbs.push(orb);
+    }
+
+    for orb in orbs.into_iter().rev() {
+        state.queue_action_front(Action::ChannelOrb(orb));
     }
 }
 
