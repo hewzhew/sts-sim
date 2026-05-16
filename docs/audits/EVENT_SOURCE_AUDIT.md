@@ -73,14 +73,57 @@ Test:
 
 - `event_random_card_helpers_use_java_rng_streams`
 
+### Designer selection and mutation sources
+
+Java `events/shrines/Designer.java` has several non-obvious boundaries:
+
+- Constructor randomness consumes `miscRng.randomBoolean()` twice.
+- `Adjust` uses `masterDeck.hasUpgradableCards()` / `getUpgradableCards()`,
+  so normal already-upgraded cards, Status, and Curse cards are not eligible;
+  `Searing Blow` remains upgradeable.
+- `Clean Up` and `Full Service` button disabling checks
+  `CardGroup.getGroupWithoutBottledCards(masterDeck)`, while the actual grid
+  selection opens `CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())`.
+  Rust now preserves that source-level distinction instead of smoothing it into
+  one "reasonable" predicate.
+- `Adjust` random upgrades and `Full Service` follow-up upgrades use
+  `Collections.shuffle(upgradableCards, new Random(miscRng.randomLong()))`.
+- `Punch` applies HP_LOSS damage; Rust records this through a Designer-sourced
+  HP domain event instead of directly mutating `current_hp`.
+
+Fixes:
+
+- `RunPendingChoiceReason::Upgrade` now filters to Java `canUpgrade()`-eligible
+  master-deck cards.
+- `RunPendingChoiceReason::Transform` now uses Java `getPurgeableCards()`
+  filtering, rejecting `AscendersBane`, `CurseOfTheBell`, and `Necronomicurse`.
+- Added `PurgeNonBottled` and `TransformNonBottled` run-selection reasons for
+  Designer-style `getGroupWithoutBottledCards(getPurgeableCards())` flows.
+- Designer random upgrades now call `upgrade_card_with_source(...,
+  Event(Designer))` instead of mutating `upgrades` directly.
+- Designer Punch now calls `change_hp_with_source(..., Event(Designer))`.
+
+Tests:
+
+- `designer_adjust_upgrade_one_selection_uses_java_can_upgrade`
+- `designer_cleanup_remove_selection_excludes_bottled_and_unpurgeable_cards`
+- `designer_random_upgrade_uses_can_upgrade_and_domain_event_source`
+- `designer_punch_emits_hp_loss_source`
+- `designer_full_service_followup_upgrade_uses_domain_event_source`
+- `designer_run_pending_choice_rejects_invalid_direct_deck_input`
+
 ## Current High-Risk Event Areas
 
 - `Match and Keep` still deserves deeper review for board serialization,
   duplicate-card handling, and how upgraded/generated card instances are
   represented after a match.
-- Selection-heavy events need source-by-source checks: `Designer`, `Falling`,
-  `WeMeetAgain`, `The Library`, `Bonfire Spirits`, `Nloth`, and
-  `Note For Yourself`.
+- Selection-heavy events need source-by-source checks: `Falling`, `WeMeetAgain`,
+  `The Library`, `Bonfire Spirits`, `Nloth`, and `Note For Yourself`.
+- Several existing event modules likely need the new non-bottled selection
+  reason after direct Java audit (`Cleric`, `GoldenWing`, `LivingWall`,
+  `Transmogrifier`, `PurificationShrine`, `Beggar`, `GremlinWheelGame`,
+  `NoteForYourself`, and `BackToBasics` all use
+  `CardGroup.getGroupWithoutBottledCards(...)` in Java).
 - Event combat return states need continued scrutiny: `Colosseum`,
   `Masked Bandits`, `Mushrooms`, and `Mysterious Sphere`.
 - `SecretPortal` and `SpireHeart` need an explicit classification: unsupported,
@@ -91,5 +134,4 @@ Test:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `772 passed`.
-
+- Current result after this pass: `778 passed`.

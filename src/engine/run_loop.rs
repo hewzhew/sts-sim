@@ -269,9 +269,10 @@ pub fn tick_run(
                         return true;
                     };
                     if seen_indices.contains(&idx)
-                        || !crate::state::core::run_pending_choice_allows_card(
+                        || !crate::state::core::run_pending_choice_allows_card_for_run(
                             &rpc_state.reason,
                             card,
+                            run_state,
                         )
                     {
                         return true;
@@ -298,7 +299,8 @@ pub fn tick_run(
                 });
 
                 match rpc_state.reason {
-                    crate::state::core::RunPendingChoiceReason::Purge => {
+                    crate::state::core::RunPendingChoiceReason::Purge
+                    | crate::state::core::RunPendingChoiceReason::PurgeNonBottled => {
                         for idx in sorted_indices {
                             if idx < run_state.master_deck.len() {
                                 // Store removed card's rarity in event_state.internal_state
@@ -331,7 +333,8 @@ pub fn tick_run(
                             }
                         }
                     }
-                    crate::state::core::RunPendingChoiceReason::Transform => {
+                    crate::state::core::RunPendingChoiceReason::Transform
+                    | crate::state::core::RunPendingChoiceReason::TransformNonBottled => {
                         for idx in sorted_indices {
                             if idx < run_state.master_deck.len() {
                                 run_state.transform_card_with_source(idx, false, source);
