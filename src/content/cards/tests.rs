@@ -4251,7 +4251,9 @@ fn watcher_conclude_runtime_actions_match_java_use_method() {
                 "Java Conclude passes this.multiDamage, so target-specific damage modifiers must be preserved"
             );
         }
-        other => panic!("Conclude first action should remain DamageAllEnemiesAction, got {other:?}"),
+        other => {
+            panic!("Conclude first action should remain DamageAllEnemiesAction, got {other:?}")
+        }
     }
 }
 

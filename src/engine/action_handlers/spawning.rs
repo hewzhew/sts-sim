@@ -343,12 +343,10 @@ pub fn handle_add_combat_reward(item: crate::rewards::state::RewardItem, state: 
 }
 
 pub fn handle_roll_monster_move(monster_id: usize, state: &mut CombatState) {
-    if let Some(m) = state
-        .entities
-        .monsters
-        .iter()
-        .find(|m| m.id == monster_id && !m.is_dying)
-    {
+    if let Some(m) = state.entities.monsters.iter().find(|m| m.id == monster_id) {
+        // Java RollMoveAction.update() calls monster.rollMove() without checking
+        // isDying/isEscaping. Queued rolls after thorns kills, SuicideAction, or
+        // slime split still consume aiRng and update moveHistory.
         let entity_snapshot = m.clone();
         let num = state.rng.ai_rng.random(99);
         let player_powers = crate::content::powers::store::powers_snapshot_for(state, 0);
@@ -979,5 +977,41 @@ pub fn handle_update_relic_used_up(
         .find(|r| r.id == relic_id)
     {
         relic.used_up = used_up;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_roll_monster_move;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn roll_monster_move_still_executes_for_dying_monster_like_java_action() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut cultist = crate::test_support::test_monster(EnemyId::Cultist);
+        cultist.id = 7;
+        cultist.is_dying = true;
+        cultist.set_planned_move_id(0);
+        cultist.move_history_mut().clear();
+        state.entities.monsters = vec![cultist];
+
+        let before_counter = state.rng.ai_rng.counter;
+
+        handle_roll_monster_move(7, &mut state);
+
+        assert_eq!(state.rng.ai_rng.counter, before_counter + 1);
+        assert_eq!(
+            state.entities.monsters[0].planned_move_id(),
+            3,
+            "Cultist.java first getMove still sets Incantation even if RollMoveAction resolves after death"
+        );
+        assert_eq!(
+            state.entities.monsters[0]
+                .move_history()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![3]
+        );
     }
 }

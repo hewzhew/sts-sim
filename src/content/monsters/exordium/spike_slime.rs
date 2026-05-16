@@ -277,7 +277,7 @@ impl MonsterBehavior for SpikeSlimeL {
             source: entity.id,
             target: entity.id,
             power_id: PowerId::Split,
-            amount: 1,
+            amount: -1,
         }]
     }
 

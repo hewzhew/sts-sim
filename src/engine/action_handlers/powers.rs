@@ -1035,8 +1035,20 @@ mod tests {
         );
 
         let mut master_reality_state = blank_test_combat();
-        handle_apply_power(0, 0, PowerId::MasterRealityPower, -1, &mut master_reality_state);
-        handle_apply_power(0, 0, PowerId::MasterRealityPower, -1, &mut master_reality_state);
+        handle_apply_power(
+            0,
+            0,
+            PowerId::MasterRealityPower,
+            -1,
+            &mut master_reality_state,
+        );
+        handle_apply_power(
+            0,
+            0,
+            PowerId::MasterRealityPower,
+            -1,
+            &mut master_reality_state,
+        );
         assert_eq!(
             store::power_amount(&master_reality_state, 0, PowerId::MasterRealityPower),
             -2,

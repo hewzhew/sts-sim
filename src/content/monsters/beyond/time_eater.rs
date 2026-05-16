@@ -40,7 +40,9 @@ mod tests {
         let actions = TimeEater::take_turn_plan(&mut state, &time_eater, &plan);
 
         assert!(matches!(
-            actions.iter().find(|action| matches!(action, Action::Heal { .. })),
+            actions
+                .iter()
+                .find(|action| matches!(action, Action::Heal { .. })),
             Some(Action::Heal {
                 target: 1,
                 amount: 128

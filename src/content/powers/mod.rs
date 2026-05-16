@@ -863,10 +863,11 @@ pub fn resolve_power_on_use_card(
         PowerId::FreeAttackPower => {
             let def = crate::content::cards::get_card_definition(card.id);
             if def.card_type == crate::content::cards::CardType::Attack && !purge {
-                let remaining = store::with_power_mut(state, 0, PowerId::FreeAttackPower, |power| {
-                    power.amount -= 1;
-                    power.amount
-                });
+                let remaining =
+                    store::with_power_mut(state, 0, PowerId::FreeAttackPower, |power| {
+                        power.amount -= 1;
+                        power.amount
+                    });
                 if remaining.is_some_and(|amount| amount <= 0) {
                     state.queue_action_front(crate::runtime::action::Action::RemovePower {
                         target: 0,
@@ -1655,11 +1656,12 @@ pub fn resolve_power_on_attacked_to_change_damage(
         }
         PowerId::Invincible => {
             let target = info.target;
-            let capped_damage = store::with_power_mut(state, target, PowerId::Invincible, |power| {
-                let capped = current_damage.min(power.amount).max(0);
-                power.amount = (power.amount - capped).max(0);
-                capped
-            });
+            let capped_damage =
+                store::with_power_mut(state, target, PowerId::Invincible, |power| {
+                    let capped = current_damage.min(power.amount).max(0);
+                    power.amount = (power.amount - capped).max(0);
+                    capped
+                });
             capped_damage.unwrap_or(current_damage)
         }
         _ => current_damage,

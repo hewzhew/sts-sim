@@ -375,7 +375,7 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
 }
 
 fn roll_chance(rng: &mut crate::runtime::rng::StsRng, percent: i32) -> bool {
-    rng.random_range(0, 99) < percent
+    rng.random_boolean_chance(percent as f32 / 100.0)
 }
 
 fn execute_steps(entity: &MonsterEntity, plan: &MonsterTurnPlan) -> Vec<Action> {
@@ -427,7 +427,7 @@ impl MonsterBehavior for AcidSlimeL {
             source: entity.id,
             target: entity.id,
             power_id: PowerId::Split,
-            amount: 1,
+            amount: -1,
         }]
     }
 
@@ -514,6 +514,78 @@ impl MonsterBehavior for AcidSlimeS {
             }
             [] => panic!("acid slime S plan missing locked truth"),
             steps => panic!("acid slime S plan/steps mismatch: {:?}", steps),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{roll_chance, AcidSlimeL};
+    use crate::content::monsters::{EnemyId, MonsterBehavior, PreBattleLegacyRng};
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn percent_roll_uses_java_random_boolean_chance_not_integer_roll() {
+        for seed in 0..128 {
+            for percent in [40, 50, 60] {
+                let mut actual = StsRng::new(seed);
+                let mut expected = actual.clone();
+
+                let actual_result = roll_chance(&mut actual, percent);
+                let expected_result = expected.random_boolean_chance(percent as f32 / 100.0);
+
+                assert_eq!(
+                    actual_result, expected_result,
+                    "seed {seed} percent {percent} should follow Java randomBoolean(float)"
+                );
+                assert_eq!(
+                    actual, expected,
+                    "seed {seed} percent {percent} should leave identical RNG state"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn split_power_prebattle_uses_java_sentinel_amount() {
+        for (enemy_id, amount) in [
+            (
+                EnemyId::AcidSlimeL,
+                split_power_amount::<AcidSlimeL>(EnemyId::AcidSlimeL),
+            ),
+            (
+                EnemyId::SpikeSlimeL,
+                split_power_amount::<crate::content::monsters::exordium::spike_slime::SpikeSlimeL>(
+                    EnemyId::SpikeSlimeL,
+                ),
+            ),
+            (
+                EnemyId::SlimeBoss,
+                split_power_amount::<crate::content::monsters::exordium::slime_boss::SlimeBoss>(
+                    EnemyId::SlimeBoss,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                amount, -1,
+                "{enemy_id:?} SplitPower should match Java SplitPower.amount = -1"
+            );
+        }
+    }
+
+    fn split_power_amount<T: MonsterBehavior>(enemy_id: EnemyId) -> i32 {
+        let mut state = crate::test_support::blank_test_combat();
+        let monster = crate::test_support::test_monster(enemy_id);
+        let actions = T::use_pre_battle_actions(&mut state, &monster, PreBattleLegacyRng::Misc);
+        match actions.as_slice() {
+            [Action::ApplyPower {
+                power_id: PowerId::Split,
+                amount,
+                ..
+            }] => *amount,
+            other => panic!("expected one Split ApplyPower action, got {other:?}"),
         }
     }
 }

@@ -1372,7 +1372,6 @@ pub fn handle_upgrade_all_burns(state: &mut CombatState) {
         .draw_pile
         .iter_mut()
         .chain(state.zones.discard_pile.iter_mut())
-        .chain(state.zones.hand.iter_mut())
     {
         if card.id == CardId::Burn {
             card.upgrades += 1;
@@ -2535,8 +2534,9 @@ mod tests {
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
-        handle_queue_early_end_turn, handle_return_stasis_card, handle_upgrade_all_cards_in_combat,
-        handle_upgrade_all_in_hand, handle_use_card_done, obtain_specific_potion_if_allowed,
+        handle_queue_early_end_turn, handle_return_stasis_card, handle_upgrade_all_burns,
+        handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand, handle_use_card_done,
+        obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
@@ -2970,6 +2970,28 @@ mod tests {
         assert_ne!(
             state.zones.discard_pile[0].uuid, state.zones.draw_pile[0].uuid,
             "Java MakeTempCardInDiscardAndDeckAction uses separate stat-equivalent copies"
+        );
+    }
+
+    #[test]
+    fn burn_increase_upgrades_only_draw_and_discard_like_java() {
+        let mut state = blank_test_combat();
+        state.zones.hand = vec![CombatCard::new(CardId::Burn, 1)];
+        state.zones.draw_pile = vec![CombatCard::new(CardId::Burn, 2)];
+        state.zones.discard_pile = vec![CombatCard::new(CardId::Burn, 3)];
+        state.zones.exhaust_pile = vec![CombatCard::new(CardId::Burn, 4)];
+
+        handle_upgrade_all_burns(&mut state);
+
+        assert_eq!(
+            state.zones.hand[0].upgrades, 0,
+            "Java BurnIncreaseAction does not iterate the hand"
+        );
+        assert_eq!(state.zones.draw_pile[0].upgrades, 1);
+        assert_eq!(state.zones.discard_pile[0].upgrades, 1);
+        assert_eq!(
+            state.zones.exhaust_pile[0].upgrades, 0,
+            "Java BurnIncreaseAction does not iterate the exhaust pile"
         );
     }
 

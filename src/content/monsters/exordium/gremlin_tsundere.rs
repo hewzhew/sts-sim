@@ -100,7 +100,10 @@ fn alive_monster_count(state: &CombatState) -> usize {
         .entities
         .monsters
         .iter()
-        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
+        // Java counts monsters that are not isDying and not isEscaping. It
+        // does not check currentHealth here, so a zero-HP monster awaiting the
+        // queued death path still affects this immediate branch.
+        .filter(|monster| !monster.is_dying && !monster.is_escaped)
         .count()
 }
 
@@ -144,5 +147,35 @@ impl MonsterBehavior for GremlinTsundere {
             }
             GremlinTsundereTurn::Escape => vec![Action::Escape { target: entity.id }],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{protect_plan, GremlinTsundere};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn protect_followup_counts_zero_hp_not_yet_dying_monsters_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut tsundere = crate::test_support::test_monster(EnemyId::GremlinTsundere);
+        tsundere.id = 10;
+        let mut pending_death = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+        pending_death.id = 11;
+        pending_death.current_hp = 0;
+        pending_death.is_dying = false;
+        state.entities.monsters = vec![tsundere.clone(), pending_death];
+
+        let actions = GremlinTsundere::take_turn_plan(&mut state, &tsundere, &protect_plan(0));
+
+        assert!(matches!(
+            actions.last(),
+            Some(Action::SetMonsterMove {
+                monster_id: 10,
+                next_move_byte: 1,
+                ..
+            })
+        ));
     }
 }
