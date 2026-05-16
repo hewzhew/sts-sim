@@ -1027,6 +1027,40 @@ pub fn handle_feed(
     clear_post_combat_actions_if_ready(state);
 }
 
+pub fn handle_lesson_learned(
+    target: usize,
+    damage_info: crate::runtime::action::DamageInfo,
+    state: &mut CombatState,
+) {
+    let mut info = damage_info;
+    info.target = target;
+    let _ = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
+    if target_receives_java_unique_kill_reward(state, target) {
+        let possible = state
+            .meta
+            .master_deck_snapshot
+            .iter()
+            .enumerate()
+            .filter(|(_, card)| crate::content::cards::can_upgrade_card_once(card))
+            .map(|(idx, _)| idx)
+            .collect::<Vec<_>>();
+        if !possible.is_empty() {
+            let pick = state
+                .rng
+                .misc_rng
+                .random_range(0, possible.len() as i32 - 1) as usize;
+            let deck_idx = possible[pick];
+            let card_uuid = state.meta.master_deck_snapshot[deck_idx].uuid;
+            state.meta.master_deck_snapshot[deck_idx].upgrades += 1;
+            state
+                .meta
+                .meta_changes
+                .push(crate::runtime::combat::MetaChange::UpgradeMasterDeckCard { card_uuid });
+        }
+    }
+    clear_post_combat_actions_if_ready(state);
+}
+
 pub fn handle_hand_of_greed(
     target: usize,
     damage_info: crate::runtime::action::DamageInfo,
@@ -1846,5 +1880,56 @@ mod tests {
             }],
             "Java RitualDaggerAction applies the reward from its own post-damage target state, even when damage() returned because the target was already isDying"
         );
+    }
+
+    #[test]
+    fn lesson_learned_action_upgrades_master_deck_snapshot_and_emits_meta_change() {
+        let mut state = blank_test_combat();
+        let mut target = test_monster(EnemyId::JawWorm);
+        target.id = 69;
+        target.current_hp = 0;
+        target.is_dying = true;
+        state.entities.monsters = vec![target];
+        let mut upgraded_defend = CombatCard::new(CardId::Defend, 691);
+        upgraded_defend.upgrades = 1;
+        state.meta.master_deck_snapshot =
+            vec![CombatCard::new(CardId::Strike, 690), upgraded_defend];
+
+        handle_lesson_learned(69, player_damage(69), &mut state);
+
+        assert_eq!(state.meta.master_deck_snapshot[0].upgrades, 1);
+        assert_eq!(
+            state.meta.meta_changes,
+            vec![crate::runtime::combat::MetaChange::UpgradeMasterDeckCard { card_uuid: 690 }],
+            "Java LessonLearnedAction upgrades a random canUpgrade() card from player.masterDeck"
+        );
+    }
+
+    #[test]
+    fn lesson_learned_action_does_not_upgrade_minion_kill_like_java() {
+        let mut state = blank_test_combat();
+        let mut target = test_monster(EnemyId::JawWorm);
+        target.id = 70;
+        target.current_hp = 0;
+        target.is_dying = true;
+        state.entities.monsters = vec![target];
+        crate::content::powers::store::set_powers_for(
+            &mut state,
+            70,
+            vec![Power {
+                power_type: PowerId::Minion,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        state.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 700)];
+
+        handle_lesson_learned(70, player_damage(70), &mut state);
+
+        assert_eq!(state.meta.master_deck_snapshot[0].upgrades, 0);
+        assert!(state.meta.meta_changes.is_empty());
     }
 }

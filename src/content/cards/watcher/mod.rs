@@ -34,6 +34,7 @@ pub mod indignation;
 pub mod inner_peace;
 pub mod judgement;
 pub mod just_lucky;
+pub mod lesson_learned;
 pub mod like_water;
 pub mod master_reality;
 pub mod meditate;

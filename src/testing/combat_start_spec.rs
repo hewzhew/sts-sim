@@ -82,6 +82,7 @@ pub fn build_natural_start_state(
             player_class: run_state.player_class,
             is_boss_fight: room_type == RoomType::MonsterRoomBoss,
             is_elite_fight: room_type == RoomType::MonsterRoomElite,
+            master_deck_snapshot: run_state.master_deck.clone(),
             meta_changes: Vec::new(),
         },
         turn: TurnRuntime::fresh_player_turn(3),

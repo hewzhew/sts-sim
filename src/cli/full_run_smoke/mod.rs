@@ -605,6 +605,7 @@ fn build_combat_state(run_state: &mut RunState, encounter_id: EncounterId) -> Co
             player_class: run_state.player_class,
             is_boss_fight: false,
             is_elite_fight: false,
+            master_deck_snapshot: run_state.master_deck.clone(),
             meta_changes: Vec::new(),
         },
         turn: TurnRuntime::fresh_player_turn(3),

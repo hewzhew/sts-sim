@@ -161,6 +161,12 @@ fn apply_combat_meta_change(run_state: &mut RunState, change: crate::runtime::co
         crate::runtime::combat::MetaChange::ModifyCardMisc { card_uuid, amount } => {
             run_state.modify_card_misc_value(card_uuid, amount);
         }
+        crate::runtime::combat::MetaChange::UpgradeMasterDeckCard { card_uuid } => {
+            run_state.upgrade_card_with_source(
+                card_uuid,
+                crate::state::selection::DomainEventSource::DeckMutation,
+            );
+        }
     }
 }
 
@@ -1012,6 +1018,22 @@ mod tests {
         assert_eq!(
             run_state.master_deck[0].misc_value, 20,
             "Java RitualDaggerAction updates player.masterDeck before GetAllInBattleInstances"
+        );
+    }
+
+    #[test]
+    fn combat_upgrade_meta_change_updates_matching_master_deck_card() {
+        let mut run_state = RunState::new(1, 0, false, "Watcher");
+        run_state.master_deck = vec![CombatCard::new(CardId::StrikeP, 201)];
+
+        apply_combat_meta_change(
+            &mut run_state,
+            crate::runtime::combat::MetaChange::UpgradeMasterDeckCard { card_uuid: 201 },
+        );
+
+        assert_eq!(
+            run_state.master_deck[0].upgrades, 1,
+            "Java LessonLearnedAction upgrades a random canUpgrade() card from player.masterDeck"
         );
     }
 

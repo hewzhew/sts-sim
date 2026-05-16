@@ -11,6 +11,7 @@ use std::ops::{Deref, DerefMut};
 pub enum MetaChange {
     AddCardToMasterDeck(CardId),
     ModifyCardMisc { card_uuid: u32, amount: i32 },
+    UpgradeMasterDeckCard { card_uuid: u32 },
 }
 
 // --- ID Types ---
@@ -34,6 +35,7 @@ pub struct CombatMeta {
     pub player_class: &'static str,
     pub is_boss_fight: bool,
     pub is_elite_fight: bool,
+    pub master_deck_snapshot: Vec<CombatCard>,
     pub meta_changes: Vec<MetaChange>,
 }
 

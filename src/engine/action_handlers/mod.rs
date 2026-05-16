@@ -281,6 +281,10 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             damage_info,
             max_hp_amount,
         } => damage::handle_feed(target, damage_info, max_hp_amount, state),
+        Action::LessonLearned {
+            target,
+            damage_info,
+        } => damage::handle_lesson_learned(target, damage_info, state),
         Action::HandOfGreed {
             target,
             damage_info,

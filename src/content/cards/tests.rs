@@ -3382,6 +3382,46 @@ fn watcher_foreign_influence_matches_java_sources() {
 }
 
 #[test]
+fn watcher_lesson_learned_matches_java_sources() {
+    let java_map = build_java_id_map();
+    assert_eq!(java_id(CardId::LessonLearned), "LessonLearned");
+    assert_eq!(java_map.get("LessonLearned"), Some(&CardId::LessonLearned));
+
+    let lesson = get_card_definition(CardId::LessonLearned);
+    assert_eq!(lesson.name, "Lesson Learned");
+    assert_eq!(lesson.card_type, CardType::Attack);
+    assert_eq!(lesson.rarity, CardRarity::Rare);
+    assert_eq!(lesson.cost, 2);
+    assert_eq!(lesson.base_damage, 10);
+    assert_eq!(lesson.upgrade_damage, 3);
+    assert_eq!(lesson.target, CardTarget::Enemy);
+    assert!(lesson.exhaust);
+    assert!(lesson.tags.contains(&CardTag::Healing));
+    assert!(WATCHER_RARE_POOL.contains(&CardId::LessonLearned));
+
+    let state = crate::test_support::blank_test_combat();
+    let mut lesson_plus = CombatCard::new(CardId::LessonLearned, 1049);
+    lesson_plus.upgrades = 1;
+    let actions = resolve_card_play(CardId::LessonLearned, &state, &lesson_plus, Some(7));
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::LessonLearned {
+            target: 7,
+            damage_info: DamageInfo {
+                source: 0,
+                target: 7,
+                base: 13,
+                output: 13,
+                damage_type: DamageType::Normal,
+                is_modified: true,
+            },
+        },
+        "Java LessonLearned.use queues LessonLearnedAction with this.damage"
+    );
+}
+
+#[test]
 fn watcher_wish_and_option_cards_match_java_sources() {
     let java_map = build_java_id_map();
     assert_eq!(java_id(CardId::Wish), "Wish");
@@ -16185,6 +16225,7 @@ fn character_reward_pools_preserve_java_hashmap_runtime_order_for_implemented_ca
         ("Ironclad", &[CardId::Feed, CardId::Reaper][..]),
         ("Silent", &[CardId::Alchemize][..]),
         ("Defect", &[CardId::SelfRepair][..]),
+        ("Watcher", &[CardId::LessonLearned, CardId::Wish][..]),
     ] {
         let pool = class_combat_card_pool_for_type(class, None);
         for healing_card in healing_cards {

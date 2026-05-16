@@ -232,5 +232,10 @@ fn stable_meta_change_key(change: &MetaChange) -> StableMetaChangeKey {
             card_uuid: *card_uuid,
             amount: *amount,
         },
+        MetaChange::UpgradeMasterDeckCard { card_uuid } => {
+            StableMetaChangeKey::UpgradeMasterDeckCard {
+                card_uuid: *card_uuid,
+            }
+        }
     }
 }

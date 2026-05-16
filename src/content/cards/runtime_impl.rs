@@ -70,6 +70,7 @@ pub fn resolve_card_play_with_context(
         CardId::ForeignInfluence => {
             watcher::foreign_influence::foreign_influence_play(_state, _card)
         }
+        CardId::LessonLearned => watcher::lesson_learned::lesson_learned_play(_state, _card, t),
         CardId::Sanctity => watcher::sanctity::sanctity_play(_state, _card),
         CardId::CrushJoints => watcher::crush_joints::crush_joints_play(_state, _card, t),
         CardId::SashWhip => watcher::sash_whip::sash_whip_play(_state, _card, t),

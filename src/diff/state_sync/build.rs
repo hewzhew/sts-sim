@@ -273,6 +273,7 @@ pub fn build_combat_state_from_snapshots(
             is_elite_fight: truth_snapshot.get("room_type").map_or(false, |s| {
                 s.as_str() == Some("MonsterRoomElite") || s.as_str() == Some("EventRoom")
             }),
+            master_deck_snapshot: Vec::new(),
             meta_changes: Vec::new(),
         },
         turn: TurnRuntime {

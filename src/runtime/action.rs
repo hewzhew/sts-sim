@@ -369,6 +369,12 @@ pub enum Action {
         damage_info: DamageInfo,
         max_hp_amount: i32,
     },
+    /// Java Watcher `LessonLearnedAction`: damage, then if the target is a
+    /// qualifying kill, randomly upgrade an upgradeable master-deck card.
+    LessonLearned {
+        target: EntityId,
+        damage_info: DamageInfo,
+    },
     HandOfGreed {
         target: EntityId,
         damage_info: DamageInfo,
@@ -931,6 +937,7 @@ impl Action {
                 | Action::OrbDamageAllEnemies { .. }
                 | Action::DamageRandomEnemy { .. }
                 | Action::Feed { .. }
+                | Action::LessonLearned { .. }
                 | Action::HandOfGreed { .. }
                 | Action::RitualDagger { .. }
                 | Action::VampireDamage(_)

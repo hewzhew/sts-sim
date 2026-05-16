@@ -26,6 +26,7 @@ pub fn blank_test_combat() -> CombatState {
             player_class: "Ironclad",
             is_boss_fight: false,
             is_elite_fight: false,
+            master_deck_snapshot: Vec::new(),
             meta_changes: Vec::new(),
         },
         turn: TurnRuntime {

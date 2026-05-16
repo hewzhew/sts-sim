@@ -319,6 +319,7 @@ pub enum CardId {
     Indignation,
     FollowUp,
     ForeignInfluence,
+    LessonLearned,
     Sanctity,
     CrushJoints,
     SashWhip,
@@ -738,6 +739,7 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Indignation => watcher::indignation::definition(),
         CardId::FollowUp => watcher::follow_up::definition(),
         CardId::ForeignInfluence => watcher::foreign_influence::definition(),
+        CardId::LessonLearned => watcher::lesson_learned::definition(),
         CardId::Sanctity => watcher::sanctity::definition(),
         CardId::CrushJoints => watcher::crush_joints::definition(),
         CardId::SashWhip => watcher::sash_whip::definition(),
@@ -1459,6 +1461,7 @@ pub const WATCHER_RARE_POOL: &[CardId] = &[
     CardId::Vault,
     CardId::Omniscience,
     CardId::Wish,
+    CardId::LessonLearned,
 ];
 
 /// Returns the pool for a given rarity (Ironclad).
@@ -1674,6 +1677,7 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Indignation => "Indignation",
         CardId::FollowUp => "FollowUp",
         CardId::ForeignInfluence => "ForeignInfluence",
+        CardId::LessonLearned => "LessonLearned",
         CardId::Sanctity => "Sanctity",
         CardId::CrushJoints => "CrushJoints",
         CardId::SashWhip => "SashWhip",
@@ -2187,6 +2191,7 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Vault,
         Omniscience,
         Wish,
+        LessonLearned,
         BecomeAlmighty,
         FameAndFortune,
         LiveForever,

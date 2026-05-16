@@ -103,6 +103,7 @@ pub(in crate::bot::combat) struct StableMetaKey {
 pub(in crate::bot::combat) enum StableMetaChangeKey {
     AddCardToMasterDeck(String),
     ModifyCardMisc { card_uuid: u32, amount: i32 },
+    UpgradeMasterDeckCard { card_uuid: u32 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -398,6 +399,9 @@ impl StableMetaChangeKey {
             StableMetaChangeKey::AddCardToMasterDeck(card) => format!("add_master:{card}"),
             StableMetaChangeKey::ModifyCardMisc { card_uuid, amount } => {
                 format!("modify_misc:{card_uuid}:{amount}")
+            }
+            StableMetaChangeKey::UpgradeMasterDeckCard { card_uuid } => {
+                format!("upgrade_master:{card_uuid}")
             }
         }
     }
