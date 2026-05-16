@@ -249,6 +249,9 @@ pub enum CardId {
     Glacier,
     Skim,
     Overclock,
+    DoubleEnergy,
+    Reprogram,
+    Melter,
     // Add more as we expand
 }
 
@@ -522,6 +525,9 @@ pub fn get_card_definition(id: CardId) -> CardDefinition {
         CardId::Glacier => defect::glacier::definition(),
         CardId::Skim => defect::skim::definition(),
         CardId::Overclock => defect::overclock::definition(),
+        CardId::DoubleEnergy => defect::double_energy::definition(),
+        CardId::Reprogram => defect::reprogram::definition(),
+        CardId::Melter => defect::melter::definition(),
         CardId::Bash => ironclad::bash::definition(),
         CardId::Neutralize => silent::neutralize::definition(),
         CardId::Survivor => silent::survivor::definition(),
@@ -1197,6 +1203,9 @@ pub fn java_id(id: CardId) -> &'static str {
         CardId::Glacier => "Glacier",
         CardId::Skim => "Skim",
         CardId::Overclock => "Steam Power",
+        CardId::DoubleEnergy => "Double Energy",
+        CardId::Reprogram => "Reprogram",
+        CardId::Melter => "Melter",
         CardId::Neutralize => "Neutralize",
         CardId::Survivor => "Survivor",
 
@@ -1458,6 +1467,9 @@ pub fn build_java_id_map() -> std::collections::HashMap<&'static str, CardId> {
         Glacier,
         Skim,
         Overclock,
+        DoubleEnergy,
+        Reprogram,
+        Melter,
         Neutralize,
         Survivor,
         Anger,

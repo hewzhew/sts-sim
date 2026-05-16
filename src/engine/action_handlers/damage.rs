@@ -1142,6 +1142,14 @@ pub fn handle_lose_block(target: usize, amount: i32, state: &mut CombatState) {
     }
 }
 
+pub fn handle_remove_all_block(target: usize, state: &mut CombatState) {
+    if target == 0 {
+        state.entities.player.block = 0;
+    } else if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
+        m.block = 0;
+    }
+}
+
 pub fn handle_heal(target: usize, mut amount: i32, state: &mut CombatState) {
     if amount < 0 {
         let pct = (-amount) as f32 / 100.0;

@@ -186,6 +186,9 @@ pub enum Action {
         target: EntityId,
         amount: i32,
     },
+    RemoveAllBlock {
+        target: EntityId,
+    },
     /// Rust migration shim for Java `LoseHPAction` provenance.
     ///
     /// In Java, whether HP loss triggers `RupturePower.wasHPLost(...)` is determined
@@ -215,6 +218,8 @@ pub enum Action {
     GainEnergy {
         amount: i32,
     },
+    /// Java Defect `DoubleEnergyAction`: gain current energy at execution time.
+    DoubleEnergy,
     /// Java `GainEnergyIfDiscardAction`: checked at action execution time.
     GainEnergyIfDiscardedThisTurn {
         amount: i32,

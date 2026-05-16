@@ -269,6 +269,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             damage::handle_gain_block_random_monster(source, amount, state)
         }
         Action::LoseBlock { target, amount } => damage::handle_lose_block(target, amount, state),
+        Action::RemoveAllBlock { target } => damage::handle_remove_all_block(target, state),
         Action::Heal { target, amount } => damage::handle_heal(target, amount, state),
         Action::GainGold { amount } => damage::handle_gain_gold(amount, state),
         Action::StealPlayerGold { thief_id, amount } => {
@@ -372,6 +373,7 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             powers::handle_trigger_time_warp_end_turn(owner, state)
         }
         Action::GainEnergy { amount } => powers::handle_gain_energy(amount, state),
+        Action::DoubleEnergy => powers::handle_double_energy(state),
         Action::GainEnergyIfDiscardedThisTurn { amount } => {
             if state.turn.counters.cards_discarded_this_turn > 0 {
                 powers::handle_gain_energy(amount, state);

@@ -727,6 +727,13 @@ pub fn handle_gain_energy(amount: i32, state: &mut CombatState) {
     state.turn.adjust_energy(amount);
 }
 
+pub fn handle_double_energy(state: &mut CombatState) {
+    let current_energy = state.turn.energy as i32;
+    if current_energy > 0 {
+        state.turn.adjust_energy(current_energy);
+    }
+}
+
 pub fn handle_gain_max_hp(amount: i32, state: &mut CombatState) {
     state.entities.player.max_hp += amount;
     state.entities.player.current_hp =

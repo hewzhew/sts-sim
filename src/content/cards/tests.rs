@@ -1607,6 +1607,45 @@ fn defect_low_risk_uncommon_definitions_match_java_sources() {
             0,
             1,
         ),
+        (
+            CardId::DoubleEnergy,
+            "Double Energy",
+            CardType::Skill,
+            1,
+            0,
+            0,
+            0,
+            CardTarget::SelfTarget,
+            0,
+            0,
+            0,
+        ),
+        (
+            CardId::Reprogram,
+            "Reprogram",
+            CardType::Skill,
+            1,
+            0,
+            0,
+            1,
+            CardTarget::None,
+            0,
+            0,
+            1,
+        ),
+        (
+            CardId::Melter,
+            "Melter",
+            CardType::Attack,
+            1,
+            10,
+            0,
+            0,
+            CardTarget::Enemy,
+            4,
+            0,
+            0,
+        ),
     ];
 
     let java_map = build_java_id_map();
@@ -1647,6 +1686,13 @@ fn defect_low_risk_uncommon_definitions_match_java_sources() {
     let mut fusion_plus = CombatCard::new(CardId::Fusion, 241);
     fusion_plus.upgrades = 1;
     assert_eq!(upgraded_base_cost_override(&fusion_plus), Some(1));
+    let mut double_energy_plus = CombatCard::new(CardId::DoubleEnergy, 2411);
+    double_energy_plus.upgrades = 1;
+    assert_eq!(upgraded_base_cost_override(&double_energy_plus), Some(0));
+    assert!(exhausts_when_played(&CombatCard::new(
+        CardId::DoubleEnergy,
+        2412
+    )));
 }
 
 #[test]
@@ -1751,6 +1797,126 @@ fn defect_low_risk_uncommon_runtime_actions_match_java_use_methods() {
         resolve_card_play(CardId::Overclock, &state, &overclock_plus, None);
     assert_eq!(overclock_plus_actions[0].action, Action::DrawCards(3));
     assert_eq!(overclock_plus_actions[1].action, overclock[1].action);
+
+    let double_energy = resolve_card_play(
+        CardId::DoubleEnergy,
+        &state,
+        &CombatCard::new(CardId::DoubleEnergy, 251),
+        None,
+    );
+    assert_eq!(double_energy.len(), 1);
+    assert_eq!(double_energy[0].action, Action::DoubleEnergy);
+
+    let reprogram = resolve_card_play(
+        CardId::Reprogram,
+        &state,
+        &CombatCard::new(CardId::Reprogram, 252),
+        None,
+    );
+    assert_eq!(reprogram.len(), 3);
+    assert_eq!(
+        reprogram[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: -1,
+        }
+    );
+    assert_eq!(
+        reprogram[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 1,
+        }
+    );
+    assert_eq!(
+        reprogram[2].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Dexterity,
+            amount: 1,
+        }
+    );
+    let mut reprogram_plus = CombatCard::new(CardId::Reprogram, 253);
+    reprogram_plus.upgrades = 1;
+    let reprogram_plus_actions =
+        resolve_card_play(CardId::Reprogram, &state, &reprogram_plus, None);
+    assert_eq!(
+        reprogram_plus_actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Focus,
+            amount: -2,
+        }
+    );
+    assert_eq!(
+        reprogram_plus_actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 2,
+        }
+    );
+    assert_eq!(
+        reprogram_plus_actions[2].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Dexterity,
+            amount: 2,
+        }
+    );
+
+    let melter = resolve_card_play(
+        CardId::Melter,
+        &state,
+        &CombatCard::new(CardId::Melter, 254),
+        Some(19),
+    );
+    assert_eq!(melter.len(), 2);
+    assert_eq!(melter[0].action, Action::RemoveAllBlock { target: 19 });
+    match &melter[1].action {
+        Action::Damage(info) => {
+            assert_eq!(info.target, 19);
+            assert_eq!(info.base, 10);
+            assert_eq!(info.output, 10);
+        }
+        other => panic!("Melter second action should damage, got {other:?}"),
+    }
+    let mut melter_plus = CombatCard::new(CardId::Melter, 255);
+    melter_plus.upgrades = 1;
+    let melter_plus_actions = resolve_card_play(CardId::Melter, &state, &melter_plus, Some(19));
+    match &melter_plus_actions[1].action {
+        Action::Damage(info) => {
+            assert_eq!(info.base, 14);
+            assert_eq!(info.output, 14);
+        }
+        other => panic!("Melter+ second action should damage, got {other:?}"),
+    }
+}
+
+#[test]
+fn defect_energy_and_remove_block_actions_read_execution_state() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.turn.energy = 2;
+    crate::engine::action_handlers::execute_action(Action::DoubleEnergy, &mut state);
+    assert_eq!(state.turn.energy, 4);
+
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.id = 256;
+    monster.block = 18;
+    state.entities.monsters = vec![monster];
+    crate::engine::action_handlers::execute_action(
+        Action::RemoveAllBlock { target: 256 },
+        &mut state,
+    );
+    assert_eq!(state.entities.monsters[0].block, 0);
 }
 
 #[test]
