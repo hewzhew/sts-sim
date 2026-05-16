@@ -37,6 +37,7 @@ pub enum SelectionReason {
     DiscardToHand,
     DiscardToHandNoCostChange,
     DiscardToHandRetain,
+    Omniscience,
     Recycle,
     Discovery,
 }

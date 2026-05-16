@@ -3315,6 +3315,43 @@ fn watcher_vault_matches_java_sources() {
 }
 
 #[test]
+fn watcher_omniscience_matches_java_sources() {
+    let java_map = build_java_id_map();
+    assert_eq!(java_id(CardId::Omniscience), "Omniscience");
+    assert_eq!(java_map.get("Omniscience"), Some(&CardId::Omniscience));
+
+    let omni = get_card_definition(CardId::Omniscience);
+    assert_eq!(omni.name, "Omniscience");
+    assert_eq!(omni.card_type, CardType::Skill);
+    assert_eq!(omni.rarity, CardRarity::Rare);
+    assert_eq!(omni.cost, 4);
+    assert_eq!(omni.base_magic, 2);
+    assert_eq!(omni.target, CardTarget::None);
+    assert!(omni.exhaust);
+    assert!(WATCHER_RARE_POOL.contains(&CardId::Omniscience));
+
+    let mut omni_plus = CombatCard::new(CardId::Omniscience, 1046);
+    omni_plus.upgrades = 1;
+    assert_eq!(omni_plus.get_cost(), 3);
+
+    let state = crate::test_support::blank_test_combat();
+    let actions = resolve_card_play(CardId::Omniscience, &state, &omni_plus, None);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(
+        actions[0].action,
+        Action::SuspendForGridSelect {
+            source_pile: crate::state::PileType::Draw,
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: crate::state::GridSelectFilter::Any,
+            reason: crate::state::GridSelectReason::Omniscience { play_amount: 2 },
+        },
+        "Java Omniscience queues OmniscienceAction(magicNumber), which opens draw-pile grid select"
+    );
+}
+
+#[test]
 fn watcher_scry_card_runtime_actions_match_java_use_methods() {
     let state = crate::test_support::blank_test_combat();
 

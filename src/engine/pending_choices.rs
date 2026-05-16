@@ -538,6 +538,56 @@ pub fn handle_grid_select(
                         }
                     }
                 }
+                GridSelectReason::Omniscience { play_amount } => {
+                    if !matches!(source_pile, PileType::Draw) {
+                        return Err("Omniscience selection must source from draw pile");
+                    }
+                    if !pile_contains_all(&combat_state.zones.draw_pile, &uuids) {
+                        return Err("Grid candidate no longer in draw pile");
+                    }
+                    for uuid in &uuids {
+                        let pos = combat_state
+                            .zones
+                            .draw_pile
+                            .iter()
+                            .position(|c| c.uuid == *uuid)
+                            .expect("validated Omniscience selection must still exist");
+                        let mut card = combat_state.zones.draw_pile.remove(pos);
+                        card.exhaust_override = Some(true);
+                        combat_state.queue_action_back(Action::EnqueueCardPlay {
+                            item: Box::new(crate::runtime::combat::QueuedCardPlay {
+                                card: card.clone(),
+                                target: None,
+                                energy_on_use: combat_state.turn.energy as i32,
+                                ignore_energy_total: false,
+                                autoplay: true,
+                                random_target: true,
+                                is_end_turn_autoplay: false,
+                                purge_on_use: false,
+                                source: crate::runtime::combat::QueuedCardSource::Normal,
+                            }),
+                            in_front: false,
+                        });
+                        for _ in 1..play_amount {
+                            let copy = card
+                                .make_stat_equivalent_copy_with_uuid(combat_state.next_card_uuid());
+                            combat_state.queue_action_back(Action::EnqueueCardPlay {
+                                item: Box::new(crate::runtime::combat::QueuedCardPlay {
+                                    card: copy,
+                                    target: None,
+                                    energy_on_use: combat_state.turn.energy as i32,
+                                    ignore_energy_total: false,
+                                    autoplay: true,
+                                    random_target: true,
+                                    is_end_turn_autoplay: false,
+                                    purge_on_use: true,
+                                    source: crate::runtime::combat::QueuedCardSource::Normal,
+                                }),
+                                in_front: false,
+                            });
+                        }
+                    }
+                }
             }
 
             combat_state.emit_event(DomainEvent::SelectionResolved {

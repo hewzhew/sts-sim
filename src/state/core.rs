@@ -158,6 +158,7 @@ pub enum GridSelectReason {
     DiscardToHand,             // LiquidMemories: pick from discard → hand (cost 0)
     DiscardToHandNoCostChange, // Hologram: pick from discard → hand without changing cost
     DiscardToHandRetain,       // Meditate: pick from discard → hand and retain for one turn
+    Omniscience { play_amount: u8 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -274,6 +275,7 @@ impl From<GridSelectReason> for SelectionReason {
                 SelectionReason::DiscardToHandNoCostChange
             }
             GridSelectReason::DiscardToHandRetain => SelectionReason::DiscardToHandRetain,
+            GridSelectReason::Omniscience { .. } => SelectionReason::Omniscience,
         }
     }
 }

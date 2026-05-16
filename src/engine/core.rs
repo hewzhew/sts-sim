@@ -401,6 +401,7 @@ pub fn tick_engine(
                     let available = candidate_uuids.len() as u8;
                     if available == 0 {
                         let legal_empty_fizzle = min == 0
+                            || matches!(reason, crate::state::GridSelectReason::Omniscience { .. })
                             || (source_pile == crate::state::PileType::Discard
                                 && matches!(
                                     reason,
@@ -430,7 +431,14 @@ pub fn tick_engine(
                         return true;
                     }
 
-                    if available == 1 && min == 1 && max == 1 && !can_cancel {
+                    let java_auto_selects_single_candidate =
+                        !matches!(reason, crate::state::GridSelectReason::Omniscience { .. });
+                    if java_auto_selects_single_candidate
+                        && available == 1
+                        && min == 1
+                        && max == 1
+                        && !can_cancel
+                    {
                         let _ = pending_choices::handle_grid_select(
                             engine_state,
                             combat_state,
@@ -1319,6 +1327,12 @@ fn grid_select_candidates(
         {
             return java_better_draw_pile_to_hand_candidates(combat_state);
         }
+        crate::state::GridSelectReason::Omniscience { .. }
+            if source_pile == crate::state::PileType::Draw
+                && filter == crate::state::GridSelectFilter::Any =>
+        {
+            return java_better_draw_pile_to_hand_candidates(combat_state);
+        }
         crate::state::GridSelectReason::SkillFromDeckToHand
             if source_pile == crate::state::PileType::Draw
                 && filter == crate::state::GridSelectFilter::Skill =>
@@ -1598,6 +1612,105 @@ mod tests {
                 "Java BetterDrawPileToHandAction sorts the temporary draw-pile group before opening grid select"
             ),
             other => panic!("Seek-style grid select should remain pending, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn omniscience_single_candidate_still_opens_grid_select_like_java() {
+        let mut combat_state = blank_test_combat();
+        let mut engine_state = EngineState::CombatProcessing;
+        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::StrikeP, 10)];
+        combat_state.queue_action_back(Action::SuspendForGridSelect {
+            source_pile: PileType::Draw,
+            min: 1,
+            max: 1,
+            can_cancel: false,
+            filter: GridSelectFilter::Any,
+            reason: GridSelectReason::Omniscience { play_amount: 2 },
+        });
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+
+        match engine_state {
+            EngineState::PendingChoice(PendingChoice::GridSelect {
+                candidate_uuids,
+                reason,
+                ..
+            }) => {
+                assert_eq!(candidate_uuids, vec![10]);
+                assert_eq!(reason, GridSelectReason::Omniscience { play_amount: 2 });
+            }
+            other => panic!(
+                "Java OmniscienceAction opens grid select even with one draw-pile card, got {other:?}"
+            ),
+        }
+        assert!(
+            combat_state.pop_next_action().is_none(),
+            "Omniscience must wait for grid selection instead of auto-moving the only candidate"
+        );
+    }
+
+    #[test]
+    fn omniscience_selection_removes_draw_card_and_queues_autoplay_copies() {
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.card_uuid_counter = 100;
+        combat_state.turn.energy = 1;
+        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::StrikeP, 10)];
+        let mut engine_state = EngineState::PendingChoice(PendingChoice::GridSelect {
+            source_pile: PileType::Draw,
+            candidate_uuids: vec![10],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: GridSelectReason::Omniscience { play_amount: 2 },
+        });
+
+        resolve_pending_choice(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::SubmitGridSelect(vec![10]),
+        )
+        .expect("valid Omniscience grid selection should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert!(combat_state.zones.draw_pile.is_empty());
+
+        let first = combat_state
+            .pop_next_action()
+            .expect("Omniscience should queue the selected card first");
+        match first {
+            Action::EnqueueCardPlay { item, in_front } => {
+                assert!(!in_front);
+                assert_eq!(item.card.id, CardId::StrikeP);
+                assert_eq!(item.card.uuid, 10);
+                assert_eq!(item.card.exhaust_override, Some(true));
+                assert_eq!(item.energy_on_use, 1);
+                assert!(item.autoplay);
+                assert!(item.random_target);
+                assert!(!item.purge_on_use);
+            }
+            other => panic!("expected first Omniscience queued play, got {other:?}"),
+        }
+
+        let second = combat_state
+            .pop_next_action()
+            .expect("Omniscience should queue a purge-on-use stat-equivalent copy");
+        match second {
+            Action::EnqueueCardPlay { item, in_front } => {
+                assert!(!in_front);
+                assert_eq!(item.card.id, CardId::StrikeP);
+                assert_ne!(item.card.uuid, 10);
+                assert_eq!(item.card.exhaust_override, None);
+                assert_eq!(item.energy_on_use, 1);
+                assert!(item.autoplay);
+                assert!(item.random_target);
+                assert!(item.purge_on_use);
+            }
+            other => panic!("expected second Omniscience queued play, got {other:?}"),
         }
     }
 

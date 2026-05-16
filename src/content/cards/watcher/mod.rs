@@ -38,6 +38,7 @@ pub mod master_reality;
 pub mod meditate;
 pub mod mental_fortress;
 pub mod nirvana;
+pub mod omniscience;
 pub mod perseverance;
 pub mod pray;
 pub mod pressure_points;
