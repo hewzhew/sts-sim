@@ -506,6 +506,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::MakeCopyInDiscard { original, amount } => {
             cards::handle_make_copy_in_discard(original, amount, state)
         }
+        Action::ReturnStasisCard { card_uuid, to_hand } => {
+            cards::handle_return_stasis_card(card_uuid, to_hand, state)
+        }
         Action::MakeTempCardInDiscardAndDeck { card_id, amount } => {
             cards::handle_make_temp_card_in_discard_and_deck(card_id, amount, state)
         }

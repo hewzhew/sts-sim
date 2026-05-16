@@ -577,6 +577,10 @@ pub enum Action {
         original: Box<crate::runtime::combat::CombatCard>,
         amount: u8,
     },
+    ReturnStasisCard {
+        card_uuid: u32,
+        to_hand: bool,
+    },
     MakeTempCardInDiscardAndDeck {
         card_id: crate::content::cards::CardId,
         amount: u8,

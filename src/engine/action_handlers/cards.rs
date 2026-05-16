@@ -1194,6 +1194,39 @@ pub fn handle_make_copy_in_discard(
     }
 }
 
+pub fn handle_return_stasis_card(card_uuid: u32, to_hand: bool, state: &mut CombatState) {
+    let Some(pos) = state
+        .zones
+        .limbo
+        .iter()
+        .position(|card| card.uuid == card_uuid)
+    else {
+        return;
+    };
+    let held = state.zones.limbo.remove(pos);
+    let mut card = held.make_same_instance_of_java();
+
+    if to_hand {
+        // Java StasisPower uses MakeTempCardInHandAction(card, false, true).
+        // The action constructor upgrades once under Master Reality. If the
+        // card actually enters hand, ShowCardAndAddToHandEffect upgrades again;
+        // if hand overflow sends it to discard, only the constructor upgrade
+        // has affected the same-UUID copy.
+        apply_master_reality_to_generated_card(&mut card, state, 1);
+        if state.zones.hand.len() < 10 {
+            apply_master_reality_to_generated_card(&mut card, state, 1);
+            apply_generated_card_entering_hand_mechanics(&mut card, state);
+            state.zones.hand.push(card);
+        } else {
+            state.add_card_to_discard_pile_top(card);
+        }
+    } else {
+        // Java full-hand Stasis path uses MakeTempCardInDiscardAction(card, true);
+        // that sameUUID constructor deliberately skips Master Reality.
+        state.add_card_to_discard_pile_top(card);
+    }
+}
+
 pub fn handle_make_temp_card_in_discard_and_deck(
     card_id: CardId,
     amount: u8,
@@ -2368,8 +2401,8 @@ mod tests {
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
-        handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand, handle_use_card_done,
-        obtain_specific_potion_if_allowed,
+        handle_return_stasis_card, handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand,
+        handle_use_card_done, obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
@@ -2660,6 +2693,69 @@ mod tests {
         assert_eq!(
             state.zones.discard_pile[0].upgrades, 1,
             "Java MakeTempCardInHandAction overflow adds srcCard to discard, so only the action constructor Master Reality call affects the actual card"
+        );
+    }
+
+    #[test]
+    fn stasis_return_preserves_same_uuid_and_java_master_reality_counts() {
+        let mut state = blank_test_combat();
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        state
+            .zones
+            .limbo
+            .push(CombatCard::new(CardId::SearingBlow, 77));
+
+        handle_return_stasis_card(77, true, &mut state);
+
+        assert!(state.zones.limbo.is_empty());
+        assert_eq!(state.zones.hand.len(), 1);
+        assert_eq!(state.zones.hand[0].uuid, 77);
+        assert_eq!(
+            state.zones.hand[0].upgrades, 2,
+            "Java Stasis hand path uses MakeTempCardInHandAction(card, false, true), so sameUUID still receives constructor + hand-effect Master Reality calls"
+        );
+
+        let mut overflow_state = blank_test_combat();
+        overflow_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        for uuid in 1..=10 {
+            overflow_state
+                .zones
+                .hand
+                .push(CombatCard::new(CardId::Strike, uuid));
+        }
+        overflow_state
+            .zones
+            .limbo
+            .push(CombatCard::new(CardId::SearingBlow, 88));
+
+        handle_return_stasis_card(88, false, &mut overflow_state);
+
+        assert!(overflow_state.zones.limbo.is_empty());
+        assert_eq!(overflow_state.zones.discard_pile.len(), 1);
+        assert_eq!(overflow_state.zones.discard_pile[0].uuid, 88);
+        assert_eq!(
+            overflow_state.zones.discard_pile[0].upgrades, 0,
+            "Java Stasis full-hand path uses MakeTempCardInDiscardAction(card, true), whose sameUUID constructor skips Master Reality"
         );
     }
 
