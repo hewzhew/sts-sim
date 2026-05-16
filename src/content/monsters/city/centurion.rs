@@ -16,6 +16,55 @@ const SLASH: u8 = 1;
 const PROTECT: u8 = 2;
 const FURY: u8 = 3;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn roll_counts_zero_hp_non_dying_allies_like_java_alive_count() {
+        let centurion = crate::test_support::test_monster(EnemyId::Centurion);
+        let mut ally = crate::test_support::test_monster(EnemyId::Healer);
+        ally.id = 2;
+        ally.current_hp = 0;
+        ally.is_dying = false;
+        ally.is_escaped = false;
+        let monsters = vec![centurion.clone(), ally];
+
+        let plan = Centurion::roll_move_custom_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &centurion,
+            0,
+            65,
+            &monsters,
+        );
+
+        assert_eq!(plan.move_id, PROTECT);
+    }
+
+    #[test]
+    fn protect_can_block_zero_hp_non_dying_ally_like_java_action() {
+        let centurion = crate::test_support::test_monster(EnemyId::Centurion);
+        let mut ally = crate::test_support::test_monster(EnemyId::Healer);
+        ally.id = 2;
+        ally.current_hp = 0;
+        ally.is_dying = false;
+        ally.is_escaped = false;
+        let mut state = crate::test_support::combat_with_monsters(vec![centurion, ally]);
+
+        crate::engine::action_handlers::execute_action(
+            Action::GainBlockRandomMonster {
+                source: 1,
+                amount: 15,
+            },
+            &mut state,
+        );
+
+        assert_eq!(state.entities.monsters[0].block, 0);
+        assert_eq!(state.entities.monsters[1].block, 15);
+    }
+}
+
 enum CenturionTurn<'a> {
     Slash(&'a AttackSpec),
     Protect(&'a RandomBlockStep),
@@ -99,7 +148,7 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
 fn alive_monster_count(monsters: &[MonsterEntity]) -> usize {
     monsters
         .iter()
-        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
+        .filter(|monster| !monster.is_dying && !monster.is_escaped)
         .count()
 }
 

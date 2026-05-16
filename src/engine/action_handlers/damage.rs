@@ -1344,7 +1344,6 @@ pub fn handle_gain_block_random_monster(source: usize, amount: i32, state: &mut 
         .iter()
         .filter(|m| {
             m.id != source
-                && m.current_hp > 0
                 && !m.is_escaped
                 && !matches!(
                     crate::content::monsters::resolve_monster_turn_plan(state, m).summary_spec(),
