@@ -1,0 +1,27 @@
+{
+  "protocol_meta": {
+    "combat_action_space": {
+      "screen_type": "CARD_REWARD",
+      "actions": [
+        {
+          "action_id": "choice:discovery:0",
+          "kind": "submit_choice",
+          "command": "CHOOSE 0",
+          "choice_index": 0,
+          "choice_label": "Strike_R"
+        },
+        {
+          "action_id": "choice:discovery:1",
+          "kind": "submit_choice",
+          "command": "CHOOSE 1",
+          "choice_index": 1,
+          "choice_label": "Defend_R"
+        }
+      ]
+    }
+  },
+  "game_state": {
+    "screen_type": "CARD_REWARD",
+    "room_phase": "COMBAT"
+  }
+}

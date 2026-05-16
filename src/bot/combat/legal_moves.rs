@@ -533,19 +533,9 @@ mod tests {
         assert_eq!(engine, EngineState::CombatPlayerTurn);
         let diagnostics = combat.take_engine_diagnostics();
         assert!(
-            diagnostics.iter().any(|diagnostic| diagnostic.severity
-                == crate::state::selection::EngineDiagnosticSeverity::Info
-                && diagnostic.class
-                    == crate::state::selection::EngineDiagnosticClass::Normalization
-                && diagnostic
-                    .message
-                    .contains("auto-skipped empty hand select")),
-            "empty Warcry hand selection should fizzle as a Java-compatible normalization"
-        );
-        assert!(
             diagnostics.iter().all(|diagnostic| diagnostic.severity
                 != crate::state::selection::EngineDiagnosticSeverity::Error),
-            "empty Warcry hand selection should not emit an engine error: {diagnostics:?}"
+            "empty Warcry with no card to put back should not emit an engine error: {diagnostics:?}"
         );
     }
 

@@ -2384,7 +2384,15 @@ mod tests {
 
         assert_eq!(state.zones.draw_pile.len(), 2);
         let generated = &state.zones.draw_pile[0];
-        assert_eq!(generated.cost_for_turn, Some(0));
+        let generated_def = crate::content::cards::get_card_definition(generated.id);
+        if generated_def.cost >= 0 {
+            assert_eq!(generated.cost_for_turn, Some(0));
+        } else {
+            assert_eq!(
+                generated.cost_for_turn, None,
+                "Java setCostForTurn(0) does not make unplayable cards playable"
+            );
+        }
         assert!(
             crate::content::cards::silent_pool_for_type(CardType::Skill).contains(&generated.id),
             "random generated draw-pile cards must come from the current character pool"

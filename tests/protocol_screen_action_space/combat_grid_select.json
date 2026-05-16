@@ -1,0 +1,25 @@
+{
+  "protocol_meta": {
+    "combat_action_space": {
+      "screen_type": "GRID",
+      "actions": [
+        {
+          "action_id": "choice:grid:0",
+          "kind": "submit_choice",
+          "command": "CHOOSE 0",
+          "choice_index": 0,
+          "choice_label": "Strike_R"
+        },
+        {
+          "action_id": "proceed:grid",
+          "kind": "proceed",
+          "command": "CONFIRM"
+        }
+      ]
+    }
+  },
+  "game_state": {
+    "screen_type": "GRID",
+    "room_phase": "COMBAT"
+  }
+}
