@@ -577,6 +577,34 @@ Tests:
 - `join_cult_damage_and_ritual_dagger_use_event_source`
 - `join_cult_damage_applies_tungsten_rod`
 
+### Bonfire resource rewards
+
+Java `events/shrines/Bonfire.java` applies the offered-card reward after grid
+selection removes the card from the master deck:
+
+- Curse: spawn and obtain `SpiritPoop`, or `Circlet` if `SpiritPoop` is already
+  owned.
+- Common / Special: `player.heal(5)`.
+- Uncommon: `player.heal(player.maxHealth)`.
+- Rare: `player.increaseMaxHp(10, false)`, then
+  `player.heal(player.maxHealth)`.
+
+Rust splits this Java event into `bonfire_elementals` and `bonfire_spirits`.
+Both now use sourced run helpers instead of direct relic/HP/max-HP mutation.
+The rare branch preserves Java's two-step health behavior: increasing max HP
+heals by 10 through `increaseMaxHp`, then the event performs a separate full
+heal. `Mark of the Bloom` therefore blocks the heals while leaving the max-HP
+increase intact.
+
+Tests:
+
+- `common_offer_heals_with_event_source`
+- `rare_offer_matches_java_max_hp_then_full_heal_sequence`
+- `heal_rewards_obey_mark_of_the_bloom`
+- `curse_offer_obtains_spirit_poop_with_event_source`
+- `common_offer_heals_with_spirits_event_source`
+- `curse_offer_obtains_spirit_poop_with_spirits_event_source`
+
 ### Lab potion rewards
 
 Java `events/shrines/Lab.java` does not put potions directly into player potion
@@ -807,10 +835,12 @@ Validation:
   `GremlinWheelGame`, `MindBloom`, `WindingHalls`, and `SensoryStone` are now
   covered; `ShiningLight` is also covered for damage and random upgrade
   sources. `Nest` is covered for gold, damage, and Ritual Dagger obtain source.
-  `Lab` now opens potion rewards instead of directly filling potion slots. The
-  remaining direct writes should be handled event-by-event against Java source.
+  `BonfireElementals` and `BonfireSpirits` are covered for rarity reward relic,
+  heal, full-heal, and max-HP paths. `Lab` now opens potion rewards instead of
+  directly filling potion slots. The remaining direct writes should be handled
+  event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `847 passed`.
+- Current result after this pass: `853 passed`.
