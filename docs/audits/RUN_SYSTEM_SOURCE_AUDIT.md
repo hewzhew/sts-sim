@@ -309,6 +309,8 @@ Rust result:
 - Defect combat setup now starts with Java's three `masterMaxOrbs` empty slots
   before Cracked Core / Frozen Core / Nuclear Battery pre-battle orb effects
   resolve.
+- Non-Defect combat setup with `PrismaticShard` now starts with one empty
+  `masterMaxOrbs` slot, matching `PrismaticShard.onEquip`.
 - Chest-open hooks were checked against Java. The only relics overriding chest
   hooks are `Cursed Key`, `Matryoshka`, and `Nloth's Mask`; boss chests pass
   `bossChest=true`, Cursed Key/Nloth's Mask do nothing in that case, and
@@ -322,6 +324,7 @@ Coverage:
 - `boss_reward_generates_three_boss_relics_by_pool_order_without_retry_layer`
 - `natural_combat_start_applies_ring_of_the_serpent_opening_hand_size`
 - `natural_defect_combat_start_has_java_orb_slots_before_cracked_core`
+- `natural_non_defect_prismatic_shard_combat_start_has_one_empty_orb_slot`
 
 ## Reward Card Pool / Prismatic Shard Pass
 

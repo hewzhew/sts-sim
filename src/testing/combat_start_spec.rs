@@ -267,6 +267,23 @@ mod tests {
             .skip(1)
             .all(|orb| orb.id == OrbId::Empty));
     }
+
+    #[test]
+    fn natural_non_defect_prismatic_shard_combat_start_has_one_empty_orb_slot() {
+        let mut run = RunState::new(1, 0, false, "Silent");
+        run.relics.push(RelicState::new(RelicId::PrismaticShard));
+
+        let (_engine_state, combat) =
+            build_natural_start_state(&mut run, EncounterId::JawWorm, RoomType::MonsterRoom)
+                .expect("combat should initialize");
+
+        assert_eq!(
+            combat.entities.player.max_orbs, 1,
+            "Java PrismaticShard.onEquip grants one master orb slot to non-Defect classes"
+        );
+        assert_eq!(combat.entities.player.orbs.len(), 1);
+        assert_eq!(combat.entities.player.orbs[0].id, OrbId::Empty);
+    }
 }
 
 fn compile_master_deck(specs: &[AuthorCardSpec]) -> Result<Vec<CombatCard>, String> {
