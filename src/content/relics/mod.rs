@@ -15,7 +15,6 @@ pub mod centennial_puzzle;
 pub mod champion_belt;
 pub mod charons_ashes;
 pub mod clockwork_souvenir;
-pub mod dark_blood;
 pub mod dodecahedron;
 pub mod fossilized_helix;
 pub mod girya;
@@ -231,7 +230,6 @@ pub enum RelicId {
     CultistMask,
     CursedKey,
     Damaru,
-    DarkBlood,
     DarkstonePeriapt,
     DataDisk,
     DeadBranch,
@@ -421,7 +419,7 @@ pub fn get_relic_tier(id: RelicId) -> RelicTier {
     use RelicId::*;
     match id {
         // Starter
-        BurningBlood | CrackedCore | PureWater | SnakeRing | DarkBlood => RelicTier::Starter,
+        BurningBlood | CrackedCore | PureWater | SnakeRing => RelicTier::Starter,
         // Common (shared)
         Akabeko | Anchor | AncientTeaSet | ArtOfWar | BagOfMarbles | BagOfPreparation
         | BloodVial | Boot | BronzeScales | CentennialPuzzle | CeramicFish | DreamCatcher
@@ -483,10 +481,8 @@ fn relic_class(id: RelicId) -> Option<&'static str> {
     use RelicId::*;
     match id {
         // Red (Ironclad)
-        BlackBlood | Brimstone | BurningBlood | ChampionBelt | CharonsAshes | DarkBlood
-        | MagicFlower | MarkOfPain | PaperFrog | RedSkull | RunicCube | SelfFormingClay => {
-            Some("Ironclad")
-        }
+        BlackBlood | Brimstone | BurningBlood | ChampionBelt | CharonsAshes | MagicFlower
+        | MarkOfPain | PaperFrog | RedSkull | RunicCube | SelfFormingClay => Some("Ironclad"),
         // Green (Silent)
         HoveringKite | NinjaScroll | PaperCrane | RingOfTheSerpent | SnakeRing | SneckoSkull
         | TheSpecimen | Tingsha | ToughBandages | TwistedFunnel | WristBlade => Some("Silent"),
@@ -547,7 +543,6 @@ pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
         CultistMask,
         CursedKey,
         Damaru,
-        DarkBlood,
         DarkstonePeriapt,
         DataDisk,
         DeadBranch,
@@ -907,7 +902,6 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::FrozenEgg => {}
         RelicId::FrozenEye => {}
-        RelicId::DarkBlood => sub.on_victory = true,
         RelicId::Dodecahedron => sub.at_battle_start = true,
         RelicId::FossilizedHelix => sub.at_battle_start = true,
         RelicId::Girya => sub.at_battle_start = true,

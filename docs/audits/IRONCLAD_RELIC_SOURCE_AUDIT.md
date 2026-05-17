@@ -3922,6 +3922,29 @@ Coverage:
 - `empty_boss_relic_pool_returns_red_circlet_like_java_sources`
 - `relic_id_from_java_maps_boss_pool_fallback_red_circlet`
 
+### DarkBlood Rust Stub
+
+Status: `removed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/BlackBlood.java`
+- `D:/rust/cardcrawl/relics/BurningBlood.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/content/relics/hooks.rs`
+- deleted `src/content/relics/dark_blood.rs`
+
+Java evidence:
+- The Java relic directory contains `BlackBlood.java` and `BurningBlood.java`;
+  there is no `DarkBlood.java`.
+- `Black Blood` is the Ironclad boss upgrade relic and heals 12 on victory.
+
+Rust result:
+- Removed the non-Java `RelicId::DarkBlood` content stub and victory hook.
+- Kept the Java-backed `RelicId::BlackBlood` and `RelicId::BurningBlood`
+  implementations.
+
 ### Discerning Monocle
 
 Status: `wrong-fixed`

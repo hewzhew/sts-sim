@@ -3617,17 +3617,6 @@
           "confidence": 1.0,
           "status": "mapped"
         },
-        "DarkBlood": {
-          "rust": "DarkBlood",
-          "java": [],
-          "sources": [
-            "override_rules"
-          ],
-          "candidates": [],
-          "match_rule": "override",
-          "confidence": 1.0,
-          "status": "unsupported"
-        },
         "DarkstonePeriapt": {
           "rust": "DarkstonePeriapt",
           "java": [

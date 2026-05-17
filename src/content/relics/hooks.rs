@@ -373,9 +373,6 @@ pub fn on_victory(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]
         match relic_id {
             RelicId::BurningBlood => actions
                 .extend(crate::content::relics::burning_blood::BurningBlood::on_victory(state)),
-            RelicId::DarkBlood => {
-                actions.extend(crate::content::relics::dark_blood::DarkBlood::on_victory())
-            }
             RelicId::BlackBlood => actions.extend(
                 crate::content::relics::black_blood::BlackBlood::on_victory(state),
             ),
