@@ -347,6 +347,33 @@ Tests:
 - `heal_amount_uses_java_float_cast_not_rounding`
 - `heal_cost_is_paid_even_when_mark_of_the_bloom_blocks_heal`
 
+### Beggar donation and purge boundary
+
+Java `events/city/Beggar.java` separates the paid donation from the card-removal
+grid:
+
+```text
+INTRO click:
+  loseGold(75)
+  screen = GAVE_MONEY
+
+GAVE_MONEY click:
+  gridSelectScreen.open(getGroupWithoutBottledCards(masterDeck.getPurgeableCards()))
+  screen = LEAVE
+```
+
+Rust previously paid gold and opened the purge selection on the same choice.
+
+Fixes:
+
+- Donation now only pays 75 gold and advances to the paid prompt.
+- The next event click opens `RunPendingChoiceReason::PurgeNonBottled`.
+
+Tests:
+
+- `donate_pays_gold_before_opening_purge_prompt_like_java`
+- `paid_continue_opens_non_bottled_purge_selection`
+
 ### Golden Wing remove damage and attack gate
 
 Java `events/exordium/GoldenWing.java` handles the remove-card option by first
@@ -1233,4 +1260,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `905 passed`.
+- Current result after this pass: `907 passed`.
