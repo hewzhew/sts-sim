@@ -375,3 +375,62 @@ Coverage:
 - `normal_reward_pool_remains_current_class_only`
 - `prismatic_reward_pool_uses_any_color_cards_sorted_by_java_id`
 - `prismatic_reward_selection_consumes_card_rng_shuffle_seed_before_pick`
+
+## Shop Colored Card Pool / Rarity Fallback Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/shop/Merchant.java`
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+- `D:/rust/cardcrawl/cards/CardGroup.java`
+
+Key source facts:
+
+- `Merchant` creates the five colored card sale slots as:
+  `Attack`, `Attack`, `Skill`, `Skill`, `Power`.
+- Each colored card rolls rarity through `AbstractDungeon.rollRarity()` and
+  then calls `AbstractDungeon.getCardFromPool(rarity, type, true)`.
+- Initial merchant colored cards therefore use `cardRng` for both rarity and
+  `CardGroup.getRandomCard(type, true)` selection.
+- Courier colored-card restock is different: `ShopScreen.purchaseCard` rolls
+  rarity through `AbstractDungeon.rollRarity()` but then calls
+  `getCardFromPool(..., false)`, so the concrete card selection goes through
+  LibGDX `MathUtils.random` rather than `AbstractDungeon.cardRng`.
+- `getCardFromPool` uses the current dungeon rarity pools. The `PrismaticShard`
+  reward-card branch is not used here; owning the relic does not by itself make
+  merchant colored cards draw from all colors.
+- `getCardFromPool` does not have one generic fallback list:
+  - Attack/Skill `Rare` falls through to `Uncommon`, then `Common`.
+  - Attack/Skill `Uncommon` falls through to `Common`.
+  - Attack/Skill `Common` does not fall through upward.
+  - Power `Common` retries `Uncommon`, then `Rare`.
+  - Power `Uncommon` retries `Rare`.
+  - Power `Rare` falls through only to `Uncommon`.
+- `CardGroup.getRandomCard(type, true)` sorts the type-filtered temporary list
+  by Java card id before selecting with `AbstractDungeon.cardRng`.
+- The merchant rejects a duplicate second Attack or duplicate second Skill by
+  rolling a fresh rarity and card again. The Java loop has no attempt cap.
+
+Rust result:
+
+- Shop colored card selection now uses a Java-shaped rarity path instead of the
+  old generic fallback that could incorrectly promote missing Common
+  Attack/Skill slots to Uncommon/Rare or route missing Uncommon Power through
+  Common.
+- Courier colored-card restock now consumes `card_rng` only for rarity and uses
+  the isolated simulator `math_rng` for `MathUtils.random` card selection. This
+  keeps the mechanical Java source fact without letting UI-only MathUtils calls
+  pollute `card_rng` or `misc_rng`.
+- The old fake starter-card fallback was removed. If a required shop card pool
+  is missing, Rust now fails loudly instead of silently producing a non-source
+  card.
+- The old 12-attempt cap on duplicate second Attack/Skill rerolls was removed;
+  Java rerolls until a non-duplicate card is selected.
+- Colored card candidates are still sorted by `java_id` before the `card_rng`
+  index draw, matching `CardGroup.getRandomCard(type, true)`.
+
+Coverage:
+
+- `shop_attack_and_skill_rarity_paths_match_java_fallthrough`
+- `shop_power_rarity_paths_match_java_recursive_power_fallbacks`
+- `courier_colored_restock_uses_card_rng_for_rarity_and_math_rng_for_card_selection`

@@ -3,7 +3,9 @@ use crate::content::cards::{
 };
 use crate::content::potions::{self, PotionId};
 use crate::content::relics::{RelicId, RelicTier};
-use crate::shop::merchant::{random_shop_colored_card_of_type, random_shop_colorless_card};
+use crate::shop::merchant::{
+    random_shop_colored_card_of_type_for_courier_restock, random_shop_colorless_card,
+};
 use crate::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
@@ -165,7 +167,7 @@ fn replace_shop_card_slot(
         random_shop_colorless_card(&mut run_state.rng_pool, rarity)
     } else {
         let card_type = get_card_definition(purchased_card_id).card_type;
-        random_shop_colored_card_of_type(
+        random_shop_colored_card_of_type_for_courier_restock(
             &mut run_state.rng_pool,
             run_state.player_class,
             run_state.card_blizz_randomizer,

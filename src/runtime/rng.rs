@@ -309,7 +309,8 @@ pub fn shuffle_with_random_long<T>(items: &mut [T], game_rng: &mut StsRng) {
 
 // ─── RNG Pool ────────────────────────────────────────────────────────────────
 
-/// All 12 RNG streams used by the Java engine.
+/// All RNG streams used by the Java engine plus one isolated deterministic
+/// stand-in for mechanical uses of LibGDX `MathUtils.random`.
 ///
 /// Seven are persistent across floors (seeded once at run start):
 ///   `monster_rng`, `event_rng`, `merchant_rng`, `card_rng`,
@@ -317,6 +318,11 @@ pub fn shuffle_with_random_long<T>(items: &mut [T], game_rng: &mut StsRng) {
 ///
 /// Five are re-seeded per floor via `generate_floor_seeds()`:
 ///   `monster_hp_rng`, `ai_rng`, `shuffle_rng`, `card_random_rng`, `misc_rng`
+///
+/// `math_rng` is not a normal STS dungeon RNG stream. It exists because a few
+/// Java mechanical outcomes incorrectly use LibGDX `MathUtils.random`, whose
+/// global state is also consumed by UI effects. The simulator consumes
+/// `math_rng` only for those mechanical outcomes, never for UI-only effects.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RngPool {
     // Persistent (run-level)
@@ -333,6 +339,8 @@ pub struct RngPool {
     pub shuffle_rng: StsRng,
     pub card_random_rng: StsRng,
     pub misc_rng: StsRng,
+    // Simulator-owned isolation for mechanically relevant MathUtils.random.
+    pub math_rng: StsRng,
 }
 
 impl Default for RngPool {
@@ -357,6 +365,7 @@ impl RngPool {
             shuffle_rng: StsRng::new(seed),
             card_random_rng: StsRng::new(seed),
             misc_rng: StsRng::new(seed),
+            math_rng: StsRng::new(seed),
         }
     }
 
