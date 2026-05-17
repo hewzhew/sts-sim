@@ -137,6 +137,8 @@ pub fn handle_spawn_monster(
         corrupt_heart: Default::default(),
         writhing_mass: Default::default(),
         spiker: Default::default(),
+        spire_shield: Default::default(),
+        spire_spear: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -227,6 +229,14 @@ pub fn handle_spawn_monster(
     if enemy_id == crate::content::monsters::EnemyId::Spiker {
         new_monster.spiker.protocol_seeded = true;
         new_monster.spiker.thorns_count = 0;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::SpireShield {
+        new_monster.spire_shield.protocol_seeded = true;
+        new_monster.spire_shield.move_count = 0;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::SpireSpear {
+        new_monster.spire_spear.protocol_seeded = true;
+        new_monster.spire_spear.move_count = 0;
     }
     if matches!(
         enemy_id,
@@ -846,6 +856,48 @@ fn handle_update_spiker_state(
     }
 }
 
+fn handle_update_spire_shield_state(
+    monster_id: usize,
+    move_count: Option<u8>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = move_count {
+            monster.spire_shield.move_count = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.spire_shield.protocol_seeded = value;
+        }
+    }
+}
+
+fn handle_update_spire_spear_state(
+    monster_id: usize,
+    move_count: Option<u8>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = move_count {
+            monster.spire_spear.move_count = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.spire_spear.protocol_seeded = value;
+        }
+    }
+}
+
 pub fn handle_update_monster_runtime(
     monster_id: usize,
     patch: MonsterRuntimePatch,
@@ -988,6 +1040,14 @@ pub fn handle_update_monster_runtime(
             thorns_count,
             protocol_seeded,
         } => handle_update_spiker_state(monster_id, thorns_count, protocol_seeded, state),
+        MonsterRuntimePatch::SpireShield {
+            move_count,
+            protocol_seeded,
+        } => handle_update_spire_shield_state(monster_id, move_count, protocol_seeded, state),
+        MonsterRuntimePatch::SpireSpear {
+            move_count,
+            protocol_seeded,
+        } => handle_update_spire_spear_state(monster_id, move_count, protocol_seeded, state),
     }
 }
 

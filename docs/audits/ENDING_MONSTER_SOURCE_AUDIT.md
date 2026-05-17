@@ -26,8 +26,10 @@ Java private state:
 
 - `moveCount`
 
-Rust reconstructs `moveCount` from move history. This matches the Java roll boundary because
-`moveCount` increments inside `getMove()` after the next move is selected.
+Rust carries `moveCount` explicitly in `SpireShieldRuntimeState`. Java increments this private field
+inside `getMove()` after selecting the next move, so Rust updates it through the roll-move runtime
+hook rather than inferring it from truncated move history. `CommunicationMod` exports the private
+field as `monster.runtime_state.move_count`, and Rust state sync treats it as strict protocol truth.
 
 Source-backed details preserved:
 
@@ -52,8 +54,12 @@ Java private state:
 - `moveCount`
 - `skewerCount`
 
-Rust derives `moveCount` from move history and derives `skewerCount` from ascension level. This
-matches Java's roll timing and constructor thresholds.
+Rust carries `moveCount` explicitly in `SpireSpearRuntimeState`. Java increments this private field
+inside `getMove()` after selecting the next move, so Rust updates it through the roll-move runtime
+hook rather than inferring it from truncated move history. `CommunicationMod` exports the private
+field as `monster.runtime_state.move_count`, and Rust state sync treats it as strict protocol truth.
+Rust still derives `skewerCount` from ascension level because Java sets it only in the constructor
+from the A3 threshold and never mutates it afterward.
 
 Source-backed details preserved:
 
@@ -106,8 +112,6 @@ Source-backed details preserved:
 
 ## Follow-Up Watch Points
 
-- Shield and Spear `moveCount` are safe as history-derived state in normal roll/execute flow. If a
-  future live-import path can represent a planned-but-unrecorded ending move, this should become
-  explicit runtime state.
-- Heart is already explicit runtime state and should stay that way; do not collapse it back into
-  move-history inference.
+- Shield, Spear, and Heart runtime counters are explicit Java-private-field mirrors. Do not collapse
+  them back into move-history inference; live snapshots only expose a truncated move history and
+  cannot reconstruct the full private counters.

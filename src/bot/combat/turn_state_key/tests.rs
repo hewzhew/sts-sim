@@ -495,6 +495,30 @@ fn stable_monster_signature_ignores_irrelevant_runtime_fields_but_keeps_relevant
         stable_outcome_key(&EngineState::CombatPlayerTurn, &spiker),
         stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_spiker),
     );
+
+    let mut shield = blank_test_combat();
+    shield
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::SpireShield, 3));
+    let mut changed_shield = shield.clone();
+    changed_shield.entities.monsters[0].spire_shield.move_count = 2;
+    assert_ne!(
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &shield),
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_shield),
+    );
+
+    let mut spear = blank_test_combat();
+    spear
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::SpireSpear, 3));
+    let mut changed_spear = spear.clone();
+    changed_spear.entities.monsters[0].spire_spear.move_count = 2;
+    assert_ne!(
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &spear),
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_spear),
+    );
 }
 
 #[test]

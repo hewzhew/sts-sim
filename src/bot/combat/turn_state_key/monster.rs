@@ -5,8 +5,8 @@ use crate::runtime::combat::{
     BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
     CorruptHeartRuntimeState, DarklingRuntimeState, GuardianRuntimeState, HexaghostRuntimeState,
     JawWormRuntimeState, LagavulinRuntimeState, LouseRuntimeState, MonsterEntity, MonsterMoveState,
-    ShelledParasiteRuntimeState, SneckoRuntimeState, SpikerRuntimeState, ThiefRuntimeState,
-    WrithingMassRuntimeState,
+    ShelledParasiteRuntimeState, SneckoRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
+    SpireSpearRuntimeState, ThiefRuntimeState, WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
@@ -101,6 +101,18 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
         Some(EnemyId::Spiker) => {
             format!("spiker:{}", stable_spiker_signature(&monster.spiker))
         }
+        Some(EnemyId::SpireShield) => {
+            format!(
+                "spire_shield:{}",
+                stable_spire_shield_signature(&monster.spire_shield)
+            )
+        }
+        Some(EnemyId::SpireSpear) => {
+            format!(
+                "spire_spear:{}",
+                stable_spire_spear_signature(&monster.spire_spear)
+            )
+        }
         Some(EnemyId::Lagavulin) => {
             format!(
                 "lagavulin:{}",
@@ -120,7 +132,8 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         concat!(
             "hex={}:louse={}:jaw={}:thief={}:byrd={}:chosen={}:",
             "snecko={}:parasite={}:bronze_auto={}:bronze_orb={}:book={}:",
-            "collector={}:champ={}:awakened={}:heart={}:writhing_mass={}:spiker={}:darkling={}:lagavulin={}:guardian={}"
+            "collector={}:champ={}:awakened={}:heart={}:writhing_mass={}:spiker={}:",
+            "spire_shield={}:spire_spear={}:darkling={}:lagavulin={}:guardian={}"
         ),
         stable_hexaghost_signature(&monster.hexaghost),
         stable_louse_signature(&monster.louse),
@@ -139,6 +152,8 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         stable_corrupt_heart_signature(&monster.corrupt_heart),
         stable_writhing_mass_signature(&monster.writhing_mass),
         stable_spiker_signature(&monster.spiker),
+        stable_spire_shield_signature(&monster.spire_shield),
+        stable_spire_spear_signature(&monster.spire_spear),
         stable_darkling_signature(&monster.darkling),
         stable_lagavulin_signature(&monster.lagavulin),
         stable_guardian_signature(&monster.guardian),
@@ -461,6 +476,14 @@ fn stable_writhing_mass_signature(state: &WrithingMassRuntimeState) -> String {
 
 fn stable_spiker_signature(state: &SpikerRuntimeState) -> String {
     format!("seed{}:thorns{}", state.protocol_seeded, state.thorns_count)
+}
+
+fn stable_spire_shield_signature(state: &SpireShieldRuntimeState) -> String {
+    format!("seed{}:moves{}", state.protocol_seeded, state.move_count)
+}
+
+fn stable_spire_spear_signature(state: &SpireSpearRuntimeState) -> String {
+    format!("seed{}:moves{}", state.protocol_seeded, state.move_count)
 }
 
 fn stable_lagavulin_signature(state: &LagavulinRuntimeState) -> String {

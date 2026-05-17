@@ -2,7 +2,7 @@ use crate::content::cards::CardId;
 use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BuffSpec, DamageKind, EffectStrength,
@@ -40,6 +40,41 @@ mod tests {
                 upgraded: false,
             }
         )));
+    }
+
+    #[test]
+    fn roll_uses_private_move_count_not_truncated_move_history() {
+        let mut spear = crate::test_support::test_monster(EnemyId::SpireSpear);
+        spear.spire_spear.move_count = 1;
+        spear.move_history_mut().clear();
+
+        let plan =
+            SpireSpear::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &spear, 20, 0);
+
+        assert_eq!(
+            plan.move_id, SKEWER,
+            "Java SpireSpear.getMove branches on private moveCount, not recoverable moveHistory length"
+        );
+    }
+
+    #[test]
+    fn roll_updates_private_move_count_like_java_get_move() {
+        let mut spear = crate::test_support::test_monster(EnemyId::SpireSpear);
+        spear.id = 64;
+        spear.spire_spear.move_count = 2;
+
+        let actions = SpireSpear::on_roll_move(20, &spear, 0, &piercer_plan());
+
+        assert_eq!(
+            actions,
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 64,
+                patch: MonsterRuntimePatch::SpireSpear {
+                    move_count: Some(3),
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
     }
 }
 
@@ -141,6 +176,24 @@ fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
     }
 }
 
+fn current_move_count(entity: &MonsterEntity) -> u8 {
+    assert!(
+        entity.spire_spear.protocol_seeded,
+        "spire spear runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.spire_spear.move_count
+}
+
+fn increment_move_count(entity: &MonsterEntity) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::SpireSpear {
+            move_count: Some(entity.spire_spear.move_count.saturating_add(1)),
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
 impl MonsterBehavior for SpireSpear {
     fn use_pre_battle_actions(
         state: &mut CombatState,
@@ -163,7 +216,7 @@ impl MonsterBehavior for SpireSpear {
         ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        match entity.move_history().len() % 3 {
+        match current_move_count(entity) % 3 {
             0 => {
                 if entity.move_history().back().copied() == Some(BURN_STRIKE) {
                     piercer_plan()
@@ -180,6 +233,15 @@ impl MonsterBehavior for SpireSpear {
                 }
             }
         }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        vec![increment_move_count(entity)]
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {

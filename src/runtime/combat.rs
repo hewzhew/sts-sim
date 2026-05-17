@@ -939,6 +939,8 @@ pub struct MonsterEntity {
     pub corrupt_heart: CorruptHeartRuntimeState,
     pub writhing_mass: WrithingMassRuntimeState,
     pub spiker: SpikerRuntimeState,
+    pub spire_shield: SpireShieldRuntimeState,
+    pub spire_spear: SpireSpearRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
@@ -1234,6 +1236,18 @@ pub struct WrithingMassRuntimeState {
 pub struct SpikerRuntimeState {
     pub protocol_seeded: bool,
     pub thorns_count: u8,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SpireShieldRuntimeState {
+    pub protocol_seeded: bool,
+    pub move_count: u8,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SpireSpearRuntimeState {
+    pub protocol_seeded: bool,
+    pub move_count: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2119,6 +2133,8 @@ mod tests {
             corrupt_heart: CorruptHeartRuntimeState::default(),
             writhing_mass: WrithingMassRuntimeState::default(),
             spiker: SpikerRuntimeState::default(),
+            spire_shield: SpireShieldRuntimeState::default(),
+            spire_spear: SpireSpearRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2184,6 +2200,8 @@ mod tests {
             corrupt_heart: CorruptHeartRuntimeState::default(),
             writhing_mass: WrithingMassRuntimeState::default(),
             spiker: SpikerRuntimeState::default(),
+            spire_shield: SpireShieldRuntimeState::default(),
+            spire_spear: SpireSpearRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2246,6 +2264,8 @@ mod tests {
             corrupt_heart: CorruptHeartRuntimeState::default(),
             writhing_mass: WrithingMassRuntimeState::default(),
             spiker: SpikerRuntimeState::default(),
+            spire_shield: SpireShieldRuntimeState::default(),
+            spire_spear: SpireSpearRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),

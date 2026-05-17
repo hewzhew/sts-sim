@@ -89,6 +89,26 @@ pub(crate) fn seed_spiker_runtime_from_snapshot(monster: &Value, entity: &mut Mo
     entity.spiker.protocol_seeded = true;
 }
 
+pub(crate) fn seed_spire_shield_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::SpireShield;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.spire_shield.move_count = runtime_state_u8(monster, monster_type, "move_count");
+    entity.spire_shield.protocol_seeded = true;
+}
+
+pub(crate) fn seed_spire_spear_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::SpireSpear;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.spire_spear.move_count = runtime_state_u8(monster, monster_type, "move_count");
+    entity.spire_spear.protocol_seeded = true;
+}
+
 pub(crate) fn seed_byrd_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Byrd;
     if entity.monster_type != monster_type as usize {
@@ -395,6 +415,8 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_thief_runtime_from_snapshot(monster, entity);
     seed_writhing_mass_runtime_from_snapshot(monster, entity);
     seed_spiker_runtime_from_snapshot(monster, entity);
+    seed_spire_shield_runtime_from_snapshot(monster, entity);
+    seed_spire_spear_runtime_from_snapshot(monster, entity);
     seed_darkling_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -463,6 +485,8 @@ mod tests {
             corrupt_heart: Default::default(),
             writhing_mass: Default::default(),
             spiker: Default::default(),
+            spire_shield: Default::default(),
+            spire_spear: Default::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -697,6 +721,38 @@ mod tests {
         })
     }
 
+    fn spire_shield_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "SpireShield",
+            "current_hp": 125,
+            "max_hp": 125,
+            "block": 0,
+            "move_id": 3,
+            "move_base_damage": 38,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "move_count": 5
+            }
+        })
+    }
+
+    fn spire_spear_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "SpireSpear",
+            "current_hp": 180,
+            "max_hp": 180,
+            "block": 0,
+            "move_id": 3,
+            "move_base_damage": 10,
+            "move_hits": 4,
+            "powers": [],
+            "runtime_state": {
+                "move_count": 4
+            }
+        })
+    }
+
     fn chosen_observation_snapshot() -> serde_json::Value {
         json!({
             "id": "Chosen",
@@ -918,6 +974,30 @@ mod tests {
         assert_eq!(entity.monster_type, EnemyId::Spiker as usize);
         assert_eq!(entity.spiker.thorns_count, 5);
         assert!(entity.spiker.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_spire_shield_runtime_state() {
+        let snapshot = spire_shield_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::SpireShield as usize);
+        assert_eq!(entity.spire_shield.move_count, 5);
+        assert!(entity.spire_shield.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_spire_spear_runtime_state() {
+        let snapshot = spire_spear_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::SpireSpear as usize);
+        assert_eq!(entity.spire_spear.move_count, 4);
+        assert!(entity.spire_spear.protocol_seeded);
     }
 
     #[test]

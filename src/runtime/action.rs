@@ -98,6 +98,14 @@ pub enum MonsterRuntimePatch {
         thorns_count: Option<u8>,
         protocol_seeded: Option<bool>,
     },
+    SpireShield {
+        move_count: Option<u8>,
+        protocol_seeded: Option<bool>,
+    },
+    SpireSpear {
+        move_count: Option<u8>,
+        protocol_seeded: Option<bool>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

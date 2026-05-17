@@ -45,6 +45,8 @@ pub fn sync_monsters_from_snapshots(
             corrupt_heart: Default::default(),
             writhing_mass: Default::default(),
             spiker: Default::default(),
+            spire_shield: Default::default(),
+            spire_spear: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),

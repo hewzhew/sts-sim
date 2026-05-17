@@ -1,7 +1,7 @@
 use crate::content::monsters::exordium::{attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DamageKind, DebuffSpec, DefendSpec,
@@ -49,6 +49,41 @@ mod tests {
                 amount: 43,
             }
         )));
+    }
+
+    #[test]
+    fn roll_uses_private_move_count_not_truncated_move_history() {
+        let mut shield = crate::test_support::test_monster(EnemyId::SpireShield);
+        shield.spire_shield.move_count = 2;
+        shield.move_history_mut().clear();
+
+        let plan =
+            SpireShield::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &shield, 20, 0);
+
+        assert_eq!(
+            plan.move_id, SMASH,
+            "Java SpireShield.getMove branches on private moveCount, not recoverable moveHistory length"
+        );
+    }
+
+    #[test]
+    fn roll_updates_private_move_count_like_java_get_move() {
+        let mut shield = crate::test_support::test_monster(EnemyId::SpireShield);
+        shield.id = 63;
+        shield.spire_shield.move_count = 2;
+
+        let actions = SpireShield::on_roll_move(20, &shield, 0, &smash_plan(20));
+
+        assert_eq!(
+            actions,
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 63,
+                patch: MonsterRuntimePatch::SpireShield {
+                    move_count: Some(3),
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
     }
 }
 
@@ -147,6 +182,24 @@ fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
     }
 }
 
+fn current_move_count(entity: &MonsterEntity) -> u8 {
+    assert!(
+        entity.spire_shield.protocol_seeded,
+        "spire shield runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.spire_shield.move_count
+}
+
+fn increment_move_count(entity: &MonsterEntity) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::SpireShield {
+            move_count: Some(entity.spire_shield.move_count.saturating_add(1)),
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
 impl MonsterBehavior for SpireShield {
     fn use_pre_battle_actions(
         state: &mut CombatState,
@@ -177,7 +230,7 @@ impl MonsterBehavior for SpireShield {
         ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        match entity.move_history().len() % 3 {
+        match current_move_count(entity) % 3 {
             0 => {
                 if rng.random_boolean() {
                     fortify_plan()
@@ -194,6 +247,15 @@ impl MonsterBehavior for SpireShield {
             }
             _ => smash_plan(ascension_level),
         }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        vec![increment_move_count(entity)]
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {

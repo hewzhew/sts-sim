@@ -396,6 +396,8 @@ mod tests {
             corrupt_heart: Default::default(),
             writhing_mass: Default::default(),
             spiker: Default::default(),
+            spire_shield: Default::default(),
+            spire_spear: Default::default(),
             darkling: DarklingRuntimeState {
                 first_move: false,
                 nip_dmg: 0,

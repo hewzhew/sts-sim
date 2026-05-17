@@ -91,6 +91,8 @@ Rust currently consumes explicit Java runtime fields for:
 - `Lagavulin.is_out_triggered`
 - `WrithingMass.used_mega_debuff`
 - `Spiker.thorns_count`
+- `SpireShield.move_count`
+- `SpireSpear.move_count`
 
 ### Relics
 
