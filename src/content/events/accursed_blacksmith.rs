@@ -5,8 +5,9 @@
 // Forge uses gridSelectScreen for player to choose which card to upgrade.
 
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     if event_state.current_screen == 1 {
@@ -63,14 +64,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     // Rummage: obtain Pain curse + WarpedTongs relic
                     super::obtain_event_card(
                         run_state,
-                        crate::state::events::EventId::AccursedBlacksmith,
+                        EventId::AccursedBlacksmith,
                         crate::content::cards::CardId::Pain,
                     );
-                    run_state
-                        .relics
-                        .push(crate::content::relics::RelicState::new(
-                            crate::content::relics::RelicId::WarpedTongs,
-                        ));
+                    let _ = run_state.obtain_relic_with_source(
+                        crate::content::relics::RelicId::WarpedTongs,
+                        EngineState::EventRoom,
+                        DomainEventSource::Event(EventId::AccursedBlacksmith),
+                    );
                     event_state.current_screen = 1;
                 }
                 _ => {
@@ -85,4 +86,98 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::selection::DomainEvent;
+
+    fn blacksmith_run() -> RunState {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.event_state = Some(EventState {
+            id: EventId::AccursedBlacksmith,
+            current_screen: 0,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        run_state
+    }
+
+    #[test]
+    fn forge_opens_upgrade_pending_choice_like_grid_select() {
+        let mut run_state = blacksmith_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(matches!(
+            engine_state,
+            EngineState::RunPendingChoice(ref pending)
+                if pending.reason == RunPendingChoiceReason::Upgrade
+                    && pending.min_choices == 1
+                    && pending.max_choices == 1
+        ));
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+    }
+
+    #[test]
+    fn rummage_uses_event_sources_for_pain_and_warped_tongs() {
+        let mut run_state = blacksmith_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Pain));
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::WarpedTongs));
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                card,
+                source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+            } if card.id == CardId::Pain
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicObtained {
+                relic_id: RelicId::WarpedTongs,
+                source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+            }
+        )));
+    }
+
+    #[test]
+    fn rummage_pain_can_be_blocked_by_omamori_without_blocking_warped_tongs() {
+        let mut run_state = blacksmith_run();
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Pain));
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::WarpedTongs));
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Omamori should remain after blocking Pain");
+        assert_eq!(omamori.counter, 1);
+    }
 }

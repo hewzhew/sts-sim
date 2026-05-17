@@ -902,6 +902,33 @@ Tests:
 - `first_fight_returns_to_event_room_without_rewards_or_elite_trigger`
 - `second_fight_preserves_java_elite_trigger_without_normal_elite_rewards`
 
+### Accursed Blacksmith relic obtain source
+
+Java `events/shrines/AccursedBlacksmith.java` has two mechanics-relevant paths:
+
+- Forge opens `gridSelectScreen.open(masterDeck.getUpgradableCards(), 1, ...)`
+  and upgrades the selected master-deck card.
+- Rummage creates a `Pain` via `ShowCardAndObtainEffect` and obtains
+  `WarpedTongs` through `spawnRelicAndObtain`.
+
+Rust already routed `Pain` through the event card-obtain helper, so Omamori and
+event source metadata were preserved. The relic side still pushed
+`WarpedTongs` directly into `run_state.relics`, bypassing the unified relic
+obtain pipeline and dropping the event source.
+
+Fixes:
+
+- `WarpedTongs` now uses `RunState::obtain_relic_with_source(...,
+  Event(AccursedBlacksmith))`.
+- Added regression coverage for Forge pending-upgrade state, Rummage event
+  sources, and Omamori blocking `Pain` without blocking `WarpedTongs`.
+
+Tests:
+
+- `forge_opens_upgrade_pending_choice_like_grid_select`
+- `rummage_uses_event_sources_for_pain_and_warped_tongs`
+- `rummage_pain_can_be_blocked_by_omamori_without_blocking_warped_tongs`
+
 ### Cursed Tome HP_LOSS and book reward
 
 Java `events/city/CursedTome.java` uses
@@ -999,10 +1026,11 @@ Validation:
   of directly filling potion slots and sources its A15 HP_LOSS leave damage.
   `TombRedMask` now routes paid `Red Mask` obtain through the relic obtain
   helper. `CursedTome` now uses shared Java HP_LOSS event semantics and preserves
-  random-book RNG consumption. The remaining direct writes should be handled
-  event-by-event against Java source.
+  random-book RNG consumption. `AccursedBlacksmith` now routes `WarpedTongs`
+  through the event-sourced relic obtain pipeline. The remaining direct writes
+  should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `878 passed`.
+- Current result after this pass: `881 passed`.
