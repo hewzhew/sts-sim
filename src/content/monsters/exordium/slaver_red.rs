@@ -279,40 +279,45 @@ mod tests {
     use crate::runtime::action::Action;
     use crate::semantics::combat::{MonsterMoveSpec, MoveStep};
 
-    fn red_slaver_with_history(history: &[u8]) -> crate::runtime::combat::MonsterEntity {
+    fn red_slaver_with_runtime(
+        history: &[u8],
+        first_turn: bool,
+        used_entangle: bool,
+    ) -> crate::runtime::combat::MonsterEntity {
         let mut monster = crate::testing::support::test_monster(EnemyId::SlaverRed);
         monster.move_history_mut().extend(history.iter().copied());
-        monster.slaver_red.first_turn = history.is_empty();
-        monster.slaver_red.used_entangle = history.contains(&ENTANGLE);
+        monster.slaver_red.first_turn = first_turn;
+        monster.slaver_red.used_entangle = used_entangle;
         monster
     }
 
     #[test]
-    fn red_slaver_roll_logic_matches_java_private_flags_from_move_history() {
+    fn red_slaver_roll_logic_uses_explicit_java_private_flags() {
         let mut rng = crate::runtime::rng::StsRng::new(1);
 
-        let first = red_slaver_with_history(&[]);
+        let first = red_slaver_with_runtime(&[], true, false);
         assert_eq!(
             SlaverRed::roll_move_plan(&mut rng, &first, 0, 99).move_id,
             STAB,
             "Java firstTurn forces Stab before considering the random roll"
         );
 
-        let after_first_stab = red_slaver_with_history(&[STAB]);
+        let after_first_stab = red_slaver_with_runtime(&[STAB], false, false);
         assert_eq!(
             SlaverRed::roll_move_plan(&mut rng, &after_first_stab, 0, 75).move_id,
             ENTANGLE,
             "Java uses Entangle once when num >= 75 and usedEntangle is false"
         );
 
-        let after_entangle = red_slaver_with_history(&[STAB, ENTANGLE]);
+        let after_entangle = red_slaver_with_runtime(&[STAB, ENTANGLE], false, true);
         assert_eq!(
             SlaverRed::roll_move_plan(&mut rng, &after_entangle, 0, 55).move_id,
             STAB,
             "Java post-Entangle high roll prefers Stab unless the last two moves were Stab"
         );
 
-        let after_entangle_and_two_stabs = red_slaver_with_history(&[STAB, ENTANGLE, STAB, STAB]);
+        let after_entangle_and_two_stabs =
+            red_slaver_with_runtime(&[STAB, ENTANGLE, STAB, STAB], false, true);
         assert_eq!(
             SlaverRed::roll_move_plan(&mut rng, &after_entangle_and_two_stabs, 0, 99).move_id,
             SCRAPE,
@@ -323,9 +328,7 @@ mod tests {
     #[test]
     fn red_slaver_used_entangle_is_private_runtime_not_truncated_history() {
         let mut rng = crate::runtime::rng::StsRng::new(1);
-        let mut monster = red_slaver_with_history(&[STAB]);
-        monster.slaver_red.first_turn = false;
-        monster.slaver_red.used_entangle = true;
+        let monster = red_slaver_with_runtime(&[STAB], false, true);
 
         assert_eq!(
             SlaverRed::roll_move_plan(&mut rng, &monster, 0, 99).move_id,
@@ -337,8 +340,7 @@ mod tests {
     #[test]
     fn red_slaver_first_turn_is_private_runtime_not_empty_history() {
         let mut rng = crate::runtime::rng::StsRng::new(1);
-        let mut monster = red_slaver_with_history(&[]);
-        monster.slaver_red.first_turn = false;
+        let monster = red_slaver_with_runtime(&[], false, false);
 
         assert_eq!(
             SlaverRed::roll_move_plan(&mut rng, &monster, 17, 0).move_id,
@@ -351,14 +353,14 @@ mod tests {
     fn red_slaver_a17_scrape_cannot_repeat_immediately_like_java() {
         let mut rng = crate::runtime::rng::StsRng::new(1);
 
-        let after_scrape = red_slaver_with_history(&[STAB, SCRAPE]);
+        let after_scrape = red_slaver_with_runtime(&[STAB, SCRAPE], false, false);
         assert_eq!(
             SlaverRed::roll_move_plan(&mut rng, &after_scrape, 17, 0).move_id,
             STAB,
             "Java A17+ checks lastMove(Scrape), not lastTwoMoves(Scrape)"
         );
 
-        let after_non_scrape = red_slaver_with_history(&[STAB, STAB]);
+        let after_non_scrape = red_slaver_with_runtime(&[STAB, STAB], false, false);
         assert_eq!(
             SlaverRed::roll_move_plan(&mut rng, &after_non_scrape, 17, 0).move_id,
             SCRAPE

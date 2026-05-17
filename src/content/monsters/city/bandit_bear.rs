@@ -91,23 +91,16 @@ fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
     }
 }
 
-fn last_move(entity: &MonsterEntity) -> Option<u8> {
-    entity.move_history().back().copied()
-}
-
 impl MonsterBehavior for BanditBear {
     fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
-        entity: &MonsterEntity,
+        _entity: &MonsterEntity,
         ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        match last_move(entity) {
-            None => bear_hug_plan(ascension_level),
-            Some(BEAR_HUG | MAUL) => lunge_plan(ascension_level),
-            Some(LUNGE) => maul_plan(ascension_level),
-            Some(_) => bear_hug_plan(ascension_level),
-        }
+        // Java BanditBear.getMove(int) always sets BEAR_HUG. The Maul/Lunge
+        // chain is advanced by SetMoveAction in takeTurn.
+        bear_hug_plan(ascension_level)
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
@@ -173,5 +166,24 @@ impl MonsterBehavior for BanditBear {
             (_, []) => panic!("bandit bear plan missing locked truth"),
             (move_id, steps) => panic!("bandit bear plan/steps mismatch: {} {:?}", move_id, steps),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BanditBear, BEAR_HUG, LUNGE, MAUL};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+
+    #[test]
+    fn roll_move_always_returns_bear_hug_like_java_get_move() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut bear = crate::testing::support::test_monster(EnemyId::BanditBear);
+        bear.move_history_mut().extend([BEAR_HUG, LUNGE, MAUL]);
+
+        assert_eq!(
+            BanditBear::roll_move_plan(&mut rng, &bear, 17, 99).move_id,
+            BEAR_HUG,
+            "Java BanditBear.getMove(int) ignores move history; attack chaining is SetMoveAction-only"
+        );
     }
 }

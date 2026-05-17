@@ -173,9 +173,6 @@ impl MonsterBehavior for Lagavulin {
         if !entity.lagavulin.is_out {
             return idle_plan();
         }
-        if entity.move_history().is_empty() {
-            return attack_plan(ascension_level);
-        }
         if entity.lagavulin.debuff_turn_count < 2 {
             if last_two_moves_are_attack(entity) {
                 debuff_plan(ascension_level)

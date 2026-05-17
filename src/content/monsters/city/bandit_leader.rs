@@ -82,10 +82,6 @@ fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
     }
 }
 
-fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
-    entity.move_history().back().copied() == Some(move_id)
-}
-
 fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
     entity.move_history().len() >= 2
         && entity.move_history()[entity.move_history().len() - 1] == move_id
@@ -95,27 +91,13 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
 impl MonsterBehavior for BanditLeader {
     fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
-        entity: &MonsterEntity,
-        ascension_level: u8,
+        _entity: &MonsterEntity,
+        _ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        if entity.move_history().is_empty() {
-            return mock_plan();
-        }
-
-        if last_move(entity, MOCK) {
-            agonizing_slash_plan(ascension_level)
-        } else if last_move(entity, AGONIZING_SLASH) {
-            cross_slash_plan(ascension_level)
-        } else if last_move(entity, CROSS_SLASH) {
-            if ascension_level >= 17 && !last_two_moves(entity, CROSS_SLASH) {
-                cross_slash_plan(ascension_level)
-            } else {
-                agonizing_slash_plan(ascension_level)
-            }
-        } else {
-            mock_plan()
-        }
+        // Java BanditLeader.getMove(int) always sets MOCK. The real attack chain
+        // is advanced by SetMoveAction in takeTurn, not by RollMoveAction.
+        mock_plan()
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
@@ -183,5 +165,26 @@ impl MonsterBehavior for BanditLeader {
                 panic!("bandit leader plan/steps mismatch: {} {:?}", move_id, steps)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BanditLeader, AGONIZING_SLASH, CROSS_SLASH, MOCK};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+
+    #[test]
+    fn roll_move_always_returns_mock_like_java_get_move() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut leader = crate::testing::support::test_monster(EnemyId::BanditLeader);
+        leader
+            .move_history_mut()
+            .extend([MOCK, AGONIZING_SLASH, CROSS_SLASH, CROSS_SLASH]);
+
+        assert_eq!(
+            BanditLeader::roll_move_plan(&mut rng, &leader, 17, 99).move_id,
+            MOCK,
+            "Java BanditLeader.getMove(int) ignores move history; attack chaining is SetMoveAction-only"
+        );
     }
 }

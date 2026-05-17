@@ -77,6 +77,16 @@ Scope:
   bandits. These are not imported as hidden runtime truth because they do not currently mutate
   mechanical state or consume game RNG. If a future bridge observes a real `nextMove=ESCAPE`, that
   remains represented by the ordinary planned move truth.
+- `move_history` is recorded when Java `setMove(...)` runs, not when the monster turn finishes.
+  Rust mirrors this by pushing history from `SetMonsterMove` / `RollMonsterMove`. This does not
+  mean every Java `takeTurn()` SetMove chain belongs in `getMove()`:
+  - `BanditBear.getMove(int)` always sets `BEAR_HUG`; Maul/Lunge are advanced only by
+    `SetMoveAction` inside `takeTurn()`.
+  - `BanditLeader.getMove(int)` always sets `MOCK`; Agonizing Slash / Cross Slash are advanced only
+    by `SetMoveAction` inside `takeTurn()`, with Java's `lastTwoMoves(CROSS_SLASH)` check preserved
+    there.
+  - `BanditPointy.getMove(int)` and its `takeTurn()` follow-up both set the same repeated attack, so
+    it does not need a separate SetMove-chain exception.
 
 ### Byrd
 
