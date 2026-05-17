@@ -896,7 +896,7 @@ pub fn tick_run(
                                 *engine_state = EngineState::Shop(run_state.generate_shop());
                             }
                             RoomType::EventRoom => {
-                                let event_id = run_state.generate_event();
+                                let event_id = run_state.generate_event_from_event_room_duplicate();
                                 let mut event_state =
                                     crate::state::events::EventState::new(event_id);
                                 // Wire init functions for events with constructor-time RNG
@@ -1601,6 +1601,47 @@ mod tests {
             "forced treasure must not continue into specific event generation"
         );
         assert!(matches!(engine_state, EngineState::RewardScreen(_)));
+    }
+
+    #[test]
+    fn event_room_specific_event_selection_uses_duplicate_event_rng_like_java() {
+        use crate::state::events::EventId;
+
+        let mut run_state = run_state_with_first_room(RoomType::EventRoom);
+        run_state.event_generator.monster_chance = 0.0;
+        run_state.event_generator.shop_chance = 0.0;
+        run_state.event_generator.treasure_chance = 0.0;
+        run_state.event_generator.shrine_chance = 0.0;
+        run_state.event_generator.event_pool = vec![EventId::BigFish];
+        run_state.event_generator.shrine_pool.clear();
+        run_state.event_generator.one_time_event_pool.clear();
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(
+            run_state
+                .event_state
+                .as_ref()
+                .expect("event state should be initialized")
+                .id,
+            EventId::BigFish
+        );
+        assert!(
+            run_state.event_generator.event_pool.is_empty(),
+            "Java generateEvent mutates the event pool even though it uses a duplicate RNG"
+        );
+        assert_eq!(
+            run_state.rng_pool.event_rng.counter, 1,
+            "Java commits only EventHelper.roll's eventRng consumption; EventRoom.onPlayerEntry selects the concrete event with a duplicate RNG"
+        );
     }
 
     #[test]

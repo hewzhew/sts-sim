@@ -99,6 +99,12 @@ and reachability gates must be checked separately.
      monster, shop, or treasure. Tiny Chest forces the post-roll result to
      treasure after still consuming the room-roll RNG; Juzu and previous-shop
      shop suppression are handled in the room roll, not in event selection.
+   - current progress: if the `?` roll remains an EventRoom, Java
+     `EventRoom.onPlayerEntry()` selects the concrete event with an
+     `eventRng` duplicate created from the current counter and does not commit
+     that duplicate back to global `eventRng`. Rust now mutates event/shrine
+     pools from the selected event while leaving the global counter at the
+     post-room-roll value.
    - current progress: exhausted event/shrine pools no longer fabricate a
      backup event. Java has no `Cleric` / `Golden Idol` / `Golden Shrine`
      fallback when all candidate pools are empty, so Rust now returns `None` in
@@ -399,6 +405,11 @@ Important boundary:
   now mirrors the source's `Math.min(99, fillIndex)` fill behavior, including
   the final-slot overwrite when ramped Monster/Shop/Treasure chances overflow
   the 100-slot table.
+- Java `EventRoom.onPlayerEntry()` selects the concrete event with
+  `new Random(Settings.seed, AbstractDungeon.eventRng.counter)` and does not
+  assign that duplicate back to `AbstractDungeon.eventRng`. Rust now uses the
+  same duplicate-RNG boundary for concrete event selection after a `?` node
+  rolls back into an EventRoom.
 - Java `TheEnding.initializeEventList()` and `initializeShrineList()` are empty.
   Rust now treats Act 4 and unknown act ids as empty event/shrine pools instead
   of falling through to Act 3 pools.
@@ -410,8 +421,9 @@ Important boundary:
 Validation:
 
 - `cargo test events::generator --all-targets`
+- `event_room_specific_event_selection_uses_duplicate_event_rng_like_java`
 - Latest full-suite validation after EventHelper room-roll table work:
-  `cargo test --all-targets` -> `1078 passed`.
+  `cargo test --all-targets` -> `1194 passed`.
 
 ## Encounter Pool Reachability Pass
 

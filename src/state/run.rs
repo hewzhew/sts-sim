@@ -824,6 +824,26 @@ impl RunState {
             .generate_event(&mut self.rng_pool, &ctx)
     }
 
+    /// Mirrors `EventRoom.onPlayerEntry()`.
+    ///
+    /// Java creates `new Random(Settings.seed, AbstractDungeon.eventRng.counter)`
+    /// and passes that duplicate into `AbstractDungeon.generateEvent(...)`.
+    /// The event/shrine pools mutate, but the global `eventRng` counter is not
+    /// advanced by the specific event selection after the `?` room-type roll.
+    pub fn generate_event_from_event_room_duplicate(&mut self) -> crate::state::events::EventId {
+        let tiny_chest_counter = self
+            .relics
+            .iter()
+            .find(|relic| relic.id == crate::content::relics::RelicId::TinyChest)
+            .map(|relic| relic.counter)
+            .unwrap_or(0);
+        let ctx = self.build_event_context(tiny_chest_counter, false);
+        let mut rng_duplicate = self.rng_pool.clone();
+
+        self.event_generator
+            .generate_event(&mut rng_duplicate, &ctx)
+    }
+
     /// Adds a card to the master deck using DeckManager pipeline.
     /// Handles Omamori negation, CeramicFish gold, Elite Eggs upgrades, etc.
     /// Returns true if the card was actually added (false if Omamori blocked it).
