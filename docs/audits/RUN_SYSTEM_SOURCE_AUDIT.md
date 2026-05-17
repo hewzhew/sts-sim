@@ -318,6 +318,11 @@ Important boundary:
 - Java ordinary `eventList` is act-local and events are removed as they appear;
   it is not rebuilt mid-act when emptied. Rust now preserves an exhausted
   ordinary event pool until the next act's event-list initialization.
+- Java `EventHelper.roll` classifies `?` room replacements by filling a
+  100-slot `RoomResult[]`, not by a pure cumulative threshold expression. Rust
+  now mirrors the source's `Math.min(99, fillIndex)` fill behavior, including
+  the final-slot overwrite when ramped Monster/Shop/Treasure chances overflow
+  the 100-slot table.
 - Java `TheEnding.initializeEventList()` and `initializeShrineList()` are empty.
   Rust now treats Act 4 and unknown act ids as empty event/shrine pools instead
   of falling through to Act 3 pools.
@@ -329,8 +334,8 @@ Important boundary:
 Validation:
 
 - `cargo test events::generator --all-targets`
-- Latest full-suite validation after Secret Portal event work:
-  `cargo test --all-targets` -> `1045 passed`.
+- Latest full-suite validation after EventHelper room-roll table work:
+  `cargo test --all-targets` -> `1078 passed`.
 
 ## Encounter Pool Reachability Pass
 
