@@ -340,7 +340,8 @@ pub fn build_map_observation(run_state: &RunState) -> RunMapObservationV0 {
     RunMapObservationV0 {
         current_x: run_state.map.current_x,
         current_y: run_state.map.current_y,
-        boss_node_available: run_state.map.boss_node_available,
+        boss_node_available: run_state.map.boss_node_available
+            || run_state.map.boss_node_available_now(),
         has_emerald_key: run_state.keys[2],
         nodes,
     }
@@ -1082,7 +1083,7 @@ pub fn reward_item_observation(
 mod tests {
     use super::*;
     use crate::content::potions::{Potion, PotionId};
-    use crate::map::node::{MapRoomNode, RoomType};
+    use crate::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::map::state::MapState;
     use crate::state::events::{EventId, EventState};
 
@@ -1174,6 +1175,38 @@ mod tests {
         assert!(
             observation.nodes[0].has_emerald_key,
             "node-level field still reports the Emerald elite marker"
+        );
+    }
+
+    #[test]
+    fn map_observation_derives_boss_node_availability_from_position() {
+        let mut top_rest = MapRoomNode::new(0, 14);
+        top_rest.class = Some(RoomType::RestRoom);
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.map = MapState::new(vec![vec![top_rest]]);
+        run_state.map.current_x = 0;
+        run_state.map.current_y = 14;
+        run_state.map.boss_node_available = false;
+
+        assert!(build_map_observation(&run_state).boss_node_available);
+
+        let mut elite = MapRoomNode::new(0, 2);
+        elite.class = Some(RoomType::MonsterRoomElite);
+        elite.edges.insert(MapEdge::new(0, 2, 0, 3));
+        let mut boss = MapRoomNode::new(0, 3);
+        boss.class = Some(RoomType::MonsterRoomBoss);
+        run_state.map = MapState::new(vec![
+            vec![MapRoomNode::new(0, 0)],
+            vec![MapRoomNode::new(0, 1)],
+            vec![elite],
+            vec![boss],
+        ]);
+        run_state.map.current_x = 0;
+        run_state.map.current_y = 2;
+
+        assert!(
+            build_map_observation(&run_state).boss_node_available,
+            "TheEnding exposes the boss hitbox from the Shield/Spear node even though it is not row 14"
         );
     }
 

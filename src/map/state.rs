@@ -101,6 +101,21 @@ impl MapState {
         self.get_current_node().and_then(|n| n.class)
     }
 
+    pub fn boss_node_available_now(&self) -> bool {
+        if self.current_y == 14 {
+            return true;
+        }
+        let Some(current_node) = self.get_current_node() else {
+            return false;
+        };
+        current_node.edges.iter().any(|edge| {
+            self.graph
+                .get(edge.dst_y.max(0) as usize)
+                .and_then(|row| row.get(edge.dst_x.max(0) as usize))
+                .is_some_and(|node| node.class == Some(RoomType::MonsterRoomBoss))
+        })
+    }
+
     pub fn get_current_node(&self) -> Option<&super::node::MapRoomNode> {
         if self.current_y >= 0
             && self.current_x >= 0
@@ -169,6 +184,33 @@ mod tests {
         assert!(
             !map.can_travel_to(0, 2, true),
             "Java Winged Greaves does not skip arbitrary future rows"
+        );
+    }
+
+    #[test]
+    fn boss_node_availability_is_derived_from_java_map_position() {
+        let mut normal = MapState::new(vec![vec![node(0, 14, Some(RoomType::RestRoom))]]);
+        normal.current_x = 0;
+        normal.current_y = 14;
+        assert!(
+            normal.boss_node_available_now(),
+            "Java DungeonMap makes the boss hitbox available from row 14"
+        );
+
+        let mut elite = node(0, 2, Some(RoomType::MonsterRoomElite));
+        elite.edges.insert(MapEdge::new(0, 2, 0, 3));
+        let ending = vec![
+            vec![node(0, 0, Some(RoomType::RestRoom))],
+            vec![node(0, 1, Some(RoomType::ShopRoom))],
+            vec![elite],
+            vec![node(0, 3, Some(RoomType::MonsterRoomBoss))],
+        ];
+        let mut ending_map = MapState::new(ending);
+        ending_map.current_x = 0;
+        ending_map.current_y = 2;
+        assert!(
+            ending_map.boss_node_available_now(),
+            "Java TheEnding also exposes the boss hitbox from the Shield/Spear node"
         );
     }
 }

@@ -205,11 +205,17 @@ Key source facts:
   It ignores X, but still stays on the next edge row.
 - Boss entry is a special map boss hitbox path from row 14 to a synthetic boss
   room node. It is not a Wing Boots jump.
+- TheEnding is the exception in `DungeonMap.update()`: the boss hitbox is
+  available when the current node is the Shield/Spear node at row 2.
 
 Rust result:
 
 - `MapState::can_travel_to(..., has_flight=true)` now allows same-row flight
   across the next reachable row only.
+- Public map observation derives `boss_node_available` from Java map position
+  rules instead of relying only on a stored protocol/import field: normal acts
+  expose it from row 14, and TheEnding exposes it when the current node has an
+  outgoing edge to a `MonsterRoomBoss`.
 - `MapState::set_current_room_type` is used when a Java `?` node rolls into
   an actual generated room, mirroring `nextRoom.room = generateRoom(roomResult)`
   rather than pretending every `?` is a real event.
@@ -232,6 +238,8 @@ Coverage:
 - `wing_boots_matches_java_next_row_only_semantics`
 - `legal_map_actions_expose_wing_boots_only_on_next_row`
 - `map_observation_separates_owned_emerald_key_from_emerald_elite_marker`
+- `boss_node_availability_is_derived_from_java_map_position`
+- `map_observation_derives_boss_node_availability_from_position`
 - `run_observation_exposes_all_top_panel_keys`
 
 ## Between-Act Transition Pass
