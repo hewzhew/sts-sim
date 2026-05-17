@@ -43,11 +43,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     let heal_amt = (run_state.max_hp as f32 * 0.25) as i32;
                     run_state
                         .heal_with_source(heal_amt, DomainEventSource::Event(EventId::Mushrooms));
-                    run_state.add_card_to_deck_with_upgrades_from(
-                        CardId::Parasite,
-                        0,
-                        DomainEventSource::Event(EventId::Mushrooms),
-                    );
+                    super::obtain_event_card(run_state, EventId::Mushrooms, CardId::Parasite);
                     event_state.current_screen = 1;
                 }
             }

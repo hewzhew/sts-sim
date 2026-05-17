@@ -356,12 +356,13 @@ Fixes:
 - Potion, gold, card, and leave costs now use
   `content::events::apply_player_hp_loss_damage(..., Event(KnowingSkull))`.
 - Added regression coverage for independent cost increments, gold reward order,
-  and leave transition under Tungsten Rod.
+  random colorless card event source, and leave transition under Tungsten Rod.
 
 Tests:
 
 - `potion_reward_hp_loss_respects_tungsten_and_increments_only_potion_cost`
 - `gold_reward_hp_loss_respects_tungsten_then_grants_gold`
+- `card_reward_hp_loss_and_random_colorless_card_use_event_source`
 - `leave_hp_loss_respects_tungsten_and_moves_to_complete_screen`
 
 ### Dead Adventurer encounter roll
@@ -1481,12 +1482,18 @@ Fixes:
   narrow helper for event-owned card obtains.
 - Replaced all production `src/content/events/*` direct `add_card_to_deck`
   calls with the event-source helper.
-- The only remaining direct event-module `add_card_to_deck` occurrence is a
-  `falling.rs` unit-test setup helper, not production event logic.
+- `Mushrooms` Parasite and `KnowingSkull` random colorless card now use the
+  same event-owned obtain helper.
+- Remaining production direct `add_card_to_deck_*` calls are intentional
+  special cases: pre-relic Omamori snapshots (`Addict`, `BigFish`,
+  `Mausoleum`), previewed upgrade copies (`MatchAndKeep`, `TheLibrary`), and
+  `NoteForYourself`'s manual profile-card obtain path. The only plain
+  `add_card_to_deck` occurrence in event modules is a `falling.rs` unit-test
+  setup helper.
 
 Validation:
 
-- Static scan: `rg "run_state\\.add_card_to_deck\\(|\\.add_card_to_deck\\(" src/content/events`
+- Static scan: `rg "add_card_to_deck" src/content/events -g "*.rs"`
 - `cargo test --all-targets`
 
 ## Current High-Risk Event Areas
@@ -1519,4 +1526,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `944 passed`.
+- Current result after this pass: `945 passed`.

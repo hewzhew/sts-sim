@@ -116,7 +116,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     inc_card(&mut event_state.internal_state);
                     let card_id = run_state
                         .random_colorless_card(crate::content::cards::CardRarity::Uncommon);
-                    run_state.add_card_to_deck_with_upgrades_from(card_id, 0, source);
+                    super::obtain_event_card(run_state, EventId::KnowingSkull, card_id);
                     // Stay on ASK screen
                 }
                 _ => {
@@ -199,6 +199,28 @@ mod tests {
             event,
             DomainEvent::GoldChanged {
                 delta: 90,
+                source: DomainEventSource::Event(EventId::KnowingSkull),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn card_reward_hp_loss_and_random_colorless_card_use_event_source() {
+        let mut run_state = skull_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        assert_eq!(run_state.current_hp, 24);
+        let event_state = run_state.event_state.as_ref().unwrap();
+        assert_eq!(event_state.current_screen, 1);
+        assert_eq!(potion_cost(event_state.internal_state), 6);
+        assert_eq!(gold_cost(event_state.internal_state), 6);
+        assert_eq!(card_cost(event_state.internal_state), 7);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
                 source: DomainEventSource::Event(EventId::KnowingSkull),
                 ..
             }
