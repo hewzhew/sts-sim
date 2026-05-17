@@ -150,6 +150,7 @@ pub fn handle_spawn_monster(
         spheric_guardian: Default::default(),
         reptomancer: Default::default(),
         darkling: Default::default(),
+        nemesis: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
     };
@@ -179,6 +180,9 @@ pub fn handle_spawn_monster(
     }
     if enemy_id == crate::content::monsters::EnemyId::Reptomancer {
         crate::content::monsters::beyond::reptomancer::initialize_runtime_state(&mut new_monster);
+    }
+    if enemy_id == crate::content::monsters::EnemyId::Nemesis {
+        crate::content::monsters::beyond::nemesis::initialize_runtime_state(&mut new_monster);
     }
     if enemy_id == crate::content::monsters::EnemyId::JawWorm {
         crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(
@@ -1223,6 +1227,31 @@ fn handle_update_reptomancer_state(
     }
 }
 
+fn handle_update_nemesis_state(
+    monster_id: usize,
+    first_move: Option<bool>,
+    scythe_cooldown: Option<i32>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = first_move {
+            monster.nemesis.first_move = value;
+        }
+        if let Some(value) = scythe_cooldown {
+            monster.nemesis.scythe_cooldown = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.nemesis.protocol_seeded = value;
+        }
+    }
+}
+
 fn handle_update_gremlin_wizard_state(
     monster_id: usize,
     current_charge: Option<u8>,
@@ -1544,6 +1573,17 @@ pub fn handle_update_monster_runtime(
             monster_id,
             first_move,
             dagger_slots,
+            protocol_seeded,
+            state,
+        ),
+        MonsterRuntimePatch::Nemesis {
+            first_move,
+            scythe_cooldown,
+            protocol_seeded,
+        } => handle_update_nemesis_state(
+            monster_id,
+            first_move,
+            scythe_cooldown,
             protocol_seeded,
             state,
         ),

@@ -46,6 +46,7 @@ Scope:
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Reptomancer | `first_move`, `dagger_slots` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
+| Nemesis | `first_move`, `scythe_cooldown` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 
 ## Notes
 
@@ -214,6 +215,18 @@ Scope:
   updates the corresponding runtime slot together.
 - Remaining history usage is limited to Java's explicit repeat rules around Snake Strike, Spawn
   Dagger, and Big Bite.
+
+### Nemesis
+
+- `runtime_state.first_move` and `runtime_state.scythe_cooldown` are exported by
+  `CommunicationMod`.
+- Rust state sync marks the Nemesis runtime slice as protocol-seeded and semantic roll logic
+  requires factory/protocol seeding before branch selection.
+- Java decrements `scytheCooldown` at the start of every `getMove()` and resets it to 2 only when
+  Scythe is selected. Rust mirrors this through `Action::UpdateMonsterRuntime` emitted from
+  `on_roll_move`.
+- The opening branch is gated by Java private `firstMove`, not by empty move history.
+- Remaining history usage is limited to Java's explicit `lastMove` / `lastTwoMoves` repeat rules.
 
 ### The Guardian
 

@@ -952,6 +952,7 @@ pub struct MonsterEntity {
     pub spheric_guardian: SphericGuardianRuntimeState,
     pub reptomancer: ReptomancerRuntimeState,
     pub darkling: DarklingRuntimeState,
+    pub nemesis: NemesisRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
 }
@@ -1342,6 +1343,13 @@ pub struct DarklingRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub nip_dmg: i32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NemesisRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_move: bool,
+    pub scythe_cooldown: i32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2234,6 +2242,7 @@ mod tests {
             spheric_guardian: SphericGuardianRuntimeState::default(),
             reptomancer: ReptomancerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
+            nemesis: NemesisRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2311,6 +2320,7 @@ mod tests {
             spheric_guardian: SphericGuardianRuntimeState::default(),
             reptomancer: ReptomancerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
+            nemesis: NemesisRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2385,6 +2395,7 @@ mod tests {
             spheric_guardian: SphericGuardianRuntimeState::default(),
             reptomancer: ReptomancerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
+            nemesis: NemesisRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };

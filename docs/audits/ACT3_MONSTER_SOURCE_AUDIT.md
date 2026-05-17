@@ -185,8 +185,14 @@ the A18 starting offset. This matches Java roll timing in normal decision-bounda
 ### Nemesis
 
 Java has private `scytheCooldown`, decremented at the start of every `getMove()` and reset to 2
-when Scythe is selected. Rust reconstructs this cooldown from the last Scythe in move history. This
-matches the Java timing at roll boundaries.
+when Scythe is selected. Java also gates the opening branch on private `firstMove`, cleared inside
+`getMove()`.
+
+Rust now carries both fields explicitly in `NemesisRuntimeState`, imports them from
+`monster.runtime_state.first_move` and `monster.runtime_state.scythe_cooldown`, and updates them via
+`Action::UpdateMonsterRuntime` during roll resolution. `move_history` is used only for Java's
+explicit repeat checks such as `lastMove(SCYTHE)` and `lastTwoMoves(TRI_ATTACK)`, not to recover
+hidden cooldown or opening state.
 
 Nemesis also reapplies Intangible after every turn only when it does not already have Intangible;
 Rust preserves that guard.

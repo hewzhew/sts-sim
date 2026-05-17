@@ -6,9 +6,9 @@ use crate::runtime::combat::{
     CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, GremlinLeaderRuntimeState,
     GremlinNobRuntimeState, GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState,
     JawWormRuntimeState, LagavulinRuntimeState, LargeSlimeRuntimeState, LouseRuntimeState,
-    MonsterEntity, MonsterMoveState, ReptomancerRuntimeState, SentryRuntimeState,
-    ShelledParasiteRuntimeState, SlaverRedRuntimeState, SlimeBossRuntimeState, SneckoRuntimeState,
-    SphericGuardianRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
+    MonsterEntity, MonsterMoveState, NemesisRuntimeState, ReptomancerRuntimeState,
+    SentryRuntimeState, ShelledParasiteRuntimeState, SlaverRedRuntimeState, SlimeBossRuntimeState,
+    SneckoRuntimeState, SphericGuardianRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
     SpireSpearRuntimeState, ThiefRuntimeState, WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
@@ -100,6 +100,9 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
                 "reptomancer:{}",
                 stable_reptomancer_signature(&monster.reptomancer)
             )
+        }
+        Some(EnemyId::Nemesis) => {
+            format!("nemesis:{}", stable_nemesis_signature(&monster.nemesis))
         }
         Some(EnemyId::WrithingMass) => {
             format!(
@@ -548,6 +551,13 @@ fn stable_reptomancer_signature(state: &ReptomancerRuntimeState) -> String {
     format!(
         "seed{}:first{}:daggers{:?}",
         state.protocol_seeded, state.first_move, state.dagger_slots
+    )
+}
+
+fn stable_nemesis_signature(state: &NemesisRuntimeState) -> String {
+    format!(
+        "seed{}:first{}:scythe_cd{}",
+        state.protocol_seeded, state.first_move, state.scythe_cooldown
     )
 }
 

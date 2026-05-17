@@ -135,6 +135,11 @@ pub enum MonsterRuntimePatch {
         dagger_slots: Option<[Option<EntityId>; 4]>,
         protocol_seeded: Option<bool>,
     },
+    Nemesis {
+        first_move: Option<bool>,
+        scythe_cooldown: Option<i32>,
+        protocol_seeded: Option<bool>,
+    },
     GremlinWizard {
         current_charge: Option<u8>,
         protocol_seeded: Option<bool>,

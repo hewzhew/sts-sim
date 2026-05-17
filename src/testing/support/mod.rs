@@ -119,6 +119,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         spheric_guardian: Default::default(),
         reptomancer: Default::default(),
         darkling: Default::default(),
+        nemesis: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
     };
@@ -195,6 +196,9 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
     }
     if enemy_id == EnemyId::Reptomancer {
         crate::content::monsters::beyond::reptomancer::initialize_runtime_state(&mut monster);
+    }
+    if enemy_id == EnemyId::Nemesis {
+        crate::content::monsters::beyond::nemesis::initialize_runtime_state(&mut monster);
     }
     if enemy_id == EnemyId::Spiker {
         monster.spiker.protocol_seeded = true;

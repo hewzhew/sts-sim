@@ -2,8 +2,8 @@ use crate::content::cards::CardId;
 use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, MonsterEntity, NemesisRuntimeState};
 use crate::semantics::combat::{
     AddCardStep, AttackSpec, CardDestination, DamageKind, EffectStrength, MonsterMoveSpec,
     MonsterTurnPlan, MoveStep,
@@ -14,6 +14,100 @@ pub struct Nemesis;
 const TRI_ATTACK: u8 = 2;
 const SCYTHE: u8 = 3;
 const TRI_BURN: u8 = 4;
+
+pub fn initialize_runtime_state(entity: &mut MonsterEntity) {
+    entity.nemesis = NemesisRuntimeState {
+        protocol_seeded: true,
+        first_move: true,
+        scythe_cooldown: 0,
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn first_roll_clears_private_first_move_and_pre_decrements_cooldown() {
+        let mut state = crate::testing::support::blank_test_combat();
+        state.entities.monsters = vec![crate::testing::support::test_monster(EnemyId::Nemesis)];
+
+        crate::engine::action_handlers::execute_action(
+            Action::RollMonsterMove { monster_id: 1 },
+            &mut state,
+        );
+
+        let nemesis = &state.entities.monsters[0];
+        assert!(
+            !nemesis.nemesis.first_move,
+            "Java Nemesis.getMove clears private firstMove while rolling the opening move"
+        );
+        assert_eq!(
+            nemesis.nemesis.scythe_cooldown, -1,
+            "Java decrements scytheCooldown before even the opening branch"
+        );
+    }
+
+    #[test]
+    fn imported_first_move_false_with_empty_history_does_not_force_opening() {
+        let mut nemesis = crate::testing::support::test_monster(EnemyId::Nemesis);
+        nemesis.nemesis.first_move = false;
+        nemesis.nemesis.scythe_cooldown = 0;
+
+        let plan = Nemesis::roll_move_plan(&mut StsRng::new(0), &nemesis, 0, 0);
+
+        assert_eq!(
+            plan.move_id, SCYTHE,
+            "Java gates the opening branch on private firstMove, not empty move history"
+        );
+    }
+
+    #[test]
+    fn scythe_roll_resets_private_cooldown_to_two() {
+        let mut nemesis = crate::testing::support::test_monster(EnemyId::Nemesis);
+        nemesis.nemesis.first_move = false;
+        nemesis.nemesis.scythe_cooldown = 0;
+        let plan = scythe_plan();
+
+        let actions = Nemesis::on_roll_move(0, &nemesis, 0, &plan);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::Nemesis {
+                    first_move: None,
+                    scythe_cooldown: Some(2),
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn non_scythe_roll_keeps_java_pre_decremented_cooldown() {
+        let mut nemesis = crate::testing::support::test_monster(EnemyId::Nemesis);
+        nemesis.nemesis.first_move = false;
+        nemesis.nemesis.scythe_cooldown = 2;
+        let plan = tri_attack_plan(0);
+
+        let actions = Nemesis::on_roll_move(0, &nemesis, 50, &plan);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::Nemesis {
+                    first_move: None,
+                    scythe_cooldown: Some(1),
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
+    }
+}
 
 fn scythe_damage() -> i32 {
     45
@@ -88,17 +182,30 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
         && history[history.len() - 2] == move_id
 }
 
-fn reconstruct_scythe_cooldown(history: &std::collections::VecDeque<u8>) -> i32 {
-    let mut last_scythe_idx = None;
-    for (i, &move_id) in history.iter().enumerate() {
-        if move_id == SCYTHE {
-            last_scythe_idx = Some(i);
-        }
-    }
+fn runtime(entity: &MonsterEntity) -> &NemesisRuntimeState {
+    assert!(
+        entity.nemesis.protocol_seeded,
+        "nemesis runtime truth must be protocol-seeded or factory-seeded"
+    );
+    &entity.nemesis
+}
 
-    match last_scythe_idx {
-        Some(idx) => 1 - ((history.len() - 1 - idx) as i32),
-        None => -(history.len() as i32) - 1,
+fn scythe_cooldown_after_java_pre_decrement(entity: &MonsterEntity) -> i32 {
+    runtime(entity).scythe_cooldown - 1
+}
+
+fn nemesis_runtime_update(
+    entity: &MonsterEntity,
+    first_move: Option<bool>,
+    scythe_cooldown: Option<i32>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::Nemesis {
+            first_move,
+            scythe_cooldown,
+            protocol_seeded: Some(true),
+        },
     }
 }
 
@@ -109,15 +216,16 @@ impl MonsterBehavior for Nemesis {
         ascension_level: u8,
         num: i32,
     ) -> MonsterTurnPlan {
-        if entity.move_history().is_empty() {
+        let runtime = runtime(entity);
+        let scythe_cooldown = scythe_cooldown_after_java_pre_decrement(entity);
+
+        if runtime.first_move {
             return if num < 50 {
                 tri_attack_plan(ascension_level)
             } else {
                 tri_burn_plan(ascension_level)
             };
         }
-
-        let scythe_cooldown = reconstruct_scythe_cooldown(entity.move_history());
 
         if num < 30 {
             if !last_move(entity, SCYTHE) && scythe_cooldown <= 0 {
@@ -152,6 +260,26 @@ impl MonsterBehavior for Nemesis {
         } else {
             tri_attack_plan(ascension_level)
         }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let runtime = runtime(entity);
+        let first_move = runtime.first_move.then_some(false);
+        let scythe_cooldown = if plan.move_id == SCYTHE {
+            2
+        } else {
+            runtime.scythe_cooldown - 1
+        };
+        vec![nemesis_runtime_update(
+            entity,
+            first_move,
+            Some(scythe_cooldown),
+        )]
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {

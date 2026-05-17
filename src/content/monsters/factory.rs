@@ -155,6 +155,7 @@ pub fn build_encounter(
             spheric_guardian: Default::default(),
             reptomancer: Default::default(),
             darkling: Default::default(),
+            nemesis: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
         };
@@ -288,6 +289,9 @@ pub fn build_encounter(
         }
         if enemy_id == EnemyId::Reptomancer {
             crate::content::monsters::beyond::reptomancer::initialize_runtime_state(&mut monster);
+        }
+        if enemy_id == EnemyId::Nemesis {
+            crate::content::monsters::beyond::nemesis::initialize_runtime_state(&mut monster);
         }
         if enemy_id == EnemyId::TheGuardian {
             crate::content::monsters::exordium::the_guardian::initialize_runtime_state(
