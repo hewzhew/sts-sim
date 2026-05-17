@@ -3859,7 +3859,7 @@ fn ring_of_the_serpent_increases_opening_and_turn_start_draw_count() {
         .entities
         .player
         .add_relic(RelicState::new(RelicId::RingOfTheSerpent));
-    state.recompute_turn_start_draw_modifier();
+    state.reset_turn_energy_from_player();
 
     assert_eq!(
         crate::engine::core::compute_player_turn_start_draw_count(&state),

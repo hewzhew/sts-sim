@@ -219,6 +219,31 @@ fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::build_natural_start_state;
+    use crate::content::monsters::factory::EncounterId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::map::node::RoomType;
+    use crate::state::run::RunState;
+
+    #[test]
+    fn natural_combat_start_applies_ring_of_the_serpent_opening_hand_size() {
+        let mut run = RunState::new(1, 0, false, "Silent");
+        run.relics = vec![RelicState::new(RelicId::RingOfTheSerpent)];
+
+        let (_engine_state, combat) =
+            build_natural_start_state(&mut run, EncounterId::JawWorm, RoomType::MonsterRoom)
+                .expect("combat should initialize");
+
+        assert_eq!(
+            combat.zones.hand.len(),
+            6,
+            "Java Ring of the Serpent increments masterHandSize, so initial draw uses 6"
+        );
+    }
+}
+
 fn compile_master_deck(specs: &[AuthorCardSpec]) -> Result<Vec<CombatCard>, String> {
     let mut deck = Vec::new();
     let mut next_uuid = 10_000u32;

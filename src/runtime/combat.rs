@@ -458,6 +458,7 @@ impl CombatState {
 
     pub fn reset_turn_energy_from_player(&mut self) {
         self.turn.set_energy(self.entities.player.energy_master);
+        self.recompute_turn_start_draw_modifier();
     }
 }
 

@@ -271,7 +271,7 @@ Validation:
 
 - `cargo test events::generator --all-targets`
 - Latest full-suite validation after boss chest flow work:
-  `cargo test --all-targets` -> `1020 passed`.
+  `cargo test --all-targets` -> `1021 passed`.
 
 ## Boss Chest Relic Flow Pass
 
@@ -303,6 +303,9 @@ Rust result:
 - Starter upgrade boss relics (`Black Blood`, `Ring of the Serpent`,
   `FrozenCore`, `HolyWater`) now replace relic slot 0 before the act transition,
   matching `instantObtain(player, 0, true)`.
+- `Ring of the Serpent` passive draw-size state is now present before combat
+  start draw. Java implements this as `masterHandSize++` on equip and copies it
+  into `gameHandSize` during combat setup.
 - Chest-open hooks were checked against Java. The only relics overriding chest
   hooks are `Cursed Key`, `Matryoshka`, and `Nloth's Mask`; boss chests pass
   `bossChest=true`, Cursed Key/Nloth's Mask do nothing in that case, and
@@ -314,3 +317,4 @@ Coverage:
 - `boss_relic_choice_defers_act_transition_until_on_equip_selection_resolves`
 - `boss_starter_upgrade_relic_replaces_starter_slot_before_advancing_act`
 - `boss_reward_generates_three_boss_relics_by_pool_order_without_retry_layer`
+- `natural_combat_start_applies_ring_of_the_serpent_opening_hand_size`
