@@ -2743,11 +2743,15 @@ Rust result:
   not by a generic on-lose-hp bus.
 - Fixed revive eligibility to require `counter == -1` as well as `!used_up`.
 - Fairy Potion priority and Mark of the Bloom blocking behavior are covered.
+- Fairy Potion passive revive is deliberately not treated as a potion-use relic
+  hook. Java reaches it from `AbstractPlayer.damage`, not `PotionPopUp`, so
+  `ToyOrnithopter.onUsePotion()` does not fire on Fairy revive.
 - UI-only relic-above-creature behavior is intentionally not represented.
 
 Coverage:
 - `shared_rare_passive_resource_relic_metadata_matches_java_sources`
 - `lizard_tail_uses_java_counter_gate_and_fairy_priority`
+- `fairy_passive_revive_does_not_trigger_toy_ornithopter_on_use_potion`
 
 ## Shared Relic Batch 11 - Rare Run / Campfire Relics
 

@@ -2266,12 +2266,7 @@ pub fn handle_play_card_direct(
 
 pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatState) {
     if let Some(Some(potion)) = state.entities.potions.get(slot).cloned() {
-        if potion.id == crate::content::potions::PotionId::FairyPotion {
-            return;
-        }
-        if potion.id == crate::content::potions::PotionId::SmokeBomb
-            && smoke_bomb_blocked_like_java(state)
-        {
+        if !crate::content::potions::potion_can_use_in_combat_like_java(&potion, state) {
             return;
         }
         let def = crate::content::potions::get_potion_definition(potion.id);
@@ -2387,19 +2382,6 @@ fn potion_class_for_combat(state: &CombatState) -> crate::content::potions::Poti
         "Watcher" => crate::content::potions::PotionClass::Watcher,
         _ => crate::content::potions::PotionClass::Ironclad,
     }
-}
-
-fn smoke_bomb_blocked_like_java(state: &CombatState) -> bool {
-    state.meta.is_boss_fight
-        || state.entities.monsters.iter().any(|monster| {
-            crate::content::monsters::EnemyId::from_id(monster.monster_type)
-                .is_some_and(|enemy_id| enemy_id.is_boss())
-                || crate::content::powers::store::has_power(
-                    state,
-                    monster.id,
-                    crate::content::powers::PowerId::BackAttack,
-                )
-        })
 }
 
 pub fn handle_play_top_card(target: Option<usize>, exhaust: bool, state: &mut CombatState) {
@@ -2778,6 +2760,7 @@ mod tests {
     #[test]
     fn entropic_brew_generates_concrete_limited_potions_before_obtain_actions() {
         let mut state = blank_test_combat();
+        state.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
         state.entities.potions = vec![
             Some(crate::content::potions::Potion::new(
                 PotionId::EntropicBrew,
@@ -2868,6 +2851,7 @@ mod tests {
     #[test]
     fn essence_of_darkness_channels_for_each_orb_slot_and_sacred_bark_potency() {
         let mut state = blank_test_combat();
+        state.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
         state.entities.player.max_orbs = 3;
         state.entities.player.orbs = vec![
             crate::runtime::combat::OrbEntity::new(crate::runtime::combat::OrbId::Empty),
@@ -2953,8 +2937,51 @@ mod tests {
     }
 
     #[test]
+    fn combat_potion_execution_respects_java_can_use_gate() {
+        let mut disabled = blank_test_combat();
+        disabled.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        disabled.entities.potions = vec![Some(
+            crate::content::potions::Potion::with_affordance_truth(
+                PotionId::FirePotion,
+                1,
+                false,
+                true,
+                true,
+            ),
+        )];
+        handle_use_potion(0, Some(disabled.entities.monsters[0].id), &mut disabled);
+        assert!(disabled.entities.potions[0].is_some());
+        assert_eq!(
+            disabled.action_queue_len(),
+            0,
+            "Java PotionPopUp checks potion.canUse before calling use()"
+        );
+
+        let mut dead_monsters = blank_test_combat();
+        dead_monsters.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        dead_monsters.entities.monsters[0].current_hp = 0;
+        dead_monsters.entities.monsters[0].is_dying = true;
+        dead_monsters.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::FirePotion,
+            2,
+        ))];
+        handle_use_potion(
+            0,
+            Some(dead_monsters.entities.monsters[0].id),
+            &mut dead_monsters,
+        );
+        assert!(dead_monsters.entities.potions[0].is_some());
+        assert_eq!(
+            dead_monsters.action_queue_len(),
+            0,
+            "Java AbstractPotion.canUse blocks when the room monsters are basically dead"
+        );
+    }
+
+    #[test]
     fn liquid_memories_auto_move_does_not_drop_cards_when_hand_fills() {
         let mut state = blank_test_combat();
+        state.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
         state.entities.potions = vec![Some(crate::content::potions::Potion::new(
             PotionId::LiquidMemories,
             1,

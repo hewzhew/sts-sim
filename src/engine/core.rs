@@ -1157,6 +1157,9 @@ fn handle_player_turn_input(
                 .get(potion_index)
                 .and_then(|p| p.as_ref())
                 .ok_or("Potion index out of range")?;
+            if !crate::content::potions::potion_can_use_in_combat_like_java(potion, combat_state) {
+                return Err("Potion cannot be used in current combat state");
+            }
             let def = crate::content::potions::get_potion_definition(potion.id);
             target = targeting::resolve_target_request(
                 combat_state,

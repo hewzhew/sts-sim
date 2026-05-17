@@ -13,15 +13,7 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
                 let Some(potion) = maybe_potion.as_ref() else {
                     continue;
                 };
-                if !potion.can_use {
-                    continue;
-                }
-                if potion.id == crate::content::potions::PotionId::FairyPotion {
-                    continue;
-                }
-                if potion.id == crate::content::potions::PotionId::SmokeBomb
-                    && smoke_bomb_blocked_like_java(combat)
-                {
+                if !crate::content::potions::potion_can_use_in_combat_like_java(potion, combat) {
                     continue;
                 }
                 if let Some(validation) =
@@ -127,19 +119,6 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
     }
 
     moves
-}
-
-fn smoke_bomb_blocked_like_java(combat: &CombatState) -> bool {
-    combat.meta.is_boss_fight
-        || combat.entities.monsters.iter().any(|monster| {
-            crate::content::monsters::EnemyId::from_id(monster.monster_type)
-                .is_some_and(|enemy_id| enemy_id.is_boss())
-                || crate::content::powers::store::has_power(
-                    combat,
-                    monster.id,
-                    crate::content::powers::PowerId::BackAttack,
-                )
-        })
 }
 
 pub(crate) fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {

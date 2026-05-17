@@ -26,6 +26,9 @@ mechanical simulator truth and must stay anchored to the Java source under
 - `PotionPopUp` applies `potion.use(target)`, then relic `onUsePotion`, then
   destroys the potion slot. Rust combat use now keeps this ordering: potion
   actions first, relic hooks second, slot clear after successful use.
+- `FairyPotion` is not a `PotionPopUp` use path. Java passive revive is handled
+  inline in `AbstractPlayer.damage`: it calls `FairyPotion.use(player)` and
+  destroys the slot directly, without relic `onUsePotion`.
 - `AbstractPotion.canUse()` blocks most potion use outside active combat, after
   the turn has ended, when monsters are basically dead, and in `WeMeetAgain`.
   Some potion classes override this. `BloodPotion`, `FruitJuice`, and
@@ -51,9 +54,11 @@ mechanical simulator truth and must stay anchored to the Java source under
 | Liquid Memories | `BetterDiscardPileToHandAction(number, 0)` auto-moves when discard size is `<= number`; if hand fills, remaining discard cards stay in discard. Empty discard still consumes the potion and no-ops. | Immediate path now checks hand capacity before removing each discard card and leaves overflow cards in discard. | `liquid_memories_auto_move_does_not_drop_cards_when_hand_fills`; `engine_fizzles_liquid_memories_empty_discard_after_consuming_potion` |
 | Snecko Oil | Queues draw, then `RandomizeHandCostAction`; that action skips `cost < 0`, rolls 0-3 per eligible card, and changes both `cost` and `costForTurn` when different. | `handle_randomize_hand_costs` now reads current combat cost, skips X/unplayable cost, and mutates combat plus turn cost. | `snecko_oil_randomize_updates_combat_cost_and_turn_cost_like_java` |
 | Smoke Bomb | `SmokeBomb.canUse()` rejects if any monster has `BackAttack` or `EnemyType.BOSS`; it is not just a room-level boss flag. | `handle_use_potion` and `engine_local_moves` now block by room boss flag, visible boss monster type, and `BackAttack`. | `smoke_bomb_is_blocked_by_spire_shield_back_attack_power`; `smoke_bomb_is_blocked_by_boss_monster_type_even_without_room_flag`; `engine_local_moves_skip_smoke_bomb_when_visible_monster_is_boss` |
+| Combat use legality | Java `PotionPopUp` only calls `use()` after `potion.canUse()` passes. Generic `AbstractPotion.canUse()` requires active combat, player turn not ended, monsters not basically dead, and no `WeMeetAgain`; special potions such as Fairy and Smoke Bomb override this. | Added one shared Rust combat-use legality helper and routed execution, legal moves, and observation through it, so direct action/replay inputs cannot bypass the same gate. | `combat_potion_execution_respects_java_can_use_gate`; existing Smoke Bomb and Fairy tests |
 | Run observation `canUse` / `canDiscard` | Non-combat top-panel affordances are dynamic: only Blood/Fruit/Entropic override non-combat use, `FairyPotion` is passive, and `WeMeetAgain` blocks both use and discard. During combat, potion slots live in combat state, not stale run state. | `build_potion_observations` now reads combat slots when combat is active and uses source-backed non-combat affordance helpers for run-state slots. | `non_combat_potion_observation_uses_java_can_use_overrides`; `we_meet_again_blocks_potion_use_and_discard_observation`; `combat_potion_observation_uses_combat_slots_not_stale_run_slots` |
 | Run-level top-panel potion execution | Java `PotionPopUp` allows discard outside combat unless `WeMeetAgain`, and allows Blood/Fruit/Entropic use outside combat. It applies potion effect, relic `onUsePotion`, then destroys the slot; non-combat Entropic uses non-limited `returnRandomPotion()` and Sozu consumes without generating. | `tick_run` now intercepts run-level `UsePotion` / `DiscardPotion` in non-combat states, applies Blood/Fruit/Entropic effects to `RunState`, triggers Toy Ornithopter, consumes the slot, and uses non-limited Entropic generation. | `run_level_potion_actions_follow_java_top_panel_affordances`; `run_level_blood_potion_uses_sacred_bark_toy_ornithopter_and_consumes_slot`; `run_level_potion_discard_is_blocked_by_we_meet_again`; `run_level_entropic_brew_consumes_slot_and_refills_without_limited_filter`; `run_level_entropic_brew_with_sozu_consumes_without_generating_potions` |
 | Shop potion purchase under Sozu | Java `StorePotion.purchasePotion()` returns immediately when Sozu is present; it flashes the relic but does not spend gold, call `obtainPotion`, remove the offer, or trigger Courier restock. | `shop_handler` now treats shop potion buys under Sozu as blocked no-ops, and full-run shop legal actions do not expose `BuyPotion` with Sozu. | `sozu_shop_potion_purchase_is_blocked_without_spending_or_removing_offer`; `courier_does_not_refill_sozu_blocked_shop_potion_purchase`; `legal_shop_actions_block_sozu_potion_purchase_like_java_store_potion` |
+| Fairy Potion passive revive | `AbstractPlayer.damage` checks Mark of the Bloom first, consumes the first Fairy Potion before Lizard Tail, calls `FairyPotion.use(player)`, and destroys the slot directly. Since this path bypasses `PotionPopUp`, `ToyOrnithopter.onUsePotion()` is not called. | `try_revive` remains the only Fairy passive path: Mark blocks it, Fairy has priority over Lizard Tail, Sacred Bark potency and heal modifiers are applied, the slot is removed, and no `on_use_potion` actions are queued. | `lizard_tail_uses_java_counter_gate_and_fairy_priority`; `fairy_passive_revive_does_not_trigger_toy_ornithopter_on_use_potion` |
 
 ## Short-Term Clean Areas
 
@@ -75,8 +80,6 @@ mechanical simulator truth and must stay anchored to the Java source under
 
 ## Boundaries Still Not Closed
 
-- The passive death-prevention path for `FairyPotion` belongs to revive/death
-  handling, not `Action::UsePotion`; it should remain audited with death hooks.
 - Potion reward/drop generation is partly covered by relic/run audits, but it is
   not the same thing as combat potion use.
 - UI-only effects, sounds, cursor movement, hitbox movement, and visual potion

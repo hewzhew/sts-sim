@@ -875,33 +875,13 @@ fn potion_can_use_in_observation(
     is_we_meet_again_event: bool,
 ) -> bool {
     if let Some(combat) = combat {
-        return potion.can_use
-            && matches!(engine_state, EngineState::CombatPlayerTurn)
+        return matches!(engine_state, EngineState::CombatPlayerTurn)
             && !is_we_meet_again_event
-            && potion.id != crate::content::potions::PotionId::FairyPotion
-            && !combat.are_monsters_basically_dead_java()
-            && !combat_potion_blocked_by_java_special_case(potion.id, combat);
+            && crate::content::potions::potion_can_use_in_combat_like_java(potion, combat);
     }
 
     potion.can_use
         && crate::content::potions::potion_can_use_out_of_combat(potion.id, is_we_meet_again_event)
-}
-
-fn combat_potion_blocked_by_java_special_case(
-    id: crate::content::potions::PotionId,
-    combat: &CombatState,
-) -> bool {
-    id == crate::content::potions::PotionId::SmokeBomb
-        && (combat.meta.is_boss_fight
-            || combat.entities.monsters.iter().any(|monster| {
-                crate::content::monsters::EnemyId::from_id(monster.monster_type)
-                    .is_some_and(|enemy_id| enemy_id.is_boss())
-                    || crate::content::powers::store::has_power(
-                        combat,
-                        monster.id,
-                        crate::content::powers::PowerId::BackAttack,
-                    )
-            }))
 }
 
 pub fn base_semantics_for_card(card_id: CardId, upgrades: u8) -> Vec<String> {

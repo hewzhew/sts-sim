@@ -4340,6 +4340,31 @@ fn lizard_tail_uses_java_counter_gate_and_fairy_priority() {
 }
 
 #[test]
+fn fairy_passive_revive_does_not_trigger_toy_ornithopter_on_use_potion() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.current_hp = 0;
+    state.entities.player.max_hp = 80;
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::ToyOrnithopter));
+    state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::FairyPotion,
+        7003,
+    ))];
+
+    crate::engine::action_handlers::try_revive(&mut state);
+
+    assert_eq!(state.entities.player.current_hp, 24);
+    assert!(state.entities.potions[0].is_none());
+    assert_eq!(
+        state.action_queue_len(),
+        0,
+        "Java Fairy Potion passive revive is handled by AbstractPlayer.damage, not PotionPopUp, so relic onUsePotion hooks do not fire"
+    );
+}
+
+#[test]
 fn shared_rare_run_campfire_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Mango), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::OldCoin), RelicTier::Rare);

@@ -656,6 +656,42 @@ pub fn potion_can_use_out_of_combat(id: PotionId, is_we_meet_again_event: bool) 
     )
 }
 
+/// Java `AbstractPotion.canUse()` for an already-owned potion in combat, plus
+/// potion-specific overrides that are mechanical rather than UI-only.
+///
+/// This deliberately belongs below the generic potion metadata because it is a
+/// runtime legality rule: adapters and action execution must agree on it.
+pub fn potion_can_use_in_combat_like_java(
+    potion: &Potion,
+    combat: &crate::runtime::combat::CombatState,
+) -> bool {
+    potion.can_use
+        && potion.id != PotionId::FairyPotion
+        && matches!(
+            combat.turn.current_phase,
+            crate::runtime::combat::CombatPhase::PlayerTurn
+        )
+        && !combat.are_monsters_basically_dead_java()
+        && !potion_blocked_in_combat_by_java_override(potion.id, combat)
+}
+
+pub fn potion_blocked_in_combat_by_java_override(
+    id: PotionId,
+    combat: &crate::runtime::combat::CombatState,
+) -> bool {
+    id == PotionId::SmokeBomb
+        && (combat.meta.is_boss_fight
+            || combat.entities.monsters.iter().any(|monster| {
+                crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                    .is_some_and(|enemy_id| enemy_id.is_boss())
+                    || crate::content::powers::store::has_power(
+                        combat,
+                        monster.id,
+                        crate::content::powers::PowerId::BackAttack,
+                    )
+            }))
+}
+
 /// Returns a random potion with rarity weighting, matching Java's `AbstractDungeon.returnRandomPotion()`.
 /// Rolls 0-99: <65 = Common, 65-89 = Uncommon, ≥90 = Rare.
 /// When `limited=true`, excludes FruitJuice (Java behavior for EntropicBrew).
