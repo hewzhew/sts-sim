@@ -102,10 +102,15 @@ mod tests {
     use super::handle_choice;
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
-    use crate::state::core::{EngineState, RunPendingChoiceReason};
+    use crate::engine::run_loop::tick_run;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
     use crate::state::events::{EventId, EventState};
     use crate::state::run::RunState;
-    use crate::state::selection::{DomainEvent, DomainEventSource};
+    use crate::state::selection::{
+        DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
+        SelectionTargetRef,
+    };
 
     fn golden_wing_run() -> RunState {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
@@ -114,6 +119,10 @@ mod tests {
         run_state.event_state = Some(EventState::new(EventId::GoldenWing));
         run_state.emitted_events.clear();
         run_state
+    }
+
+    fn deck_card(id: CardId, uuid: u32) -> CombatCard {
+        CombatCard::new(id, uuid)
     }
 
     #[test]
@@ -161,10 +170,69 @@ mod tests {
     }
 
     #[test]
+    fn remove_path_selection_excludes_bottled_and_unpurgeable_cards_like_java() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck = vec![
+            deck_card(CardId::Strike, 101),
+            deck_card(CardId::Defend, 102),
+            deck_card(CardId::AscendersBane, 103),
+        ];
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 101;
+        run_state.relics.push(bottle);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Golden Wing remove path should open deck purge selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::PurgeNonBottled);
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::Purge);
+        assert_eq!(
+            request.targets,
+            vec![SelectionTargetRef::CardUuid(102)],
+            "Java opens CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())"
+        );
+    }
+
+    #[test]
+    fn remove_path_removes_selected_card_with_event_source() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101)];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+        assert!(run_state.master_deck.is_empty());
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(EventId::GoldenWing),
+            } if card.id == CardId::Strike && card.uuid == 101
+        )));
+    }
+
+    #[test]
     fn attack_option_uses_upgraded_master_deck_base_damage_like_java() {
         let mut run_state = golden_wing_run();
         run_state.master_deck.clear();
-        let mut pommel = crate::runtime::combat::CombatCard::new(CardId::PommelStrike, 99);
+        let mut pommel = CombatCard::new(CardId::PommelStrike, 99);
         pommel.upgrades = 1;
         run_state.master_deck.push(pommel);
 
@@ -180,7 +248,7 @@ mod tests {
     fn attack_option_does_not_count_non_attack_base_damage() {
         let mut run_state = golden_wing_run();
         run_state.master_deck.clear();
-        let mut defend = crate::runtime::combat::CombatCard::new(CardId::Defend, 100);
+        let mut defend = CombatCard::new(CardId::Defend, 100);
         defend.base_damage_override = Some(super::REQUIRED_DAMAGE);
         run_state.master_deck.push(defend);
 

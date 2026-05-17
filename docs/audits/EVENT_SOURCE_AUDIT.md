@@ -609,11 +609,17 @@ Fixes:
   matching Java's card instance `baseDamage` gate.
 - Direct calls to the disabled attack option now stay inert, matching Java's
   `if (!canAttack) break` guard instead of advancing to the leave screen.
+- The remove-card selection is covered as Java
+  `CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())`, and
+  the shared resolver emits `Event(GoldenWing)` sourced removal events after
+  the damage step.
 
 Tests:
 
 - `remove_path_damage_uses_event_source_before_purge_selection`
 - `remove_path_damage_respects_tungsten_rod_like_java_player_damage`
+- `remove_path_selection_excludes_bottled_and_unpurgeable_cards_like_java`
+- `remove_path_removes_selected_card_with_event_source`
 - `attack_option_uses_upgraded_master_deck_base_damage_like_java`
 - `attack_option_does_not_count_non_attack_base_damage`
 - `disabled_attack_option_does_not_advance_or_grant_gold`
@@ -876,6 +882,9 @@ Fixes:
 - Gold, relic, curse, and purge results now have event-level regression tests
   for source, reward-screen shape, Omamori interception, and non-bottled purge
   selection.
+- The purge-result no-candidate path is locked to Java's `size() <= 0` guard,
+  while the selection and submitted removal are covered for non-bottled
+  purgeable filtering and `Event(GremlinWheelGame)` source.
 
 Tests:
 
@@ -883,6 +892,9 @@ Tests:
 - `relic_result_opens_reward_screen_with_one_relic_reward`
 - `curse_result_uses_obtain_pipeline_so_omamori_can_block_decay`
 - `purge_result_opens_non_bottled_purge_selection_when_possible`
+- `purge_result_without_purgeable_card_advances_without_pending_like_java`
+- `purge_result_selection_excludes_bottled_and_unpurgeable_cards_like_java`
+- `purge_result_removes_selected_card_with_event_source`
 - `full_heal_uses_java_heal_source_and_respects_mark_of_the_bloom`
 - `full_heal_emits_event_source_without_mark`
 - `hp_loss_result_uses_source_and_can_reduce_hp_to_zero`
@@ -1642,4 +1654,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `969 passed`.
+- Current result after this pass: `974 passed`.
