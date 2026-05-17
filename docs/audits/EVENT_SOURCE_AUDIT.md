@@ -176,6 +176,8 @@ Fixes:
 
 - The card trade option now exposes the selected card UUID and card id in
   `EventEffect::RemoveCard`.
+- Added `DomainEvent::PotionLost` and `RunState::remove_potion_at_with_source`
+  so giving a potion is visible as an event-sourced resource cost.
 - Giving a card removes it with `DomainEventSource::Event(WeMeetAgain)`.
 - The relic obtained from potion / gold / card trades now uses
   `obtain_relic_with_source(..., Event(WeMeetAgain))` rather than the generic
@@ -185,6 +187,7 @@ Tests:
 
 - `card_trade_option_exposes_specific_remove_effect`
 - `card_trade_removes_card_and_obtains_relic_with_event_source`
+- `potion_trade_removes_selected_potion_and_obtains_relic_with_event_source`
 
 ### The Library previewed card rewards
 
@@ -895,4 +898,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `858 passed`.
+- Current result after this pass: `859 passed`.

@@ -1356,6 +1356,21 @@ impl RunState {
         }
     }
 
+    pub fn remove_potion_at_with_source(
+        &mut self,
+        slot: usize,
+        source: DomainEventSource,
+    ) -> Option<crate::content::potions::PotionId> {
+        let potion = self.potions.get_mut(slot)?.take()?;
+        let potion_id = potion.id;
+        self.emit_event(DomainEvent::PotionLost {
+            potion_id,
+            slot,
+            source,
+        });
+        Some(potion_id)
+    }
+
     /// Find first empty potion slot index, or None if full.
     pub fn find_empty_potion_slot(&self) -> Option<usize> {
         self.potions.iter().position(|p| p.is_none())

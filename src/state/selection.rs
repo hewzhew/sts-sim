@@ -164,6 +164,11 @@ pub enum DomainEvent {
         slot: usize,
         source: DomainEventSource,
     },
+    PotionLost {
+        potion_id: PotionId,
+        slot: usize,
+        source: DomainEventSource,
+    },
     SelectionResolved {
         scope: SelectionScope,
         reason: SelectionReason,

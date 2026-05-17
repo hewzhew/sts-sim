@@ -191,9 +191,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 0 => {
                     // Give potion → relic
                     let potion_slot = ((event_state.internal_state >> 16) & 0xFF) as usize;
-                    if potion_slot < run_state.potions.len() {
-                        run_state.potions[potion_slot] = None;
-                    }
+                    run_state.remove_potion_at_with_source(
+                        potion_slot,
+                        DomainEventSource::Event(EventId::WeMeetAgain),
+                    );
                     event_state.current_screen = 1;
                     obtain_event_relic(_engine_state, run_state);
                 }
@@ -310,6 +311,7 @@ pub fn init_we_meet_again_state(run_state: &mut RunState) -> i32 {
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::potions::{Potion, PotionId};
     use crate::runtime::combat::CombatCard;
     use crate::state::events::EventOptionConstraint;
     use crate::state::selection::DomainEvent;
@@ -384,6 +386,41 @@ mod tests {
                 card,
                 source: DomainEventSource::Event(EventId::WeMeetAgain),
             } if card.uuid == 11
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicObtained {
+                source: DomainEventSource::Event(EventId::WeMeetAgain),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn potion_trade_removes_selected_potion_and_obtains_relic_with_event_source() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.potions[1] = Some(Potion::new(PotionId::FirePotion, 91));
+        rs.event_state = Some(EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: (1 << 16),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert!(rs.potions[1].is_none());
+        let events = rs.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::PotionLost {
+                potion_id: PotionId::FirePotion,
+                slot: 1,
+                source: DomainEventSource::Event(EventId::WeMeetAgain),
+            }
         )));
         assert!(events.iter().any(|event| matches!(
             event,

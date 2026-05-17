@@ -465,6 +465,13 @@ pub fn render_user_feed_event(event: &DomainEvent) -> String {
             describe_potion_id(*potion_id),
             slot
         ),
+        DomainEvent::PotionLost {
+            potion_id, slot, ..
+        } => format!(
+            "  [POTION] Lost {} (slot {})",
+            describe_potion_id(*potion_id),
+            slot
+        ),
         DomainEvent::SelectionResolved {
             scope,
             reason,
