@@ -148,6 +148,14 @@ pub enum MonsterRuntimePatch {
         used_haste: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    Donu {
+        is_attacking: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
+    Deca {
+        is_attacking: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
     GremlinWizard {
         current_charge: Option<u8>,
         protocol_seeded: Option<bool>,

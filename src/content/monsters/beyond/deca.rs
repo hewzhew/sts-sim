@@ -2,8 +2,8 @@ use crate::content::cards::CardId;
 use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, DecaRuntimeState, MonsterEntity};
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, CardDestination, DamageKind, DefendSpec,
     EffectStrength, MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
@@ -14,6 +14,91 @@ pub struct Deca;
 
 const BEAM: u8 = 0;
 const SQUARE_OF_PROTECTION: u8 = 2;
+
+pub fn initialize_runtime_state(entity: &mut MonsterEntity) {
+    entity.deca = DecaRuntimeState {
+        protocol_seeded: true,
+        is_attacking: true,
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn imported_is_attacking_false_with_empty_history_rolls_square() {
+        let mut deca = crate::test_support::test_monster(EnemyId::Deca);
+        deca.deca.is_attacking = false;
+        deca.move_history_mut().clear();
+
+        let plan = Deca::roll_move_plan(&mut StsRng::new(0), &deca, 0, 0);
+
+        assert_eq!(
+            plan.move_id, SQUARE_OF_PROTECTION,
+            "Java Deca.getMove gates on private isAttacking, not move history"
+        );
+    }
+
+    #[test]
+    fn beam_turn_sets_private_is_attacking_false_before_roll() {
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
+                EnemyId::Deca,
+            )]);
+        let deca = state.entities.monsters[0].clone();
+        let plan = beam_plan(0);
+
+        let actions = Deca::take_turn_plan(&mut state, &deca, &plan);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack { .. },
+                Action::MonsterAttack { .. },
+                Action::MakeTempCardInDiscard { .. },
+                Action::UpdateMonsterRuntime {
+                    patch: MonsterRuntimePatch::Deca {
+                        is_attacking: Some(false),
+                        protocol_seeded: Some(true),
+                    },
+                    ..
+                },
+                Action::RollMonsterMove { .. },
+            ]
+        ));
+    }
+
+    #[test]
+    fn square_turn_sets_private_is_attacking_true_before_roll() {
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
+                EnemyId::Deca,
+            )]);
+        let mut deca = state.entities.monsters[0].clone();
+        deca.deca.is_attacking = false;
+        let plan = square_plan(0);
+
+        let actions = Deca::take_turn_plan(&mut state, &deca, &plan);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::GainBlock { .. },
+                Action::UpdateMonsterRuntime {
+                    patch: MonsterRuntimePatch::Deca {
+                        is_attacking: Some(true),
+                        protocol_seeded: Some(true),
+                    },
+                    ..
+                },
+                Action::RollMonsterMove { .. },
+            ]
+        ));
+    }
+}
 
 fn beam_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 4 {
@@ -100,6 +185,24 @@ fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
     }
 }
 
+fn runtime(entity: &MonsterEntity) -> &DecaRuntimeState {
+    assert!(
+        entity.deca.protocol_seeded,
+        "deca runtime truth must be protocol-seeded or factory-seeded"
+    );
+    &entity.deca
+}
+
+fn deca_runtime_update(entity: &MonsterEntity, is_attacking: bool) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::Deca {
+            is_attacking: Some(is_attacking),
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
 impl MonsterBehavior for Deca {
     fn use_pre_battle_actions(
         state: &mut CombatState,
@@ -122,10 +225,10 @@ impl MonsterBehavior for Deca {
         ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        match entity.move_history().back().copied() {
-            None => beam_plan(ascension_level),
-            Some(BEAM) => square_plan(ascension_level),
-            _ => beam_plan(ascension_level),
+        if runtime(entity).is_attacking {
+            beam_plan(ascension_level)
+        } else {
+            square_plan(ascension_level)
         }
     }
 
@@ -196,6 +299,10 @@ impl MonsterBehavior for Deca {
             (_, []) => panic!("deca plan missing locked truth"),
             (move_id, steps) => panic!("deca plan/steps mismatch: {} {:?}", move_id, steps),
         };
+        actions.push(deca_runtime_update(
+            entity,
+            plan.move_id == SQUARE_OF_PROTECTION,
+        ));
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

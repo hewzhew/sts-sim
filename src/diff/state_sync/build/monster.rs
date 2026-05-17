@@ -98,6 +98,26 @@ pub(crate) fn seed_time_eater_runtime_from_snapshot(monster: &Value, entity: &mu
     entity.time_eater.protocol_seeded = true;
 }
 
+pub(crate) fn seed_donu_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::Donu;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.donu.is_attacking = runtime_state_bool(monster, monster_type, "is_attacking");
+    entity.donu.protocol_seeded = true;
+}
+
+pub(crate) fn seed_deca_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::Deca;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.deca.is_attacking = runtime_state_bool(monster, monster_type, "is_attacking");
+    entity.deca.protocol_seeded = true;
+}
+
 pub(crate) fn seed_writhing_mass_runtime_from_snapshot(
     monster: &Value,
     entity: &mut MonsterEntity,
@@ -761,6 +781,8 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_nemesis_runtime_from_snapshot(monster, entity);
     seed_giant_head_runtime_from_snapshot(monster, entity);
     seed_time_eater_runtime_from_snapshot(monster, entity);
+    seed_donu_runtime_from_snapshot(monster, entity);
+    seed_deca_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
 }
@@ -794,10 +816,10 @@ mod tests {
     };
     use crate::content::monsters::EnemyId;
     use crate::runtime::combat::{
-        ByrdRuntimeState, ChosenRuntimeState, DarklingRuntimeState, GiantHeadRuntimeState,
-        GuardianRuntimeState, HexaghostRuntimeState, LagavulinRuntimeState, MonsterEntity,
-        MonsterMoveState, NemesisRuntimeState, ShelledParasiteRuntimeState, SneckoRuntimeState,
-        TimeEaterRuntimeState,
+        ByrdRuntimeState, ChosenRuntimeState, DarklingRuntimeState, DecaRuntimeState,
+        DonuRuntimeState, GiantHeadRuntimeState, GuardianRuntimeState, HexaghostRuntimeState,
+        LagavulinRuntimeState, MonsterEntity, MonsterMoveState, NemesisRuntimeState,
+        ShelledParasiteRuntimeState, SneckoRuntimeState, TimeEaterRuntimeState,
     };
 
     fn blank_monster_entity() -> MonsterEntity {
@@ -846,6 +868,8 @@ mod tests {
             nemesis: NemesisRuntimeState::default(),
             giant_head: GiantHeadRuntimeState::default(),
             time_eater: TimeEaterRuntimeState::default(),
+            donu: DonuRuntimeState::default(),
+            deca: DecaRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         }
@@ -1001,6 +1025,44 @@ mod tests {
             "powers": [],
             "runtime_state": {
                 "used_haste": true
+            },
+            "is_gone": false,
+            "half_dead": false
+        })
+    }
+
+    fn donu_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Donu",
+            "current_hp": 250,
+            "max_hp": 250,
+            "block": 0,
+            "intent": "ATTACK",
+            "move_id": 0,
+            "move_base_damage": 10,
+            "move_hits": 2,
+            "powers": [],
+            "runtime_state": {
+                "is_attacking": true
+            },
+            "is_gone": false,
+            "half_dead": false
+        })
+    }
+
+    fn deca_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Deca",
+            "current_hp": 250,
+            "max_hp": 250,
+            "block": 0,
+            "intent": "DEFEND",
+            "move_id": 2,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "is_attacking": false
             },
             "is_gone": false,
             "half_dead": false
@@ -1529,6 +1591,30 @@ mod tests {
         assert_eq!(entity.planned_move_id(), 2);
         assert!(entity.time_eater.used_haste);
         assert!(entity.time_eater.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_donu_runtime_state() {
+        let snapshot = donu_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.planned_move_id(), 0);
+        assert!(entity.donu.is_attacking);
+        assert!(entity.donu.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_deca_runtime_state() {
+        let snapshot = deca_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.planned_move_id(), 2);
+        assert!(!entity.deca.is_attacking);
+        assert!(entity.deca.protocol_seeded);
     }
 
     #[test]

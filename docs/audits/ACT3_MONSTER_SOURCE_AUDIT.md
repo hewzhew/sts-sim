@@ -148,8 +148,10 @@ Haste heal amount is read at take-turn queue time, matching Java
 
 ### Donu / Deca
 
-Donu and Deca alternate via private `isAttacking` booleans. Rust derives the same alternation from
-move history:
+Donu and Deca alternate via private `isAttacking` booleans. Rust now carries these as explicit
+`DonuRuntimeState` and `DecaRuntimeState`, imports them from
+`monster.runtime_state.is_attacking`, and updates them through `Action::UpdateMonsterRuntime` during
+turn execution before the queued `RollMonsterMoveAction` equivalent resolves:
 
 - Donu starts with Circle of Protection, then Beam.
 - Deca starts with Beam, then Square of Protection.

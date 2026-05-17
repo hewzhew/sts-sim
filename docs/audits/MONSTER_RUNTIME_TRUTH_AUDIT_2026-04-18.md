@@ -49,6 +49,8 @@ Scope:
 | Nemesis | `first_move`, `scythe_cooldown` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Giant Head | `count` | Yes | Yes | Yes | `lastTwoMoves(GLARE/COUNT)` sequencing only | Good |
 | Time Eater | `used_haste` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
+| Donu | `is_attacking` | Yes | Yes | Yes | None | Good |
+| Deca | `is_attacking` | Yes | Yes | Yes | None | Good |
 
 ## Notes
 
@@ -255,6 +257,16 @@ Scope:
   `HealAction(this.maxHealth / 2 - this.currentHealth)`.
 - Remaining history usage is limited to Java's explicit repeat rules around Reverberate, Head Slam,
   and Ripple.
+
+### Donu / Deca
+
+- `runtime_state.is_attacking` is exported by `CommunicationMod` for both Donu and Deca.
+- Rust state sync marks both runtime slices as protocol-seeded and semantic roll logic requires
+  factory/protocol seeding before branch selection.
+- Java mutates `isAttacking` inside `takeTurn()` after queueing the branch's visible actions and
+  before queueing `RollMoveAction`. Rust mirrors that with `Action::UpdateMonsterRuntime`
+  immediately before `Action::RollMonsterMove`.
+- Rust no longer derives their alternation from `move_history`.
 
 ### The Guardian
 

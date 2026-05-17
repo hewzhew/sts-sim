@@ -3,14 +3,14 @@ use crate::runtime::combat::CollectorRuntimeState;
 use crate::runtime::combat::{
     AwakenedOneRuntimeState, BookOfStabbingRuntimeState, BronzeAutomatonRuntimeState,
     BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
-    CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, GiantHeadRuntimeState,
-    GremlinLeaderRuntimeState, GremlinNobRuntimeState, GremlinWizardRuntimeState,
-    GuardianRuntimeState, HexaghostRuntimeState, JawWormRuntimeState, LagavulinRuntimeState,
-    LargeSlimeRuntimeState, LouseRuntimeState, MonsterEntity, MonsterMoveState,
-    NemesisRuntimeState, ReptomancerRuntimeState, SentryRuntimeState, ShelledParasiteRuntimeState,
-    SlaverRedRuntimeState, SlimeBossRuntimeState, SneckoRuntimeState, SphericGuardianRuntimeState,
-    SpikerRuntimeState, SpireShieldRuntimeState, SpireSpearRuntimeState, ThiefRuntimeState,
-    TimeEaterRuntimeState, WrithingMassRuntimeState,
+    CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, DecaRuntimeState,
+    DonuRuntimeState, GiantHeadRuntimeState, GremlinLeaderRuntimeState, GremlinNobRuntimeState,
+    GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState, JawWormRuntimeState,
+    LagavulinRuntimeState, LargeSlimeRuntimeState, LouseRuntimeState, MonsterEntity,
+    MonsterMoveState, NemesisRuntimeState, ReptomancerRuntimeState, SentryRuntimeState,
+    ShelledParasiteRuntimeState, SlaverRedRuntimeState, SlimeBossRuntimeState, SneckoRuntimeState,
+    SphericGuardianRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
+    SpireSpearRuntimeState, ThiefRuntimeState, TimeEaterRuntimeState, WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
@@ -117,6 +117,8 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
                 stable_time_eater_signature(&monster.time_eater)
             )
         }
+        Some(EnemyId::Donu) => format!("donu:{}", stable_donu_signature(&monster.donu)),
+        Some(EnemyId::Deca) => format!("deca:{}", stable_deca_signature(&monster.deca)),
         Some(EnemyId::WrithingMass) => {
             format!(
                 "writhing_mass:{}",
@@ -580,6 +582,14 @@ fn stable_giant_head_signature(state: &GiantHeadRuntimeState) -> String {
 
 fn stable_time_eater_signature(state: &TimeEaterRuntimeState) -> String {
     format!("seed{}:haste{}", state.protocol_seeded, state.used_haste)
+}
+
+fn stable_donu_signature(state: &DonuRuntimeState) -> String {
+    format!("seed{}:atk{}", state.protocol_seeded, state.is_attacking)
+}
+
+fn stable_deca_signature(state: &DecaRuntimeState) -> String {
+    format!("seed{}:atk{}", state.protocol_seeded, state.is_attacking)
 }
 
 fn stable_writhing_mass_signature(state: &WrithingMassRuntimeState) -> String {

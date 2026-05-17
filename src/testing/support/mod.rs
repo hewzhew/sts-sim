@@ -122,6 +122,8 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         nemesis: Default::default(),
         giant_head: Default::default(),
         time_eater: Default::default(),
+        donu: Default::default(),
+        deca: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
     };
@@ -207,6 +209,12 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
     }
     if enemy_id == EnemyId::TimeEater {
         crate::content::monsters::beyond::time_eater::initialize_runtime_state(&mut monster);
+    }
+    if enemy_id == EnemyId::Donu {
+        crate::content::monsters::beyond::donu::initialize_runtime_state(&mut monster);
+    }
+    if enemy_id == EnemyId::Deca {
+        crate::content::monsters::beyond::deca::initialize_runtime_state(&mut monster);
     }
     if enemy_id == EnemyId::Spiker {
         monster.spiker.protocol_seeded = true;
