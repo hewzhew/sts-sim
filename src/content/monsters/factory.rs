@@ -731,12 +731,12 @@ pub fn build_encounter(
         EncounterId::ThreeShapes => {
             // Java: spawnShapes(true) — 3 random shapes, draw-without-replace
             let mut shape_pool = vec![
-                EnemyId::Spiker,
-                EnemyId::Spiker,
                 EnemyId::Repulsor,
                 EnemyId::Repulsor,
                 EnemyId::Exploder,
                 EnemyId::Exploder,
+                EnemyId::Spiker,
+                EnemyId::Spiker,
             ];
             for _ in 0..3 {
                 let idx = misc_rng.random_range(0, (shape_pool.len() - 1) as i32) as usize;
@@ -762,12 +762,12 @@ pub fn build_encounter(
         EncounterId::FourShapes => {
             // Java: spawnShapes(false) — 4 random shapes, draw-without-replace
             let mut shape_pool = vec![
-                EnemyId::Spiker,
-                EnemyId::Spiker,
                 EnemyId::Repulsor,
                 EnemyId::Repulsor,
                 EnemyId::Exploder,
                 EnemyId::Exploder,
+                EnemyId::Spiker,
+                EnemyId::Spiker,
             ];
             for _ in 0..4 {
                 let idx = misc_rng.random_range(0, (shape_pool.len() - 1) as i32) as usize;
@@ -939,5 +939,55 @@ fn get_ancient_shape(misc_rng: &mut StsRng) -> EnemyId {
         0 => EnemyId::Spiker,
         1 => EnemyId::Repulsor,
         _ => EnemyId::Exploder,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn java_spawn_shapes_sequence(seed: u64, count: usize) -> Vec<EnemyId> {
+        let mut rng = StsRng::new(seed);
+        let mut pool = vec![
+            EnemyId::Repulsor,
+            EnemyId::Repulsor,
+            EnemyId::Exploder,
+            EnemyId::Exploder,
+            EnemyId::Spiker,
+            EnemyId::Spiker,
+        ];
+        (0..count)
+            .map(|_| {
+                let idx = rng.random_range(0, (pool.len() - 1) as i32) as usize;
+                pool.remove(idx)
+            })
+            .collect()
+    }
+
+    fn encounter_enemy_ids(encounter: EncounterId, misc_seed: u64) -> Vec<EnemyId> {
+        let mut misc_rng = StsRng::new(misc_seed);
+        let mut hp_rng = StsRng::new(99);
+        build_encounter(encounter, &mut misc_rng, &mut hp_rng, 0)
+            .into_iter()
+            .map(|monster| {
+                EnemyId::from_id(monster.monster_type)
+                    .expect("factory should create known monster ids")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ancient_shape_encounters_use_java_spawn_shapes_pool_order() {
+        let seed = 17;
+        assert_eq!(
+            encounter_enemy_ids(EncounterId::ThreeShapes, seed),
+            java_spawn_shapes_sequence(seed, 3),
+            "Java MonsterHelper.spawnShapes starts from Repulsor, Repulsor, Exploder, Exploder, Spiker, Spiker"
+        );
+        assert_eq!(
+            encounter_enemy_ids(EncounterId::FourShapes, seed),
+            java_spawn_shapes_sequence(seed, 4),
+            "4 Shapes uses the same Java draw-without-replacement pool"
+        );
     }
 }

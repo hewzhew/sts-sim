@@ -53,6 +53,20 @@ the count from move history. This is acceptable for the ordinary Spiker flow bec
 have a Reactive-like reroll path, but it remains a watch point for live/imported states where a
 planned buff could be represented before execution.
 
+### Shapes Encounter Construction
+
+Java `MonsterHelper.spawnShapes(weak)` builds its draw-without-replacement pool in this exact order:
+
+```text
+Repulsor, Repulsor, Exploder, Exploder, Spiker, Spiker
+```
+
+This is not UI-only: the pool index is rolled with `AbstractDungeon.miscRng`, so the initial pool
+order changes the actual monster composition for the same run seed. Rust now uses the Java order for
+both `ThreeShapes` and `FourShapes`. `randomXOffset/randomYOffset` in nearby helper code uses
+LibGDX `MathUtils.random`, not `AbstractDungeon.miscRng`, so those render-position rolls remain
+intentionally omitted from simulator RNG.
+
 ### Orb Walker
 
 Java Laser queues one `MakeTempCardInDiscardAndDeckAction(new Burn())`. That action creates a
