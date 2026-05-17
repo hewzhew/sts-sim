@@ -189,6 +189,29 @@ Tests:
 - `card_trade_removes_card_and_obtains_relic_with_event_source`
 - `potion_trade_removes_selected_potion_and_obtains_relic_with_event_source`
 
+### Knowing Skull HP_LOSS costs
+
+Java `events/city/KnowingSkull.java` applies every cost through
+`AbstractDungeon.player.damage(new DamageInfo(null, cost, HP_LOSS))`: potion,
+gold, card, and leave all bypass block but still run player relic
+`onLoseHpLast`. `Tungsten Rod` therefore reduces each cost by 1.
+
+Rust previously used direct sourced HP changes for these costs, preserving the
+event source but skipping the HP_LOSS damage semantics.
+
+Fixes:
+
+- Potion, gold, card, and leave costs now use
+  `content::events::apply_player_hp_loss_damage(..., Event(KnowingSkull))`.
+- Added regression coverage for independent cost increments, gold reward order,
+  and leave transition under Tungsten Rod.
+
+Tests:
+
+- `potion_reward_hp_loss_respects_tungsten_and_increments_only_potion_cost`
+- `gold_reward_hp_loss_respects_tungsten_then_grants_gold`
+- `leave_hp_loss_respects_tungsten_and_moves_to_complete_screen`
+
 ### Dead Adventurer encounter roll
 
 Java `events/exordium/DeadAdventurer.java` consumes `miscRng` twice during
@@ -1085,10 +1108,11 @@ Validation:
   random-book RNG consumption. `AccursedBlacksmith` now routes `WarpedTongs`
   through the event-sourced relic obtain pipeline. `Mausoleum` now preserves the
   Java relic-before-Writhe effect timing. `DrugDealer` now routes Inject Mutagens
-  relics through the event-sourced relic obtain pipeline. The remaining direct
-  writes should be handled event-by-event against Java source.
+  relics through the event-sourced relic obtain pipeline. `KnowingSkull` now
+  applies repeatable costs through the shared Java HP_LOSS event helper. The
+  remaining direct writes should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `888 passed`.
+- Current result after this pass: `891 passed`.
