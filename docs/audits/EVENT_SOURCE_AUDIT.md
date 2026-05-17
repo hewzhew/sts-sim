@@ -189,6 +189,31 @@ Tests:
 - `card_trade_removes_card_and_obtains_relic_with_event_source`
 - `potion_trade_removes_selected_potion_and_obtains_relic_with_event_source`
 
+### Dead Adventurer encounter roll
+
+Java `events/exordium/DeadAdventurer.java` consumes `miscRng` twice during
+construction before the player searches:
+
+- shuffle the hidden reward list with `miscRng.randomLong()`;
+- choose the elite corpse encounter with `miscRng.random(0, 2)`.
+
+Rust was preserving the reward shuffle but did not consume or store the enemy
+roll, and event-combat adapters treated `"Dead Adventurer"` as a fixed
+Lagavulin event fight. The initialized event state now stores the Java enemy
+index and the combat trigger emits the corresponding encounter key:
+
+- `0` -> `3 Sentries`
+- `1` -> `Gremlin Nob`
+- `2` -> `Lagavulin Event`
+
+The full-run and play adapters now resolve those event-combat keys explicitly.
+
+Tests:
+
+- `init_consumes_java_enemy_roll_and_stores_enemy_in_state`
+- `combat_trigger_uses_stored_java_enemy_key`
+- `enemy_key_mapping_matches_java_get_monster_cases`
+
 ### The Library previewed card rewards
 
 Java `events/city/TheLibrary.java` builds a 20-card `CardGroup` using
@@ -898,4 +923,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `859 passed`.
+- Current result after this pass: `862 passed`.

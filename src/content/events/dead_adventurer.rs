@@ -9,6 +9,7 @@ use crate::state::selection::DomainEventSource;
 // bits[12..13] = reward0 type (0=Gold, 1=Nothing, 2=Relic)
 // bits[14..15] = reward1 type
 // bits[16..17] = reward2 type
+// bits[18..19] = enemy (0=3 Sentries, 1=Gremlin Nob, 2=Lagavulin Event)
 
 const GOLD_REWARD: i32 = 30;
 const CHANCE_RAMP: i32 = 25;
@@ -22,6 +23,9 @@ fn encounter_chance(s: i32) -> i32 {
 fn reward_type(s: i32, idx: i32) -> i32 {
     (s >> (12 + idx * 2)) & 0x3
 }
+fn enemy_type(s: i32) -> i32 {
+    (s >> 18) & 0x3
+}
 
 fn set_num_rewards(s: &mut i32, n: i32) {
     *s = (*s & !0xF) | (n & 0xF);
@@ -31,6 +35,17 @@ fn set_encounter_chance(s: &mut i32, c: i32) {
 }
 fn set_reward_types(s: &mut i32, r0: i32, r1: i32, r2: i32) {
     *s = (*s & !(0x3F << 12)) | ((r0 & 0x3) << 12) | ((r1 & 0x3) << 14) | ((r2 & 0x3) << 16);
+}
+fn set_enemy_type(s: &mut i32, enemy: i32) {
+    *s = (*s & !(0x3 << 18)) | ((enemy & 0x3) << 18);
+}
+
+fn encounter_key_for_enemy(enemy: i32) -> &'static str {
+    match enemy {
+        0 => "3 Sentries",
+        1 => "Gremlin Nob",
+        _ => "Lagavulin Event",
+    }
 }
 
 pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
@@ -87,6 +102,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                                 _ => {}
                             }
                         }
+                        let encounter_key =
+                            encounter_key_for_enemy(enemy_type(event_state.internal_state));
                         event_state.current_screen = 2;
                         event_state.completed = true;
                         run_state.event_state = Some(event_state);
@@ -98,7 +115,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                                 elite_trigger: false,
                                 post_combat_return:
                                     crate::state::core::PostCombatReturn::MapNavigation,
-                                encounter_key: "Dead Adventurer",
+                                encounter_key,
                             });
                         return;
                     }
@@ -164,9 +181,76 @@ pub fn init_dead_adventurer_state(run_state: &mut RunState) -> i32 {
     // Java: Collections.shuffle(rewards, new Random(miscRng.randomLong()))
     let mut rewards = [0i32, 1, 2];
     crate::runtime::rng::shuffle_with_random_long(&mut rewards, &mut run_state.rng_pool.misc_rng);
+    // Java constructor also chooses which elite encounter is in the corpse.
+    let enemy = run_state.rng_pool.misc_rng.random_range(0, 2);
     let mut s = 0i32;
     set_num_rewards(&mut s, 0);
     set_encounter_chance(&mut s, base_chance);
     set_reward_types(&mut s, rewards[0], rewards[1], rewards[2]);
+    set_enemy_type(&mut s, enemy);
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        encounter_key_for_enemy, enemy_type, init_dead_adventurer_state, set_encounter_chance,
+        set_enemy_type, set_num_rewards, set_reward_types,
+    };
+    use crate::state::core::{EngineState, EventCombatState, PostCombatReturn};
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+
+    #[test]
+    fn init_consumes_java_enemy_roll_and_stores_enemy_in_state() {
+        let mut expected = RunState::new(1, 0, false, "Ironclad");
+        let mut rewards = [0i32, 1, 2];
+        crate::runtime::rng::shuffle_with_random_long(
+            &mut rewards,
+            &mut expected.rng_pool.misc_rng,
+        );
+        let expected_enemy = expected.rng_pool.misc_rng.random_range(0, 2);
+
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let state = init_dead_adventurer_state(&mut run_state);
+
+        assert_eq!(enemy_type(state), expected_enemy);
+    }
+
+    #[test]
+    fn combat_trigger_uses_stored_java_enemy_key() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut internal_state = 0;
+        set_num_rewards(&mut internal_state, 0);
+        set_encounter_chance(&mut internal_state, 100);
+        set_reward_types(&mut internal_state, 1, 1, 1);
+        set_enemy_type(&mut internal_state, 0);
+        run_state.event_state = Some(EventState {
+            id: EventId::DeadAdventurer,
+            current_screen: 0,
+            internal_state,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        let mut engine_state = EngineState::EventRoom;
+
+        super::handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(matches!(
+            engine_state,
+            EngineState::EventCombat(EventCombatState {
+                encounter_key: "3 Sentries",
+                post_combat_return: PostCombatReturn::MapNavigation,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn enemy_key_mapping_matches_java_get_monster_cases() {
+        assert_eq!(encounter_key_for_enemy(0), "3 Sentries");
+        assert_eq!(encounter_key_for_enemy(1), "Gremlin Nob");
+        assert_eq!(encounter_key_for_enemy(2), "Lagavulin Event");
+    }
 }
