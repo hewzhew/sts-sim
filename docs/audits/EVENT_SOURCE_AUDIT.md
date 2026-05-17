@@ -286,10 +286,25 @@ index and the combat trigger emits the corresponding encounter key:
 
 The full-run and play adapters now resolve those event-combat keys explicitly.
 
+Java also splits the fight branch across two clicks: the search click reveals
+the fight and rolls/adds the 25-35 gold combat reward, then the `[Fight!]`
+click adds any remaining corpse rewards and enters elite combat. Rust previously
+entered combat immediately on the search click and generated all remaining
+rewards at that earlier boundary.
+
+Fixes:
+
+- Dead Adventurer now stops on the fight prompt after a triggered search.
+- The pre-combat gold roll is stored in event state and reused when the fight is
+  actually entered.
+- Remaining unclaimed corpse rewards are generated on the `[Fight!]` click.
+- The event combat now marks `elite_trigger=true`, matching Java.
+
 Tests:
 
 - `init_consumes_java_enemy_roll_and_stores_enemy_in_state`
-- `combat_trigger_uses_stored_java_enemy_key`
+- `combat_trigger_first_stops_on_java_fight_prompt`
+- `fight_prompt_enters_combat_with_stored_java_enemy_key`
 - `enemy_key_mapping_matches_java_get_monster_cases`
 
 ### The Library previewed card rewards
@@ -1337,4 +1352,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `912 passed`.
+- Current result after this pass: `913 passed`.
