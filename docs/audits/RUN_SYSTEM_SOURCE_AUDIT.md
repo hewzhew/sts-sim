@@ -298,6 +298,9 @@ Important boundary:
 - Java ordinary `eventList` is act-local and events are removed as they appear;
   it is not rebuilt mid-act when emptied. Rust now preserves an exhausted
   ordinary event pool until the next act's event-list initialization.
+- Java `TheEnding.initializeEventList()` and `initializeShrineList()` are empty.
+  Rust now treats Act 4 and unknown act ids as empty event/shrine pools instead
+  of falling through to Act 3 pools.
 - Java `SecretPortal` is now represented in Rust as a special one-time Act 3
   event with the Java playtime gate. The Rust event handler maps accepting the
   portal to the boss combat boundary instead of modeling Java's UI room

@@ -79,7 +79,7 @@ impl EventGenerator {
                 EventId::Mausoleum,
                 EventId::Vampires,
             ],
-            _ => vec![
+            3 => vec![
                 EventId::Falling,
                 EventId::MindBloom,
                 EventId::MoaiHead,
@@ -88,6 +88,7 @@ impl EventGenerator {
                 EventId::TombRedMask,
                 EventId::WindingHalls,
             ],
+            _ => Vec::new(),
         };
 
         // Per-act shrine pool
@@ -108,7 +109,7 @@ impl EventGenerator {
                 EventId::Purifier,
                 EventId::UpgradeShrine,
             ],
-            _ => vec![
+            3 => vec![
                 EventId::MatchAndKeep,
                 EventId::GremlinWheelGame,
                 EventId::GoldenShrine,
@@ -116,6 +117,7 @@ impl EventGenerator {
                 EventId::Purifier,
                 EventId::UpgradeShrine,
             ],
+            _ => Vec::new(),
         };
 
         if !self.one_time_event_pool_initialized {
@@ -487,6 +489,14 @@ mod tests {
         );
         assert!(generator.event_pool.is_empty());
         assert_eq!(generator.try_get_pool_event(&mut rng, &c), None);
+    }
+
+    #[test]
+    fn act_four_event_and_shrine_pools_match_empty_java_the_ending_lists() {
+        let generator = EventGenerator::new(4);
+
+        assert!(generator.event_pool.is_empty());
+        assert!(generator.shrine_pool.is_empty());
     }
 
     #[test]
