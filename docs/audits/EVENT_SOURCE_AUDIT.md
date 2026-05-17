@@ -294,7 +294,7 @@ Tests:
 - `heal_amount_uses_java_float_cast_not_rounding`
 - `heal_cost_is_paid_even_when_mark_of_the_bloom_blocks_heal`
 
-### Golden Wing remove damage
+### Golden Wing remove damage and attack gate
 
 Java `events/exordium/GoldenWing.java` handles the remove-card option by first
 calling:
@@ -307,17 +307,27 @@ That is normal player damage, not a direct HP assignment. In practice, the
 out-of-combat simulator currently needs at least the `onLoseHpLast` portion
 that affects HP loss such as `Tungsten Rod`.
 
+The attack option is gated by `CardHelper.hasCardWithXDamage(10)`. The helper
+ignores its parameter name in practice and checks `c.type == ATTACK` plus the
+master-deck card instance's upgraded `baseDamage >= 10`. Rust must therefore
+inspect the upgraded master-deck card instance, not only the card definition's
+unupgraded `base_damage`.
+
 Fixes:
 
 - Golden Wing remove-path damage now emits an `HpChanged` event with
   `Event(GoldenWing)` source.
 - The same path now applies the Java `Tungsten Rod` one-point reduction before
   opening the purge selection.
+- Golden Wing's attack option now uses upgraded master-deck attack damage,
+  matching Java's card instance `baseDamage` gate.
 
 Tests:
 
 - `remove_path_damage_uses_event_source_before_purge_selection`
 - `remove_path_damage_respects_tungsten_rod_like_java_player_damage`
+- `attack_option_uses_upgraded_master_deck_base_damage_like_java`
+- `attack_option_does_not_count_non_attack_base_damage`
 
 ### Face Trader touch and relic trade
 
@@ -923,4 +933,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `862 passed`.
+- Current result after this pass: `864 passed`.

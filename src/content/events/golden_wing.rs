@@ -11,7 +11,10 @@ const REQUIRED_DAMAGE: i32 = 10;
 fn has_high_damage_card(run_state: &RunState) -> bool {
     run_state.master_deck.iter().any(|c| {
         let def = crate::content::cards::get_card_definition(c.id);
-        def.base_damage >= REQUIRED_DAMAGE
+        def.card_type == crate::content::cards::CardType::Attack
+            && c.base_damage_override
+                .unwrap_or(def.base_damage + i32::from(c.upgrades) * def.upgrade_damage)
+                >= REQUIRED_DAMAGE
     })
 }
 
@@ -104,6 +107,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 #[cfg(test)]
 mod tests {
     use super::handle_choice;
+    use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::{EngineState, RunPendingChoiceReason};
     use crate::state::events::{EventId, EventState};
@@ -161,5 +165,34 @@ mod tests {
                 source: DomainEventSource::Event(EventId::GoldenWing),
             }
         )));
+    }
+
+    #[test]
+    fn attack_option_uses_upgraded_master_deck_base_damage_like_java() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck.clear();
+        let mut pommel = crate::runtime::combat::CombatCard::new(CardId::PommelStrike, 99);
+        pommel.upgrades = 1;
+        run_state.master_deck.push(pommel);
+
+        let choices = super::get_choices(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert!(
+            !choices[1].disabled,
+            "Java CardHelper.hasCardWithXDamage checks the card instance baseDamage after upgrade"
+        );
+    }
+
+    #[test]
+    fn attack_option_does_not_count_non_attack_base_damage() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck.clear();
+        let mut defend = crate::runtime::combat::CombatCard::new(CardId::Defend, 100);
+        defend.base_damage_override = Some(super::REQUIRED_DAMAGE);
+        run_state.master_deck.push(defend);
+
+        let choices = super::get_choices(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert!(choices[1].disabled);
     }
 }
