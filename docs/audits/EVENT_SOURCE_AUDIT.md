@@ -872,7 +872,8 @@ Fixes:
 
 - `Mysterious Sphere` now preserves the Java END screen on the ignore path.
 - `Mysterious Sphere` has tests for the preloaded event rewards before
-  `EventCombat`.
+  `EventCombat`, including the fixed rare `returnRandomScreenlessRelic(RARE)`
+  source.
 - `EventCombatState` now carries `elite_trigger` separately from reward
   generation. This lets Colosseum Nobs behave like Java for combat-start relics
   such as Preserved Insect, Sling, and Slaver's Collar without generating
@@ -884,6 +885,7 @@ Tests:
 
 - `leave_path_preserves_java_end_screen_before_map`
 - `fight_path_generates_java_event_rewards_before_event_combat`
+- `fight_reward_uses_rare_screenless_relic_pool`
 - `first_fight_returns_to_event_room_without_rewards_or_elite_trigger`
 - `second_fight_preserves_java_elite_trigger_without_normal_elite_rewards`
 
@@ -961,4 +963,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `870 passed`.
+- Current result after this pass: `871 passed`.

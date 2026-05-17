@@ -75,6 +75,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::relics::RelicId;
 
     #[test]
     fn leave_path_preserves_java_end_screen_before_map() {
@@ -124,5 +125,28 @@ mod tests {
             .items
             .iter()
             .any(|item| matches!(item, crate::rewards::state::RewardItem::Relic { .. })));
+    }
+
+    #[test]
+    fn fight_reward_uses_rare_screenless_relic_pool() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.rare_relic_pool = vec![RelicId::Mango];
+        run_state.event_state = Some(EventState::new(
+            crate::state::events::EventId::MysteriousSphere,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::EventCombat(combat) = engine_state else {
+            panic!("confirmed Mysterious Sphere fight should enter EventCombat");
+        };
+        assert!(combat.rewards.items.iter().any(|item| matches!(
+            item,
+            crate::rewards::state::RewardItem::Relic {
+                relic_id: RelicId::Mango
+            }
+        )));
     }
 }
