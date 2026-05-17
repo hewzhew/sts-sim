@@ -630,8 +630,12 @@ pub fn tick_run(
                 match rpc_state.reason {
                     crate::state::core::RunPendingChoiceReason::Purge
                     | crate::state::core::RunPendingChoiceReason::PurgeNonBottled => {
-                        for idx in sorted_indices {
-                            if idx < run_state.master_deck.len() {
+                        for uuid in selected_uuids_in_order {
+                            if let Some(idx) = run_state
+                                .master_deck
+                                .iter()
+                                .position(|card| card.uuid == uuid)
+                            {
                                 // Store removed card's rarity in event_state.internal_state
                                 // so events (bonfire_elementals, bonfire_spirits) can apply
                                 // rarity-based rewards after purge returns.

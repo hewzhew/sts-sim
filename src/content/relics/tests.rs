@@ -2819,6 +2819,22 @@ fn empty_cage_uses_java_purgeable_cards_and_auto_deletes_two_or_fewer() {
         engine_state,
         crate::state::core::EngineState::MapNavigation
     ));
+    let removed_ids = pending
+        .emitted_events
+        .iter()
+        .filter_map(|event| match event {
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Relic(RelicId::EmptyCage),
+            } => Some(card.id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        removed_ids,
+        vec![CardId::Strike, CardId::Defend],
+        "Java Empty Cage deletes gridSelectScreen.selectedCards in selected order"
+    );
     assert_eq!(
         pending
             .emitted_events

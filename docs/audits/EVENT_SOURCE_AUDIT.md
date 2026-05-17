@@ -1876,10 +1876,12 @@ Fixes:
   selection order.
 - Transform, non-bottled transform, and upgraded transform operations resolve
   by selected UUID order.
-- Index-sorted descending order is still used where removing cards by deck index
-  needs it.
+- Purge operations also resolve by selected UUID order; removal safety comes
+  from looking up the current deck index for each UUID before removal.
 - `DrugDealer` now has a regression check that selecting Strike then Defend
   emits transform-before IDs in that same order.
+- `EmptyCage` now has a regression check that selecting Strike then Defend
+  emits removal events in that same order.
 
 Validation:
 
@@ -1888,6 +1890,8 @@ Validation:
 - `cargo test -q designer`
 - `cargo test -q transmogrifier`
 - `cargo test -q transform`
+- `cargo test -q empty_cage`
+- `cargo test -q neow`
 - `cargo test --all-targets`
 
 ## Current High-Risk Event Areas
