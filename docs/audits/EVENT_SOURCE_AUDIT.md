@@ -494,6 +494,31 @@ Tests:
 - `retrace_heal_respects_mark_of_the_bloom_but_still_obtains_writhe`
 - `accept_loss_uses_max_hp_event_source_and_clamps_current_hp`
 
+### Sensory Stone HP-loss rewards
+
+Java `events/beyond/SensoryStone.java` opens one, two, or three colorless card
+reward rows. The two higher-focus choices additionally call:
+
+```text
+player.damage(new DamageInfo(null, 5, HP_LOSS))
+player.damage(new DamageInfo(null, 10, HP_LOSS))
+```
+
+`HP_LOSS` bypasses block and attack callbacks, but Java `AbstractPlayer.damage`
+still applies `onLoseHpLast`, so `Tungsten Rod` reduces the loss by 1.
+
+Fixes:
+
+- Focus 2/3 HP loss now emits `HpChanged` with
+  `Event(SensoryStone)` instead of directly mutating `current_hp`.
+- The previous comment claiming `Tungsten Rod` does not reduce this HP loss was
+  corrected, and the event now applies the Java `onLoseHpLast` reduction.
+
+Tests:
+
+- `focus_two_hp_loss_uses_event_source_and_opens_two_rewards`
+- `focus_three_hp_loss_applies_tungsten_rod_on_lose_hp_last`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -703,10 +728,11 @@ Validation:
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
   that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`,
   `FaceTrader`, `ForgottenAltar`, `Ghosts`, `Vampires`, `MoaiHead`, and
-  `GremlinWheelGame`, `MindBloom`, and `WindingHalls` are now covered; the
-  remaining direct writes should be handled event-by-event against Java source.
+  `GremlinWheelGame`, `MindBloom`, `WindingHalls`, and `SensoryStone` are now
+  covered; the remaining direct writes should be handled event-by-event against
+  Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `837 passed`.
+- Current result after this pass: `839 passed`.

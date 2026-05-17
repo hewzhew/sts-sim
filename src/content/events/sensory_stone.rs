@@ -1,7 +1,8 @@
 use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -35,13 +36,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             // Consume randomLong for seed parity
             let _seed = run_state.rng_pool.misc_rng.random_long();
 
-            // HP_LOSS damage for Focus 2/3 (Java: DamageInfo HP_LOSS — Tungsten Rod does NOT reduce)
+            // HP_LOSS damage for Focus 2/3. Java bypasses block, but
+            // AbstractPlayer.damage still applies relic onLoseHpLast.
             match choice_idx {
                 1 => {
-                    run_state.current_hp = (run_state.current_hp - 5).max(0);
+                    apply_hp_loss_damage(run_state, 5);
                 }
                 2 => {
-                    run_state.current_hp = (run_state.current_hp - 10).max(0);
+                    apply_hp_loss_damage(run_state, 10);
                 }
                 _ => {}
             }
@@ -65,6 +67,19 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+fn apply_hp_loss_damage(run_state: &mut RunState, amount: i32) {
+    let mut damage = amount;
+    if damage > 0
+        && run_state
+            .relics
+            .iter()
+            .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
+    {
+        damage -= 1;
+    }
+    run_state.change_hp_with_source(-damage, DomainEventSource::Event(EventId::SensoryStone));
 }
 
 /// Generate a row of 3 colorless uncommon cards for the card reward screen.
@@ -103,4 +118,81 @@ fn generate_colorless_card_row(run_state: &mut RunState) -> Vec<crate::rewards::
         }
     }
     cards
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::rewards::state::RewardItem;
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    fn sensory_run(current_hp: i32, max_hp: i32) -> RunState {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = current_hp;
+        run_state.max_hp = max_hp;
+        run_state.event_state = Some(EventState::new(EventId::SensoryStone));
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    #[test]
+    fn focus_two_hp_loss_uses_event_source_and_opens_two_rewards() {
+        let mut run_state = sensory_run(20, 80);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.current_hp, 15);
+        match engine_state {
+            EngineState::RewardScreen(rewards) => {
+                assert_eq!(rewards.items.len(), 2);
+                assert!(rewards
+                    .items
+                    .iter()
+                    .all(|item| matches!(item, RewardItem::Card { .. })));
+            }
+            other => panic!("expected reward screen, got {other:?}"),
+        }
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -5,
+                current_hp: 15,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::SensoryStone),
+            }
+        )));
+    }
+
+    #[test]
+    fn focus_three_hp_loss_applies_tungsten_rod_on_lose_hp_last() {
+        let mut run_state = sensory_run(20, 80);
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        assert_eq!(run_state.current_hp, 11);
+        match engine_state {
+            EngineState::RewardScreen(rewards) => {
+                assert_eq!(rewards.items.len(), 3);
+            }
+            other => panic!("expected reward screen, got {other:?}"),
+        }
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -9,
+                current_hp: 11,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::SensoryStone),
+            }
+        )));
+    }
 }
