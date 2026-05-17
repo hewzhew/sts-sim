@@ -220,6 +220,10 @@ Awakened One runtime truth is explicit:
 - `form1`
 - `first_turn`
 
+`CommunicationMod` exports both as `monster.runtime_state.form1` and
+`monster.runtime_state.first_turn`; Rust imports them as strict runtime truth and requires
+factory/protocol seeding before roll logic runs.
+
 The first-form death path is split between damage/death power hooks and the later Rebirth move, as
 in Java:
 

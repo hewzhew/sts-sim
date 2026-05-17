@@ -118,6 +118,17 @@ pub(crate) fn seed_deca_runtime_from_snapshot(monster: &Value, entity: &mut Mons
     entity.deca.protocol_seeded = true;
 }
 
+pub(crate) fn seed_awakened_one_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::AwakenedOne;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.awakened_one.form1 = runtime_state_bool(monster, monster_type, "form1");
+    entity.awakened_one.first_turn = runtime_state_bool(monster, monster_type, "first_turn");
+    entity.awakened_one.protocol_seeded = true;
+}
+
 pub(crate) fn seed_writhing_mass_runtime_from_snapshot(
     monster: &Value,
     entity: &mut MonsterEntity,
@@ -783,6 +794,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_time_eater_runtime_from_snapshot(monster, entity);
     seed_donu_runtime_from_snapshot(monster, entity);
     seed_deca_runtime_from_snapshot(monster, entity);
+    seed_awakened_one_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
 }
@@ -1066,6 +1078,26 @@ mod tests {
             },
             "is_gone": false,
             "half_dead": false
+        })
+    }
+
+    fn awakened_one_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "AwakenedOne",
+            "current_hp": 0,
+            "max_hp": 320,
+            "block": 0,
+            "intent": "UNKNOWN",
+            "move_id": 3,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "form1": false,
+                "first_turn": true
+            },
+            "is_gone": false,
+            "half_dead": true
         })
     }
 
@@ -1615,6 +1647,20 @@ mod tests {
         assert_eq!(entity.planned_move_id(), 2);
         assert!(!entity.deca.is_attacking);
         assert!(entity.deca.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_awakened_one_runtime_state() {
+        let snapshot = awakened_one_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.planned_move_id(), 3);
+        assert!(!entity.awakened_one.form1);
+        assert!(entity.awakened_one.first_turn);
+        assert!(entity.awakened_one.protocol_seeded);
+        assert!(entity.half_dead);
     }
 
     #[test]

@@ -51,6 +51,7 @@ Scope:
 | Time Eater | `used_haste` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Donu | `is_attacking` | Yes | Yes | Yes | None | Good |
 | Deca | `is_attacking` | Yes | Yes | Yes | None | Good |
+| Awakened One | `form1`, `first_turn` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 
 ## Notes
 
@@ -267,6 +268,18 @@ Scope:
   before queueing `RollMoveAction`. Rust mirrors that with `Action::UpdateMonsterRuntime`
   immediately before `Action::RollMonsterMove`.
 - Rust no longer derives their alternation from `move_history`.
+
+### Awakened One
+
+- `runtime_state.form1` and `runtime_state.first_turn` are exported by `CommunicationMod`.
+- Rust state sync marks the Awakened One runtime slice as protocol-seeded and semantic roll logic
+  requires factory/protocol seeding before branch selection.
+- Java clears the first-form opening `firstTurn` inside `getMove()` when Slash is selected; Rust
+  mirrors that through `Action::UpdateMonsterRuntime` emitted from `on_roll_move`.
+- Java sets `form1=false` and `firstTurn=true` during the first death / Unawakened path; Rust
+  mirrors that through `Unawakened` power death actions.
+- Remaining history usage is limited to Java's explicit repeat rules around Slash, Soul Strike,
+  Sludge, and Tackle.
 
 ### The Guardian
 

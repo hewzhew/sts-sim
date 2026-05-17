@@ -93,6 +93,8 @@ Rust currently consumes explicit Java runtime fields for:
 - `TimeEater.used_haste`
 - `Donu.is_attacking`
 - `Deca.is_attacking`
+- `AwakenedOne.form1`
+- `AwakenedOne.first_turn`
 - `Chosen.first_turn`
 - `Chosen.used_hex`
 - `Lagavulin.idle_count`

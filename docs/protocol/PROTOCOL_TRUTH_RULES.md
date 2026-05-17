@@ -72,6 +72,7 @@ Examples:
 - `monster.runtime_state.count`
 - `monster.runtime_state.used_haste`
 - `monster.runtime_state.is_attacking`
+- `monster.runtime_state.form1`
 - `relic.runtime_state.used_this_combat`
 - `relic.runtime_state.used_up`
 - `relic.runtime_state.counter`
@@ -149,6 +150,8 @@ Examples of the correct pattern:
 - `TimeEater.usedHaste`
 - `Donu.isAttacking`
 - `Deca.isAttacking`
+- `AwakenedOne.form1`
+- `AwakenedOne.firstTurn`
 - `AcidSlime_L.splitTriggered`
 - `SpikeSlime_L.splitTriggered`
 - `SphericGuardian.firstMove`

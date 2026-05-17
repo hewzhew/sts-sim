@@ -41,6 +41,10 @@ mod tests {
 }
 
 fn current_runtime(entity: &MonsterEntity) -> (bool, bool) {
+    assert!(
+        entity.awakened_one.protocol_seeded,
+        "awakened one runtime truth must be protocol-seeded or factory-seeded"
+    );
     (entity.awakened_one.form1, entity.awakened_one.first_turn)
 }
 
