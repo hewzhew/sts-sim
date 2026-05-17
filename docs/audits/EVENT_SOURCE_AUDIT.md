@@ -1244,6 +1244,45 @@ Tests:
 - `transform_selection_excludes_bottled_and_unpurgeable_cards_like_java`
 - `transformed_card_uses_event_source`
 
+### Purifier purge selection semantics
+
+Java `events/shrines/PurificationShrine.java` opens
+`CardGroup.getGroupWithoutBottledCards(AbstractDungeon.player.masterDeck.getPurgeableCards())`.
+The selected card is removed from the master deck through the event's grid
+selection flow.
+
+Audit result:
+
+- Rust opens `RunPendingChoiceReason::PurgeNonBottled`, excluding bottled and
+  unpurgeable cards.
+- The shared purge resolver emits `CardRemoved` with `Event(Purifier)`.
+
+Tests:
+
+- `purge_selection_excludes_bottled_and_unpurgeable_cards_like_java`
+- `purge_removes_selected_card_with_event_source`
+
+### Upgrade Shrine selection semantics
+
+Java `events/shrines/UpgradeShrine.java` disables the first dialog option when
+`masterDeck.hasUpgradableCards()` is false, and otherwise opens
+`AbstractDungeon.player.masterDeck.getUpgradableCards()`.
+
+Audit result:
+
+- Disabled direct calls remain inert instead of opening an empty upgrade
+  selection.
+- The pending upgrade selection uses Java `canUpgrade()` semantics, including
+  the Searing Blow exception.
+- The shared upgrade resolver emits `CardUpgraded` with `Event(UpgradeShrine)`.
+
+Tests:
+
+- `disabled_pray_does_not_open_empty_upgrade_selection`
+- `searing_blow_remains_upgradeable_after_prior_upgrades`
+- `upgrade_selection_uses_java_upgradable_cards`
+- `selected_card_is_upgraded_with_event_source`
+
 ### Duplicator full-deck copy semantics
 
 Java `events/shrines/Duplicator.java` opens `AbstractDungeon.player.masterDeck`
@@ -1582,4 +1621,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `954 passed`.
+- Current result after this pass: `958 passed`.

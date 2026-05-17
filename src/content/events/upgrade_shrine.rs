@@ -66,10 +66,15 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 mod tests {
     use super::{get_choices, handle_choice};
     use crate::content::cards::CardId;
+    use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
-    use crate::state::core::{EngineState, RunPendingChoiceReason};
+    use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
     use crate::state::events::{EventId, EventState};
     use crate::state::run::RunState;
+    use crate::state::selection::{
+        DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
+        SelectionTargetRef,
+    };
 
     fn shrine_run(deck: Vec<CombatCard>) -> RunState {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
@@ -112,5 +117,61 @@ mod tests {
                 if pending.reason == RunPendingChoiceReason::Upgrade
         ));
         assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+    }
+
+    #[test]
+    fn upgrade_selection_uses_java_upgradable_cards() {
+        let mut upgraded_strike = CombatCard::new(CardId::Strike, 101);
+        upgraded_strike.upgrades = 1;
+        let mut run_state = shrine_run(vec![
+            upgraded_strike,
+            CombatCard::new(CardId::Defend, 102),
+            CombatCard::new(CardId::Injury, 103),
+        ]);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Upgrade Shrine should open deck upgrade selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::Upgrade);
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::Upgrade);
+        assert_eq!(
+            request.targets,
+            vec![SelectionTargetRef::CardUuid(102)],
+            "Java opens masterDeck.getUpgradableCards()"
+        );
+    }
+
+    #[test]
+    fn selected_card_is_upgraded_with_event_source() {
+        let mut run_state = shrine_run(vec![CombatCard::new(CardId::Defend, 102)]);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(102)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.master_deck[0].upgrades, 1);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                after,
+                source: DomainEventSource::Event(EventId::UpgradeShrine),
+                ..
+            } if after.id == CardId::Defend && after.uuid == 102 && after.upgrades == 1
+        )));
     }
 }
