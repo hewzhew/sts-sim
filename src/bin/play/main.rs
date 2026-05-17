@@ -1282,7 +1282,9 @@ fn encounter_key_to_id(
         "Gremlin Nob" => Some(EncounterId::GremlinNob),
         "The Mushroom Lair" | "3 Fungi Beasts" => Some(EncounterId::TheMushroomLair),
         "2 Orb Walkers" => Some(EncounterId::TwoOrbWalkers),
-        "Mind Bloom Boss" => Some(EncounterId::AwakenedOne), // MindBloom spawns a random act 1 boss; fallback
+        "The Guardian" => Some(EncounterId::TheGuardian),
+        "Hexaghost" => Some(EncounterId::Hexaghost),
+        "Slime Boss" => Some(EncounterId::SlimeBoss),
         _ => None,
     }
 }

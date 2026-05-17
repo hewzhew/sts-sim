@@ -8,6 +8,14 @@ use crate::state::events::{
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
+fn act1_boss_key(index: u8) -> &'static str {
+    match index {
+        0 => "The Guardian",
+        1 => "Hexaghost",
+        _ => "Slime Boss",
+    }
+}
+
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
@@ -120,6 +128,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         &mut boss_indices,
                         &mut run_state.rng_pool.misc_rng,
                     );
+                    let encounter_key = act1_boss_key(boss_indices[0]);
 
                     // Java: addGoldToRewards(A13>=13 ? 25 : 50) + addRelicToRewards(RARE)
                     let mut rewards = crate::rewards::state::RewardState::new();
@@ -132,7 +141,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         .items
                         .push(crate::rewards::state::RewardItem::Gold { amount: gold });
                     let rare_relic =
-                        run_state.random_screenless_relic(crate::content::relics::RelicTier::Rare);
+                        run_state.random_relic_by_tier(crate::content::relics::RelicTier::Rare);
                     rewards
                         .items
                         .push(crate::rewards::state::RewardItem::Relic {
@@ -149,7 +158,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             no_cards_in_rewards: false,
                             elite_trigger: false,
                             post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-                            encounter_key: "Mind Bloom Boss",
+                            encounter_key,
                         });
                     return;
                 }
@@ -257,6 +266,40 @@ mod tests {
                 source: DomainEventSource::Event(EventId::MindBloom),
             }
         )));
+    }
+
+    #[test]
+    fn fight_uses_java_shuffled_act1_boss_key_and_rare_relic_reward() {
+        let mut rs = RunState::new(123, 0, true, "Ironclad");
+        rs.floor_num = 20;
+        rs.rare_relic_pool = vec![RelicId::OldCoin];
+        rs.event_state = Some(EventState::new(EventId::MindBloom));
+        let mut expected_indices = [0u8, 1, 2];
+        let mut expected_misc_rng = rs.rng_pool.misc_rng.clone();
+        crate::runtime::rng::shuffle_with_random_long(
+            &mut expected_indices,
+            &mut expected_misc_rng,
+        );
+        let expected_key = act1_boss_key(expected_indices[0]);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        let EngineState::EventCombat(combat) = engine_state else {
+            panic!("Mind Bloom fight should enter EventCombat");
+        };
+        assert_eq!(combat.encounter_key, expected_key);
+        assert!(combat.rewards.items.iter().any(|item| matches!(
+            item,
+            crate::rewards::state::RewardItem::Gold { amount: 50 }
+        )));
+        assert!(combat.rewards.items.iter().any(|item| matches!(
+            item,
+            crate::rewards::state::RewardItem::Relic {
+                relic_id: RelicId::OldCoin
+            }
+        )));
+        assert_eq!(rs.rng_pool.misc_rng.counter, expected_misc_rng.counter);
     }
 
     #[test]

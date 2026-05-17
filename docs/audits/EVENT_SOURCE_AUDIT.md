@@ -600,9 +600,11 @@ Tests:
 - `hp_loss_result_uses_source_and_can_reduce_hp_to_zero`
 - `hp_loss_result_applies_tungsten_rod_on_lose_hp_last`
 
-### Mind Bloom Mark and high-floor heal
+### Mind Bloom fight, Mark, and high-floor heal
 
-Java `events/beyond/MindBloom.java` uses `spawnRelicAndObtain` for the
+Java `events/beyond/MindBloom.java` uses `miscRng.randomLong()` to shuffle the
+three Act 1 bosses (`The Guardian`, `Hexaghost`, `Slime Boss`) for the fight
+branch, adds gold plus a rare relic reward, uses `spawnRelicAndObtain` for the
 `[I am Awake]` Mark of the Bloom branch, and the high-floor `[I am Rich]`
 variant calls:
 
@@ -613,6 +615,11 @@ ShowCardAndObtainEffect(new Doubt())
 
 Fixes:
 
+- The fight branch now uses the shuffled Act 1 boss key instead of a fixed
+  fallback encounter, and the play adapter maps those event keys to the actual
+  boss encounters.
+- The fight branch now uses the ordinary rare relic reward path rather than the
+  screenless event-relic path.
 - The Mark of the Bloom branch now obtains the relic through
   `obtain_relic_with_source(..., Event(MindBloom))` instead of pushing directly
   into `run_state.relics`.
@@ -622,6 +629,7 @@ Fixes:
 
 Tests:
 
+- `fight_uses_java_shuffled_act1_boss_key_and_rare_relic_reward`
 - `remember_obtains_mark_of_the_bloom_with_event_source`
 - `high_floor_desire_heals_with_event_source_and_obtains_doubt`
 - `high_floor_desire_heal_respects_mark_of_the_bloom`
@@ -1161,4 +1169,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `897 passed`.
+- Current result after this pass: `898 passed`.
