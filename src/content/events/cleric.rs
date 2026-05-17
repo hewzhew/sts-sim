@@ -226,8 +226,12 @@ mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
-    use crate::state::selection::DomainEvent;
+    use crate::state::core::ClientInput;
+    use crate::state::selection::{
+        DomainEvent, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
+    };
 
     #[test]
     fn purify_option_exposes_remove_selection_semantics() {
@@ -264,6 +268,70 @@ mod tests {
         assert!(rs.event_state.as_ref().unwrap().completed);
         assert!(matches!(engine_state, EngineState::EventRoom));
         assert!(rs.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn purify_selection_excludes_bottled_and_unpurgeable_cards_like_java() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 100;
+        rs.master_deck = vec![
+            CombatCard::new(CardId::Strike, 101),
+            CombatCard::new(CardId::Defend, 102),
+            CombatCard::new(CardId::AscendersBane, 103),
+        ];
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 101;
+        rs.relics.push(bottle);
+        rs.event_state = Some(EventState::new(EventId::Cleric));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Cleric purify should open deck purge selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::PurgeNonBottled);
+        let request = choice.selection_request(&rs);
+        assert_eq!(request.reason, SelectionReason::Purge);
+        assert_eq!(
+            request.targets,
+            vec![SelectionTargetRef::CardUuid(102)],
+            "Java opens CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())"
+        );
+    }
+
+    #[test]
+    fn purify_removes_selected_card_with_event_source() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 100;
+        rs.master_deck = vec![CombatCard::new(CardId::Strike, 101)];
+        rs.event_state = Some(EventState::new(EventId::Cleric));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut rs,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.master_deck.is_empty());
+        assert!(rs.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(EventId::Cleric),
+            } if card.id == CardId::Strike && card.uuid == 101
+        )));
     }
 
     #[test]

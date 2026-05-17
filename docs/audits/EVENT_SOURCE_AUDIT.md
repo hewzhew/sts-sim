@@ -523,6 +523,9 @@ Fixes:
 - Purify with enough gold but no removable card now advances without payment or
   pending selection, and its option semantics no longer claim a removal
   selection exists.
+- Purify selection is covered as Java
+  `CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())`, and
+  the shared resolver must emit `Event(Cleric)` sourced removal events.
 
 Tests:
 
@@ -531,6 +534,8 @@ Tests:
 - `disabled_heal_does_not_pay_or_advance`
 - `disabled_purify_does_not_pay_or_open_selection`
 - `purify_without_removable_card_is_enabled_but_advances_without_payment_like_java`
+- `purify_selection_excludes_bottled_and_unpurgeable_cards_like_java`
+- `purify_removes_selected_card_with_event_source`
 
 ### Beggar donation and purge boundary
 
@@ -555,12 +560,17 @@ Fixes:
 - The next event click opens `RunPendingChoiceReason::PurgeNonBottled`.
 - Direct calls to disabled donation now stay inert when the player has less
   than 75 gold.
+- The paid purge prompt is covered as Java
+  `CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())`, and
+  the shared resolver must emit `Event(Beggar)` sourced removal events.
 
 Tests:
 
 - `donate_pays_gold_before_opening_purge_prompt_like_java`
 - `paid_continue_opens_non_bottled_purge_selection`
 - `disabled_donate_does_not_pay_or_advance`
+- `paid_continue_selection_excludes_bottled_and_unpurgeable_cards_like_java`
+- `paid_continue_removes_selected_card_with_event_source`
 
 ### Golden Wing remove damage and attack gate
 
@@ -1621,4 +1631,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `958 passed`.
+- Current result after this pass: `962 passed`.
