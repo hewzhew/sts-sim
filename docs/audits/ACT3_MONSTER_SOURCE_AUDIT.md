@@ -210,8 +210,13 @@ Rust preserves that guard.
 ### Transient
 
 Java Transient does not queue `RollMoveAction`. It directly increments its attack counter and sets
-the next move inside `takeTurn()`. Rust preserves this with `SetMonsterMove` rather than a normal
-roll. Fading amount is 6 at A17+, otherwise 5; Shifting is applied pre-battle.
+the next move inside `takeTurn()`.
+
+The attack counter is Java private `count`, exported as `monster.runtime_state.count` and carried
+as `TransientRuntimeState.count` in Rust. Rust no longer reconstructs this value from
+`move_history`; an imported live snapshot with empty history still plans damage from the exported
+counter. Rust preserves the no-roll behavior with `SetMonsterMove` rather than a normal roll.
+Fading amount is 6 at A17+, otherwise 5; Shifting is applied pre-battle.
 
 ### Awakened One
 

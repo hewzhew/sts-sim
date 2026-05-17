@@ -160,6 +160,7 @@ pub fn build_encounter(
             time_eater: Default::default(),
             donu: Default::default(),
             deca: Default::default(),
+            transient: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
         };
@@ -308,6 +309,9 @@ pub fn build_encounter(
         }
         if enemy_id == EnemyId::Deca {
             crate::content::monsters::beyond::deca::initialize_runtime_state(&mut monster);
+        }
+        if enemy_id == EnemyId::Transient {
+            crate::content::monsters::beyond::transient::initialize_runtime_state(&mut monster);
         }
         if enemy_id == EnemyId::TheGuardian {
             crate::content::monsters::exordium::the_guardian::initialize_runtime_state(

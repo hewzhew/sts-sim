@@ -10,7 +10,8 @@ use crate::runtime::combat::{
     MonsterMoveState, NemesisRuntimeState, ReptomancerRuntimeState, SentryRuntimeState,
     ShelledParasiteRuntimeState, SlaverRedRuntimeState, SlimeBossRuntimeState, SneckoRuntimeState,
     SphericGuardianRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
-    SpireSpearRuntimeState, ThiefRuntimeState, TimeEaterRuntimeState, WrithingMassRuntimeState,
+    SpireSpearRuntimeState, ThiefRuntimeState, TimeEaterRuntimeState, TransientRuntimeState,
+    WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
@@ -119,6 +120,12 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
         }
         Some(EnemyId::Donu) => format!("donu:{}", stable_donu_signature(&monster.donu)),
         Some(EnemyId::Deca) => format!("deca:{}", stable_deca_signature(&monster.deca)),
+        Some(EnemyId::Transient) => {
+            format!(
+                "transient:{}",
+                stable_transient_signature(&monster.transient)
+            )
+        }
         Some(EnemyId::WrithingMass) => {
             format!(
                 "writhing_mass:{}",
@@ -210,7 +217,8 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
             "collector={}:champ={}:awakened={}:heart={}:writhing_mass={}:spiker={}:",
             "spire_shield={}:spire_spear={}:slaver_red={}:gremlin_nob={}:gremlin_wizard={}:",
             "cultist={}:sentry={}:slime_boss={}:large_slime={}:spheric_guardian={}:",
-            "darkling={}:lagavulin={}:guardian={}"
+            "darkling={}:giant_head={}:time_eater={}:donu={}:deca={}:transient={}:",
+            "lagavulin={}:guardian={}"
         ),
         stable_hexaghost_signature(&monster.hexaghost),
         stable_louse_signature(&monster.louse),
@@ -240,6 +248,11 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         stable_large_slime_signature(&monster.large_slime),
         stable_spheric_guardian_signature(&monster.spheric_guardian),
         stable_darkling_signature(&monster.darkling),
+        stable_giant_head_signature(&monster.giant_head),
+        stable_time_eater_signature(&monster.time_eater),
+        stable_donu_signature(&monster.donu),
+        stable_deca_signature(&monster.deca),
+        stable_transient_signature(&monster.transient),
         stable_lagavulin_signature(&monster.lagavulin),
         stable_guardian_signature(&monster.guardian),
     )
@@ -590,6 +603,10 @@ fn stable_donu_signature(state: &DonuRuntimeState) -> String {
 
 fn stable_deca_signature(state: &DecaRuntimeState) -> String {
     format!("seed{}:atk{}", state.protocol_seeded, state.is_attacking)
+}
+
+fn stable_transient_signature(state: &TransientRuntimeState) -> String {
+    format!("seed{}:count{}", state.protocol_seeded, state.count)
 }
 
 fn stable_writhing_mass_signature(state: &WrithingMassRuntimeState) -> String {

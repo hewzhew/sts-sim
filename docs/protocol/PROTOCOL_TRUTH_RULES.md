@@ -147,6 +147,7 @@ Examples of the correct pattern:
 - `Nemesis.firstMove`
 - `Nemesis.scytheCooldown`
 - `GiantHead.count`
+- `Transient.count`
 - `TimeEater.usedHaste`
 - `Donu.isAttacking`
 - `Deca.isAttacking`

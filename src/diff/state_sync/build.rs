@@ -213,6 +213,7 @@ pub fn build_combat_state_from_snapshots(
             time_eater: Default::default(),
             donu: Default::default(),
             deca: Default::default(),
+            transient: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
         };

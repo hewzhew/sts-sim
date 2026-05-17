@@ -156,6 +156,10 @@ pub enum MonsterRuntimePatch {
         is_attacking: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    Transient {
+        count: Option<i32>,
+        protocol_seeded: Option<bool>,
+    },
     GremlinWizard {
         current_charge: Option<u8>,
         protocol_seeded: Option<bool>,

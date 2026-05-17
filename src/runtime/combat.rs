@@ -957,6 +957,7 @@ pub struct MonsterEntity {
     pub time_eater: TimeEaterRuntimeState,
     pub donu: DonuRuntimeState,
     pub deca: DecaRuntimeState,
+    pub transient: TransientRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
 }
@@ -1378,6 +1379,12 @@ pub struct DonuRuntimeState {
 pub struct DecaRuntimeState {
     pub protocol_seeded: bool,
     pub is_attacking: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TransientRuntimeState {
+    pub protocol_seeded: bool,
+    pub count: i32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2275,6 +2282,7 @@ mod tests {
             time_eater: TimeEaterRuntimeState::default(),
             donu: DonuRuntimeState::default(),
             deca: DecaRuntimeState::default(),
+            transient: TransientRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2357,6 +2365,7 @@ mod tests {
             time_eater: TimeEaterRuntimeState::default(),
             donu: DonuRuntimeState::default(),
             deca: DecaRuntimeState::default(),
+            transient: TransientRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2436,6 +2445,7 @@ mod tests {
             time_eater: TimeEaterRuntimeState::default(),
             donu: DonuRuntimeState::default(),
             deca: DecaRuntimeState::default(),
+            transient: TransientRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };

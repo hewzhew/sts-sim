@@ -51,6 +51,7 @@ Scope:
 | Time Eater | `used_haste` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Donu | `is_attacking` | Yes | Yes | Yes | None | Good |
 | Deca | `is_attacking` | Yes | Yes | Yes | None | Good |
+| Transient | `count` | Yes | Yes | Yes | None | Good |
 | Awakened One | `form1`, `first_turn` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 
 ## Notes
@@ -145,6 +146,14 @@ Scope:
 - Charge cadence comes from Java's private `currentCharge`, not from consecutive Charge history.
 - Runtime patches are emitted during `take_turn_plan`, because Java mutates `currentCharge` inside
   `takeTurn()` rather than `getMove()`.
+
+### Transient
+
+- `runtime_state.count` is now exported by `CommunicationMod`.
+- Rust semantic planning requires this counter to be protocol-seeded or factory-seeded.
+- Attack damage and next intent use Java's private `count`, not `move_history` length.
+- Transient still uses direct `SetMonsterMove` after its turn instead of queuing `RollMonsterMove`,
+  matching Java's `takeTurn()` shape.
 
 ### Cultist
 

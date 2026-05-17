@@ -118,6 +118,16 @@ pub(crate) fn seed_deca_runtime_from_snapshot(monster: &Value, entity: &mut Mons
     entity.deca.protocol_seeded = true;
 }
 
+pub(crate) fn seed_transient_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::Transient;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.transient.count = runtime_state_i32(monster, monster_type, "count");
+    entity.transient.protocol_seeded = true;
+}
+
 pub(crate) fn seed_awakened_one_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::AwakenedOne;
     if entity.monster_type != monster_type as usize {
@@ -794,6 +804,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_time_eater_runtime_from_snapshot(monster, entity);
     seed_donu_runtime_from_snapshot(monster, entity);
     seed_deca_runtime_from_snapshot(monster, entity);
+    seed_transient_runtime_from_snapshot(monster, entity);
     seed_awakened_one_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -882,6 +893,7 @@ mod tests {
             time_eater: TimeEaterRuntimeState::default(),
             donu: DonuRuntimeState::default(),
             deca: DecaRuntimeState::default(),
+            transient: Default::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         }
@@ -1075,6 +1087,25 @@ mod tests {
             "powers": [],
             "runtime_state": {
                 "is_attacking": false
+            },
+            "is_gone": false,
+            "half_dead": false
+        })
+    }
+
+    fn transient_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Transient",
+            "current_hp": 999,
+            "max_hp": 999,
+            "block": 0,
+            "intent": "ATTACK",
+            "move_id": 1,
+            "move_base_damage": 70,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "count": 4
             },
             "is_gone": false,
             "half_dead": false
@@ -1647,6 +1678,18 @@ mod tests {
         assert_eq!(entity.planned_move_id(), 2);
         assert!(!entity.deca.is_attacking);
         assert!(entity.deca.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_transient_runtime_state() {
+        let snapshot = transient_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.planned_move_id(), 1);
+        assert_eq!(entity.transient.count, 4);
+        assert!(entity.transient.protocol_seeded);
     }
 
     #[test]

@@ -155,6 +155,7 @@ pub fn handle_spawn_monster(
         time_eater: Default::default(),
         donu: Default::default(),
         deca: Default::default(),
+        transient: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
     };
@@ -199,6 +200,9 @@ pub fn handle_spawn_monster(
     }
     if enemy_id == crate::content::monsters::EnemyId::Deca {
         crate::content::monsters::beyond::deca::initialize_runtime_state(&mut new_monster);
+    }
+    if enemy_id == crate::content::monsters::EnemyId::Transient {
+        crate::content::monsters::beyond::transient::initialize_runtime_state(&mut new_monster);
     }
     if enemy_id == crate::content::monsters::EnemyId::JawWorm {
         crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(
@@ -1352,6 +1356,27 @@ fn handle_update_deca_state(
     }
 }
 
+fn handle_update_transient_state(
+    monster_id: usize,
+    count: Option<i32>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = count {
+            monster.transient.count = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.transient.protocol_seeded = value;
+        }
+    }
+}
+
 fn handle_update_gremlin_wizard_state(
     monster_id: usize,
     current_charge: Option<u8>,
@@ -1703,6 +1728,10 @@ pub fn handle_update_monster_runtime(
             is_attacking,
             protocol_seeded,
         } => handle_update_deca_state(monster_id, is_attacking, protocol_seeded, state),
+        MonsterRuntimePatch::Transient {
+            count,
+            protocol_seeded,
+        } => handle_update_transient_state(monster_id, count, protocol_seeded, state),
         MonsterRuntimePatch::GremlinWizard {
             current_charge,
             protocol_seeded,
