@@ -175,6 +175,13 @@ Key source facts:
 
 - Dungeon constructors call `initializeBoss()`, then `setBoss(bossList.get(0))`.
   The selected `bossKey` is the visible map boss.
+- `initializeBoss()` does not always shuffle all bosses. In normal non-daily
+  runs it first asks `UnlockTracker.isBossSeen(...)` in an act-specific order
+  and forces the first unseen boss. If only one boss is selected, Java duplicates
+  it. Only the all-seen path and daily runs shuffle all three bosses with one
+  `monsterRng.randomLong()` seed.
+- Exordium applies `Settings.isDemo` after the normal/daily boss-generation
+  branch, clearing the list to only `Hexaghost`.
 - `MonsterRoomBoss.onPlayerEntry()` calls `getBoss()` using `bossKey`, then
   removes `bossList[0]`.
 - A20 Act 3 double boss is keyed off the post-entry queue size:
@@ -188,6 +195,10 @@ Rust result:
 - `RunState::boss_key` now models the public Java `bossKey`.
 - `RunState::boss_list` remains the internal Java boss queue and is no longer
   truncated at act start.
+- Boss generation now has explicit `BossGenerationSettings` for daily/demo and
+  seen-boss state. Standard simulator runs still use the all-bosses-seen
+  profile, but the Java unseen-boss forcing order and its no-shuffle RNG
+  behavior are tested rather than hidden in a comment.
 - `RunState::next_boss()` uses `boss_key` and then removes the front of
   `boss_list`, matching `MonsterRoomBoss.onPlayerEntry()`.
 - `RunState::should_start_act3_double_boss()` models the A20 post-entry queue
@@ -202,6 +213,9 @@ Coverage:
 - `final_act_initializes_shield_spear_and_heart_context`
 - `act3_a20_first_boss_starts_second_boss_without_reward_or_victory`
 - `act3_boss_with_all_keys_enters_initialized_final_act`
+- `boss_lists_preserve_java_seen_boss_unlock_order`
+- `boss_lists_shuffle_all_three_only_for_daily_or_all_seen_paths`
+- `exordium_demo_overrides_after_java_boss_generation_branch`
 
 ## Monster Encounter Scheduling Pass
 

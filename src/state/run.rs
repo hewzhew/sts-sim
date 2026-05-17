@@ -1172,9 +1172,15 @@ impl RunState {
     /// remaining entries and sets `bossKey = bossList.get(0)` for the second
     /// boss.
     pub fn init_boss_list(&mut self) {
-        self.boss_list = crate::content::monsters::encounter_pool::generate_boss_list(
+        let settings = crate::content::monsters::encounter_pool::BossGenerationSettings {
+            is_daily_run: self.is_daily_run,
+            is_demo: false,
+            seen: crate::content::monsters::encounter_pool::BossSeenState::all_seen(),
+        };
+        self.boss_list = crate::content::monsters::encounter_pool::generate_boss_list_with_settings(
             self.act_num,
             &mut self.rng_pool.monster_rng,
+            settings,
         );
         self.boss_key = self.boss_list.first().copied();
     }

@@ -459,44 +459,210 @@ fn beyond_exclusions(monster_list: &[EncounterId]) -> Vec<EncounterId> {
     }
 }
 
-/// Generate the boss list for the given act.
-/// Java: initializeBoss() in Exordium/TheCity/TheBeyond.
-/// Shuffles 3 bosses with `Collections.shuffle(bossList, new Random(monsterRng.randomLong()))`.
-/// For the simulator we always take the "all bosses seen" path (shuffle all 3).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BossSeenState {
+    pub guardian: bool,
+    pub hexaghost: bool,
+    pub slime_boss: bool,
+    pub champ: bool,
+    pub automaton: bool,
+    pub collector: bool,
+    pub awakened_one: bool,
+    pub donu_and_deca: bool,
+    pub time_eater: bool,
+}
+
+impl BossSeenState {
+    pub const fn all_seen() -> Self {
+        Self {
+            guardian: true,
+            hexaghost: true,
+            slime_boss: true,
+            champ: true,
+            automaton: true,
+            collector: true,
+            awakened_one: true,
+            donu_and_deca: true,
+            time_eater: true,
+        }
+    }
+
+    #[cfg(test)]
+    const fn none_seen() -> Self {
+        Self {
+            guardian: false,
+            hexaghost: false,
+            slime_boss: false,
+            champ: false,
+            automaton: false,
+            collector: false,
+            awakened_one: false,
+            donu_and_deca: false,
+            time_eater: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BossGenerationSettings {
+    pub is_daily_run: bool,
+    pub is_demo: bool,
+    pub seen: BossSeenState,
+}
+
+impl BossGenerationSettings {
+    pub const fn standard_all_seen() -> Self {
+        Self {
+            is_daily_run: false,
+            is_demo: false,
+            seen: BossSeenState::all_seen(),
+        }
+    }
+}
+
+fn shuffle_bosses(bosses: &mut [EncounterId], monster_rng: &mut StsRng) {
+    crate::runtime::rng::shuffle_with_random_long(bosses, monster_rng);
+}
+
+fn duplicate_single_boss_or_fallback(
+    bosses: &mut Vec<EncounterId>,
+    fallback: &[EncounterId],
+    monster_rng: &mut StsRng,
+) {
+    if bosses.len() == 1 {
+        bosses.push(bosses[0]);
+    } else if bosses.is_empty() {
+        bosses.extend_from_slice(fallback);
+        shuffle_bosses(bosses, monster_rng);
+    }
+}
+
+fn initialize_exordium_bosses(
+    settings: BossGenerationSettings,
+    monster_rng: &mut StsRng,
+) -> Vec<EncounterId> {
+    let fallback = [
+        EncounterId::TheGuardian,
+        EncounterId::Hexaghost,
+        EncounterId::SlimeBoss,
+    ];
+    let mut bosses = Vec::new();
+    if settings.is_daily_run {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    } else if !settings.seen.guardian {
+        bosses.push(EncounterId::TheGuardian);
+    } else if !settings.seen.hexaghost {
+        bosses.push(EncounterId::Hexaghost);
+    } else if !settings.seen.slime_boss {
+        bosses.push(EncounterId::SlimeBoss);
+    } else {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    }
+
+    duplicate_single_boss_or_fallback(&mut bosses, &fallback, monster_rng);
+
+    if settings.is_demo {
+        bosses.clear();
+        bosses.push(EncounterId::Hexaghost);
+    }
+
+    bosses
+}
+
+fn initialize_city_bosses(
+    settings: BossGenerationSettings,
+    monster_rng: &mut StsRng,
+) -> Vec<EncounterId> {
+    let fallback = [
+        EncounterId::Automaton,
+        EncounterId::Collector,
+        EncounterId::TheChamp,
+    ];
+    let mut bosses = Vec::new();
+    if settings.is_daily_run {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    } else if !settings.seen.champ {
+        bosses.push(EncounterId::TheChamp);
+    } else if !settings.seen.automaton {
+        bosses.push(EncounterId::Automaton);
+    } else if !settings.seen.collector {
+        bosses.push(EncounterId::Collector);
+    } else {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    }
+
+    duplicate_single_boss_or_fallback(&mut bosses, &fallback, monster_rng);
+    bosses
+}
+
+fn initialize_beyond_bosses(
+    settings: BossGenerationSettings,
+    monster_rng: &mut StsRng,
+) -> Vec<EncounterId> {
+    let fallback = [
+        EncounterId::AwakenedOne,
+        EncounterId::TimeEater,
+        EncounterId::DonuAndDeca,
+    ];
+    let mut bosses = Vec::new();
+    if settings.is_daily_run {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    } else if !settings.seen.awakened_one {
+        bosses.push(EncounterId::AwakenedOne);
+    } else if !settings.seen.donu_and_deca {
+        bosses.push(EncounterId::DonuAndDeca);
+    } else if !settings.seen.time_eater {
+        bosses.push(EncounterId::TimeEater);
+    } else {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    }
+
+    duplicate_single_boss_or_fallback(&mut bosses, &fallback, monster_rng);
+    bosses
+}
+
+/// Generate the boss list for the given act under the simulator's standard
+/// profile: a normal, all-unlocked/all-bosses-seen run.
 pub fn generate_boss_list(
     act: u8,
     monster_rng: &mut crate::runtime::rng::StsRng,
 ) -> Vec<EncounterId> {
-    let mut bosses = match act {
-        1 => vec![
-            EncounterId::TheGuardian,
-            EncounterId::Hexaghost,
-            EncounterId::SlimeBoss,
-        ],
-        2 => vec![
-            EncounterId::Automaton,
-            EncounterId::Collector,
-            EncounterId::TheChamp,
-        ],
-        3 => vec![
-            EncounterId::AwakenedOne,
-            EncounterId::TimeEater,
-            EncounterId::DonuAndDeca,
-        ],
+    generate_boss_list_with_settings(
+        act,
+        monster_rng,
+        BossGenerationSettings::standard_all_seen(),
+    )
+}
+
+/// Java: `initializeBoss()` in Exordium/TheCity/TheBeyond/TheEnding.
+///
+/// Non-daily runs force the first unseen boss in each act-specific unlock
+/// order. If exactly one boss is selected, Java duplicates it so the boss list
+/// has at least two entries. Once every boss in the act has been seen, or in
+/// daily runs, Java shuffles all three bosses with
+/// `Collections.shuffle(bossList, new Random(monsterRng.randomLong()))`.
+pub fn generate_boss_list_with_settings(
+    act: u8,
+    monster_rng: &mut crate::runtime::rng::StsRng,
+    settings: BossGenerationSettings,
+) -> Vec<EncounterId> {
+    match act {
+        1 => initialize_exordium_bosses(settings, monster_rng),
+        2 => initialize_city_bosses(settings, monster_rng),
+        3 => initialize_beyond_bosses(settings, monster_rng),
         4 => vec![
             EncounterId::TheHeart,
             EncounterId::TheHeart,
             EncounterId::TheHeart,
         ],
         _ => vec![],
-    };
-
-    if act <= 3 {
-        // Java: Collections.shuffle(bossList, new java.util.Random(monsterRng.randomLong()))
-        crate::runtime::rng::shuffle_with_random_long(&mut bosses, monster_rng);
     }
-
-    bosses
 }
 
 #[cfg(test)]
@@ -674,5 +840,108 @@ mod tests {
 
         assert!(monsters.is_empty());
         assert!(elites.is_empty());
+    }
+
+    #[test]
+    fn boss_lists_preserve_java_seen_boss_unlock_order() {
+        let mut rng = StsRng::new(7);
+        let settings = BossGenerationSettings {
+            is_daily_run: false,
+            is_demo: false,
+            seen: BossSeenState::none_seen(),
+        };
+
+        assert_eq!(
+            generate_boss_list_with_settings(1, &mut rng, settings),
+            vec![EncounterId::TheGuardian, EncounterId::TheGuardian]
+        );
+        assert_eq!(
+            rng.counter, 0,
+            "Java does not call monsterRng.randomLong() when it forces a single unseen boss"
+        );
+
+        let mut seen = BossSeenState::none_seen();
+        seen.guardian = true;
+        let mut rng = StsRng::new(7);
+        assert_eq!(
+            generate_boss_list_with_settings(
+                1,
+                &mut rng,
+                BossGenerationSettings { seen, ..settings },
+            ),
+            vec![EncounterId::Hexaghost, EncounterId::Hexaghost]
+        );
+        assert_eq!(rng.counter, 0);
+
+        let mut rng = StsRng::new(7);
+        assert_eq!(
+            generate_boss_list_with_settings(2, &mut rng, settings),
+            vec![EncounterId::TheChamp, EncounterId::TheChamp]
+        );
+        assert_eq!(rng.counter, 0);
+
+        let mut rng = StsRng::new(7);
+        assert_eq!(
+            generate_boss_list_with_settings(3, &mut rng, settings),
+            vec![EncounterId::AwakenedOne, EncounterId::AwakenedOne]
+        );
+        assert_eq!(rng.counter, 0);
+    }
+
+    #[test]
+    fn boss_lists_shuffle_all_three_only_for_daily_or_all_seen_paths() {
+        let mut rng = StsRng::new(7);
+        let bosses = generate_boss_list_with_settings(
+            1,
+            &mut rng,
+            BossGenerationSettings::standard_all_seen(),
+        );
+        assert_eq!(bosses.len(), 3);
+        assert!(bosses.contains(&EncounterId::TheGuardian));
+        assert!(bosses.contains(&EncounterId::Hexaghost));
+        assert!(bosses.contains(&EncounterId::SlimeBoss));
+        assert_eq!(
+            rng.counter, 1,
+            "Java all-seen boss generation consumes one monsterRng.randomLong() for Collections.shuffle"
+        );
+
+        let mut rng = StsRng::new(7);
+        let bosses = generate_boss_list_with_settings(
+            2,
+            &mut rng,
+            BossGenerationSettings {
+                is_daily_run: true,
+                is_demo: false,
+                seen: BossSeenState::none_seen(),
+            },
+        );
+        assert_eq!(bosses.len(), 3);
+        assert!(bosses.contains(&EncounterId::Automaton));
+        assert!(bosses.contains(&EncounterId::Collector));
+        assert!(bosses.contains(&EncounterId::TheChamp));
+        assert_eq!(
+            rng.counter, 1,
+            "Java daily boss generation shuffles all bosses without checking UnlockTracker"
+        );
+    }
+
+    #[test]
+    fn exordium_demo_overrides_after_java_boss_generation_branch() {
+        let mut rng = StsRng::new(7);
+        let bosses = generate_boss_list_with_settings(
+            1,
+            &mut rng,
+            BossGenerationSettings {
+                is_daily_run: false,
+                is_demo: true,
+                seen: BossSeenState::all_seen(),
+            },
+        );
+
+        assert_eq!(bosses, vec![EncounterId::Hexaghost]);
+        assert_eq!(
+            rng.counter, 1,
+            "Java Exordium.initializeBoss runs the all-seen shuffle before Settings.isDemo clears the list"
+        );
     }
 }
