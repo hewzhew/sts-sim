@@ -734,26 +734,18 @@ impl RunState {
         })
     }
 
-    /// Initialize event pools for the current act, matching Java Exordium/TheCity/TheBeyond.initializeEventList()
-    /// and AbstractDungeon.initializeSpecialOneTimeEventList().
-    pub fn generate_event(&mut self) -> crate::state::events::EventId {
+    fn build_event_context(
+        &self,
+        tiny_chest_counter: i32,
+        previous_room_was_shop: bool,
+    ) -> crate::events::context::EventContext {
         use crate::content::relics::RelicId;
 
-        let mut tiny_chest_counter = 0;
         let mut has_juzu = false;
         let mut has_golden_idol = false;
 
-        for relic in &mut self.relics {
+        for relic in &self.relics {
             match relic.id {
-                RelicId::TinyChest => {
-                    relic.counter += 1;
-                    if relic.counter == 4 {
-                        relic.counter = 0;
-                        tiny_chest_counter = 3; // Trigger force_chest in EventGenerator
-                    } else {
-                        tiny_chest_counter = relic.counter;
-                    }
-                }
                 RelicId::JuzuBracelet => has_juzu = true,
                 RelicId::GoldenIdol => has_golden_idol = true,
                 _ => {}
@@ -765,7 +757,7 @@ impl RunState {
                 == crate::content::cards::CardType::Curse
         });
 
-        let ctx = crate::events::context::EventContext {
+        crate::events::context::EventContext {
             act_num: self.act_num,
             ascension_level: self.ascension_level,
             is_daily_run: self.is_daily_run,
@@ -782,15 +774,52 @@ impl RunState {
             tiny_chest_counter,
             has_juzu_bracelet: has_juzu,
             relic_count: self.relics.len(),
-        };
+            previous_room_was_shop,
+        }
+    }
 
-        // 1. Roll room type (this consumes event_rng and updates chances, just like Java EventHelper.roll)
-        // Even if we always return Event for now, we MUST roll the room type to align RNG!
-        let _room_type = self
-            .event_generator
-            .roll_room_type(&mut self.rng_pool, &ctx);
+    /// Mirrors Java EventHelper.roll() for `?` map nodes. This mutates Tiny
+    /// Chest before room-type chances are interpreted, but EventHelper itself
+    /// still consumes eventRng before checking the forced-chest flag.
+    pub fn roll_question_mark_room_type(
+        &mut self,
+        previous_room_type: Option<crate::map::node::RoomType>,
+    ) -> crate::events::generator::RoomRoll {
+        use crate::content::relics::RelicId;
 
-        // 2. Roll specific event ID
+        let mut tiny_chest_counter = 0;
+        for relic in &mut self.relics {
+            if relic.id == RelicId::TinyChest {
+                relic.counter += 1;
+                if relic.counter == 4 {
+                    relic.counter = 0;
+                    tiny_chest_counter = 3; // Trigger force_chest in EventGenerator
+                } else {
+                    tiny_chest_counter = relic.counter;
+                }
+            }
+        }
+
+        let ctx = self.build_event_context(
+            tiny_chest_counter,
+            previous_room_type == Some(crate::map::node::RoomType::ShopRoom),
+        );
+
+        self.event_generator
+            .roll_room_type(&mut self.rng_pool, &ctx)
+    }
+
+    /// Initialize event pools for the current act, matching Java Exordium/TheCity/TheBeyond.initializeEventList()
+    /// and AbstractDungeon.initializeSpecialOneTimeEventList().
+    pub fn generate_event(&mut self) -> crate::state::events::EventId {
+        let tiny_chest_counter = self
+            .relics
+            .iter()
+            .find(|relic| relic.id == crate::content::relics::RelicId::TinyChest)
+            .map(|relic| relic.counter)
+            .unwrap_or(0);
+        let ctx = self.build_event_context(tiny_chest_counter, false);
+
         self.event_generator
             .generate_event(&mut self.rng_pool, &ctx)
     }

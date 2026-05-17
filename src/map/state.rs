@@ -113,6 +113,20 @@ impl MapState {
         }
         None
     }
+
+    pub fn set_current_room_type(&mut self, room_type: RoomType) -> Result<(), &'static str> {
+        if self.current_y >= 0
+            && self.current_x >= 0
+            && (self.current_y as usize) < self.graph.len()
+        {
+            let row = &mut self.graph[self.current_y as usize];
+            if (self.current_x as usize) < row.len() {
+                row[self.current_x as usize].class = Some(room_type);
+                return Ok(());
+            }
+        }
+        Err("No current map node")
+    }
 }
 
 #[cfg(test)]

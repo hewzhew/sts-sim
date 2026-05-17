@@ -152,7 +152,11 @@ impl EventGenerator {
         }
 
         let monster_size = (self.monster_chance * 100.0) as i32;
-        let shop_size = (self.shop_chance * 100.0) as i32;
+        let shop_size = if ctx.previous_room_was_shop {
+            0
+        } else {
+            (self.shop_chance * 100.0) as i32
+        };
         let treasure_size = (self.treasure_chance * 100.0) as i32;
 
         let roll_idx = (roll * 100.0) as i32;
@@ -356,6 +360,7 @@ mod tests {
             tiny_chest_counter: 0,
             has_golden_idol: false,
             has_juzu_bracelet: false,
+            previous_room_was_shop: false,
             relic_count: 0,
         }
     }
@@ -379,6 +384,23 @@ mod tests {
 
         c.highest_unlocked_ascension_level = 20;
         assert!(is_one_time_event_candidate(EventId::NoteForYourself, &c));
+    }
+
+    #[test]
+    fn event_room_roll_blocks_shop_result_after_shop_room_like_java() {
+        let mut generator = EventGenerator::new(1);
+        generator.monster_chance = 0.0;
+        generator.shop_chance = 1.0;
+        generator.treasure_chance = 0.0;
+        let mut rng = crate::runtime::rng::RngPool::new(1);
+        let mut context = ctx();
+        context.previous_room_was_shop = true;
+
+        assert_eq!(
+            generator.roll_room_type(&mut rng, &context),
+            RoomRoll::Event,
+            "Java EventHelper.roll sets shopSize to 0 when the previous current room is ShopRoom"
+        );
     }
 
     #[test]

@@ -93,6 +93,12 @@ and reachability gates must be checked separately.
      `AbstractDungeon.returnRandomPotion()`. Lab, Woman in Blue, Knowing Skull,
      and Neow's three-potion reward use the flat class potion pool; Neow opens
      potion rewards instead of directly filling slots.
+   - current progress: `?` map nodes now follow Java's two-stage room entry:
+     enter-room relic hooks see the original EventRoom node, then
+     `EventHelper.roll` consumes `eventRng` and replaces the room with event,
+     monster, shop, or treasure. Tiny Chest forces the post-roll result to
+     treasure after still consuming the room-roll RNG; Juzu and previous-shop
+     shop suppression are handled in the room roll, not in event selection.
 
 3. Relic pool and `canSpawn` closure:
    - turn the existing relic audit into pool-level validation, not just
@@ -204,6 +210,9 @@ Rust result:
 
 - `MapState::can_travel_to(..., has_flight=true)` now allows same-row flight
   across the next reachable row only.
+- `MapState::set_current_room_type` is used when a Java `?` node rolls into
+  an actual generated room, mirroring `nextRoom.room = generateRoom(roomResult)`
+  rather than pretending every `?` is a real event.
 - Full-run legal map actions include `FlyToNode(x, next_y)` only when Wing Boots
   has charges and normal edge travel would not already reach that node.
 - Public next-node observation marks Wing Boots targets reachable without

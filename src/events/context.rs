@@ -32,6 +32,11 @@ pub struct EventContext {
     // Used by Juzu Bracelet (overrides monster roll inside event chance calculation)
     pub has_juzu_bracelet: bool,
 
+    // Java EventHelper.roll() suppresses shop results when the previous room
+    // is a ShopRoom. The roll happens before the current ? node replaces the
+    // previous current room.
+    pub previous_room_was_shop: bool,
+
     // Used by Nloth (requires at least 2 relics)
     pub relic_count: usize,
 }

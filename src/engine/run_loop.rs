@@ -71,6 +71,89 @@ fn roll_treasure_chest_spec(run_state: &mut RunState) -> TreasureChestSpec {
     }
 }
 
+fn enter_treasure_room(run_state: &mut RunState) -> crate::rewards::state::RewardState {
+    let chest = roll_treasure_chest_spec(run_state);
+    let mut reward = crate::rewards::state::RewardState::new();
+
+    // --- onChestOpen() relic hooks (non-boss chest) ---
+    // CursedKey: add a random curse to deck
+    if run_state
+        .relics
+        .iter()
+        .any(|r| r.id == crate::content::relics::RelicId::CursedKey)
+    {
+        let curse_pool = crate::content::cards::get_curse_pool();
+        if !curse_pool.is_empty() {
+            let idx = run_state
+                .rng_pool
+                .card_rng
+                .random_range(0, (curse_pool.len() - 1) as i32) as usize;
+            run_state.add_card_to_deck_with_upgrades_from(
+                curse_pool[idx],
+                0,
+                crate::state::selection::DomainEventSource::Relic(
+                    crate::content::relics::RelicId::CursedKey,
+                ),
+            );
+        }
+    }
+
+    // Matryoshka: add an extra relic reward (75% Common, 25% Uncommon)
+    if let Some(mat) = run_state
+        .relics
+        .iter_mut()
+        .find(|r| r.id == crate::content::relics::RelicId::Matryoshka && r.counter > 0)
+    {
+        mat.counter -= 1;
+        if mat.counter == 0 {
+            mat.counter = -2;
+            mat.used_up = true;
+        }
+        let extra_tier = if run_state.rng_pool.relic_rng.random_boolean_chance(0.75) {
+            crate::content::relics::RelicTier::Common
+        } else {
+            crate::content::relics::RelicTier::Uncommon
+        };
+        let extra_relic = run_state.random_relic_by_tier(extra_tier);
+        reward.items.push(crate::rewards::state::RewardItem::Relic {
+            relic_id: extra_relic,
+        });
+    }
+
+    if let Some(amount) = chest.gold_reward {
+        crate::rewards::generator::add_gold_reward_like_java(&mut reward.items, amount);
+    }
+
+    // Generate chest relic reward after onChestOpen hooks, matching Java
+    // AbstractChest.open(): Matryoshka inserts before the base chest relic,
+    // and SapphireKey links to the last relic.
+    let relic_id = run_state.random_relic_by_tier(chest.base_relic_tier);
+    reward
+        .items
+        .push(crate::rewards::state::RewardItem::Relic { relic_id });
+    if run_state.is_final_act_available && !run_state.keys[1] {
+        reward
+            .items
+            .push(crate::rewards::state::RewardItem::SapphireKey);
+    }
+
+    // NlothsMask: remove one relic from rewards (onChestOpenAfter)
+    if let Some(mask) = run_state
+        .relics
+        .iter_mut()
+        .find(|r| r.id == crate::content::relics::RelicId::NlothsMask && r.counter > 0)
+    {
+        mask.counter -= 1;
+        if mask.counter == 0 {
+            mask.counter = -2;
+            mask.used_up = true;
+        }
+        remove_one_relic_from_rewards_after_chest_open(&mut reward.items);
+    }
+
+    reward
+}
+
 fn remove_one_relic_from_rewards_after_chest_open(
     items: &mut Vec<crate::rewards::state::RewardItem>,
 ) {
@@ -656,6 +739,7 @@ pub fn tick_run(
             };
 
             if let Some((target_x, target_y, is_flight)) = travel_target {
+                let previous_room_type = run_state.map.get_current_room_type();
                 // WingBoots: check if player has charges for flight
                 let has_flight = if is_flight {
                     run_state.relics.iter().any(|r| {
@@ -672,6 +756,7 @@ pub fn tick_run(
                 {
                     run_state.room_mugged = false;
                     run_state.room_smoked = false;
+                    run_state.event_state = None;
                     // Increment floor number successfully entering a new room
                     run_state.floor_num += 1;
 
@@ -743,7 +828,29 @@ pub fn tick_run(
                             }
                         }
 
-                        match room_type {
+                        let actual_room_type = if room_type == RoomType::EventRoom {
+                            match run_state.roll_question_mark_room_type(previous_room_type) {
+                                crate::events::generator::RoomRoll::Monster => {
+                                    RoomType::MonsterRoom
+                                }
+                                crate::events::generator::RoomRoll::Shop => RoomType::ShopRoom,
+                                crate::events::generator::RoomRoll::Treasure => {
+                                    RoomType::TreasureRoom
+                                }
+                                crate::events::generator::RoomRoll::Event => RoomType::EventRoom,
+                                crate::events::generator::RoomRoll::Elite => {
+                                    RoomType::MonsterRoomElite
+                                }
+                            }
+                        } else {
+                            room_type
+                        };
+
+                        if actual_room_type != room_type {
+                            let _ = run_state.map.set_current_room_type(actual_room_type);
+                        }
+
+                        match actual_room_type {
                             RoomType::MonsterRoom
                             | RoomType::MonsterRoomElite
                             | RoomType::MonsterRoomBoss => {
@@ -800,92 +907,7 @@ pub fn tick_run(
                                 *engine_state = EngineState::EventRoom;
                             }
                             RoomType::TreasureRoom => {
-                                let chest = roll_treasure_chest_spec(run_state);
-                                let mut reward = crate::rewards::state::RewardState::new();
-
-                                // --- onChestOpen() relic hooks (non-boss chest) ---
-                                // CursedKey: add a random curse to deck
-                                if run_state
-                                    .relics
-                                    .iter()
-                                    .any(|r| r.id == crate::content::relics::RelicId::CursedKey)
-                                {
-                                    let curse_pool = crate::content::cards::get_curse_pool();
-                                    if !curse_pool.is_empty() {
-                                        let idx = run_state
-                                            .rng_pool
-                                            .card_rng
-                                            .random_range(0, (curse_pool.len() - 1) as i32)
-                                            as usize;
-                                        run_state.add_card_to_deck_with_upgrades_from(
-                                            curse_pool[idx],
-                                            0,
-                                            crate::state::selection::DomainEventSource::Relic(
-                                                crate::content::relics::RelicId::CursedKey,
-                                            ),
-                                        );
-                                    }
-                                }
-
-                                // Matryoshka: add an extra relic reward (75% Common, 25% Uncommon)
-                                if let Some(mat) = run_state.relics.iter_mut().find(|r| {
-                                    r.id == crate::content::relics::RelicId::Matryoshka
-                                        && r.counter > 0
-                                }) {
-                                    mat.counter -= 1;
-                                    if mat.counter == 0 {
-                                        mat.counter = -2;
-                                        mat.used_up = true;
-                                    }
-                                    let extra_tier =
-                                        if run_state.rng_pool.relic_rng.random_boolean_chance(0.75)
-                                        {
-                                            crate::content::relics::RelicTier::Common
-                                        } else {
-                                            crate::content::relics::RelicTier::Uncommon
-                                        };
-                                    let extra_relic = run_state.random_relic_by_tier(extra_tier);
-                                    reward.items.push(crate::rewards::state::RewardItem::Relic {
-                                        relic_id: extra_relic,
-                                    });
-                                }
-
-                                if let Some(amount) = chest.gold_reward {
-                                    crate::rewards::generator::add_gold_reward_like_java(
-                                        &mut reward.items,
-                                        amount,
-                                    );
-                                }
-
-                                // Generate chest relic reward after onChestOpen hooks, matching
-                                // Java AbstractChest.open(): Matryoshka inserts before the
-                                // base chest relic, and SapphireKey links to the last relic.
-                                let relic_id =
-                                    run_state.random_relic_by_tier(chest.base_relic_tier);
-                                reward
-                                    .items
-                                    .push(crate::rewards::state::RewardItem::Relic { relic_id });
-                                if run_state.is_final_act_available && !run_state.keys[1] {
-                                    reward
-                                        .items
-                                        .push(crate::rewards::state::RewardItem::SapphireKey);
-                                }
-
-                                // NlothsMask: remove one relic from rewards (onChestOpenAfter)
-                                if let Some(mask) = run_state.relics.iter_mut().find(|r| {
-                                    r.id == crate::content::relics::RelicId::NlothsMask
-                                        && r.counter > 0
-                                }) {
-                                    mask.counter -= 1;
-                                    if mask.counter == 0 {
-                                        mask.counter = -2;
-                                        mask.used_up = true;
-                                    }
-                                    remove_one_relic_from_rewards_after_chest_open(
-                                        &mut reward.items,
-                                    );
-                                }
-
+                                let reward = enter_treasure_room(run_state);
                                 *engine_state = EngineState::RewardScreen(reward);
                             }
                             RoomType::TrueVictoryRoom => {
@@ -1458,6 +1480,65 @@ mod tests {
             run_state.rng_pool.treasure_rng.counter, 3,
             "Java consumes treasureRng for chest size, chest reward roll, and non-daily gold jitter"
         );
+    }
+
+    #[test]
+    fn question_mark_tiny_chest_forces_actual_treasure_after_event_room_enter_hooks() {
+        fn small_gold_common_chest_seed() -> u64 {
+            (1..10_000)
+                .find(|seed| {
+                    let mut rng = StsRng::new(*seed);
+                    rng.random_range(0, 99) < 50 && rng.random_range(0, 99) < 50
+                })
+                .expect("seed for small chest with gold and common relic")
+        }
+
+        let mut run_state = run_state_with_first_room(RoomType::EventRoom);
+        run_state.relics.clear();
+        let mut tiny_chest = RelicState::new(RelicId::TinyChest);
+        tiny_chest.counter = 3;
+        run_state.relics.push(tiny_chest);
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::SsserpentHead));
+        run_state.rng_pool.treasure_rng = StsRng::new(small_gold_common_chest_seed());
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+        let gold_before = run_state.gold;
+
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+
+        assert_eq!(
+            run_state.gold,
+            gold_before + 50,
+            "Java SsserpentHead sees the original ? EventRoom during onEnterRoom, before EventHelper.roll replaces it"
+        );
+        assert_eq!(
+            run_state.map.get_current_room_type(),
+            Some(RoomType::TreasureRoom),
+            "Java EventHelper.roll replaces the ? room with the actual rolled room"
+        );
+        let tiny_chest = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::TinyChest)
+            .expect("Tiny Chest should be present");
+        assert_eq!(tiny_chest.counter, 0);
+        assert_eq!(
+            run_state.rng_pool.event_rng.counter, 1,
+            "Java still consumes eventRng for EventHelper.roll before Tiny Chest forces the result"
+        );
+        assert!(
+            run_state.event_state.is_none(),
+            "forced treasure must not continue into specific event generation"
+        );
+        assert!(matches!(engine_state, EngineState::RewardScreen(_)));
     }
 
     #[test]

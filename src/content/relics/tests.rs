@@ -963,6 +963,7 @@ fn juzu_bracelet_converts_monster_event_roll_without_preserving_monster_chance()
         tiny_chest_counter: 0,
         has_golden_idol: false,
         has_juzu_bracelet: true,
+        previous_room_was_shop: false,
         relic_count: 1,
     };
 
@@ -997,7 +998,7 @@ fn tiny_chest_counter_forces_treasure_roll_every_fourth_unknown_room() {
     tiny_chest.counter = 3;
     run_state.relics.push(tiny_chest);
 
-    let _ = run_state.generate_event();
+    let _ = run_state.roll_question_mark_room_type(None);
     let tiny_chest = run_state
         .relics
         .iter()
@@ -1026,6 +1027,7 @@ fn tiny_chest_counter_forces_treasure_roll_every_fourth_unknown_room() {
         tiny_chest_counter: 3,
         has_golden_idol: false,
         has_juzu_bracelet: false,
+        previous_room_was_shop: false,
         relic_count: 1,
     };
 
