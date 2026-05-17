@@ -938,6 +938,7 @@ pub struct MonsterEntity {
     pub awakened_one: AwakenedOneRuntimeState,
     pub corrupt_heart: CorruptHeartRuntimeState,
     pub writhing_mass: WrithingMassRuntimeState,
+    pub spiker: SpikerRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
@@ -1227,6 +1228,12 @@ impl Default for CorruptHeartRuntimeState {
 pub struct WrithingMassRuntimeState {
     pub protocol_seeded: bool,
     pub used_mega_debuff: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SpikerRuntimeState {
+    pub protocol_seeded: bool,
+    pub thorns_count: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2111,6 +2118,7 @@ mod tests {
             awakened_one: AwakenedOneRuntimeState::default(),
             corrupt_heart: CorruptHeartRuntimeState::default(),
             writhing_mass: WrithingMassRuntimeState::default(),
+            spiker: SpikerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2175,6 +2183,7 @@ mod tests {
             awakened_one: AwakenedOneRuntimeState::default(),
             corrupt_heart: CorruptHeartRuntimeState::default(),
             writhing_mass: WrithingMassRuntimeState::default(),
+            spiker: SpikerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2236,6 +2245,7 @@ mod tests {
             awakened_one: AwakenedOneRuntimeState::default(),
             corrupt_heart: CorruptHeartRuntimeState::default(),
             writhing_mass: WrithingMassRuntimeState::default(),
+            spiker: SpikerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),

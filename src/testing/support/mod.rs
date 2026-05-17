@@ -105,6 +105,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         awakened_one: Default::default(),
         corrupt_heart: Default::default(),
         writhing_mass: Default::default(),
+        spiker: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -168,6 +169,10 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
     if enemy_id == EnemyId::WrithingMass {
         monster.writhing_mass.protocol_seeded = true;
         monster.writhing_mass.used_mega_debuff = false;
+    }
+    if enemy_id == EnemyId::Spiker {
+        monster.spiker.protocol_seeded = true;
+        monster.spiker.thorns_count = 0;
     }
     if matches!(enemy_id, EnemyId::Looter | EnemyId::Mugger) {
         monster.thief.protocol_seeded = true;

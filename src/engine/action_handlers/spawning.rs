@@ -136,6 +136,7 @@ pub fn handle_spawn_monster(
         awakened_one: Default::default(),
         corrupt_heart: Default::default(),
         writhing_mass: Default::default(),
+        spiker: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -222,6 +223,10 @@ pub fn handle_spawn_monster(
     if enemy_id == crate::content::monsters::EnemyId::WrithingMass {
         new_monster.writhing_mass.protocol_seeded = true;
         new_monster.writhing_mass.used_mega_debuff = false;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::Spiker {
+        new_monster.spiker.protocol_seeded = true;
+        new_monster.spiker.thorns_count = 0;
     }
     if matches!(
         enemy_id,
@@ -820,6 +825,27 @@ fn handle_update_writhing_mass_state(
     }
 }
 
+fn handle_update_spiker_state(
+    monster_id: usize,
+    thorns_count: Option<u8>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = thorns_count {
+            monster.spiker.thorns_count = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.spiker.protocol_seeded = value;
+        }
+    }
+}
+
 pub fn handle_update_monster_runtime(
     monster_id: usize,
     patch: MonsterRuntimePatch,
@@ -958,6 +984,10 @@ pub fn handle_update_monster_runtime(
         } => {
             handle_update_writhing_mass_state(monster_id, used_mega_debuff, protocol_seeded, state)
         }
+        MonsterRuntimePatch::Spiker {
+            thorns_count,
+            protocol_seeded,
+        } => handle_update_spiker_state(monster_id, thorns_count, protocol_seeded, state),
     }
 }
 

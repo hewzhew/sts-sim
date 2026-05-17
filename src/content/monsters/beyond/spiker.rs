@@ -1,7 +1,7 @@
 use crate::content::monsters::exordium::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     AttackSpec, BuffSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan, MoveStep,
@@ -51,11 +51,21 @@ fn buff_plan() -> MonsterTurnPlan {
 }
 
 fn buff_count(entity: &MonsterEntity) -> usize {
-    entity
-        .move_history()
-        .iter()
-        .filter(|&&move_id| move_id == BUFF_THORNS)
-        .count()
+    assert!(
+        entity.spiker.protocol_seeded,
+        "spiker runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.spiker.thorns_count as usize
+}
+
+fn increment_spiker_thorns_count(entity: &MonsterEntity) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::Spiker {
+            thorns_count: Some(entity.spiker.thorns_count.saturating_add(1)),
+            protocol_seeded: Some(true),
+        },
+    }
 }
 
 fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
@@ -111,12 +121,69 @@ impl MonsterBehavior for Spiker {
             (ATTACK, [MoveStep::Attack(attack)]) => {
                 attack_actions(entity.id, PLAYER, &attack.attack)
             }
-            (BUFF_THORNS, [MoveStep::ApplyPower(power)]) => vec![apply_power_action(entity, power)],
+            (BUFF_THORNS, [MoveStep::ApplyPower(power)]) => vec![
+                increment_spiker_thorns_count(entity),
+                apply_power_action(entity, power),
+            ],
             (move_id, steps) => panic!("spiker plan/steps mismatch: {} {:?}", move_id, steps),
         };
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn planned_but_unexecuted_thorns_buff_does_not_advance_spiker_count() {
+        let mut spiker = crate::test_support::test_monster(EnemyId::Spiker);
+        spiker.spiker.thorns_count = 5;
+        spiker.move_history_mut().extend([BUFF_THORNS; 6]);
+
+        let plan =
+            <Spiker as MonsterBehavior>::roll_move_plan(&mut StsRng::new(0), &spiker, 20, 80);
+
+        assert_eq!(
+            plan.move_id, BUFF_THORNS,
+            "Java thornsCount increments only when BUFF_THORNS executes; a planned move in moveHistory must not count as already executed"
+        );
+    }
+
+    #[test]
+    fn thorns_buff_execution_updates_runtime_before_apply_power() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut spiker = crate::test_support::test_monster(EnemyId::Spiker);
+        spiker.id = 47;
+        spiker.spiker.thorns_count = 5;
+
+        let actions =
+            <Spiker as MonsterBehavior>::take_turn_plan(&mut state, &spiker, &buff_plan());
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::UpdateMonsterRuntime {
+                    monster_id: 47,
+                    patch: MonsterRuntimePatch::Spiker {
+                        thorns_count: Some(6),
+                        protocol_seeded: Some(true),
+                    },
+                },
+                Action::ApplyPower {
+                    source: 47,
+                    target: 47,
+                    power_id: PowerId::Thorns,
+                    amount: 2,
+                },
+                Action::RollMonsterMove { monster_id: 47 },
+            ],
+            "Java increments thornsCount before queuing the Thorns ApplyPowerAction"
+        );
     }
 }

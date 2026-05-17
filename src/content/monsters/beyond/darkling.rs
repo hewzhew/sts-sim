@@ -395,6 +395,7 @@ mod tests {
             awakened_one: Default::default(),
             corrupt_heart: Default::default(),
             writhing_mass: Default::default(),
+            spiker: Default::default(),
             darkling: DarklingRuntimeState {
                 first_move: false,
                 nip_dmg: 0,

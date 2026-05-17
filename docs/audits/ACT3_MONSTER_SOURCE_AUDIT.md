@@ -48,10 +48,11 @@ helper. No change was needed.
 
 ### Spiker
 
-Java keeps `thornsCount` and increments it only when `BUFF_THORNS` executes. Rust currently derives
-the count from move history. This is acceptable for the ordinary Spiker flow because Spiker does not
-have a Reactive-like reroll path, but it remains a watch point for live/imported states where a
-planned buff could be represented before execution.
+Java keeps private `thornsCount` and increments it only inside `takeTurn()` when `BUFF_THORNS`
+executes. Rust now carries this as explicit `SpikerRuntimeState` instead of deriving it from move
+history. This matters because Java `setMove` appends to move history when a move is planned; a
+planned-but-unexecuted thorns buff must not count as an executed buff for the `thornsCount > 5`
+attack-forcing rule.
 
 ### Shapes Encounter Construction
 
@@ -197,9 +198,8 @@ in Java:
 
 ## Follow-Up Watch Points
 
-- Spiker `thornsCount` is still reconstructed from move history. This is acceptable for ordinary
-  authored/runtime fights, but should become explicit if live-imported partial states ever expose
-  planned-but-unexecuted Spiker buffs.
 - Protocol/live snapshots must export `WrithingMass.runtime_state.used_mega_debuff`; otherwise
   state import cannot distinguish "Mega Debuff intent appeared under Reactive" from "Parasite was
   actually executed."
+- Protocol/live snapshots must export `Spiker.runtime_state.thorns_count`; otherwise state import
+  cannot distinguish planned thorns buffs from executed thorns buffs.

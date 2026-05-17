@@ -94,6 +94,10 @@ pub enum MonsterRuntimePatch {
         used_mega_debuff: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    Spiker {
+        thorns_count: Option<u8>,
+        protocol_seeded: Option<bool>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

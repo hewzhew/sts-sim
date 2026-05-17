@@ -483,6 +483,18 @@ fn stable_monster_signature_ignores_irrelevant_runtime_fields_but_keeps_relevant
         stable_outcome_key(&EngineState::CombatPlayerTurn, &hexaghost),
         stable_outcome_key(&EngineState::CombatPlayerTurn, &relevant_runtime),
     );
+
+    let mut spiker = blank_test_combat();
+    spiker
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::Spiker, 2));
+    let mut changed_spiker = spiker.clone();
+    changed_spiker.entities.monsters[0].spiker.thorns_count = 5;
+    assert_ne!(
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &spiker),
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_spiker),
+    );
 }
 
 #[test]

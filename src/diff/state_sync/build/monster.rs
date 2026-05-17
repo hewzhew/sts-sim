@@ -79,6 +79,16 @@ pub(crate) fn seed_writhing_mass_runtime_from_snapshot(
     entity.writhing_mass.protocol_seeded = true;
 }
 
+pub(crate) fn seed_spiker_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::Spiker;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.spiker.thorns_count = runtime_state_u8(monster, monster_type, "thorns_count");
+    entity.spiker.protocol_seeded = true;
+}
+
 pub(crate) fn seed_byrd_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Byrd;
     if entity.monster_type != monster_type as usize {
@@ -384,6 +394,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_champ_runtime_from_snapshot(monster, entity);
     seed_thief_runtime_from_snapshot(monster, entity);
     seed_writhing_mass_runtime_from_snapshot(monster, entity);
+    seed_spiker_runtime_from_snapshot(monster, entity);
     seed_darkling_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -451,6 +462,7 @@ mod tests {
             awakened_one: Default::default(),
             corrupt_heart: Default::default(),
             writhing_mass: Default::default(),
+            spiker: Default::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -669,6 +681,22 @@ mod tests {
         })
     }
 
+    fn spiker_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Spiker",
+            "current_hp": 52,
+            "max_hp": 52,
+            "block": 0,
+            "move_id": 2,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "thorns_count": 5
+            }
+        })
+    }
+
     fn chosen_observation_snapshot() -> serde_json::Value {
         json!({
             "id": "Chosen",
@@ -878,6 +906,18 @@ mod tests {
         assert_eq!(entity.monster_type, EnemyId::WrithingMass as usize);
         assert!(entity.writhing_mass.used_mega_debuff);
         assert!(entity.writhing_mass.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_spiker_runtime_state() {
+        let snapshot = spiker_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::Spiker as usize);
+        assert_eq!(entity.spiker.thorns_count, 5);
+        assert!(entity.spiker.protocol_seeded);
     }
 
     #[test]

@@ -5,7 +5,8 @@ use crate::runtime::combat::{
     BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
     CorruptHeartRuntimeState, DarklingRuntimeState, GuardianRuntimeState, HexaghostRuntimeState,
     JawWormRuntimeState, LagavulinRuntimeState, LouseRuntimeState, MonsterEntity, MonsterMoveState,
-    ShelledParasiteRuntimeState, SneckoRuntimeState, ThiefRuntimeState, WrithingMassRuntimeState,
+    ShelledParasiteRuntimeState, SneckoRuntimeState, SpikerRuntimeState, ThiefRuntimeState,
+    WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
@@ -97,6 +98,9 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
                 stable_writhing_mass_signature(&monster.writhing_mass)
             )
         }
+        Some(EnemyId::Spiker) => {
+            format!("spiker:{}", stable_spiker_signature(&monster.spiker))
+        }
         Some(EnemyId::Lagavulin) => {
             format!(
                 "lagavulin:{}",
@@ -116,7 +120,7 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         concat!(
             "hex={}:louse={}:jaw={}:thief={}:byrd={}:chosen={}:",
             "snecko={}:parasite={}:bronze_auto={}:bronze_orb={}:book={}:",
-            "collector={}:champ={}:awakened={}:heart={}:writhing_mass={}:darkling={}:lagavulin={}:guardian={}"
+            "collector={}:champ={}:awakened={}:heart={}:writhing_mass={}:spiker={}:darkling={}:lagavulin={}:guardian={}"
         ),
         stable_hexaghost_signature(&monster.hexaghost),
         stable_louse_signature(&monster.louse),
@@ -134,6 +138,7 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         stable_awakened_one_signature(&monster.awakened_one),
         stable_corrupt_heart_signature(&monster.corrupt_heart),
         stable_writhing_mass_signature(&monster.writhing_mass),
+        stable_spiker_signature(&monster.spiker),
         stable_darkling_signature(&monster.darkling),
         stable_lagavulin_signature(&monster.lagavulin),
         stable_guardian_signature(&monster.guardian),
@@ -452,6 +457,10 @@ fn stable_writhing_mass_signature(state: &WrithingMassRuntimeState) -> String {
         "seed{}:used_mega{}",
         state.protocol_seeded, state.used_mega_debuff
     )
+}
+
+fn stable_spiker_signature(state: &SpikerRuntimeState) -> String {
+    format!("seed{}:thorns{}", state.protocol_seeded, state.thorns_count)
 }
 
 fn stable_lagavulin_signature(state: &LagavulinRuntimeState) -> String {
