@@ -40,6 +40,12 @@ attack. Rust previously returned the attack first and block second.
 Rust now emits the block action before the attack for `BASH_AND_BLOCK`. This matters when queued
 effects inspect block between actions or when action-order traces are compared to Java.
 
+Java `SphericGuardian.getMove()` also mutates private `firstMove` and `secondMove` latches. Rust
+now mirrors those as `SphericGuardianRuntimeState`, `CommunicationMod` exports
+`monster.runtime_state.first_move` and `second_move`, and state sync treats them as strict protocol
+truth. Move history is used only after both opening latches are false, matching Java's explicit
+`lastMove(BIG_ATTACK)` branch.
+
 ### Chosen
 
 Chosen has private move truth that cannot be inferred only from public move history:

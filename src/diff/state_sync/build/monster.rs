@@ -197,6 +197,20 @@ pub(crate) fn seed_large_slime_runtime_from_snapshot(monster: &Value, entity: &m
     entity.large_slime.protocol_seeded = true;
 }
 
+pub(crate) fn seed_spheric_guardian_runtime_from_snapshot(
+    monster: &Value,
+    entity: &mut MonsterEntity,
+) {
+    let monster_type = EnemyId::SphericGuardian;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.spheric_guardian.first_move = runtime_state_bool(monster, monster_type, "first_move");
+    entity.spheric_guardian.second_move = runtime_state_bool(monster, monster_type, "second_move");
+    entity.spheric_guardian.protocol_seeded = true;
+}
+
 pub(crate) fn seed_byrd_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Byrd;
     if entity.monster_type != monster_type as usize {
@@ -513,6 +527,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_jaw_worm_runtime_from_snapshot(monster, entity);
     seed_slime_boss_runtime_from_snapshot(monster, entity);
     seed_large_slime_runtime_from_snapshot(monster, entity);
+    seed_spheric_guardian_runtime_from_snapshot(monster, entity);
     seed_darkling_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -590,6 +605,7 @@ mod tests {
             sentry: Default::default(),
             slime_boss: Default::default(),
             large_slime: Default::default(),
+            spheric_guardian: Default::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -938,6 +954,23 @@ mod tests {
             "powers": [],
             "runtime_state": {
                 "first_move": false
+            }
+        })
+    }
+
+    fn spheric_guardian_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "SphericGuardian",
+            "current_hp": 20,
+            "max_hp": 20,
+            "block": 40,
+            "move_id": 4,
+            "move_base_damage": 10,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "first_move": false,
+                "second_move": true
             }
         })
     }
@@ -1298,6 +1331,19 @@ mod tests {
         assert_eq!(entity.monster_type, EnemyId::Sentry as usize);
         assert!(!entity.sentry.first_move);
         assert!(entity.sentry.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_spheric_guardian_runtime_state() {
+        let snapshot = spheric_guardian_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::SphericGuardian as usize);
+        assert!(!entity.spheric_guardian.first_move);
+        assert!(entity.spheric_guardian.second_move);
+        assert!(entity.spheric_guardian.protocol_seeded);
     }
 
     #[test]

@@ -104,6 +104,8 @@ Rust currently consumes explicit Java runtime fields for:
 - `AcidSlime_L.split_triggered`
 - `SpikeSlime_L.split_triggered`
 - `Sentry.first_move`
+- `SphericGuardian.first_move`
+- `SphericGuardian.second_move`
 
 ### Relics
 

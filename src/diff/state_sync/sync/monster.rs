@@ -54,6 +54,7 @@ pub fn sync_monsters_from_snapshots(
             sentry: Default::default(),
             slime_boss: Default::default(),
             large_slime: Default::default(),
+            spheric_guardian: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),

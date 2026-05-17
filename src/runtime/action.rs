@@ -140,6 +140,11 @@ pub enum MonsterRuntimePatch {
         split_triggered: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    SphericGuardian {
+        first_move: Option<bool>,
+        second_move: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

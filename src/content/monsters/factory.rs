@@ -151,6 +151,7 @@ pub fn build_encounter(
             sentry: Default::default(),
             slime_boss: Default::default(),
             large_slime: Default::default(),
+            spheric_guardian: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
@@ -173,6 +174,11 @@ pub fn build_encounter(
         if enemy_id == EnemyId::ShelledParasite {
             monster.shelled_parasite.first_move = true;
             monster.shelled_parasite.protocol_seeded = true;
+        }
+        if enemy_id == EnemyId::SphericGuardian {
+            crate::content::monsters::city::spheric_guardian::initialize_runtime_state(
+                &mut monster,
+            );
         }
         if enemy_id == EnemyId::JawWorm {
             crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(

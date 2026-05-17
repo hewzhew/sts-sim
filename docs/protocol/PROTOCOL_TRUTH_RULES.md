@@ -64,6 +64,7 @@ Examples:
 - `monster.runtime_state.current_charge`
 - `monster.runtime_state.used_entangle`
 - `monster.runtime_state.used_bellow`
+- `monster.runtime_state.second_move`
 - `relic.runtime_state.used_this_combat`
 - `relic.runtime_state.used_up`
 - `relic.runtime_state.counter`
@@ -135,6 +136,8 @@ Examples of the correct pattern:
 - `Darkling.nipDmg`
 - `AcidSlime_L.splitTriggered`
 - `SpikeSlime_L.splitTriggered`
+- `SphericGuardian.firstMove`
+- `SphericGuardian.secondMove`
 - `CentennialPuzzle.usedThisCombat`
 - `Pocketwatch.firstTurn`
 

@@ -146,6 +146,7 @@ pub fn handle_spawn_monster(
         sentry: Default::default(),
         slime_boss: Default::default(),
         large_slime: Default::default(),
+        spheric_guardian: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -197,6 +198,11 @@ pub fn handle_spawn_monster(
     if enemy_id == crate::content::monsters::EnemyId::ShelledParasite {
         new_monster.shelled_parasite.first_move = true;
         new_monster.shelled_parasite.protocol_seeded = true;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::SphericGuardian {
+        crate::content::monsters::city::spheric_guardian::initialize_runtime_state(
+            &mut new_monster,
+        );
     }
     if enemy_id == crate::content::monsters::EnemyId::BronzeAutomaton {
         new_monster.bronze_automaton.protocol_seeded = true;
@@ -1119,6 +1125,31 @@ fn handle_update_large_slime_state(
     }
 }
 
+fn handle_update_spheric_guardian_state(
+    monster_id: usize,
+    first_move: Option<bool>,
+    second_move: Option<bool>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = first_move {
+            monster.spheric_guardian.first_move = value;
+        }
+        if let Some(value) = second_move {
+            monster.spheric_guardian.second_move = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.spheric_guardian.protocol_seeded = value;
+        }
+    }
+}
+
 pub fn handle_update_monster_runtime(
     monster_id: usize,
     patch: MonsterRuntimePatch,
@@ -1311,6 +1342,17 @@ pub fn handle_update_monster_runtime(
             split_triggered,
             protocol_seeded,
         } => handle_update_large_slime_state(monster_id, split_triggered, protocol_seeded, state),
+        MonsterRuntimePatch::SphericGuardian {
+            first_move,
+            second_move,
+            protocol_seeded,
+        } => handle_update_spheric_guardian_state(
+            monster_id,
+            first_move,
+            second_move,
+            protocol_seeded,
+            state,
+        ),
     }
 }
 

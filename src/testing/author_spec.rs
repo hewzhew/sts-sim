@@ -671,6 +671,10 @@ fn compile_monster_runtime_state(monster: &AuthorMonsterSpec, move_id: i32) -> V
         "sentry" => json!({
             "first_move": false,
         }),
+        "sphericguardian" => json!({
+            "first_move": false,
+            "second_move": false,
+        }),
         "jawworm" => json!({
             "first_move": false,
             "hard_mode": false,

@@ -491,6 +491,20 @@ fn stable_monster_signature_ignores_irrelevant_runtime_fields_but_keeps_relevant
         stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_sentry),
     );
 
+    let mut sphere = blank_test_combat();
+    sphere
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::SphericGuardian, 2));
+    let mut changed_sphere = sphere.clone();
+    changed_sphere.entities.monsters[0]
+        .spheric_guardian
+        .second_move = false;
+    assert_ne!(
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &sphere),
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_sphere),
+    );
+
     let mut hexaghost = blank_test_combat();
     hexaghost
         .entities

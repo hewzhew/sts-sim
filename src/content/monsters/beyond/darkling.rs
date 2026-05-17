@@ -405,6 +405,7 @@ mod tests {
             sentry: Default::default(),
             slime_boss: Default::default(),
             large_slime: Default::default(),
+            spheric_guardian: Default::default(),
             darkling: DarklingRuntimeState {
                 first_move: false,
                 nip_dmg: 0,

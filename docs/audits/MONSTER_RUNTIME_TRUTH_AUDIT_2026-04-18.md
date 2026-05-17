@@ -40,6 +40,7 @@ Scope:
 | Slime Boss | `first_turn` | Yes | Yes | Yes | None for post-opening cycle | Good |
 | Large Slimes | `split_triggered` | Yes | Yes | Yes | Attack/debuff sequencing only | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
+| Spheric Guardian | `first_move`, `second_move` | Yes | Yes | Yes | Post-opening `lastMove(BIG_ATTACK)` branch only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Partial | N/A | Legacy-heavy | Debt remains |
 
@@ -157,6 +158,14 @@ Scope:
 - Rust semantic roll logic requires it to be protocol-seeded or factory-seeded.
 - Opening Bolt/Beam parity uses the monster slot only while `first_move` is true. After that, move
   history is used only for Java's explicit Bolt/Beam alternation.
+
+### Spheric Guardian
+
+- `runtime_state.first_move` and `runtime_state.second_move` are now exported by `CommunicationMod`.
+- Rust semantic roll logic requires both fields to be protocol-seeded or factory-seeded.
+- The opening Harden and Bash+Frail gates come from Java's private latches, not from move-history
+  length. After both latches are false, move history is used only for Java's explicit
+  `lastMove(BIG_ATTACK)` branch.
 
 ### Champ
 
