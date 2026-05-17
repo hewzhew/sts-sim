@@ -649,6 +649,27 @@ Tests:
 - `buying_potions_opens_reward_screen_without_filling_slots_directly`
 - `ascension_leave_hp_loss_uses_event_source_and_tungsten_rod`
 
+### Tomb of Lord Red Mask relic obtain
+
+Java `events/beyond/TombRedMask.java` has asymmetric button indices:
+
+- If the player already has `Red Mask`, button 0 wears the mask and gains 222
+  gold.
+- If the player does not have `Red Mask`, button 0 is a disabled relic-required
+  affordance, button 1 loses all gold and obtains `Red Mask`, and button 2
+  leaves.
+
+The paid branch calls `player.loseGold(player.gold)` and
+`spawnRelicAndObtain(..., new RedMask())`. Rust now uses
+`obtain_relic_with_source` for this relic instead of pushing directly into the
+relic list.
+
+Tests:
+
+- `paying_without_mask_loses_all_gold_and_obtains_red_mask_with_event_source`
+- `wearing_existing_mask_gains_222_gold_with_event_source`
+- `choices_preserve_java_button_indices_when_mask_is_missing`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -865,10 +886,11 @@ Validation:
   heal, full-heal, and max-HP paths. `Lab` now opens potion rewards instead of
   directly filling potion slots. `WomanInBlue` now opens potion rewards instead
   of directly filling potion slots and sources its A15 HP_LOSS leave damage.
-  The remaining direct writes should be handled event-by-event against Java
-  source.
+  `TombRedMask` now routes paid `Red Mask` obtain through the relic obtain
+  helper. The remaining direct writes should be handled event-by-event against
+  Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `855 passed`.
+- Current result after this pass: `858 passed`.
