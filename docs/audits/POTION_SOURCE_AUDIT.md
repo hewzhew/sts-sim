@@ -114,3 +114,52 @@ Rust result:
 
 Coverage:
 - `fire_potion_applies_enemy_final_receive_before_damage_action_like_java`
+
+### Blood Potion
+
+Status: `wrong-fixed`
+
+Java evidence:
+- `BloodPotion.use()` computes `(int)(player.maxHealth * potency / 100.0f)`
+  immediately when the potion is used.
+- In combat it queues a `HealAction` with that fixed amount.
+- Unlike `FairyPotion.use()`, Blood Potion does not apply a minimum-one heal
+  rule before calling heal.
+
+Rust result:
+- Fixed combat Blood Potion use so it queues a fixed heal amount computed at
+  use time instead of using the generic negative percentage sentinel at heal
+  execution time.
+
+Coverage:
+- `blood_potion_queues_fixed_use_time_heal_amount_without_minimum_one`
+- `blood_potion_heal_amount_is_computed_when_used_not_when_heal_executes`
+
+## `use()` Effects Reviewed Without Code Change
+
+Status: `reviewed-clean`
+
+Java evidence and Rust result:
+- Basic immediate/queued effects match their Java action type and potency:
+  `BlockPotion`, `EnergyPotion`, `SwiftPotion`, `BlessingOfTheForge`,
+  `BottledMiracle`, `CunningPotion`, and `PotionOfCapacity`.
+- Apply-power potions match target/source/power/amount ordering through the
+  shared `ApplyPowerAction` path: `PoisonPotion`, `WeakenPotion`, `FearPotion`,
+  `StrengthPotion`, `DexterityPotion`, `SpeedPotion`, `SteroidPotion`,
+  `FocusPotion`, `AncientPotion`, `RegenPotion`, `EssenceOfSteel`,
+  `LiquidBronze`, `DuplicationPotion`, `GhostInAJar`, `HeartOfIron`, and
+  `CultistPotion`.
+- Discovery potions match Java `DiscoveryAction`: Attack/Skill/Power are typed
+  discoveries with skip enabled; Colorless is colorless discovery with skip
+  disabled; Sacred Bark changes amount/copies, not the three-option offer.
+- Stance/Ambrosia match Java `ChooseOneAction(ChooseWrath, ChooseCalm)` and
+  `ChangeStanceAction("Divinity")` mechanics.
+- `GamblersBrew`, `Elixir`, `SneckoOil`, `DistilledChaosPotion`, and
+  `EssenceOfDarkness` had already been checked against their Java actions; the
+  important RNG/queue timing paths are covered by existing tests.
+
+Open edge note:
+- Java potion targeting UI excludes `isDying` and controller mode also rejects
+  `halfDead`; Rust target validation currently uses the stricter live-monster
+  target set. This stays unchanged until a concrete Java-visible targetability
+  case proves a mechanical mismatch.

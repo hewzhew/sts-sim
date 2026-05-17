@@ -23,6 +23,7 @@ pub fn get_potion_actions(
     potion: PotionId,
     target_idx: Option<usize>,
     potency: i32,
+    player_max_hp: i32,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let target = target_idx.unwrap_or(0) as EntityId;
@@ -105,12 +106,15 @@ pub fn get_potion_actions(
             );
         }
         PotionId::BloodPotion => {
-            // Heal for potency% of Max HP. Negative sentinel triggers maxHP% calculation in handler.
+            // Java computes the percent heal when the potion is used and queues
+            // a HealAction with that fixed amount. Unlike Fairy Potion, Blood
+            // Potion does not clamp the amount to at least 1.
+            let amount = (player_max_hp as f32 * (potency as f32 / 100.0)) as i32;
             bottom(
                 &mut actions,
                 Action::Heal {
                     target: PLAYER,
-                    amount: -(potency),
+                    amount,
                 },
             );
         }

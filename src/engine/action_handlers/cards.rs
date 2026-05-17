@@ -2395,6 +2395,7 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
             potion.id,
             resolved_target,
             potency,
+            state.entities.player.max_hp,
         );
         let relic_actions = crate::content::relics::hooks::on_use_potion(state, 0);
         let mut combined = actions;
@@ -2822,6 +2823,55 @@ mod tests {
         );
         assert!(info.is_modified);
         assert_eq!(state.entities.potions[0], None);
+    }
+
+    #[test]
+    fn blood_potion_queues_fixed_use_time_heal_amount_without_minimum_one() {
+        let mut state = blank_test_combat();
+        state.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        state.entities.player.max_hp = 1;
+        state.entities.player.current_hp = 1;
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::BloodPotion,
+            1,
+        ))];
+
+        handle_use_potion(0, None, &mut state);
+
+        let Some(Action::Heal { target, amount }) = state.pop_next_action() else {
+            panic!("Blood Potion should queue a fixed HealAction");
+        };
+        assert_eq!(target, 0);
+        assert_eq!(
+            amount, 0,
+            "Java BloodPotion computes (int)(maxHealth * potencyPercent) directly and does not apply Fairy Potion's minimum-one revive rule"
+        );
+        assert_eq!(state.entities.potions[0], None);
+    }
+
+    #[test]
+    fn blood_potion_heal_amount_is_computed_when_used_not_when_heal_executes() {
+        let mut state = blank_test_combat();
+        state.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        state.entities.player.max_hp = 10;
+        state.entities.player.current_hp = 1;
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::BloodPotion,
+            1,
+        ))];
+
+        handle_use_potion(0, None, &mut state);
+
+        state.entities.player.max_hp = 100;
+        let Some(action) = state.pop_next_action() else {
+            panic!("Blood Potion should queue a HealAction");
+        };
+        crate::engine::action_handlers::execute_action(action, &mut state);
+
+        assert_eq!(
+            state.entities.player.current_hp, 3,
+            "Java BloodPotion.use computes the HealAction amount before it is queued; later max HP changes do not recalculate the potion heal"
+        );
     }
 
     #[test]

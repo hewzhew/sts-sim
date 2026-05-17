@@ -913,7 +913,7 @@ mod tests {
 
     #[test]
     fn watcher_potion_actions_match_java_sources() {
-        let bottled = potion_effects::get_potion_actions(0, PotionId::BottledMiracle, None, 2);
+        let bottled = potion_effects::get_potion_actions(0, PotionId::BottledMiracle, None, 2, 80);
         assert_eq!(bottled.len(), 1);
         assert_eq!(bottled[0].insertion_mode, AddTo::Bottom);
         assert!(matches!(
@@ -925,12 +925,12 @@ mod tests {
             }
         ));
 
-        let stance = potion_effects::get_potion_actions(0, PotionId::StancePotion, None, 0);
+        let stance = potion_effects::get_potion_actions(0, PotionId::StancePotion, None, 0, 80);
         assert_eq!(stance.len(), 1);
         assert_eq!(stance[0].insertion_mode, AddTo::Bottom);
         assert!(matches!(stance[0].action, Action::SuspendForStanceChoice));
 
-        let ambrosia = potion_effects::get_potion_actions(0, PotionId::Ambrosia, None, 2);
+        let ambrosia = potion_effects::get_potion_actions(0, PotionId::Ambrosia, None, 2, 80);
         assert_eq!(ambrosia.len(), 1);
         assert_eq!(ambrosia[0].insertion_mode, AddTo::Bottom);
         assert!(matches!(&ambrosia[0].action, Action::EnterStance(stance) if stance == "Divinity"));
