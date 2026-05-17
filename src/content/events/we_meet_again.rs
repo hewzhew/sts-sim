@@ -191,35 +191,45 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 0 => {
                     // Give potion → relic
                     let potion_slot = ((event_state.internal_state >> 16) & 0xFF) as usize;
-                    run_state.remove_potion_at_with_source(
-                        potion_slot,
-                        DomainEventSource::Event(EventId::WeMeetAgain),
-                    );
-                    event_state.current_screen = 1;
-                    obtain_event_relic(_engine_state, run_state);
+                    if potion_slot != 0xFF
+                        && run_state
+                            .potions
+                            .get(potion_slot)
+                            .and_then(|potion| potion.as_ref())
+                            .is_some()
+                    {
+                        run_state.remove_potion_at_with_source(
+                            potion_slot,
+                            DomainEventSource::Event(EventId::WeMeetAgain),
+                        );
+                        event_state.current_screen = 1;
+                        obtain_event_relic(_engine_state, run_state);
+                    }
                 }
                 1 => {
                     // Give gold → relic
                     let amt = event_state.internal_state & 0xFF;
-                    run_state.change_gold_with_source(
-                        -amt,
-                        DomainEventSource::Event(EventId::WeMeetAgain),
-                    );
-                    event_state.current_screen = 1;
-                    obtain_event_relic(_engine_state, run_state);
+                    if amt > 0 && run_state.gold >= amt {
+                        run_state.change_gold_with_source(
+                            -amt,
+                            DomainEventSource::Event(EventId::WeMeetAgain),
+                        );
+                        event_state.current_screen = 1;
+                        obtain_event_relic(_engine_state, run_state);
+                    }
                 }
                 2 => {
                     // Give card → relic
                     let card_idx = ((event_state.internal_state >> 8) & 0xFF) as usize;
-                    if card_idx < run_state.master_deck.len() {
+                    if card_idx != 0xFF && card_idx < run_state.master_deck.len() {
                         let uuid = run_state.master_deck[card_idx].uuid;
                         run_state.remove_card_from_deck_with_source(
                             uuid,
                             DomainEventSource::Event(EventId::WeMeetAgain),
                         );
+                        event_state.current_screen = 1;
+                        obtain_event_relic(_engine_state, run_state);
                     }
-                    event_state.current_screen = 1;
-                    obtain_event_relic(_engine_state, run_state);
                 }
                 _ => {
                     // Attack (leave)
@@ -429,5 +439,78 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn disabled_potion_trade_does_not_grant_free_relic() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.event_state = Some(EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: (0xFF << 16) | (0xFF << 8),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        rs.emitted_events.clear();
+        let relic_count = rs.relics.len();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.relics.len(), relic_count);
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn disabled_gold_trade_does_not_grant_free_relic() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 40;
+        rs.event_state = Some(EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: (0xFF << 16) | (0xFF << 8),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        rs.emitted_events.clear();
+        let relic_count = rs.relics.len();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert_eq!(rs.gold, 40);
+        assert_eq!(rs.relics.len(), relic_count);
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn disabled_card_trade_does_not_grant_free_relic() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.event_state = Some(EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: (0xFF << 16) | (0xFF << 8),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        rs.emitted_events.clear();
+        let relic_count = rs.relics.len();
+        let deck_len = rs.master_deck.len();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        assert_eq!(rs.master_deck.len(), deck_len);
+        assert_eq!(rs.relics.len(), relic_count);
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.take_emitted_events().is_empty());
     }
 }

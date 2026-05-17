@@ -278,12 +278,17 @@ Fixes:
 - The relic obtained from potion / gold / card trades now uses
   `obtain_relic_with_source(..., Event(WeMeetAgain))` rather than the generic
   deck-mutation source.
+- Direct calls to disabled potion, gold, or card trades now stay inert instead
+  of granting a free event relic without paying the corresponding resource.
 
 Tests:
 
 - `card_trade_option_exposes_specific_remove_effect`
 - `card_trade_removes_card_and_obtains_relic_with_event_source`
 - `potion_trade_removes_selected_potion_and_obtains_relic_with_event_source`
+- `disabled_potion_trade_does_not_grant_free_relic`
+- `disabled_gold_trade_does_not_grant_free_relic`
+- `disabled_card_trade_does_not_grant_free_relic`
 
 ### Knowing Skull HP_LOSS costs
 
@@ -1406,4 +1411,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `919 passed`.
+- Current result after this pass: `922 passed`.
