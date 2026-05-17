@@ -1,7 +1,7 @@
 use super::{apply_power_action, attack_actions, gain_block_action, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     ApplyPowerStep, AttackSpec, AttackStep, BlockStep, BuffSpec, DamageKind, DefendSpec,
@@ -14,6 +14,12 @@ const BELLOW: u8 = 2;
 const THRASH: u8 = 3;
 
 pub struct JawWorm;
+
+pub fn initialize_runtime_state(entity: &mut MonsterEntity, hard_mode: bool) {
+    entity.jaw_worm.protocol_seeded = true;
+    entity.jaw_worm.first_move = !hard_mode;
+    entity.jaw_worm.hard_mode = hard_mode;
+}
 
 enum JawWormTurn<'a> {
     Chomp(&'a AttackSpec),
@@ -138,6 +144,29 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
     )
 }
 
+fn runtime(entity: &MonsterEntity) -> (bool, bool) {
+    assert!(
+        entity.jaw_worm.protocol_seeded,
+        "jaw worm runtime truth must be protocol-seeded or factory-seeded"
+    );
+    (entity.jaw_worm.first_move, entity.jaw_worm.hard_mode)
+}
+
+fn jaw_worm_runtime_update(
+    entity: &MonsterEntity,
+    first_move: Option<bool>,
+    hard_mode: Option<bool>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::JawWorm {
+            first_move,
+            hard_mode,
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
 fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> JawWormTurn<'a> {
     match (plan.move_id, plan.steps.as_slice()) {
         (
@@ -194,7 +223,8 @@ impl MonsterBehavior for JawWorm {
         asc: u8,
         num: i32,
     ) -> MonsterTurnPlan {
-        if entity.move_history().is_empty() && !entity.jaw_worm.hard_mode {
+        let (first_move, _hard_mode) = runtime(entity);
+        if first_move {
             return chomp_plan(asc);
         }
 
@@ -229,6 +259,20 @@ impl MonsterBehavior for JawWorm {
         }
     }
 
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let (first_move, _hard_mode) = runtime(entity);
+        if first_move {
+            vec![jaw_worm_runtime_update(entity, Some(false), None)]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
         plan_for(entity.planned_move_id(), state.meta.ascension_level)
     }
@@ -239,7 +283,8 @@ impl MonsterBehavior for JawWorm {
         legacy_rng: crate::content::monsters::PreBattleLegacyRng,
     ) -> Vec<Action> {
         let (_hp_rng, asc) = crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
-        if entity.jaw_worm.hard_mode {
+        let (_first_move, hard_mode) = runtime(entity);
+        if hard_mode {
             vec![
                 apply_power_action(
                     entity,
@@ -287,5 +332,62 @@ impl MonsterBehavior for JawWorm {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{initialize_runtime_state, JawWorm, BELLOW, CHOMP};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::{Action, MonsterRuntimePatch};
+
+    #[test]
+    fn jaw_worm_first_roll_uses_private_first_move_and_marks_it() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let monster = crate::testing::support::test_monster(EnemyId::JawWorm);
+        let plan = JawWorm::roll_move_plan(&mut rng, &monster, 0, 99);
+
+        assert_eq!(plan.move_id, CHOMP);
+        assert_eq!(
+            JawWorm::on_roll_move(0, &monster, 99, &plan),
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::JawWorm {
+                    first_move: Some(false),
+                    hard_mode: None,
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn jaw_worm_first_move_is_private_runtime_not_empty_history() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut monster = crate::testing::support::test_monster(EnemyId::JawWorm);
+        monster.jaw_worm.first_move = false;
+        monster.move_history_mut().clear();
+
+        assert_eq!(
+            JawWorm::roll_move_plan(&mut rng, &monster, 0, 99).move_id,
+            BELLOW,
+            "Java uses private firstMove; empty imported history alone must not force opening Chomp"
+        );
+    }
+
+    #[test]
+    fn jaw_worm_hard_mode_initialization_matches_java_constructor_side_effect() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut monster = crate::testing::support::test_monster(EnemyId::JawWorm);
+
+        initialize_runtime_state(&mut monster, true);
+
+        assert!(monster.jaw_worm.protocol_seeded);
+        assert!(monster.jaw_worm.hard_mode);
+        assert!(!monster.jaw_worm.first_move);
+        assert_eq!(
+            JawWorm::roll_move_plan(&mut rng, &monster, 0, 99).move_id,
+            BELLOW
+        );
     }
 }

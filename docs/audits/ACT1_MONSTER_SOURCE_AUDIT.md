@@ -81,6 +81,17 @@ truth.
 `saidPower`, `talky`, death speech, and skeleton/animation state are UI/audio/death-timer behavior
 for this simulator boundary. They are not exported into Rust combat mechanics.
 
+### Jaw Worm
+
+Java has private `firstMove` and `hardMode` fields. The normal constructor starts with
+`firstMove=true`; the hard-mode constructor used by Jaw Worm Horde sets `hardMode=true` and
+immediately flips `firstMove=false`.
+
+Rust now stores both fields in `JawWormRuntimeState`, `CommunicationMod` exports them as
+`monster.runtime_state.first_move` and `monster.runtime_state.hard_mode`, and state sync treats
+both as strict protocol truth. Opening Chomp is gated by the private `firstMove` field, not by
+empty move history. `hardMode` still controls the Java pre-battle Strength/Block bonus.
+
 ### Sentry
 
 Java has a private `firstMove` field. When it is true, the first move uses the monster's index in

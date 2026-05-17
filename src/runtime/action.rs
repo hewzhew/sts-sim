@@ -29,6 +29,11 @@ pub enum MonsterRuntimePatch {
         is_out: Option<bool>,
         is_out_triggered: Option<bool>,
     },
+    JawWorm {
+        first_move: Option<bool>,
+        hard_mode: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
     Guardian {
         damage_threshold: Option<i32>,
         damage_taken: Option<i32>,

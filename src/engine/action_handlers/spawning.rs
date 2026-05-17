@@ -171,6 +171,12 @@ pub fn handle_spawn_monster(
             state.meta.ascension_level,
         );
     }
+    if enemy_id == crate::content::monsters::EnemyId::JawWorm {
+        crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(
+            &mut new_monster,
+            false,
+        );
+    }
     if enemy_id == crate::content::monsters::EnemyId::Byrd {
         new_monster.byrd.first_move = true;
         new_monster.byrd.is_flying = true;
@@ -527,6 +533,31 @@ fn handle_update_lagavulin_state(
         }
         if let Some(value) = is_out_triggered {
             monster.lagavulin.is_out_triggered = value;
+        }
+    }
+}
+
+fn handle_update_jaw_worm_state(
+    monster_id: usize,
+    first_move: Option<bool>,
+    hard_mode: Option<bool>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = first_move {
+            monster.jaw_worm.first_move = value;
+        }
+        if let Some(value) = hard_mode {
+            monster.jaw_worm.hard_mode = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.jaw_worm.protocol_seeded = value;
         }
     }
 }
@@ -1041,6 +1072,13 @@ pub fn handle_update_monster_runtime(
             is_out_triggered,
             state,
         ),
+        MonsterRuntimePatch::JawWorm {
+            first_move,
+            hard_mode,
+            protocol_seeded,
+        } => {
+            handle_update_jaw_worm_state(monster_id, first_move, hard_mode, protocol_seeded, state)
+        }
         MonsterRuntimePatch::Guardian {
             damage_threshold,
             damage_taken,

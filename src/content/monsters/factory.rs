@@ -171,6 +171,12 @@ pub fn build_encounter(
             monster.shelled_parasite.first_move = true;
             monster.shelled_parasite.protocol_seeded = true;
         }
+        if enemy_id == EnemyId::JawWorm {
+            crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(
+                &mut monster,
+                false,
+            );
+        }
         if enemy_id == EnemyId::BronzeAutomaton {
             monster.bronze_automaton.protocol_seeded = true;
             monster.bronze_automaton.first_turn = true;
@@ -833,7 +839,10 @@ pub fn build_encounter(
             // Java: 3 JawWorms with isHorde=true
             for _ in 0..3 {
                 let mut jaw_worm = spawn_monster(EnemyId::JawWorm, monster_hp_rng, slot_counter);
-                jaw_worm.jaw_worm.hard_mode = true;
+                crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(
+                    &mut jaw_worm,
+                    true,
+                );
                 monsters.push(jaw_worm);
                 slot_counter += 1;
             }

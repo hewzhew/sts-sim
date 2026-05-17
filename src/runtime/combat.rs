@@ -1071,6 +1071,8 @@ pub struct LouseRuntimeState {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct JawWormRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_move: bool,
     pub hard_mode: bool,
 }
 

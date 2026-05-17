@@ -408,7 +408,10 @@ fn stable_louse_signature(state: &LouseRuntimeState) -> String {
 }
 
 fn stable_jaw_worm_signature(state: &JawWormRuntimeState) -> String {
-    format!("hard{}", state.hard_mode)
+    format!(
+        "seed{}:first{}:hard{}",
+        state.protocol_seeded, state.first_move, state.hard_mode
+    )
 }
 
 fn stable_thief_signature(state: &ThiefRuntimeState) -> String {

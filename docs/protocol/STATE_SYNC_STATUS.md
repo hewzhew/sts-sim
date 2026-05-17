@@ -97,6 +97,8 @@ Rust currently consumes explicit Java runtime fields for:
 - `SlaverRed.used_entangle`
 - `GremlinNob.used_bellow`
 - `Cultist.first_move`
+- `JawWorm.first_move`
+- `JawWorm.hard_mode`
 - `Sentry.first_move`
 
 ### Relics

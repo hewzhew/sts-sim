@@ -150,6 +150,17 @@ pub(crate) fn seed_sentry_runtime_from_snapshot(monster: &Value, entity: &mut Mo
     entity.sentry.protocol_seeded = true;
 }
 
+pub(crate) fn seed_jaw_worm_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::JawWorm;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.jaw_worm.first_move = runtime_state_bool(monster, monster_type, "first_move");
+    entity.jaw_worm.hard_mode = runtime_state_bool(monster, monster_type, "hard_mode");
+    entity.jaw_worm.protocol_seeded = true;
+}
+
 pub(crate) fn seed_byrd_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Byrd;
     if entity.monster_type != monster_type as usize {
@@ -462,6 +473,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_gremlin_nob_runtime_from_snapshot(monster, entity);
     seed_cultist_runtime_from_snapshot(monster, entity);
     seed_sentry_runtime_from_snapshot(monster, entity);
+    seed_jaw_worm_runtime_from_snapshot(monster, entity);
     seed_darkling_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -871,6 +883,24 @@ mod tests {
         })
     }
 
+    fn jaw_worm_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "JawWorm",
+            "current_hp": 44,
+            "max_hp": 44,
+            "block": 0,
+            "move_id": 2,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "last_move_id": 1,
+            "powers": [],
+            "runtime_state": {
+                "first_move": false,
+                "hard_mode": true
+            }
+        })
+    }
+
     fn chosen_observation_snapshot() -> serde_json::Value {
         json!({
             "id": "Chosen",
@@ -1165,6 +1195,19 @@ mod tests {
         assert_eq!(entity.monster_type, EnemyId::Sentry as usize);
         assert!(!entity.sentry.first_move);
         assert!(entity.sentry.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_jaw_worm_runtime_state() {
+        let snapshot = jaw_worm_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::JawWorm as usize);
+        assert!(!entity.jaw_worm.first_move);
+        assert!(entity.jaw_worm.hard_mode);
+        assert!(entity.jaw_worm.protocol_seeded);
     }
 
     #[test]

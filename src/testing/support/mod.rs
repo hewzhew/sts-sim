@@ -135,6 +135,9 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         monster.shelled_parasite.first_move = true;
         monster.shelled_parasite.protocol_seeded = true;
     }
+    if enemy_id == EnemyId::JawWorm {
+        crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(&mut monster, false);
+    }
     if enemy_id == EnemyId::BronzeAutomaton {
         monster.bronze_automaton.protocol_seeded = true;
         monster.bronze_automaton.first_turn = true;

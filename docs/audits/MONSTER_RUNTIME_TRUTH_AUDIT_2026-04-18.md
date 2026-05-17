@@ -35,6 +35,7 @@ Scope:
 | Red Slaver | `first_turn`, `used_entangle` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Gremlin Nob | `used_bellow` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
 | Cultist | `first_move` | Yes | Yes | Yes | None | Good |
+| Jaw Worm | `first_move`, `hard_mode` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Partial | N/A | Legacy-heavy | Debt remains |
@@ -114,6 +115,15 @@ Scope:
 - `runtime_state.first_move` is now exported by `CommunicationMod`.
 - Rust semantic roll logic requires it to be protocol-seeded or factory-seeded.
 - The opening Incantation gate comes from this Java private field, not from empty move history.
+
+### Jaw Worm
+
+- `runtime_state.first_move` and `runtime_state.hard_mode` are now exported by `CommunicationMod`.
+- Rust semantic roll logic requires both fields to be protocol-seeded or factory-seeded.
+- The opening Chomp gate comes from Java's private `firstMove`, not from empty move history.
+- Jaw Worm Horde uses Java hard mode: `hard_mode=true` and `first_move=false`; the pre-battle
+  Strength/Block bonus still comes from `hard_mode`.
+- Remaining history usage is limited to Java's explicit Chomp/Bellow/Thrash repeat rules.
 
 ### Sentry
 
