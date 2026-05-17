@@ -52,6 +52,43 @@ mod tests {
             "Looter.java burns aiRng.randomBoolean(0.6) for the first Mug TalkAction; playSfx uses MathUtils and does not burn aiRng"
         );
     }
+
+    #[test]
+    fn looter_lunge_sets_smoke_bomb_before_queued_damage_like_java_immediate_set_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::Looter);
+
+        let actions =
+            <Looter as MonsterBehavior>::take_turn_plan(&mut state, &entity, &lunge_plan(0));
+
+        assert!(
+            matches!(actions.first(), Some(Action::SetMonsterMove { next_move_byte: SMOKE_BOMB, .. })),
+            "Looter.java LUNGE calls setMove(SMOKE_BOMB) synchronously after queueing damage; Rust must apply that move before the queued steal/damage actions can be interrupted"
+        );
+    }
+
+    #[test]
+    fn looter_escape_still_queues_escape_intent_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::Looter);
+
+        let actions =
+            <Looter as MonsterBehavior>::take_turn_plan(&mut state, &entity, &escape_plan());
+
+        assert!(
+            matches!(
+                actions.as_slice(),
+                [
+                    Action::Escape { .. },
+                    Action::SetMonsterMove {
+                        next_move_byte: ESCAPE,
+                        ..
+                    }
+                ]
+            ),
+            "Looter.java escape turn queues EscapeAction and then SetMoveAction(ESCAPE)"
+        );
+    }
 }
 
 fn swipe_damage(asc: u8) -> i32 {
@@ -228,27 +265,40 @@ impl MonsterBehavior for Looter {
                 let next_slash_count = current_slash_count(entity).saturating_add(1);
                 let mut actions = vec![steal_gold_action(entity, steal)];
                 actions.extend(attack_actions(entity.id, PLAYER, attack));
-                let next_plan = if next_slash_count == 2 {
+                if next_slash_count == 2 {
                     if state.rng.ai_rng.random_boolean_chance(0.5) {
-                        smoke_bomb_plan()
+                        // Java calls setMove(SMOKE_BOMB) synchronously here,
+                        // not through SetMoveAction.
+                        actions.insert(0, set_next_move_action(entity, smoke_bomb_plan()));
                     } else {
-                        lunge_plan(state.meta.ascension_level)
-                    }
+                        actions.push(set_next_move_action(
+                            entity,
+                            lunge_plan(state.meta.ascension_level),
+                        ));
+                    };
                 } else {
-                    mug_plan(state.meta.ascension_level)
-                };
-                actions.push(set_next_move_action(entity, next_plan));
+                    actions.push(set_next_move_action(
+                        entity,
+                        mug_plan(state.meta.ascension_level),
+                    ));
+                }
                 actions
             }
             LooterTurn::SmokeBomb(block) => vec![
                 gain_block_action(entity, block),
                 set_next_move_action(entity, escape_plan()),
             ],
-            LooterTurn::Escape => vec![Action::Escape { target: entity.id }],
+            LooterTurn::Escape => vec![
+                Action::Escape { target: entity.id },
+                set_next_move_action(entity, escape_plan()),
+            ],
             LooterTurn::Lunge(steal, attack) => {
-                let mut actions = vec![steal_gold_action(entity, steal)];
+                // Java calls setMove(SMOKE_BOMB) synchronously after queueing
+                // damage, so the move update is not vulnerable to later action
+                // queue cleanup.
+                let mut actions = vec![set_next_move_action(entity, smoke_bomb_plan())];
+                actions.push(steal_gold_action(entity, steal));
                 actions.extend(attack_actions(entity.id, PLAYER, attack));
-                actions.push(set_next_move_action(entity, smoke_bomb_plan()));
                 actions
             }
         }
