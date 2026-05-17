@@ -404,6 +404,7 @@ mod tests {
             cultist: Default::default(),
             sentry: Default::default(),
             slime_boss: Default::default(),
+            large_slime: Default::default(),
             darkling: DarklingRuntimeState {
                 first_move: false,
                 nip_dmg: 0,

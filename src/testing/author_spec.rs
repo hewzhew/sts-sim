@@ -678,6 +678,9 @@ fn compile_monster_runtime_state(monster: &AuthorMonsterSpec, move_id: i32) -> V
         "slimeboss" => json!({
             "first_turn": false,
         }),
+        "acidslimel" | "spikeslimel" => json!({
+            "split_triggered": move_id == 3,
+        }),
         "writhingmass" => json!({
             "used_mega_debuff": false,
         }),

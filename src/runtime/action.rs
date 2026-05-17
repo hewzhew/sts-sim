@@ -136,6 +136,10 @@ pub enum MonsterRuntimePatch {
         first_turn: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    LargeSlime {
+        split_triggered: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

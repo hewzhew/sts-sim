@@ -185,6 +185,18 @@ pub(crate) fn seed_slime_boss_runtime_from_snapshot(monster: &Value, entity: &mu
     entity.slime_boss.protocol_seeded = true;
 }
 
+pub(crate) fn seed_large_slime_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let Some(monster_type @ (EnemyId::AcidSlimeL | EnemyId::SpikeSlimeL)) =
+        EnemyId::from_id(entity.monster_type)
+    else {
+        return;
+    };
+
+    entity.large_slime.split_triggered =
+        runtime_state_bool(monster, monster_type, "split_triggered");
+    entity.large_slime.protocol_seeded = true;
+}
+
 pub(crate) fn seed_byrd_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Byrd;
     if entity.monster_type != monster_type as usize {
@@ -500,6 +512,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_sentry_runtime_from_snapshot(monster, entity);
     seed_jaw_worm_runtime_from_snapshot(monster, entity);
     seed_slime_boss_runtime_from_snapshot(monster, entity);
+    seed_large_slime_runtime_from_snapshot(monster, entity);
     seed_darkling_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -576,6 +589,7 @@ mod tests {
             cultist: Default::default(),
             sentry: Default::default(),
             slime_boss: Default::default(),
+            large_slime: Default::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -962,6 +976,22 @@ mod tests {
         })
     }
 
+    fn acid_slime_l_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "AcidSlime_L",
+            "current_hp": 34,
+            "max_hp": 70,
+            "block": 0,
+            "move_id": 3,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "split_triggered": true
+            }
+        })
+    }
+
     fn chosen_observation_snapshot() -> serde_json::Value {
         json!({
             "id": "Chosen",
@@ -1293,6 +1323,18 @@ mod tests {
         assert_eq!(entity.monster_type, EnemyId::SlimeBoss as usize);
         assert!(!entity.slime_boss.first_turn);
         assert!(entity.slime_boss.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_large_slime_split_triggered_runtime_state() {
+        let snapshot = acid_slime_l_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::AcidSlimeL as usize);
+        assert!(entity.large_slime.split_triggered);
+        assert!(entity.large_slime.protocol_seeded);
     }
 
     #[test]

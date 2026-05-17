@@ -947,6 +947,7 @@ pub struct MonsterEntity {
     pub cultist: CultistRuntimeState,
     pub sentry: SentryRuntimeState,
     pub slime_boss: SlimeBossRuntimeState,
+    pub large_slime: LargeSlimeRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
@@ -1303,6 +1304,12 @@ pub struct SentryRuntimeState {
 pub struct SlimeBossRuntimeState {
     pub protocol_seeded: bool,
     pub first_turn: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LargeSlimeRuntimeState {
+    pub protocol_seeded: bool,
+    pub split_triggered: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2196,6 +2203,7 @@ mod tests {
             cultist: CultistRuntimeState::default(),
             sentry: SentryRuntimeState::default(),
             slime_boss: SlimeBossRuntimeState::default(),
+            large_slime: LargeSlimeRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2269,6 +2277,7 @@ mod tests {
             cultist: CultistRuntimeState::default(),
             sentry: SentryRuntimeState::default(),
             slime_boss: SlimeBossRuntimeState::default(),
+            large_slime: LargeSlimeRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2339,6 +2348,7 @@ mod tests {
             cultist: CultistRuntimeState::default(),
             sentry: SentryRuntimeState::default(),
             slime_boss: SlimeBossRuntimeState::default(),
+            large_slime: LargeSlimeRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),

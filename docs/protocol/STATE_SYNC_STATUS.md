@@ -101,6 +101,8 @@ Rust currently consumes explicit Java runtime fields for:
 - `JawWorm.first_move`
 - `JawWorm.hard_mode`
 - `SlimeBoss.first_turn`
+- `AcidSlime_L.split_triggered`
+- `SpikeSlime_L.split_triggered`
 - `Sentry.first_move`
 
 ### Relics

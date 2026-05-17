@@ -5,10 +5,10 @@ use crate::runtime::combat::{
     BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
     CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, GremlinNobRuntimeState,
     GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState, JawWormRuntimeState,
-    LagavulinRuntimeState, LouseRuntimeState, MonsterEntity, MonsterMoveState, SentryRuntimeState,
-    ShelledParasiteRuntimeState, SlaverRedRuntimeState, SlimeBossRuntimeState, SneckoRuntimeState,
-    SpikerRuntimeState, SpireShieldRuntimeState, SpireSpearRuntimeState, ThiefRuntimeState,
-    WrithingMassRuntimeState,
+    LagavulinRuntimeState, LargeSlimeRuntimeState, LouseRuntimeState, MonsterEntity,
+    MonsterMoveState, SentryRuntimeState, ShelledParasiteRuntimeState, SlaverRedRuntimeState,
+    SlimeBossRuntimeState, SneckoRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
+    SpireSpearRuntimeState, ThiefRuntimeState, WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
@@ -145,6 +145,12 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
                 stable_slime_boss_signature(&monster.slime_boss)
             )
         }
+        Some(EnemyId::AcidSlimeL | EnemyId::SpikeSlimeL) => {
+            format!(
+                "large_slime:{}",
+                stable_large_slime_signature(&monster.large_slime)
+            )
+        }
         Some(EnemyId::Lagavulin) => {
             format!(
                 "lagavulin:{}",
@@ -166,7 +172,7 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
             "snecko={}:parasite={}:bronze_auto={}:bronze_orb={}:book={}:",
             "collector={}:champ={}:awakened={}:heart={}:writhing_mass={}:spiker={}:",
             "spire_shield={}:spire_spear={}:slaver_red={}:gremlin_nob={}:gremlin_wizard={}:",
-            "cultist={}:sentry={}:slime_boss={}:darkling={}:lagavulin={}:guardian={}"
+            "cultist={}:sentry={}:slime_boss={}:large_slime={}:darkling={}:lagavulin={}:guardian={}"
         ),
         stable_hexaghost_signature(&monster.hexaghost),
         stable_louse_signature(&monster.louse),
@@ -193,6 +199,7 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         stable_cultist_signature(&monster.cultist),
         stable_sentry_signature(&monster.sentry),
         stable_slime_boss_signature(&monster.slime_boss),
+        stable_large_slime_signature(&monster.large_slime),
         stable_darkling_signature(&monster.darkling),
         stable_lagavulin_signature(&monster.lagavulin),
         stable_guardian_signature(&monster.guardian),
@@ -556,6 +563,13 @@ fn stable_sentry_signature(state: &SentryRuntimeState) -> String {
 
 fn stable_slime_boss_signature(state: &SlimeBossRuntimeState) -> String {
     format!("seed{}:first{}", state.protocol_seeded, state.first_turn)
+}
+
+fn stable_large_slime_signature(state: &LargeSlimeRuntimeState) -> String {
+    format!(
+        "seed{}:split{}",
+        state.protocol_seeded, state.split_triggered
+    )
 }
 
 fn stable_lagavulin_signature(state: &LagavulinRuntimeState) -> String {

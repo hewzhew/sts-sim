@@ -145,6 +145,7 @@ pub fn handle_spawn_monster(
         cultist: Default::default(),
         sentry: Default::default(),
         slime_boss: Default::default(),
+        large_slime: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -274,6 +275,13 @@ pub fn handle_spawn_monster(
     }
     if enemy_id == crate::content::monsters::EnemyId::SlimeBoss {
         crate::content::monsters::exordium::slime_boss::initialize_runtime_state(&mut new_monster);
+    }
+    if matches!(
+        enemy_id,
+        crate::content::monsters::EnemyId::AcidSlimeL
+            | crate::content::monsters::EnemyId::SpikeSlimeL
+    ) {
+        crate::content::monsters::exordium::initialize_large_slime_runtime_state(&mut new_monster);
     }
     if matches!(
         enemy_id,
@@ -1090,6 +1098,27 @@ fn handle_update_slime_boss_state(
     }
 }
 
+fn handle_update_large_slime_state(
+    monster_id: usize,
+    split_triggered: Option<bool>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = split_triggered {
+            monster.large_slime.split_triggered = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.large_slime.protocol_seeded = value;
+        }
+    }
+}
+
 pub fn handle_update_monster_runtime(
     monster_id: usize,
     patch: MonsterRuntimePatch,
@@ -1278,6 +1307,10 @@ pub fn handle_update_monster_runtime(
             first_turn,
             protocol_seeded,
         } => handle_update_slime_boss_state(monster_id, first_turn, protocol_seeded, state),
+        MonsterRuntimePatch::LargeSlime {
+            split_triggered,
+            protocol_seeded,
+        } => handle_update_large_slime_state(monster_id, split_triggered, protocol_seeded, state),
     }
 }
 

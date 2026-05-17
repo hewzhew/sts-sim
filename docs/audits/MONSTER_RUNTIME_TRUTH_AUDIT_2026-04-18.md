@@ -38,6 +38,7 @@ Scope:
 | Cultist | `first_move` | Yes | Yes | Yes | None | Good |
 | Jaw Worm | `first_move`, `hard_mode` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Slime Boss | `first_turn` | Yes | Yes | Yes | None for post-opening cycle | Good |
+| Large Slimes | `split_triggered` | Yes | Yes | Yes | Attack/debuff sequencing only | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Partial | N/A | Legacy-heavy | Debt remains |
@@ -93,6 +94,12 @@ Scope:
   - and at A17 specifically `lastMoveBefore(SPORES)`
 - `use_pre_battle_action` is now wired through semantic dispatch so `Malleable` no longer depends on legacy paths.
 - `on_death` is also routed through semantic dispatch to the default no-op implementation, which removes one more unsupported hallway-monster death edge.
+
+### Large Slimes
+
+- `runtime_state.split_triggered` is exported for `AcidSlime_L` and `SpikeSlime_L`.
+- Rust uses the private Java latch in addition to `nextMove != SPLIT`; this covers states where a later roll temporarily changes the planned move while Java still remembers that the split interrupt already fired.
+- The latch is updated immediately when the split interrupt fires. It is not queued as a Java action; only the Java `SetMoveAction` equivalent remains queued behind existing actions.
 
 ### Snecko
 

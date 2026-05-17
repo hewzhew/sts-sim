@@ -133,6 +133,8 @@ Examples of the correct pattern:
 - `Lagavulin.isOutTriggered`
 - `Darkling.firstMove`
 - `Darkling.nipDmg`
+- `AcidSlime_L.splitTriggered`
+- `SpikeSlime_L.splitTriggered`
 - `CentennialPuzzle.usedThisCombat`
 - `Pocketwatch.firstTurn`
 

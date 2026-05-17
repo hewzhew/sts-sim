@@ -190,11 +190,12 @@ amount. Gremlin Thief escape remains separate and does not mark the room mugged 
 ### Slime Split Interrupt
 
 Java large slimes and Slime Boss run their split interrupt from `damage()` after `super.damage`.
-The interrupt is guarded by `!isDying`, half-HP, and `nextMove != 3`; when it fires, Java calls
-`setMove(Split)` immediately and also queues a `SetMoveAction` to the bottom. Rust now mirrors the
-mechanical part: killing hits do not queue Split, threshold hits update the planned split intent
-immediately, and the queued `SetMonsterMove` stays behind existing multi-hit damage rather than
-jumping to the front.
+The common interrupt is guarded by `!isDying`, half-HP, and `nextMove != 3`; when it fires, Java
+calls `setMove(Split)` immediately and also queues a `SetMoveAction` to the bottom. Large
+`AcidSlime_L` / `SpikeSlime_L` additionally have private `splitTriggered`; Rust now imports that
+truth and sets it immediately when the interrupt fires. Killing hits do not queue Split, threshold
+hits update the planned split intent immediately, and the queued `SetMonsterMove` stays behind
+existing multi-hit damage rather than jumping to the front.
 
 ## Still Worth Rechecking
 
@@ -226,4 +227,5 @@ jumping to the front.
 - `gremlin_thief_escape_does_not_mark_room_mugged_like_java`
 - `killing_large_slime_does_not_queue_split_like_java_damage_override`
 - `large_slime_split_sets_intent_immediately_but_keeps_existing_multi_hit_queue`
+- `large_slime_split_triggered_blocks_duplicate_interrupt_even_if_move_changes`
 - Existing Guardian and Lagavulin source-parity tests

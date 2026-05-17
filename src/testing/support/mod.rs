@@ -114,6 +114,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         cultist: Default::default(),
         sentry: Default::default(),
         slime_boss: Default::default(),
+        large_slime: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -215,6 +216,9 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
     }
     if enemy_id == EnemyId::SlimeBoss {
         crate::content::monsters::exordium::slime_boss::initialize_runtime_state(&mut monster);
+    }
+    if matches!(enemy_id, EnemyId::AcidSlimeL | EnemyId::SpikeSlimeL) {
+        crate::content::monsters::exordium::initialize_large_slime_runtime_state(&mut monster);
     }
     if matches!(enemy_id, EnemyId::Looter | EnemyId::Mugger) {
         monster.thief.protocol_seeded = true;

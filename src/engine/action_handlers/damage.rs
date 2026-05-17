@@ -282,9 +282,19 @@ fn apply_damage_to_monster_via_pipeline(
                     // inside damage(), then add a SetMoveAction to the bottom. The
                     // immediate mutation prevents duplicate split interrupts during
                     // queued multi-hit attacks while preserving the existing queue.
+                    // Large slimes also set their private splitTriggered flag
+                    // immediately; that state is not itself a queued Java action.
                     for a in hook_actions {
                         super::execute_action(a.clone(), state);
-                        state.queue_action_back(a);
+                        if !matches!(
+                            a,
+                            Action::UpdateMonsterRuntime {
+                                patch: crate::runtime::action::MonsterRuntimePatch::LargeSlime { .. },
+                                ..
+                            }
+                        ) {
+                            state.queue_action_back(a);
+                        }
                     }
                 } else {
                     for a in hook_actions.into_iter().rev() {
@@ -1779,6 +1789,10 @@ mod tests {
             3,
             "Java damage() calls setMove(Split) immediately when the threshold is crossed"
         );
+        assert!(
+            state.entities.monsters[0].large_slime.split_triggered,
+            "Java large slimes set private splitTriggered immediately after queuing SetMoveAction"
+        );
 
         let Some(first_queued) = state.pop_next_action() else {
             panic!("remaining queued PummelDamage should stay before queued SetMoveAction");
@@ -1807,6 +1821,28 @@ mod tests {
             None,
             "planned split move blocks duplicate split interrupts during queued multi-hit damage"
         );
+    }
+
+    #[test]
+    fn large_slime_split_triggered_blocks_duplicate_interrupt_even_if_move_changes() {
+        let mut state = blank_test_combat();
+        let mut slime = test_monster(EnemyId::SpikeSlimeL);
+        slime.id = 83;
+        slime.current_hp = 30;
+        slime.max_hp = 70;
+        slime.set_planned_move_id(1);
+        slime.large_slime.split_triggered = true;
+        state.entities.monsters = vec![slime];
+        store::set_powers_for(&mut state, 83, vec![split_power()]);
+
+        handle_damage(normal_player_damage(83, 1), &mut state);
+
+        assert_eq!(
+            state.entities.monsters[0].planned_move_id(),
+            1,
+            "Java large slime damage() also checks private splitTriggered, not only nextMove != SPLIT"
+        );
+        assert_eq!(state.pop_next_action(), None);
     }
 
     #[test]

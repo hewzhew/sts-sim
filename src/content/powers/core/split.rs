@@ -15,11 +15,18 @@ pub fn on_hp_lost(state: &CombatState, owner: EntityId, _amount: i32) -> SmallVe
             && monster.current_hp <= monster.max_hp / 2
             && monster.planned_move_id() != 3
         {
-            let plan = match EnemyId::from_id(monster.monster_type) {
+            let enemy_id = EnemyId::from_id(monster.monster_type);
+            let plan = match enemy_id {
                 Some(EnemyId::AcidSlimeL) => {
+                    if crate::content::monsters::exordium::large_slime_split_triggered(monster) {
+                        return actions;
+                    }
                     crate::content::monsters::exordium::acid_slime::split_plan(EnemyId::AcidSlimeM)
                 }
                 Some(EnemyId::SpikeSlimeL) => {
+                    if crate::content::monsters::exordium::large_slime_split_triggered(monster) {
+                        return actions;
+                    }
                     crate::content::monsters::exordium::spike_slime::split_plan()
                 }
                 Some(EnemyId::SlimeBoss) => {
@@ -33,6 +40,13 @@ pub fn on_hp_lost(state: &CombatState, owner: EntityId, _amount: i32) -> SmallVe
                 planned_steps: plan.steps,
                 planned_visible_spec: plan.visible_spec,
             });
+            if matches!(enemy_id, Some(EnemyId::AcidSlimeL | EnemyId::SpikeSlimeL)) {
+                actions.push(
+                    crate::content::monsters::exordium::mark_large_slime_split_triggered_action(
+                        monster,
+                    ),
+                );
+            }
         }
     }
 
