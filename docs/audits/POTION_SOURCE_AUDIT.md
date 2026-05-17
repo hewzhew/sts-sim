@@ -161,6 +161,31 @@ Coverage:
 - `run_level_blood_potion_uses_sacred_bark_toy_ornithopter_and_consumes_slot`
 - `run_level_entropic_brew_with_sozu_consumes_without_generating_potions`
 
+### Run-Level Potion Affordance Gate
+
+Status: `fixed`
+
+Java evidence:
+- `PotionPopUp.updateInput()` checks `potion.canUse()` before calling
+  `potion.use(...)`.
+- The discard branch checks `potion.canDiscard()` before destroying the potion
+  slot.
+- `AbstractPotion.canDiscard()` blocks only `WeMeetAgain` by default.
+- `BloodPotion`, `FruitJuice`, and `EntropicBrew` override `canUse()` so they
+  can be used outside combat unless the current event is `WeMeetAgain`; most
+  other potions inherit the combat-only default.
+
+Rust result:
+- Run-level potion action exposure already used the imported
+  `can_use/can_discard` affordance flags plus the Java out-of-combat overrides.
+- Execution now rechecks those same affordance flags, so direct
+  `ClientInput::UsePotion` or `ClientInput::DiscardPotion` cannot bypass a
+  live/protocol imported disabled potion state.
+
+Coverage:
+- `run_level_potion_execution_respects_imported_affordance_flags`
+- `potion_can_use_overrides_match_java_sources`
+
 ### Potion Obtain Paths
 
 Status: `reviewed-clean`

@@ -356,14 +356,17 @@ fn handle_run_level_potion_input(
             if !crate::content::potions::potion_can_discard_in_event(is_we_meet_again_event) {
                 return true;
             }
-            let Some(potion_id) = run_state
+            let Some((potion_id, can_discard)) = run_state
                 .potions
                 .get(*slot)
                 .and_then(|slot| slot.as_ref())
-                .map(|potion| potion.id)
+                .map(|potion| (potion.id, potion.can_discard))
             else {
                 return true;
             };
+            if !can_discard {
+                return true;
+            }
             run_state.remove_potion_at_with_source(*slot, DomainEventSource::Potion(potion_id));
             true
         }
@@ -374,14 +377,17 @@ fn handle_run_level_potion_input(
             if target.is_some() {
                 return true;
             }
-            let Some(potion_id) = run_state
+            let Some((potion_id, can_use)) = run_state
                 .potions
                 .get(*potion_index)
                 .and_then(|slot| slot.as_ref())
-                .map(|potion| potion.id)
+                .map(|potion| (potion.id, potion.can_use))
             else {
                 return true;
             };
+            if !can_use {
+                return true;
+            }
             if !crate::content::potions::potion_can_use_out_of_combat(
                 potion_id,
                 is_we_meet_again_event,
@@ -1726,6 +1732,65 @@ mod tests {
         assert_eq!(
             run_state.potions[0].as_ref().map(|potion| potion.id),
             Some(crate::content::potions::PotionId::FirePotion)
+        );
+    }
+
+    #[test]
+    fn run_level_potion_execution_respects_imported_affordance_flags() {
+        let mut disabled_use = RunState::new(1, 0, false, "Ironclad");
+        disabled_use.current_hp = 10;
+        disabled_use.max_hp = 80;
+        disabled_use.potions = vec![Some(
+            crate::content::potions::Potion::with_affordance_truth(
+                crate::content::potions::PotionId::BloodPotion,
+                101,
+                false,
+                true,
+                false,
+            ),
+        )];
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut disabled_use,
+            &mut combat_state,
+            Some(ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            }),
+        ));
+
+        assert_eq!(disabled_use.current_hp, 10);
+        assert!(
+            disabled_use.potions[0].is_some(),
+            "Java PotionPopUp checks potion.canUse before calling use()"
+        );
+
+        let mut disabled_discard = RunState::new(1, 0, false, "Ironclad");
+        disabled_discard.potions = vec![Some(
+            crate::content::potions::Potion::with_affordance_truth(
+                crate::content::potions::PotionId::FirePotion,
+                102,
+                false,
+                false,
+                true,
+            ),
+        )];
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut disabled_discard,
+            &mut combat_state,
+            Some(ClientInput::DiscardPotion(0)),
+        ));
+
+        assert!(
+            disabled_discard.potions[0].is_some(),
+            "Java PotionPopUp checks potion.canDiscard before destroying the slot"
         );
     }
 
