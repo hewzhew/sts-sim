@@ -1528,6 +1528,12 @@ impl CombatState {
             .all(|m| m.is_dying || m.is_escaped)
     }
 
+    /// Java `MonsterGroup.haveMonstersEscaped()` returns true only when every
+    /// monster has its `escaped` flag set. Dying/dead monsters do not count.
+    pub fn have_monsters_escaped_java(&self) -> bool {
+        self.entities.monsters.iter().all(|m| m.is_escaped)
+    }
+
     pub fn add_card_to_draw_pile_top(&mut self, card: CombatCard) {
         self.zones.add_to_draw_pile_top(card);
     }

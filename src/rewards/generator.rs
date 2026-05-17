@@ -40,8 +40,31 @@ pub fn generate_combat_rewards_from_existing(
     existing_items: Vec<RewardItem>,
     include_card_rewards: bool,
 ) -> RewardState {
-    let mut items =
-        generate_room_rewards_before_screen(run_state, is_elite, is_boss, existing_items);
+    generate_combat_rewards_from_existing_with_escape_gate(
+        run_state,
+        is_elite,
+        is_boss,
+        existing_items,
+        include_card_rewards,
+        true,
+    )
+}
+
+pub fn generate_combat_rewards_from_existing_with_escape_gate(
+    run_state: &mut RunState,
+    is_elite: bool,
+    is_boss: bool,
+    existing_items: Vec<RewardItem>,
+    include_card_rewards: bool,
+    normal_monster_rewards_allowed: bool,
+) -> RewardState {
+    let mut items = generate_room_rewards_before_screen(
+        run_state,
+        is_elite,
+        is_boss,
+        existing_items,
+        normal_monster_rewards_allowed,
+    );
 
     if include_card_rewards {
         items.extend(generate_card_reward_items(
@@ -68,6 +91,7 @@ pub fn generate_room_rewards_before_screen(
     is_elite: bool,
     is_boss: bool,
     mut items: Vec<RewardItem>,
+    normal_monster_rewards_allowed: bool,
 ) -> Vec<RewardItem> {
     let has_ectoplasm = run_state
         .relics
@@ -82,6 +106,8 @@ pub fn generate_room_rewards_before_screen(
                 amount = (amount as f32 * 0.75).round() as i32;
             }
             add_gold_reward_like_java(&mut items, amount);
+        } else if !is_elite && !normal_monster_rewards_allowed {
+            // Java skips ordinary MonsterRoom gold when every monster escaped.
         } else {
             let amount = if is_elite {
                 run_state.rng_pool.treasure_rng.random_range(25, 35)
@@ -122,7 +148,11 @@ pub fn generate_room_rewards_before_screen(
     }
 
     // 2. Generate Potions
-    add_potion_reward_like_java(run_state, &mut items);
+    add_potion_reward_like_java_with_room_gate(
+        run_state,
+        &mut items,
+        is_elite || is_boss || normal_monster_rewards_allowed,
+    );
 
     items
 }
@@ -137,10 +167,22 @@ pub fn add_gold_reward_like_java(items: &mut Vec<RewardItem>, amount: i32) {
     items.push(RewardItem::Gold { amount });
 }
 
-/// Java `AbstractRoom.addPotionToRewards()`: caller must invoke it only for
-/// room types that are eligible for the reward potion roll.
+/// Java `AbstractRoom.addPotionToRewards()` for room types whose base potion
+/// chance is eligible before relic and reward-size overrides.
 pub fn add_potion_reward_like_java(run_state: &mut RunState, items: &mut Vec<RewardItem>) {
-    let mut chance = 40 + run_state.potion_drop_chance_mod;
+    add_potion_reward_like_java_with_room_gate(run_state, items, true);
+}
+
+pub fn add_potion_reward_like_java_with_room_gate(
+    run_state: &mut RunState,
+    items: &mut Vec<RewardItem>,
+    base_chance_allowed: bool,
+) {
+    let mut chance = if base_chance_allowed {
+        40 + run_state.potion_drop_chance_mod
+    } else {
+        0
+    };
     if run_state
         .relics
         .iter()
@@ -361,6 +403,41 @@ mod tests {
         assert!(matches!(rewards.items[2], RewardItem::Relic { .. }));
         assert!(matches!(rewards.items[3], RewardItem::EmeraldKey));
         assert!(matches!(rewards.items[4], RewardItem::Card { .. }));
+    }
+
+    #[test]
+    fn white_beast_overrides_all_escaped_monster_room_potion_chance_like_java() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::WhiteBeastStatue));
+        let treasure_before = run_state.rng_pool.treasure_rng.counter;
+        let potion_before = run_state.rng_pool.potion_rng.counter;
+
+        let rewards = super::generate_combat_rewards_from_existing_with_escape_gate(
+            &mut run_state,
+            false,
+            false,
+            Vec::new(),
+            false,
+            false,
+        );
+
+        assert_eq!(
+            run_state.rng_pool.treasure_rng.counter, treasure_before,
+            "all-escaped ordinary MonsterRoom skips Java normal gold generation"
+        );
+        assert!(
+            run_state.rng_pool.potion_rng.counter > potion_before,
+            "Java addPotionToRewards still consumes potionRng even when the base MonsterRoom chance was 0"
+        );
+        assert_eq!(
+            run_state.potion_drop_chance_mod, -10,
+            "White Beast Statue overrides the room base chance after the escaped-monster gate"
+        );
+        assert_eq!(rewards.items.len(), 1);
+        assert!(matches!(rewards.items[0], RewardItem::Potion { .. }));
     }
 
     #[test]

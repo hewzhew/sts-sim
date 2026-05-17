@@ -377,31 +377,35 @@ pub fn tick_run(
                             };
                             let mut existing_items = Vec::new();
                             existing_items.append(&mut cs.runtime.pending_rewards);
+                            let normal_monster_rewards_allowed = !cs.have_monsters_escaped_java();
                             if matches!(screen_context, RewardScreenContext::SmokedCombat) {
                                 let _hidden_room_rewards =
-                                    crate::rewards::generator::generate_combat_rewards_from_existing(
+                                    crate::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
                                         run_state,
                                         is_elite,
                                         is_boss,
                                         existing_items,
                                         false,
+                                        normal_monster_rewards_allowed,
                                     );
                                 *rs = crate::rewards::state::RewardState::with_context(
                                     RewardScreenContext::SmokedCombat,
                                 );
                             } else {
                                 // Populate the actual dropped rewards for normal/mugged combat.
-                                *rs = if existing_items.is_empty() {
+                                *rs = if existing_items.is_empty() && normal_monster_rewards_allowed
+                                {
                                     crate::rewards::generator::generate_combat_rewards(
                                         run_state, is_elite, is_boss,
                                     )
                                 } else {
-                                    crate::rewards::generator::generate_combat_rewards_from_existing(
+                                    crate::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
                                         run_state,
                                         is_elite,
                                         is_boss,
                                         existing_items,
                                         true,
+                                        normal_monster_rewards_allowed,
                                     )
                                 };
                                 rs.screen_context = screen_context;
@@ -1226,6 +1230,64 @@ mod tests {
             "Java smoked reward screen skips CombatRewardScreen.setupItemReward card generation"
         );
         assert_eq!(run_state.potion_drop_chance_mod, -10);
+    }
+
+    #[test]
+    fn mugged_all_escaped_normal_combat_skips_standard_gold_and_base_potion_chance() {
+        use crate::content::monsters::EnemyId;
+
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        let treasure_before = run_state.rng_pool.treasure_rng.counter;
+        let potion_before = run_state.rng_pool.potion_rng.counter;
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.runtime.combat_mugged = true;
+        let mut monster = crate::test_support::test_monster(EnemyId::Looter);
+        monster.is_escaped = true;
+        combat.entities.monsters.push(monster);
+
+        let mut engine_state = EngineState::CombatProcessing;
+        let mut combat_state = Some(combat);
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            None,
+        ));
+
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("mugged escaped combat should still open a reward screen");
+        };
+        assert_eq!(rewards.screen_context, RewardScreenContext::MuggedCombat);
+        assert_eq!(
+            run_state.rng_pool.treasure_rng.counter, treasure_before,
+            "Java skips ordinary MonsterRoom gold when every monster escaped"
+        );
+        assert_eq!(
+            run_state.rng_pool.potion_rng.counter,
+            potion_before + 1,
+            "Java addPotionToRewards still rolls potionRng even when escaped monsters force chance to 0"
+        );
+        assert_eq!(
+            run_state.potion_drop_chance_mod, 10,
+            "the chance-0 potion roll follows the Java miss path"
+        );
+        assert!(
+            !rewards
+                .items
+                .iter()
+                .any(|item| matches!(item, RewardItem::Gold { .. } | RewardItem::Potion { .. })),
+            "all-escaped ordinary MonsterRoom should not create standard gold or a base potion reward"
+        );
+        assert!(
+            rewards
+                .items
+                .iter()
+                .any(|item| matches!(item, RewardItem::Card { .. })),
+            "CombatRewardScreen.setupItemReward still appends card rewards for mugged combat"
+        );
     }
 
     #[test]

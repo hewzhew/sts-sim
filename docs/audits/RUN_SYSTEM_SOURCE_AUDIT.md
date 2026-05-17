@@ -83,6 +83,11 @@ and reachability gates must be checked separately.
      as pre-existing room rewards before ordinary room gold/relic/potion/card
      generation. Smoked combats still consume hidden room reward RNG but expose
      no visible reward items, matching `openCombat(..., smoked=true)`.
+   - current progress: ordinary MonsterRoom rewards now respect Java
+     `MonsterGroup.haveMonstersEscaped()`: if every monster escaped, standard
+     monster gold is skipped and the room potion base chance starts at 0, while
+     the potion RNG/miss-path still runs and White Beast Statue can still force
+     the potion afterward.
 
 3. Relic pool and `canSpawn` closure:
    - turn the existing relic audit into pool-level validation, not just
