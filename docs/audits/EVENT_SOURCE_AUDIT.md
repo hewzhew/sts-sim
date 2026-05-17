@@ -783,6 +783,38 @@ Tests:
 - `join_cult_damage_and_ritual_dagger_use_event_source`
 - `join_cult_damage_applies_tungsten_rod`
 
+### The Joust roll and payout boundary
+
+Java `events/city/TheJoust.java` separates the wager result into two clicks:
+
+```text
+PRE_JOUST:
+  ownerWins = miscRng.randomBoolean(0.3f)
+  screen = JOUST
+
+JOUST:
+  reveal result
+  gainGold(250 or 100) only if the bet won
+  screen = COMPLETE
+```
+
+Rust previously combined the roll and payout on the same `[Continue]` click.
+That changed the event-state boundary and made gold appear one decision earlier
+than Java.
+
+Fixes:
+
+- Screen 2 now only consumes the Java `miscRng.randomBoolean(0.3f)` result and
+  records it in event state.
+- Screen 3 now applies the actual wager payout and advances to the result
+  screen.
+
+Tests:
+
+- `pre_joust_continue_rolls_result_without_payout_like_java`
+- `result_continue_pays_murderer_bet_after_roll_screen`
+- `result_continue_pays_owner_bet_after_roll_screen`
+
 ### Bonfire resource rewards
 
 Java `events/shrines/Bonfire.java` applies the offered-card reward after grid
@@ -1201,4 +1233,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `902 passed`.
+- Current result after this pass: `905 passed`.
