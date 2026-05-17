@@ -4549,6 +4549,20 @@ fn prayer_wheel_adds_second_non_boss_card_reward() {
         2
     );
 
+    let mut elite = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    elite.relics.clear();
+    elite.relics.push(RelicState::new(RelicId::PrayerWheel));
+    let elite_rewards = crate::rewards::generator::generate_combat_rewards(&mut elite, true, false);
+    assert_eq!(
+        elite_rewards
+            .items
+            .iter()
+            .filter(|item| matches!(item, crate::rewards::state::RewardItem::Card { .. }))
+            .count(),
+        1,
+        "Java CombatRewardScreen.setupItemReward excludes MonsterRoomElite from Prayer Wheel's extra card reward"
+    );
+
     let mut boss = crate::state::run::RunState::new(1, 0, false, "Ironclad");
     boss.relics.clear();
     boss.relics.push(RelicState::new(RelicId::PrayerWheel));

@@ -388,20 +388,6 @@ pub fn tick_run(
                                 // Act 1 or Act 2 boss defeated — mark for act advance after rewards.
                                 run_state.pending_boss_reward = true;
                             }
-
-                            // Normal (non-boss) elite reward generation adds emerald key if present
-                            if !is_boss
-                                && is_elite
-                                && run_state.is_final_act_available
-                                && !run_state.keys[2]
-                            {
-                                if let Some(node) = run_state.map.get_current_node() {
-                                    if node.has_emerald_key {
-                                        rs.items
-                                            .push(crate::rewards::state::RewardItem::EmeraldKey);
-                                    }
-                                }
-                            }
                         }
                     }
                     if start_next_act3_boss {

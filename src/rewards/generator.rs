@@ -60,6 +60,35 @@ pub fn generate_combat_rewards(
         }
     }
 
+    if is_elite {
+        // Java: MonsterRoomElite.dropReward() runs before addPotionToRewards()
+        // and before CombatRewardScreen.setupItemReward() appends card rewards.
+        let relic_id = run_state.random_relic();
+        items.push(RewardItem::Relic { relic_id });
+
+        // Black Star: second relic reward from elites.
+        if run_state
+            .relics
+            .iter()
+            .any(|r| r.id == crate::content::relics::RelicId::BlackStar)
+        {
+            let relic_id2 = run_state.random_relic();
+            items.push(RewardItem::Relic {
+                relic_id: relic_id2,
+            });
+        }
+
+        // Java MonsterRoomElite.addEmeraldKey() appends the key immediately
+        // after elite relic rewards, before potion and card rewards are added.
+        if run_state.is_final_act_available && !run_state.keys[2] {
+            if let Some(node) = run_state.map.get_current_node() {
+                if node.has_emerald_key {
+                    items.push(RewardItem::EmeraldKey);
+                }
+            }
+        }
+    }
+
     // 2. Generate Potions
     let mut chance = 40 + run_state.potion_drop_chance_mod;
     if run_state
@@ -68,6 +97,9 @@ pub fn generate_combat_rewards(
         .any(|r| r.id == crate::content::relics::RelicId::WhiteBeastStatue)
     {
         chance = 100;
+    }
+    if items.len() >= 4 {
+        chance = 0;
     }
 
     let roll = run_state.rng_pool.potion_rng.random_range(0, 99);
@@ -90,29 +122,10 @@ pub fn generate_combat_rewards(
     items.push(RewardItem::Card {
         cards: generate_card_reward(run_state, num_cards_eff, is_elite),
     });
-    if !is_boss && has_prayer_wheel {
+    if !is_boss && !is_elite && has_prayer_wheel {
         items.push(RewardItem::Card {
             cards: generate_card_reward(run_state, num_cards_eff, is_elite),
         });
-    }
-
-    if is_elite {
-        // Java: MonsterRoomElite.dropReward() → addRelicToRewards(returnRandomRelicTier())
-        let relic_id = run_state.random_relic();
-        items.push(RewardItem::Relic { relic_id });
-
-        // BlackStar: second relic reward from elites
-        if is_elite
-            && run_state
-                .relics
-                .iter()
-                .any(|r| r.id == crate::content::relics::RelicId::BlackStar)
-        {
-            let relic_id2 = run_state.random_relic();
-            items.push(RewardItem::Relic {
-                relic_id: relic_id2,
-            });
-        }
     }
 
     RewardState {
@@ -177,6 +190,62 @@ mod tests {
                 .any(|item| matches!(item, RewardItem::Relic { .. })),
             "Java MonsterRoomBoss uses the boss chest for boss relics; ordinary combat rewards do not include a normal relic"
         );
+    }
+
+    #[test]
+    fn elite_rewards_follow_java_drop_potion_card_order() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::WhiteBeastStatue));
+        run_state.relics.push(RelicState::new(RelicId::BlackStar));
+
+        let rewards = super::generate_combat_rewards(&mut run_state, true, false);
+
+        assert!(matches!(rewards.items[0], RewardItem::Gold { .. }));
+        assert!(matches!(rewards.items[1], RewardItem::Relic { .. }));
+        assert!(matches!(rewards.items[2], RewardItem::Relic { .. }));
+        assert!(matches!(rewards.items[3], RewardItem::Potion { .. }));
+        assert!(matches!(rewards.items[4], RewardItem::Card { .. }));
+    }
+
+    #[test]
+    fn elite_emerald_key_counts_toward_java_potion_reward_size_gate() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::WhiteBeastStatue));
+        run_state.relics.push(RelicState::new(RelicId::BlackStar));
+        run_state.map.current_y = 0;
+        run_state.map.current_x = 0;
+        run_state.map.graph[0][0].has_emerald_key = true;
+        let potion_rng_before = run_state.rng_pool.potion_rng.counter;
+
+        let rewards = super::generate_combat_rewards(&mut run_state, true, false);
+
+        assert_eq!(
+            run_state.rng_pool.potion_rng.counter,
+            potion_rng_before + 1,
+            "Java addPotionToRewards still consumes potionRng when rewards.size() >= 4 forces chance to 0"
+        );
+        assert_eq!(
+            run_state.potion_drop_chance_mod, 10,
+            "a blocked potion roll still follows the Java miss path and increases blizzardPotionMod"
+        );
+        assert!(
+            !rewards
+                .items
+                .iter()
+                .any(|item| matches!(item, RewardItem::Potion { .. })),
+            "Gold + two Black Star relic rewards + Emerald Key reach Java rewards.size() >= 4 before potion generation"
+        );
+        assert!(matches!(rewards.items[0], RewardItem::Gold { .. }));
+        assert!(matches!(rewards.items[1], RewardItem::Relic { .. }));
+        assert!(matches!(rewards.items[2], RewardItem::Relic { .. }));
+        assert!(matches!(rewards.items[3], RewardItem::EmeraldKey));
+        assert!(matches!(rewards.items[4], RewardItem::Card { .. }));
     }
 
     #[test]
