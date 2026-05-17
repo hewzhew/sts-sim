@@ -304,6 +304,9 @@ candidate lists.
 
 Audit result:
 
+- `RunState` now carries an explicit `neow_rng`, mirroring Java
+  `NeowEvent.rng`, initialized from `Settings.seed` when the blessing choices
+  are generated and reused by later Neow reward activation.
 - Neow remove rewards stay on `RunPendingChoiceReason::Purge`, not
   `PurgeNonBottled`.
 - Neow transform rewards stay on `RunPendingChoiceReason::Transform`, not
@@ -311,14 +314,15 @@ Audit result:
 - Neow upgrade rewards use the shared Java `canUpgrade()` master-deck filter.
 - Submitted remove, upgrade, and transform selections emit domain events with
   `DomainEventSource::Event(Neow)`.
-
-Open follow-up:
-
-- Java constructs Neow rewards and performs Neow transforms through
-  `NeowEvent.rng`. Rust currently generates the choice set from a local
-  seed-derived RNG and later reuses the shared transform helper, which consumes
-  `misc_rng`. This pass intentionally did not fold that RNG-identity issue into
-  selection filtering; it needs a separate Neow RNG audit.
+- Neow random rare card reward, ordinary card-reward generation, colorless
+  generation, and Neow transform rewards now consume `neow_rng` rather than
+  `card_rng` or `misc_rng`.
+- Neow ordinary class-card rewards now match Java `rollRarity()`: 33% Uncommon,
+  otherwise Common; they do not roll Rare unless the reward is explicitly
+  `THREE_RARE_CARDS`.
+- Neow ordinary colorless rewards now match Java's `getColorlessRewardCards`
+  path: `rollRarity()` consumes Neow RNG, then Common is promoted to Uncommon,
+  so the non-rare colorless reward offers Uncommon colorless cards only.
 
 Tests:
 
@@ -328,6 +332,10 @@ Tests:
 - `remove_two_selection_removes_selected_cards_with_event_source`
 - `selected_upgrade_uses_event_source`
 - `transform_two_selection_transforms_selected_cards_with_event_source`
+- `setup_preserves_java_neow_rng_counter_after_choice_generation`
+- `one_random_rare_card_uses_neow_rng_not_card_rng`
+- `normal_class_card_reward_uses_neow_rng_and_never_rolls_rare`
+- `normal_colorless_reward_is_uncommon_only_like_java`
 
 ### Falling card preselection
 
@@ -1723,4 +1731,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `986 passed`.
+- Current result after this pass: `990 passed`.

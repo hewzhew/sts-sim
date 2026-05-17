@@ -1,7 +1,7 @@
 use crate::content::relics::RelicState;
 use crate::map::state::MapState;
 use crate::runtime::combat::{CombatCard, PlayerEntity};
-use crate::runtime::rng::RngPool;
+use crate::runtime::rng::{RngPool, StsRng};
 use crate::state::selection::{DomainCardSnapshot, DomainEvent, DomainEventSource};
 use std::cell::Cell;
 
@@ -28,6 +28,9 @@ pub struct RunState {
 
     pub map: MapState,
     pub rng_pool: RngPool,
+    /// Java `NeowEvent.rng`, initialized from `Settings.seed` when Neow
+    /// blessings are generated and then reused by Neow reward activation.
+    pub neow_rng: StsRng,
 
     // Persistent out-of-combat attributes decoupled from CombatState
     pub current_hp: i32,
@@ -114,6 +117,7 @@ impl RunState {
             player_class,
             map: MapState::new(first_map),
             rng_pool: RngPool::new(seed),
+            neow_rng: StsRng::new(seed),
 
             // Typical Ironclad defaults
             current_hp: base_max_hp,
@@ -1587,10 +1591,7 @@ impl RunState {
             if filtered.is_empty() {
                 CardId::Clumsy
             } else {
-                let idx = self
-                    .rng_pool
-                    .misc_rng
-                    .random_range(0, filtered.len() as i32 - 1) as usize;
+                let idx = self.transform_random_index(filtered.len(), source);
                 filtered[idx]
             }
         } else if COLORLESS_UNCOMMON_POOL.contains(&old_card_id)
@@ -1612,10 +1613,7 @@ impl RunState {
             if pool.is_empty() {
                 old_card_id
             } else {
-                let idx = self
-                    .rng_pool
-                    .misc_rng
-                    .random_range(0, pool.len() as i32 - 1) as usize;
+                let idx = self.transform_random_index(pool.len(), source);
                 pool[idx]
             }
         } else {
@@ -1645,10 +1643,7 @@ impl RunState {
             if pool.is_empty() {
                 old_card_id
             } else {
-                let idx = self
-                    .rng_pool
-                    .misc_rng
-                    .random_range(0, pool.len() as i32 - 1) as usize;
+                let idx = self.transform_random_index(pool.len(), source);
                 pool[idx]
             }
         };
@@ -1696,6 +1691,18 @@ impl RunState {
         // 4. Resolve obtain-triggered deck actions
         self.resolve_deck_actions(result.actions, source);
         self.dispatch_on_master_deck_change();
+    }
+
+    fn transform_random_index(&mut self, len: usize, source: DomainEventSource) -> usize {
+        if len == 0 {
+            return 0;
+        }
+        let rng = if source == DomainEventSource::Event(crate::state::events::EventId::Neow) {
+            &mut self.neow_rng
+        } else {
+            &mut self.rng_pool.misc_rng
+        };
+        rng.random_range(0, len as i32 - 1) as usize
     }
 
     pub fn emit_event(&mut self, event: DomainEvent) {

@@ -171,6 +171,7 @@ pub fn setup_neow_choices(run_state: &mut RunState) {
     let _hp_bonus = (run_state.max_hp as f32 * 0.1) as i32;
     let boss_count = 1; // For simulator assume standard run with prior boss kills
 
+    run_state.neow_rng = crate::runtime::rng::StsRng::new(run_state.seed);
     let mut extra = Vec::new();
 
     if boss_count == 0 {
@@ -182,7 +183,7 @@ pub fn setup_neow_choices(run_state: &mut RunState) {
         extra.push(encode_drawback(NeowDrawback::None));
     } else {
         // blessing: 4 categories, each pick one reward
-        let mut neow_rng = crate::runtime::rng::StsRng::new(run_state.seed);
+        let neow_rng = &mut run_state.neow_rng;
 
         // Category 0: small bonuses
         let cat0_options = [
@@ -443,10 +444,7 @@ fn apply_reward(
                 crate::content::cards::CardRarity::Rare,
             );
             if !pool.is_empty() {
-                let idx = run_state
-                    .rng_pool
-                    .card_rng
-                    .random_range(0, (pool.len() - 1) as i32) as usize;
+                let idx = neow_random_index(run_state, pool.len());
                 super::obtain_event_card(run_state, crate::state::events::EventId::Neow, pool[idx]);
             }
         }
@@ -542,38 +540,62 @@ fn apply_reward(
     }
 }
 
+fn neow_random_index(run_state: &mut RunState, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    run_state.neow_rng.random_range(0, len as i32 - 1) as usize
+}
+
+fn neow_roll_rarity(run_state: &mut RunState) -> crate::content::cards::CardRarity {
+    use crate::content::cards::CardRarity;
+    if run_state.neow_rng.random_boolean_chance(0.33) {
+        CardRarity::Uncommon
+    } else {
+        CardRarity::Common
+    }
+}
+
+fn neow_pick_unique_card(
+    run_state: &mut RunState,
+    pool: &[crate::content::cards::CardId],
+    selected: &[crate::content::cards::CardId],
+) -> Option<crate::content::cards::CardId> {
+    if pool.is_empty() {
+        return None;
+    }
+
+    for _ in 0..(pool.len() * 8).max(1) {
+        let card_id = pool[neow_random_index(run_state, pool.len())];
+        if !selected.contains(&card_id) {
+            return Some(card_id);
+        }
+    }
+
+    pool.iter().copied().find(|card_id| !selected.contains(card_id))
+}
+
 /// Generate 3 cards from the player's class card pool.
 /// If `rare_only` is true, all 3 cards come from the Rare pool.
-/// Otherwise, uses the same rarity roll as DreamCatcher (standard card reward rarity distribution).
+/// Otherwise, Java Neow rolls only Common/Uncommon: 33% Uncommon, else Common.
 fn generate_neow_class_cards(
     run_state: &mut RunState,
     rare_only: bool,
 ) -> Vec<crate::rewards::state::RewardCard> {
     use crate::content::cards::CardRarity;
     let mut cards = Vec::new();
+    let mut selected_ids = Vec::new();
     for _ in 0..3 {
-        let rarity = if rare_only {
-            CardRarity::Rare
-        } else {
-            let roll = run_state.rng_pool.card_rng.random_range(0, 99);
-            if roll < 3 {
-                CardRarity::Rare
-            } else if roll < 40 {
-                CardRarity::Uncommon
-            } else {
-                CardRarity::Common
-            }
-        };
+        let mut rarity = neow_roll_rarity(run_state);
+        if rare_only {
+            rarity = CardRarity::Rare;
+        }
         let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
             run_state.player_class,
             rarity,
         );
-        if !pool.is_empty() {
-            let idx = run_state
-                .rng_pool
-                .card_rng
-                .random_range(0, (pool.len() - 1) as i32) as usize;
-            let card_id = pool[idx];
+        if let Some(card_id) = neow_pick_unique_card(run_state, pool, &selected_ids) {
+            selected_ids.push(card_id);
             cards.push(crate::rewards::state::RewardCard::new(
                 card_id,
                 run_state.preview_obtain_card_upgrades(card_id, 0),
@@ -632,23 +654,21 @@ fn generate_neow_colorless_cards(
     rare_only: bool,
 ) -> Vec<crate::rewards::state::RewardCard> {
     let mut cards = Vec::new();
+    let mut selected_ids = Vec::new();
     for _ in 0..3 {
-        let pool = if rare_only {
+        let mut rarity = neow_roll_rarity(run_state);
+        if rare_only {
+            rarity = crate::content::cards::CardRarity::Rare;
+        } else if rarity == crate::content::cards::CardRarity::Common {
+            rarity = crate::content::cards::CardRarity::Uncommon;
+        }
+        let pool = if rarity == crate::content::cards::CardRarity::Rare {
             COLORLESS_RARE_POOL
         } else {
-            let roll = run_state.rng_pool.card_rng.random_range(0, 99);
-            if roll < 30 {
-                COLORLESS_RARE_POOL
-            } else {
-                COLORLESS_UNCOMMON_POOL
-            }
+            COLORLESS_UNCOMMON_POOL
         };
-        if !pool.is_empty() {
-            let idx = run_state
-                .rng_pool
-                .card_rng
-                .random_range(0, (pool.len() - 1) as i32) as usize;
-            let card_id = pool[idx];
+        if let Some(card_id) = neow_pick_unique_card(run_state, pool, &selected_ids) {
+            selected_ids.push(card_id);
             cards.push(crate::rewards::state::RewardCard::new(
                 card_id,
                 run_state.preview_obtain_card_upgrades(card_id, 0),
@@ -660,11 +680,15 @@ fn generate_neow_colorless_cards(
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_drawback, encode_reward, handle_choice, NeowDrawback, NeowRewardType};
+    use super::{
+        encode_drawback, encode_reward, generate_neow_class_cards, generate_neow_colorless_cards,
+        handle_choice, NeowDrawback, NeowRewardType,
+    };
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
+    use crate::runtime::rng::StsRng;
     use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
     use crate::state::events::{EventId, EventState};
     use crate::state::run::RunState;
@@ -682,6 +706,7 @@ mod tests {
     fn neow_run_with_reward(reward: NeowRewardType, deck: Vec<CombatCard>) -> RunState {
         let mut run_state = RunState::new(1, 0, true, "Ironclad");
         run_state.master_deck = deck;
+        run_state.neow_rng = StsRng::new(run_state.seed);
         run_state.event_state = Some(EventState {
             id: EventId::Neow,
             current_screen: 1,
@@ -879,6 +904,8 @@ mod tests {
             ],
         );
         let mut engine_state = choose_neow_reward(&mut run_state);
+        let misc_before = run_state.rng_pool.misc_rng.counter;
+        let neow_before = run_state.neow_rng.counter;
 
         let mut combat_state = None;
         assert!(tick_run(
@@ -895,6 +922,15 @@ mod tests {
         ));
 
         assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(
+            run_state.rng_pool.misc_rng.counter, misc_before,
+            "Java Neow transform uses NeowEvent.rng, not miscRng"
+        );
+        assert_eq!(
+            run_state.neow_rng.counter,
+            neow_before + 2,
+            "two selected Neow transforms consume two NeowEvent.rng card rolls"
+        );
         let events = run_state.take_emitted_events();
         assert!(events.iter().any(|event| matches!(
             event,
@@ -912,5 +948,70 @@ mod tests {
                 ..
             } if before.id == CardId::Defend && before.uuid == 12
         )));
+    }
+
+    #[test]
+    fn setup_preserves_java_neow_rng_counter_after_choice_generation() {
+        let run_state = RunState::new(7, 0, true, "Ironclad");
+
+        assert_eq!(
+            run_state.neow_rng.counter, 4,
+            "standard Neow blessing constructs category 0, category 1, category 2 drawback, and category 2 reward from NeowEvent.rng"
+        );
+    }
+
+    #[test]
+    fn one_random_rare_card_uses_neow_rng_not_card_rng() {
+        let mut run_state = neow_run_with_reward(NeowRewardType::OneRandomRareCard, Vec::new());
+        let card_before = run_state.rng_pool.card_rng.counter;
+        let neow_before = run_state.neow_rng.counter;
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.rng_pool.card_rng.counter, card_before);
+        assert_eq!(run_state.neow_rng.counter, neow_before + 1);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                source: DomainEventSource::Event(EventId::Neow),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn normal_class_card_reward_uses_neow_rng_and_never_rolls_rare() {
+        let mut run_state = neow_run_with_reward(NeowRewardType::ThreeCards, Vec::new());
+        let card_before = run_state.rng_pool.card_rng.counter;
+        let neow_before = run_state.neow_rng.counter;
+
+        let cards = generate_neow_class_cards(&mut run_state, false);
+
+        assert_eq!(run_state.rng_pool.card_rng.counter, card_before);
+        assert!(run_state.neow_rng.counter >= neow_before + 6);
+        assert_eq!(cards.len(), 3);
+        assert!(cards.iter().all(|card| {
+            let rarity = crate::content::cards::get_card_definition(card.id).rarity;
+            rarity == crate::content::cards::CardRarity::Common
+                || rarity == crate::content::cards::CardRarity::Uncommon
+        }));
+    }
+
+    #[test]
+    fn normal_colorless_reward_is_uncommon_only_like_java() {
+        let mut run_state = neow_run_with_reward(NeowRewardType::RandomColorless, Vec::new());
+        let card_before = run_state.rng_pool.card_rng.counter;
+        let neow_before = run_state.neow_rng.counter;
+
+        let cards = generate_neow_colorless_cards(&mut run_state, false);
+
+        assert_eq!(run_state.rng_pool.card_rng.counter, card_before);
+        assert!(run_state.neow_rng.counter >= neow_before + 6);
+        assert_eq!(cards.len(), 3);
+        assert!(cards.iter().all(|card| {
+            crate::content::cards::get_card_definition(card.id).rarity
+                == crate::content::cards::CardRarity::Uncommon
+        }));
     }
 }
