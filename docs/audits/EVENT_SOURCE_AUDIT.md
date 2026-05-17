@@ -265,17 +265,22 @@ Tests:
 - `sleep_heals_through_player_heal_semantics_and_event_source`
 - `sleep_is_blocked_by_mark_of_the_bloom_like_java_player_heal`
 
-### Big Fish HP rewards
+### Big Fish HP rewards and Box timing
 
 Java `events/exordium/BigFish.java` handles the two HP options through player
 resource methods, not direct field writes:
 
 - `Banana` calls `AbstractDungeon.player.heal(maxHealth / 3, true)`.
 - `Donut` calls `AbstractDungeon.player.increaseMaxHp(5, true)`.
+- `Box` constructs `ShowCardAndObtainEffect(Regret)` before obtaining the random
+  relic through `spawnRelicAndObtain`.
 
 `AbstractCreature.increaseMaxHp` first increments max HP and then calls
 `heal(amount, true)`, so healing hooks such as `Mark of the Bloom` can block
 the attached heal without blocking the max-HP gain itself.
+
+The Box ordering means Omamori interception uses the pre-relic state, while
+later obtain-card hooks see the newly obtained relic.
 
 Fixes:
 
@@ -285,6 +290,8 @@ Fixes:
   Event(BigFish))`.
 - `RunState::gain_max_hp_with_source` now follows Java's increase-then-heal
   shape instead of hard-mutating current HP.
+- `BigFish` Box now obtains `Regret` with a pre-relic Omamori snapshot, while
+  preserving post-relic obtain-card hooks such as `Darkstone Periapt`.
 
 Tests:
 
@@ -292,6 +299,8 @@ Tests:
 - `banana_heal_is_blocked_by_mark_of_the_bloom`
 - `donut_increase_max_hp_uses_java_increase_then_heal_semantics`
 - `donut_max_hp_gain_survives_mark_but_attached_heal_is_blocked`
+- `box_new_omamori_does_not_block_regret_from_same_choice`
+- `box_new_darkstone_still_triggers_on_regret_after_relic_obtain`
 
 ### Sssserpent gold and curse
 
@@ -1149,4 +1158,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `894 passed`.
+- Current result after this pass: `896 passed`.

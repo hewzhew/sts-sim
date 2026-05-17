@@ -1,4 +1,5 @@
 use crate::content::cards::CardId;
+use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
@@ -39,6 +40,15 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 _ => {
                     // Box: Random relic + Regret curse
+                    // Java constructs ShowCardAndObtainEffect(Regret) before
+                    // spawnRelicAndObtain(relic), so Omamori interception uses
+                    // the pre-relic state while later obtain-card hooks see the
+                    // newly obtained relic.
+                    let omamori_snapshot = run_state
+                        .relics
+                        .iter()
+                        .find(|relic| relic.id == RelicId::Omamori)
+                        .map(|relic| relic.counter);
                     let relic_id = run_state.random_screenless_relic_reward();
                     if let Some(next_state) = run_state.obtain_relic_with_source(
                         relic_id,
@@ -47,7 +57,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     ) {
                         *engine_state = next_state;
                     }
-                    super::obtain_event_card(run_state, EventId::BigFish, CardId::Regret);
+                    let source = DomainEventSource::Event(EventId::BigFish);
+                    run_state.add_card_to_deck_with_omamori_snapshot_from(
+                        CardId::Regret,
+                        0,
+                        source,
+                        omamori_snapshot.is_some(),
+                        omamori_snapshot.unwrap_or(0),
+                    );
                 }
             }
             event_state.current_screen = 1;
@@ -63,6 +80,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 #[cfg(test)]
 mod tests {
     use super::handle_choice;
+    use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
     use crate::state::events::{EventId, EventState};
@@ -169,5 +187,46 @@ mod tests {
                 source: DomainEventSource::Event(EventId::BigFish),
             }
         )));
+    }
+
+    fn force_box_relic(run_state: &mut RunState, relic_id: RelicId) {
+        run_state.common_relic_pool = vec![relic_id];
+        run_state.uncommon_relic_pool = vec![relic_id];
+        run_state.rare_relic_pool = vec![relic_id];
+    }
+
+    #[test]
+    fn box_new_omamori_does_not_block_regret_from_same_choice() {
+        let mut run_state = big_fish_run(80, 80);
+        force_box_relic(&mut run_state, RelicId::Omamori);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("box should obtain Omamori from the forced relic pool");
+        assert_eq!(omamori.counter, 2);
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Regret));
+    }
+
+    #[test]
+    fn box_new_darkstone_still_triggers_on_regret_after_relic_obtain() {
+        let mut run_state = big_fish_run(80, 80);
+        force_box_relic(&mut run_state, RelicId::DarkstonePeriapt);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Regret));
+        assert_eq!(run_state.max_hp, 86);
     }
 }
