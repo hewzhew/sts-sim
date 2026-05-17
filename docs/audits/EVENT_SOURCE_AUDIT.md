@@ -1112,7 +1112,10 @@ increase intact.
 Java's Bonfire choose screen does not disable the Offer button when there are no
 non-bottled purgeable cards. Pressing it advances to the complete screen and
 opens no grid. Rust now preserves that empty-offer path instead of creating an
-empty pending selection.
+empty pending selection. Because Rust keeps both `BonfireElementals` and the
+live alias `BonfireSpirits`, both entries now share the same non-bottled
+purgeable filter, record the offered card rarity through the shared selection
+resolver, and emit sourced `CardRemoved` events.
 
 Tests:
 
@@ -1121,8 +1124,11 @@ Tests:
 - `heal_rewards_obey_mark_of_the_bloom`
 - `curse_offer_obtains_spirit_poop_with_event_source`
 - `offer_without_purgeable_card_advances_without_pending_like_java`
+- `offer_selection_excludes_bottled_and_unpurgeable_cards_like_java`
+- `offer_removes_selected_card_with_event_source_and_records_rarity`
 - `common_offer_heals_with_spirits_event_source`
 - `curse_offer_obtains_spirit_poop_with_spirits_event_source`
+- `offer_removes_selected_card_with_spirits_event_source_and_records_rarity`
 
 ### Upgrade Shrine upgrade guard
 
@@ -1631,4 +1637,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `962 passed`.
+- Current result after this pass: `967 passed`.
