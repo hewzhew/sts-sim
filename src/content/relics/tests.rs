@@ -950,6 +950,8 @@ fn juzu_bracelet_converts_monster_event_roll_without_preserving_monster_chance()
     let ctx = crate::events::context::EventContext {
         act_num: 1,
         ascension_level: 0,
+        is_daily_run: false,
+        highest_unlocked_ascension_level: 0,
         floor_num: 10,
         gold: 99,
         current_hp: 80,
@@ -1008,6 +1010,8 @@ fn tiny_chest_counter_forces_treasure_roll_every_fourth_unknown_room() {
     let ctx = crate::events::context::EventContext {
         act_num: 1,
         ascension_level: 0,
+        is_daily_run: false,
+        highest_unlocked_ascension_level: 0,
         floor_num: 10,
         gold: 99,
         current_hp: 80,

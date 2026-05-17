@@ -22,6 +22,8 @@ pub fn with_suppressed_obtain_logs<T>(f: impl FnOnce() -> T) -> T {
 pub struct RunState {
     pub seed: u64,
     pub ascension_level: u8,
+    pub is_daily_run: bool,
+    pub highest_unlocked_ascension_level: u8,
     pub act_num: u8,
     pub floor_num: i32,
     pub player_class: &'static str, // "Ironclad", "Silent", "Defect", "Watcher"
@@ -112,6 +114,8 @@ impl RunState {
         let mut rs = RunState {
             seed,
             ascension_level,
+            is_daily_run: false,
+            highest_unlocked_ascension_level: ascension_level,
             act_num: 1,
             floor_num: 0,
             player_class,
@@ -719,6 +723,8 @@ impl RunState {
         let ctx = crate::events::context::EventContext {
             act_num: self.act_num,
             ascension_level: self.ascension_level,
+            is_daily_run: self.is_daily_run,
+            highest_unlocked_ascension_level: self.highest_unlocked_ascension_level,
             floor_num: self.floor_num,
             gold: self.gold,
             current_hp: self.current_hp,

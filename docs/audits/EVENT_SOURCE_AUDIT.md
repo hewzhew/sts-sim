@@ -1452,6 +1452,16 @@ Tests:
 
 ### Note For Yourself profile card
 
+Reachability:
+
+Java `dungeons/AbstractDungeon.java::isNoteForYourselfAvailable()` adds
+`NoteForYourself` to the special one-time event list only when the run is not a
+Daily Run and either the current ascension is 0 or the current ascension is
+below the profile's highest unlocked ascension. It is always disabled at A15+.
+Rust now represents this explicitly in `EventContext` with `is_daily_run` and
+`highest_unlocked_ascension_level`; it no longer treats the gate as plain
+`ascension < 15`.
+
 Java `events/shrines/NoteForYourself.java` reads the offered card from
 `CardCrawlGame.playerPref` keys `NOTE_CARD` and `NOTE_UPGRADE`, defaulting to
 `Iron Wave`. Taking the card manually calls relic `onObtainCard`, adds the card

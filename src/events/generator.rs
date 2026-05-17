@@ -216,18 +216,7 @@ impl EventGenerator {
         candidates.extend_from_slice(&self.shrine_pool);
 
         for &event in &self.one_time_event_pool {
-            let ok = match event {
-                EventId::FountainOfCurseCleansing => ctx.has_curses,
-                EventId::Designer => (ctx.act_num == 2 || ctx.act_num == 3) && ctx.gold >= 75,
-                EventId::Duplicator => ctx.act_num == 2 || ctx.act_num == 3,
-                EventId::FaceTrader => ctx.act_num == 1 || ctx.act_num == 2,
-                EventId::KnowingSkull => ctx.act_num == 2 && ctx.current_hp > 12,
-                EventId::Nloth => ctx.act_num == 2 && ctx.relic_count >= 2,
-                EventId::TheJoust => ctx.act_num == 2 && ctx.gold >= 50,
-                EventId::WomanInBlue => ctx.gold >= 50,
-                EventId::NoteForYourself => ctx.ascension_level < 15,
-                _ => true,
-            };
+            let ok = is_one_time_event_candidate(event, ctx);
             if ok {
                 candidates.push(event);
             }
@@ -265,15 +254,7 @@ impl EventGenerator {
 
         let mut candidates: Vec<EventId> = Vec::new();
         for &event in &self.event_pool {
-            let ok = match event {
-                EventId::DeadAdventurer => ctx.floor_num > 6,
-                EventId::Mushrooms => ctx.floor_num > 6,
-                EventId::MoaiHead => ctx.has_golden_idol || hp_pct <= 0.5,
-                EventId::Cleric => ctx.gold >= 35,
-                EventId::Beggar => ctx.gold >= 75,
-                EventId::Colosseum => ctx.floor_num > map_midpoint,
-                _ => true,
-            };
+            let ok = is_pool_event_candidate(event, ctx, hp_pct, map_midpoint);
             if ok {
                 candidates.push(event);
             }
@@ -342,5 +323,182 @@ impl EventGenerator {
         let options = [EventId::Cleric, EventId::GoldenIdol, EventId::GoldenShrine];
         let idx = rng.event_rng.random_range(0, 2) as usize;
         options[idx]
+    }
+}
+
+fn is_note_for_yourself_available(ctx: &EventContext) -> bool {
+    if ctx.is_daily_run || ctx.ascension_level >= 15 {
+        return false;
+    }
+    ctx.ascension_level == 0 || ctx.ascension_level < ctx.highest_unlocked_ascension_level
+}
+
+fn is_one_time_event_candidate(event: EventId, ctx: &EventContext) -> bool {
+    match event {
+        EventId::FountainOfCurseCleansing => ctx.has_curses,
+        EventId::Designer => (ctx.act_num == 2 || ctx.act_num == 3) && ctx.gold >= 75,
+        EventId::Duplicator => ctx.act_num == 2 || ctx.act_num == 3,
+        EventId::FaceTrader => ctx.act_num == 1 || ctx.act_num == 2,
+        EventId::KnowingSkull => ctx.act_num == 2 && ctx.current_hp > 12,
+        EventId::Nloth => ctx.act_num == 2 && ctx.relic_count >= 2,
+        EventId::TheJoust => ctx.act_num == 2 && ctx.gold >= 50,
+        EventId::WomanInBlue => ctx.gold >= 50,
+        EventId::NoteForYourself => is_note_for_yourself_available(ctx),
+        _ => true,
+    }
+}
+
+fn is_pool_event_candidate(
+    event: EventId,
+    ctx: &EventContext,
+    hp_pct: f32,
+    map_midpoint: i32,
+) -> bool {
+    match event {
+        EventId::DeadAdventurer => ctx.floor_num > 6,
+        EventId::Mushrooms => ctx.floor_num > 6,
+        EventId::MoaiHead => ctx.has_golden_idol || hp_pct <= 0.5,
+        EventId::Cleric => ctx.gold >= 35,
+        EventId::Beggar => ctx.gold >= 75,
+        EventId::Colosseum => ctx.floor_num > map_midpoint,
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx() -> EventContext {
+        EventContext {
+            act_num: 1,
+            ascension_level: 0,
+            is_daily_run: false,
+            highest_unlocked_ascension_level: 0,
+            floor_num: 1,
+            gold: 99,
+            current_hp: 80,
+            max_hp: 80,
+            has_curses: false,
+            tiny_chest_counter: 0,
+            has_golden_idol: false,
+            has_juzu_bracelet: false,
+            relic_count: 0,
+        }
+    }
+
+    #[test]
+    fn note_for_yourself_uses_java_daily_ascension_and_profile_gate() {
+        let mut c = ctx();
+        assert!(is_one_time_event_candidate(EventId::NoteForYourself, &c));
+
+        c.is_daily_run = true;
+        assert!(!is_one_time_event_candidate(EventId::NoteForYourself, &c));
+
+        c.is_daily_run = false;
+        c.ascension_level = 15;
+        c.highest_unlocked_ascension_level = 20;
+        assert!(!is_one_time_event_candidate(EventId::NoteForYourself, &c));
+
+        c.ascension_level = 10;
+        c.highest_unlocked_ascension_level = 10;
+        assert!(!is_one_time_event_candidate(EventId::NoteForYourself, &c));
+
+        c.highest_unlocked_ascension_level = 20;
+        assert!(is_one_time_event_candidate(EventId::NoteForYourself, &c));
+    }
+
+    #[test]
+    fn one_time_event_candidate_gates_match_java_abstract_dungeon() {
+        let mut c = ctx();
+
+        c.has_curses = false;
+        assert!(!is_one_time_event_candidate(
+            EventId::FountainOfCurseCleansing,
+            &c
+        ));
+        c.has_curses = true;
+        assert!(is_one_time_event_candidate(
+            EventId::FountainOfCurseCleansing,
+            &c
+        ));
+
+        c.act_num = 1;
+        c.gold = 99;
+        assert!(!is_one_time_event_candidate(EventId::Designer, &c));
+        c.act_num = 2;
+        c.gold = 74;
+        assert!(!is_one_time_event_candidate(EventId::Designer, &c));
+        c.gold = 75;
+        assert!(is_one_time_event_candidate(EventId::Designer, &c));
+
+        c.act_num = 1;
+        assert!(!is_one_time_event_candidate(EventId::Duplicator, &c));
+        c.act_num = 3;
+        assert!(is_one_time_event_candidate(EventId::Duplicator, &c));
+
+        c.act_num = 3;
+        assert!(!is_one_time_event_candidate(EventId::FaceTrader, &c));
+        c.act_num = 1;
+        assert!(is_one_time_event_candidate(EventId::FaceTrader, &c));
+
+        c.act_num = 2;
+        c.current_hp = 12;
+        assert!(!is_one_time_event_candidate(EventId::KnowingSkull, &c));
+        c.current_hp = 13;
+        assert!(is_one_time_event_candidate(EventId::KnowingSkull, &c));
+
+        c.relic_count = 1;
+        assert!(!is_one_time_event_candidate(EventId::Nloth, &c));
+        c.relic_count = 2;
+        assert!(is_one_time_event_candidate(EventId::Nloth, &c));
+
+        c.gold = 49;
+        assert!(!is_one_time_event_candidate(EventId::TheJoust, &c));
+        c.gold = 50;
+        assert!(is_one_time_event_candidate(EventId::TheJoust, &c));
+
+        c.gold = 49;
+        assert!(!is_one_time_event_candidate(EventId::WomanInBlue, &c));
+        c.gold = 50;
+        assert!(is_one_time_event_candidate(EventId::WomanInBlue, &c));
+    }
+
+    #[test]
+    fn pool_event_candidate_gates_match_java_abstract_dungeon() {
+        let mut c = ctx();
+
+        c.floor_num = 6;
+        assert!(!is_pool_event_candidate(
+            EventId::DeadAdventurer,
+            &c,
+            1.0,
+            7
+        ));
+        assert!(!is_pool_event_candidate(EventId::Mushrooms, &c, 1.0, 7));
+        c.floor_num = 7;
+        assert!(is_pool_event_candidate(EventId::DeadAdventurer, &c, 1.0, 7));
+        assert!(is_pool_event_candidate(EventId::Mushrooms, &c, 1.0, 7));
+
+        c.has_golden_idol = false;
+        assert!(!is_pool_event_candidate(EventId::MoaiHead, &c, 0.51, 7));
+        assert!(is_pool_event_candidate(EventId::MoaiHead, &c, 0.5, 7));
+        c.has_golden_idol = true;
+        assert!(is_pool_event_candidate(EventId::MoaiHead, &c, 1.0, 7));
+
+        c.gold = 34;
+        assert!(!is_pool_event_candidate(EventId::Cleric, &c, 1.0, 7));
+        c.gold = 35;
+        assert!(is_pool_event_candidate(EventId::Cleric, &c, 1.0, 7));
+
+        c.gold = 74;
+        assert!(!is_pool_event_candidate(EventId::Beggar, &c, 1.0, 7));
+        c.gold = 75;
+        assert!(is_pool_event_candidate(EventId::Beggar, &c, 1.0, 7));
+
+        c.floor_num = 7;
+        assert!(!is_pool_event_candidate(EventId::Colosseum, &c, 1.0, 7));
+        c.floor_num = 8;
+        assert!(is_pool_event_candidate(EventId::Colosseum, &c, 1.0, 7));
     }
 }

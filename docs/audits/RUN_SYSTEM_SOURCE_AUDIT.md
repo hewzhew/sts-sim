@@ -35,7 +35,7 @@ and reachability gates must be checked separately.
 
 | Area | Java source roots | Rust source roots | Main risks | Status |
 | --- | --- | --- | --- | --- |
-| Event pools and one-time events | `dungeons/AbstractDungeon.java`, `events/**` | `src/events/generator.rs`, `src/content/events`, `src/engine/event_handler.rs` | event availability gates split from event button handlers; one-time removal; act/floor/gold/HP/relic/deck predicates | open |
+| Event pools and one-time events | `dungeons/AbstractDungeon.java`, `events/**` | `src/events/generator.rs`, `src/content/events`, `src/engine/event_handler.rs` | event availability gates split from event button handlers; one-time removal; act/floor/gold/HP/relic/deck predicates | partial |
 | Monster encounter pools | `dungeons/Exordium.java`, `dungeons/TheCity.java`, `dungeons/TheBeyond.java`, `monsters/**`, `helpers/MonsterHelper.java` | `src/monsters`, `src/encounters`, monster audit docs | pool weights, hard/elite/boss encounter selection, monster HP RNG, encounter history rules | open |
 | Boss selection and visibility | `AbstractDungeon`, dungeon subclasses, map/boss key code | `src/state/run.rs`, map/encounter generation code | selected boss is known to player before the act boss; boss list/pool mutations; Act 4 special path | open |
 | Map generation and path visibility | `map/**`, `dungeons/AbstractDungeon.java`, `rooms/**` | map/run state modules | visible route graph, next-node legality, winged movement, room symbols, hidden room contents vs known node types | open |
@@ -90,4 +90,54 @@ A run-level mechanic is not closed until it has:
 - a public-visibility note for future AI observation work.
 
 If any of these are missing, mark the mechanic `open` or `partial`, not clean.
+
+## Event Pool Reachability Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+- `D:/rust/cardcrawl/dungeons/Exordium.java`
+- `D:/rust/cardcrawl/dungeons/TheCity.java`
+- `D:/rust/cardcrawl/dungeons/TheBeyond.java`
+
+Rust sources checked:
+
+- `src/events/context.rs`
+- `src/events/generator.rs`
+- `src/state/run.rs`
+
+Source-backed candidate gates now covered by direct generator tests:
+
+| Event | Java reachability rule | Rust rule |
+| --- | --- | --- |
+| `FountainOfCurseCleansing` | special one-time; player must be cursed | `ctx.has_curses` |
+| `Designer` | Act 2 or Act 3; at least 75 gold | `(act == 2 || act == 3) && gold >= 75` |
+| `Duplicator` | Act 2 or Act 3 | `act == 2 || act == 3` |
+| `FaceTrader` | Act 1 or Act 2 | `act == 1 || act == 2` |
+| `KnowingSkull` | Act 2; current HP greater than 12 | `act == 2 && current_hp > 12` |
+| `Nloth` | Act 2; at least two relics | `act == 2 && relic_count >= 2` |
+| `TheJoust` | Act 2; at least 50 gold | `act == 2 && gold >= 50` |
+| `WomanInBlue` | at least 50 gold | `gold >= 50` |
+| `NoteForYourself` | non-daily; A0, or A1-A14 lower than profile's highest unlocked ascension | explicit `is_daily_run`, `ascension_level`, and `highest_unlocked_ascension_level` in `EventContext` |
+| `DeadAdventurer` | floor greater than 6 | `floor_num > 6` |
+| `Mushrooms` | floor greater than 6 | `floor_num > 6` |
+| `MoaiHead` | has Golden Idol or HP percentage is at most 50% | `has_golden_idol || hp_pct <= 0.5` |
+| `Cleric` | at least 35 gold | `gold >= 35` |
+| `Beggar` | at least 75 gold | `gold >= 75` |
+| `Colosseum` | current map node is past the map midpoint | currently modeled as `floor_num > 7`; this is a proxy and remains a map-state follow-up |
+
+Important boundary:
+
+- Java decides `NoteForYourself` availability when initializing the special
+  one-time event list. Rust still keeps the event in the pool and filters it at
+  candidate selection time. This is mechanically acceptable for ordinary
+  candidate generation, but exact empty-pool/fallback behavior remains open
+  until event-list initialization is made context-aware.
+- Java `SecretPortal` is a special one-time Act 3 portal event, but the Rust
+  simulator intentionally excludes it from `EventId`; this remains documented in
+  `EVENT_SOURCE_AUDIT.md` rather than silently treated as implemented.
+
+Validation:
+
+- `cargo test events::generator --all-targets`
 
