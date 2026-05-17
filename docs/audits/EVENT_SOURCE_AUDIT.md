@@ -194,11 +194,16 @@ Fixes:
   Event(BackTotheBasics))`.
 - `[Simplicity]` is no longer marked disabled solely because no removable card
   exists; the no-candidate path now advances without opening pending selection.
+- `[Simplicity]` selection is covered as Java
+  `CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())`, and
+  the shared resolver emits `Event(BackTotheBasics)` sourced removal events.
 
 Tests:
 
 - `basics_upgrades_only_upgradeable_starter_strikes_and_defends`
 - `simplicity_without_purgeable_cards_advances_without_pending_like_java`
+- `simplicity_selection_excludes_bottled_and_unpurgeable_cards_like_java`
+- `simplicity_removes_selected_card_with_event_source`
 
 ### Fountain bottled curse removal semantics
 
@@ -1637,4 +1642,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `967 passed`.
+- Current result after this pass: `969 passed`.
