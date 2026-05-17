@@ -312,6 +312,29 @@ Validation:
 - Latest full-suite validation after Secret Portal event work:
   `cargo test --all-targets` -> `1045 passed`.
 
+## Encounter Pool Reachability Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+- `D:/rust/cardcrawl/dungeons/Exordium.java`
+- `D:/rust/cardcrawl/dungeons/TheCity.java`
+- `D:/rust/cardcrawl/dungeons/TheBeyond.java`
+- `D:/rust/cardcrawl/dungeons/TheEnding.java`
+
+Rust sources checked:
+
+- `src/content/monsters/encounter_pool.rs`
+- `src/state/run.rs`
+
+Source-backed result:
+
+- Java has concrete encounter-list initialization only for the known dungeons.
+  `TheEnding.generateMonsters()` fills both normal and elite lists with
+  `Shield and Spear`.
+- Rust already modeled Act 4 as `ShieldAndSpear` lists. It now treats unknown
+  act ids as empty encounter lists instead of silently falling back to Act 1.
+
 ## Boss Chest Relic Flow Pass
 
 Java sources checked:

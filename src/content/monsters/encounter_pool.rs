@@ -116,7 +116,7 @@ pub fn generate_encounter_lists(
         2 => generate_the_city(&mut monster_list, &mut elite_list, monster_rng),
         3 => generate_the_beyond(&mut monster_list, &mut elite_list, monster_rng),
         4 => generate_the_ending(&mut monster_list, &mut elite_list),
-        _ => generate_exordium(&mut monster_list, &mut elite_list, monster_rng),
+        _ => {}
     }
 
     (monster_list, elite_list)
@@ -497,4 +497,19 @@ pub fn generate_boss_list(
     }
 
     bosses
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_act_does_not_fall_back_to_exordium_encounter_lists() {
+        let mut rng = StsRng::new(7);
+
+        let (monsters, elites) = generate_encounter_lists(99, &mut rng);
+
+        assert!(monsters.is_empty());
+        assert!(elites.is_empty());
+    }
 }
