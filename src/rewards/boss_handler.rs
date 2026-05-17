@@ -18,7 +18,7 @@ pub fn handle(
                     // room. The dungeon transition happens only after the boss chest
                     // is left, so state-interrupting on-equip effects must resolve
                     // before advance_act().
-                    if let Some(next_state) = run_state.obtain_relic_with_source(
+                    if let Some(next_state) = run_state.obtain_boss_relic_choice_with_source(
                         chosen_relic,
                         EngineState::MapNavigation,
                         DomainEventSource::BossRelicChoice,
@@ -116,5 +116,38 @@ mod tests {
             "act transition should happen after the boss relic's pending selection resolves"
         );
         assert!(!run_state.pending_boss_act_transition);
+    }
+
+    #[test]
+    fn boss_starter_upgrade_relic_replaces_starter_slot_before_advancing_act() {
+        for (player_class, starter, upgrade) in [
+            ("Ironclad", RelicId::BurningBlood, RelicId::BlackBlood),
+            ("Silent", RelicId::SnakeRing, RelicId::RingOfTheSerpent),
+            ("Defect", RelicId::CrackedCore, RelicId::FrozenCore),
+            ("Watcher", RelicId::PureWater, RelicId::HolyWater),
+        ] {
+            let mut run_state = RunState::new(7, 0, false, player_class);
+            let mut boss_state = BossRelicChoiceState::new(vec![upgrade]);
+
+            assert_eq!(run_state.relics[0].id, starter);
+
+            let next = handle(
+                &mut run_state,
+                &mut boss_state,
+                Some(ClientInput::SubmitRelicChoice(0)),
+            )
+            .expect("boss relic choice should transition");
+
+            assert!(matches!(next, EngineState::MapNavigation));
+            assert_eq!(run_state.act_num, 2);
+            assert_eq!(
+                run_state.relics[0].id, upgrade,
+                "Java instantObtain(player, 0, true) replaces slot 0 for {upgrade:?}"
+            );
+            assert!(
+                !run_state.relics.iter().any(|relic| relic.id == starter),
+                "starter relic should not remain beside its boss upgrade"
+            );
+        }
     }
 }

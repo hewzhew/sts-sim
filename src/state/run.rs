@@ -385,6 +385,35 @@ impl RunState {
         next_state
     }
 
+    pub fn obtain_boss_relic_choice_with_source(
+        &mut self,
+        relic_id: crate::content::relics::RelicId,
+        return_state: crate::state::core::EngineState,
+        source: DomainEventSource,
+    ) -> Option<crate::state::core::EngineState> {
+        if is_starter_upgrade_boss_relic(relic_id) && !self.relics.is_empty() {
+            let previous_gold = self.gold;
+            let previous_hp = self.current_hp;
+            let previous_max_hp = self.max_hp;
+            let replaced_relic_id = self.relics[0].id;
+
+            // Java BossRelicSelectScreen calls instantObtain(player, 0, true)
+            // for these boss relics. That overwrites relic slot 0 and calls
+            // onEquip, but does not run the old relic's onUnequip hook.
+            self.relics[0] = crate::content::relics::RelicState::new(relic_id);
+            self.emit_event(DomainEvent::RelicLost {
+                relic_id: replaced_relic_id,
+                source,
+            });
+            self.emit_event(DomainEvent::RelicObtained { relic_id, source });
+            let next_state = crate::engine::relic_manager::on_equip(self, relic_id, return_state);
+            self.emit_run_resource_diffs(previous_gold, previous_hp, previous_max_hp, source);
+            return next_state;
+        }
+
+        self.obtain_relic_with_source(relic_id, return_state, source)
+    }
+
     pub fn obtain_relic_at_with_source(
         &mut self,
         relic_id: crate::content::relics::RelicId,
@@ -1713,6 +1742,16 @@ impl RunState {
             uuid: card.uuid,
         }
     }
+}
+
+fn is_starter_upgrade_boss_relic(relic_id: crate::content::relics::RelicId) -> bool {
+    matches!(
+        relic_id,
+        crate::content::relics::RelicId::BlackBlood
+            | crate::content::relics::RelicId::RingOfTheSerpent
+            | crate::content::relics::RelicId::FrozenCore
+            | crate::content::relics::RelicId::HolyWater
+    )
 }
 
 #[cfg(test)]

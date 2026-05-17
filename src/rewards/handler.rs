@@ -15,23 +15,13 @@ fn post_reward_state(run_state: &mut RunState) -> EngineState {
     }
     // After boss reward screen, trigger boss relic selection before advancing act
     if run_state.pending_boss_reward {
-        run_state.pending_boss_reward = false; // consume
-        let mut relics = Vec::new();
-        // Generate 3 unique boss relics
-        for _ in 0..3 {
-            // we should make sure they are unique if possible, but for now just roll 3 times
-            // duplicate handling is ideally done during generation. We'll roll 3 times and accept it.
-            let mut next_relic =
-                run_state.random_relic_by_tier(crate::content::relics::RelicTier::Boss);
-            // simple deduplication (max 10 retries to prevent infinite loop)
-            let mut retries = 0;
-            while relics.contains(&next_relic) && retries < 10 {
-                next_relic =
-                    run_state.random_relic_by_tier(crate::content::relics::RelicTier::Boss);
-                retries += 1;
-            }
-            relics.push(next_relic);
-        }
+        run_state.pending_boss_reward = false;
+        // Java BossChest constructor calls returnRandomRelic(BOSS) exactly
+        // three times. The boss relic pool already removes candidates as they
+        // are drawn, so there is no retry/dedup layer here.
+        let relics = (0..3)
+            .map(|_| run_state.random_relic_by_tier(crate::content::relics::RelicTier::Boss))
+            .collect();
         return EngineState::BossRelicSelect(crate::rewards::state::BossRelicChoiceState::new(
             relics,
         ));
@@ -225,5 +215,32 @@ mod tests {
             returned_rewards.items,
             vec![RewardItem::Gold { amount: 25 }]
         );
+    }
+
+    #[test]
+    fn boss_reward_generates_three_boss_relics_by_pool_order_without_retry_layer() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.pending_boss_reward = true;
+        run_state.boss_relic_pool = vec![
+            RelicId::CoffeeDripper,
+            RelicId::BlackStar,
+            RelicId::Astrolabe,
+        ];
+
+        let next = super::post_reward_state(&mut run_state);
+
+        let EngineState::BossRelicSelect(state) = next else {
+            panic!("boss reward should open boss relic select");
+        };
+        assert_eq!(
+            state.relics,
+            vec![
+                RelicId::CoffeeDripper,
+                RelicId::BlackStar,
+                RelicId::Astrolabe
+            ],
+            "Java BossChest calls returnRandomRelic(BOSS) exactly three times"
+        );
+        assert!(run_state.boss_relic_pool.is_empty());
     }
 }
