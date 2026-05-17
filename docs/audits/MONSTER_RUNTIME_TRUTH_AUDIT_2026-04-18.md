@@ -86,6 +86,15 @@ Scope:
 - Rust semantic execution updates thief runtime explicitly when gold is stolen.
 - Death rewards now rely on seeded thief runtime truth instead of reconstructing it from sequence history.
 
+### Lagavulin
+
+- `runtime_state.idle_count`, `debuff_turn_count`, `is_out`, and `is_out_triggered` are exported
+  by `CommunicationMod`.
+- Rust state sync treats all four fields as strict runtime truth. It no longer repairs missing
+  `debuff_turn_count` as zero or infers `is_out` from the visible planned move.
+- Remaining move history usage is limited to Java's explicit attack/debuff sequencing after
+  Lagavulin is awake.
+
 ### Shelled Parasite
 
 - `runtime_state.first_move` is now exported by `CommunicationMod`.

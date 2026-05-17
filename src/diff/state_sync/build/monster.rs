@@ -669,15 +669,9 @@ pub(crate) fn seed_lagavulin_runtime_from_snapshot(monster: &Value, entity: &mut
     }
 
     entity.lagavulin.idle_count = runtime_state_u8(monster, monster_type, "idle_count");
-    entity.lagavulin.debuff_turn_count = runtime_state(monster, monster_type)
-        .get("debuff_turn_count")
-        .and_then(|value| value.as_u64())
-        .map(|value| value as u8)
-        .unwrap_or(0);
-    entity.lagavulin.is_out = runtime_state(monster, monster_type)
-        .get("is_out")
-        .and_then(|value| value.as_bool())
-        .unwrap_or_else(|| entity.planned_move_id() != 5);
+    entity.lagavulin.debuff_turn_count =
+        runtime_state_u8(monster, monster_type, "debuff_turn_count");
+    entity.lagavulin.is_out = runtime_state_bool(monster, monster_type, "is_out");
     entity.lagavulin.is_out_triggered =
         runtime_state_bool(monster, monster_type, "is_out_triggered");
 }
@@ -1244,6 +1238,28 @@ mod tests {
                 "move_count": 4,
                 "buff_count": 2,
                 "blood_hit_count": 15
+            },
+            "is_gone": false,
+            "half_dead": false
+        })
+    }
+
+    fn lagavulin_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Lagavulin",
+            "current_hp": 90,
+            "max_hp": 115,
+            "block": 0,
+            "intent": "ATTACK",
+            "move_id": 3,
+            "move_base_damage": 20,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "idle_count": 2,
+                "debuff_turn_count": 1,
+                "is_out": true,
+                "is_out_triggered": true
             },
             "is_gone": false,
             "half_dead": false
@@ -1882,6 +1898,20 @@ mod tests {
         assert_eq!(entity.corrupt_heart.buff_count, 2);
         assert_eq!(entity.corrupt_heart.blood_hit_count, 15);
         assert!(entity.corrupt_heart.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_lagavulin_full_runtime_state() {
+        let snapshot = lagavulin_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::Lagavulin as usize);
+        assert_eq!(entity.lagavulin.idle_count, 2);
+        assert_eq!(entity.lagavulin.debuff_turn_count, 1);
+        assert!(entity.lagavulin.is_out);
+        assert!(entity.lagavulin.is_out_triggered);
     }
 
     #[test]

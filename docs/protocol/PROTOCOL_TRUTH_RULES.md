@@ -143,6 +143,8 @@ default assumption should be:
 Examples of the correct pattern:
 
 - `Lagavulin.idleCount`
+- `Lagavulin.debuffTurnCount`
+- `Lagavulin.isOut`
 - `Lagavulin.isOutTriggered`
 - `Darkling.firstMove`
 - `Darkling.nipDmg`
