@@ -91,6 +91,27 @@ Test:
 
 - `event_id_from_name_accepts_exact_java_event_ids`
 
+### Sensory Stone screen and colorless reward flow
+
+Java `SensoryStone` starts with a single intro option, then moves to a second
+screen containing `Focus 1`, `Focus 2`, and `Focus 3`. There is no Ascension
+gate that removes the second and third focus options. The random memory text is
+chosen only after a focus option is selected.
+
+Rust previously flattened the intro and focus screens into one decision and
+incorrectly hid `Focus 2/3` at high Ascension. The event now preserves the
+Java two-step flow and consumes the memory-text `miscRng.randomLong()` only on
+the focus decision. Its colorless reward rows now mirror
+`RewardItem(CardColor.COLORLESS)`: apply reward-card-count relics, roll
+rare/uncommon with `colorlessRareChance`, select from the sorted colorless pool
+with `cardRng`, avoid duplicates in a row, and run preview obtain hooks.
+
+Tests:
+
+- `first_click_only_reveals_focus_choices_like_java_intro_screen`
+- `focus_choices_are_available_on_second_screen_even_at_high_ascension`
+- `colorless_reward_row_uses_reward_card_count_relics`
+
 ### Match and Keep start card
 
 Java `GremlinMatchGame.initializeCards()` calls
