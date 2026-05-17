@@ -764,6 +764,30 @@ impl RunState {
         source: DomainEventSource,
     ) -> bool {
         let ctx = self.build_deck_context();
+        self.add_card_to_deck_with_context(card_id, pre_upgrades, source, ctx)
+    }
+
+    pub fn add_card_to_deck_with_omamori_snapshot_from(
+        &mut self,
+        card_id: crate::content::cards::CardId,
+        pre_upgrades: u8,
+        source: DomainEventSource,
+        has_omamori: bool,
+        omamori_charges: i32,
+    ) -> bool {
+        let mut ctx = self.build_deck_context();
+        ctx.has_omamori = has_omamori;
+        ctx.omamori_charges = omamori_charges;
+        self.add_card_to_deck_with_context(card_id, pre_upgrades, source, ctx)
+    }
+
+    fn add_card_to_deck_with_context(
+        &mut self,
+        card_id: crate::content::cards::CardId,
+        pre_upgrades: u8,
+        source: DomainEventSource,
+        ctx: crate::deck::context::DeckContext,
+    ) -> bool {
         let mut target_uuid = self.next_card_uuid();
 
         let result = crate::deck::manager::DeckManager::obtain_card(

@@ -430,6 +430,38 @@ Tests:
 - `shed_blood_damage_respects_tungsten_after_max_hp_heal`
 - `desecrate_decay_uses_event_obtain_pipeline_and_omamori_can_block_it`
 
+### Addict stolen relic / Shame timing
+
+Java `events/city/Addict.java` handles the `[Rob]` branch by constructing
+`ShowCardAndObtainEffect(new Shame(), ...)` before calling
+`spawnRelicAndObtain(...)` for the stolen relic. The `ShowCardAndObtainEffect`
+constructor immediately checks `Omamori`, while the card is actually added later
+after the relic has already been obtained.
+
+This means:
+
+- an already-owned `Omamori` blocks the `Shame`;
+- a newly stolen `Omamori` does not block that same `Shame`;
+- newly stolen obtain-card relics such as `Darkstone Periapt` still see the
+  later `Shame` obtain.
+
+Rust previously obtained the relic and then ran the normal card-obtain pipeline,
+so stealing `Omamori` could incorrectly block the `Shame`.
+
+Fixes:
+
+- Added a RunState card-obtain entrypoint that uses an explicit Omamori
+  interception snapshot while still evaluating other obtain-card hooks from the
+  current relic set.
+- The Addict rob branch snapshots Omamori before obtaining the stolen relic, then
+  obtains `Shame` with that snapshot.
+
+Tests:
+
+- `rob_new_omamori_does_not_block_shame_from_same_choice`
+- `rob_existing_omamori_still_blocks_shame_before_stolen_relic_resolves`
+- `rob_new_darkstone_still_triggers_on_shame_after_relic_obtain`
+
 ### Drug Dealer relic obtain source
 
 Java `events/city/DrugDealer.java` has three first-screen choices:
@@ -1109,10 +1141,12 @@ Validation:
   through the event-sourced relic obtain pipeline. `Mausoleum` now preserves the
   Java relic-before-Writhe effect timing. `DrugDealer` now routes Inject Mutagens
   relics through the event-sourced relic obtain pipeline. `KnowingSkull` now
-  applies repeatable costs through the shared Java HP_LOSS event helper. The
-  remaining direct writes should be handled event-by-event against Java source.
+  applies repeatable costs through the shared Java HP_LOSS event helper.
+  `Addict` now preserves the Java Omamori timing around the stolen relic and
+  Shame obtain. The remaining direct writes should be handled event-by-event
+  against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `891 passed`.
+- Current result after this pass: `894 passed`.
