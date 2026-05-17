@@ -1195,16 +1195,6 @@ impl RunState {
                 }
             } // TheEnding
         };
-
-        // Between-act healing (Java: AbstractDungeon.java L2562-2566)
-        // Asc 5+: heal 75% of missing HP. Below Asc 5: heal to full.
-        if self.ascension_level >= 5 {
-            let missing = self.max_hp - self.current_hp;
-            let heal = (missing as f32 * 0.75).round() as i32;
-            self.current_hp = (self.current_hp + heal).min(self.max_hp);
-        } else {
-            self.current_hp = self.max_hp;
-        }
     }
 
     /// Roll a random relic tier using relicRng.
@@ -1851,6 +1841,24 @@ mod tests {
         assert_eq!(run.monster_list, vec![EncounterId::ShieldAndSpear; 3]);
         assert_eq!(run.boss_list, vec![EncounterId::TheHeart; 3]);
         assert_eq!(run.boss_key, Some(EncounterId::TheHeart));
+    }
+
+    #[test]
+    fn advance_act_heals_once_like_java_dungeon_transition_setup() {
+        let mut asc5 = RunState::new(7, 5, false, "Ironclad");
+        asc5.current_hp = 20;
+        asc5.max_hp = 80;
+        asc5.advance_act();
+        assert_eq!(
+            asc5.current_hp, 65,
+            "Java dungeonTransitionSetup heals round((max-current)*0.75) once at Ascension 5+"
+        );
+
+        let mut low_asc = RunState::new(7, 0, false, "Ironclad");
+        low_asc.current_hp = 20;
+        low_asc.max_hp = 80;
+        low_asc.advance_act();
+        assert_eq!(low_asc.current_hp, 80);
     }
 
     #[test]

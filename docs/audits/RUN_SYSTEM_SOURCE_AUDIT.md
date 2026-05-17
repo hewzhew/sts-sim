@@ -46,6 +46,7 @@ and reachability gates must be checked separately.
 | Rest site and campfire actions | `rooms/RestRoom.java`, `vfx/campfire/**`, campfire relic hooks | `src/engine/campfire_handler.rs`, relic hooks | rest/smith/toke/dig/lift/recall, UI-hosted mechanical effects, Dream Catcher, Girya, Shovel, Peace Pipe | partial |
 | Chest and treasure rooms | `rooms/TreasureRoom*.java`, chest/relic code | treasure/reward/run state | chest reward RNG, Matryoshka, Cursed Key, Tiny Chest, boss chest vs normal chest hooks | open |
 | Neow and run start | `neow/**`, character start deck/relic code | `src/state/run.rs`, Neow handlers | starting deck/relic correctness, choice visibility, reward RNG, class-specific starter replacements | partial |
+| Between-act transition | `dungeons/AbstractDungeon.java`, boss proceed flow | `src/state/run.rs`, boss reward handlers | one-time heal, act increment, map/list reset, RNG counter alignment, boss chest timing | partial |
 | Global visibility contract | map screens, reward screens, potion panel, top panel, AbstractDungeon fields | AI observation docs and run state | what policy may legally know: boss, map graph, event contents, reward choices, potion use/discard, relic counters | open |
 
 ## Immediate Execution Order
@@ -185,6 +186,28 @@ Coverage:
 - `wing_boots_matches_java_next_row_only_semantics`
 - `legal_map_actions_expose_wing_boots_only_on_next_row`
 
+## Between-Act Transition Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+
+Key source facts:
+
+- `dungeonTransitionSetup()` increments `actNum`, clears path/event/monster/
+  elite/boss lists, resets event probabilities, and heals exactly once.
+- At Ascension 5+, the heal is
+  `round((maxHealth - currentHealth) * 0.75)`.
+- Below Ascension 5, the heal is full.
+
+Rust result:
+
+- `RunState::advance_act()` no longer applies the between-act heal twice.
+
+Coverage:
+
+- `advance_act_heals_once_like_java_dungeon_transition_setup`
+
 ## Event Pool Reachability Pass
 
 Java sources checked:
@@ -234,5 +257,5 @@ Important boundary:
 Validation:
 
 - `cargo test events::generator --all-targets`
-- Latest full-suite validation after map/Wing Boots work:
-  `cargo test --all-targets` -> `1012 passed`.
+- Latest full-suite validation after between-act healing work:
+  `cargo test --all-targets` -> `1013 passed`.
