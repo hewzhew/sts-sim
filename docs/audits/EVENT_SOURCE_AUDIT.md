@@ -239,11 +239,15 @@ Fixes:
   Attack candidates with `miscRng`.
 - Falling removal now emits `DomainEventSource::Event(Falling)` instead of
   using the generic deck-mutation source.
+- Disabled missing-type choices now stay inert instead of advancing to the
+  result screen; the all-missing `Land Safely` path still advances like Java.
 
 Tests:
 
 - `falling_init_ignores_bottled_cards_like_java_card_helper`
 - `falling_removal_uses_event_domain_source`
+- `disabled_missing_type_choice_does_not_advance_or_remove_card`
+- `land_safely_without_any_candidates_advances_like_java`
 
 ### Living Wall choice guards
 
@@ -1471,4 +1475,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `936 passed`.
+- Current result after this pass: `938 passed`.

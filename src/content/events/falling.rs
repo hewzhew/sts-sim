@@ -181,19 +181,29 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
         }
         1 => {
             let s = event_state.internal_state;
-            let card_idx = match choice_idx {
-                0 => skill_idx(s),
-                1 => power_idx(s),
-                _ => attack_idx(s),
-            };
-            if card_idx < run_state.master_deck.len() {
-                let uuid = run_state.master_deck[card_idx].uuid;
-                run_state.remove_card_from_deck_with_source(
-                    uuid,
-                    DomainEventSource::Event(crate::state::events::EventId::Falling),
-                );
+            let has_skill = (s & 0x3FF) != NO_CARD;
+            let has_power = ((s >> 10) & 0x3FF) != NO_CARD;
+            let has_attack = ((s >> 20) & 0x3FF) != NO_CARD;
+            if !has_skill && !has_power && !has_attack {
+                event_state.current_screen = 2;
+            } else {
+                let card_idx = match choice_idx {
+                    0 if has_skill => Some(skill_idx(s)),
+                    1 if has_power => Some(power_idx(s)),
+                    2 if has_attack => Some(attack_idx(s)),
+                    _ => None,
+                };
+                if let Some(card_idx) = card_idx {
+                    if card_idx < run_state.master_deck.len() {
+                        let uuid = run_state.master_deck[card_idx].uuid;
+                        run_state.remove_card_from_deck_with_source(
+                            uuid,
+                            DomainEventSource::Event(crate::state::events::EventId::Falling),
+                        );
+                    }
+                    event_state.current_screen = 2;
+                }
             }
-            event_state.current_screen = 2;
         }
         _ => {
             event_state.completed = true;
@@ -351,5 +361,59 @@ mod tests {
                 source: DomainEventSource::Event(crate::state::events::EventId::Falling),
             } if card.uuid == 11
         )));
+    }
+
+    #[test]
+    fn disabled_missing_type_choice_does_not_advance_or_remove_card() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck = vec![CombatCard::new(CardId::Inflame, 12)];
+        rs.event_state = Some(EventState {
+            id: crate::state::events::EventId::Falling,
+            current_screen: 1,
+            internal_state: (NO_CARD & 0x3FF) | (0 << 10) | ((NO_CARD & 0x3FF) << 20),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        let options = get_options(&rs, rs.event_state.as_ref().unwrap());
+        assert!(options[0].ui.disabled);
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.master_deck.len(), 1);
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 1);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn land_safely_without_any_candidates_advances_like_java() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck = vec![];
+        rs.event_state = Some(EventState {
+            id: crate::state::events::EventId::Falling,
+            current_screen: 1,
+            internal_state: (NO_CARD & 0x3FF)
+                | ((NO_CARD & 0x3FF) << 10)
+                | ((NO_CARD & 0x3FF) << 20),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        let options = get_options(&rs, rs.event_state.as_ref().unwrap());
+        assert_eq!(options.len(), 1);
+        assert!(!options[0].ui.disabled);
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 2);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.take_emitted_events().is_empty());
     }
 }
