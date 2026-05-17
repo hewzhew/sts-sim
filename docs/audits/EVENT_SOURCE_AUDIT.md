@@ -116,6 +116,31 @@ Tests:
 - `embrace_madness_damage_applies_tungsten_rod`
 - `enter_light_normal_damage_applies_torii_then_tungsten`
 
+### Event grid-selection callback timing
+
+Several Java events open `AbstractDungeon.gridSelectScreen` and then consume
+`gridSelectScreen.selectedCards` from the event's `update()` method. Rust must
+not translate that pattern into a blanket "resume every event after
+RunPendingChoice" rule:
+
+- Pure deck mutations are already represented by the selected
+  `RunPendingChoiceReason`: remove, transform, upgrade, duplicate, or obtain a
+  selected card copy. Examples include `Cleric`, `GoldenWing`, `LivingWall`,
+  `GremlinWheelGame`, `BackToBasics`, `AccursedBlacksmith`, `Duplicator`,
+  `Purifier`, `UpgradeShrine`, `Transmorgrifier`, and `DrugDealer`.
+- Events whose Java `update()` callback applies additional event-local effects
+  after the deck selection need an explicit Rust post-selection callback. The
+  current audited whitelist is `BonfireElementals` / `BonfireSpirits` for the
+  offered-card rarity reward and `Designer` for the final event completion plus
+  Full Service's random follow-up upgrade.
+- Events such as `NoteForYourself` intentionally stay out of this whitelist
+  because their selection side effect is handled by the shared deck-selection
+  resolver and they should not be advanced by a synthetic extra event choice.
+
+This whitelist is deliberately narrow. Adding an event here requires checking
+the Java event source first and adding an integration test that submits the deck
+selection through `tick_run`.
+
 ### Designer selection and mutation sources
 
 Java `events/shrines/Designer.java` has several non-obvious boundaries:
