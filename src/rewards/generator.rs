@@ -96,7 +96,7 @@ pub fn generate_combat_rewards(
         });
     }
 
-    if is_elite || is_boss {
+    if is_elite {
         // Java: MonsterRoomElite.dropReward() → addRelicToRewards(returnRandomRelicTier())
         let relic_id = run_state.random_relic();
         items.push(RewardItem::Relic { relic_id });
@@ -131,6 +131,7 @@ mod tests {
     };
     use crate::content::cards::{CardId, CardRarity};
     use crate::content::relics::{RelicId, RelicState};
+    use crate::rewards::state::RewardItem;
     use crate::state::run::RunState;
 
     #[test]
@@ -160,6 +161,22 @@ mod tests {
             .relics
             .push(RelicState::new(RelicId::QuestionCard));
         assert_eq!(adjusted_card_reward_choice_count(&run_state, 3), 2);
+    }
+
+    #[test]
+    fn boss_combat_rewards_do_not_include_normal_relic() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+
+        let rewards = super::generate_combat_rewards(&mut run_state, false, true);
+
+        assert!(
+            !rewards
+                .items
+                .iter()
+                .any(|item| matches!(item, RewardItem::Relic { .. })),
+            "Java MonsterRoomBoss uses the boss chest for boss relics; ordinary combat rewards do not include a normal relic"
+        );
     }
 
     #[test]
