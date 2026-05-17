@@ -189,7 +189,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 #[cfg(test)]
 mod tests {
     use super::handle_choice;
-    use crate::content::relics::{RelicId, RelicState};
+use crate::content::cards::CardId;
+use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
     use crate::state::events::{EventId, EventState};
     use crate::state::run::RunState;
@@ -324,5 +325,25 @@ mod tests {
 
         assert_eq!(run_state.max_hp, 85);
         assert_eq!(run_state.current_hp, 36);
+    }
+
+    #[test]
+    fn desecrate_decay_uses_event_obtain_pipeline_and_omamori_can_block_it() {
+        let mut run_state = forgotten_altar_run();
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Decay));
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Omamori should remain after blocking Decay");
+        assert_eq!(omamori.counter, 1);
     }
 }

@@ -395,6 +395,9 @@ Fixes:
   slot, or grants `Circlet` when `Bloody Idol` is already owned.
 - `Shed Blood` now gains max HP through `gain_max_hp_with_source` and then
   applies sourced normal damage with the Java `Tungsten Rod` reduction path.
+- `Desecrate` continues through the event card-obtain helper; regression
+  coverage now verifies that Omamori can block the `Decay` without bypassing
+  the event pipeline.
 
 Tests:
 
@@ -402,6 +405,7 @@ Tests:
 - `offering_golden_idol_with_existing_bloody_idol_grants_circlet_without_losing_idol`
 - `shed_blood_increases_max_hp_then_heals_then_takes_java_damage`
 - `shed_blood_damage_respects_tungsten_after_max_hp_heal`
+- `desecrate_decay_uses_event_obtain_pipeline_and_omamori_can_block_it`
 
 ### Ghosts and Vampires max-HP trades
 
@@ -1060,4 +1064,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `884 passed`.
+- Current result after this pass: `885 passed`.
