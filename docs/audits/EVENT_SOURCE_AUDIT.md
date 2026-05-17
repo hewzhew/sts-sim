@@ -1288,8 +1288,11 @@ Java `events/shrines/WomanInBlue.java` buys potion rewards, not direct potion
 inventory entries. For each paid choice it loses gold, clears room rewards,
 adds one to three `RewardItem(PotionHelper.getRandomPotion())`, marks the room
 complete, and opens the combat reward screen. The purchase buttons are not
-disabled by gold in Java; `loseGold(cost)` clamps the player's gold to zero.
-Potion capacity and Sozu are handled later by the reward screen.
+disabled by gold in the event handler; `loseGold(cost)` clamps the player's
+gold to zero. Normal vanilla reachability is gated earlier in
+`dungeons/AbstractDungeon.java`: `The Woman in Blue` is filtered out when
+`AbstractDungeon.player.gold < 50`. Potion capacity and Sozu are handled later
+by the reward screen.
 
 The A15 leave branch applies
 `DamageInfo(null, ceil(maxHealth * 0.05), HP_LOSS)`. HP_LOSS bypasses block and
@@ -1300,8 +1303,11 @@ Fixes:
 - Buying potions now opens `EngineState::RewardScreen` containing potion reward
   items instead of calling `obtain_potion` directly.
 - Potion purchase semantics no longer require an empty potion slot.
-- Potion purchase semantics no longer require enough gold; buying with
-  insufficient gold now clamps gold to zero and still opens potion rewards.
+- Event generation requires at least 50 gold, matching the Java event-pool
+  gate.
+- The handler remains Java-like under directly constructed/replay states:
+  buying with insufficient gold clamps gold to zero and still opens potion
+  rewards.
 - A15 leave damage now emits `HpChanged` with `Event(WomanInBlue)` and applies
   Tungsten Rod's HP-loss reduction.
 
