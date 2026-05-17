@@ -1772,6 +1772,34 @@ Tests:
 - `take_book_final_damage_uses_hp_loss_and_opens_book_reward`
 - `random_book_consumes_misc_rng_even_when_only_circlet_is_possible`
 
+### Daily event-combat gold rolls
+
+Four Java event fights use a different `miscRng` gold roll in Daily Run mode:
+
+- `events/beyond/MysteriousSphere.java`: Daily
+  `miscRng.random(50)`, ordinary `miscRng.random(45, 55)`.
+- `events/city/MaskedBandits.java`: Daily `miscRng.random(30)`,
+  ordinary `miscRng.random(25, 35)`.
+- `events/exordium/Mushrooms.java`: Daily `miscRng.random(25)`,
+  ordinary `miscRng.random(20, 30)`.
+- `events/exordium/DeadAdventurer.java`: Daily `miscRng.random(30)`,
+  ordinary `miscRng.random(25, 35)` after the fight-reveal roll.
+
+Fixes:
+
+- The four Rust event handlers now branch on `RunState::is_daily_run` before
+  adding event-combat gold rewards.
+- Dead Adventurer preserves Java's order: first the encounter roll
+  `miscRng.random(0, 99)`, then the Daily/ordinary combat-gold roll when the
+  fight is revealed.
+
+Tests:
+
+- `daily_fight_reward_uses_java_daily_gold_roll` in
+  `mysterious_sphere.rs`, `masked_bandits.rs`, and `mushrooms.rs`.
+- `daily_combat_trigger_uses_java_daily_gold_roll` in
+  `dead_adventurer.rs`.
+
 ### SecretPortal and SpireHeart classification
 
 Java `events/beyond/SecretPortal.java` is a special one-time Act 3 portal event,
@@ -1860,4 +1888,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `993 passed`.
+- Current result after this pass: `1089 passed`.
