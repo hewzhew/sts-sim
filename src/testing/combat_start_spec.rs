@@ -225,6 +225,7 @@ mod tests {
     use crate::content::monsters::factory::EncounterId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::map::node::RoomType;
+    use crate::runtime::combat::OrbId;
     use crate::state::run::RunState;
 
     #[test]
@@ -241,6 +242,30 @@ mod tests {
             6,
             "Java Ring of the Serpent increments masterHandSize, so initial draw uses 6"
         );
+    }
+
+    #[test]
+    fn natural_defect_combat_start_has_java_orb_slots_before_cracked_core() {
+        let mut run = RunState::new(1, 0, false, "Defect");
+
+        let (_engine_state, combat) =
+            build_natural_start_state(&mut run, EncounterId::JawWorm, RoomType::MonsterRoom)
+                .expect("combat should initialize");
+
+        assert_eq!(combat.entities.player.max_orbs, 3);
+        assert_eq!(combat.entities.player.orbs.len(), 3);
+        assert_eq!(
+            combat.entities.player.orbs[0].id,
+            OrbId::Lightning,
+            "Java Defect starts combat with 3 master orb slots before Cracked Core channels Lightning"
+        );
+        assert!(combat
+            .entities
+            .player
+            .orbs
+            .iter()
+            .skip(1)
+            .all(|orb| orb.id == OrbId::Empty));
     }
 }
 

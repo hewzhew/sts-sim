@@ -271,7 +271,7 @@ Validation:
 
 - `cargo test events::generator --all-targets`
 - Latest full-suite validation after boss chest flow work:
-  `cargo test --all-targets` -> `1021 passed`.
+  `cargo test --all-targets` -> `1022 passed`.
 
 ## Boss Chest Relic Flow Pass
 
@@ -306,6 +306,9 @@ Rust result:
 - `Ring of the Serpent` passive draw-size state is now present before combat
   start draw. Java implements this as `masterHandSize++` on equip and copies it
   into `gameHandSize` during combat setup.
+- Defect combat setup now starts with Java's three `masterMaxOrbs` empty slots
+  before Cracked Core / Frozen Core / Nuclear Battery pre-battle orb effects
+  resolve.
 - Chest-open hooks were checked against Java. The only relics overriding chest
   hooks are `Cursed Key`, `Matryoshka`, and `Nloth's Mask`; boss chests pass
   `bossChest=true`, Cursed Key/Nloth's Mask do nothing in that case, and
@@ -318,3 +321,4 @@ Coverage:
 - `boss_starter_upgrade_relic_replaces_starter_slot_before_advancing_act`
 - `boss_reward_generates_three_boss_relics_by_pool_order_without_retry_layer`
 - `natural_combat_start_applies_ring_of_the_serpent_opening_hand_size`
+- `natural_defect_combat_start_has_java_orb_slots_before_cracked_core`

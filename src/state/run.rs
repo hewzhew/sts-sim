@@ -312,6 +312,17 @@ impl RunState {
 
     /// Extends this RunState's persistent player properties into a temporary CombatState player.
     pub fn build_combat_player(&self, id: crate::core::EntityId) -> PlayerEntity {
+        let master_max_orbs = if self.player_class == "Defect" {
+            3
+        } else if self
+            .relics
+            .iter()
+            .any(|relic| relic.id == crate::content::relics::RelicId::PrismaticShard)
+        {
+            1
+        } else {
+            0
+        };
         let mut p = PlayerEntity {
             id,
             current_hp: self.current_hp,
@@ -319,8 +330,12 @@ impl RunState {
             block: 0,
             gold_delta_this_combat: 0,
             gold: self.gold,
-            max_orbs: 0,
-            orbs: Vec::new(),
+            max_orbs: master_max_orbs,
+            orbs: (0..master_max_orbs)
+                .map(|_| {
+                    crate::runtime::combat::OrbEntity::new(crate::runtime::combat::OrbId::Empty)
+                })
+                .collect(),
             stance: crate::runtime::combat::StanceId::Neutral,
             relics: Vec::new(),
             relic_buses: Default::default(),
