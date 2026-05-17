@@ -292,6 +292,9 @@ Important boundary:
   candidate selection time. This is mechanically acceptable for ordinary
   candidate generation, but exact empty-pool/fallback behavior remains open
   until event-list initialization is made context-aware.
+- Java initializes the special one-time event list once in Exordium and carries
+  the same list into later acts. Rust now preserves that lifetime: an exhausted
+  one-time event pool is not repopulated by act transitions.
 - Java `SecretPortal` is now represented in Rust as a special one-time Act 3
   event with the Java playtime gate. The Rust event handler maps accepting the
   portal to the boss combat boundary instead of modeling Java's UI room

@@ -16,6 +16,7 @@ pub struct EventGenerator {
     pub event_pool: Vec<EventId>,
     pub shrine_pool: Vec<EventId>,
     pub one_time_event_pool: Vec<EventId>,
+    one_time_event_pool_initialized: bool,
 
     pub monster_chance: f32,
     pub shop_chance: f32,
@@ -29,6 +30,7 @@ impl EventGenerator {
             event_pool: Vec::new(),
             shrine_pool: Vec::new(),
             one_time_event_pool: Vec::new(),
+            one_time_event_pool_initialized: false,
             monster_chance: 0.10,
             shop_chance: 0.03,
             treasure_chance: 0.02,
@@ -108,7 +110,7 @@ impl EventGenerator {
             ],
         };
 
-        if self.one_time_event_pool.is_empty() {
+        if !self.one_time_event_pool_initialized {
             self.one_time_event_pool = vec![
                 EventId::AccursedBlacksmith,
                 EventId::BonfireElementals,
@@ -125,6 +127,7 @@ impl EventGenerator {
                 EventId::WeMeetAgain,
                 EventId::WomanInBlue,
             ];
+            self.one_time_event_pool_initialized = true;
         }
     }
 
@@ -474,6 +477,22 @@ mod tests {
         assert!(!is_one_time_event_candidate(EventId::SecretPortal, &c));
         c.playtime_seconds = 800.0;
         assert!(is_one_time_event_candidate(EventId::SecretPortal, &c));
+    }
+
+    #[test]
+    fn one_time_event_pool_is_initialized_once_across_act_transitions() {
+        let mut generator = EventGenerator::new(1);
+
+        assert!(generator
+            .one_time_event_pool
+            .contains(&EventId::AccursedBlacksmith));
+
+        generator.one_time_event_pool.clear();
+        generator.initialize_event_pools(2);
+
+        assert!(generator.one_time_event_pool.is_empty());
+        assert!(generator.event_pool.contains(&EventId::Addict));
+        assert!(generator.shrine_pool.contains(&EventId::MatchAndKeep));
     }
 
     #[test]
