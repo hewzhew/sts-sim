@@ -85,6 +85,11 @@ Tail applying Weak before Vulnerable at high ascension.
 Centurion's ally-counting and defensive targeting follow Java's flag checks rather than current HP
 checks. Rust already includes tests for zero-HP, non-dying entities.
 
+`GainBlockRandomMonsterAction` itself follows the Java action filter: it excludes the source,
+monsters whose current intent is `ESCAPE`, and `isDying` monsters. It does not filter Java
+`isEscaping` / Rust `is_escaped`, so an already escaping monster with non-escape intent remains a
+valid target, matching the source action.
+
 Healer's total missing HP threshold, A17 attack repetition rule, heal targets, and Strength targets
 match Java:
 

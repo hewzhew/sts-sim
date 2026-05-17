@@ -1416,7 +1416,6 @@ pub fn handle_gain_block_random_monster(source: usize, amount: i32, state: &mut 
         .iter()
         .filter(|m| {
             m.id != source
-                && !m.is_escaped
                 && !matches!(
                     crate::content::monsters::resolve_monster_turn_plan(state, m).summary_spec(),
                     crate::semantics::combat::MonsterMoveSpec::Escape
@@ -1565,6 +1564,7 @@ mod tests {
     use crate::content::powers::PowerId;
     use crate::runtime::action::{DamageInfo, DamageType};
     use crate::runtime::combat::{CombatCard, Power, PowerPayload};
+    use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
     use crate::test_support::{blank_test_combat, test_monster};
 
     fn split_power() -> Power {
@@ -1587,6 +1587,54 @@ mod tests {
             damage_type: DamageType::Normal,
             is_modified: false,
         }
+    }
+
+    fn visible_attack_intent() -> MonsterMoveSpec {
+        MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 1,
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        })
+    }
+
+    #[test]
+    fn gain_block_random_monster_does_not_filter_is_escaping_like_java() {
+        let mut source = test_monster(EnemyId::Centurion);
+        source.id = 1;
+        source.set_planned_visible_spec(Some(visible_attack_intent()));
+        let mut escaping_ally = test_monster(EnemyId::Healer);
+        escaping_ally.id = 2;
+        escaping_ally.is_escaped = true;
+        escaping_ally.set_planned_visible_spec(Some(visible_attack_intent()));
+        let mut state = crate::test_support::combat_with_monsters(vec![source, escaping_ally]);
+
+        handle_gain_block_random_monster(1, 15, &mut state);
+
+        assert_eq!(state.entities.monsters[0].block, 0);
+        assert_eq!(
+            state.entities.monsters[1].block, 15,
+            "Java GainBlockRandomMonsterAction filters source, intent == ESCAPE, and isDying; it does not filter isEscaping"
+        );
+    }
+
+    #[test]
+    fn gain_block_random_monster_filters_escape_intent_like_java() {
+        let mut source = test_monster(EnemyId::Centurion);
+        source.id = 1;
+        source.set_planned_visible_spec(Some(visible_attack_intent()));
+        let mut escaping_intent_ally = test_monster(EnemyId::Looter);
+        escaping_intent_ally.id = 2;
+        escaping_intent_ally.set_planned_move_id(3);
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![source, escaping_intent_ally]);
+
+        handle_gain_block_random_monster(1, 15, &mut state);
+
+        assert_eq!(
+            state.entities.monsters[0].block, 15,
+            "Java falls back to the source when every non-source monster has ESCAPE intent"
+        );
+        assert_eq!(state.entities.monsters[1].block, 0);
     }
 
     #[test]
