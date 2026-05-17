@@ -657,3 +657,260 @@ fn generate_neow_colorless_cards(
     }
     cards
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{encode_drawback, encode_reward, handle_choice, NeowDrawback, NeowRewardType};
+    use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::engine::run_loop::tick_run;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{
+        DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
+        SelectionTargetRef,
+    };
+
+    fn deck_card(id: CardId, uuid: u32, upgrades: u8) -> CombatCard {
+        let mut card = CombatCard::new(id, uuid);
+        card.upgrades = upgrades;
+        card
+    }
+
+    fn neow_run_with_reward(reward: NeowRewardType, deck: Vec<CombatCard>) -> RunState {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.master_deck = deck;
+        run_state.event_state = Some(EventState {
+            id: EventId::Neow,
+            current_screen: 1,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data: vec![
+                1,
+                encode_reward(reward),
+                encode_drawback(NeowDrawback::None),
+            ],
+        });
+        run_state
+    }
+
+    fn choose_neow_reward(run_state: &mut RunState) -> EngineState {
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, run_state, 0);
+        engine_state
+    }
+
+    #[test]
+    fn remove_selection_uses_java_purgeable_cards_including_bottled() {
+        let mut run_state = neow_run_with_reward(
+            NeowRewardType::RemoveCard,
+            vec![
+                deck_card(CardId::Strike, 11, 0),
+                deck_card(CardId::Defend, 12, 0),
+                deck_card(CardId::AscendersBane, 13, 0),
+            ],
+        );
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 11;
+        run_state.relics.push(bottle);
+
+        let engine_state = choose_neow_reward(&mut run_state);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Neow remove reward should open deck purge selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::Purge);
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::Purge);
+        assert_eq!(
+            request.targets,
+            vec![
+                SelectionTargetRef::CardUuid(11),
+                SelectionTargetRef::CardUuid(12)
+            ],
+            "Java Neow opens masterDeck.getPurgeableCards(), so bottled cards remain eligible"
+        );
+    }
+
+    #[test]
+    fn transform_selection_uses_java_purgeable_cards_including_bottled() {
+        let mut run_state = neow_run_with_reward(
+            NeowRewardType::TransformCard,
+            vec![
+                deck_card(CardId::Strike, 11, 0),
+                deck_card(CardId::Defend, 12, 0),
+                deck_card(CardId::Necronomicurse, 13, 0),
+            ],
+        );
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 11;
+        run_state.relics.push(bottle);
+
+        let engine_state = choose_neow_reward(&mut run_state);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Neow transform reward should open deck transform selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::Transform);
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::Transform);
+        assert_eq!(
+            request.targets,
+            vec![
+                SelectionTargetRef::CardUuid(11),
+                SelectionTargetRef::CardUuid(12)
+            ],
+            "Java Neow transform also uses masterDeck.getPurgeableCards()"
+        );
+    }
+
+    #[test]
+    fn upgrade_selection_uses_java_upgradable_cards() {
+        let mut run_state = neow_run_with_reward(
+            NeowRewardType::UpgradeCard,
+            vec![
+                deck_card(CardId::Strike, 11, 1),
+                deck_card(CardId::Defend, 12, 0),
+                deck_card(CardId::Injury, 13, 0),
+            ],
+        );
+
+        let engine_state = choose_neow_reward(&mut run_state);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Neow upgrade reward should open deck upgrade selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::Upgrade);
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::Upgrade);
+        assert_eq!(
+            request.targets,
+            vec![SelectionTargetRef::CardUuid(12)],
+            "Java Neow upgrade opens masterDeck.getUpgradableCards()"
+        );
+    }
+
+    #[test]
+    fn remove_two_selection_removes_selected_cards_with_event_source() {
+        let mut run_state = neow_run_with_reward(
+            NeowRewardType::RemoveTwo,
+            vec![
+                deck_card(CardId::Strike, 11, 0),
+                deck_card(CardId::Defend, 12, 0),
+                deck_card(CardId::Bash, 13, 0),
+            ],
+        );
+        let mut engine_state = choose_neow_reward(&mut run_state);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![
+                    SelectionTargetRef::CardUuid(11),
+                    SelectionTargetRef::CardUuid(12),
+                ],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(EventId::Neow),
+            } if card.id == CardId::Strike && card.uuid == 11
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(EventId::Neow),
+            } if card.id == CardId::Defend && card.uuid == 12
+        )));
+    }
+
+    #[test]
+    fn selected_upgrade_uses_event_source() {
+        let mut run_state = neow_run_with_reward(
+            NeowRewardType::UpgradeCard,
+            vec![deck_card(CardId::Defend, 12, 0)],
+        );
+        let mut engine_state = choose_neow_reward(&mut run_state);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(12)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.master_deck[0].upgrades, 1);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                after,
+                source: DomainEventSource::Event(EventId::Neow),
+                ..
+            } if after.id == CardId::Defend && after.uuid == 12 && after.upgrades == 1
+        )));
+    }
+
+    #[test]
+    fn transform_two_selection_transforms_selected_cards_with_event_source() {
+        let mut run_state = neow_run_with_reward(
+            NeowRewardType::TransformTwoCards,
+            vec![
+                deck_card(CardId::Strike, 11, 0),
+                deck_card(CardId::Defend, 12, 0),
+                deck_card(CardId::Bash, 13, 0),
+            ],
+        );
+        let mut engine_state = choose_neow_reward(&mut run_state);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![
+                    SelectionTargetRef::CardUuid(11),
+                    SelectionTargetRef::CardUuid(12),
+                ],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardTransformed {
+                before,
+                source: DomainEventSource::Event(EventId::Neow),
+                ..
+            } if before.id == CardId::Strike && before.uuid == 11
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardTransformed {
+                before,
+                source: DomainEventSource::Event(EventId::Neow),
+                ..
+            } if before.id == CardId::Defend && before.uuid == 12
+        )));
+    }
+}

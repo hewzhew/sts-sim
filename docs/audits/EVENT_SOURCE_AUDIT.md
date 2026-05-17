@@ -283,6 +283,52 @@ filter uniformly. `DrugDealer`, Neow transform/remove rewards, `EmptyCage`, and
 `Astrolabe` use `masterDeck.getPurgeableCards()` directly, so they remain on
 the ordinary `Purge` / `Transform` variants.
 
+### Neow deck-selection rewards
+
+Java `neow/NeowReward.java` has four deck-selection rewards whose selection
+sources are easy to accidentally smooth into the ordinary event-shrine
+patterns:
+
+- `REMOVE_CARD` opens `masterDeck.getPurgeableCards()` for one card.
+- `REMOVE_TWO` opens `masterDeck.getPurgeableCards()` for two cards.
+- `TRANSFORM_CARD` opens `masterDeck.getPurgeableCards()` for one card.
+- `TRANSFORM_TWO_CARDS` opens `masterDeck.getPurgeableCards()` for two cards.
+- `UPGRADE_CARD` opens `masterDeck.getUpgradableCards()`.
+
+Unlike many shrine events, Neow does not wrap these selection groups with
+`CardGroup.getGroupWithoutBottledCards(...)`. Bottled cards therefore remain
+eligible for Neow remove and transform rewards as long as they are otherwise
+purgeable. Special non-purgeable cards such as `AscendersBane`,
+`CurseOfTheBell`, and `Necronomicurse` still stay out of remove/transform
+candidate lists.
+
+Audit result:
+
+- Neow remove rewards stay on `RunPendingChoiceReason::Purge`, not
+  `PurgeNonBottled`.
+- Neow transform rewards stay on `RunPendingChoiceReason::Transform`, not
+  `TransformNonBottled`.
+- Neow upgrade rewards use the shared Java `canUpgrade()` master-deck filter.
+- Submitted remove, upgrade, and transform selections emit domain events with
+  `DomainEventSource::Event(Neow)`.
+
+Open follow-up:
+
+- Java constructs Neow rewards and performs Neow transforms through
+  `NeowEvent.rng`. Rust currently generates the choice set from a local
+  seed-derived RNG and later reuses the shared transform helper, which consumes
+  `misc_rng`. This pass intentionally did not fold that RNG-identity issue into
+  selection filtering; it needs a separate Neow RNG audit.
+
+Tests:
+
+- `remove_selection_uses_java_purgeable_cards_including_bottled`
+- `transform_selection_uses_java_purgeable_cards_including_bottled`
+- `upgrade_selection_uses_java_upgradable_cards`
+- `remove_two_selection_removes_selected_cards_with_event_source`
+- `selected_upgrade_uses_event_source`
+- `transform_two_selection_transforms_selected_cards_with_event_source`
+
 ### Falling card preselection
 
 Java `events/beyond/Falling.java` calls `CardHelper.hasCardWithType()` and
@@ -1677,4 +1723,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `980 passed`.
+- Current result after this pass: `986 passed`.
