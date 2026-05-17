@@ -24,8 +24,12 @@ impl MapState {
     }
 
     /// Checks if the player can legally travel to the target point based on edges.
-    /// If `has_flight` is true, allows traveling to any node at y > current_y (WingBoots),
-    /// not just adjacent rows — matching Java's MapRoomNode.wingedIsConnected().
+    /// If `has_flight` is true, allows traveling to any valid node on the next
+    /// row reached by the current node's outgoing edges, not to arbitrary later
+    /// rows.
+    ///
+    /// Java: `MapRoomNode.wingedIsConnectedTo()` checks `node.y == edge.dstY`
+    /// and ignores `dstX` while Winged Greaves has charges.
     pub fn can_travel_to(&self, target_x: i32, target_y: i32, has_flight: bool) -> bool {
         // Handle initial map entry at y=0
         if self.current_y == -1 {
@@ -48,17 +52,23 @@ impl MapState {
             }
         }
 
-        // WingBoots flight: allow traveling to any valid node above current position
-        // Java: MapRoomNode.wingedIsConnected() — allows non-adjacent y as long as node exists
-        if has_flight && target_y > self.current_y && target_y <= 14 {
-            if (target_y as usize) < self.graph.len()
-                && (target_x as usize) < self.graph[target_y as usize].len()
+        // WingBoots flight: allow any valid node on a row the current node can
+        // already reach vertically. Java compares only the target row to each
+        // outgoing edge's dstY; it does not allow skipping multiple rows.
+        if has_flight
+            && self.current_y >= 0
+            && (self.current_y as usize) < self.graph.len()
+            && target_y == self.current_y + 1
+            && (target_y as usize) < self.graph.len()
+            && target_x >= 0
+            && (target_x as usize) < self.graph[target_y as usize].len()
+        {
+            let current_node = &self.graph[self.current_y as usize][self.current_x as usize];
+            let target_node = &self.graph[target_y as usize][target_x as usize];
+            if current_node.edges.iter().any(|edge| edge.dst_y == target_y)
+                && (!target_node.edges.is_empty() || target_node.class.is_some())
             {
-                let target_node = &self.graph[target_y as usize][target_x as usize];
-                // Node must have edges or be a valid room (not an empty/disconnected node)
-                if !target_node.edges.is_empty() || target_node.class.is_some() {
-                    return true;
-                }
+                return true;
             }
         }
 
@@ -102,5 +112,49 @@ impl MapState {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::node::{MapEdge, MapRoomNode, RoomType};
+
+    fn node(x: i32, y: i32, class: Option<RoomType>) -> MapRoomNode {
+        let mut node = MapRoomNode::new(x, y);
+        node.class = class;
+        node
+    }
+
+    #[test]
+    fn wing_boots_matches_java_next_row_only_semantics() {
+        let mut start = node(0, 0, Some(RoomType::MonsterRoom));
+        start.edges.insert(MapEdge::new(0, 0, 0, 1));
+
+        let graph = vec![
+            vec![start, node(1, 0, None)],
+            vec![
+                node(0, 1, Some(RoomType::MonsterRoom)),
+                node(1, 1, Some(RoomType::ShopRoom)),
+            ],
+            vec![
+                node(0, 2, Some(RoomType::RestRoom)),
+                node(1, 2, Some(RoomType::MonsterRoom)),
+            ],
+        ];
+        let mut map = MapState::new(graph);
+        map.current_x = 0;
+        map.current_y = 0;
+
+        assert!(map.can_travel_to(0, 1, false));
+        assert!(!map.can_travel_to(1, 1, false));
+        assert!(
+            map.can_travel_to(1, 1, true),
+            "Java Winged Greaves ignores dstX but keeps the target on an outgoing edge row"
+        );
+        assert!(
+            !map.can_travel_to(0, 2, true),
+            "Java Winged Greaves does not skip arbitrary future rows"
+        );
     }
 }

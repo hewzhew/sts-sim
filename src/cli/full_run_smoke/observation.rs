@@ -391,13 +391,19 @@ pub fn build_next_node_observations(run_state: &RunState) -> Vec<RunMapNodeObser
 }
 
 pub fn map_node_observation(run_state: &RunState, x: i32, y: i32) -> RunMapNodeObservationV0 {
+    let has_wing_boots = run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::WingBoots && relic.counter > 0);
+    let reachable_now = run_state.map.can_travel_to(x, y, false)
+        || (has_wing_boots && run_state.map.can_travel_to(x, y, true));
     if y == 15 {
         return RunMapNodeObservationV0 {
             x,
             y,
             room_type: Some("MonsterRoomBoss".to_string()),
             has_emerald_key: false,
-            reachable_now: run_state.map.can_travel_to(x, y, false),
+            reachable_now,
             edges: Vec::new(),
         };
     }
@@ -422,7 +428,7 @@ pub fn map_node_observation(run_state: &RunState, x: i32, y: i32) -> RunMapNodeO
         y,
         room_type: node.and_then(|node| node.class).map(room_type_name),
         has_emerald_key: node.is_some_and(|node| node.has_emerald_key),
-        reachable_now: run_state.map.can_travel_to(x, y, false),
+        reachable_now,
         edges,
     }
 }

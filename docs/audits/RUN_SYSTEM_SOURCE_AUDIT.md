@@ -88,6 +88,10 @@ and reachability gates must be checked separately.
 5. Map and room visibility:
    - define what the player knows on the map at each point;
    - verify legal next-node movement and special movement relics.
+   - current progress: Wing Boots movement now follows Java
+     `MapRoomNode.wingedIsConnectedTo`: it can target other nodes on the next
+     outgoing edge row, but cannot skip arbitrary future rows. Full-run legal
+     actions now expose those flight choices as `FlyToNode`.
 
 6. Reward, shop, rest, and chest screens:
    - source-check every screen that hosts mechanical state;
@@ -151,6 +155,36 @@ Coverage:
 - `act3_a20_first_boss_starts_second_boss_without_reward_or_victory`
 - `act3_boss_with_all_keys_enters_initialized_final_act`
 
+## Map Movement and Visibility Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/map/MapRoomNode.java`
+- `D:/rust/cardcrawl/map/DungeonMap.java`
+
+Key source facts:
+
+- Normal map movement uses edge `(dstX, dstY)` matching.
+- Winged Greaves / Wing Boots is not arbitrary vertical flight. The Java method
+  checks every outgoing edge and allows a winged target when `node.y == edge.dstY`.
+  It ignores X, but still stays on the next edge row.
+- Boss entry is a special map boss hitbox path from row 14 to a synthetic boss
+  room node. It is not a Wing Boots jump.
+
+Rust result:
+
+- `MapState::can_travel_to(..., has_flight=true)` now allows same-row flight
+  across the next reachable row only.
+- Full-run legal map actions include `FlyToNode(x, next_y)` only when Wing Boots
+  has charges and normal edge travel would not already reach that node.
+- Public next-node observation marks Wing Boots targets reachable without
+  exposing multi-row jumps.
+
+Coverage:
+
+- `wing_boots_matches_java_next_row_only_semantics`
+- `legal_map_actions_expose_wing_boots_only_on_next_row`
+
 ## Event Pool Reachability Pass
 
 Java sources checked:
@@ -200,5 +234,5 @@ Important boundary:
 Validation:
 
 - `cargo test events::generator --all-targets`
-- Latest full-suite validation after boss/final-act work:
-  `cargo test --all-targets` -> `1010 passed`.
+- Latest full-suite validation after map/Wing Boots work:
+  `cargo test --all-targets` -> `1012 passed`.

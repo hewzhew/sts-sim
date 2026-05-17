@@ -2932,6 +2932,8 @@ Java source:
 Rust source:
 - `src/content/relics/mod.rs`
 - `src/engine/run_loop.rs`
+- `src/map/state.rs`
+- `src/cli/full_run_smoke/actions.rs`
 - `src/state/run.rs`
 
 Java evidence:
@@ -2939,15 +2941,23 @@ Java evidence:
   `counter = 3`.
 - `setCounter(-2)` marks the relic used up.
 - `canSpawn`: requires floor `<= 40` unless Endless.
+- Map movement is hosted in `MapRoomNode.wingedIsConnectedTo`: while the relic
+  has charges, it ignores target X but still requires the target node to be on
+  an outgoing edge row (`node.y == edge.dstY`). It does not skip arbitrary
+  future rows.
 
 Rust result:
 - Tier and initial counter `3` match Java.
 - Flight consumes charges in map navigation and marks the relic used up at zero.
 - Added normal relic-pool spawn gating for floor `<= 40`.
+- Corrected map flight semantics to expose/use `FlyToNode` only for otherwise
+  unconnected nodes on the next reachable row, not multi-row jumps.
 
 Coverage:
 - `shared_rare_run_campfire_relic_metadata_matches_java_sources`
 - `rare_run_relic_can_spawn_gates_match_java_sources`
+- `wing_boots_matches_java_next_row_only_semantics`
+- `legal_map_actions_expose_wing_boots_only_on_next_row`
 
 ## Shared Relic Batch 12 - Rare Card Flow / Refresh Relics
 

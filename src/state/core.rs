@@ -212,7 +212,7 @@ pub enum ClientInput {
     SubmitCardChoice(Vec<usize>),
     SubmitDiscoverChoice(usize),
     SelectMapNode(usize),
-    FlyToNode(usize, usize), // (x, y) — WingBoots flight to non-adjacent node
+    FlyToNode(usize, usize), // (x, y) — WingBoots flight to another node on the next map row
     SelectEventOption(usize),
     CampfireOption(CampfireChoice),
     EventChoice(usize),

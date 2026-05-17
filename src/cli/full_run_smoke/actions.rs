@@ -96,9 +96,15 @@ pub fn legal_map_actions(run_state: &RunState) -> Vec<ClientInput> {
 
     let mut actions = Vec::new();
     if next_y <= run_state.map.graph.len() as i32 {
+        let has_wing_boots = run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::WingBoots && relic.counter > 0);
         for x in 0..7 {
             if run_state.map.can_travel_to(x, next_y, false) {
                 actions.push(ClientInput::SelectMapNode(x as usize));
+            } else if has_wing_boots && run_state.map.can_travel_to(x, next_y, true) {
+                actions.push(ClientInput::FlyToNode(x as usize, next_y as usize));
             }
         }
     }
@@ -340,7 +346,47 @@ pub fn campfire_choice_key(choice: &CampfireChoice) -> String {
 mod tests {
     use super::*;
     use crate::content::potions::{Potion, PotionId};
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::map::node::{MapEdge, MapRoomNode, RoomType};
+    use crate::map::state::MapState;
     use crate::state::events::{EventId, EventState};
+
+    fn map_node(x: i32, y: i32, class: Option<RoomType>) -> MapRoomNode {
+        let mut node = MapRoomNode::new(x, y);
+        node.class = class;
+        node
+    }
+
+    #[test]
+    fn legal_map_actions_expose_wing_boots_only_on_next_row() {
+        let mut start = map_node(0, 0, Some(RoomType::MonsterRoom));
+        start.edges.insert(MapEdge::new(0, 0, 0, 1));
+
+        let graph = vec![
+            vec![start, map_node(1, 0, None)],
+            vec![
+                map_node(0, 1, Some(RoomType::MonsterRoom)),
+                map_node(1, 1, Some(RoomType::ShopRoom)),
+            ],
+            vec![
+                map_node(0, 2, Some(RoomType::RestRoom)),
+                map_node(1, 2, Some(RoomType::MonsterRoom)),
+            ],
+        ];
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.map = MapState::new(graph);
+        run_state.map.current_x = 0;
+        run_state.map.current_y = 0;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::WingBoots));
+
+        let actions = legal_map_actions(&run_state);
+
+        assert!(actions.contains(&ClientInput::SelectMapNode(0)));
+        assert!(actions.contains(&ClientInput::FlyToNode(1, 1)));
+        assert!(!actions.contains(&ClientInput::FlyToNode(0, 2)));
+        assert!(!actions.contains(&ClientInput::FlyToNode(1, 2)));
+    }
 
     #[test]
     fn run_level_potion_actions_follow_java_top_panel_affordances() {
