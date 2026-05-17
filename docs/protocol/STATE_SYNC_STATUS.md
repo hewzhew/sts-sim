@@ -95,6 +95,7 @@ Rust currently consumes explicit Java runtime fields for:
 - `SpireSpear.move_count`
 - `SlaverRed.first_turn`
 - `SlaverRed.used_entangle`
+- `GremlinNob.used_bellow`
 
 ### Relics
 

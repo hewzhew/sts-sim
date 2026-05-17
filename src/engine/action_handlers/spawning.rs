@@ -140,6 +140,7 @@ pub fn handle_spawn_monster(
         spire_shield: Default::default(),
         spire_spear: Default::default(),
         slaver_red: Default::default(),
+        gremlin_nob: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -243,6 +244,10 @@ pub fn handle_spawn_monster(
         new_monster.slaver_red.protocol_seeded = true;
         new_monster.slaver_red.first_turn = true;
         new_monster.slaver_red.used_entangle = false;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::GremlinNob {
+        new_monster.gremlin_nob.protocol_seeded = true;
+        new_monster.gremlin_nob.used_bellow = false;
     }
     if matches!(
         enemy_id,
@@ -929,6 +934,27 @@ fn handle_update_slaver_red_state(
     }
 }
 
+fn handle_update_gremlin_nob_state(
+    monster_id: usize,
+    used_bellow: Option<bool>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = used_bellow {
+            monster.gremlin_nob.used_bellow = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.gremlin_nob.protocol_seeded = value;
+        }
+    }
+}
+
 pub fn handle_update_monster_runtime(
     monster_id: usize,
     patch: MonsterRuntimePatch,
@@ -1090,6 +1116,10 @@ pub fn handle_update_monster_runtime(
             protocol_seeded,
             state,
         ),
+        MonsterRuntimePatch::GremlinNob {
+            used_bellow,
+            protocol_seeded,
+        } => handle_update_gremlin_nob_state(monster_id, used_bellow, protocol_seeded, state),
     }
 }
 

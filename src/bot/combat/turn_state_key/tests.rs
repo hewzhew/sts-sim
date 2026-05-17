@@ -545,6 +545,20 @@ fn stable_monster_signature_ignores_irrelevant_runtime_fields_but_keeps_relevant
             &changed_red_slaver_first_turn
         ),
     );
+
+    let mut gremlin_nob = blank_test_combat();
+    gremlin_nob
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::GremlinNob, 3));
+    let mut changed_gremlin_nob = gremlin_nob.clone();
+    changed_gremlin_nob.entities.monsters[0]
+        .gremlin_nob
+        .used_bellow = true;
+    assert_ne!(
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &gremlin_nob),
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_gremlin_nob),
+    );
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use super::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     ApplyPowerStep, AttackSpec, AttackStep, DamageKind, DebuffSpec, EffectStrength,
@@ -132,6 +132,24 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
     )
 }
 
+fn runtime(entity: &MonsterEntity) -> bool {
+    assert!(
+        entity.gremlin_nob.protocol_seeded,
+        "gremlin nob runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.gremlin_nob.used_bellow
+}
+
+fn gremlin_nob_runtime_update(entity: &MonsterEntity, used_bellow: Option<bool>) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::GremlinNob {
+            used_bellow,
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
 fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> GremlinNobTurn<'a> {
     match (plan.move_id, plan.steps.as_slice()) {
         (
@@ -184,7 +202,7 @@ impl MonsterBehavior for GremlinNob {
         asc: u8,
         num: i32,
     ) -> MonsterTurnPlan {
-        if entity.move_history().is_empty() {
+        if !runtime(entity) {
             return bellow_plan(asc);
         }
 
@@ -200,6 +218,19 @@ impl MonsterBehavior for GremlinNob {
             skull_bash_plan(asc)
         } else {
             bull_rush_plan(asc)
+        }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if !runtime(entity) {
+            vec![gremlin_nob_runtime_update(entity, Some(true))]
+        } else {
+            Vec::new()
         }
     }
 
@@ -225,5 +256,76 @@ impl MonsterBehavior for GremlinNob {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GremlinNob, BELLOW, BULL_RUSH, SKULL_BASH};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::{Action, MonsterRuntimePatch};
+
+    fn nob_with_history(history: &[u8]) -> crate::runtime::combat::MonsterEntity {
+        let mut monster = crate::testing::support::test_monster(EnemyId::GremlinNob);
+        monster.move_history_mut().extend(history.iter().copied());
+        monster.gremlin_nob.used_bellow = history.contains(&BELLOW);
+        monster
+    }
+
+    #[test]
+    fn gremlin_nob_first_roll_uses_private_bellow_latch_and_marks_it() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let monster = nob_with_history(&[]);
+        let plan = GremlinNob::roll_move_plan(&mut rng, &monster, 0, 99);
+
+        assert_eq!(plan.move_id, BELLOW);
+        assert_eq!(
+            GremlinNob::on_roll_move(0, &monster, 99, &plan),
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::GremlinNob {
+                    used_bellow: Some(true),
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn gremlin_nob_used_bellow_is_private_runtime_not_empty_history() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut monster = nob_with_history(&[]);
+        monster.gremlin_nob.used_bellow = true;
+
+        assert_eq!(
+            GremlinNob::roll_move_plan(&mut rng, &monster, 0, 99).move_id,
+            BULL_RUSH,
+            "Java uses private usedBellow; empty imported history alone must not force Bellow"
+        );
+    }
+
+    #[test]
+    fn gremlin_nob_bellow_latch_is_not_inferred_from_nonempty_history() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut monster = nob_with_history(&[BULL_RUSH]);
+        monster.gremlin_nob.used_bellow = false;
+
+        assert_eq!(
+            GremlinNob::roll_move_plan(&mut rng, &monster, 0, 0).move_id,
+            BELLOW,
+            "Java uses private usedBellow; move history must not replace the latch"
+        );
+    }
+
+    #[test]
+    fn gremlin_nob_a18_keeps_java_skull_bash_sequence_after_bellow() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut monster = nob_with_history(&[BELLOW, BULL_RUSH]);
+        monster.gremlin_nob.used_bellow = true;
+
+        assert_eq!(
+            GremlinNob::roll_move_plan(&mut rng, &monster, 18, 99).move_id,
+            SKULL_BASH
+        );
     }
 }

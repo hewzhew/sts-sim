@@ -195,6 +195,7 @@ pub fn build_combat_state_from_snapshots(
             spire_shield: Default::default(),
             spire_spear: Default::default(),
             slaver_red: Default::default(),
+            gremlin_nob: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),

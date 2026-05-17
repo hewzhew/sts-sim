@@ -119,6 +119,17 @@ but the protocol only exports current / last / second-last move ids. Rust now st
 Remaining move-history use is limited to Java's explicit `lastMove` / `lastTwoMoves` repeat rules
 for Stab and Scrape. Entangle gating and first-turn behavior come from runtime truth only.
 
+### Gremlin Nob
+
+Java has a private `usedBellow` field that is flipped inside `getMove()` before the first Bellow
+move is planned. This is hidden runtime truth, not a repeat rule. Rust now stores it in
+`GremlinNobRuntimeState`, `CommunicationMod` exports it as `monster.runtime_state.used_bellow`, and
+state sync treats it as strict protocol truth.
+
+Remaining move-history use is limited to Java's explicit `lastMove` / `lastMoveBefore` /
+`lastTwoMoves` rules for Bull Rush and Skull Bash. The one-time Bellow gate comes from runtime
+truth only.
+
 ### Looter
 
 Java Looter escape sets `AbstractDungeon.getCurrRoom().mugged = true` before queuing
@@ -153,6 +164,10 @@ jumping to the front.
 - `red_slaver_first_turn_is_private_runtime_not_empty_history`
 - `red_slaver_a17_scrape_cannot_repeat_immediately_like_java`
 - `red_slaver_take_turn_actions_preserve_java_order_and_amounts`
+- `gremlin_nob_first_roll_uses_private_bellow_latch_and_marks_it`
+- `gremlin_nob_used_bellow_is_private_runtime_not_empty_history`
+- `gremlin_nob_bellow_latch_is_not_inferred_from_nonempty_history`
+- `gremlin_nob_a18_keeps_java_skull_bash_sequence_after_bellow`
 - `looter_escape_marks_room_mugged_even_without_stolen_gold_like_java`
 - `gremlin_thief_escape_does_not_mark_room_mugged_like_java`
 - `killing_large_slime_does_not_queue_split_like_java_damage_override`

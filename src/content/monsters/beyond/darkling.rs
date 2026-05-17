@@ -399,6 +399,7 @@ mod tests {
             spire_shield: Default::default(),
             spire_spear: Default::default(),
             slaver_red: Default::default(),
+            gremlin_nob: Default::default(),
             darkling: DarklingRuntimeState {
                 first_move: false,
                 nip_dmg: 0,

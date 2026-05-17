@@ -109,6 +109,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         spire_shield: Default::default(),
         spire_spear: Default::default(),
         slaver_red: Default::default(),
+        gremlin_nob: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -189,6 +190,10 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         monster.slaver_red.protocol_seeded = true;
         monster.slaver_red.first_turn = true;
         monster.slaver_red.used_entangle = false;
+    }
+    if enemy_id == EnemyId::GremlinNob {
+        monster.gremlin_nob.protocol_seeded = true;
+        monster.gremlin_nob.used_bellow = false;
     }
     if matches!(enemy_id, EnemyId::Looter | EnemyId::Mugger) {
         monster.thief.protocol_seeded = true;

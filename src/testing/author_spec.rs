@@ -676,6 +676,9 @@ fn compile_monster_runtime_state(monster: &AuthorMonsterSpec, move_id: i32) -> V
             "first_turn": move_id == 1,
             "used_entangle": move_id == 2,
         }),
+        "gremlinnob" => json!({
+            "used_bellow": true,
+        }),
         "lagavulin" => json!({
             "idle_count": 0,
             "debuff_turn_count": 0,

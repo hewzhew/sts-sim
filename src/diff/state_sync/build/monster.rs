@@ -120,6 +120,16 @@ pub(crate) fn seed_slaver_red_runtime_from_snapshot(monster: &Value, entity: &mu
     entity.slaver_red.protocol_seeded = true;
 }
 
+pub(crate) fn seed_gremlin_nob_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::GremlinNob;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.gremlin_nob.used_bellow = runtime_state_bool(monster, monster_type, "used_bellow");
+    entity.gremlin_nob.protocol_seeded = true;
+}
+
 pub(crate) fn seed_byrd_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Byrd;
     if entity.monster_type != monster_type as usize {
@@ -429,6 +439,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_spire_shield_runtime_from_snapshot(monster, entity);
     seed_spire_spear_runtime_from_snapshot(monster, entity);
     seed_slaver_red_runtime_from_snapshot(monster, entity);
+    seed_gremlin_nob_runtime_from_snapshot(monster, entity);
     seed_darkling_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -500,6 +511,7 @@ mod tests {
             spire_shield: Default::default(),
             spire_spear: Default::default(),
             slaver_red: Default::default(),
+            gremlin_nob: Default::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -784,6 +796,23 @@ mod tests {
         })
     }
 
+    fn gremlin_nob_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "GremlinNob",
+            "current_hp": 86,
+            "max_hp": 86,
+            "block": 0,
+            "move_id": 1,
+            "move_base_damage": 14,
+            "move_hits": 1,
+            "last_move_id": 1,
+            "powers": [],
+            "runtime_state": {
+                "used_bellow": true
+            }
+        })
+    }
+
     fn chosen_observation_snapshot() -> serde_json::Value {
         json!({
             "id": "Chosen",
@@ -1042,6 +1071,18 @@ mod tests {
         assert!(!entity.slaver_red.first_turn);
         assert!(entity.slaver_red.used_entangle);
         assert!(entity.slaver_red.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_gremlin_nob_runtime_state() {
+        let snapshot = gremlin_nob_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::GremlinNob as usize);
+        assert!(entity.gremlin_nob.used_bellow);
+        assert!(entity.gremlin_nob.protocol_seeded);
     }
 
     #[test]

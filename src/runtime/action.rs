@@ -111,6 +111,10 @@ pub enum MonsterRuntimePatch {
         used_entangle: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    GremlinNob {
+        used_bellow: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
