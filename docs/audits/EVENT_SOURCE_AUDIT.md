@@ -237,6 +237,30 @@ Tests:
 - `falling_init_ignores_bottled_cards_like_java_card_helper`
 - `falling_removal_uses_event_domain_source`
 
+### Living Wall choice guards
+
+Java `events/exordium/LivingWall.java` has two separate guard layers:
+
+- The `Grow` dialog option is disabled only when
+  `masterDeck.hasUpgradableCards()` is false.
+- When any of `Forget`, `Change`, or `Grow` is clicked, the handler first
+  checks `CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())`.
+  If that group is empty, the event still advances to the result screen, but no
+  grid selection opens. This also affects `Grow`, even though the grid it would
+  open is `masterDeck.getUpgradableCards()`.
+
+Fix:
+
+- Direct calls to disabled `Grow` now stay inert when no card can upgrade,
+  instead of opening an empty upgrade selection.
+- The Java non-bottled-purgeable guard before `Grow` is kept and covered, so a
+  bottled-only upgradable deck advances without opening the upgrade prompt.
+
+Tests:
+
+- `disabled_grow_does_not_open_empty_upgrade_selection`
+- `grow_keeps_java_non_bottled_purgeable_guard_before_upgrade_prompt`
+
 ### We Meet Again trade sources
 
 Java `events/shrines/WeMeetAgain.java` preselects a potion slot, a gold amount,
@@ -1382,4 +1406,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `917 passed`.
+- Current result after this pass: `919 passed`.
