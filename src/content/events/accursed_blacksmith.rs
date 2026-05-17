@@ -14,14 +14,10 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         return vec![EventChoiceMeta::new("[Leave]")];
     }
 
-    let has_upgradable = run_state.master_deck.iter().any(|c| {
-        let def = crate::content::cards::get_card_definition(c.id);
-        // Java: canUpgrade() — curses never, SearingBlow always, others only if upgrades == 0
-        match def.rarity {
-            crate::content::cards::CardRarity::Curse => false,
-            _ => c.id == crate::content::cards::CardId::SearingBlow || c.upgrades == 0,
-        }
-    });
+    let has_upgradable = run_state
+        .master_deck
+        .iter()
+        .any(crate::state::core::master_deck_card_can_upgrade);
 
     let mut choices = vec![];
     if has_upgradable {
@@ -52,13 +48,19 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Forge: upgrade a card via grid-select (Java: gridSelectScreen.open(getUpgradableCards(), 1, ...))
-                    *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
-                        min_choices: 1,
-                        max_choices: 1,
-                        reason: RunPendingChoiceReason::Upgrade,
-                        return_state: Box::new(EngineState::EventRoom),
-                    });
-                    event_state.current_screen = 1;
+                    if run_state
+                        .master_deck
+                        .iter()
+                        .any(crate::state::core::master_deck_card_can_upgrade)
+                    {
+                        *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+                            min_choices: 1,
+                            max_choices: 1,
+                            reason: RunPendingChoiceReason::Upgrade,
+                            return_state: Box::new(EngineState::EventRoom),
+                        });
+                        event_state.current_screen = 1;
+                    }
                 }
                 1 => {
                     // Rummage: obtain Pain curse + WarpedTongs relic
@@ -123,6 +125,22 @@ mod tests {
                     && pending.max_choices == 1
         ));
         assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+    }
+
+    #[test]
+    fn disabled_forge_does_not_open_empty_upgrade_selection() {
+        let mut run_state = blacksmith_run();
+        run_state.master_deck.clear();
+        run_state
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(CardId::Injury, 100));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
     }
 
     #[test]

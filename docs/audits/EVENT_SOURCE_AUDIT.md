@@ -1263,12 +1263,15 @@ Fixes:
 
 - `WarpedTongs` now uses `RunState::obtain_relic_with_source(...,
   Event(AccursedBlacksmith))`.
+- Forge now uses the shared Java `canUpgrade()` helper and direct calls to the
+  disabled Forge option stay inert when no upgradable card exists.
 - Added regression coverage for Forge pending-upgrade state, Rummage event
   sources, and Omamori blocking `Pain` without blocking `WarpedTongs`.
 
 Tests:
 
 - `forge_opens_upgrade_pending_choice_like_grid_select`
+- `disabled_forge_does_not_open_empty_upgrade_selection`
 - `rummage_uses_event_sources_for_pain_and_warped_tongs`
 - `rummage_pain_can_be_blocked_by_omamori_without_blocking_warped_tongs`
 
@@ -1411,4 +1414,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `922 passed`.
+- Current result after this pass: `923 passed`.
