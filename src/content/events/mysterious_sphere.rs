@@ -37,8 +37,12 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
         }
         1 => {
             // Fight! Set up rewards and enter event combat.
-            // Java: miscRng.random(45, 55) for gold, returnRandomScreenlessRelic(RARE) for relic
-            let gold = run_state.rng_pool.misc_rng.random_range(45, 55);
+            // Java: daily uses miscRng.random(50), ordinary runs use miscRng.random(45, 55).
+            let gold = if run_state.is_daily_run {
+                run_state.rng_pool.misc_rng.random(50)
+            } else {
+                run_state.rng_pool.misc_rng.random_range(45, 55)
+            };
             let mut rewards = crate::rewards::state::RewardState::new();
             rewards
                 .items
@@ -125,6 +129,29 @@ mod tests {
             .items
             .iter()
             .any(|item| matches!(item, crate::rewards::state::RewardItem::Relic { .. })));
+    }
+
+    #[test]
+    fn daily_fight_reward_uses_java_daily_gold_roll() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.is_daily_run = true;
+        let mut expected_rng = run_state.rng_pool.misc_rng.clone();
+        let expected_gold = expected_rng.random(50);
+        run_state.event_state = Some(EventState::new(
+            crate::state::events::EventId::MysteriousSphere,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::EventCombat(combat) = engine_state else {
+            panic!("confirmed Mysterious Sphere fight should enter EventCombat");
+        };
+        assert!(combat.rewards.items.iter().any(|item| matches!(
+            item,
+            crate::rewards::state::RewardItem::Gold { amount } if *amount == expected_gold
+        )));
     }
 
     #[test]

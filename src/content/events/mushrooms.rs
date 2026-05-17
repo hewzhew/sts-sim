@@ -51,7 +51,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
         2 => {
             // Fight the mushrooms. Java generates rewards immediately before
             // enterCombat().
-            let gold = run_state.rng_pool.misc_rng.random_range(20, 30);
+            let gold = if run_state.is_daily_run {
+                run_state.rng_pool.misc_rng.random(25)
+            } else {
+                run_state.rng_pool.misc_rng.random_range(20, 30)
+            };
             let mut rewards = crate::rewards::state::RewardState::new();
             rewards
                 .items
@@ -132,6 +136,27 @@ mod tests {
             crate::rewards::state::RewardItem::Relic {
                 relic_id: RelicId::OddMushroom
             }
+        )));
+    }
+
+    #[test]
+    fn daily_fight_reward_uses_java_daily_gold_roll() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.is_daily_run = true;
+        let mut expected_rng = run_state.rng_pool.misc_rng.clone();
+        let expected_gold = expected_rng.random(25);
+        run_state.event_state = Some(EventState::new(EventId::Mushrooms));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::EventCombat(combat) = engine_state else {
+            panic!("confirmed Mushrooms fight should enter EventCombat");
+        };
+        assert!(combat.rewards.items.iter().any(|item| matches!(
+            item,
+            crate::rewards::state::RewardItem::Gold { amount } if *amount == expected_gold
         )));
     }
 

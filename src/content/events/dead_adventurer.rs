@@ -86,7 +86,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         // Java first reveals the fight and adds the 25-35 gold
                         // reward. Remaining corpse rewards are added on the next
                         // click immediately before enterCombat().
-                        let combat_gold = run_state.rng_pool.misc_rng.random_range(25, 35);
+                        let combat_gold = if run_state.is_daily_run {
+                            run_state.rng_pool.misc_rng.random(30)
+                        } else {
+                            run_state.rng_pool.misc_rng.random_range(25, 35)
+                        };
                         set_combat_gold_reward(&mut event_state.internal_state, combat_gold);
                         event_state.current_screen = 1;
                         run_state.event_state = Some(event_state);
@@ -257,6 +261,38 @@ mod tests {
         let event_state = run_state.event_state.as_ref().unwrap();
         assert_eq!(event_state.current_screen, 1);
         assert!((25..=35).contains(&combat_gold_reward(event_state.internal_state)));
+    }
+
+    #[test]
+    fn daily_combat_trigger_uses_java_daily_gold_roll() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.is_daily_run = true;
+        let mut expected_rng = run_state.rng_pool.misc_rng.clone();
+        let _fight_roll = expected_rng.random_range(0, 99);
+        let expected_gold = expected_rng.random(30);
+
+        let mut internal_state = 0;
+        set_num_rewards(&mut internal_state, 0);
+        set_encounter_chance(&mut internal_state, 100);
+        set_reward_types(&mut internal_state, 1, 1, 1);
+        set_enemy_type(&mut internal_state, 0);
+        run_state.event_state = Some(EventState {
+            id: EventId::DeadAdventurer,
+            current_screen: 0,
+            internal_state,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        let mut engine_state = EngineState::EventRoom;
+
+        super::handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(
+            combat_gold_reward(run_state.event_state.as_ref().unwrap().internal_state),
+            expected_gold,
+            "Java daily Dead Adventurer uses miscRng.random(30), not random(25, 35)"
+        );
     }
 
     #[test]
