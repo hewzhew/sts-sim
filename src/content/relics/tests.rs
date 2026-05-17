@@ -3070,6 +3070,10 @@ fn shared_shop_special_relic_gap_batch_metadata_matches_java_sources() {
         RelicTier::Uncommon,
         "Java DiscerningMonocle constructor is UNCOMMON, not SHOP"
     );
+    assert!(
+        !build_relic_pool(RelicTier::Uncommon, "Ironclad").contains(&RelicId::DiscerningMonocle),
+        "RelicLibrary.initialize never registers DiscerningMonocle, so its constructor tier must not put it in normal pools"
+    );
 
     assert!(get_relic_subscriptions(RelicId::Abacus).on_shuffle);
     assert!(get_relic_subscriptions(RelicId::ChemicalX).on_calculate_x_cost);

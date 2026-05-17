@@ -3993,12 +3993,17 @@ Rust source:
 Java evidence:
 - Constructor: ID `"Discerning Monocle"`, tier `UNCOMMON`, landing sound
   `CLINK`.
+- `RelicLibrary.initialize()` never calls `RelicLibrary.add(new
+  DiscerningMonocle())`, so the class exists in source but is not registered in
+  normal vanilla relic pools.
 - `onEnterRoom`: pulses only in `ShopRoom`; otherwise stops pulsing.
 - Although the class defines `MULTIPLIER = 0.8f`, this vanilla Java source tree
   does not reference `DiscerningMonocle` in `ShopScreen` price calculation.
 
 Rust result:
 - Fixed tier from the old shop-tier assumption to Java's `UNCOMMON`.
+- Split constructor tier from pool registration: Rust no longer includes
+  `DiscerningMonocle` in the RelicLibrary-registered pool list.
 - Removed the misleading headless comment that claimed a shop discount.
 - No UI-only shop pulse is modeled.
 
@@ -4991,7 +4996,7 @@ class-specific queue.
 | 109 | `Cauldron.java` | `cauldron.rs` / reward screen | `wrong-fixed` |
 | 110 | `ChemicalX.java` | `chemical_x.rs` / X-cost hook | `exact` |
 | 111 | `Circlet.java` | `mod.rs` / run relic obtain | `wrong-fixed` |
-| 112 | `DiscerningMonocle.java` | `discerning_monocle.rs` / tier | `wrong-fixed` |
+| 112 | `DiscerningMonocle.java` | `discerning_monocle.rs` / unregistered tier | `wrong-fixed` |
 | 113 | `DollysMirror.java` | `dollys_mirror.rs` / run duplicate choice | `wrong-fixed` |
 | 114 | `Enchiridion.java` | `enchiridion.rs` / pre-battle card generation | `exact` |
 | 115 | `FaceOfCleric.java` | `face_of_cleric.rs` / victory max HP | `exact` |

@@ -501,8 +501,9 @@ fn relic_class(id: RelicId) -> Option<&'static str> {
 /// Mirrors Java's `RelicLibrary.populateRelicPool(pool, tier, playerClass)`.
 pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
     use RelicId::*;
-    // All known RelicIds — iterate and filter
-    const ALL_RELICS: &[RelicId] = &[
+    // Relics registered by Java's RelicLibrary.initialize(). Source-present
+    // but unregistered relics, such as Discerning Monocle, must not enter pools.
+    const RELIC_LIBRARY_REGISTERED_RELICS: &[RelicId] = &[
         Abacus,
         Akabeko,
         Anchor,
@@ -534,7 +535,6 @@ pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
         ChampionBelt,
         CharonsAshes,
         ChemicalX,
-        Circlet,
         CloakClasp,
         ClockworkSouvenir,
         CoffeeDripper,
@@ -546,8 +546,6 @@ pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
         DarkstonePeriapt,
         DataDisk,
         DeadBranch,
-        Dodecahedron,
-        DiscerningMonocle,
         DollysMirror,
         DreamCatcher,
         DuVuDoll,
@@ -631,7 +629,6 @@ pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
         PrismaticShard,
         PureWater,
         QuestionCard,
-        RedCirclet,
         RedMask,
         RedSkull,
         RegalPillow,
@@ -688,7 +685,7 @@ pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
     ];
 
     let mut pool = Vec::new();
-    for &relic in ALL_RELICS {
+    for &relic in RELIC_LIBRARY_REGISTERED_RELICS {
         if get_relic_tier(relic) != tier {
             continue;
         }
