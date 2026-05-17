@@ -147,8 +147,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                                 *engine_state = next_state;
                             }
                         }
+                        event_state.current_screen = 1;
                     }
-                    event_state.current_screen = 1;
                 }
                 1 => {
                     // +5 Max HP, lose HP
@@ -188,9 +188,9 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 
 #[cfg(test)]
 mod tests {
-    use super::handle_choice;
-use crate::content::cards::CardId;
-use crate::content::relics::{RelicId, RelicState};
+    use super::{get_choices, handle_choice};
+    use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
     use crate::state::events::{EventId, EventState};
     use crate::state::run::RunState;
@@ -203,6 +203,25 @@ use crate::content::relics::{RelicId, RelicState};
         run_state.event_state = Some(EventState::new(EventId::ForgottenAltar));
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn disabled_offer_without_golden_idol_does_not_advance_or_grant_relic() {
+        let mut run_state = forgotten_altar_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        let choices = get_choices(&run_state, run_state.event_state.as_ref().unwrap());
+        assert!(choices[0].disabled);
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(!run_state
+            .relics
+            .iter()
+            .any(|relic| matches!(relic.id, RelicId::BloodyIdol | RelicId::Circlet)));
+        assert!(run_state.take_emitted_events().is_empty());
     }
 
     #[test]

@@ -628,6 +628,8 @@ Fixes:
   insertion/replacement while preserving on-equip hooks and domain events.
 - `Forgotten Altar` now replaces `Golden Idol` with `Bloody Idol` at the same
   slot, or grants `Circlet` when `Bloody Idol` is already owned.
+- The disabled Offer branch now stays inert when `Golden Idol` is missing,
+  rather than advancing to the result screen through a direct handler call.
 - `Shed Blood` now gains max HP through `gain_max_hp_with_source` and then
   applies sourced normal damage with the Java `Tungsten Rod` reduction path.
 - `Desecrate` continues through the event card-obtain helper; regression
@@ -636,6 +638,7 @@ Fixes:
 
 Tests:
 
+- `disabled_offer_without_golden_idol_does_not_advance_or_grant_relic`
 - `offering_golden_idol_replaces_same_relic_slot_with_bloody_idol`
 - `offering_golden_idol_with_existing_bloody_idol_grants_circlet_without_losing_idol`
 - `shed_blood_increases_max_hp_then_heals_then_takes_java_damage`
@@ -757,9 +760,11 @@ Fixes:
   hooks.
 - Golden Idol trade now uses `remove_relic_at_with_source` and sourced gold
   gain.
+- The disabled Golden Idol trade now stays inert when the relic is missing.
 
 Tests:
 
+- `disabled_trade_without_golden_idol_does_not_advance_or_grant_gold`
 - `enter_loses_max_hp_then_heals_to_new_max_with_event_source`
 - `enter_max_hp_loss_survives_mark_but_full_heal_is_blocked`
 - `trade_removes_golden_idol_and_grants_gold_with_event_sources`
@@ -1120,13 +1125,15 @@ Java `events/beyond/TombRedMask.java` has asymmetric button indices:
 The paid branch calls `player.loseGold(player.gold)` and
 `spawnRelicAndObtain(..., new RedMask())`. Rust now uses
 `obtain_relic_with_source` for this relic instead of pushing directly into the
-relic list.
+relic list. The disabled button-0 affordance now stays inert when `Red Mask` is
+missing, instead of being treated as the Leave branch.
 
 Tests:
 
 - `paying_without_mask_loses_all_gold_and_obtains_red_mask_with_event_source`
 - `wearing_existing_mask_gains_222_gold_with_event_source`
 - `choices_preserve_java_button_indices_when_mask_is_missing`
+- `disabled_don_mask_without_red_mask_does_not_advance_or_grant_gold`
 
 ### N'loth relic trade
 
@@ -1457,4 +1464,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `931 passed`.
+- Current result after this pass: `934 passed`.

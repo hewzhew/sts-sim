@@ -50,6 +50,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
             } else {
                 match choice_idx {
+                    0 => {}
                     1 => {
                         // Pay all gold, get Red Mask
                         run_state.set_gold_with_source(
@@ -81,7 +82,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_choice, get_choices};
+    use super::{get_choices, handle_choice};
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
     use crate::state::events::{EventId, EventState};
@@ -161,5 +162,21 @@ mod tests {
         assert!(choices[0].disabled);
         assert!(!choices[1].disabled);
         assert!(!choices[2].disabled);
+    }
+
+    #[test]
+    fn disabled_don_mask_without_red_mask_does_not_advance_or_grant_gold() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 17;
+        run_state.event_state = Some(EventState::new(EventId::TombRedMask));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.gold, 17);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
     }
 }

@@ -69,8 +69,8 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                             333,
                             DomainEventSource::Event(EventId::MoaiHead),
                         );
+                        event_state.current_screen = 1;
                     }
-                    event_state.current_screen = 1;
                 }
                 _ => {
                     event_state.completed = true;
@@ -87,7 +87,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 
 #[cfg(test)]
 mod tests {
-    use super::handle_choice;
+    use super::{get_choices, handle_choice};
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
     use crate::state::events::{EventId, EventState};
@@ -102,6 +102,22 @@ mod tests {
         run_state.event_state = Some(EventState::new(EventId::MoaiHead));
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn disabled_trade_without_golden_idol_does_not_advance_or_grant_gold() {
+        let mut run_state = moai_run(20, 80);
+        let mut engine_state = EngineState::EventRoom;
+
+        let choices = get_choices(&run_state, run_state.event_state.as_ref().unwrap());
+        assert!(choices[1].disabled);
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.gold, 0);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
     }
 
     #[test]
