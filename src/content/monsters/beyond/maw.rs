@@ -1,8 +1,8 @@
 use crate::content::monsters::exordium::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, MawRuntimeState, MonsterEntity};
 use crate::semantics::combat::{
     ApplyPowerStep, AttackSpec, BuffSpec, DamageKind, DebuffSpec, EffectStrength, MonsterMoveSpec,
     MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
@@ -40,12 +40,39 @@ fn terrify_duration(ascension_level: u8) -> i32 {
     }
 }
 
-fn nom_hits_for_roll(entity: &MonsterEntity) -> u8 {
-    (((entity.move_history().len() as i32) + 2) / 2).max(1) as u8
+pub fn initialize_runtime_state(entity: &mut MonsterEntity) {
+    entity.maw = MawRuntimeState {
+        protocol_seeded: true,
+        roared: false,
+        turn_count: 1,
+    };
 }
 
-fn nom_hits_for_turn(entity: &MonsterEntity) -> u8 {
-    (((entity.move_history().len() as i32) + 1) / 2).max(1) as u8
+fn runtime(entity: &MonsterEntity) -> &MawRuntimeState {
+    assert!(
+        entity.maw.protocol_seeded,
+        "maw runtime truth must be protocol-seeded or factory-seeded"
+    );
+    &entity.maw
+}
+
+fn nom_hits_for_count(turn_count: i32) -> u8 {
+    (turn_count / 2).max(1) as u8
+}
+
+fn maw_runtime_update(
+    entity: &MonsterEntity,
+    roared: Option<bool>,
+    turn_count: Option<i32>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::Maw {
+            roared,
+            turn_count,
+            protocol_seeded: Some(true),
+        },
+    }
 }
 
 fn roar_plan(ascension_level: u8) -> MonsterTurnPlan {
@@ -108,16 +135,12 @@ fn nom_plan(hits: u8) -> MonsterTurnPlan {
     )
 }
 
-fn has_roared(entity: &MonsterEntity) -> bool {
-    entity.move_history().contains(&ROAR)
-}
-
 fn plan_for(move_id: u8, ascension_level: u8, entity: &MonsterEntity) -> MonsterTurnPlan {
     match move_id {
         ROAR => roar_plan(ascension_level),
         SLAM => slam_plan(ascension_level),
         DROOL => drool_plan(ascension_level),
-        NOMNOMNOM => nom_plan(nom_hits_for_turn(entity)),
+        NOMNOMNOM => nom_plan(nom_hits_for_count(runtime(entity).turn_count)),
         _ => MonsterTurnPlan::unknown(move_id),
     }
 }
@@ -129,18 +152,32 @@ impl MonsterBehavior for Maw {
         ascension_level: u8,
         num: i32,
     ) -> MonsterTurnPlan {
-        if !has_roared(entity) {
+        let next_turn_count = runtime(entity).turn_count + 1;
+        if !runtime(entity).roared {
             return roar_plan(ascension_level);
         }
 
         let last_move = entity.move_history().back().copied();
         if num < 50 && last_move != Some(NOMNOMNOM) {
-            return nom_plan(nom_hits_for_roll(entity));
+            return nom_plan(nom_hits_for_count(next_turn_count));
         }
         if matches!(last_move, Some(SLAM | NOMNOMNOM)) {
             return drool_plan(ascension_level);
         }
         slam_plan(ascension_level)
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        vec![maw_runtime_update(
+            entity,
+            None,
+            Some(runtime(entity).turn_count + 1),
+        )]
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
@@ -157,6 +194,7 @@ impl MonsterBehavior for Maw {
                 vec![
                     apply_power_action(entity, weak),
                     apply_power_action(entity, frail),
+                    maw_runtime_update(entity, Some(true), None),
                 ]
             }
             (SLAM, [MoveStep::Attack(attack)]) => attack_actions(entity.id, PLAYER, &attack.attack),
@@ -170,5 +208,91 @@ impl MonsterBehavior for Maw {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn imported_roared_false_forces_roar_even_with_roar_history() {
+        let mut maw = crate::test_support::test_monster(EnemyId::Maw);
+        maw.maw.roared = false;
+        maw.maw.turn_count = 5;
+        maw.move_history_mut().extend([ROAR, SLAM, DROOL]);
+
+        let plan = Maw::roll_move_plan(&mut StsRng::new(0), &maw, 0, 99);
+
+        assert_eq!(plan.move_id, ROAR);
+    }
+
+    #[test]
+    fn imported_turn_count_drives_nom_hit_count() {
+        let mut maw = crate::test_support::test_monster(EnemyId::Maw);
+        maw.maw.roared = true;
+        maw.maw.turn_count = 5;
+        maw.move_history_mut().clear();
+
+        let plan = Maw::roll_move_plan(&mut StsRng::new(0), &maw, 0, 0);
+
+        assert_eq!(plan.move_id, NOMNOMNOM);
+        assert_eq!(plan.attack().map(|attack| attack.hits), Some(3));
+    }
+
+    #[test]
+    fn roll_move_increments_java_turn_count() {
+        let mut maw = crate::test_support::test_monster(EnemyId::Maw);
+        maw.maw.turn_count = 2;
+        let plan = Maw::roll_move_plan(&mut StsRng::new(0), &maw, 0, 99);
+
+        let actions = Maw::on_roll_move(0, &maw, 99, &plan);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::Maw {
+                    roared: None,
+                    turn_count: Some(3),
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn roar_turn_marks_private_roared_before_roll_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::Maw)];
+        let maw = state.entities.monsters[0].clone();
+        let plan = roar_plan(0);
+
+        let actions = Maw::take_turn_plan(&mut state, &maw, &plan);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::ApplyPower {
+                    power_id: PowerId::Weak,
+                    ..
+                },
+                Action::ApplyPower {
+                    power_id: PowerId::Frail,
+                    ..
+                },
+                Action::UpdateMonsterRuntime {
+                    patch: MonsterRuntimePatch::Maw {
+                        roared: Some(true),
+                        turn_count: None,
+                        protocol_seeded: Some(true),
+                    },
+                    ..
+                },
+                Action::RollMonsterMove { .. },
+            ]
+        ));
     }
 }

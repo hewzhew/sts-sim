@@ -156,6 +156,8 @@ pub fn handle_spawn_monster(
         donu: Default::default(),
         deca: Default::default(),
         transient: Default::default(),
+        exploder: Default::default(),
+        maw: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
     };
@@ -203,6 +205,12 @@ pub fn handle_spawn_monster(
     }
     if enemy_id == crate::content::monsters::EnemyId::Transient {
         crate::content::monsters::beyond::transient::initialize_runtime_state(&mut new_monster);
+    }
+    if enemy_id == crate::content::monsters::EnemyId::Exploder {
+        crate::content::monsters::beyond::exploder::initialize_runtime_state(&mut new_monster);
+    }
+    if enemy_id == crate::content::monsters::EnemyId::Maw {
+        crate::content::monsters::beyond::maw::initialize_runtime_state(&mut new_monster);
     }
     if enemy_id == crate::content::monsters::EnemyId::JawWorm {
         crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(
@@ -1377,6 +1385,52 @@ fn handle_update_transient_state(
     }
 }
 
+fn handle_update_exploder_state(
+    monster_id: usize,
+    turn_count: Option<i32>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = turn_count {
+            monster.exploder.turn_count = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.exploder.protocol_seeded = value;
+        }
+    }
+}
+
+fn handle_update_maw_state(
+    monster_id: usize,
+    roared: Option<bool>,
+    turn_count: Option<i32>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = roared {
+            monster.maw.roared = value;
+        }
+        if let Some(value) = turn_count {
+            monster.maw.turn_count = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.maw.protocol_seeded = value;
+        }
+    }
+}
+
 fn handle_update_gremlin_wizard_state(
     monster_id: usize,
     current_charge: Option<u8>,
@@ -1732,6 +1786,15 @@ pub fn handle_update_monster_runtime(
             count,
             protocol_seeded,
         } => handle_update_transient_state(monster_id, count, protocol_seeded, state),
+        MonsterRuntimePatch::Exploder {
+            turn_count,
+            protocol_seeded,
+        } => handle_update_exploder_state(monster_id, turn_count, protocol_seeded, state),
+        MonsterRuntimePatch::Maw {
+            roared,
+            turn_count,
+            protocol_seeded,
+        } => handle_update_maw_state(monster_id, roared, turn_count, protocol_seeded, state),
         MonsterRuntimePatch::GremlinWizard {
             current_charge,
             protocol_seeded,

@@ -160,6 +160,15 @@ pub enum MonsterRuntimePatch {
         count: Option<i32>,
         protocol_seeded: Option<bool>,
     },
+    Exploder {
+        turn_count: Option<i32>,
+        protocol_seeded: Option<bool>,
+    },
+    Maw {
+        roared: Option<bool>,
+        turn_count: Option<i32>,
+        protocol_seeded: Option<bool>,
+    },
     GremlinWizard {
         current_charge: Option<u8>,
         protocol_seeded: Option<bool>,

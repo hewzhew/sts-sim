@@ -958,6 +958,8 @@ pub struct MonsterEntity {
     pub donu: DonuRuntimeState,
     pub deca: DecaRuntimeState,
     pub transient: TransientRuntimeState,
+    pub exploder: ExploderRuntimeState,
+    pub maw: MawRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
 }
@@ -1385,6 +1387,29 @@ pub struct DecaRuntimeState {
 pub struct TransientRuntimeState {
     pub protocol_seeded: bool,
     pub count: i32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ExploderRuntimeState {
+    pub protocol_seeded: bool,
+    pub turn_count: i32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MawRuntimeState {
+    pub protocol_seeded: bool,
+    pub roared: bool,
+    pub turn_count: i32,
+}
+
+impl Default for MawRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            roared: false,
+            turn_count: 1,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2283,6 +2308,8 @@ mod tests {
             donu: DonuRuntimeState::default(),
             deca: DecaRuntimeState::default(),
             transient: TransientRuntimeState::default(),
+            exploder: ExploderRuntimeState::default(),
+            maw: MawRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2366,6 +2393,8 @@ mod tests {
             donu: DonuRuntimeState::default(),
             deca: DecaRuntimeState::default(),
             transient: TransientRuntimeState::default(),
+            exploder: ExploderRuntimeState::default(),
+            maw: MawRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2446,6 +2475,8 @@ mod tests {
             donu: DonuRuntimeState::default(),
             deca: DecaRuntimeState::default(),
             transient: TransientRuntimeState::default(),
+            exploder: ExploderRuntimeState::default(),
+            maw: MawRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };

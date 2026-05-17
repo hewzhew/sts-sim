@@ -67,6 +67,8 @@ pub fn sync_monsters_from_snapshots(
             donu: Default::default(),
             deca: Default::default(),
             transient: Default::default(),
+            exploder: Default::default(),
+            maw: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
         });

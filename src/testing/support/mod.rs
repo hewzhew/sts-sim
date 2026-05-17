@@ -125,6 +125,8 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         donu: Default::default(),
         deca: Default::default(),
         transient: Default::default(),
+        exploder: Default::default(),
+        maw: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
     };
@@ -219,6 +221,12 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
     }
     if enemy_id == EnemyId::Transient {
         crate::content::monsters::beyond::transient::initialize_runtime_state(&mut monster);
+    }
+    if enemy_id == EnemyId::Exploder {
+        crate::content::monsters::beyond::exploder::initialize_runtime_state(&mut monster);
+    }
+    if enemy_id == EnemyId::Maw {
+        crate::content::monsters::beyond::maw::initialize_runtime_state(&mut monster);
     }
     if enemy_id == EnemyId::Spiker {
         monster.spiker.protocol_seeded = true;

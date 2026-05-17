@@ -44,6 +44,8 @@ Scope:
 | Spheric Guardian | `first_move`, `second_move` | Yes | Yes | Yes | Post-opening `lastMove(BIG_ATTACK)` branch only | Good |
 | The Collector | `initial_spawn`, `ult_used`, `turns_taken`, `enemy_slots` | Yes | Yes | Yes | `lastMove(REVIVE)` / `lastTwoMoves(FIREBALL)` sequencing only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
+| Exploder | `turn_count` | Yes | Yes | Yes | None | Good |
+| Maw | `roared`, `turn_count` | Yes | Yes | Yes | `lastMove(SLAM/NOM)` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Reptomancer | `first_move`, `dagger_slots` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Nemesis | `first_move`, `scythe_cooldown` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
@@ -146,6 +148,23 @@ Scope:
 - Charge cadence comes from Java's private `currentCharge`, not from consecutive Charge history.
 - Runtime patches are emitted during `take_turn_plan`, because Java mutates `currentCharge` inside
   `takeTurn()` rather than `getMove()`.
+
+### Exploder
+
+- `runtime_state.turn_count` is now exported by `CommunicationMod`.
+- Rust semantic roll logic requires this counter to be protocol-seeded or factory-seeded.
+- The attack/explosion cadence comes from Java's private `turnCount`, not from move history.
+- Runtime patches are emitted during `take_turn_plan`, because Java increments `turnCount` inside
+  `takeTurn()` before the queued `RollMoveAction` resolves.
+
+### Maw
+
+- `runtime_state.roared` and `runtime_state.turn_count` are now exported by `CommunicationMod`.
+- Rust semantic roll logic requires both fields to be protocol-seeded or factory-seeded.
+- The opening Roar gate comes from Java's private `roared`, not from whether ROAR exists in history.
+- Nom hit count comes from Java's private `turnCount / 2`, not from move history length.
+- Runtime `turn_count` is updated during roll resolution, because Java increments it at the start of
+  `getMove()`. Runtime `roared` is updated only when Roar executes.
 
 ### Transient
 

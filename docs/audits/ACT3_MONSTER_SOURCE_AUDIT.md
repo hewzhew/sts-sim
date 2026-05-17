@@ -35,10 +35,13 @@ Covered in this pass:
 
 ### Exploder
 
-Java uses a private `turnCount` that makes the first two turns attacks and the third turn the
-explosion intent. Rust derives this from the planned move history. In the normal decision-boundary
-flow this matches Java timing: initial roll is an attack, after the first executed turn the next roll
-is still attack, and after the second executed turn the next roll is explosion.
+Java uses a private `turnCount` that increments inside `takeTurn()` before the queued
+`RollMoveAction`. That counter makes the first two turns attacks and the third turn the explosion
+intent.
+
+Rust now carries this as explicit `ExploderRuntimeState.turn_count`, imports it from
+`monster.runtime_state.turn_count`, and updates it through `Action::UpdateMonsterRuntime` during
+turn execution before `RollMonsterMove`. Rust no longer reconstructs it from planned move history.
 
 ### Repulsor
 
@@ -82,9 +85,18 @@ for Laser.
 
 ### Maw
 
-Java starts `turnCount` at 1, increments it inside `getMove`, and uses it to scale Nom. Rust derives
-the planned and executed Nom hit counts from move history. In normal decision-boundary flow this
-matches the Java increment timing.
+Java starts `turnCount` at 1, increments it at the start of `getMove()`, uses it to scale Nom hit
+count, and stores a private `roared` latch that is set only when Roar executes.
+
+Rust now carries both as explicit `MawRuntimeState`:
+
+- `roared`
+- `turn_count`
+
+`CommunicationMod` exports both fields, Rust imports them as strict runtime truth, and
+`Action::UpdateMonsterRuntime` updates `turn_count` during roll resolution. The `roared` latch is
+updated only by the Roar take-turn path, matching Java; Rust no longer uses move history to infer
+whether Roar already executed or how many Nom hits should be planned.
 
 ### Spire Growth
 

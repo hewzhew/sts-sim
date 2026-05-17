@@ -4,12 +4,12 @@ use crate::runtime::combat::{
     AwakenedOneRuntimeState, BookOfStabbingRuntimeState, BronzeAutomatonRuntimeState,
     BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
     CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, DecaRuntimeState,
-    DonuRuntimeState, GiantHeadRuntimeState, GremlinLeaderRuntimeState, GremlinNobRuntimeState,
-    GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState, JawWormRuntimeState,
-    LagavulinRuntimeState, LargeSlimeRuntimeState, LouseRuntimeState, MonsterEntity,
-    MonsterMoveState, NemesisRuntimeState, ReptomancerRuntimeState, SentryRuntimeState,
-    ShelledParasiteRuntimeState, SlaverRedRuntimeState, SlimeBossRuntimeState, SneckoRuntimeState,
-    SphericGuardianRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
+    DonuRuntimeState, ExploderRuntimeState, GiantHeadRuntimeState, GremlinLeaderRuntimeState,
+    GremlinNobRuntimeState, GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState,
+    JawWormRuntimeState, LagavulinRuntimeState, LargeSlimeRuntimeState, LouseRuntimeState,
+    MawRuntimeState, MonsterEntity, MonsterMoveState, NemesisRuntimeState, ReptomancerRuntimeState,
+    SentryRuntimeState, ShelledParasiteRuntimeState, SlaverRedRuntimeState, SlimeBossRuntimeState,
+    SneckoRuntimeState, SphericGuardianRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
     SpireSpearRuntimeState, ThiefRuntimeState, TimeEaterRuntimeState, TransientRuntimeState,
     WrithingMassRuntimeState,
 };
@@ -126,6 +126,10 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
                 stable_transient_signature(&monster.transient)
             )
         }
+        Some(EnemyId::Exploder) => {
+            format!("exploder:{}", stable_exploder_signature(&monster.exploder))
+        }
+        Some(EnemyId::Maw) => format!("maw:{}", stable_maw_signature(&monster.maw)),
         Some(EnemyId::WrithingMass) => {
             format!(
                 "writhing_mass:{}",
@@ -218,6 +222,7 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
             "spire_shield={}:spire_spear={}:slaver_red={}:gremlin_nob={}:gremlin_wizard={}:",
             "cultist={}:sentry={}:slime_boss={}:large_slime={}:spheric_guardian={}:",
             "darkling={}:giant_head={}:time_eater={}:donu={}:deca={}:transient={}:",
+            "exploder={}:maw={}:",
             "lagavulin={}:guardian={}"
         ),
         stable_hexaghost_signature(&monster.hexaghost),
@@ -253,6 +258,8 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         stable_donu_signature(&monster.donu),
         stable_deca_signature(&monster.deca),
         stable_transient_signature(&monster.transient),
+        stable_exploder_signature(&monster.exploder),
+        stable_maw_signature(&monster.maw),
         stable_lagavulin_signature(&monster.lagavulin),
         stable_guardian_signature(&monster.guardian),
     )
@@ -607,6 +614,17 @@ fn stable_deca_signature(state: &DecaRuntimeState) -> String {
 
 fn stable_transient_signature(state: &TransientRuntimeState) -> String {
     format!("seed{}:count{}", state.protocol_seeded, state.count)
+}
+
+fn stable_exploder_signature(state: &ExploderRuntimeState) -> String {
+    format!("seed{}:turn{}", state.protocol_seeded, state.turn_count)
+}
+
+fn stable_maw_signature(state: &MawRuntimeState) -> String {
+    format!(
+        "seed{}:roared{}:turn{}",
+        state.protocol_seeded, state.roared, state.turn_count
+    )
 }
 
 fn stable_writhing_mass_signature(state: &WrithingMassRuntimeState) -> String {

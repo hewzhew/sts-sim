@@ -70,6 +70,8 @@ Examples:
 - `monster.runtime_state.dagger_slots`
 - `monster.runtime_state.scythe_cooldown`
 - `monster.runtime_state.count`
+- `monster.runtime_state.turn_count`
+- `monster.runtime_state.roared`
 - `monster.runtime_state.used_haste`
 - `monster.runtime_state.is_attacking`
 - `monster.runtime_state.form1`
@@ -148,6 +150,9 @@ Examples of the correct pattern:
 - `Nemesis.scytheCooldown`
 - `GiantHead.count`
 - `Transient.count`
+- `Exploder.turnCount`
+- `Maw.roared`
+- `Maw.turnCount`
 - `TimeEater.usedHaste`
 - `Donu.isAttacking`
 - `Deca.isAttacking`

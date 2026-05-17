@@ -128,6 +128,27 @@ pub(crate) fn seed_transient_runtime_from_snapshot(monster: &Value, entity: &mut
     entity.transient.protocol_seeded = true;
 }
 
+pub(crate) fn seed_exploder_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::Exploder;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.exploder.turn_count = runtime_state_i32(monster, monster_type, "turn_count");
+    entity.exploder.protocol_seeded = true;
+}
+
+pub(crate) fn seed_maw_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::Maw;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.maw.roared = runtime_state_bool(monster, monster_type, "roared");
+    entity.maw.turn_count = runtime_state_i32(monster, monster_type, "turn_count");
+    entity.maw.protocol_seeded = true;
+}
+
 pub(crate) fn seed_awakened_one_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::AwakenedOne;
     if entity.monster_type != monster_type as usize {
@@ -805,6 +826,8 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_donu_runtime_from_snapshot(monster, entity);
     seed_deca_runtime_from_snapshot(monster, entity);
     seed_transient_runtime_from_snapshot(monster, entity);
+    seed_exploder_runtime_from_snapshot(monster, entity);
+    seed_maw_runtime_from_snapshot(monster, entity);
     seed_awakened_one_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -894,6 +917,8 @@ mod tests {
             donu: DonuRuntimeState::default(),
             deca: DecaRuntimeState::default(),
             transient: Default::default(),
+            exploder: Default::default(),
+            maw: Default::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         }
@@ -1106,6 +1131,45 @@ mod tests {
             "powers": [],
             "runtime_state": {
                 "count": 4
+            },
+            "is_gone": false,
+            "half_dead": false
+        })
+    }
+
+    fn exploder_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Exploder",
+            "current_hp": 31,
+            "max_hp": 35,
+            "block": 0,
+            "intent": "UNKNOWN",
+            "move_id": 2,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "turn_count": 2
+            },
+            "is_gone": false,
+            "half_dead": false
+        })
+    }
+
+    fn maw_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Maw",
+            "current_hp": 260,
+            "max_hp": 300,
+            "block": 0,
+            "intent": "ATTACK",
+            "move_id": 5,
+            "move_base_damage": 5,
+            "move_hits": 3,
+            "powers": [],
+            "runtime_state": {
+                "roared": true,
+                "turn_count": 6
             },
             "is_gone": false,
             "half_dead": false
@@ -1690,6 +1754,31 @@ mod tests {
         assert_eq!(entity.planned_move_id(), 1);
         assert_eq!(entity.transient.count, 4);
         assert!(entity.transient.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_exploder_runtime_state() {
+        let snapshot = exploder_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.planned_move_id(), 2);
+        assert_eq!(entity.exploder.turn_count, 2);
+        assert!(entity.exploder.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_maw_runtime_state() {
+        let snapshot = maw_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.planned_move_id(), 5);
+        assert!(entity.maw.roared);
+        assert_eq!(entity.maw.turn_count, 6);
+        assert!(entity.maw.protocol_seeded);
     }
 
     #[test]
