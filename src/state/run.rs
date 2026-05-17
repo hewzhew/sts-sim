@@ -1114,6 +1114,7 @@ impl RunState {
     pub fn enter_final_act(&mut self) {
         self.act_num = 4;
         self.pending_boss_reward = false;
+        self.apply_dungeon_transition_setup_effects();
         self.map = crate::map::state::MapState::new(crate::map::generator::generate_ending_map());
         self.init_encounter_lists();
         self.init_boss_list();
@@ -1133,17 +1134,7 @@ impl RunState {
         self.act_num += 1;
         self.pending_boss_reward = false;
 
-        self.align_card_rng_counter_for_dungeon_transition();
-
-        // Boss defeat heal
-        // Java: AbstractDungeon.dungeonTransitionSetup() -> player.heal(0.75 or maxHealth)
-        let missing = self.max_hp - self.current_hp;
-        let heal_amount = if self.ascension_level >= 5 {
-            (missing as f32 * 0.75).round() as i32
-        } else {
-            self.max_hp
-        };
-        self.current_hp = (self.current_hp + heal_amount).min(self.max_hp);
+        self.apply_dungeon_transition_setup_effects();
 
         // Generate new map for the next act
         // Generate map for the new act; returns consumed mapRng for emerald placement.
@@ -1197,6 +1188,22 @@ impl RunState {
                 }
             } // TheEnding
         };
+    }
+
+    fn apply_dungeon_transition_setup_effects(&mut self) {
+        self.align_card_rng_counter_for_dungeon_transition();
+        self.potion_drop_chance_mod = 0;
+        self.heal_for_dungeon_transition();
+    }
+
+    fn heal_for_dungeon_transition(&mut self) {
+        let missing = self.max_hp - self.current_hp;
+        let heal_amount = if self.ascension_level >= 5 {
+            (missing as f32 * 0.75).round() as i32
+        } else {
+            self.max_hp
+        };
+        self.current_hp = (self.current_hp + heal_amount).min(self.max_hp);
     }
 
     fn align_card_rng_counter_for_dungeon_transition(&mut self) {
@@ -1702,6 +1709,14 @@ mod tests {
         run.master_deck.iter().map(|card| card.id).collect()
     }
 
+    fn card_rng_after_calls(count: u32) -> StsRng {
+        let mut rng = StsRng::new(17);
+        for _ in 0..count {
+            let _ = rng.random(999);
+        }
+        rng
+    }
+
     #[test]
     fn starting_loadouts_use_class_specific_java_starter_decks() {
         let ironclad = RunState::new(1, 0, false, "Ironclad");
@@ -1848,9 +1863,28 @@ mod tests {
         use crate::content::monsters::factory::EncounterId;
 
         let mut run = RunState::new(7, 20, true, "Ironclad");
+        run.current_hp = 20;
+        run.max_hp = 80;
+        run.potion_drop_chance_mod = 30;
+        run.rng_pool.card_rng = card_rng_after_calls(501);
+        let mut expected_card_rng = run.rng_pool.card_rng.clone();
+        expected_card_rng.advance_counter_to(750);
+
         run.enter_final_act();
 
         assert_eq!(run.act_num, 4);
+        assert_eq!(
+            run.current_hp, 65,
+            "TheEnding constructor also runs dungeonTransitionSetup and heals once"
+        );
+        assert_eq!(
+            run.potion_drop_chance_mod, 0,
+            "Java dungeonTransitionSetup resets AbstractRoom.blizzardPotionMod on Act 4 entry too"
+        );
+        assert_eq!(
+            run.rng_pool.card_rng, expected_card_rng,
+            "TheEnding constructor also applies the cardRng counter band alignment"
+        );
         assert_eq!(run.elite_monster_list, vec![EncounterId::ShieldAndSpear; 3]);
         assert_eq!(run.monster_list, vec![EncounterId::ShieldAndSpear; 3]);
         assert_eq!(run.boss_list, vec![EncounterId::TheHeart; 3]);
@@ -1877,14 +1911,6 @@ mod tests {
 
     #[test]
     fn advance_act_aligns_card_rng_counter_like_java_dungeon_transition_setup() {
-        fn card_rng_after_calls(count: u32) -> StsRng {
-            let mut rng = StsRng::new(17);
-            for _ in 0..count {
-                let _ = rng.random(999);
-            }
-            rng
-        }
-
         for (counter_before, expected_counter_after) in [
             (0, 0),
             (1, 250),
@@ -1911,6 +1937,19 @@ mod tests {
                 "Java dungeonTransitionSetup aligns cardRng counter {counter_before} to {expected_counter_after} by consuming randomBoolean calls"
             );
         }
+    }
+
+    #[test]
+    fn advance_act_resets_potion_drop_chance_like_java_dungeon_transition_setup() {
+        let mut run = RunState::new(7, 0, false, "Ironclad");
+        run.potion_drop_chance_mod = -20;
+
+        run.advance_act();
+
+        assert_eq!(
+            run.potion_drop_chance_mod, 0,
+            "Java dungeonTransitionSetup resets AbstractRoom.blizzardPotionMod between acts"
+        );
     }
 
     #[test]

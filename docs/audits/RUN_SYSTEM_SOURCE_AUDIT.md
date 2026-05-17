@@ -199,6 +199,8 @@ Key source facts:
 - Before the heal, Java aligns `cardRng.counter` upward to the next act band:
   1..249 -> 250, 251..499 -> 500, 501..749 -> 750. `Random.setCounter`
   consumes `randomBoolean()` calls instead of assigning the counter directly.
+- Java resets `AbstractRoom.blizzardPotionMod` on every dungeon transition,
+  including the transition into `TheEnding`.
 - At Ascension 5+, the heal is
   `round((maxHealth - currentHealth) * 0.75)`.
 - Below Ascension 5, the heal is full.
@@ -208,11 +210,15 @@ Rust result:
 - `RunState::advance_act()` no longer applies the between-act heal twice.
 - `RunState::advance_act()` now mirrors Java card reward RNG band alignment and
   advances the underlying RNG state while moving the counter.
+- `RunState::advance_act()` and `RunState::enter_final_act()` now share the
+  Java transition effects: card RNG alignment, potion pity reset, and healing.
 
 Coverage:
 
 - `advance_act_heals_once_like_java_dungeon_transition_setup`
 - `advance_act_aligns_card_rng_counter_like_java_dungeon_transition_setup`
+- `advance_act_resets_potion_drop_chance_like_java_dungeon_transition_setup`
+- `final_act_initializes_shield_spear_and_heart_context`
 - `advance_counter_to_matches_java_set_counter_random_boolean_consumption`
 
 ## Event Pool Reachability Pass
@@ -265,4 +271,4 @@ Validation:
 
 - `cargo test events::generator --all-targets`
 - Latest full-suite validation after between-act transition work:
-  `cargo test --all-targets` -> `1015 passed`.
+  `cargo test --all-targets` -> `1016 passed`.
