@@ -45,6 +45,7 @@ Scope:
 | The Collector | `initial_spawn`, `ult_used`, `turns_taken`, `enemy_slots` | Yes | Yes | Yes | `lastMove(REVIVE)` / `lastTwoMoves(FIREBALL)` sequencing only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Exploder | `turn_count` | Yes | Yes | Yes | None | Good |
+| Spiker | `thorns_count` | Yes | Yes | Yes | `lastMove(ATTACK)` repeat guard only | Good |
 | Maw | `roared`, `turn_count` | Yes | Yes | Yes | `lastMove(SLAM/NOM)` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Reptomancer | `first_move`, `dagger_slots` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
@@ -70,6 +71,12 @@ Scope:
   `isEscaping || escaped` to `MonsterEntity.is_escaped`.
 - `is_gone` remains only a consistency check for Java `isDeadOrEscaped()`. It must not be used to
   infer death, because Java `isDeadOrEscaped()` also returns true while a monster is escaping.
+- Java `deathReact()` / `escapeNext()` was reviewed separately from lifecycle import. In vanilla
+  code, Gremlin `deathReact()` and `escapeNext()` have no active base-game caller, while Bandit
+  `deathReact()` is reached from `BanditBear.die()` but queues only `TalkAction` on the surviving
+  bandits. These are not imported as hidden runtime truth because they do not currently mutate
+  mechanical state or consume game RNG. If a future bridge observes a real `nextMove=ESCAPE`, that
+  remains represented by the ordinary planned move truth.
 
 ### Byrd
 
@@ -178,6 +185,14 @@ Scope:
 - The attack/explosion cadence comes from Java's private `turnCount`, not from move history.
 - Runtime patches are emitted during `take_turn_plan`, because Java increments `turnCount` inside
   `takeTurn()` before the queued `RollMoveAction` resolves.
+
+### Spiker
+
+- `runtime_state.thorns_count` is exported by `CommunicationMod`.
+- Rust semantic roll logic requires this counter to be protocol-seeded or factory-seeded.
+- Java increments `thornsCount` only when the BUFF_THORNS turn executes, before queuing the Thorns
+  `ApplyPowerAction`; Rust mirrors that ordering with `Action::UpdateMonsterRuntime`.
+- Remaining history usage is limited to Java's explicit `lastMove(ATTACK)` repeat guard.
 
 ### Maw
 
