@@ -72,6 +72,7 @@ pub(crate) fn relic_can_spawn_in_context(id: RelicId, context: &RelicSpawnContex
         | RelicId::JuzuBracelet
         | RelicId::MealTicket
         | RelicId::MeatOnTheBone
+        | RelicId::MoltenEgg
         | RelicId::Omamori
         | RelicId::PotionBelt
         | RelicId::PrayerWheel

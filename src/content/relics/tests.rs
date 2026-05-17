@@ -4477,6 +4477,11 @@ fn rare_run_relic_can_spawn_gates_match_java_sources() {
             RelicTier::Uncommon,
             RelicId::OrnamentalFan,
         ),
+        (
+            RelicId::MoltenEgg,
+            RelicTier::Uncommon,
+            RelicId::OrnamentalFan,
+        ),
         (RelicId::Omamori, RelicTier::Common, RelicId::BloodVial),
         (RelicId::PotionBelt, RelicTier::Common, RelicId::BloodVial),
         (RelicId::PrayerWheel, RelicTier::Rare, RelicId::Mango),

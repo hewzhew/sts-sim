@@ -39,8 +39,9 @@ Coverage:
 Java evidence:
 - `AncientTeaSet`, `CeramicFish`, `DarkstonePeriapt`, `DreamCatcher`,
   `FrozenEgg2`, `JuzuBracelet`, `MealTicket`, `MeatOnTheBone`, `Omamori`,
-  `PotionBelt`, `PrayerWheel`, `QuestionCard`, `RegalPillow`, `SingingBowl`,
-  and `ToxicEgg2` return `Settings.isEndless || AbstractDungeon.floorNum <= 48`.
+  `MoltenEgg2`, `PotionBelt`, `PrayerWheel`, `QuestionCard`, `RegalPillow`,
+  `SingingBowl`, and `ToxicEgg2` return
+  `Settings.isEndless || AbstractDungeon.floorNum <= 48`.
 - `PreservedInsect` returns `Settings.isEndless || AbstractDungeon.floorNum <= 52`.
 - `TinyChest` returns `Settings.isEndless || AbstractDungeon.floorNum <= 35`.
 - `Courier`, `MawBank`, `OldCoin`, and `SmilingMask` add a current-room guard:
