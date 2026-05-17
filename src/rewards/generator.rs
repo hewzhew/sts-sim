@@ -1,3 +1,4 @@
+use crate::content::cards::CardId;
 use crate::content::cards::CardRarity;
 use crate::rewards::state::RewardCard;
 use crate::rewards::state::RewardItem;
@@ -130,7 +131,11 @@ pub fn generate_combat_rewards(
 
 #[cfg(test)]
 mod tests {
-    use super::adjusted_card_reward_choice_count;
+    use super::{
+        adjusted_card_reward_choice_count, reward_card_candidate_pool_for_run,
+        select_reward_card_candidate,
+    };
+    use crate::content::cards::{CardId, CardRarity};
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::run::RunState;
 
@@ -162,6 +167,143 @@ mod tests {
             .push(RelicState::new(RelicId::QuestionCard));
         assert_eq!(adjusted_card_reward_choice_count(&run_state, 3), 2);
     }
+
+    #[test]
+    fn normal_reward_pool_remains_current_class_only() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+
+        let pool = reward_card_candidate_pool_for_run(&run_state, CardRarity::Common);
+
+        assert!(pool.contains(&CardId::PommelStrike));
+        assert!(!pool.contains(&CardId::QuickSlash));
+        assert!(!pool.contains(&CardId::BeamCell));
+        assert!(!pool.contains(&CardId::BowlingBash));
+    }
+
+    #[test]
+    fn prismatic_reward_pool_uses_any_color_cards_sorted_by_java_id() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::PrismaticShard));
+
+        let common = reward_card_candidate_pool_for_run(&run_state, CardRarity::Common);
+        assert!(common.contains(&CardId::PommelStrike));
+        assert!(common.contains(&CardId::QuickSlash));
+        assert!(common.contains(&CardId::BeamCell));
+        assert!(common.contains(&CardId::BowlingBash));
+        assert!(common.windows(2).all(|pair| {
+            crate::content::cards::java_id(pair[0]) <= crate::content::cards::java_id(pair[1])
+        }));
+
+        let uncommon = reward_card_candidate_pool_for_run(&run_state, CardRarity::Uncommon);
+        assert!(uncommon.contains(&CardId::BandageUp));
+        assert!(uncommon.contains(&CardId::Tantrum));
+
+        let rare = reward_card_candidate_pool_for_run(&run_state, CardRarity::Rare);
+        assert!(rare.contains(&CardId::HandOfGreed));
+        assert!(rare.contains(&CardId::Feed));
+    }
+
+    #[test]
+    fn prismatic_reward_selection_consumes_card_rng_shuffle_seed_before_pick() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::PrismaticShard));
+        let before = run_state.rng_pool.card_rng.counter;
+
+        let selected = select_reward_card_candidate(&mut run_state, CardRarity::Common)
+            .expect("common any-color reward pool should not be empty");
+
+        assert_eq!(
+            run_state.rng_pool.card_rng.counter,
+            before + 2,
+            "Java CardLibrary.getAnyColorCard(rarity) consumes cardRng.randomLong() for CardGroup.shuffle, then cardRng.random() for sorted getRandomCard"
+        );
+        assert!(
+            reward_card_candidate_pool_for_run(&run_state, CardRarity::Common).contains(&selected)
+        );
+    }
+}
+
+fn has_prismatic_shard(run_state: &RunState) -> bool {
+    run_state
+        .relics
+        .iter()
+        .any(|r| r.id == crate::content::relics::RelicId::PrismaticShard)
+}
+
+fn any_color_reward_pool_sorted(rarity: CardRarity) -> Vec<CardId> {
+    use crate::content::cards::{
+        get_card_definition, java_id, CardType, COLORLESS_RARE_POOL, COLORLESS_UNCOMMON_POOL,
+        DEFECT_COMMON_POOL, DEFECT_RARE_POOL, DEFECT_UNCOMMON_POOL, IRONCLAD_COMMON_POOL,
+        IRONCLAD_RARE_POOL, IRONCLAD_UNCOMMON_POOL, SILENT_COMMON_POOL, SILENT_RARE_POOL,
+        SILENT_UNCOMMON_POOL, WATCHER_COMMON_POOL, WATCHER_RARE_POOL, WATCHER_UNCOMMON_POOL,
+    };
+
+    let mut pool = [
+        IRONCLAD_COMMON_POOL,
+        IRONCLAD_UNCOMMON_POOL,
+        IRONCLAD_RARE_POOL,
+        SILENT_COMMON_POOL,
+        SILENT_UNCOMMON_POOL,
+        SILENT_RARE_POOL,
+        DEFECT_COMMON_POOL,
+        DEFECT_UNCOMMON_POOL,
+        DEFECT_RARE_POOL,
+        WATCHER_COMMON_POOL,
+        WATCHER_UNCOMMON_POOL,
+        WATCHER_RARE_POOL,
+        COLORLESS_UNCOMMON_POOL,
+        COLORLESS_RARE_POOL,
+    ]
+    .into_iter()
+    .flatten()
+    .copied()
+    .filter(|id| {
+        let def = get_card_definition(*id);
+        def.rarity == rarity
+            && def.card_type != CardType::Curse
+            && def.card_type != CardType::Status
+    })
+    .collect::<Vec<_>>();
+    pool.sort_by_key(|id| java_id(*id));
+    pool
+}
+
+fn reward_card_candidate_pool_for_run(run_state: &RunState, rarity: CardRarity) -> Vec<CardId> {
+    if has_prismatic_shard(run_state) {
+        any_color_reward_pool_sorted(rarity)
+    } else {
+        crate::engine::campfire_handler::nonempty_card_pool_for_class(
+            run_state.player_class,
+            rarity,
+        )
+        .to_vec()
+    }
+}
+
+fn select_reward_card_candidate(run_state: &mut RunState, rarity: CardRarity) -> Option<CardId> {
+    let pool = reward_card_candidate_pool_for_run(run_state, rarity);
+    if pool.is_empty() {
+        return None;
+    }
+
+    if has_prismatic_shard(run_state) {
+        // Java CardLibrary.getAnyColorCard(rarity) first calls
+        // CardGroup.shuffle(AbstractDungeon.cardRng). getRandomCard(true, rarity)
+        // then rebuilds a rarity list, sorts by AbstractCard.cardID, and selects
+        // with AbstractDungeon.cardRng. Because the pool is already filtered to
+        // one rarity, the shuffle only affects RNG consumption.
+        let _shuffle_seed = run_state.rng_pool.card_rng.random_long();
+    }
+
+    let idx = run_state.rng_pool.card_rng.random(pool.len() as i32 - 1) as usize;
+    Some(pool[idx])
 }
 
 /// Generates a set of card rewards based on current rarity chances.
@@ -217,20 +359,16 @@ pub fn generate_card_reward(
             _ => {}
         }
 
-        let pool = crate::engine::campfire_handler::nonempty_card_pool_for_class(
-            run_state.player_class,
-            rarity,
-        );
+        let pool = reward_card_candidate_pool_for_run(run_state, rarity);
         if !pool.is_empty() {
             let mut contains_dupe = true;
             let mut candidate = pool[0];
             while contains_dupe {
                 contains_dupe = false;
-                let idx = run_state
-                    .rng_pool
-                    .card_rng
-                    .random_range(0, (pool.len() - 1) as i32) as usize;
-                candidate = pool[idx];
+                let Some(next_candidate) = select_reward_card_candidate(run_state, rarity) else {
+                    break;
+                };
+                candidate = next_candidate;
                 for c in &cards {
                     if c.id == candidate {
                         contains_dupe = true;

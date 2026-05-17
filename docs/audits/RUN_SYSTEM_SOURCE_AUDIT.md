@@ -322,3 +322,53 @@ Coverage:
 - `boss_reward_generates_three_boss_relics_by_pool_order_without_retry_layer`
 - `natural_combat_start_applies_ring_of_the_serpent_opening_hand_size`
 - `natural_defect_combat_start_has_java_orb_slots_before_cracked_core`
+
+## Reward Card Pool / Prismatic Shard Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+- `D:/rust/cardcrawl/helpers/CardLibrary.java`
+- `D:/rust/cardcrawl/cards/CardGroup.java`
+- `D:/rust/cardcrawl/cards/AbstractCard.java`
+
+Key source facts:
+
+- `AbstractDungeon.getRewardCards()` rolls rarity for each reward card, updates
+  the card blizzard rare-chance offset, then repeatedly draws until the visible
+  reward row has no duplicate `cardID`.
+- Without `PrismaticShard`, the draw uses `AbstractDungeon.getCard(rarity)`,
+  which selects from the current character rarity pool.
+- With `PrismaticShard`, the draw uses
+  `CardLibrary.getAnyColorCard(rarity)`. That helper scans all card-library
+  entries, filters only by exact rarity and not Curse/Status type, then calls
+  `CardGroup.shuffle(AbstractDungeon.cardRng)` and
+  `getRandomCard(true, rarity).makeCopy()`.
+- `CardGroup.getRandomCard(true, rarity)` sorts the rarity-filtered temporary
+  list by `AbstractCard.cardID` before selecting with `AbstractDungeon.cardRng`.
+  Because `getAnyColorCard(rarity)` already filtered to one rarity, the shuffle
+  is mechanically important for consuming `cardRng.randomLong()`, even though
+  the later sort removes its ordering effect.
+- The rarity-only `getAnyColorCard` overload does not filter out HEALING-tagged
+  cards. That differs from the type-specific overload used by
+  `ForeignInfluenceAction`.
+
+Rust result:
+
+- Normal card rewards continue to use the current class rarity pool in existing
+  Java runtime order.
+- Card rewards while `PrismaticShard` is owned now use an any-color rarity pool
+  containing implemented Ironclad, Silent, Defect, Watcher, and colorless reward
+  cards, excluding only Curse/Status types.
+- The Prismatic branch consumes `card_rng.random_long()` before selecting, then
+  selects from a `java_id`-sorted pool with `card_rng.random()`, matching the
+  Java `CardGroup.shuffle(...); getRandomCard(true, rarity)` RNG shape.
+- This path is shared by ordinary combat rewards and reward-screen card rewards
+  produced through Dream Catcher, Orrery, Tiny House, and similar callers of
+  `generate_card_reward`.
+
+Coverage:
+
+- `normal_reward_pool_remains_current_class_only`
+- `prismatic_reward_pool_uses_any_color_cards_sorted_by_java_id`
+- `prismatic_reward_selection_consumes_card_rng_shuffle_seed_before_pick`
