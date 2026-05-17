@@ -418,14 +418,17 @@ Important boundary:
 - Java `TheEnding.initializeEventList()` and `initializeShrineList()` are empty.
   Rust now treats Act 4 and unknown act ids as empty event/shrine pools instead
   of falling through to Act 3 pools.
-- Java `SecretPortal` is now represented in Rust as a special one-time Act 3
-  event with the Java playtime gate. The Rust event handler maps accepting the
-  portal to the boss combat boundary instead of modeling Java's UI room
-  transition objects (`MapRoomNode(-1, 15)`, `pathX`, `pathY`).
+- Java `SecretPortal` is represented in Rust as a special one-time Act 3 event
+  with the Java playtime gate. Accepting the portal creates the synthetic boss
+  room boundary used by Java (`MapRoomNode(-1, 15)`), clears the event-room
+  state, increments the floor, applies modeled all-room entry hooks such as
+  `MawBank`, and then starts boss combat. Rendering/path animation objects are
+  not modeled.
 
 Validation:
 
 - `cargo test events::generator --all-targets`
+- `cargo test secret_portal --all-targets`
 - `event_room_specific_event_selection_uses_duplicate_event_rng_like_java`
 - Latest full-suite validation after EventHelper room-roll table work:
   `cargo test --all-targets` -> `1194 passed`.

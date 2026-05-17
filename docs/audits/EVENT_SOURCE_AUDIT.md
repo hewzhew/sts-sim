@@ -1808,11 +1808,18 @@ it does not behave like a normal event reward or combat. It marks the current
 room complete, constructs a `MonsterRoomBoss` at map node `(-1, 15)`, appends
 `pathX/pathY`, and starts the next-room transition.
 
-Rust currently does not model player playtime or boss-room teleport nodes in
-the event generator, and `EventId` deliberately has no `SecretPortal` variant.
-This is an explicit unsupported special event, not an accidental missing normal
-event module. To implement it later, add a run-level transition primitive rather
-than an ordinary `src/content/events/*` choice handler.
+Rust now models this as a special one-time Act 3 event with the Java playtime
+gate. Accepting the portal clears the event state, moves the run to the
+synthetic boss-room boundary, increments the floor like Java
+`nextRoomTransition()`, applies modeled all-room entry hooks such as `MawBank`,
+and lets the normal boss-combat initialization consume `bossKey` / `bossList`.
+UI-only pieces such as screen shake, fade particles, and path animation are not
+modeled.
+
+Tests:
+
+- `accepting_secret_portal_moves_to_boss_combat_boundary`
+- `secret_portal_boss_transition_applies_all_room_entry_relics`
 
 Java `events/beyond/SpireHeart.java` is the post-Act-3 heart scene and final-act
 gate. It computes score/heart damage, either sends the player to death/game-over
