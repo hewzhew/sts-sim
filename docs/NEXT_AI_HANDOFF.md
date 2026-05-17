@@ -45,15 +45,35 @@ Forbidden:
 
 Branch tip:
 
-- `d0adc3b Fix bandit setmove chain parity`
+- `874605d Fix thief move chaining parity`
 
 Recent commits:
 
+- `874605d Fix thief move chaining parity`
+- `da4095f Update parity handoff state`
 - `d0adc3b Fix bandit setmove chain parity`
 - `bb06207 Expose public map context during combat observations`
 - `44acc14 Fix secret portal boss transition semantics`
 - `bc09895 Preserve potion canUse overrides`
 - `69c983c Model treasure chest open boundary`
+
+`874605d` summary:
+
+- `Looter` and `Mugger` now distinguish Java synchronous `setMove(...)`
+  mutations from queued `SetMoveAction(...)`.
+- Looter/Mugger lunge-style attacks place the next Smoke Bomb move update
+  before queued steal/damage actions so later queue cleanup cannot erase a Java
+  immediate move mutation.
+- Looter/Mugger escape turns now include the Java post-escape
+  `SetMoveAction(ESCAPE)`.
+- `Mugger.die()` burns one `aiRng.random(2)` for Java death voice selection,
+  even when there is no stolen gold reward.
+
+Verification for `874605d`:
+
+- `cargo test looter --all-targets` -> `4 passed`
+- `cargo test mugger --all-targets` -> `6 passed`
+- `cargo test --all-targets` -> `1207 passed`
 
 `d0adc3b` summary:
 
@@ -94,7 +114,7 @@ The current monster architecture is still usable if these rules are followed:
 - UI/VFX classes are ignored only after checking that they do not mutate combat
   state, RNG, room state, map state, or visible choices.
 
-Current text scans after `d0adc3b`:
+Current text scans after `874605d`:
 
 - `src/content/monsters` has no remaining direct `move_history().is_empty`
   private-state pattern from the recent search.
@@ -113,6 +133,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   roll with `if plan.move_id != SPLIT`.
 - `SpikeSlime_L`: Java queues `RollMoveAction` after the switch, including the
   split path; Rust always pushes the post-turn roll after `execute_steps`.
+- `Looter` / `Mugger`: fixed in `874605d`. Java contains both synchronous
+  `setMove(...)` branches and queued `SetMoveAction(...)` branches; Rust now
+  preserves the meaningful timing split for lunge/smoke/escape paths.
 
 Split / victory timing:
 
@@ -150,6 +173,8 @@ Keep these on the short list and revisit with narrow source packets:
 8. Map/boss/event/shop/chest/campfire visibility and room transition state.
 9. Relic counters, relic hooks, and hidden vs public state.
 10. Monster pools, event pools, and act/floor/ascension gates.
+11. Java synchronous `setMove(...)` vs queued `SetMoveAction(...)`; do not
+    collapse these when queued damage, death, or cleanup can intervene.
 
 ## Next Work Queue
 
@@ -158,9 +183,12 @@ Continue monster audit before jumping back to machine learning.
 Recommended next packets:
 
 1. Finish the mixed `SetMoveAction` / `RollMoveAction` monster sweep:
-   - Re-check `AwakenedOne`, `Darkling`, `GremlinFat`, `GremlinWizard`,
-     `Looter`, `Mugger`, and any other Java monsters whose `takeTurn()` both
-     acts and schedules a next move.
+   - `AwakenedOne` and `Darkling` were read; no immediate code change was made.
+     Keep Java duplicate move-history behavior from immediate `setMove(...)`
+     plus later `SetMoveAction(...)` on the watch list.
+   - `Looter` and `Mugger` were fixed in `874605d`.
+   - Next narrow packet: `GremlinFat` and `GremlinWizard`, then any remaining
+     monsters whose `takeTurn()` both acts and schedules a next move.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
