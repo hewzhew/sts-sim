@@ -826,7 +826,9 @@ uses `AbstractPlayer.heal()` and `ShowCardAndObtainEffect(new Parasite())`.
 Java `events/city/MaskedBandits.java` uses event id `Masked Bandits` as the
 monster encounter key. Paying gold advances through three dialogue screens and
 the third continue opens the map immediately; it does not add an extra leave
-screen.
+screen. Its `stealGold()` animation samples monsters through LibGDX
+`MathUtils.random`, not the game's seeded RNG streams, so the simulator should
+not consume run RNG while paying.
 
 Fixes:
 
@@ -840,6 +842,8 @@ Fixes:
   names, while CLI/full-run adapters still accept the older local aliases.
 - `Masked Bandits` paid dialogue now completes on the same click Java uses to
   open the map instead of requiring one extra `[Leave]`.
+- `Masked Bandits` paid gold loss is locked to `Event(MaskedBandits)` source,
+  and the already-owned `Red Mask` reward case is locked to `Circlet`.
 
 Tests:
 
@@ -850,6 +854,7 @@ Tests:
 - `fight_reward_gives_circlet_when_odd_mushroom_is_already_owned`
 - `pay_path_opens_map_after_java_dialog_sequence_without_extra_leave_click`
 - `fight_uses_java_event_encounter_key_and_event_rewards`
+- `fight_reward_gives_circlet_when_red_mask_is_already_owned`
 
 ### Mysterious Sphere and Colosseum event-combat boundaries
 
@@ -956,4 +961,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `869 passed`.
+- Current result after this pass: `870 passed`.

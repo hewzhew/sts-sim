@@ -90,6 +90,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::relics::RelicState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
 
     #[test]
     fn pay_path_opens_map_after_java_dialog_sequence_without_extra_leave_click() {
@@ -100,6 +102,14 @@ mod tests {
 
         handle_choice(&mut engine_state, &mut run_state, 0);
         assert_eq!(run_state.gold, 0);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::GoldChanged {
+                delta: -123,
+                new_total: 0,
+                source: DomainEventSource::Event(EventId::MaskedBandits),
+            }
+        )));
         assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
 
         handle_choice(&mut engine_state, &mut run_state, 0);
@@ -134,6 +144,26 @@ mod tests {
             item,
             crate::rewards::state::RewardItem::Relic {
                 relic_id: RelicId::RedMask
+            }
+        )));
+    }
+
+    #[test]
+    fn fight_reward_gives_circlet_when_red_mask_is_already_owned() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.push(RelicState::new(RelicId::RedMask));
+        run_state.event_state = Some(EventState::new(EventId::MaskedBandits));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let EngineState::EventCombat(combat) = engine_state else {
+            panic!("fight should enter EventCombat");
+        };
+        assert!(combat.rewards.items.iter().any(|item| matches!(
+            item,
+            crate::rewards::state::RewardItem::Relic {
+                relic_id: RelicId::Circlet
             }
         )));
     }
