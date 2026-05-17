@@ -4420,83 +4420,250 @@ fn mango_and_old_coin_on_equip_match_java_resource_changes() {
 
 #[test]
 fn rare_run_relic_can_spawn_gates_match_java_sources() {
-    fn rare_spawn_result(
+    fn spawn_result(
+        tier: RelicTier,
         blocked_candidate: RelicId,
+        fallback: RelicId,
         floor_num: i32,
         owned_relics: Vec<RelicState>,
+        room_type: crate::map::node::RoomType,
     ) -> RelicId {
         let mut run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
         run.floor_num = floor_num;
         run.relics = owned_relics;
-        run.rare_relic_pool = vec![blocked_candidate, RelicId::Mango];
-        run.random_relic_by_tier(RelicTier::Rare)
+
+        let mut node = crate::map::node::MapRoomNode::new(0, 0);
+        node.class = Some(room_type);
+        run.map = crate::map::state::MapState::new(vec![vec![node]]);
+        run.map.current_x = 0;
+        run.map.current_y = 0;
+
+        match tier {
+            RelicTier::Common => run.common_relic_pool = vec![blocked_candidate, fallback],
+            RelicTier::Uncommon => run.uncommon_relic_pool = vec![blocked_candidate, fallback],
+            RelicTier::Rare => run.rare_relic_pool = vec![blocked_candidate, fallback],
+            RelicTier::Shop => run.shop_relic_pool = vec![blocked_candidate, fallback],
+            RelicTier::Boss => run.boss_relic_pool = vec![blocked_candidate, fallback],
+            _ => panic!("unsupported tier in canSpawn test: {tier:?}"),
+        }
+        run.random_relic_by_tier(tier)
+    }
+
+    let monster_room = crate::map::node::RoomType::MonsterRoom;
+    let shop_room = crate::map::node::RoomType::ShopRoom;
+
+    let floor_48_gates = [
+        (
+            RelicId::AncientTeaSet,
+            RelicTier::Common,
+            RelicId::BloodVial,
+        ),
+        (RelicId::CeramicFish, RelicTier::Common, RelicId::BloodVial),
+        (
+            RelicId::DarkstonePeriapt,
+            RelicTier::Uncommon,
+            RelicId::OrnamentalFan,
+        ),
+        (RelicId::DreamCatcher, RelicTier::Common, RelicId::BloodVial),
+        (
+            RelicId::FrozenEgg,
+            RelicTier::Uncommon,
+            RelicId::OrnamentalFan,
+        ),
+        (RelicId::JuzuBracelet, RelicTier::Common, RelicId::BloodVial),
+        (RelicId::MealTicket, RelicTier::Common, RelicId::BloodVial),
+        (
+            RelicId::MeatOnTheBone,
+            RelicTier::Uncommon,
+            RelicId::OrnamentalFan,
+        ),
+        (RelicId::Omamori, RelicTier::Common, RelicId::BloodVial),
+        (RelicId::PotionBelt, RelicTier::Common, RelicId::BloodVial),
+        (RelicId::PrayerWheel, RelicTier::Rare, RelicId::Mango),
+        (
+            RelicId::QuestionCard,
+            RelicTier::Uncommon,
+            RelicId::OrnamentalFan,
+        ),
+        (RelicId::RegalPillow, RelicTier::Common, RelicId::BloodVial),
+        (
+            RelicId::SingingBowl,
+            RelicTier::Uncommon,
+            RelicId::OrnamentalFan,
+        ),
+        (
+            RelicId::ToxicEgg,
+            RelicTier::Uncommon,
+            RelicId::OrnamentalFan,
+        ),
+    ];
+    for (candidate, tier, fallback) in floor_48_gates {
+        assert_eq!(
+            spawn_result(tier, candidate, fallback, 48, vec![], monster_room),
+            candidate,
+            "{candidate:?} should spawn on floor 48 like Java canSpawn"
+        );
+        assert_eq!(
+            spawn_result(tier, candidate, fallback, 49, vec![], monster_room),
+            fallback,
+            "{candidate:?} should reject after floor 48 like Java canSpawn"
+        );
+    }
+
+    let shop_room_gates = [
+        (RelicId::Courier, RelicTier::Shop, RelicId::ChemicalX),
+        (RelicId::MawBank, RelicTier::Common, RelicId::BloodVial),
+        (RelicId::OldCoin, RelicTier::Rare, RelicId::Mango),
+        (RelicId::SmilingMask, RelicTier::Common, RelicId::BloodVial),
+    ];
+    for (candidate, tier, fallback) in shop_room_gates {
+        assert_eq!(
+            spawn_result(tier, candidate, fallback, 48, vec![], monster_room),
+            candidate,
+            "{candidate:?} should spawn outside ShopRoom before floor cutoff"
+        );
+        assert_eq!(
+            spawn_result(tier, candidate, fallback, 48, vec![], shop_room),
+            fallback,
+            "{candidate:?} should reject in ShopRoom like Java canSpawn"
+        );
+        assert_eq!(
+            spawn_result(tier, candidate, fallback, 49, vec![], monster_room),
+            fallback,
+            "{candidate:?} should reject after floor 48 like Java canSpawn"
+        );
     }
 
     assert_eq!(
-        rare_spawn_result(RelicId::OldCoin, 48, vec![]),
-        RelicId::OldCoin
+        spawn_result(
+            RelicTier::Common,
+            RelicId::PreservedInsect,
+            RelicId::BloodVial,
+            52,
+            vec![],
+            monster_room,
+        ),
+        RelicId::PreservedInsect
     );
     assert_eq!(
-        rare_spawn_result(RelicId::OldCoin, 49, vec![]),
-        RelicId::Mango
+        spawn_result(
+            RelicTier::Common,
+            RelicId::PreservedInsect,
+            RelicId::BloodVial,
+            53,
+            vec![],
+            monster_room,
+        ),
+        RelicId::BloodVial
     );
     assert_eq!(
-        rare_spawn_result(RelicId::PrayerWheel, 49, vec![]),
-        RelicId::Mango
+        spawn_result(
+            RelicTier::Common,
+            RelicId::TinyChest,
+            RelicId::BloodVial,
+            35,
+            vec![],
+            monster_room,
+        ),
+        RelicId::TinyChest
     );
     assert_eq!(
-        rare_spawn_result(RelicId::WingBoots, 40, vec![]),
+        spawn_result(
+            RelicTier::Common,
+            RelicId::TinyChest,
+            RelicId::BloodVial,
+            36,
+            vec![],
+            monster_room,
+        ),
+        RelicId::BloodVial
+    );
+    assert_eq!(
+        spawn_result(
+            RelicTier::Rare,
+            RelicId::WingBoots,
+            RelicId::Mango,
+            40,
+            vec![],
+            monster_room,
+        ),
         RelicId::WingBoots
     );
     assert_eq!(
-        rare_spawn_result(RelicId::WingBoots, 41, vec![]),
+        spawn_result(
+            RelicTier::Rare,
+            RelicId::WingBoots,
+            RelicId::Mango,
+            41,
+            vec![],
+            monster_room,
+        ),
         RelicId::Mango
     );
 
     assert_eq!(
-        rare_spawn_result(RelicId::Girya, 48, vec![]),
+        spawn_result(
+            RelicTier::Rare,
+            RelicId::Girya,
+            RelicId::Mango,
+            48,
+            vec![],
+            monster_room,
+        ),
         RelicId::Mango,
         "Java Girya/PeacePipe/Shovel reject floorNum >= 48"
     );
     assert_eq!(
-        rare_spawn_result(
+        spawn_result(
+            RelicTier::Rare,
             RelicId::Girya,
+            RelicId::Mango,
             47,
             vec![
                 RelicState::new(RelicId::PeacePipe),
                 RelicState::new(RelicId::Shovel)
             ],
+            monster_room,
         ),
         RelicId::Mango,
         "Java campfire relics reject when two of Girya/Peace Pipe/Shovel are already owned"
     );
     assert_eq!(
-        rare_spawn_result(
+        spawn_result(
+            RelicTier::Rare,
             RelicId::Girya,
+            RelicId::Mango,
             47,
-            vec![RelicState::new(RelicId::PeacePipe)]
+            vec![RelicState::new(RelicId::PeacePipe)],
+            monster_room,
         ),
         RelicId::Girya
     );
     assert_eq!(
-        rare_spawn_result(
+        spawn_result(
+            RelicTier::Rare,
             RelicId::PeacePipe,
+            RelicId::Mango,
             47,
             vec![
                 RelicState::new(RelicId::Girya),
                 RelicState::new(RelicId::Shovel)
             ],
+            monster_room,
         ),
         RelicId::Mango
     );
     assert_eq!(
-        rare_spawn_result(
+        spawn_result(
+            RelicTier::Rare,
             RelicId::Shovel,
+            RelicId::Mango,
             47,
             vec![
                 RelicState::new(RelicId::Girya),
                 RelicState::new(RelicId::PeacePipe)
             ],
+            monster_room,
         ),
         RelicId::Mango
     );

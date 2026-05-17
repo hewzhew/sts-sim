@@ -1,5 +1,6 @@
 use crate::content::cards::{CardId, CardRarity, CardType};
 use crate::content::relics::{RelicId, RelicTier};
+use crate::map::node::RoomType;
 use crate::state::run::RunState;
 
 #[derive(Clone)]
@@ -8,6 +9,7 @@ pub(crate) struct RelicSpawnContext {
     master_deck: Vec<CardId>,
     floor_num: i32,
     act_num: u8,
+    current_room_type: Option<RoomType>,
 }
 
 impl RelicSpawnContext {
@@ -17,6 +19,7 @@ impl RelicSpawnContext {
             master_deck: run_state.master_deck.iter().map(|card| card.id).collect(),
             floor_num: run_state.floor_num,
             act_num: run_state.act_num,
+            current_room_type: run_state.map.get_current_room_type(),
         }
     }
 
@@ -29,6 +32,10 @@ impl RelicSpawnContext {
             .iter()
             .filter(|&&id| matches!(id, RelicId::Girya | RelicId::PeacePipe | RelicId::Shovel))
             .count()
+    }
+
+    fn is_current_shop_room(&self) -> bool {
+        self.current_room_type == Some(RoomType::ShopRoom)
     }
 }
 
@@ -57,10 +64,28 @@ pub(crate) fn relic_can_spawn_in_context(id: RelicId, context: &RelicSpawnContex
         RelicId::BottledTornado => context.master_deck.iter().any(|&card_id| {
             crate::content::cards::get_card_definition(card_id).card_type == CardType::Power
         }),
-        RelicId::Courier | RelicId::MeatOnTheBone | RelicId::SingingBowl => context.floor_num <= 48,
+        RelicId::AncientTeaSet
+        | RelicId::CeramicFish
+        | RelicId::DarkstonePeriapt
+        | RelicId::DreamCatcher
+        | RelicId::FrozenEgg
+        | RelicId::JuzuBracelet
+        | RelicId::MealTicket
+        | RelicId::MeatOnTheBone
+        | RelicId::Omamori
+        | RelicId::PotionBelt
+        | RelicId::PrayerWheel
+        | RelicId::QuestionCard
+        | RelicId::RegalPillow
+        | RelicId::SingingBowl
+        | RelicId::ToxicEgg => context.floor_num <= 48,
+        RelicId::Courier | RelicId::MawBank | RelicId::OldCoin | RelicId::SmilingMask => {
+            context.floor_num <= 48 && !context.is_current_shop_room()
+        }
         RelicId::Ectoplasm => context.act_num <= 1,
-        RelicId::OldCoin | RelicId::PrayerWheel => context.floor_num <= 48,
         RelicId::Matryoshka | RelicId::WingBoots => context.floor_num <= 40,
+        RelicId::PreservedInsect => context.floor_num <= 52,
+        RelicId::TinyChest => context.floor_num <= 35,
         RelicId::Girya | RelicId::PeacePipe | RelicId::Shovel => {
             context.floor_num < 48 && context.campfire_relic_count() < 2
         }

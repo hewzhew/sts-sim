@@ -34,6 +34,31 @@ Coverage:
 - `ectoplasm_can_spawn_only_in_act_one_and_blocks_gold_gain`
 - `rare_run_relic_can_spawn_gates_match_java_sources`
 
+## Pool-Level Correction - Relic `canSpawn` Gates
+
+Java evidence:
+- `AncientTeaSet`, `CeramicFish`, `DarkstonePeriapt`, `DreamCatcher`,
+  `FrozenEgg2`, `JuzuBracelet`, `MealTicket`, `MeatOnTheBone`, `Omamori`,
+  `PotionBelt`, `PrayerWheel`, `QuestionCard`, `RegalPillow`, `SingingBowl`,
+  and `ToxicEgg2` return `Settings.isEndless || AbstractDungeon.floorNum <= 48`.
+- `PreservedInsect` returns `Settings.isEndless || AbstractDungeon.floorNum <= 52`.
+- `TinyChest` returns `Settings.isEndless || AbstractDungeon.floorNum <= 35`.
+- `Courier`, `MawBank`, `OldCoin`, and `SmilingMask` add a current-room guard:
+  they reject spawning when `AbstractDungeon.getCurrRoom() instanceof ShopRoom`.
+- `Girya`, `PeacePipe`, and `Shovel` reject `floorNum >= 48` and reject if two
+  of the three campfire relics are already owned.
+
+Rust result:
+- The Rust simulator currently models standard non-Endless runs, so the
+  `Settings.isEndless` escape hatch is intentionally not represented.
+- `RelicSpawnContext` now carries the current map room type, allowing relic
+  pool selection to reject the Java ShopRoom-blocked relics when appropriate.
+- The floor gates above are enforced in both front-draw and end-draw relic
+  paths.
+
+Coverage:
+- `rare_run_relic_can_spawn_gates_match_java_sources`
+
 ## Batch 1 - Blood / Bloodied / Vulnerable Relics
 
 ### Burning Blood
