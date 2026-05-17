@@ -665,13 +665,22 @@ pub fn potion_can_use_in_combat_like_java(
     potion: &Potion,
     combat: &crate::runtime::combat::CombatState,
 ) -> bool {
-    potion.can_use
-        && potion.id != PotionId::FairyPotion
-        && matches!(
-            combat.turn.current_phase,
-            crate::runtime::combat::CombatPhase::PlayerTurn
-        )
-        && !combat.are_monsters_basically_dead_java()
+    if !potion.can_use || potion.id == PotionId::FairyPotion {
+        return false;
+    }
+    if !matches!(
+        combat.turn.current_phase,
+        crate::runtime::combat::CombatPhase::PlayerTurn
+    ) {
+        return false;
+    }
+    if matches!(
+        potion.id,
+        PotionId::BloodPotion | PotionId::FruitJuice | PotionId::EntropicBrew
+    ) {
+        return true;
+    }
+    !combat.are_monsters_basically_dead_java()
         && !potion_blocked_in_combat_by_java_override(potion.id, combat)
 }
 
@@ -854,6 +863,19 @@ mod tests {
             &Potion::new(PotionId::FairyPotion, 3),
             &combat
         ));
+
+        combat.entities.monsters[0].current_hp = 0;
+        combat.entities.monsters[0].is_dying = true;
+        assert!(!potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::FirePotion, 5),
+            &combat
+        ));
+        assert!(
+            potion_can_use_in_combat_like_java(&Potion::new(PotionId::FruitJuice, 6), &combat),
+            "Java FruitJuice overrides AbstractPotion.canUse and does not inherit the alive-monster gate"
+        );
+        combat.entities.monsters[0].current_hp = 40;
+        combat.entities.monsters[0].is_dying = false;
 
         combat.meta.is_boss_fight = true;
         assert!(!potion_can_use_in_combat_like_java(
