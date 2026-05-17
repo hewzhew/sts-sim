@@ -834,6 +834,8 @@ Fixes:
 - `Mushrooms` now heals through `RunState::heal_with_source`, so Mark of the
   Bloom blocks the heal, and obtains `Parasite` through the normal event card
   obtain pipeline.
+- `Mushrooms` fight rewards are locked for the `Odd Mushroom` already-owned
+  case, which must reward `Circlet`.
 - `Mushrooms` and `Masked Bandits` event-combat keys now use the Java encounter
   names, while CLI/full-run adapters still accept the older local aliases.
 - `Masked Bandits` paid dialogue now completes on the same click Java uses to
@@ -844,6 +846,8 @@ Tests:
 - `fight_path_requires_java_confirm_screen_before_combat`
 - `eat_uses_player_heal_and_show_card_obtain_semantics`
 - `eat_heal_is_blocked_by_mark_of_the_bloom_but_curse_obtain_still_runs`
+- `eat_parasite_can_be_blocked_by_omamori_like_show_card_and_obtain_effect`
+- `fight_reward_gives_circlet_when_odd_mushroom_is_already_owned`
 - `pay_path_opens_map_after_java_dialog_sequence_without_extra_leave_click`
 - `fight_uses_java_event_encounter_key_and_event_rewards`
 
@@ -952,4 +956,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `867 passed`.
+- Current result after this pass: `869 passed`.

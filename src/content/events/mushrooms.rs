@@ -185,4 +185,49 @@ mod tests {
         assert_eq!(run_state.current_hp, 20);
         assert_eq!(run_state.master_deck.last().unwrap().id, CardId::Parasite);
     }
+
+    #[test]
+    fn fight_reward_gives_circlet_when_odd_mushroom_is_already_owned() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.push(RelicState::new(RelicId::OddMushroom));
+        run_state.event_state = Some(EventState::new(EventId::Mushrooms));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::EventCombat(combat) = engine_state else {
+            panic!("confirmed Mushrooms fight should enter EventCombat");
+        };
+        assert!(combat.rewards.items.iter().any(|item| matches!(
+            item,
+            crate::rewards::state::RewardItem::Relic {
+                relic_id: RelicId::Circlet
+            }
+        )));
+    }
+
+    #[test]
+    fn eat_parasite_can_be_blocked_by_omamori_like_show_card_and_obtain_effect() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 20;
+        run_state.max_hp = 80;
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+        run_state.event_state = Some(EventState::new(EventId::Mushrooms));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.current_hp, 40);
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Parasite));
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Omamori should remain after blocking the curse");
+        assert_eq!(omamori.counter, 1);
+    }
 }
