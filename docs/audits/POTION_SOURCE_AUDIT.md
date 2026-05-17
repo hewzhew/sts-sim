@@ -19,6 +19,10 @@ Java evidence:
 - `AbstractDungeon.returnRandomPotion()` first rolls rarity with `potionRng`
   and then rejection-samples from `PotionHelper.getRandomPotion()`.
 - `AbstractDungeon.returnRandomPotion(rarity, true)` rejects `Fruit Juice`.
+- In the Java source, `returnRandomPotion(rarity, true)` also initializes
+  `spamCheck` to true after the first flat `PotionHelper.getRandomPotion()`
+  call, which means that first flat roll is always consumed and discarded before
+  the limited rejection-sampling loop can return.
 - `AbstractDungeon.returnTotallyRandomPotion()` delegates directly to
   `PotionHelper.getRandomPotion()`.
 
@@ -27,10 +31,13 @@ Rust result:
 - `PotionClass::Any` is the Java `getAll` / upload-style list, not a normal
   run class pool.
 - `random_potion` models the Java rarity roll and rejection-sampling path.
+- The limited path consumes Java's discarded initial flat potion roll before
+  accepting a non-Fruit-Juice result.
 - `random_potion_any` models the flat `PotionHelper.getRandomPotion()` path.
 
 Coverage:
 - `potion_helper_pools_match_java_order_for_all_classes`
+- `limited_random_potion_discards_initial_flat_roll_like_java`
 
 ## Use And Discard Legality
 
@@ -63,3 +70,28 @@ Open audit work:
 - Recheck Toy Ornithopter / Sacred Bark ordering around run-level potion use.
 - Recheck `ObtainPotionAction` and out-of-combat `ObtainPotionEffect` ordering
   where reward screens or event flows are involved.
+
+## High-Risk `use()` Effects - First Pass
+
+### Liquid Memories
+
+Status: `wrong-fixed`
+
+Java evidence:
+- `LiquidMemories.use()` queues `BetterDiscardPileToHandAction(this.potency, 0)`.
+- `BetterDiscardPileToHandAction` auto-moves all discard cards only when
+  `discardPile.size() <= numberOfCards` and the action is not optional.
+- Otherwise it opens `GridCardSelectScreen` with `anyNumber == false`, so the
+  screen closes only after exactly `numberOfCards` cards are selected.
+- The selected cards receive `setCostForTurn(newCost)`.
+
+Rust result:
+- Existing auto-move handling already preserved the full-hand case: selected
+  discard cards are left in discard if the hand is full.
+- Fixed the pending grid-select path to require exact potency instead of
+  allowing any count from `1..=potency`. This matters with Sacred Bark, where
+  Liquid Memories has potency `2`.
+
+Coverage:
+- `liquid_memories_auto_move_does_not_drop_cards_when_hand_fills`
+- `liquid_memories_sacred_bark_grid_select_requires_exact_potency`

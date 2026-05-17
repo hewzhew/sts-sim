@@ -713,7 +713,10 @@ pub fn random_potion(
 
 /// Returns a random potion of the given rarity from the class pool.
 /// Java: `AbstractDungeon.returnRandomPotion(rarity, limited)` — rejection-samples from flat pool.
-/// When `limited=true`, excludes FruitJuice.
+///
+/// When `limited=true`, Java initializes `spamCheck` to true after taking an
+/// initial flat random potion, so the first flat roll is always discarded before
+/// the acceptable non-Fruit-Juice rejection-sampling loop begins.
 pub fn random_potion_by_rarity(
     rng: &mut crate::runtime::rng::StsRng,
     class: PotionClass,
@@ -721,6 +724,9 @@ pub fn random_potion_by_rarity(
     limited: bool,
 ) -> PotionId {
     let pool = potions_for_class(class);
+    if limited {
+        let _ = pool[rng.random(pool.len() as i32 - 1) as usize];
+    }
     loop {
         let idx = rng.random(pool.len() as i32 - 1) as usize;
         let id = pool[idx];
@@ -854,6 +860,21 @@ mod tests {
             &Potion::new(PotionId::SmokeBomb, 4),
             &combat
         ));
+    }
+
+    #[test]
+    fn limited_random_potion_discards_initial_flat_roll_like_java() {
+        let mut rng = crate::runtime::rng::StsRng::new(17);
+        let before = rng.counter;
+
+        let potion =
+            random_potion_by_rarity(&mut rng, PotionClass::Silent, PotionRarity::Rare, true);
+
+        assert_ne!(potion, PotionId::FruitJuice);
+        assert!(
+            rng.counter >= before + 2,
+            "Java returnRandomPotion(rarity, true) consumes and discards one initial PotionHelper.getRandomPotion roll before accepting a limited result"
+        );
     }
 
     #[test]

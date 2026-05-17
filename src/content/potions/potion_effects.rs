@@ -373,7 +373,7 @@ pub fn get_potion_actions(
                 &mut actions,
                 Action::SuspendForGridSelect {
                     source_pile: crate::state::PileType::Discard,
-                    min: 1,
+                    min: potency as u8,
                     max: potency as u8,
                     can_cancel: false,
                     filter: crate::state::GridSelectFilter::Any,

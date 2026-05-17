@@ -2783,8 +2783,8 @@ mod tests {
             "Java Entropic Brew queues one ObtainPotionAction per potion slot"
         );
         assert!(
-            state.rng.potion_rng.counter > potion_rng_before,
-            "Java Entropic Brew calls returnRandomPotion(true) while the potion is used, before queued obtains run"
+            state.rng.potion_rng.counter >= potion_rng_before + 9,
+            "Java Entropic Brew calls returnRandomPotion(true) once per potion slot while the potion is used; each call consumes one rarity roll, discards one initial flat potion roll, then consumes at least one accepted/rejected flat roll"
         );
         while let Some(action) = state.pop_next_action() {
             crate::engine::action_handlers::execute_action(action, &mut state);
@@ -3010,6 +3010,45 @@ mod tests {
         );
         assert_eq!(state.zones.hand[9].id, CardId::Strike);
         assert_eq!(state.zones.hand[9].cost_for_turn_java(), 0);
+    }
+
+    #[test]
+    fn liquid_memories_sacred_bark_grid_select_requires_exact_potency() {
+        let mut state = blank_test_combat();
+        state.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::LiquidMemories,
+            1,
+        ))];
+        state
+            .entities
+            .player
+            .relics
+            .push(RelicState::new(RelicId::SacredBark));
+        state.zones.discard_pile = vec![
+            CombatCard::new(CardId::Strike, 201),
+            CombatCard::new(CardId::Bash, 202),
+            CombatCard::new(CardId::Defend, 203),
+        ];
+
+        handle_use_potion(0, None, &mut state);
+
+        let Some(Action::SuspendForGridSelect {
+            source_pile,
+            min,
+            max,
+            can_cancel,
+            reason,
+            ..
+        }) = state.pop_next_action()
+        else {
+            panic!("Liquid Memories should queue a discard grid select when discard has more cards than potency");
+        };
+        assert_eq!(source_pile, crate::state::PileType::Discard);
+        assert_eq!(min, 2);
+        assert_eq!(max, 2);
+        assert!(!can_cancel);
+        assert_eq!(reason, crate::state::GridSelectReason::DiscardToHand);
     }
 
     #[test]
