@@ -146,11 +146,22 @@ Fixes:
   Event(Designer))` instead of mutating `upgrades` directly.
 - Designer Punch now uses the shared Java HP_LOSS helper with
   `Event(Designer)` source instead of directly mutating HP.
+- Submitted `Clean Up` remove and transform selections now have regression
+  coverage for `Event(Designer)` removal/transform sources.
 - Direct calls to Java-disabled `Adjust`, `Clean Up`, and `Full Service`
   choices now stay inert. The guards intentionally reuse the Java button
   predicates, including the distinction where `Clean Up` / `Full Service`
   disabling checks non-bottled master-deck size while the opened grid later uses
   non-bottled purgeable cards.
+
+Open follow-up:
+
+- Java performs some post-selection event callbacks, such as Designer Full
+  Service's random upgrade, inside the grid-selection update path. The current
+  Rust event loop applies this class of event follow-up when the event room is
+  handled again after selection return. This is a broader event-state-machine
+  timing issue and should be audited separately instead of hidden inside one
+  Designer test.
 
 Tests:
 
@@ -158,6 +169,9 @@ Tests:
 - `designer_disabled_adjust_without_gold_does_not_pay_or_open_selection`
 - `designer_disabled_adjust_without_upgradable_card_does_not_pay_or_advance`
 - `designer_cleanup_remove_selection_excludes_bottled_and_unpurgeable_cards`
+- `designer_cleanup_remove_selected_card_uses_event_source`
+- `designer_cleanup_transform_selection_excludes_bottled_and_unpurgeable_cards`
+- `designer_cleanup_transform_selected_cards_use_event_source`
 - `designer_disabled_cleanup_without_gold_does_not_pay_or_open_selection`
 - `designer_disabled_cleanup_transform_requires_two_non_bottled_cards`
 - `designer_disabled_full_service_does_not_pay_or_open_selection`
@@ -1663,4 +1677,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `977 passed`.
+- Current result after this pass: `980 passed`.
