@@ -12,13 +12,10 @@ fn get_damage(run_state: &RunState) -> i32 {
 }
 
 fn has_upgradable_cards(run_state: &RunState) -> bool {
-    run_state.master_deck.iter().any(|c| {
-        let def = crate::content::cards::get_card_definition(c.id);
-        c.id == crate::content::cards::CardId::SearingBlow
-            || (c.upgrades == 0
-                && def.card_type != crate::content::cards::CardType::Status
-                && def.card_type != crate::content::cards::CardType::Curse)
-    })
+    run_state
+        .master_deck
+        .iter()
+        .any(crate::state::core::master_deck_card_can_upgrade)
 }
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
@@ -50,25 +47,32 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 
     match event_state.current_screen {
         0 => {
+            let mut advance_screen = false;
             match choice_idx {
                 0 => {
                     // Enter Light: take damage + upgrade 2 random cards
-                    let damage = get_damage(run_state);
-                    let damage = apply_enter_light_damage(run_state, damage);
-                    run_state.change_hp_with_source(
-                        -damage,
-                        DomainEventSource::Event(EventId::ShiningLight),
-                    );
-                    run_state.upgrade_random_cards_with_source(
-                        2,
-                        DomainEventSource::Event(EventId::ShiningLight),
-                    );
+                    if has_upgradable_cards(run_state) {
+                        let damage = get_damage(run_state);
+                        let damage = apply_enter_light_damage(run_state, damage);
+                        run_state.change_hp_with_source(
+                            -damage,
+                            DomainEventSource::Event(EventId::ShiningLight),
+                        );
+                        run_state.upgrade_random_cards_with_source(
+                            2,
+                            DomainEventSource::Event(EventId::ShiningLight),
+                        );
+                        advance_screen = true;
+                    }
                 }
                 _ => {
                     // Leave
+                    advance_screen = true;
                 }
             }
-            event_state.current_screen = 1;
+            if advance_screen {
+                event_state.current_screen = 1;
+            }
         }
         _ => {
             event_state.completed = true;
@@ -196,6 +200,26 @@ mod tests {
                 .iter()
                 .map(|card| (card.id, card.upgrades))
                 .collect::<Vec<_>>()
+        );
+        assert!(run_state.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn disabled_enter_light_does_not_apply_damage_when_no_cards_can_upgrade() {
+        let mut run_state = shining_run(30, 30);
+        run_state.master_deck = vec![
+            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Injury, 11),
+            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::AscendersBane, 12),
+        ];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 30);
+        assert_eq!(
+            run_state.event_state.as_ref().unwrap().current_screen,
+            0,
+            "disabled Java option should not advance the event state"
         );
         assert!(run_state.take_emitted_events().is_empty());
     }

@@ -827,12 +827,16 @@ Fixes:
   `upgrade_random_cards` default behavior unchanged.
 - Shining Light random upgrades now emit `CardUpgraded` with
   `Event(ShiningLight)`.
+- The disabled Enter option now stays inert if no master-deck cards can upgrade,
+  matching Java's disabled dialog option instead of applying damage through a
+  direct handler call.
 
 Tests:
 
 - `enter_light_damage_and_random_upgrades_use_event_source`
 - `enter_light_normal_damage_applies_torii_then_tungsten`
 - `leave_does_not_damage_or_upgrade`
+- `disabled_enter_light_does_not_apply_damage_when_no_cards_can_upgrade`
 
 ### Nest gold and Ritual Dagger branch
 
@@ -1313,4 +1317,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `910 passed`.
+- Current result after this pass: `911 passed`.
