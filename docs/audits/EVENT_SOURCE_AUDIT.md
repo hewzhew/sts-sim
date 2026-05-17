@@ -270,6 +270,25 @@ Tests:
 - `donut_increase_max_hp_uses_java_increase_then_heal_semantics`
 - `donut_max_hp_gain_survives_mark_but_attached_heal_is_blocked`
 
+### Sssserpent gold and curse
+
+Java `events/exordium/Sssserpent.java` uses event id `"Liars Game"` and is a
+two-step event:
+
+- first click `Agree` only advances to the agree/confirm screen;
+- confirm adds `ShowCardAndObtainEffect(Doubt)`, then grants gold with
+  `player.gainGold(goldReward)`;
+- gold reward is `175`, or `150` at ascension 15+.
+
+`ShowCardAndObtainEffect` routes the curse through the normal obtain pipeline,
+so `Omamori` can prevent `Doubt` without preventing the gold gain.
+
+Tests:
+
+- `agree_is_two_step_and_confirm_grants_java_gold_and_doubt`
+- `ascension_15_uses_java_lower_gold_reward`
+- `omamori_blocks_doubt_but_not_gold`
+
 ### Cleric heal payment
 
 Java `events/exordium/Cleric.java` computes the heal amount as
@@ -933,4 +952,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `864 passed`.
+- Current result after this pass: `867 passed`.
