@@ -5,6 +5,7 @@ use crate::state::events::{
     EventOptionSemantics, EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
@@ -133,7 +134,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     {
                         hp_loss = (hp_loss - 1).max(0);
                     }
-                    run_state.current_hp = (run_state.current_hp - hp_loss).max(0);
+                    run_state.change_hp_with_source(
+                        -hp_loss,
+                        DomainEventSource::Event(EventId::WindingHalls),
+                    );
                     super::obtain_event_card(run_state, EventId::WindingHalls, CardId::Madness);
                     super::obtain_event_card(run_state, EventId::WindingHalls, CardId::Madness);
                     event_state.current_screen = 2;
@@ -146,17 +150,20 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         0.25
                     };
                     let heal_amt = (run_state.max_hp as f32 * heal_pct).round() as i32;
-                    run_state.current_hp = (run_state.current_hp + heal_amt).min(run_state.max_hp);
+                    run_state.heal_with_source(
+                        heal_amt,
+                        DomainEventSource::Event(EventId::WindingHalls),
+                    );
                     super::obtain_event_card(run_state, EventId::WindingHalls, CardId::Writhe);
                     event_state.current_screen = 2;
                 }
                 _ => {
                     // Accept: lose Max HP
                     let max_hp_loss = (run_state.max_hp as f32 * 0.05).round() as i32;
-                    run_state.max_hp = (run_state.max_hp - max_hp_loss).max(1);
-                    if run_state.current_hp > run_state.max_hp {
-                        run_state.current_hp = run_state.max_hp;
-                    }
+                    run_state.lose_max_hp_with_source(
+                        max_hp_loss,
+                        DomainEventSource::Event(EventId::WindingHalls),
+                    );
                     event_state.current_screen = 2;
                 }
             }
@@ -167,4 +174,154 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    fn winding_run(current_hp: i32, max_hp: i32, ascension_level: u8) -> RunState {
+        let mut run_state = RunState::new(1, ascension_level, false, "Ironclad");
+        run_state.current_hp = current_hp;
+        run_state.max_hp = max_hp;
+        let mut event_state = EventState::new(EventId::WindingHalls);
+        event_state.current_screen = 1;
+        run_state.event_state = Some(event_state);
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    #[test]
+    fn embrace_madness_damage_uses_event_source_and_obtains_two_madness() {
+        let mut run_state = winding_run(20, 80, 0);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 10);
+        assert_eq!(
+            run_state
+                .master_deck
+                .iter()
+                .filter(|card| card.id == CardId::Madness)
+                .count(),
+            2
+        );
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -10,
+                current_hp: 10,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::WindingHalls),
+            }
+        )));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::WindingHalls),
+                    } if card.id == CardId::Madness
+                ))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn embrace_madness_damage_applies_tungsten_rod() {
+        let mut run_state = winding_run(20, 80, 0);
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 11);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -9,
+                current_hp: 11,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::WindingHalls),
+            }
+        )));
+    }
+
+    #[test]
+    fn retrace_heal_uses_event_source_and_obtains_writhe() {
+        let mut run_state = winding_run(10, 80, 0);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.current_hp, 30);
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Writhe));
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: 20,
+                current_hp: 30,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::WindingHalls),
+            }
+        )));
+    }
+
+    #[test]
+    fn retrace_heal_respects_mark_of_the_bloom_but_still_obtains_writhe() {
+        let mut run_state = winding_run(10, 80, 0);
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::MarkOfTheBloom));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.current_hp, 10);
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Writhe));
+        assert!(!run_state
+            .take_emitted_events()
+            .iter()
+            .any(|event| matches!(event, DomainEvent::HpChanged { .. })));
+    }
+
+    #[test]
+    fn accept_loss_uses_max_hp_event_source_and_clamps_current_hp() {
+        let mut run_state = winding_run(80, 80, 0);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        assert_eq!(run_state.max_hp, 76);
+        assert_eq!(run_state.current_hp, 76);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::MaxHpChanged {
+                delta: -4,
+                current_hp: 76,
+                max_hp: 76,
+                source: DomainEventSource::Event(EventId::WindingHalls),
+            }
+        )));
+    }
 }

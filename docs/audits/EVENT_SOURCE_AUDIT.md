@@ -460,6 +460,40 @@ Tests:
 - `high_floor_desire_heals_with_event_source_and_obtains_doubt`
 - `high_floor_desire_heal_respects_mark_of_the_bloom`
 
+### Winding Halls resource branches
+
+Java `events/beyond/WindingHalls.java` computes the branch amounts at event
+construction time with `MathUtils.round(...)`, then applies:
+
+```text
+Embrace Madness:
+  player.damage(new DamageInfo(null, hpAmt))
+  obtain 2 Madness
+Retrace:
+  player.heal(healAmt)
+  obtain Writhe
+Accept:
+  player.decreaseMaxHealth(maxHPAmt)
+```
+
+Fixes:
+
+- The Madness branch now keeps the existing `Tungsten Rod` adjustment for
+  ownerless normal damage but emits the HP loss through
+  `change_hp_with_source(..., Event(WindingHalls))`.
+- The Writhe branch now uses `heal_with_source`, so Java heal hooks such as
+  `Mark of the Bloom` are preserved.
+- The max-HP branch now uses `lose_max_hp_with_source` instead of directly
+  mutating `max_hp` and clamping `current_hp`.
+
+Tests:
+
+- `embrace_madness_damage_uses_event_source_and_obtains_two_madness`
+- `embrace_madness_damage_applies_tungsten_rod`
+- `retrace_heal_uses_event_source_and_obtains_writhe`
+- `retrace_heal_respects_mark_of_the_bloom_but_still_obtains_writhe`
+- `accept_loss_uses_max_hp_event_source_and_clamps_current_hp`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -669,10 +703,10 @@ Validation:
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
   that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`,
   `FaceTrader`, `ForgottenAltar`, `Ghosts`, `Vampires`, `MoaiHead`, and
-  `GremlinWheelGame`, and `MindBloom` are now covered; the remaining direct
-  writes should be handled event-by-event against Java source.
+  `GremlinWheelGame`, `MindBloom`, and `WindingHalls` are now covered; the
+  remaining direct writes should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `832 passed`.
+- Current result after this pass: `837 passed`.
