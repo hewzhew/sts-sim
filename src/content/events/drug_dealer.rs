@@ -6,8 +6,9 @@
 // Screen 1: [Leave]
 
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     if event_state.current_screen == 1 {
@@ -59,7 +60,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     // Obtain J.A.X.
                     super::obtain_event_card(
                         run_state,
-                        crate::state::events::EventId::DrugDealer,
+                        EventId::DrugDealer,
                         crate::content::cards::CardId::JAX,
                     );
                     event_state.current_screen = 1;
@@ -85,9 +86,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     } else {
                         crate::content::relics::RelicId::MutagenicStrength
                     };
-                    run_state
-                        .relics
-                        .push(crate::content::relics::RelicState::new(relic_id));
+                    let _ = run_state.obtain_relic_with_source(
+                        relic_id,
+                        EngineState::EventRoom,
+                        DomainEventSource::Event(EventId::DrugDealer),
+                    );
                     event_state.current_screen = 1;
                 }
                 _ => {
@@ -101,4 +104,92 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::selection::DomainEvent;
+
+    fn drug_dealer_run() -> RunState {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.event_state = Some(EventState {
+            id: EventId::DrugDealer,
+            current_screen: 0,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    #[test]
+    fn ingest_mutagens_obtains_jax_with_event_source() {
+        let mut run_state = drug_dealer_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::JAX));
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                card,
+                source: DomainEventSource::Event(EventId::DrugDealer),
+            } if card.id == CardId::JAX
+        )));
+    }
+
+    #[test]
+    fn inject_mutagens_obtains_relic_with_event_source() {
+        let mut run_state = drug_dealer_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::MutagenicStrength));
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicObtained {
+                relic_id: RelicId::MutagenicStrength,
+                source: DomainEventSource::Event(EventId::DrugDealer),
+            }
+        )));
+    }
+
+    #[test]
+    fn inject_mutagens_grants_circlet_through_obtain_pipeline_when_already_owned() {
+        let mut run_state = drug_dealer_run();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::MutagenicStrength));
+        run_state.relics.push(RelicState::new(RelicId::Circlet));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        let circlet = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Circlet)
+            .expect("existing Circlet should remain");
+        assert_eq!(circlet.counter, 2);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicObtained {
+                relic_id: RelicId::Circlet,
+                source: DomainEventSource::Event(EventId::DrugDealer),
+            }
+        )));
+    }
 }

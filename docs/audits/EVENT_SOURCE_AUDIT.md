@@ -407,6 +407,32 @@ Tests:
 - `shed_blood_damage_respects_tungsten_after_max_hp_heal`
 - `desecrate_decay_uses_event_obtain_pipeline_and_omamori_can_block_it`
 
+### Drug Dealer relic obtain source
+
+Java `events/city/DrugDealer.java` has three first-screen choices:
+
+- Obtain `J.A.X.` through `ShowCardAndObtainEffect`.
+- Transform two purgeable cards through a grid select.
+- Obtain `MutagenicStrength`, or `Circlet` if `MutagenicStrength` is already
+  owned, through `spawnRelicAndObtain`.
+
+Rust already routed `J.A.X.` through the event card-obtain helper. The
+Mutagenic Strength branch still pushed the relic directly into `run_state`,
+which skipped event source metadata and Circlet counter handling.
+
+Fixes:
+
+- The Inject Mutagens branch now uses `RunState::obtain_relic_with_source(...,
+  Event(DrugDealer))` for both `MutagenicStrength` and fallback `Circlet`.
+- Added regression coverage for `J.A.X.` event source, relic event source, and
+  existing-Circlet counter increment.
+
+Tests:
+
+- `ingest_mutagens_obtains_jax_with_event_source`
+- `inject_mutagens_obtains_relic_with_event_source`
+- `inject_mutagens_grants_circlet_through_obtain_pipeline_when_already_owned`
+
 ### Ghosts and Vampires max-HP trades
 
 Java `events/city/Ghosts.java` and `events/city/Vampires.java` both reduce
@@ -1058,10 +1084,11 @@ Validation:
   helper. `CursedTome` now uses shared Java HP_LOSS event semantics and preserves
   random-book RNG consumption. `AccursedBlacksmith` now routes `WarpedTongs`
   through the event-sourced relic obtain pipeline. `Mausoleum` now preserves the
-  Java relic-before-Writhe effect timing. The remaining direct writes should be
-  handled event-by-event against Java source.
+  Java relic-before-Writhe effect timing. `DrugDealer` now routes Inject Mutagens
+  relics through the event-sourced relic obtain pipeline. The remaining direct
+  writes should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `885 passed`.
+- Current result after this pass: `888 passed`.
