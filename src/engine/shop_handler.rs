@@ -26,6 +26,16 @@ fn current_shop_price_multiplier(run_state: &RunState) -> f32 {
     multiplier
 }
 
+fn apply_restock_relic_or_potion_discounts(run_state: &RunState, mut price: i32) -> i32 {
+    if has_relic(run_state, RelicId::Courier) {
+        price = (price as f32 * 0.8).round() as i32;
+    }
+    if has_relic(run_state, RelicId::MembershipCard) {
+        price = (price as f32 * 0.5).round() as i32;
+    }
+    price
+}
+
 fn base_purge_cost(run_state: &RunState) -> i32 {
     75 + run_state.shop_purge_count * 25
 }
@@ -81,7 +91,7 @@ fn reprice_relic_price(run_state: &mut RunState, base_price: i32) -> i32 {
             .merchant_rng
             .random_f32_min_max(0.95, 1.05))
     .round() as i32;
-    (jittered as f32 * current_shop_price_multiplier(run_state)).round() as i32
+    apply_restock_relic_or_potion_discounts(run_state, jittered)
 }
 
 fn reprice_potion_price(run_state: &mut RunState, potion_id: PotionId) -> i32 {
@@ -92,7 +102,7 @@ fn reprice_potion_price(run_state: &mut RunState, potion_id: PotionId) -> i32 {
             .merchant_rng
             .random_f32_min_max(0.95, 1.05))
     .round() as i32;
-    (jittered as f32 * current_shop_price_multiplier(run_state)).round() as i32
+    apply_restock_relic_or_potion_discounts(run_state, jittered)
 }
 
 fn reprice_card_price(run_state: &mut RunState, card_id: CardId) -> i32 {
@@ -301,13 +311,29 @@ pub fn handle(
 
 #[cfg(test)]
 mod tests {
-    use super::{handle, replace_shop_relic_slot};
+    use super::{apply_restock_relic_or_potion_discounts, handle, replace_shop_relic_slot};
     use crate::content::cards::CardId;
     use crate::content::potions::PotionId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::shop::state::{ShopCard, ShopPotion, ShopRelic, ShopState};
     use crate::state::core::{ClientInput, EngineState};
     use crate::state::run::RunState;
+
+    #[test]
+    fn courier_membership_restock_relic_potion_discounts_round_sequentially() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Courier));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::MembershipCard));
+
+        assert_eq!(
+            apply_restock_relic_or_potion_discounts(&run_state, 101),
+            41,
+            "Java ShopScreen.getNewPrice rounds after Courier, then rounds again after Membership Card"
+        );
+    }
 
     #[test]
     fn spending_gold_in_shop_uses_up_maw_bank() {

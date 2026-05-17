@@ -434,3 +434,33 @@ Coverage:
 - `shop_attack_and_skill_rarity_paths_match_java_fallthrough`
 - `shop_power_rarity_paths_match_java_recursive_power_fallbacks`
 - `courier_colored_restock_uses_card_rng_for_rarity_and_math_rng_for_card_selection`
+
+## Shop Restock Price Rounding Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/shop/ShopScreen.java`
+- `D:/rust/cardcrawl/shop/StoreRelic.java`
+- `D:/rust/cardcrawl/shop/StorePotion.java`
+
+Key source facts:
+
+- Initial shop inventory is priced, then global shop discounts are applied by
+  `ShopScreen.applyDiscount`, which rounds each pass independently.
+- Courier card restock uses `ShopScreen.setPrice(AbstractCard)`: card base price
+  is jittered, colorless/Courier/Membership multipliers are applied as floats,
+  then the final value is truncated to `int`.
+- Courier relic and potion restock use `ShopScreen.getNewPrice(StoreRelic)` and
+  `getNewPrice(StorePotion)`: jitter is rounded first, Courier discount is
+  rounded, then Membership Card discount is rounded.
+
+Rust result:
+
+- Card restock keeps the source-shaped float multiplier path with final
+  truncation.
+- Relic and potion restock now apply Courier and Membership Card discounts as
+  sequential rounded passes instead of one combined multiplier.
+
+Coverage:
+
+- `courier_membership_restock_relic_potion_discounts_round_sequentially`
