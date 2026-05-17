@@ -1175,6 +1175,15 @@ fn handle_player_turn_input(
         }
 
         ClientInput::DiscardPotion(slot) => {
+            let potion = combat_state
+                .entities
+                .potions
+                .get(slot)
+                .and_then(|p| p.as_ref())
+                .ok_or("Potion index out of range")?;
+            if !potion.can_discard {
+                return Err("Potion cannot be discarded in current combat state");
+            }
             combat_state.queue_action_back(Action::DiscardPotion { slot });
             Ok(())
         }
@@ -1719,6 +1728,38 @@ mod tests {
         let ironclad_pool = class_combat_card_pool("Ironclad");
         assert!(ironclad_pool.contains(&CardId::PommelStrike));
         assert!(!ironclad_pool.contains(&CardId::Acrobatics));
+    }
+
+    #[test]
+    fn combat_discard_potion_input_respects_java_can_discard_affordance() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+        combat_state.entities.potions = vec![Some(
+            crate::content::potions::Potion::with_affordance_truth(
+                crate::content::potions::PotionId::FirePotion,
+                1,
+                true,
+                false,
+                true,
+            ),
+        )];
+        let mut engine_state = EngineState::CombatPlayerTurn;
+
+        let alive = super::tick_until_stable_turn(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::DiscardPotion(0),
+        );
+
+        assert!(alive);
+        assert!(combat_state.entities.potions[0].is_some());
+        let diagnostics = combat_state.take_engine_diagnostics();
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("Potion cannot be discarded")),
+            "combat discard input should be rejected instead of bypassing Java canDiscard"
+        );
     }
 
     #[test]

@@ -58,12 +58,20 @@ Rust result:
 - Combat potion legality rejects Fairy Potion, dead/ended combat states, and
   Java's Smoke Bomb boss/back-attack cases.
 - We Meet Again blocks both use and discard.
+- Combat action enumeration now exposes `DiscardPotion` for owned potions with
+  `can_discard == true`, even when `can_use == false`, matching the Java
+  potion pop-up's separate discard button.
+- Combat discard input validates `can_discard` before queuing the low-level
+  discard action, so direct client input cannot bypass Java affordance truth.
 
 Coverage:
 - `potion_can_use_overrides_match_java_sources`
 - `non_combat_potion_observation_uses_java_can_use_overrides`
 - `we_meet_again_blocks_potion_use_and_discard_observation`
 - `combat_potion_execution_respects_java_can_use_gate`
+- `engine_local_moves_skip_unusable_potions`
+- `combat_discard_potion_input_respects_java_can_discard_affordance`
+- `combat_action_mask_exposes_discardable_unusable_potions`
 
 Open audit work:
 - Continue per-potion effect comparison against each Java `use()` method.

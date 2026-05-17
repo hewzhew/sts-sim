@@ -505,6 +505,36 @@ fn build_action_candidates(
                 selection_indices: Vec::new(),
                 selection_uuids: Vec::new(),
             },
+            CombatAction::DiscardPotion { potion_index } => DriverActionCandidate {
+                index,
+                legal: mask.legal[index],
+                label: action.label(combat),
+                action_family: "discard_potion".to_string(),
+                choice_kind: None,
+                card_id: None,
+                card_name: None,
+                potion_id: combat
+                    .entities
+                    .potions
+                    .get(*potion_index)
+                    .and_then(|potion| potion.as_ref())
+                    .map(|potion| format!("{:?}", potion.id)),
+                potion_name: combat
+                    .entities
+                    .potions
+                    .get(*potion_index)
+                    .and_then(|potion| potion.as_ref())
+                    .map(|potion| {
+                        sts_simulator::content::potions::get_potion_definition(potion.id)
+                            .name
+                            .to_string()
+                    }),
+                slot_index: Some(*potion_index),
+                target: None,
+                target_slot: None,
+                selection_indices: Vec::new(),
+                selection_uuids: Vec::new(),
+            },
             CombatAction::SubmitDiscoverChoice {
                 index: choice_index,
             } => DriverActionCandidate {

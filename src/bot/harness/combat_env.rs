@@ -164,6 +164,9 @@ pub enum CombatAction {
         potion_index: usize,
         target: Option<EntityId>,
     },
+    DiscardPotion {
+        potion_index: usize,
+    },
     SubmitDiscoverChoice {
         index: usize,
     },
@@ -198,6 +201,7 @@ impl CombatAction {
                 potion_index: *potion_index,
                 target: *target,
             },
+            Self::DiscardPotion { potion_index } => ClientInput::DiscardPotion(*potion_index),
             Self::SubmitDiscoverChoice { index } => ClientInput::SubmitDiscoverChoice(*index),
             Self::SubmitCardChoice { indices } => ClientInput::SubmitCardChoice(indices.clone()),
             Self::SubmitHandSelect { uuids } => ClientInput::SubmitHandSelect(uuids.clone()),
@@ -230,6 +234,7 @@ impl CombatAction {
                 Some(target) => format!("UsePotion#{} @{}", potion_index, target),
                 None => format!("UsePotion#{}", potion_index),
             },
+            Self::DiscardPotion { potion_index } => format!("DiscardPotion#{potion_index}"),
             Self::SubmitDiscoverChoice { index } => format!("DiscoverChoice#{index}"),
             Self::SubmitCardChoice { indices } => format!("CardChoice{:?}", indices),
             Self::SubmitHandSelect { uuids } => format!("HandSelect{:?}", uuids),
@@ -253,6 +258,7 @@ impl From<ClientInput> for CombatAction {
                 potion_index,
                 target,
             },
+            ClientInput::DiscardPotion(potion_index) => Self::DiscardPotion { potion_index },
             ClientInput::SubmitDiscoverChoice(index) => Self::SubmitDiscoverChoice { index },
             ClientInput::SubmitCardChoice(indices) => Self::SubmitCardChoice { indices },
             ClientInput::SubmitHandSelect(uuids) => Self::SubmitHandSelect { uuids },
@@ -939,6 +945,7 @@ fn enumerate_candidate_actions(
                 if maybe_potion.is_none() {
                     continue;
                 }
+                actions.push(CombatAction::DiscardPotion { potion_index });
                 let legal_targeted = legal_moves_for_audit(engine_state, combat)
                     .into_iter()
                     .filter_map(|input| match input {
@@ -1491,6 +1498,7 @@ fn update_turn_prefix_tracker(
             }
         }
         CombatAction::UsePotion { .. }
+        | CombatAction::DiscardPotion { .. }
         | CombatAction::EndTurn
         | CombatAction::SubmitDiscoverChoice { .. }
         | CombatAction::SubmitCardChoice { .. }
@@ -1517,6 +1525,7 @@ fn action_family_name(action: &CombatAction) -> &'static str {
         CombatAction::EndTurn => "end_turn",
         CombatAction::PlayCard { .. } => "play_card",
         CombatAction::UsePotion { .. } => "use_potion",
+        CombatAction::DiscardPotion { .. } => "discard_potion",
         CombatAction::SubmitDiscoverChoice { .. } => "choice_select",
         CombatAction::SubmitCardChoice { .. } => "choice_select",
         CombatAction::SubmitHandSelect { .. } => "choice_select",
@@ -1615,4 +1624,40 @@ fn format_card(card: &CombatCard) -> String {
         label.push('+');
     }
     label
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combat_action_mask_exposes_discardable_unusable_potions() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters = vec![crate::test_support::test_monster(
+            crate::content::monsters::EnemyId::JawWorm,
+        )];
+        combat.entities.potions = vec![Some(
+            crate::content::potions::Potion::with_affordance_truth(
+                crate::content::potions::PotionId::FairyPotion,
+                1,
+                false,
+                true,
+                false,
+            ),
+        )];
+
+        let mask = build_action_mask(&EngineState::CombatPlayerTurn, &combat);
+
+        assert!(mask
+            .legal_actions()
+            .iter()
+            .any(|action| matches!(action, CombatAction::DiscardPotion { potion_index: 0 })));
+        assert!(!mask.legal_actions().iter().any(|action| matches!(
+            action,
+            CombatAction::UsePotion {
+                potion_index: 0,
+                ..
+            }
+        )));
+    }
 }

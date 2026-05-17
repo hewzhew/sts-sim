@@ -13,6 +13,9 @@ pub(crate) fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> 
                 let Some(potion) = maybe_potion.as_ref() else {
                     continue;
                 };
+                if potion.can_discard {
+                    moves.push(ClientInput::DiscardPotion(potion_index));
+                }
                 if !crate::content::potions::potion_can_use_in_combat_like_java(potion, combat) {
                     continue;
                 }
@@ -376,6 +379,18 @@ mod tests {
                 .iter()
                 .any(|input| matches!(input, ClientInput::UsePotion { .. })),
             "engine-local enumeration should not emit can_use=false potion actions"
+        );
+        assert!(
+            inputs
+                .iter()
+                .any(|input| matches!(input, ClientInput::DiscardPotion(0))),
+            "Java PotionPopUp allows discarding an owned potion through canDiscard even when canUse is false"
+        );
+        assert!(
+            !inputs
+                .iter()
+                .any(|input| matches!(input, ClientInput::DiscardPotion(1 | 2))),
+            "empty potion slots are not discardable actions"
         );
     }
 
