@@ -115,6 +115,31 @@ Tests:
 - `designer_full_service_followup_upgrade_uses_domain_event_source`
 - `designer_run_pending_choice_rejects_invalid_direct_deck_input`
 
+### Back to Basics starter upgrade semantics
+
+Java `events/city/BackToBasics.java` implements `[Basics]` by scanning the
+master deck and upgrading only cards that:
+
+```text
+have STARTER_STRIKE or STARTER_DEFEND tag
+and canUpgrade()
+```
+
+Rust previously incremented `upgrades` directly for every locally classified
+starter basic card. That could over-upgrade an already upgraded Strike/Defend
+and bypass the normal master-deck upgrade path.
+
+Fixes:
+
+- `[Basics]` now filters through Java-equivalent starter-basic plus
+  `master_deck_card_can_upgrade`.
+- Upgrades now go through `upgrade_card_with_source(...,
+  Event(BackTotheBasics))`.
+
+Tests:
+
+- `basics_upgrades_only_upgradeable_starter_strikes_and_defends`
+
 ### Non-bottled card selection sweeps
 
 Java frequently opens deck selection through:
@@ -1260,4 +1285,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `907 passed`.
+- Current result after this pass: `908 passed`.

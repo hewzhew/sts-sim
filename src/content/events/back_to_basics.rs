@@ -1,6 +1,7 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -43,10 +44,18 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 1 => {
                     // Upgrade all Strikes and Defends
-                    for card in run_state.master_deck.iter_mut() {
-                        if crate::content::cards::is_starter_basic(card.id) {
-                            card.upgrades += 1;
-                        }
+                    let source = DomainEventSource::Event(EventId::BackTotheBasics);
+                    let upgrade_uuids: Vec<u32> = run_state
+                        .master_deck
+                        .iter()
+                        .filter(|card| {
+                            crate::content::cards::is_starter_basic(card.id)
+                                && crate::state::core::master_deck_card_can_upgrade(card)
+                        })
+                        .map(|card| card.uuid)
+                        .collect();
+                    for uuid in upgrade_uuids {
+                        run_state.upgrade_card_with_source(uuid, source);
                     }
                     event_state.current_screen = 1;
                 }
@@ -61,4 +70,59 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::cards::CardId;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    fn card(id: CardId, uuid: u32, upgrades: u8) -> CombatCard {
+        let mut card = CombatCard::new(id, uuid);
+        card.upgrades = upgrades;
+        card
+    }
+
+    #[test]
+    fn basics_upgrades_only_upgradeable_starter_strikes_and_defends() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.master_deck = vec![
+            card(CardId::Strike, 11, 0),
+            card(CardId::Defend, 12, 1),
+            card(CardId::Bash, 13, 0),
+            card(CardId::AscendersBane, 14, 0),
+        ];
+        run_state.event_state = Some(EventState::new(EventId::BackTotheBasics));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(
+            run_state
+                .master_deck
+                .iter()
+                .map(|card| (card.id, card.upgrades))
+                .collect::<Vec<_>>(),
+            vec![
+                (CardId::Strike, 1),
+                (CardId::Defend, 1),
+                (CardId::Bash, 0),
+                (CardId::AscendersBane, 0),
+            ]
+        );
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                before,
+                after,
+                source: DomainEventSource::Event(EventId::BackTotheBasics),
+            } if before.uuid == 11 && before.upgrades == 0 && after.upgrades == 1
+        )));
+    }
 }
