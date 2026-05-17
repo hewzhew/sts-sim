@@ -960,6 +960,7 @@ pub struct MonsterEntity {
     pub transient: TransientRuntimeState,
     pub exploder: ExploderRuntimeState,
     pub maw: MawRuntimeState,
+    pub snake_dagger: SnakeDaggerRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
 }
@@ -1251,6 +1252,7 @@ impl Default for CorruptHeartRuntimeState {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WrithingMassRuntimeState {
     pub protocol_seeded: bool,
+    pub first_move: bool,
     pub used_mega_debuff: bool,
 }
 
@@ -1408,6 +1410,21 @@ impl Default for MawRuntimeState {
             protocol_seeded: false,
             roared: false,
             turn_count: 1,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SnakeDaggerRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_move: bool,
+}
+
+impl Default for SnakeDaggerRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            first_move: true,
         }
     }
 }
@@ -2310,6 +2327,7 @@ mod tests {
             transient: TransientRuntimeState::default(),
             exploder: ExploderRuntimeState::default(),
             maw: MawRuntimeState::default(),
+            snake_dagger: SnakeDaggerRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2395,6 +2413,7 @@ mod tests {
             transient: TransientRuntimeState::default(),
             exploder: ExploderRuntimeState::default(),
             maw: MawRuntimeState::default(),
+            snake_dagger: SnakeDaggerRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2477,6 +2496,7 @@ mod tests {
             transient: TransientRuntimeState::default(),
             exploder: ExploderRuntimeState::default(),
             maw: MawRuntimeState::default(),
+            snake_dagger: SnakeDaggerRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };

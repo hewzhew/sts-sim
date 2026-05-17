@@ -127,6 +127,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         transient: Default::default(),
         exploder: Default::default(),
         maw: Default::default(),
+        snake_dagger: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
     };
@@ -194,6 +195,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
     }
     if enemy_id == EnemyId::WrithingMass {
         monster.writhing_mass.protocol_seeded = true;
+        monster.writhing_mass.first_move = true;
         monster.writhing_mass.used_mega_debuff = false;
     }
     if enemy_id == EnemyId::Darkling {
@@ -227,6 +229,9 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
     }
     if enemy_id == EnemyId::Maw {
         crate::content::monsters::beyond::maw::initialize_runtime_state(&mut monster);
+    }
+    if enemy_id == EnemyId::SnakeDagger {
+        crate::content::monsters::beyond::snake_dagger::initialize_runtime_state(&mut monster);
     }
     if enemy_id == EnemyId::Spiker {
         monster.spiker.protocol_seeded = true;

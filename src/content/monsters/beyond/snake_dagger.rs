@@ -1,8 +1,8 @@
 use crate::content::cards::CardId;
 use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, MonsterEntity, SnakeDaggerRuntimeState};
 use crate::semantics::combat::{
     AddCardStep, AttackSpec, CardDestination, DamageKind, EffectStrength, MonsterMoveSpec,
     MonsterTurnPlan, MoveStep,
@@ -14,10 +14,36 @@ pub struct SnakeDagger;
 const WOUND: u8 = 1;
 const EXPLODE: u8 = 2;
 
+pub fn initialize_runtime_state(entity: &mut MonsterEntity) {
+    entity.snake_dagger = SnakeDaggerRuntimeState {
+        protocol_seeded: true,
+        first_move: true,
+    };
+}
+
+fn first_move(entity: &MonsterEntity) -> bool {
+    assert!(
+        entity.snake_dagger.protocol_seeded,
+        "snake dagger runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.snake_dagger.first_move
+}
+
+fn snake_dagger_runtime_update(entity: &MonsterEntity, first_move: bool) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::SnakeDagger {
+            first_move: Some(first_move),
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
+    use crate::runtime::rng::StsRng;
 
     #[test]
     fn explode_uses_lose_hp_action_not_suicide_like_java() {
@@ -44,6 +70,39 @@ mod tests {
                 .any(|action| matches!(action, Action::Suicide { target: 1 })),
             "SuicideAction bypasses the Java monster damage/death pipeline"
         );
+    }
+
+    #[test]
+    fn first_move_uses_runtime_flag_not_empty_history() {
+        let mut dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        dagger.snake_dagger.first_move = false;
+        dagger.move_history_mut().clear();
+
+        let plan = SnakeDagger::roll_move_plan(&mut StsRng::new(0), &dagger, 0, 0);
+
+        assert_eq!(
+            plan.move_id, EXPLODE,
+            "Java SnakeDagger.firstMove is the opening gate, not move history"
+        );
+    }
+
+    #[test]
+    fn opening_roll_clears_first_move_runtime_flag() {
+        let dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        let plan = SnakeDagger::roll_move_plan(&mut StsRng::new(0), &dagger, 0, 0);
+
+        let actions = SnakeDagger::on_roll_move(0, &dagger, 0, &plan);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::SnakeDagger {
+                    first_move: Some(false),
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
     }
 }
 
@@ -116,10 +175,23 @@ impl MonsterBehavior for SnakeDagger {
         _ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        if entity.move_history().is_empty() {
+        if first_move(entity) {
             wound_plan()
         } else {
             explode_plan()
+        }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if first_move(entity) {
+            vec![snake_dagger_runtime_update(entity, false)]
+        } else {
+            Vec::new()
         }
     }
 

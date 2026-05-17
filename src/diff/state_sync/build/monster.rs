@@ -169,9 +169,20 @@ pub(crate) fn seed_writhing_mass_runtime_from_snapshot(
         return;
     }
 
+    entity.writhing_mass.first_move = runtime_state_bool(monster, monster_type, "first_move");
     entity.writhing_mass.used_mega_debuff =
         runtime_state_bool(monster, monster_type, "used_mega_debuff");
     entity.writhing_mass.protocol_seeded = true;
+}
+
+pub(crate) fn seed_snake_dagger_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::SnakeDagger;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.snake_dagger.first_move = runtime_state_bool(monster, monster_type, "first_move");
+    entity.snake_dagger.protocol_seeded = true;
 }
 
 pub(crate) fn seed_spiker_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
@@ -806,6 +817,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_champ_runtime_from_snapshot(monster, entity);
     seed_thief_runtime_from_snapshot(monster, entity);
     seed_writhing_mass_runtime_from_snapshot(monster, entity);
+    seed_snake_dagger_runtime_from_snapshot(monster, entity);
     seed_spiker_runtime_from_snapshot(monster, entity);
     seed_spire_shield_runtime_from_snapshot(monster, entity);
     seed_spire_spear_runtime_from_snapshot(monster, entity);
@@ -919,6 +931,7 @@ mod tests {
             transient: Default::default(),
             exploder: Default::default(),
             maw: Default::default(),
+            snake_dagger: Default::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         }
@@ -1346,8 +1359,27 @@ mod tests {
             "move_hits": 1,
             "powers": [],
             "runtime_state": {
+                "first_move": false,
                 "used_mega_debuff": true
             }
+        })
+    }
+
+    fn snake_dagger_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Dagger",
+            "current_hp": 22,
+            "max_hp": 25,
+            "block": 0,
+            "move_id": 2,
+            "move_base_damage": 25,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "first_move": false
+            },
+            "is_gone": false,
+            "half_dead": false
         })
     }
 
@@ -1833,7 +1865,10 @@ mod tests {
             "move_id": 1,
             "move_base_damage": 9,
             "move_hits": 1,
-            "powers": []
+            "powers": [],
+            "runtime_state": {
+                "first_move": false
+            }
         });
         let dagger_two_snapshot = json!({
             "id": "Dagger",
@@ -1845,6 +1880,9 @@ mod tests {
             "move_base_damage": 25,
             "move_hits": 1,
             "powers": [],
+            "runtime_state": {
+                "first_move": false
+            },
             "is_gone": true
         });
 
@@ -2190,8 +2228,22 @@ mod tests {
         apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
 
         assert_eq!(entity.monster_type, EnemyId::WrithingMass as usize);
+        assert!(!entity.writhing_mass.first_move);
         assert!(entity.writhing_mass.used_mega_debuff);
         assert!(entity.writhing_mass.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_snake_dagger_runtime_state() {
+        let snapshot = snake_dagger_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::SnakeDagger as usize);
+        assert_eq!(entity.planned_move_id(), 2);
+        assert!(!entity.snake_dagger.first_move);
+        assert!(entity.snake_dagger.protocol_seeded);
     }
 
     #[test]

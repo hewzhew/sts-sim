@@ -48,12 +48,14 @@ Scope:
 | Maw | `roared`, `turn_count` | Yes | Yes | Yes | `lastMove(SLAM/NOM)` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Reptomancer | `first_move`, `dagger_slots` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
+| Snake Dagger | `first_move` | Yes | Yes | Yes | None | Good |
 | Nemesis | `first_move`, `scythe_cooldown` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Giant Head | `count` | Yes | Yes | Yes | `lastTwoMoves(GLARE/COUNT)` sequencing only | Good |
 | Time Eater | `used_haste` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Donu | `is_attacking` | Yes | Yes | Yes | None | Good |
 | Deca | `is_attacking` | Yes | Yes | Yes | None | Good |
 | Transient | `count` | Yes | Yes | Yes | None | Good |
+| Writhing Mass | `first_move`, `used_mega_debuff` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Awakened One | `form1`, `first_turn` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 
 ## Notes
@@ -173,6 +175,21 @@ Scope:
 - Attack damage and next intent use Java's private `count`, not `move_history` length.
 - Transient still uses direct `SetMonsterMove` after its turn instead of queuing `RollMonsterMove`,
   matching Java's `takeTurn()` shape.
+
+### Writhing Mass
+
+- `runtime_state.first_move` and `runtime_state.used_mega_debuff` are now exported by
+  `CommunicationMod`.
+- Rust semantic roll logic requires both fields to be protocol-seeded or factory-seeded.
+- The opening branch comes from Java's private `firstMove`, not empty move history.
+- Mega Debuff eligibility comes from Java's private `usedMegaDebuff`, not whether move 4 appeared
+  during a Reactive reroll.
+
+### Snake Dagger
+
+- `runtime_state.first_move` is now exported by `CommunicationMod`.
+- Rust semantic roll logic requires this field to be protocol-seeded or factory-seeded.
+- The Wound/Explode switch comes from Java `SnakeDagger.firstMove`, not empty move history.
 
 ### Cultist
 

@@ -102,6 +102,7 @@ pub enum MonsterRuntimePatch {
         protocol_seeded: Option<bool>,
     },
     WrithingMass {
+        first_move: Option<bool>,
         used_mega_debuff: Option<bool>,
         protocol_seeded: Option<bool>,
     },
@@ -167,6 +168,10 @@ pub enum MonsterRuntimePatch {
     Maw {
         roared: Option<bool>,
         turn_count: Option<i32>,
+        protocol_seeded: Option<bool>,
+    },
+    SnakeDagger {
+        first_move: Option<bool>,
         protocol_seeded: Option<bool>,
     },
     GremlinWizard {

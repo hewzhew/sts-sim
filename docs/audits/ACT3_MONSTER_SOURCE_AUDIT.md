@@ -109,7 +109,8 @@ Spire Growth matches the Java source:
 
 ### Writhing Mass / Reactive
 
-Java has private `usedMegaDebuff`, initially false, and sets it to true only inside
+Java has private `firstMove` and `usedMegaDebuff`. `firstMove` is cleared inside `getMove()` when
+the opening branch is rolled. `usedMegaDebuff` is initially false and is set to true only inside
 `WrithingMass.takeTurn()` when the Parasite move actually executes.
 
 Rust previously inferred "used Mega Debuff" from move history. That is wrong because Writhing Mass
@@ -118,14 +119,17 @@ away before the monster executes. Java does not consume `usedMegaDebuff` in that
 
 Rust now carries explicit `WrithingMassRuntimeState`:
 
+- `first_move`
 - `used_mega_debuff`
 - `protocol_seeded`
 
-The runtime flag is set only by the Mega Debuff take-turn action, before adding Parasite to the
-master deck. Search/memo state keys include this runtime field, so branches where Parasite has been
-executed are not merged with branches where Mega Debuff was only a transient Reactive intent.
-`CommunicationMod` exports Java's private `usedMegaDebuff` as
-`monster.runtime_state.used_mega_debuff`, and Rust state sync treats it as strict protocol truth.
+The first-move flag is updated during roll resolution, matching Java `getMove()`. The Mega Debuff
+flag is set only by the Mega Debuff take-turn action, before adding Parasite to the master deck.
+Search/memo state keys include these runtime fields, so opening branches do not depend on history
+emptiness, and branches where Parasite has been executed are not merged with branches where Mega
+Debuff was only a transient Reactive intent.
+`CommunicationMod` exports Java's private fields as `monster.runtime_state.first_move` and
+`monster.runtime_state.used_mega_debuff`, and Rust state sync treats them as strict protocol truth.
 
 ### Darkling
 
@@ -189,7 +193,8 @@ when Spawn Dagger executes.
 
 Snake Dagger source-backed details preserved:
 
-- first move Wound attack, second move Explode;
+- first move Wound attack, second move Explode; this gate now uses Java `SnakeDagger.firstMove`
+  exported as `monster.runtime_state.first_move`, not empty move history;
 - Explode queues player damage and `LoseHPAction(this, this, currentHealth)`, not `SuicideAction`;
 - Wound is added to discard.
 

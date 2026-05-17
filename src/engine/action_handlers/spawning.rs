@@ -158,6 +158,7 @@ pub fn handle_spawn_monster(
         transient: Default::default(),
         exploder: Default::default(),
         maw: Default::default(),
+        snake_dagger: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
     };
@@ -211,6 +212,9 @@ pub fn handle_spawn_monster(
     }
     if enemy_id == crate::content::monsters::EnemyId::Maw {
         crate::content::monsters::beyond::maw::initialize_runtime_state(&mut new_monster);
+    }
+    if enemy_id == crate::content::monsters::EnemyId::SnakeDagger {
+        crate::content::monsters::beyond::snake_dagger::initialize_runtime_state(&mut new_monster);
     }
     if enemy_id == crate::content::monsters::EnemyId::JawWorm {
         crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(
@@ -280,6 +284,7 @@ pub fn handle_spawn_monster(
     }
     if enemy_id == crate::content::monsters::EnemyId::WrithingMass {
         new_monster.writhing_mass.protocol_seeded = true;
+        new_monster.writhing_mass.first_move = true;
         new_monster.writhing_mass.used_mega_debuff = false;
     }
     if enemy_id == crate::content::monsters::EnemyId::Spiker {
@@ -1081,6 +1086,7 @@ fn handle_update_corrupt_heart_state(
 
 fn handle_update_writhing_mass_state(
     monster_id: usize,
+    first_move: Option<bool>,
     used_mega_debuff: Option<bool>,
     protocol_seeded: Option<bool>,
     state: &mut CombatState,
@@ -1091,6 +1097,9 @@ fn handle_update_writhing_mass_state(
         .iter_mut()
         .find(|m| m.id == monster_id)
     {
+        if let Some(value) = first_move {
+            monster.writhing_mass.first_move = value;
+        }
         if let Some(value) = used_mega_debuff {
             monster.writhing_mass.used_mega_debuff = value;
         }
@@ -1431,6 +1440,27 @@ fn handle_update_maw_state(
     }
 }
 
+fn handle_update_snake_dagger_state(
+    monster_id: usize,
+    first_move: Option<bool>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = first_move {
+            monster.snake_dagger.first_move = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.snake_dagger.protocol_seeded = value;
+        }
+    }
+}
+
 fn handle_update_gremlin_wizard_state(
     monster_id: usize,
     current_charge: Option<u8>,
@@ -1708,11 +1738,16 @@ pub fn handle_update_monster_runtime(
             state,
         ),
         MonsterRuntimePatch::WrithingMass {
+            first_move,
             used_mega_debuff,
             protocol_seeded,
-        } => {
-            handle_update_writhing_mass_state(monster_id, used_mega_debuff, protocol_seeded, state)
-        }
+        } => handle_update_writhing_mass_state(
+            monster_id,
+            first_move,
+            used_mega_debuff,
+            protocol_seeded,
+            state,
+        ),
         MonsterRuntimePatch::Spiker {
             thorns_count,
             protocol_seeded,
@@ -1795,6 +1830,10 @@ pub fn handle_update_monster_runtime(
             turn_count,
             protocol_seeded,
         } => handle_update_maw_state(monster_id, roared, turn_count, protocol_seeded, state),
+        MonsterRuntimePatch::SnakeDagger {
+            first_move,
+            protocol_seeded,
+        } => handle_update_snake_dagger_state(monster_id, first_move, protocol_seeded, state),
         MonsterRuntimePatch::GremlinWizard {
             current_charge,
             protocol_seeded,

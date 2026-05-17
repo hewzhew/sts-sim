@@ -94,6 +94,8 @@ Rust currently consumes explicit Java runtime fields for:
 - `Exploder.turn_count`
 - `Maw.roared`
 - `Maw.turn_count`
+- `WrithingMass.first_move`
+- `SnakeDagger.first_move`
 - `TimeEater.used_haste`
 - `Donu.is_attacking`
 - `Deca.is_attacking`

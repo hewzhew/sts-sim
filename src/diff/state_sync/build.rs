@@ -216,6 +216,7 @@ pub fn build_combat_state_from_snapshots(
             transient: Default::default(),
             exploder: Default::default(),
             maw: Default::default(),
+            snake_dagger: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
         };

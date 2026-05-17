@@ -153,6 +153,8 @@ Examples of the correct pattern:
 - `Exploder.turnCount`
 - `Maw.roared`
 - `Maw.turnCount`
+- `WrithingMass.firstMove`
+- `SnakeDagger.firstMove`
 - `TimeEater.usedHaste`
 - `Donu.isAttacking`
 - `Deca.isAttacking`
