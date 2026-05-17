@@ -39,6 +39,46 @@ pub(crate) fn apply_player_hp_loss_damage(
     run_state.change_hp_with_source(-damage, source)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EventDamageOwner {
+    None,
+    Player,
+}
+
+/// Applies Java `AbstractDungeon.player.damage(DamageInfo(owner, amount))`
+/// from event code, outside combat.
+///
+/// Event rooms have no block, but normal DEFAULT damage still runs player
+/// relic hooks. `Torii` only applies when `DamageInfo.owner != null`, while
+/// `Tungsten Rod` applies later through `onLoseHpLast`.
+pub(crate) fn apply_player_default_damage(
+    run_state: &mut crate::state::run::RunState,
+    amount: i32,
+    owner: EventDamageOwner,
+    source: crate::state::selection::DomainEventSource,
+) -> i32 {
+    let mut damage = amount.max(0);
+    if owner != EventDamageOwner::None
+        && damage > 1
+        && damage <= 5
+        && run_state
+            .relics
+            .iter()
+            .any(|r| r.id == crate::content::relics::RelicId::Torii)
+    {
+        damage = 1;
+    }
+    if damage > 0
+        && run_state
+            .relics
+            .iter()
+            .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
+    {
+        damage -= 1;
+    }
+    run_state.change_hp_with_source(-damage, source)
+}
+
 // Phase 1: Exordium Events
 pub mod big_fish;
 pub mod golden_wing;

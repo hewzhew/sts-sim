@@ -382,6 +382,36 @@ Tests:
 - `attack_option_uses_upgraded_master_deck_base_damage_like_java`
 - `attack_option_does_not_count_non_attack_base_damage`
 
+### World of Goop constructor gold loss and gather order
+
+Java `events/exordium/GoopPuddle.java` rolls the leave-branch gold loss in the
+constructor, then immediately clamps it to the player's current gold. The
+gather branch executes:
+
+```text
+AbstractDungeon.player.damage(new DamageInfo(AbstractDungeon.player, damage))
+AbstractDungeon.player.gainGold(gold)
+```
+
+That means the displayed/recorded leave loss is the constructor-clamped amount,
+and gather damage is normal `DamageInfo` with `owner = player`, so event-room
+normal damage still reaches player relic hooks such as `Torii` and
+`Tungsten Rod`.
+
+Fixes:
+
+- `init_goop_puddle_state` now stores the Java constructor-clamped gold loss.
+- `[Gather Gold]` now applies DEFAULT damage before gold gain, matching Java's
+  execution order.
+- The gather damage now uses the shared DEFAULT damage event helper instead of
+  directly mutating HP.
+
+Tests:
+
+- `init_clamps_leave_gold_loss_to_current_gold_like_java_constructor`
+- `gather_gold_applies_java_damage_before_gold_gain`
+- `gather_gold_default_damage_applies_tungsten_rod`
+
 ### Face Trader touch and relic trade
 
 Java `events/shrines/FaceTrader.java` has two relevant resource boundaries:
@@ -1171,4 +1201,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `899 passed`.
+- Current result after this pass: `902 passed`.
