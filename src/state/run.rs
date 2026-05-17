@@ -1456,6 +1456,10 @@ impl RunState {
     /// Shuffles upgradable cards in the master deck and upgrades up to `count`.
     /// Mirrors Java ShiningLight's upgrade logic using miscRng for shuffling.
     pub fn upgrade_random_cards(&mut self, count: usize) {
+        self.upgrade_random_cards_with_source(count, DomainEventSource::DeckMutation);
+    }
+
+    pub fn upgrade_random_cards_with_source(&mut self, count: usize, source: DomainEventSource) {
         // Collect indices of upgradable cards
         let mut upgradable_indices: Vec<usize> = self
             .master_deck
@@ -1482,7 +1486,7 @@ impl RunState {
         // Upgrade up to `count` cards
         for &idx in upgradable_indices.iter().take(count) {
             let uuid = self.master_deck[idx].uuid;
-            self.upgrade_card(uuid);
+            self.upgrade_card_with_source(uuid, source);
         }
     }
 

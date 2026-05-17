@@ -519,6 +519,35 @@ Tests:
 - `focus_two_hp_loss_uses_event_source_and_opens_two_rewards`
 - `focus_three_hp_loss_applies_tungsten_rod_on_lose_hp_last`
 
+### Shining Light damage and random upgrades
+
+Java `events/exordium/ShiningLight.java` applies:
+
+```text
+player.damage(new DamageInfo(player, damage))
+upgradeCards()
+```
+
+The damage is normal player-owned damage. Out of combat there is no block to
+consume, but Java still applies relic hooks such as `Torii` and `Tungsten Rod`
+in the normal damage pipeline. The random upgrades are event-caused deck
+mutations, not generic deck mutations.
+
+Fixes:
+
+- Entering the light now routes damage through sourced HP change after applying
+  the relevant Java normal-damage relic reductions.
+- Added `RunState::upgrade_random_cards_with_source`, leaving the old
+  `upgrade_random_cards` default behavior unchanged.
+- Shining Light random upgrades now emit `CardUpgraded` with
+  `Event(ShiningLight)`.
+
+Tests:
+
+- `enter_light_damage_and_random_upgrades_use_event_source`
+- `enter_light_normal_damage_applies_torii_then_tungsten`
+- `leave_does_not_damage_or_upgrade`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -729,10 +758,11 @@ Validation:
   that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`,
   `FaceTrader`, `ForgottenAltar`, `Ghosts`, `Vampires`, `MoaiHead`, and
   `GremlinWheelGame`, `MindBloom`, `WindingHalls`, and `SensoryStone` are now
-  covered; the remaining direct writes should be handled event-by-event against
+  covered; `ShiningLight` is also covered for damage and random upgrade
+  sources. The remaining direct writes should be handled event-by-event against
   Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `839 passed`.
+- Current result after this pass: `842 passed`.
