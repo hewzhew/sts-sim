@@ -8,6 +8,69 @@ use crate::state::selection::{
     SelectionTargetRef,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TreasureChestSize {
+    Small,
+    Medium,
+    Large,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TreasureChestSpec {
+    size: TreasureChestSize,
+    base_relic_tier: crate::content::relics::RelicTier,
+    gold_reward: Option<i32>,
+}
+
+fn roll_treasure_chest_spec(run_state: &mut RunState) -> TreasureChestSpec {
+    let roll = run_state.rng_pool.treasure_rng.random_range(0, 99);
+    let size = if run_state.act_num >= 4 {
+        TreasureChestSize::Medium
+    } else if roll < 50 {
+        TreasureChestSize::Small
+    } else if roll < 83 {
+        TreasureChestSize::Medium
+    } else {
+        TreasureChestSize::Large
+    };
+
+    let (common_chance, uncommon_chance, gold_chance, gold_amount) = match size {
+        TreasureChestSize::Small => (75, 25, 50, 25),
+        TreasureChestSize::Medium => (35, 50, 35, 50),
+        TreasureChestSize::Large => (0, 75, 50, 75),
+    };
+
+    let reward_roll = run_state.rng_pool.treasure_rng.random_range(0, 99);
+    let base_relic_tier = if reward_roll < common_chance {
+        crate::content::relics::RelicTier::Common
+    } else if reward_roll < common_chance + uncommon_chance {
+        crate::content::relics::RelicTier::Uncommon
+    } else {
+        crate::content::relics::RelicTier::Rare
+    };
+    let gold_reward = if reward_roll < gold_chance {
+        if run_state.is_daily_run {
+            Some(gold_amount)
+        } else {
+            Some(
+                run_state
+                    .rng_pool
+                    .treasure_rng
+                    .random_f32_min_max(gold_amount as f32 * 0.9, gold_amount as f32 * 1.1)
+                    .round() as i32,
+            )
+        }
+    } else {
+        None
+    };
+
+    TreasureChestSpec {
+        size,
+        base_relic_tier,
+        gold_reward,
+    }
+}
+
 fn remove_one_relic_from_rewards_after_chest_open(
     items: &mut Vec<crate::rewards::state::RewardItem>,
 ) {
@@ -737,6 +800,7 @@ pub fn tick_run(
                                 *engine_state = EngineState::EventRoom;
                             }
                             RoomType::TreasureRoom => {
+                                let chest = roll_treasure_chest_spec(run_state);
                                 let mut reward = crate::rewards::state::RewardState::new();
 
                                 // --- onChestOpen() relic hooks (non-boss chest) ---
@@ -786,10 +850,18 @@ pub fn tick_run(
                                     });
                                 }
 
+                                if let Some(amount) = chest.gold_reward {
+                                    crate::rewards::generator::add_gold_reward_like_java(
+                                        &mut reward.items,
+                                        amount,
+                                    );
+                                }
+
                                 // Generate chest relic reward after onChestOpen hooks, matching
                                 // Java AbstractChest.open(): Matryoshka inserts before the
                                 // base chest relic, and SapphireKey links to the last relic.
-                                let relic_id = run_state.random_relic();
+                                let relic_id =
+                                    run_state.random_relic_by_tier(chest.base_relic_tier);
                                 reward
                                     .items
                                     .push(crate::rewards::state::RewardItem::Relic { relic_id });
@@ -998,6 +1070,7 @@ mod tests {
     use crate::map::state::MapState;
     use crate::rewards::state::{RewardItem, RewardScreenContext, RewardState};
     use crate::runtime::combat::CombatCard;
+    use crate::runtime::rng::StsRng;
     use crate::state::core::{ClientInput, EngineState, EventCombatState, PostCombatReturn};
     use crate::state::run::RunState;
     use crate::state::selection::{
@@ -1328,6 +1401,63 @@ mod tests {
         ));
         assert_eq!(blocked.current_hp, 20);
         assert!(matches!(blocked_engine, EngineState::Shop(_)));
+    }
+
+    #[test]
+    fn treasure_room_uses_java_chest_reward_rolls_before_relic_pool_draw() {
+        fn small_gold_common_chest_seed() -> u64 {
+            (1..10_000)
+                .find(|seed| {
+                    let mut rng = StsRng::new(*seed);
+                    rng.random_range(0, 99) < 50 && rng.random_range(0, 99) < 50
+                })
+                .expect("seed for small chest with gold and common relic")
+        }
+
+        let mut run_state = run_state_with_first_room(RoomType::TreasureRoom);
+        run_state.relics.clear();
+        run_state.rng_pool.treasure_rng = StsRng::new(small_gold_common_chest_seed());
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+        run_state.uncommon_relic_pool = vec![RelicId::Sundial];
+        run_state.rare_relic_pool = vec![RelicId::Mango];
+        let relic_rng_before = run_state.rng_pool.relic_rng.counter;
+
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("treasure room should open a reward screen");
+        };
+        assert!(
+            matches!(rewards.items[0], RewardItem::Gold { .. }),
+            "Java AbstractChest.open adds chest gold before the base chest relic"
+        );
+        assert_eq!(
+            rewards
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    RewardItem::Relic { relic_id } => Some(*relic_id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![RelicId::Anchor],
+            "Java chest reward tier is decided by treasureRng, then removes from that tier pool"
+        );
+        assert_eq!(
+            run_state.rng_pool.relic_rng.counter, relic_rng_before,
+            "Java chest tier selection does not consume relicRng"
+        );
+        assert_eq!(
+            run_state.rng_pool.treasure_rng.counter, 3,
+            "Java consumes treasureRng for chest size, chest reward roll, and non-daily gold jitter"
+        );
     }
 
     #[test]

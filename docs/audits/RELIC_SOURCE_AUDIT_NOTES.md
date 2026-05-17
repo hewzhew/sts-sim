@@ -40,3 +40,30 @@ Rust result:
 
 Coverage:
 - `black_star_second_elite_relic_skips_campfire_relics_like_java`
+
+## Normal Treasure Chests
+
+Java evidence:
+- `D:/rust/cardcrawl/rooms/TreasureRoom.java`
+- `D:/rust/cardcrawl/rewards/chests/AbstractChest.java`
+- `D:/rust/cardcrawl/rewards/chests/SmallChest.java`
+- `D:/rust/cardcrawl/rewards/chests/MediumChest.java`
+- `D:/rust/cardcrawl/rewards/chests/LargeChest.java`
+- `TreasureRoom.onPlayerEntry()` constructs `AbstractDungeon.getRandomChest()`.
+- `getRandomChest()` consumes `treasureRng` to choose small/medium/large.
+- The chest constructor immediately calls `randomizeReward()`, consuming
+  `treasureRng` again to decide both gold and the base relic tier.
+- `AbstractChest.open(false)` then runs chest-open relic hooks, adds chest gold
+  if present, adds a relic from the pre-rolled tier, optionally links Sapphire
+  Key to the last reward, then runs `onChestOpenAfter`.
+
+Rust result:
+- Normal TreasureRoom entry now rolls chest size and chest reward with
+  `treasure_rng` before chest-open hooks.
+- Base chest relics now use the pre-rolled chest tier via
+  `random_relic_by_tier`; they no longer call `random_relic`, which would
+  incorrectly consume `relic_rng` for an extra tier roll.
+- UI-only chest visuals are intentionally not represented.
+
+Coverage:
+- `treasure_room_uses_java_chest_reward_rolls_before_relic_pool_draw`
