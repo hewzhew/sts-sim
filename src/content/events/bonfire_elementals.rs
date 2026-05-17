@@ -16,23 +16,12 @@ use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
         0 => vec![EventChoiceMeta::new("[Approach] Investigate the bonfire.")],
-        1 => {
-            let has_removable =
-                crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state);
-            if has_removable {
-                vec![EventChoiceMeta::new(
-                    "[Offer] Sacrifice a card to the spirits.",
-                )]
-            } else {
-                vec![EventChoiceMeta::disabled(
-                    "[Offer] No cards to sacrifice.",
-                    "No purgeable cards",
-                )]
-            }
-        }
+        1 => vec![EventChoiceMeta::new(
+            "[Offer] Sacrifice a card to the spirits.",
+        )],
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -46,18 +35,22 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
             event_state.current_screen = 1;
         }
         1 => {
-            // Sacrifice a card via grid-select.
-            // The Purge handler in run_loop.rs stores the removed card's rarity
-            // in event_state.internal_state before removal.
-            event_state.current_screen = 2;
-            run_state.event_state = Some(event_state);
-            *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
-                min_choices: 1,
-                max_choices: 1,
-                reason: RunPendingChoiceReason::PurgeNonBottled,
-                return_state: Box::new(EngineState::EventRoom),
-            });
-            return;
+            if crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state) {
+                event_state.current_screen = 2;
+                // Sacrifice a card via grid-select.
+                // The Purge handler in run_loop.rs stores the removed card's rarity
+                // in event_state.internal_state before removal.
+                run_state.event_state = Some(event_state);
+                *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+                    min_choices: 1,
+                    max_choices: 1,
+                    reason: RunPendingChoiceReason::PurgeNonBottled,
+                    return_state: Box::new(EngineState::EventRoom),
+                });
+                return;
+            } else {
+                event_state.current_screen = 3;
+            }
         }
         2 => {
             // Returned from purge. Read rarity from internal_state
@@ -108,7 +101,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
 
 #[cfg(test)]
 mod tests {
-    use super::handle_choice;
+    use super::{get_choices, handle_choice};
+    use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
     use crate::state::events::{EventId, EventState};
@@ -123,6 +117,40 @@ mod tests {
         run_state.event_state = Some(event_state);
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn offer_without_purgeable_card_advances_without_pending_like_java() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck = vec![crate::runtime::combat::CombatCard::new(
+            CardId::AscendersBane,
+            11,
+        )];
+        let mut event_state = EventState::new(EventId::BonfireElementals);
+        event_state.current_screen = 1;
+        run_state.event_state = Some(event_state);
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        let choices = get_choices(&run_state, run_state.event_state.as_ref().unwrap());
+        assert!(
+            !choices[0].disabled,
+            "Java Bonfire keeps Offer clickable and handles the empty group in buttonEffect"
+        );
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 3);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(!run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::SpiritPoop));
+        assert!(run_state.event_state.as_ref().unwrap().completed);
     }
 
     #[test]

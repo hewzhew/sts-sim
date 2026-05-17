@@ -50,15 +50,12 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
             } else {
                 50
             };
+            let has_removable =
+                crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state);
             if run_state.gold >= purify_cost {
-                choices.push(EventOption::new(
-                    EventChoiceMeta::new(format!(
-                        "[Purify] Lose {} Gold. Remove a card from your deck.",
-                        purify_cost
-                    )),
-                    EventOptionSemantics {
-                        action: EventActionKind::DeckOperation,
-                        effects: vec![
+                let (effects, constraints, transition) = if has_removable {
+                    (
+                        vec![
                             EventEffect::LoseGold(purify_cost),
                             EventEffect::RemoveCard {
                                 count: 1,
@@ -66,13 +63,26 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                                 kind: EventCardKind::Unknown,
                             },
                         ],
-                        constraints: vec![
-                            EventOptionConstraint::RequiresGold(purify_cost),
-                            EventOptionConstraint::RequiresRemovableCard,
-                        ],
-                        transition: EventOptionTransition::OpenSelection(
-                            EventSelectionKind::RemoveCard,
-                        ),
+                        vec![EventOptionConstraint::RequiresGold(purify_cost)],
+                        EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard),
+                    )
+                } else {
+                    (
+                        vec![],
+                        vec![EventOptionConstraint::RequiresGold(purify_cost)],
+                        EventOptionTransition::AdvanceScreen,
+                    )
+                };
+                choices.push(EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Purify] Lose {} Gold. Remove a card from your deck.",
+                        purify_cost
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects,
+                        constraints,
+                        transition,
                         repeatable: false,
                         terminal: false,
                     },
@@ -153,12 +163,16 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Heal
-                    run_state
-                        .change_gold_with_source(-35, DomainEventSource::Event(EventId::Cleric));
-                    let heal = (run_state.max_hp as f32 * 0.25) as i32;
-                    run_state.heal_with_source(heal, DomainEventSource::Event(EventId::Cleric));
-                    event_state.current_screen = 1;
-                    event_state.completed = true;
+                    if run_state.gold >= 35 {
+                        run_state.change_gold_with_source(
+                            -35,
+                            DomainEventSource::Event(EventId::Cleric),
+                        );
+                        let heal = (run_state.max_hp as f32 * 0.25) as i32;
+                        run_state.heal_with_source(heal, DomainEventSource::Event(EventId::Cleric));
+                        event_state.current_screen = 1;
+                        event_state.completed = true;
+                    }
                 }
                 1 => {
                     // Purify
@@ -167,24 +181,28 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     } else {
                         50
                     };
-                    if !crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state) {
-                        event_state.current_screen = 1;
-                        event_state.completed = true;
-                    } else {
-                        run_state.change_gold_with_source(
-                            -purify_cost,
-                            DomainEventSource::Event(EventId::Cleric),
-                        );
-                        *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
-                            min_choices: 1,
-                            max_choices: 1,
-                            reason: RunPendingChoiceReason::PurgeNonBottled,
-                            return_state: Box::new(EngineState::EventRoom),
-                        });
-                        event_state.current_screen = 1;
-                        event_state.completed = true;
-                        run_state.event_state = Some(event_state);
-                        return;
+                    if run_state.gold >= purify_cost {
+                        if !crate::state::core::has_non_bottled_purgeable_master_deck_card(
+                            run_state,
+                        ) {
+                            event_state.current_screen = 1;
+                            event_state.completed = true;
+                        } else {
+                            run_state.change_gold_with_source(
+                                -purify_cost,
+                                DomainEventSource::Event(EventId::Cleric),
+                            );
+                            *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+                                min_choices: 1,
+                                max_choices: 1,
+                                reason: RunPendingChoiceReason::PurgeNonBottled,
+                                return_state: Box::new(EngineState::EventRoom),
+                            });
+                            event_state.current_screen = 1;
+                            event_state.completed = true;
+                            run_state.event_state = Some(event_state);
+                            return;
+                        }
                     }
                 }
                 2 => {
@@ -206,7 +224,9 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::combat::CombatCard;
     use crate::state::selection::DomainEvent;
 
     #[test]
@@ -219,6 +239,66 @@ mod tests {
             options[1].semantics.transition,
             EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard)
         ));
+    }
+
+    #[test]
+    fn purify_without_removable_card_is_enabled_but_advances_without_payment_like_java() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 100;
+        rs.master_deck = vec![CombatCard::new(CardId::AscendersBane, 11)];
+        rs.event_state = Some(EventState::new(EventId::Cleric));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        let options = get_options(&rs, rs.event_state.as_ref().unwrap());
+        assert!(!options[1].ui.disabled);
+        assert!(matches!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        ));
+        assert!(options[1].semantics.effects.is_empty());
+
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert_eq!(rs.gold, 100);
+        assert!(rs.event_state.as_ref().unwrap().completed);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn disabled_heal_does_not_pay_or_advance() {
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.gold = 34;
+        rs.current_hp = 1;
+        rs.max_hp = 80;
+        rs.event_state = Some(EventState::new(EventId::Cleric));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.gold, 34);
+        assert_eq!(rs.current_hp, 1);
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn disabled_purify_does_not_pay_or_open_selection() {
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.gold = 49;
+        rs.event_state = Some(EventState::new(EventId::Cleric));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert_eq!(rs.gold, 49);
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.take_emitted_events().is_empty());
     }
 
     #[test]

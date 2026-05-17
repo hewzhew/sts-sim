@@ -457,17 +457,30 @@ resource calls:
 Rust previously rounded the heal amount and then directly mutated
 `current_hp`.
 
+Java disables the Heal and Purify buttons when the player cannot pay, so those
+branches must not be executable through direct event calls. Java also leaves
+Purify clickable when the player can pay but has no non-bottled purgeable card;
+that path advances to the proceed screen without paying gold or opening a grid.
+
 Fixes:
 
 - Cleric heal amount now uses Java's float-cast truncation.
 - Cleric heal now calls `RunState::heal_with_source(..., Event(Cleric))`.
 - Paying gold remains separate from healing, so `Mark of the Bloom` blocks only
   the heal and not the gold cost.
+- Disabled Heal and Purify direct calls now stay inert instead of creating
+  negative-gold states.
+- Purify with enough gold but no removable card now advances without payment or
+  pending selection, and its option semantics no longer claim a removal
+  selection exists.
 
 Tests:
 
 - `heal_amount_uses_java_float_cast_not_rounding`
 - `heal_cost_is_paid_even_when_mark_of_the_bloom_blocks_heal`
+- `disabled_heal_does_not_pay_or_advance`
+- `disabled_purify_does_not_pay_or_open_selection`
+- `purify_without_removable_card_is_enabled_but_advances_without_payment_like_java`
 
 ### Beggar donation and purge boundary
 
@@ -1022,14 +1035,33 @@ heals by 10 through `increaseMaxHp`, then the event performs a separate full
 heal. `Mark of the Bloom` therefore blocks the heals while leaving the max-HP
 increase intact.
 
+Java's Bonfire choose screen does not disable the Offer button when there are no
+non-bottled purgeable cards. Pressing it advances to the complete screen and
+opens no grid. Rust now preserves that empty-offer path instead of creating an
+empty pending selection.
+
 Tests:
 
 - `common_offer_heals_with_event_source`
 - `rare_offer_matches_java_max_hp_then_full_heal_sequence`
 - `heal_rewards_obey_mark_of_the_bloom`
 - `curse_offer_obtains_spirit_poop_with_event_source`
+- `offer_without_purgeable_card_advances_without_pending_like_java`
 - `common_offer_heals_with_spirits_event_source`
 - `curse_offer_obtains_spirit_poop_with_spirits_event_source`
+
+### Upgrade Shrine upgrade guard
+
+Java `events/shrines/UpgradeShrine.java` disables `[Pray]` if
+`masterDeck.hasUpgradableCards()` is false, then opens
+`masterDeck.getUpgradableCards()` if the enabled option is pressed. Rust now uses
+the shared Java-equivalent master-deck upgrade predicate instead of a local
+copy, so Searing Blow and other custom upgrade rules stay centralized.
+
+Tests:
+
+- `disabled_pray_does_not_open_empty_upgrade_selection`
+- `searing_blow_remains_upgradeable_after_prior_upgrades`
 
 ### Lab potion rewards
 
@@ -1425,4 +1457,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `925 passed`.
+- Current result after this pass: `931 passed`.
