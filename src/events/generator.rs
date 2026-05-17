@@ -264,7 +264,7 @@ impl EventGenerator {
         } else {
             1.0
         };
-        let map_midpoint = 7;
+        let map_midpoint = (ctx.map_height / 2) as i32;
 
         let mut candidates: Vec<EventId> = Vec::new();
         for &event in &self.event_pool {
@@ -330,7 +330,7 @@ fn is_pool_event_candidate(
         EventId::MoaiHead => ctx.has_golden_idol || hp_pct <= 0.5,
         EventId::Cleric => ctx.gold >= 35,
         EventId::Beggar => ctx.gold >= 75,
-        EventId::Colosseum => ctx.floor_num > map_midpoint,
+        EventId::Colosseum => ctx.map_current_y.is_some_and(|map_y| map_y > map_midpoint),
         _ => true,
     }
 }
@@ -346,6 +346,8 @@ mod tests {
             is_daily_run: false,
             highest_unlocked_ascension_level: 0,
             floor_num: 1,
+            map_current_y: Some(0),
+            map_height: 15,
             gold: 99,
             current_hp: 80,
             max_hp: 80,
@@ -531,9 +533,12 @@ mod tests {
         c.gold = 75;
         assert!(is_pool_event_candidate(EventId::Beggar, &c, 1.0, 7));
 
-        c.floor_num = 7;
+        c.floor_num = 99;
+        c.map_current_y = Some(7);
         assert!(!is_pool_event_candidate(EventId::Colosseum, &c, 1.0, 7));
-        c.floor_num = 8;
+        c.map_current_y = None;
+        assert!(!is_pool_event_candidate(EventId::Colosseum, &c, 1.0, 7));
+        c.map_current_y = Some(8);
         assert!(is_pool_event_candidate(EventId::Colosseum, &c, 1.0, 7));
     }
 }

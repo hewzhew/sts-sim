@@ -9,6 +9,11 @@ pub struct EventContext {
     /// than the highest unlocked ascension for the profile.
     pub highest_unlocked_ascension_level: u8,
     pub floor_num: i32,
+    /// Java `AbstractDungeon.currMapNode.y`; `None` mirrors the Java null
+    /// current-node guard used by events such as Colosseum.
+    pub map_current_y: Option<i32>,
+    /// Java `AbstractDungeon.map.size()`.
+    pub map_height: usize,
     pub gold: i32,
     pub current_hp: i32,
     pub max_hp: i32,

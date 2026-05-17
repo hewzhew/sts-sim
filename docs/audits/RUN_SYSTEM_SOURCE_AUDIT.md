@@ -283,7 +283,7 @@ Source-backed candidate gates now covered by direct generator tests:
 | `MoaiHead` | has Golden Idol or HP percentage is at most 50% | `has_golden_idol || hp_pct <= 0.5` |
 | `Cleric` | at least 35 gold | `gold >= 35` |
 | `Beggar` | at least 75 gold | `gold >= 75` |
-| `Colosseum` | current map node is past the map midpoint | currently modeled as `floor_num > 7`; this is a proxy and remains a map-state follow-up |
+| `Colosseum` | current map node is past the map midpoint | `map_current_y > map_height / 2`, with `None` current node rejected |
 
 Important boundary:
 

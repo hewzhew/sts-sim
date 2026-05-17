@@ -771,6 +771,8 @@ impl RunState {
             is_daily_run: self.is_daily_run,
             highest_unlocked_ascension_level: self.highest_unlocked_ascension_level,
             floor_num: self.floor_num,
+            map_current_y: (self.map.current_y >= 0).then_some(self.map.current_y),
+            map_height: self.map.graph.len(),
             gold: self.gold,
             current_hp: self.current_hp,
             max_hp: self.max_hp,
