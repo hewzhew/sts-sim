@@ -1236,6 +1236,7 @@ pub struct CorruptHeartRuntimeState {
     pub first_move: bool,
     pub move_count: u8,
     pub buff_count: u8,
+    pub blood_hit_count: u8,
 }
 
 impl Default for CorruptHeartRuntimeState {
@@ -1245,6 +1246,7 @@ impl Default for CorruptHeartRuntimeState {
             first_move: true,
             move_count: 0,
             buff_count: 0,
+            blood_hit_count: 12,
         }
     }
 }

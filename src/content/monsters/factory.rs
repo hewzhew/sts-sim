@@ -229,10 +229,10 @@ pub fn build_encounter(
             monster.awakened_one.first_turn = true;
         }
         if enemy_id == EnemyId::CorruptHeart {
-            monster.corrupt_heart.protocol_seeded = true;
-            monster.corrupt_heart.first_move = true;
-            monster.corrupt_heart.move_count = 0;
-            monster.corrupt_heart.buff_count = 0;
+            crate::content::monsters::ending::corrupt_heart::initialize_runtime_state(
+                &mut monster,
+                ascension_level,
+            );
         }
         if enemy_id == EnemyId::WrithingMass {
             monster.writhing_mass.protocol_seeded = true;

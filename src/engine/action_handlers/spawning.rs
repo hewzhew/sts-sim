@@ -277,10 +277,10 @@ pub fn handle_spawn_monster(
         new_monster.awakened_one.first_turn = true;
     }
     if enemy_id == crate::content::monsters::EnemyId::CorruptHeart {
-        new_monster.corrupt_heart.protocol_seeded = true;
-        new_monster.corrupt_heart.first_move = true;
-        new_monster.corrupt_heart.move_count = 0;
-        new_monster.corrupt_heart.buff_count = 0;
+        crate::content::monsters::ending::corrupt_heart::initialize_runtime_state(
+            &mut new_monster,
+            state.meta.ascension_level,
+        );
     }
     if enemy_id == crate::content::monsters::EnemyId::WrithingMass {
         new_monster.writhing_mass.protocol_seeded = true;
@@ -1060,6 +1060,7 @@ fn handle_update_corrupt_heart_state(
     first_move: Option<bool>,
     move_count: Option<u8>,
     buff_count: Option<u8>,
+    blood_hit_count: Option<u8>,
     protocol_seeded: Option<bool>,
     state: &mut CombatState,
 ) {
@@ -1077,6 +1078,9 @@ fn handle_update_corrupt_heart_state(
         }
         if let Some(value) = buff_count {
             monster.corrupt_heart.buff_count = value;
+        }
+        if let Some(value) = blood_hit_count {
+            monster.corrupt_heart.blood_hit_count = value;
         }
         if let Some(value) = protocol_seeded {
             monster.corrupt_heart.protocol_seeded = value;
@@ -1728,12 +1732,14 @@ pub fn handle_update_monster_runtime(
             first_move,
             move_count,
             buff_count,
+            blood_hit_count,
             protocol_seeded,
         } => handle_update_corrupt_heart_state(
             monster_id,
             first_move,
             move_count,
             buff_count,
+            blood_hit_count,
             protocol_seeded,
             state,
         ),

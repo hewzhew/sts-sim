@@ -254,6 +254,24 @@ in Java:
 - Rebirth revives and heals to max.
 - Final death makes non-dying Cultists escape.
 
+### Corrupt Heart
+
+Corrupt Heart runtime truth is explicit:
+
+- `isFirstMove`
+- `moveCount`
+- `buffCount`
+- `bloodHitCount`
+
+`CommunicationMod` exports these fields as `monster.runtime_state.first_move`,
+`monster.runtime_state.move_count`, `monster.runtime_state.buff_count`, and
+`monster.runtime_state.blood_hit_count`; Rust imports them as strict runtime truth and requires
+factory/protocol seeding before roll logic runs.
+
+`bloodHitCount` is constructor state derived from ascension in Java, but it directly controls the
+Blood Shots multi-hit count. Rust therefore treats the exported Java value as truth rather than
+recomputing it from local ascension during live import.
+
 ## Follow-Up Watch Points
 
 - Act 3 live/protocol runtime truth for `WrithingMass.usedMegaDebuff` and `Spiker.thornsCount` is

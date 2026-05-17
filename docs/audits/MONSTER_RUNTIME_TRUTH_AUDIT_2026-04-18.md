@@ -57,6 +57,7 @@ Scope:
 | Transient | `count` | Yes | Yes | Yes | None | Good |
 | Writhing Mass | `first_move`, `used_mega_debuff` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Awakened One | `form1`, `first_turn` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
+| Corrupt Heart | `first_move`, `move_count`, `buff_count`, `blood_hit_count` | Yes | Yes | Yes | `lastMove(ECHO_ATTACK)` sequencing only | Good |
 
 ## Notes
 
@@ -325,6 +326,18 @@ Scope:
   mirrors that through `Unawakened` power death actions.
 - Remaining history usage is limited to Java's explicit repeat rules around Slash, Soul Strike,
   Sludge, and Tackle.
+
+### Corrupt Heart
+
+- `runtime_state.first_move`, `move_count`, `buff_count`, and `blood_hit_count` are exported by
+  `CommunicationMod`.
+- Rust state sync marks the Heart runtime slice as protocol-seeded and semantic roll logic requires
+  factory/protocol seeding before branch selection.
+- `blood_hit_count` is Java constructor state derived from ascension, but it still directly affects
+  Blood Shots hit count; Rust now imports and uses the Java field instead of recomputing the value
+  from local ascension.
+- `move_count` advances during roll resolution, while `buff_count` advances only when the buff turn
+  executes, matching Java's split between `getMove()` and `takeTurn()`.
 
 ### The Guardian
 

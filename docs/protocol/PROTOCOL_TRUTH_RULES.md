@@ -75,6 +75,7 @@ Examples:
 - `monster.runtime_state.used_haste`
 - `monster.runtime_state.is_attacking`
 - `monster.runtime_state.form1`
+- `monster.runtime_state.blood_hit_count`
 - `relic.runtime_state.used_this_combat`
 - `relic.runtime_state.used_up`
 - `relic.runtime_state.counter`
@@ -155,6 +156,10 @@ Examples of the correct pattern:
 - `Maw.turnCount`
 - `WrithingMass.firstMove`
 - `SnakeDagger.firstMove`
+- `CorruptHeart.isFirstMove`
+- `CorruptHeart.moveCount`
+- `CorruptHeart.buffCount`
+- `CorruptHeart.bloodHitCount`
 - `TimeEater.usedHaste`
 - `Donu.isAttacking`
 - `Deca.isAttacking`

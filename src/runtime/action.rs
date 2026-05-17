@@ -99,6 +99,7 @@ pub enum MonsterRuntimePatch {
         first_move: Option<bool>,
         move_count: Option<u8>,
         buff_count: Option<u8>,
+        blood_hit_count: Option<u8>,
         protocol_seeded: Option<bool>,
     },
     WrithingMass {

@@ -160,6 +160,23 @@ pub(crate) fn seed_awakened_one_runtime_from_snapshot(monster: &Value, entity: &
     entity.awakened_one.protocol_seeded = true;
 }
 
+pub(crate) fn seed_corrupt_heart_runtime_from_snapshot(
+    monster: &Value,
+    entity: &mut MonsterEntity,
+) {
+    let monster_type = EnemyId::CorruptHeart;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.corrupt_heart.first_move = runtime_state_bool(monster, monster_type, "first_move");
+    entity.corrupt_heart.move_count = runtime_state_u8(monster, monster_type, "move_count");
+    entity.corrupt_heart.buff_count = runtime_state_u8(monster, monster_type, "buff_count");
+    entity.corrupt_heart.blood_hit_count =
+        runtime_state_u8(monster, monster_type, "blood_hit_count");
+    entity.corrupt_heart.protocol_seeded = true;
+}
+
 pub(crate) fn seed_writhing_mass_runtime_from_snapshot(
     monster: &Value,
     entity: &mut MonsterEntity,
@@ -841,6 +858,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_exploder_runtime_from_snapshot(monster, entity);
     seed_maw_runtime_from_snapshot(monster, entity);
     seed_awakened_one_runtime_from_snapshot(monster, entity);
+    seed_corrupt_heart_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
 }
@@ -1206,6 +1224,28 @@ mod tests {
             },
             "is_gone": false,
             "half_dead": true
+        })
+    }
+
+    fn corrupt_heart_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "CorruptHeart",
+            "current_hp": 650,
+            "max_hp": 800,
+            "block": 0,
+            "intent": "ATTACK",
+            "move_id": 1,
+            "move_base_damage": 2,
+            "move_hits": 15,
+            "powers": [],
+            "runtime_state": {
+                "first_move": false,
+                "move_count": 4,
+                "buff_count": 2,
+                "blood_hit_count": 15
+            },
+            "is_gone": false,
+            "half_dead": false
         })
     }
 
@@ -1825,6 +1865,21 @@ mod tests {
         assert!(entity.awakened_one.first_turn);
         assert!(entity.awakened_one.protocol_seeded);
         assert!(entity.half_dead);
+    }
+
+    #[test]
+    fn truth_import_seeds_corrupt_heart_runtime_state() {
+        let snapshot = corrupt_heart_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.planned_move_id(), 1);
+        assert!(!entity.corrupt_heart.first_move);
+        assert_eq!(entity.corrupt_heart.move_count, 4);
+        assert_eq!(entity.corrupt_heart.buff_count, 2);
+        assert_eq!(entity.corrupt_heart.blood_hit_count, 15);
+        assert!(entity.corrupt_heart.protocol_seeded);
     }
 
     #[test]

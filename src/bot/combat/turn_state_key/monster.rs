@@ -577,8 +577,12 @@ fn stable_awakened_one_signature(state: &AwakenedOneRuntimeState) -> String {
 
 fn stable_corrupt_heart_signature(state: &CorruptHeartRuntimeState) -> String {
     format!(
-        "seed{}:first{}:moves{}:buff{}",
-        state.protocol_seeded, state.first_move, state.move_count, state.buff_count
+        "seed{}:first{}:moves{}:buff{}:blood_hits{}",
+        state.protocol_seeded,
+        state.first_move,
+        state.move_count,
+        state.buff_count,
+        state.blood_hit_count
     )
 }
 

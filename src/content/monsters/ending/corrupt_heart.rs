@@ -55,7 +55,7 @@ fn echo_attack_damage(ascension_level: u8) -> i32 {
     }
 }
 
-fn blood_hit_count(ascension_level: u8) -> u8 {
+fn initial_blood_hit_count(ascension_level: u8) -> u8 {
     if ascension_level >= 4 {
         15
     } else {
@@ -63,11 +63,24 @@ fn blood_hit_count(ascension_level: u8) -> u8 {
     }
 }
 
-fn current_runtime(entity: &MonsterEntity) -> (bool, u8, u8) {
+pub fn initialize_runtime_state(entity: &mut MonsterEntity, ascension_level: u8) {
+    entity.corrupt_heart.protocol_seeded = true;
+    entity.corrupt_heart.first_move = true;
+    entity.corrupt_heart.move_count = 0;
+    entity.corrupt_heart.buff_count = 0;
+    entity.corrupt_heart.blood_hit_count = initial_blood_hit_count(ascension_level);
+}
+
+fn current_runtime(entity: &MonsterEntity) -> (bool, u8, u8, u8) {
+    assert!(
+        entity.corrupt_heart.protocol_seeded,
+        "CorruptHeart runtime must be factory/protocol seeded before semantic use"
+    );
     (
         entity.corrupt_heart.first_move,
         entity.corrupt_heart.move_count,
         entity.corrupt_heart.buff_count,
+        entity.corrupt_heart.blood_hit_count,
     )
 }
 
@@ -76,6 +89,7 @@ fn corrupt_heart_runtime_update(
     first_move: Option<bool>,
     move_count: Option<u8>,
     buff_count: Option<u8>,
+    blood_hit_count: Option<u8>,
 ) -> Action {
     Action::UpdateMonsterRuntime {
         monster_id: entity.id,
@@ -83,6 +97,7 @@ fn corrupt_heart_runtime_update(
             first_move,
             move_count,
             buff_count,
+            blood_hit_count,
             protocol_seeded: Some(true),
         },
     }
@@ -161,12 +176,12 @@ fn debilitate_plan() -> MonsterTurnPlan {
     )
 }
 
-fn blood_shots_plan(ascension_level: u8) -> MonsterTurnPlan {
+fn blood_shots_plan(hit_count: u8) -> MonsterTurnPlan {
     MonsterTurnPlan::from_spec(
         BLOOD_SHOTS,
         MonsterMoveSpec::Attack(AttackSpec {
             base_damage: 2,
-            hits: blood_hit_count(ascension_level),
+            hits: hit_count,
             damage_kind: DamageKind::Normal,
         }),
     )
@@ -228,7 +243,7 @@ fn buff_followup_step(buff_count: u8) -> MoveStep {
 }
 
 fn buff_plan(entity: &MonsterEntity, strength_amount: i32) -> MonsterTurnPlan {
-    let (_, _, buff_count) = current_runtime(entity);
+    let (_, _, buff_count, _) = current_runtime(entity);
     MonsterTurnPlan::with_visible_spec(
         GAIN_ONE_STRENGTH,
         smallvec![
@@ -259,7 +274,10 @@ fn turn_buff_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPla
 fn plan_for(state: &CombatState, entity: &MonsterEntity, move_id: u8) -> MonsterTurnPlan {
     match move_id {
         DEBILITATE => debilitate_plan(),
-        BLOOD_SHOTS => blood_shots_plan(state.meta.ascension_level),
+        BLOOD_SHOTS => {
+            let (_, _, _, blood_hit_count) = current_runtime(entity);
+            blood_shots_plan(blood_hit_count)
+        }
         ECHO_ATTACK => echo_attack_plan(state.meta.ascension_level),
         GAIN_ONE_STRENGTH => turn_buff_plan(state, entity),
         _ => MonsterTurnPlan::unknown(move_id),
@@ -298,7 +316,7 @@ impl MonsterBehavior for CorruptHeart {
         ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        let (first_move, move_count, _) = current_runtime(entity);
+        let (first_move, move_count, _, blood_hit_count) = current_runtime(entity);
         if first_move {
             return debilitate_plan();
         }
@@ -306,7 +324,7 @@ impl MonsterBehavior for CorruptHeart {
         match move_count % 3 {
             0 => {
                 if rng.random_boolean() {
-                    blood_shots_plan(ascension_level)
+                    blood_shots_plan(blood_hit_count)
                 } else {
                     echo_attack_plan(ascension_level)
                 }
@@ -315,7 +333,7 @@ impl MonsterBehavior for CorruptHeart {
                 if !last_move(entity, ECHO_ATTACK) {
                     echo_attack_plan(ascension_level)
                 } else {
-                    blood_shots_plan(ascension_level)
+                    blood_shots_plan(blood_hit_count)
                 }
             }
             _ => roll_buff_plan(entity),
@@ -328,15 +346,16 @@ impl MonsterBehavior for CorruptHeart {
         _num: i32,
         _plan: &MonsterTurnPlan,
     ) -> Vec<Action> {
-        let (first_move, move_count, buff_count) = current_runtime(entity);
+        let (first_move, move_count, buff_count, _) = current_runtime(entity);
         vec![if first_move {
-            corrupt_heart_runtime_update(entity, Some(false), None, None)
+            corrupt_heart_runtime_update(entity, Some(false), None, None, None)
         } else {
             corrupt_heart_runtime_update(
                 entity,
                 None,
                 Some(move_count.saturating_add(1)),
                 Some(buff_count),
+                None,
             )
         }]
     }
@@ -375,7 +394,7 @@ impl MonsterBehavior for CorruptHeart {
                 GAIN_ONE_STRENGTH,
                 [MoveStep::ApplyPower(strength_step), MoveStep::ApplyPower(followup_step)],
             ) => {
-                let (_, _, buff_count) = current_runtime(entity);
+                let (_, _, buff_count, _) = current_runtime(entity);
                 vec![
                     apply_power_action(entity, strength_step),
                     apply_power_action(entity, followup_step),
@@ -384,6 +403,7 @@ impl MonsterBehavior for CorruptHeart {
                         None,
                         None,
                         Some(buff_count.saturating_add(1)),
+                        None,
                     ),
                 ]
             }
