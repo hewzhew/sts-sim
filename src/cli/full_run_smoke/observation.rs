@@ -48,11 +48,7 @@ pub fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
         ),
         map: build_map_observation_if_relevant(&ctx.engine_state, &ctx.run_state),
         next_nodes: build_next_node_observations(&ctx.run_state),
-        act_boss: ctx
-            .run_state
-            .boss_list
-            .first()
-            .map(|boss| format!("{boss:?}")),
+        act_boss: ctx.run_state.boss_key.map(|boss| format!("{boss:?}")),
         reward_source: reward_source_label(&ctx.engine_state, &ctx.run_state),
         combat: combat.map(|combat| build_combat_observation(&ctx.engine_state, combat)),
         screen: build_screen_observation(&ctx.engine_state, &ctx.run_state),

@@ -338,49 +338,63 @@ pub fn tick_run(
                         apply_combat_meta_change(run_state, change);
                     }
 
-                    // Check for Act 3 boss victory → Act 4 transition
-                    // Java: AbstractRoom:317 — if BossRoom + TheBeyond/TheEnding + 3 keys → skip rewards
+                    let mut start_next_act3_boss = false;
+
+                    // Check for Act 3 boss victory and reward generation.
+                    // Java: AbstractRoom.update() skips normal reward-screen opening
+                    // for TheBeyond/TheEnding boss rooms. On A20, ProceedButton
+                    // sends the player directly to the second Act 3 boss while
+                    // `bossList.size() == 2`.
                     if let EngineState::RewardScreen(rs) = engine_state {
                         let is_boss = cs.meta.is_boss_fight;
                         let is_elite = cs.meta.is_elite_fight;
-                        let screen_context = if run_state.room_mugged {
-                            RewardScreenContext::MuggedCombat
-                        } else if run_state.room_smoked {
-                            RewardScreenContext::SmokedCombat
-                        } else {
-                            RewardScreenContext::Standard
-                        };
-                        if !matches!(screen_context, RewardScreenContext::SmokedCombat) {
-                            // Populate the actual dropped rewards for normal/mugged combat.
-                            *rs = crate::rewards::generator::generate_combat_rewards(
-                                run_state, is_elite, is_boss,
-                            );
-                            rs.items.append(&mut cs.runtime.pending_rewards);
-                        }
-                        rs.screen_context = screen_context;
 
-                        if is_boss
-                            && run_state.act_num == 3
-                            && run_state.is_final_act_available
-                            && run_state.keys[0]
-                            && run_state.keys[1]
-                            && run_state.keys[2]
-                        {
-                            // All 3 keys collected — transition to Act 4 (TheEnding)
-                            let ending_map = crate::map::generator::generate_ending_map();
-                            run_state.map = crate::map::state::MapState::new(ending_map);
-                            run_state.act_num = 4;
-                            *engine_state = EngineState::MapNavigation;
-                        } else if is_boss && run_state.act_num <= 2 {
-                            // Act 1 or Act 2 boss defeated — mark for act advance after rewards
-                            run_state.pending_boss_reward = true;
-                        } else if is_boss && run_state.act_num == 3 {
-                            // Act 3 boss defeated without all keys → game victory (no Act 4)
-                            *engine_state =
-                                EngineState::GameOver(crate::state::core::RunResult::Victory);
+                        if is_boss && run_state.act_num == 3 {
+                            if run_state.should_start_act3_double_boss() {
+                                run_state.reveal_next_boss_from_list();
+                                start_next_act3_boss = true;
+                                *engine_state = EngineState::CombatPlayerTurn;
+                            } else if run_state.is_final_act_available
+                                && run_state.keys[0]
+                                && run_state.keys[1]
+                                && run_state.keys[2]
+                            {
+                                // All 3 keys collected — transition to Act 4 (TheEnding).
+                                run_state.enter_final_act();
+                                *engine_state = EngineState::MapNavigation;
+                            } else {
+                                // Act 3 boss defeated without all keys → game victory (no Act 4).
+                                *engine_state =
+                                    EngineState::GameOver(crate::state::core::RunResult::Victory);
+                            }
                         } else {
+                            let screen_context = if run_state.room_mugged {
+                                RewardScreenContext::MuggedCombat
+                            } else if run_state.room_smoked {
+                                RewardScreenContext::SmokedCombat
+                            } else {
+                                RewardScreenContext::Standard
+                            };
+                            if !matches!(screen_context, RewardScreenContext::SmokedCombat) {
+                                // Populate the actual dropped rewards for normal/mugged combat.
+                                *rs = crate::rewards::generator::generate_combat_rewards(
+                                    run_state, is_elite, is_boss,
+                                );
+                                rs.items.append(&mut cs.runtime.pending_rewards);
+                            }
+                            rs.screen_context = screen_context;
+
+                            if is_boss && run_state.act_num <= 2 {
+                                // Act 1 or Act 2 boss defeated — mark for act advance after rewards.
+                                run_state.pending_boss_reward = true;
+                            }
+
                             // Normal (non-boss) elite reward generation adds emerald key if present
-                            if is_elite && run_state.is_final_act_available && !run_state.keys[2] {
+                            if !is_boss
+                                && is_elite
+                                && run_state.is_final_act_available
+                                && !run_state.keys[2]
+                            {
                                 if let Some(node) = run_state.map.get_current_node() {
                                     if node.has_emerald_key {
                                         rs.items
@@ -389,6 +403,9 @@ pub fn tick_run(
                                 }
                             }
                         }
+                    }
+                    if start_next_act3_boss {
+                        *combat_state = None;
                     }
                     if let EngineState::GameOver(_) = engine_state {
                         return false;
@@ -970,6 +987,90 @@ mod tests {
         second.class = Some(RoomType::MonsterRoom);
         run_state.map = MapState::new(vec![vec![first], vec![second]]);
         run_state
+    }
+
+    #[test]
+    fn act3_a20_first_boss_starts_second_boss_without_reward_or_victory() {
+        use crate::content::monsters::factory::EncounterId;
+        use crate::content::monsters::EnemyId;
+
+        let mut run_state = RunState::new(1, 20, true, "Ironclad");
+        run_state.act_num = 3;
+        run_state.boss_list = vec![
+            EncounterId::AwakenedOne,
+            EncounterId::TimeEater,
+            EncounterId::DonuAndDeca,
+        ];
+        run_state.boss_key = Some(EncounterId::AwakenedOne);
+        assert_eq!(run_state.next_boss(), Some(EncounterId::AwakenedOne));
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.meta.is_boss_fight = true;
+        let mut boss = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        boss.current_hp = 0;
+        boss.is_dying = true;
+        combat.entities.monsters.push(boss);
+
+        let mut engine_state = EngineState::CombatProcessing;
+        let mut combat_state = Some(combat);
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            None,
+        ));
+
+        assert!(matches!(engine_state, EngineState::CombatPlayerTurn));
+        assert!(combat_state.is_none());
+        assert_eq!(run_state.boss_key, Some(EncounterId::TimeEater));
+        assert_eq!(
+            run_state.boss_list,
+            vec![EncounterId::TimeEater, EncounterId::DonuAndDeca]
+        );
+    }
+
+    #[test]
+    fn act3_boss_with_all_keys_enters_initialized_final_act() {
+        use crate::content::monsters::factory::EncounterId;
+        use crate::content::monsters::EnemyId;
+
+        let mut run_state = RunState::new(1, 19, true, "Ironclad");
+        run_state.act_num = 3;
+        run_state.keys = [true, true, true];
+        run_state.boss_list = vec![
+            EncounterId::AwakenedOne,
+            EncounterId::TimeEater,
+            EncounterId::DonuAndDeca,
+        ];
+        run_state.boss_key = Some(EncounterId::AwakenedOne);
+        assert_eq!(run_state.next_boss(), Some(EncounterId::AwakenedOne));
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.meta.is_boss_fight = true;
+        let mut boss = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        boss.current_hp = 0;
+        boss.is_dying = true;
+        combat.entities.monsters.push(boss);
+
+        let mut engine_state = EngineState::CombatProcessing;
+        let mut combat_state = Some(combat);
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            None,
+        ));
+
+        assert!(matches!(engine_state, EngineState::MapNavigation));
+        assert_eq!(run_state.act_num, 4);
+        assert_eq!(
+            run_state.elite_monster_list,
+            vec![EncounterId::ShieldAndSpear; 3]
+        );
+        assert_eq!(run_state.boss_key, Some(EncounterId::TheHeart));
+        assert!(combat_state.is_some());
     }
 
     #[test]

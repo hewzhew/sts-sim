@@ -115,10 +115,19 @@ pub fn generate_encounter_lists(
         1 => generate_exordium(&mut monster_list, &mut elite_list, monster_rng),
         2 => generate_the_city(&mut monster_list, &mut elite_list, monster_rng),
         3 => generate_the_beyond(&mut monster_list, &mut elite_list, monster_rng),
+        4 => generate_the_ending(&mut monster_list, &mut elite_list),
         _ => generate_exordium(&mut monster_list, &mut elite_list, monster_rng),
     }
 
     (monster_list, elite_list)
+}
+
+fn generate_the_ending(monster_list: &mut Vec<EncounterId>, elite_list: &mut Vec<EncounterId>) {
+    // Java: TheEnding.generateMonsters() fills both normal and elite lists with
+    // Shield and Spear. The fixed Act 4 map uses the elite room, but both lists
+    // are populated in the source.
+    monster_list.extend([EncounterId::ShieldAndSpear; 3]);
+    elite_list.extend([EncounterId::ShieldAndSpear; 3]);
 }
 
 // ============================================================================
@@ -474,11 +483,18 @@ pub fn generate_boss_list(
             EncounterId::TimeEater,
             EncounterId::DonuAndDeca,
         ],
+        4 => vec![
+            EncounterId::TheHeart,
+            EncounterId::TheHeart,
+            EncounterId::TheHeart,
+        ],
         _ => vec![],
     };
 
-    // Java: Collections.shuffle(bossList, new java.util.Random(monsterRng.randomLong()))
-    crate::runtime::rng::shuffle_with_random_long(&mut bosses, monster_rng);
+    if act <= 3 {
+        // Java: Collections.shuffle(bossList, new java.util.Random(monsterRng.randomLong()))
+        crate::runtime::rng::shuffle_with_random_long(&mut bosses, monster_rng);
+    }
 
     bosses
 }

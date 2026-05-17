@@ -88,6 +88,11 @@ pub struct RunState {
     // Populated at dungeon init via weighted roll; consumed in order as player enters combat rooms.
     pub monster_list: Vec<crate::content::monsters::factory::EncounterId>,
     pub elite_monster_list: Vec<crate::content::monsters::factory::EncounterId>,
+    /// Java `AbstractDungeon.bossKey`: the boss currently shown on the map and
+    /// used by `MonsterRoomBoss` when the boss room is entered. `boss_list` is
+    /// the internal queue and may contain future bosses that are not public
+    /// observation.
+    pub boss_key: Option<crate::content::monsters::factory::EncounterId>,
     pub boss_list: Vec<crate::content::monsters::factory::EncounterId>,
 
     /// Set to true after boss combat ends, consumed by post_reward_state() to trigger act advance.
@@ -168,6 +173,7 @@ impl RunState {
             // Encounter lists (filled by generate_encounter_lists)
             monster_list: Vec::new(),
             elite_monster_list: Vec::new(),
+            boss_key: None,
             boss_list: Vec::new(),
 
             pending_boss_reward: false,
@@ -1067,30 +1073,57 @@ impl RunState {
         }
     }
 
-    /// Initialize the boss list for the current act.
-    /// Java: initializeBoss() in Exordium/TheCity/TheBeyond — shuffle 3 bosses with monsterRng.
+    /// Initialize the boss list for the current act and publish the visible
+    /// boss key.
+    ///
+    /// Java: dungeon constructors call `initializeBoss()`, then
+    /// `setBoss(bossList.get(0))`. The list itself is not truncated; on A20
+    /// Act 3, the first boss removes index 0, then `ProceedButton` sees two
+    /// remaining entries and sets `bossKey = bossList.get(0)` for the second
+    /// boss.
     pub fn init_boss_list(&mut self) {
         self.boss_list = crate::content::monsters::encounter_pool::generate_boss_list(
             self.act_num,
             &mut self.rng_pool.monster_rng,
         );
-        // Asc 20: Keep first 2 bosses for double boss fights (Java: ProceedButton L95)
-        // Below Asc 20: Keep only first boss (standard behavior)
-        if self.ascension_level >= 20 {
-            self.boss_list.truncate(2);
-        } else {
-            self.boss_list.truncate(1);
-        }
+        self.boss_key = self.boss_list.first().copied();
     }
 
     /// Pop the next boss from the pre-scheduled list.
-    /// Java: bossKey = bossList.get(0), then bossList.remove(0) in MonsterRoomBoss.
+    /// Java: `getBoss()` uses `bossKey`, then
+    /// `MonsterRoomBoss.onPlayerEntry()` removes `bossList[0]`.
     pub fn next_boss(&mut self) -> Option<crate::content::monsters::factory::EncounterId> {
-        if self.boss_list.is_empty() {
-            None
-        } else {
-            Some(self.boss_list.remove(0))
+        let boss = self.boss_key.or_else(|| self.boss_list.first().copied());
+        if !self.boss_list.is_empty() {
+            self.boss_list.remove(0);
         }
+        boss
+    }
+
+    pub fn reveal_next_boss_from_list(
+        &mut self,
+    ) -> Option<crate::content::monsters::factory::EncounterId> {
+        self.boss_key = self.boss_list.first().copied();
+        self.boss_key
+    }
+
+    pub fn should_start_act3_double_boss(&self) -> bool {
+        self.act_num == 3 && self.ascension_level >= 20 && self.boss_list.len() == 2
+    }
+
+    pub fn enter_final_act(&mut self) {
+        self.act_num = 4;
+        self.pending_boss_reward = false;
+        self.map = crate::map::state::MapState::new(crate::map::generator::generate_ending_map());
+        self.init_encounter_lists();
+        self.init_boss_list();
+        self.event_generator.initialize_event_pools(self.act_num);
+        self.event_generator.reset_probabilities();
+        self.card_upgraded_chance = if self.ascension_level >= 12 {
+            0.25
+        } else {
+            0.5
+        };
     }
 
     /// Advance to the next act after boss defeat.
@@ -1775,6 +1808,49 @@ mod tests {
             shuffle_after + 1,
             "Java returnColorlessCard(rarity) shuffles colorlessCardPool with shuffleRng.randomLong()"
         );
+    }
+
+    #[test]
+    fn boss_key_is_public_boss_while_boss_list_keeps_java_queue() {
+        let mut run = RunState::new(7, 20, false, "Ironclad");
+        run.act_num = 3;
+        run.init_boss_list();
+
+        assert_eq!(
+            run.boss_key,
+            run.boss_list.first().copied(),
+            "Java setBoss(bossList[0]) publishes the current map boss"
+        );
+        assert_eq!(
+            run.boss_list.len(),
+            3,
+            "Java keeps the full shuffled bossList; A20 double boss depends on the post-entry size"
+        );
+
+        let first = run.boss_key;
+        assert_eq!(run.next_boss(), first);
+        assert_eq!(run.boss_list.len(), 2);
+        assert!(run.should_start_act3_double_boss());
+
+        let second = run.reveal_next_boss_from_list();
+        assert_eq!(second, run.boss_list.first().copied());
+        assert_eq!(run.next_boss(), second);
+        assert_eq!(run.boss_list.len(), 1);
+        assert!(!run.should_start_act3_double_boss());
+    }
+
+    #[test]
+    fn final_act_initializes_shield_spear_and_heart_context() {
+        use crate::content::monsters::factory::EncounterId;
+
+        let mut run = RunState::new(7, 20, true, "Ironclad");
+        run.enter_final_act();
+
+        assert_eq!(run.act_num, 4);
+        assert_eq!(run.elite_monster_list, vec![EncounterId::ShieldAndSpear; 3]);
+        assert_eq!(run.monster_list, vec![EncounterId::ShieldAndSpear; 3]);
+        assert_eq!(run.boss_list, vec![EncounterId::TheHeart; 3]);
+        assert_eq!(run.boss_key, Some(EncounterId::TheHeart));
     }
 
     #[test]

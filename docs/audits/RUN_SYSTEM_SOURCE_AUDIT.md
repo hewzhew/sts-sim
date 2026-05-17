@@ -79,6 +79,11 @@ and reachability gates must be checked separately.
 4. Monster and boss generation:
    - verify encounter pools and boss visibility before touching AI pathing;
    - keep monster runtime intent/AI audit separate from encounter selection.
+   - current progress: boss selection now separates Java `bossKey` from the
+     internal `bossList`. Public observations use `bossKey`; `bossList` keeps
+     the full Java queue so A20 Act 3 double-boss logic can test the
+     post-entry `bossList.size() == 2` condition. Act 4 now initializes the
+     The Ending encounter lists to Shield/Spear and the boss key/list to Heart.
 
 5. Map and room visibility:
    - define what the player knows on the map at each point;
@@ -100,6 +105,51 @@ A run-level mechanic is not closed until it has:
 - a public-visibility note for future AI observation work.
 
 If any of these are missing, mark the mechanic `open` or `partial`, not clean.
+
+## Boss Selection and Final Act Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+- `D:/rust/cardcrawl/dungeons/Exordium.java`
+- `D:/rust/cardcrawl/dungeons/TheCity.java`
+- `D:/rust/cardcrawl/dungeons/TheBeyond.java`
+- `D:/rust/cardcrawl/dungeons/TheEnding.java`
+- `D:/rust/cardcrawl/rooms/MonsterRoomBoss.java`
+- `D:/rust/cardcrawl/ui/buttons/ProceedButton.java`
+- `D:/rust/cardcrawl/rooms/AbstractRoom.java`
+
+Key source facts:
+
+- Dungeon constructors call `initializeBoss()`, then `setBoss(bossList.get(0))`.
+  The selected `bossKey` is the visible map boss.
+- `MonsterRoomBoss.onPlayerEntry()` calls `getBoss()` using `bossKey`, then
+  removes `bossList[0]`.
+- A20 Act 3 double boss is keyed off the post-entry queue size:
+  `ascensionLevel >= 20 && bossList.size() == 2`.
+- TheBeyond and TheEnding boss rooms skip normal combat reward-screen opening.
+- TheEnding generates a fixed map and fills both normal and elite encounter
+  lists with `Shield and Spear`; its boss list is `The Heart` repeated.
+
+Rust result:
+
+- `RunState::boss_key` now models the public Java `bossKey`.
+- `RunState::boss_list` remains the internal Java boss queue and is no longer
+  truncated at act start.
+- `RunState::next_boss()` uses `boss_key` and then removes the front of
+  `boss_list`, matching `MonsterRoomBoss.onPlayerEntry()`.
+- `RunState::should_start_act3_double_boss()` models the A20 post-entry queue
+  test. The run loop now transitions from the first Act 3 boss directly to the
+  second boss without generating normal rewards.
+- `RunState::enter_final_act()` initializes the Act 4 map, encounter lists,
+  boss key/list, event pools, and card-upgrade chance.
+
+Coverage:
+
+- `boss_key_is_public_boss_while_boss_list_keeps_java_queue`
+- `final_act_initializes_shield_spear_and_heart_context`
+- `act3_a20_first_boss_starts_second_boss_without_reward_or_victory`
+- `act3_boss_with_all_keys_enters_initialized_final_act`
 
 ## Event Pool Reachability Pass
 
@@ -150,5 +200,5 @@ Important boundary:
 Validation:
 
 - `cargo test events::generator --all-targets`
-- Latest full-suite validation after potion and relic-pool work:
-  `cargo test --all-targets` -> `1006 passed`.
+- Latest full-suite validation after boss/final-act work:
+  `cargo test --all-targets` -> `1010 passed`.
