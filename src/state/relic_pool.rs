@@ -100,7 +100,7 @@ pub(crate) fn random_relic_by_tier_from_pools(
     spawn_context: &RelicSpawnContext,
 ) -> RelicId {
     let id = draw_front_relic_key_from_pools(tier, pools, spawn_context);
-    if id != RelicId::Circlet && !relic_can_spawn_in_context(id, spawn_context) {
+    if !is_pool_fallback_relic(id) && !relic_can_spawn_in_context(id, spawn_context) {
         random_relic_end_by_tier_from_pools(tier, pools, spawn_context)
     } else {
         id
@@ -127,12 +127,12 @@ pub(crate) fn random_relic_end_by_tier_from_pools(
             if !pools.boss.is_empty() {
                 pools.boss.remove(0)
             } else {
-                RelicId::Circlet
+                RelicId::RedCirclet
             }
         }
         _ => RelicId::Circlet,
     };
-    if id != RelicId::Circlet && !relic_can_spawn_in_context(id, spawn_context) {
+    if !is_pool_fallback_relic(id) && !relic_can_spawn_in_context(id, spawn_context) {
         random_relic_end_by_tier_from_pools(tier, pools, spawn_context)
     } else {
         id
@@ -177,9 +177,13 @@ fn draw_front_relic_key_from_pools(
             if !pools.boss.is_empty() {
                 pools.boss.remove(0)
             } else {
-                RelicId::Circlet
+                RelicId::RedCirclet
             }
         }
         _ => RelicId::Circlet,
     }
+}
+
+fn is_pool_fallback_relic(id: RelicId) -> bool {
+    matches!(id, RelicId::Circlet | RelicId::RedCirclet)
 }

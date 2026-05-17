@@ -6332,14 +6332,14 @@
             "Red Circlet"
           ],
           "scope": "non_combat",
-          "rust": null,
+          "rust": "RedCirclet",
           "sources": [
             "baseline"
           ],
           "candidates": [],
           "confidence": 1.0,
           "match_rule": "baseline",
-          "status": "unsupported"
+          "status": "mapped"
         },
         "Test3": {
           "java": [

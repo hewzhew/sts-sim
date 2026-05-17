@@ -3064,6 +3064,7 @@ fn shared_shop_special_relic_gap_batch_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Cauldron), RelicTier::Shop);
     assert_eq!(get_relic_tier(RelicId::ChemicalX), RelicTier::Shop);
     assert_eq!(get_relic_tier(RelicId::Circlet), RelicTier::Special);
+    assert_eq!(get_relic_tier(RelicId::RedCirclet), RelicTier::Special);
     assert_eq!(
         get_relic_tier(RelicId::DiscerningMonocle),
         RelicTier::Uncommon,
@@ -3075,6 +3076,8 @@ fn shared_shop_special_relic_gap_batch_metadata_matches_java_sources() {
     assert!(!get_relic_subscriptions(RelicId::BloodyIdol).at_battle_start);
     assert!(!get_relic_subscriptions(RelicId::Cauldron).at_battle_start);
     assert_eq!(RelicState::new(RelicId::Circlet).counter, 1);
+    assert_eq!(RelicState::new(RelicId::RedCirclet).counter, -1);
+    assert!(!get_relic_subscriptions(RelicId::RedCirclet).at_battle_start);
 }
 
 #[test]
@@ -3252,6 +3255,25 @@ fn circlet_duplicate_obtain_increments_existing_counter_instead_of_adding_copy()
             ))
             .count(),
         2
+    );
+}
+
+#[test]
+fn empty_boss_relic_pool_returns_red_circlet_like_java_sources() {
+    let mut front = crate::state::run::RunState::new(23, 0, false, "Ironclad");
+    front.boss_relic_pool.clear();
+    assert_eq!(
+        front.random_relic_by_tier(RelicTier::Boss),
+        RelicId::RedCirclet,
+        "Java AbstractDungeon.returnRandomRelicKey(BOSS) returns Red Circlet when bossRelicPool is empty"
+    );
+
+    let mut end = crate::state::run::RunState::new(23, 0, false, "Ironclad");
+    end.boss_relic_pool.clear();
+    assert_eq!(
+        end.random_relic_end_by_tier(RelicTier::Boss),
+        RelicId::RedCirclet,
+        "Java AbstractDungeon.returnEndRandomRelicKey(BOSS) also returns Red Circlet when bossRelicPool is empty"
     );
 }
 

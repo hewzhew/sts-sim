@@ -1968,7 +1968,7 @@
                         "Red Circlet"
                     ],
                     "scope": "non_combat",
-                    "rust": null
+                    "rust": "RedCirclet"
                 },
                 "RegalPillow": {
                     "java": [

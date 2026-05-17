@@ -3888,6 +3888,40 @@ Coverage:
 - `shared_shop_special_relic_gap_batch_metadata_matches_java_sources`
 - `circlet_duplicate_obtain_increments_existing_counter_instead_of_adding_copy`
 
+### Red Circlet
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/RedCirclet.java`
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+
+Rust source:
+- `src/content/relics/mod.rs`
+- `src/content/relics/red_circlet.rs`
+- `src/state/relic_pool.rs`
+- `tools/protocol_schema_baseline.json`
+- `tools/compiled_protocol_schema.json`
+
+Java evidence:
+- Constructor: ID `"Red Circlet"`, tier `SPECIAL`, landing sound `CLINK`.
+- Unlike `Circlet`, the constructor does not set `counter = 1`.
+- `AbstractDungeon.returnRandomRelicKey(BOSS)` and
+  `returnEndRandomRelicKey(BOSS)` return `"Red Circlet"` when
+  `bossRelicPool` is empty. Empty rare pools return `"Circlet"` instead.
+
+Rust result:
+- Added `RelicId::RedCirclet` as a distinct special relic with no hooks and
+  default counter `-1`.
+- Fixed front/end boss relic pool fallback to return `RedCirclet` instead of
+  `Circlet`.
+- Mapped Java protocol ID `"Red Circlet"` to the Rust relic ID.
+
+Coverage:
+- `shared_shop_special_relic_gap_batch_metadata_matches_java_sources`
+- `empty_boss_relic_pool_returns_red_circlet_like_java_sources`
+- `relic_id_from_java_maps_boss_pool_fallback_red_circlet`
+
 ### Discerning Monocle
 
 Status: `wrong-fixed`

@@ -108,6 +108,7 @@ pub mod pen_nib;
 pub mod potion_belt;
 pub mod preserved_insect;
 pub mod question_card;
+pub mod red_circlet;
 pub mod red_mask;
 pub mod sacred_bark;
 pub mod self_forming_clay;
@@ -319,6 +320,7 @@ pub enum RelicId {
     PrismaticShard,
     PureWater,
     QuestionCard,
+    RedCirclet,
     RedMask,
     RedSkull,
     RegalPillow,
@@ -468,8 +470,8 @@ pub fn get_relic_tier(id: RelicId) -> RelicTier {
         // Special / Event (never in relic pools)
         BloodyIdol | Circlet | CultistMask | Enchiridion | FaceOfCleric | GoldenIdol
         | GremlinMask | MarkOfTheBloom | MutagenicStrength | Necronomicon | NeowsLament
-        | NilrysCodex | NlothsGift | NlothsMask | OddMushroom | RedMask | SpiritPoop
-        | SsserpentHead | WarpedTongs => RelicTier::Special,
+        | NilrysCodex | NlothsGift | NlothsMask | OddMushroom | RedCirclet | RedMask
+        | SpiritPoop | SsserpentHead | WarpedTongs => RelicTier::Special,
         // Fallback
         _ => RelicTier::Special,
     }
@@ -634,6 +636,7 @@ pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
         PrismaticShard,
         PureWater,
         QuestionCard,
+        RedCirclet,
         RedMask,
         RedSkull,
         RegalPillow,
@@ -984,6 +987,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::Vajra => sub.at_battle_start = true,
         RelicId::WhiteBeastStatue => {} // Passive out of combat
+        RelicId::RedCirclet => {}       // Java boss-pool-empty fallback, no hooks
         RelicId::RedMask => sub.at_battle_start = true,
         // P1 High-Impact Relics
         RelicId::PhilosopherStone => {

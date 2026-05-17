@@ -884,6 +884,12 @@ mod tests {
     }
 
     #[test]
+    fn relic_id_from_java_maps_boss_pool_fallback_red_circlet() {
+        assert_eq!(relic_id_from_java("Circlet"), Some(RelicId::Circlet));
+        assert_eq!(relic_id_from_java("Red Circlet"), Some(RelicId::RedCirclet));
+    }
+
+    #[test]
     fn build_noncombat_affordance_snapshot_maps_protocol_actions() {
         let action_space = json!({
             "noncombat_action_space": {
