@@ -534,6 +534,27 @@ pub fn handle_event_choice(
     Ok(())
 }
 
+pub fn handle_event_post_run_pending_choice(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+) -> Result<bool, &'static str> {
+    let Some(event_state) = run_state.event_state.as_ref() else {
+        return Ok(false);
+    };
+
+    let should_resume = matches!(
+        (event_state.id, event_state.current_screen),
+        (EventId::BonfireSpirits, 2) | (EventId::BonfireElementals, 2) | (EventId::Designer, 2)
+    );
+
+    if !should_resume {
+        return Ok(false);
+    }
+
+    handle_event_choice(engine_state, run_state, 0)?;
+    Ok(true)
+}
+
 pub fn get_event_options(run_state: &RunState) -> Vec<EventOption> {
     if let Some(event_state) = &run_state.event_state {
         if event_state.completed {

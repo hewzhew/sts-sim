@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn offer_removes_selected_card_with_event_source_and_records_rarity() {
+    fn offer_removes_selected_card_with_event_source_and_applies_post_selection_reward() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.master_deck = vec![deck_card(CardId::Strike, 101)];
         let mut event_state = EventState::new(EventId::BonfireElementals);
@@ -215,7 +215,11 @@ mod tests {
         ));
 
         assert!(matches!(engine_state, EngineState::EventRoom));
-        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 2);
+        assert_eq!(
+            run_state.event_state.as_ref().unwrap().current_screen,
+            3,
+            "Java Bonfire applies the selected-card callback during the grid-select update path"
+        );
         assert_eq!(
             run_state.event_state.as_ref().unwrap().internal_state,
             1,
@@ -228,6 +232,45 @@ mod tests {
                 card,
                 source: DomainEventSource::Event(EventId::BonfireElementals),
             } if card.id == CardId::Strike && card.uuid == 101
+        )));
+    }
+
+    #[test]
+    fn common_offer_selection_heals_during_post_selection_callback() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 10;
+        run_state.max_hp = 80;
+        run_state.master_deck = vec![deck_card(CardId::PommelStrike, 101)];
+        let mut event_state = EventState::new(EventId::BonfireElementals);
+        event_state.current_screen = 1;
+        run_state.event_state = Some(event_state);
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 3);
+        assert_eq!(run_state.current_hp, 15);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: 5,
+                current_hp: 15,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::BonfireElementals),
+            }
         )));
     }
 

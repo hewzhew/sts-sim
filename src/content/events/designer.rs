@@ -878,6 +878,58 @@ mod tests {
     }
 
     #[test]
+    fn designer_full_service_selection_auto_runs_followup_upgrade_like_java_update() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 99;
+        rs.master_deck = vec![
+            deck_card(CardId::Strike, 11, 0),
+            deck_card(CardId::Defend, 12, 0),
+        ];
+        rs.event_state = Some(designer_state(1, 0b00));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut rs,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(11)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(rs.event_state.as_ref().unwrap().completed);
+        assert_eq!(rs.gold, 99 - full_service_cost(0));
+        assert_eq!(
+            rs.master_deck
+                .iter()
+                .map(|card| (card.id, card.uuid, card.upgrades))
+                .collect::<Vec<_>>(),
+            vec![(CardId::Defend, 12, 1)]
+        );
+        let events = rs.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(EventId::Designer),
+            } if card.id == CardId::Strike && card.uuid == 11
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                before,
+                after,
+                source: DomainEventSource::Event(EventId::Designer),
+            } if before.uuid == 12 && before.upgrades == 0 && after.upgrades == 1
+        )));
+    }
+
+    #[test]
     fn designer_run_pending_choice_rejects_invalid_direct_deck_input() {
         let mut rs = RunState::new(1, 0, true, "Ironclad");
         rs.master_deck = vec![

@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn offer_removes_selected_card_with_spirits_event_source_and_records_rarity() {
+    fn offer_removes_selected_card_with_spirits_event_source_and_applies_post_selection_reward() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.master_deck = vec![deck_card(CardId::Strike, 101)];
         let mut event_state = EventState::new(EventId::BonfireSpirits);
@@ -198,7 +198,11 @@ mod tests {
         ));
 
         assert!(matches!(engine_state, EngineState::EventRoom));
-        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 2);
+        assert_eq!(
+            run_state.event_state.as_ref().unwrap().current_screen,
+            3,
+            "Java Bonfire applies the selected-card callback during the grid-select update path"
+        );
         assert_eq!(run_state.event_state.as_ref().unwrap().internal_state, 1);
         assert!(run_state.master_deck.is_empty());
         assert!(run_state.take_emitted_events().iter().any(|event| matches!(

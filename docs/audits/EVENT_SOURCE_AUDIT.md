@@ -153,15 +153,12 @@ Fixes:
   predicates, including the distinction where `Clean Up` / `Full Service`
   disabling checks non-bottled master-deck size while the opened grid later uses
   non-bottled purgeable cards.
-
-Open follow-up:
-
-- Java performs some post-selection event callbacks, such as Designer Full
-  Service's random upgrade, inside the grid-selection update path. The current
-  Rust event loop applies this class of event follow-up when the event room is
-  handled again after selection return. This is a broader event-state-machine
-  timing issue and should be audited separately instead of hidden inside one
-  Designer test.
+- Java performs Designer grid-selection callbacks in `update()` after the grid
+  closes. Rust now resumes only the whitelisted Designer screen-2 callback after
+  `RunPendingChoice` returns to `EventRoom`, so selected Clean Up / Adjust /
+  Full Service choices complete without requiring an extra synthetic event
+  click. Full Service's random follow-up upgrade now happens in that same return
+  step.
 
 Tests:
 
@@ -179,6 +176,7 @@ Tests:
 - `designer_punch_emits_hp_loss_source`
 - `designer_punch_hp_loss_applies_tungsten_rod`
 - `designer_full_service_followup_upgrade_uses_domain_event_source`
+- `designer_full_service_selection_auto_runs_followup_upgrade_like_java_update`
 - `designer_run_pending_choice_rejects_invalid_direct_deck_input`
 
 ### Back to Basics starter upgrade semantics
@@ -1194,6 +1192,12 @@ heals by 10 through `increaseMaxHp`, then the event performs a separate full
 heal. `Mark of the Bloom` therefore blocks the heals while leaving the max-HP
 increase intact.
 
+Java applies the selected-card reward inside `Bonfire.update()` after
+`gridSelectScreen.selectedCards` becomes non-empty. Rust now mirrors that timing
+by resuming only the whitelisted Bonfire screen-2 callback immediately after
+`RunPendingChoice` returns to `EventRoom`; Bonfire no longer waits for a later
+extra event click to apply the rarity reward.
+
 Java's Bonfire choose screen does not disable the Offer button when there are no
 non-bottled purgeable cards. Pressing it advances to the complete screen and
 opens no grid. Rust now preserves that empty-offer path instead of creating an
@@ -1210,10 +1214,11 @@ Tests:
 - `curse_offer_obtains_spirit_poop_with_event_source`
 - `offer_without_purgeable_card_advances_without_pending_like_java`
 - `offer_selection_excludes_bottled_and_unpurgeable_cards_like_java`
-- `offer_removes_selected_card_with_event_source_and_records_rarity`
+- `offer_removes_selected_card_with_event_source_and_applies_post_selection_reward`
+- `common_offer_selection_heals_during_post_selection_callback`
 - `common_offer_heals_with_spirits_event_source`
 - `curse_offer_obtains_spirit_poop_with_spirits_event_source`
-- `offer_removes_selected_card_with_spirits_event_source_and_records_rarity`
+- `offer_removes_selected_card_with_spirits_event_source_and_applies_post_selection_reward`
 
 ### Upgrade Shrine upgrade guard
 
@@ -1731,4 +1736,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `990 passed`.
+- Current result after this pass: `992 passed`.
