@@ -914,6 +914,20 @@ fn build_monster_mechanic_state(
                 object.insert("first_move".to_string(), json!(monster.darkling.first_move));
                 object.insert("nip_damage".to_string(), json!(monster.darkling.nip_dmg));
             }
+            Some(crate::content::monsters::EnemyId::Reptomancer) => {
+                object.insert(
+                    "protocol_seeded".to_string(),
+                    json!(monster.reptomancer.protocol_seeded),
+                );
+                object.insert(
+                    "first_move".to_string(),
+                    json!(monster.reptomancer.first_move),
+                );
+                object.insert(
+                    "dagger_slots".to_string(),
+                    json!(monster.reptomancer.dagger_slots),
+                );
+            }
             _ => {}
         }
     }

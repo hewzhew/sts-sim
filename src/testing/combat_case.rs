@@ -2187,6 +2187,10 @@ fn apply_monster_runtime_delta(
             }
             "darkling.first_move" => monster.darkling.first_move = json_bool(value, field)?,
             "darkling.nip_dmg" => monster.darkling.nip_dmg = json_i32(value, field)?,
+            "reptomancer.protocol_seeded" => {
+                monster.reptomancer.protocol_seeded = json_bool(value, field)?
+            }
+            "reptomancer.first_move" => monster.reptomancer.first_move = json_bool(value, field)?,
             "lagavulin.is_out" => monster.lagavulin.is_out = json_bool(value, field)?,
             "lagavulin.idle_count" => monster.lagavulin.idle_count = json_u8(value, field)?,
             "lagavulin.debuff_turn_count" => {
@@ -2698,6 +2702,10 @@ fn extract_monster_runtime_value(
         "darkling.protocol_seeded" => ActualFieldValue::Bool(monster.darkling.protocol_seeded),
         "darkling.first_move" => ActualFieldValue::Bool(monster.darkling.first_move),
         "darkling.nip_dmg" => ActualFieldValue::Number(monster.darkling.nip_dmg as i64),
+        "reptomancer.protocol_seeded" => {
+            ActualFieldValue::Bool(monster.reptomancer.protocol_seeded)
+        }
+        "reptomancer.first_move" => ActualFieldValue::Bool(monster.reptomancer.first_move),
         "lagavulin.is_out" => ActualFieldValue::Bool(monster.lagavulin.is_out),
         "lagavulin.idle_count" => ActualFieldValue::Number(monster.lagavulin.idle_count as i64),
         "lagavulin.debuff_turn_count" => {

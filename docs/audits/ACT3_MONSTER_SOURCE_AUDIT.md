@@ -158,11 +158,17 @@ block-then-Plated-Armor ordering at A19+.
 
 Reptomancer source-backed details preserved:
 
-- first move is always Spawn Dagger;
+- first move is always Spawn Dagger and comes from Java private `firstMove`;
 - A18+ spawns two daggers, otherwise one;
 - `canSpawn()` counts all non-self monsters that are not `isDying`, matching Java's flag check;
-- dagger slot reuse uses `isDeadOrEscaped()`;
+- dagger slot reuse uses Java private `daggers[4]`, not draw-position inference; a slot is free
+  when its stored dagger is null or `isDeadOrEscaped()`;
 - death cleanup queues suicide for every non-dying ally.
+
+`CommunicationMod` exports `runtime_state.first_move` and `runtime_state.dagger_slots` from the
+Java Reptomancer object. Rust imports those slots by Java monster instance id, stores them in
+`ReptomancerRuntimeState`, and updates the slot array through `Action::SpawnReptomancerDagger`
+when Spawn Dagger executes.
 
 Snake Dagger source-backed details preserved:
 

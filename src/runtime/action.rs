@@ -130,6 +130,11 @@ pub enum MonsterRuntimePatch {
         gremlin_slots: Option<[Option<EntityId>; 3]>,
         protocol_seeded: Option<bool>,
     },
+    Reptomancer {
+        first_move: Option<bool>,
+        dagger_slots: Option<[Option<EntityId>; 4]>,
+        protocol_seeded: Option<bool>,
+    },
     GremlinWizard {
         current_charge: Option<u8>,
         protocol_seeded: Option<bool>,
@@ -918,6 +923,13 @@ pub enum Action {
         leader_id: EntityId,
         slot: u8,
         monster_id: crate::content::monsters::EnemyId,
+        logical_position: i32,
+        hp: crate::semantics::combat::SpawnHpSpec,
+        protocol_draw_x: Option<i32>,
+    },
+    SpawnReptomancerDagger {
+        reptomancer_id: EntityId,
+        slot: u8,
         logical_position: i32,
         hp: crate::semantics::combat::SpawnHpSpec,
         protocol_draw_x: Option<i32>,

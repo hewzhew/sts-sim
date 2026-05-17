@@ -85,6 +85,8 @@ Rust currently consumes explicit Java runtime fields for:
 - `Hexaghost.burn_upgraded`
 - `Darkling.first_move`
 - `Darkling.nip_dmg`
+- `Reptomancer.first_move`
+- `Reptomancer.dagger_slots`
 - `Chosen.first_turn`
 - `Chosen.used_hex`
 - `Lagavulin.idle_count`

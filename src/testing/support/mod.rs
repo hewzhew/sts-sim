@@ -117,6 +117,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         slime_boss: Default::default(),
         large_slime: Default::default(),
         spheric_guardian: Default::default(),
+        reptomancer: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -191,6 +192,9 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         monster.darkling.protocol_seeded = true;
         monster.darkling.first_move = true;
         monster.darkling.nip_dmg = 9;
+    }
+    if enemy_id == EnemyId::Reptomancer {
+        crate::content::monsters::beyond::reptomancer::initialize_runtime_state(&mut monster);
     }
     if enemy_id == EnemyId::Spiker {
         monster.spiker.protocol_seeded = true;

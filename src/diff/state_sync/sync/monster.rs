@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use super::super::build::{
     apply_monster_split_snapshot, seed_collector_enemy_slots_from_snapshots,
-    seed_gremlin_leader_slots_from_snapshots,
+    seed_gremlin_leader_slots_from_snapshots, seed_reptomancer_dagger_slots_from_snapshots,
 };
 use super::power::sync_monster_powers_from_snapshot;
 
@@ -59,6 +59,7 @@ pub fn sync_monsters_from_snapshots(
             slime_boss: Default::default(),
             large_slime: Default::default(),
             spheric_guardian: Default::default(),
+            reptomancer: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
@@ -89,6 +90,11 @@ pub fn sync_monsters_from_snapshots(
         &mut cs.entities.monsters,
     );
     seed_gremlin_leader_slots_from_snapshots(
+        truth_monsters,
+        &cs.runtime.monster_protocol,
+        &mut cs.entities.monsters,
+    );
+    seed_reptomancer_dagger_slots_from_snapshots(
         truth_monsters,
         &cs.runtime.monster_protocol,
         &mut cs.entities.monsters,

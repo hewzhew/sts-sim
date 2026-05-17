@@ -148,6 +148,7 @@ pub fn handle_spawn_monster(
         slime_boss: Default::default(),
         large_slime: Default::default(),
         spheric_guardian: Default::default(),
+        reptomancer: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -175,6 +176,9 @@ pub fn handle_spawn_monster(
             &mut state.rng.monster_hp_rng,
             state.meta.ascension_level,
         );
+    }
+    if enemy_id == crate::content::monsters::EnemyId::Reptomancer {
+        crate::content::monsters::beyond::reptomancer::initialize_runtime_state(&mut new_monster);
     }
     if enemy_id == crate::content::monsters::EnemyId::JawWorm {
         crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(
@@ -488,6 +492,43 @@ pub fn handle_spawn_gremlin_leader_minion(
     {
         leader.gremlin_leader.gremlin_slots[usize::from(gremlin_slot)] = Some(new_entity_id);
         leader.gremlin_leader.protocol_seeded = true;
+    }
+}
+
+pub fn handle_spawn_reptomancer_dagger(
+    reptomancer_id: usize,
+    dagger_slot: u8,
+    logical_position: i32,
+    hp: SpawnHpSpec,
+    protocol_draw_x: Option<i32>,
+    state: &mut CombatState,
+) {
+    assert!(
+        dagger_slot < 4,
+        "reptomancer dagger slot must be one of Java daggers[0..4)"
+    );
+    let monster_id = crate::content::monsters::EnemyId::SnakeDagger;
+    let (current_hp, max_hp) = resolve_spawn_hp(monster_id, hp, state);
+    let target_slot = smart_spawn_slot(state, logical_position, protocol_draw_x);
+    let new_entity_id = handle_spawn_monster(
+        monster_id,
+        target_slot,
+        current_hp,
+        max_hp,
+        logical_position,
+        protocol_draw_x,
+        true,
+        state,
+    );
+
+    if let Some(reptomancer) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|monster| monster.id == reptomancer_id)
+    {
+        reptomancer.reptomancer.dagger_slots[usize::from(dagger_slot)] = Some(new_entity_id);
+        reptomancer.reptomancer.protocol_seeded = true;
     }
 }
 
@@ -1157,6 +1198,31 @@ fn handle_update_gremlin_leader_state(
     }
 }
 
+fn handle_update_reptomancer_state(
+    monster_id: usize,
+    first_move: Option<bool>,
+    dagger_slots: Option<[Option<usize>; 4]>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = first_move {
+            monster.reptomancer.first_move = value;
+        }
+        if let Some(value) = dagger_slots {
+            monster.reptomancer.dagger_slots = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.reptomancer.protocol_seeded = value;
+        }
+    }
+}
+
 fn handle_update_gremlin_wizard_state(
     monster_id: usize,
     current_charge: Option<u8>,
@@ -1470,6 +1536,17 @@ pub fn handle_update_monster_runtime(
             gremlin_slots,
             protocol_seeded,
         } => handle_update_gremlin_leader_state(monster_id, gremlin_slots, protocol_seeded, state),
+        MonsterRuntimePatch::Reptomancer {
+            first_move,
+            dagger_slots,
+            protocol_seeded,
+        } => handle_update_reptomancer_state(
+            monster_id,
+            first_move,
+            dagger_slots,
+            protocol_seeded,
+            state,
+        ),
         MonsterRuntimePatch::GremlinWizard {
             current_charge,
             protocol_seeded,

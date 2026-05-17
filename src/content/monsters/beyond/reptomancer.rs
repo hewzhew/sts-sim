@@ -1,7 +1,7 @@
 use crate::content::monsters::exordium::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::{EnemyId, MonsterBehavior, MonsterRollContext, PreBattleLegacyRng};
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::runtime::rng::StsRng;
 use crate::semantics::combat::{
@@ -14,6 +14,15 @@ pub struct Reptomancer;
 
 impl Reptomancer {
     pub const DAGGER_DRAW_X: [i32; 4] = [210, -220, 180, -250];
+}
+
+pub fn initialize_runtime_state(entity: &mut MonsterEntity) {
+    if EnemyId::from_id(entity.monster_type) != Some(EnemyId::Reptomancer) {
+        return;
+    }
+    entity.reptomancer.protocol_seeded = true;
+    entity.reptomancer.first_move = true;
+    entity.reptomancer.dagger_slots = [None, None, None, None];
 }
 
 #[cfg(test)]
@@ -36,8 +45,9 @@ mod tests {
         assert!(
             actions.iter().any(|action| matches!(
                 action,
-                Action::SpawnMonsterSmart {
-                    monster_id: EnemyId::SnakeDagger,
+                Action::SpawnReptomancerDagger {
+                    reptomancer_id: 1,
+                    slot: 0,
                     logical_position: x,
                     ..
                 } if *x == Reptomancer::DAGGER_DRAW_X[0]
@@ -172,21 +182,35 @@ fn can_spawn(monsters: &[MonsterEntity], reptomancer_id: usize) -> bool {
         <= 3
 }
 
-fn occupied_dagger_slots(state: &CombatState, reptomancer_id: usize) -> [bool; 4] {
+fn runtime(entity: &MonsterEntity) -> &crate::runtime::combat::ReptomancerRuntimeState {
+    assert!(
+        entity.reptomancer.protocol_seeded,
+        "reptomancer runtime truth must be protocol-seeded or factory-seeded"
+    );
+    &entity.reptomancer
+}
+
+fn reptomancer_runtime_update(entity: &MonsterEntity, first_move: Option<bool>) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::Reptomancer {
+            first_move,
+            dagger_slots: None,
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
+fn occupied_dagger_slots(state: &CombatState, entity: &MonsterEntity) -> [bool; 4] {
     let mut occupied = [false; 4];
-    for monster in &state.entities.monsters {
-        if monster.id == reptomancer_id
-            || monster.is_dying
-            || monster.is_escaped
-            || monster.half_dead
-            || EnemyId::from_id(monster.monster_type) != Some(EnemyId::SnakeDagger)
-        {
-            continue;
-        }
-        for (slot, draw_x) in Reptomancer::DAGGER_DRAW_X.iter().enumerate() {
-            if monster.logical_position == *draw_x {
-                occupied[slot] = true;
-            }
+    for (slot, monster_id) in runtime(entity).dagger_slots.iter().enumerate() {
+        if let Some(monster_id) = monster_id {
+            occupied[slot] = state
+                .entities
+                .monsters
+                .iter()
+                .find(|monster| monster.id == *monster_id)
+                .is_some_and(|monster| !monster.is_dead_or_escaped());
         }
     }
     occupied
@@ -199,7 +223,7 @@ fn roll_move_custom_plan(
     num: i32,
     monsters: &[MonsterEntity],
 ) -> MonsterTurnPlan {
-    if entity.move_history().is_empty() {
+    if runtime(entity).first_move {
         return spawn_dagger_plan();
     }
 
@@ -234,6 +258,35 @@ impl MonsterBehavior for Reptomancer {
         entity: &MonsterEntity,
         _legacy_rng: PreBattleLegacyRng,
     ) -> Vec<Action> {
+        let Some(reptomancer_index) = state
+            .entities
+            .monsters
+            .iter()
+            .position(|monster| monster.id == entity.id)
+        else {
+            return Vec::new();
+        };
+
+        let mut dagger_slots = [None, None, None, None];
+        for (index, monster) in state.entities.monsters.iter().enumerate() {
+            if EnemyId::from_id(monster.monster_type) == Some(EnemyId::SnakeDagger) {
+                if index > reptomancer_index {
+                    dagger_slots[0] = Some(monster.id);
+                } else {
+                    dagger_slots[1] = Some(monster.id);
+                }
+            }
+        }
+        if let Some(reptomancer) = state
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|monster| monster.id == entity.id)
+        {
+            reptomancer.reptomancer.dagger_slots = dagger_slots;
+            reptomancer.reptomancer.protocol_seeded = true;
+        }
+
         state
             .entities
             .monsters
@@ -258,6 +311,19 @@ impl MonsterBehavior for Reptomancer {
         roll_move_custom_plan(rng, entity, ascension_level, num, ctx.monsters)
     }
 
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if runtime(entity).first_move {
+            vec![reptomancer_runtime_update(entity, Some(false))]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
         plan_for(entity.planned_move_id(), state.meta.ascension_level)
     }
@@ -274,7 +340,7 @@ impl MonsterBehavior for Reptomancer {
                 actions
             }
             (SPAWN_DAGGER, []) => {
-                let occupied = occupied_dagger_slots(state, entity.id);
+                let occupied = occupied_dagger_slots(state, entity);
                 let mut spawned = 0usize;
                 let mut actions = Vec::new();
                 for (slot, draw_x) in Reptomancer::DAGGER_DRAW_X.iter().enumerate() {
@@ -282,15 +348,15 @@ impl MonsterBehavior for Reptomancer {
                         continue;
                     }
                     spawned += 1;
-                    actions.push(Action::SpawnMonsterSmart {
-                        monster_id: EnemyId::SnakeDagger,
+                    actions.push(Action::SpawnReptomancerDagger {
+                        reptomancer_id: entity.id,
+                        slot: slot as u8,
                         hp: SpawnHpSpec {
                             current: SpawnHpValue::Rolled,
                             max: SpawnHpValue::Rolled,
                         },
                         logical_position: *draw_x,
                         protocol_draw_x: Some(*draw_x),
-                        is_minion: true,
                     });
                 }
                 actions

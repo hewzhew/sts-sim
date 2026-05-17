@@ -136,6 +136,8 @@ Examples of the correct pattern:
 - `Lagavulin.isOutTriggered`
 - `Darkling.firstMove`
 - `Darkling.nipDmg`
+- `Reptomancer.firstMove`
+- `Reptomancer.daggers`
 - `AcidSlime_L.splitTriggered`
 - `SpikeSlime_L.splitTriggered`
 - `SphericGuardian.firstMove`

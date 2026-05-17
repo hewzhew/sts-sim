@@ -45,6 +45,7 @@ Scope:
 | The Collector | `initial_spawn`, `ult_used`, `turns_taken`, `enemy_slots` | Yes | Yes | Yes | `lastMove(REVIVE)` / `lastTwoMoves(FIREBALL)` sequencing only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
+| Reptomancer | `first_move`, `dagger_slots` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 
 ## Notes
 
@@ -203,6 +204,16 @@ Scope:
   mirrors that through `Action::UpdateMonsterRuntime`; generic `SetMonsterMove` and
   `RollMonsterMove` no longer clear the flag as a side effect.
 - Remaining history usage is limited to Java's explicit `lastMove` / `lastTwoMoves` branching.
+
+### Reptomancer
+
+- `runtime_state.first_move` and `runtime_state.dagger_slots` are exported by `CommunicationMod`.
+- Rust state sync maps Java dagger slot monster instance ids to Rust entity ids in a second pass,
+  matching the Java private `daggers[4]` array instead of deriving occupancy from draw position.
+- Spawn Dagger execution now uses `Action::SpawnReptomancerDagger`, which spawns the dagger and
+  updates the corresponding runtime slot together.
+- Remaining history usage is limited to Java's explicit repeat rules around Snake Strike, Spawn
+  Dagger, and Big Bite.
 
 ### The Guardian
 

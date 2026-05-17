@@ -950,6 +950,7 @@ pub struct MonsterEntity {
     pub slime_boss: SlimeBossRuntimeState,
     pub large_slime: LargeSlimeRuntimeState,
     pub spheric_guardian: SphericGuardianRuntimeState,
+    pub reptomancer: ReptomancerRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
@@ -1327,6 +1328,13 @@ pub struct SphericGuardianRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub second_move: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ReptomancerRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_move: bool,
+    pub dagger_slots: [Option<EntityId>; 4],
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2224,6 +2232,7 @@ mod tests {
             slime_boss: SlimeBossRuntimeState::default(),
             large_slime: LargeSlimeRuntimeState::default(),
             spheric_guardian: SphericGuardianRuntimeState::default(),
+            reptomancer: ReptomancerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2300,6 +2309,7 @@ mod tests {
             slime_boss: SlimeBossRuntimeState::default(),
             large_slime: LargeSlimeRuntimeState::default(),
             spheric_guardian: SphericGuardianRuntimeState::default(),
+            reptomancer: ReptomancerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2373,6 +2383,7 @@ mod tests {
             slime_boss: SlimeBossRuntimeState::default(),
             large_slime: LargeSlimeRuntimeState::default(),
             spheric_guardian: SphericGuardianRuntimeState::default(),
+            reptomancer: ReptomancerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),

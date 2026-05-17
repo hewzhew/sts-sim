@@ -153,6 +153,7 @@ pub fn build_encounter(
             slime_boss: Default::default(),
             large_slime: Default::default(),
             spheric_guardian: Default::default(),
+            reptomancer: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
@@ -284,6 +285,9 @@ pub fn build_encounter(
                 hp_rng,
                 ascension_level,
             );
+        }
+        if enemy_id == EnemyId::Reptomancer {
+            crate::content::monsters::beyond::reptomancer::initialize_runtime_state(&mut monster);
         }
         if enemy_id == EnemyId::TheGuardian {
             crate::content::monsters::exordium::the_guardian::initialize_runtime_state(
