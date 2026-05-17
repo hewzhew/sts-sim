@@ -37,6 +37,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     if run_state.ascension_level >= 15 {
                         gets_curse = true;
                     }
+                    let omamori_snapshot = run_state
+                        .relics
+                        .iter()
+                        .find(|relic| relic.id == crate::content::relics::RelicId::Omamori)
+                        .map(|relic| relic.counter);
                     let relic_id = run_state.random_screenless_relic_reward();
                     if let Some(next_state) = run_state.obtain_relic_with_source(
                         relic_id,
@@ -46,7 +51,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         *engine_state = next_state;
                     }
                     if gets_curse {
-                        super::obtain_event_card(run_state, EventId::Mausoleum, CardId::Writhe);
+                        let source = DomainEventSource::Event(EventId::Mausoleum);
+                        run_state.add_card_to_deck_with_omamori_snapshot_from(
+                            CardId::Writhe,
+                            0,
+                            source,
+                            omamori_snapshot.is_some(),
+                            omamori_snapshot.unwrap_or(0),
+                        );
                     }
                     event_state.current_screen = 1;
                 }
@@ -149,5 +161,30 @@ mod tests {
             .find(|relic| relic.id == RelicId::Omamori)
             .expect("Omamori should remain after blocking Writhe");
         assert_eq!(omamori.counter, 1);
+    }
+
+    #[test]
+    fn newly_obtained_omamori_does_not_block_writhe_from_same_open() {
+        let mut run_state = mausoleum_run();
+        run_state.common_relic_pool = vec![RelicId::Omamori];
+        run_state.uncommon_relic_pool = vec![RelicId::Omamori];
+        run_state.rare_relic_pool = vec![RelicId::Omamori];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Mausoleum should obtain Omamori from the forced relic pool");
+        assert_eq!(
+            omamori.counter, 2,
+            "Java checks Omamori when Writhe's ShowCardAndObtainEffect is constructed"
+        );
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Writhe));
     }
 }

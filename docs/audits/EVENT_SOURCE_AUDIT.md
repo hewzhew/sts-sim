@@ -1034,20 +1034,23 @@ screenless relic through `spawnRelicAndObtain`.
 Mechanically, that means the relic is owned before the Writhe obtain effect
 resolves. This matters for relics such as `DarkstonePeriapt`: if Mausoleum rolls
 Darkstone and also gives Writhe, Darkstone should see that curse obtain and
-grant max HP.
+grant max HP. Omamori is the exception point: the Writhe effect constructor
+checks Omamori before the random relic is obtained, so a newly rolled Omamori
+must not block that same Writhe.
 
 Fixes:
 
 - Mausoleum now obtains the random relic before routing Writhe through the event
-  card obtain helper.
-- Added regression coverage for Darkstone timing, A15 RNG consumption, and
-  Omamori blocking Writhe after the relic has already been obtained.
+  card obtain helper, but uses a pre-relic Omamori snapshot for interception.
+- Added regression coverage for Darkstone timing, A15 RNG consumption, existing
+  Omamori blocking Writhe, and newly obtained Omamori not blocking Writhe.
 
 Tests:
 
 - `cursed_open_obtains_relic_before_writhe_effect_resolves_like_java`
 - `cursed_open_still_rolls_misc_rng_before_a15_forces_curse`
 - `omamori_blocks_writhe_after_relic_obtain_so_darkstone_does_not_trigger`
+- `newly_obtained_omamori_does_not_block_writhe_from_same_open`
 
 ### Cursed Tome HP_LOSS and book reward
 
@@ -1158,4 +1161,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `896 passed`.
+- Current result after this pass: `897 passed`.
