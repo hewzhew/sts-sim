@@ -75,7 +75,6 @@ Coverage:
 
 Open audit work:
 - Continue per-potion effect comparison against each Java `use()` method.
-- Recheck Toy Ornithopter / Sacred Bark ordering around run-level potion use.
 - Recheck `ObtainPotionAction` and out-of-combat `ObtainPotionEffect` ordering
   where reward screens or event flows are involved.
 
@@ -142,6 +141,27 @@ Rust result:
 Coverage:
 - `blood_potion_queues_fixed_use_time_heal_amount_without_minimum_one`
 - `blood_potion_heal_amount_is_computed_when_used_not_when_heal_executes`
+
+### Run-Level Potion Relic Ordering
+
+Status: `reviewed-clean`
+
+Java evidence:
+- `PotionPopUp` calls `potion.use(...)`, then iterates player relics and calls
+  `onUsePotion()`, then destroys the potion slot.
+- `ToyOrnithopter.onUsePotion()` heals immediately outside combat.
+- `EntropicBrew.use()` does not call `returnRandomPotion()` in the non-combat
+  Sozu branch, but `PotionPopUp` still calls relic `onUsePotion()` afterward.
+
+Rust result:
+- Run-level Blood Potion and Fruit Juice apply their potion effect first, then
+  Toy Ornithopter, then consume the potion slot.
+- Run-level Entropic Brew with Sozu consumes the slot, does not consume potion
+  RNG or create potions, and still triggers Toy Ornithopter.
+
+Coverage:
+- `run_level_blood_potion_uses_sacred_bark_toy_ornithopter_and_consumes_slot`
+- `run_level_entropic_brew_with_sozu_consumes_without_generating_potions`
 
 ## `use()` Effects Reviewed Without Code Change
 

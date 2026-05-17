@@ -1524,8 +1524,13 @@ mod tests {
     #[test]
     fn run_level_entropic_brew_with_sozu_consumes_without_generating_potions() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 10;
+        run_state.max_hp = 80;
         run_state.relics.clear();
         run_state.relics.push(RelicState::new(RelicId::Sozu));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::ToyOrnithopter));
         run_state.potions = vec![
             Some(crate::content::potions::Potion::new(
                 crate::content::potions::PotionId::EntropicBrew,
@@ -1534,6 +1539,7 @@ mod tests {
             None,
             None,
         ];
+        let potion_rng_before = run_state.rng_pool.potion_rng.counter;
         let mut engine_state = EngineState::MapNavigation;
         let mut combat_state = None;
 
@@ -1548,9 +1554,25 @@ mod tests {
         ));
 
         assert!(run_state.potions.iter().all(|slot| slot.is_none()));
+        assert_eq!(
+            run_state.rng_pool.potion_rng.counter, potion_rng_before,
+            "Java EntropicBrew non-combat Sozu branch flashes Sozu and does not call returnRandomPotion"
+        );
+        assert_eq!(
+            run_state.current_hp, 15,
+            "Java PotionPopUp still calls relic onUsePotion after EntropicBrew.use(), even when Sozu blocks potion generation"
+        );
         assert!(!run_state.emitted_events.iter().any(|event| matches!(
             event,
             crate::state::selection::DomainEvent::PotionObtained { .. }
+        )));
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::HpChanged {
+                delta: 5,
+                source: DomainEventSource::Relic(RelicId::ToyOrnithopter),
+                ..
+            }
         )));
     }
 
