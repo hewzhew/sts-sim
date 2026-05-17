@@ -82,12 +82,32 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::engine::run_loop::tick_run;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::ClientInput;
+    use crate::state::selection::{
+        DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
+        SelectionTargetRef,
+    };
 
     fn living_wall_run() -> RunState {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.event_state = Some(EventState::new(crate::state::events::EventId::LivingWall));
         run_state.emitted_events.clear();
         run_state
+    }
+
+    fn deck_card(id: CardId, uuid: u32, upgrades: u8) -> CombatCard {
+        let mut card = CombatCard::new(id, uuid);
+        card.upgrades = upgrades;
+        card
+    }
+
+    fn bottle_uuid(run_state: &mut RunState, uuid: u32) {
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = uuid as i32;
+        run_state.relics.push(bottle);
     }
 
     #[test]
@@ -110,9 +130,8 @@ mod tests {
         let mut run_state = living_wall_run();
         run_state.master_deck.clear();
         let strike = crate::runtime::combat::CombatCard::new(CardId::Strike, 100);
-        let mut bottle = crate::content::relics::RelicState::new(
-            crate::content::relics::RelicId::BottledFlame,
-        );
+        let mut bottle =
+            crate::content::relics::RelicState::new(crate::content::relics::RelicId::BottledFlame);
         bottle.amount = strike.uuid as i32;
         run_state.relics.push(bottle);
         run_state.master_deck.push(strike);
@@ -125,5 +144,105 @@ mod tests {
             matches!(engine_state, EngineState::EventRoom),
             "Java checks getGroupWithoutBottledCards(getPurgeableCards()) before opening the Grow upgrade grid"
         );
+    }
+
+    #[test]
+    fn forget_and_change_selection_exclude_bottled_and_unpurgeable_cards_like_java() {
+        for (choice_idx, expected_reason, expected_selection_reason) in [
+            (
+                0,
+                RunPendingChoiceReason::PurgeNonBottled,
+                SelectionReason::Purge,
+            ),
+            (
+                1,
+                RunPendingChoiceReason::TransformNonBottled,
+                SelectionReason::Transform,
+            ),
+        ] {
+            let mut run_state = living_wall_run();
+            run_state.master_deck = vec![
+                deck_card(CardId::Strike, 101, 0),
+                deck_card(CardId::Defend, 102, 0),
+                deck_card(CardId::AscendersBane, 103, 0),
+            ];
+            bottle_uuid(&mut run_state, 101);
+            let mut engine_state = EngineState::EventRoom;
+
+            handle_choice(&mut engine_state, &mut run_state, choice_idx);
+
+            let EngineState::RunPendingChoice(choice) = engine_state else {
+                panic!("Living Wall choice should open a deck selection");
+            };
+            assert_eq!(choice.reason, expected_reason);
+            let request = choice.selection_request(&run_state);
+            assert_eq!(request.reason, expected_selection_reason);
+            assert_eq!(
+                request.targets,
+                vec![SelectionTargetRef::CardUuid(102)],
+                "Java uses CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards()) for Forget and Change"
+            );
+        }
+    }
+
+    #[test]
+    fn forget_removes_selected_card_with_event_source() {
+        let mut run_state = living_wall_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101, 0)];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.master_deck.is_empty());
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(crate::state::events::EventId::LivingWall),
+            } if card.id == CardId::Strike && card.uuid == 101
+        )));
+    }
+
+    #[test]
+    fn change_transforms_selected_card_with_event_source() {
+        let mut run_state = living_wall_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101, 0)];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.master_deck.len(), 1);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardTransformed {
+                before,
+                source: DomainEventSource::Event(crate::state::events::EventId::LivingWall),
+                ..
+            } if before.id == CardId::Strike && before.uuid == 101
+        )));
     }
 }

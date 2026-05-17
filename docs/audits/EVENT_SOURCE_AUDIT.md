@@ -306,11 +306,17 @@ Fix:
   instead of opening an empty upgrade selection.
 - The Java non-bottled-purgeable guard before `Grow` is kept and covered, so a
   bottled-only upgradable deck advances without opening the upgrade prompt.
+- `Forget` and `Change` are now covered as non-bottled purgeable selections,
+  and their shared selection resolver must emit `Event(LivingWall)` sourced
+  remove/transform domain events.
 
 Tests:
 
 - `disabled_grow_does_not_open_empty_upgrade_selection`
 - `grow_keeps_java_non_bottled_purgeable_guard_before_upgrade_prompt`
+- `forget_and_change_selection_exclude_bottled_and_unpurgeable_cards_like_java`
+- `forget_removes_selected_card_with_event_source`
+- `change_transforms_selected_card_with_event_source`
 
 ### We Meet Again trade sources
 
@@ -1212,6 +1218,50 @@ Tests:
 - `trade_removes_offered_relic_and_obtains_gift_with_event_source`
 - `trade_with_existing_gift_grants_circlet_without_losing_offered_relic`
 
+### Transmogrifier transform selection semantics
+
+Java `events/shrines/Transmogrifier.java` uses event id string
+`Transmorgrifier` and opens
+`CardGroup.getGroupWithoutBottledCards(AbstractDungeon.player.masterDeck.getPurgeableCards())`.
+The selected card is removed from the master deck, transformed with
+`AbstractDungeon.miscRng`, and obtained through `ShowCardAndObtainEffect`.
+
+Audit result:
+
+- Rust keeps the Java id spelling through `EventId::Transmorgrifier`.
+- The event opens `RunPendingChoiceReason::TransformNonBottled`, excluding
+  bottled and unpurgeable cards.
+- The shared transform resolver emits `CardTransformed` with the event source.
+
+Tests:
+
+- `transform_selection_excludes_bottled_and_unpurgeable_cards_like_java`
+- `transformed_card_uses_event_source`
+
+### Duplicator full-deck copy semantics
+
+Java `events/shrines/Duplicator.java` opens `AbstractDungeon.player.masterDeck`
+directly. It does not use `getPurgeableCards()` and does not filter bottled
+cards. The selected card is copied through `makeStatEquivalentCopy()`, bottle
+flags are cleared on the copied Java card, and the copy is obtained through
+`ShowCardAndObtainEffect`.
+
+Audit result:
+
+- Rust already opens `RunPendingChoiceReason::Duplicate`, whose candidate
+  filter includes the full master deck.
+- The shared duplicate resolver uses `add_card_instance_copy_to_deck_from`,
+  preserving stat-equivalent fields such as upgrades and `misc_value`, while
+  allocating a fresh UUID so Rust bottle attachments remain on the original
+  UUID.
+- Added regression coverage that the Duplicator event source is used for the
+  obtained copy.
+
+Tests:
+
+- `duplicate_selection_uses_full_master_deck_like_java`
+- `duplicate_selection_obtains_stat_equivalent_copy_with_event_source`
+
 ### Note For Yourself profile card
 
 Java `events/shrines/NoteForYourself.java` reads the offered card from
@@ -1526,4 +1576,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `945 passed`.
+- Current result after this pass: `952 passed`.
