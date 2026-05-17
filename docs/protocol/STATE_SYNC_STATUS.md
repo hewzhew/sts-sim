@@ -76,6 +76,13 @@ Examples already wired:
 
 ### Monsters
 
+Rust consumes shared monster lifecycle truth as separate fields:
+
+- `monster.is_dying` maps to Rust `MonsterEntity.is_dying`
+- `monster.is_escaping || monster.is_escaped` maps to Rust `MonsterEntity.is_escaped`
+- `monster.half_dead` maps to Rust `MonsterEntity.half_dead`
+- `monster.is_gone` is only the Java `isDeadOrEscaped()` aggregate used for consistency checks
+
 Rust currently consumes explicit Java runtime fields for:
 
 - `Guardian.guardian_threshold`

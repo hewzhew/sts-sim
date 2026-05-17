@@ -273,9 +273,10 @@ fn align_rust_monsters_to_java(cs: &CombatState, java_ms: &[Value]) -> Vec<Optio
                             .monster_protocol_identity(monster.id)
                             .and_then(|identity| identity.draw_x)
                             == java_draw_x
-                        && monster.is_dying
-                            == (java_monster["is_gone"].as_bool().unwrap_or(false)
-                                && !java_monster["half_dead"].as_bool().unwrap_or(false))
+                        && monster.is_dying == java_monster["is_dying"].as_bool().unwrap_or(false)
+                        && monster.is_escaped
+                            == (java_monster["is_escaping"].as_bool().unwrap_or(false)
+                                || java_monster["is_escaped"].as_bool().unwrap_or(false))
                         && monster.half_dead == java_monster["half_dead"].as_bool().unwrap_or(false)
                 })
                 .map(|(idx, _)| idx)

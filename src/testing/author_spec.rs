@@ -352,6 +352,7 @@ pub fn compile_combat_author_spec(spec: &CombatAuthorSpec) -> Result<ScenarioFix
                 "runtime_state": compile_monster_runtime_state(monster, resolved_move_id),
                 "is_dying": false,
                 "is_escaping": false,
+                "is_escaped": false,
                 "half_dead": false,
                 "is_gone": false,
             }))
@@ -373,6 +374,7 @@ pub fn compile_combat_author_spec(spec: &CombatAuthorSpec) -> Result<ScenarioFix
                 "move_hits": monster.move_hits,
                 "is_dying": false,
                 "is_escaping": false,
+                "is_escaped": false,
                 "half_dead": false,
                 "is_gone": false,
             }))

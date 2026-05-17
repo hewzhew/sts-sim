@@ -1501,13 +1501,13 @@ fn format_java_monster_line(
             .unwrap_or("?")
     };
     let mut flags = Vec::new();
-    if bool_field("is_gone") || bool_field("is_dying") {
+    if bool_field("is_dying") {
         flags.push("dead");
     }
     if bool_field("half_dead") {
         flags.push("half_dead");
     }
-    if bool_field("is_escaping") {
+    if bool_field("is_escaping") || bool_field("is_escaped") {
         flags.push("escaping");
     }
     let powers = format_java_powers(truth_monster);

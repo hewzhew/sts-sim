@@ -54,6 +54,9 @@
             "first_move": false
           },
           "is_gone": false,
+          "is_dying": false,
+          "is_escaping": false,
+          "is_escaped": false,
           "half_dead": false
         }
       ],
@@ -126,6 +129,9 @@
           "intent": "ATTACK",
           "powers": [],
           "is_gone": false,
+          "is_dying": false,
+          "is_escaping": false,
+          "is_escaped": false,
           "half_dead": false
         }
       ],

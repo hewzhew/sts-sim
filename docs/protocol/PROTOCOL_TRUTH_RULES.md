@@ -77,6 +77,10 @@ Examples:
 - `monster.runtime_state.is_attacking`
 - `monster.runtime_state.form1`
 - `monster.runtime_state.blood_hit_count`
+- `monster.is_dying`
+- `monster.is_escaping`
+- `monster.is_escaped`
+- `monster.half_dead`
 - `relic.runtime_state.used_this_combat`
 - `relic.runtime_state.used_up`
 - `relic.runtime_state.counter`

@@ -747,6 +747,13 @@ fn snapshot_i32(monster: &Value, key: &str) -> Option<i32> {
         })
 }
 
+fn snapshot_bool_required(monster: &Value, key: &str) -> bool {
+    monster
+        .get(key)
+        .and_then(|value| value.as_bool())
+        .unwrap_or_else(|| panic!("strict state_sync: monster.{key} missing"))
+}
+
 pub(crate) fn monster_protocol_state_from_snapshot(
     monster: &Value,
     index: usize,
@@ -802,6 +809,9 @@ pub(crate) fn apply_monster_truth_snapshot(
         .get("is_gone")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let is_dying = snapshot_bool_required(monster, "is_dying");
+    let is_escaping = snapshot_bool_required(monster, "is_escaping");
+    let is_escaped = snapshot_bool_required(monster, "is_escaped");
 
     entity.current_hp = monster["current_hp"]
         .as_i64()
@@ -809,8 +819,14 @@ pub(crate) fn apply_monster_truth_snapshot(
     entity.max_hp = monster["max_hp"].as_i64().unwrap_or(0) as i32;
     entity.block = monster["block"].as_i64().unwrap_or(0) as i32;
     entity.slot = index as u8;
-    entity.is_dying = is_gone && !half_dead;
+    entity.is_dying = is_dying;
+    entity.is_escaped = is_escaping || is_escaped;
     entity.half_dead = half_dead;
+    assert_eq!(
+        is_gone,
+        is_dying || half_dead || is_escaping,
+        "strict state_sync: monster.is_gone must match Java isDeadOrEscaped()"
+    );
     entity.monster_type = monster_id_from_java(monster["id"].as_str().unwrap_or(""))
         .map(|e| e as usize)
         .unwrap_or(0);
@@ -967,6 +983,9 @@ mod tests {
                 "used_hex": true
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -985,6 +1004,9 @@ mod tests {
                 "first_turn": true
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1004,6 +1026,9 @@ mod tests {
                 "first_move": false
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1024,6 +1049,9 @@ mod tests {
                 "nip_dmg": 11
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1044,6 +1072,9 @@ mod tests {
                 "dagger_slots": []
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1064,6 +1095,9 @@ mod tests {
                 "scythe_cooldown": 2
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1083,6 +1117,9 @@ mod tests {
                 "count": 0
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1102,6 +1139,9 @@ mod tests {
                 "used_haste": true
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1121,6 +1161,9 @@ mod tests {
                 "is_attacking": true
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1140,6 +1183,9 @@ mod tests {
                 "is_attacking": false
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1159,6 +1205,9 @@ mod tests {
                 "count": 4
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1178,6 +1227,9 @@ mod tests {
                 "turn_count": 2
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1198,6 +1250,9 @@ mod tests {
                 "turn_count": 6
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1217,7 +1272,10 @@ mod tests {
                 "form1": false,
                 "first_turn": true
             },
-            "is_gone": false,
+            "is_gone": true,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": true
         })
     }
@@ -1240,6 +1298,9 @@ mod tests {
                 "blood_hit_count": 15
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1262,6 +1323,9 @@ mod tests {
                 "is_out_triggered": true
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1282,6 +1346,9 @@ mod tests {
                 "stolen_gold": 20
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1310,6 +1377,9 @@ mod tests {
                 "close_up_triggered": false
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1331,6 +1401,9 @@ mod tests {
                 "enemy_slots": []
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1347,6 +1420,11 @@ mod tests {
             "last_move_id": 2,
             "second_last_move_id": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "stab_count": 3
             }
@@ -1363,6 +1441,11 @@ mod tests {
             "move_base_damage": -1,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_turn": false,
                 "num_turns": 3
@@ -1380,6 +1463,11 @@ mod tests {
             "move_base_damage": -1,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "used_stasis": true
             }
@@ -1396,6 +1484,11 @@ mod tests {
             "move_base_damage": 14,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_turn": false,
                 "num_turns": 3,
@@ -1415,6 +1508,11 @@ mod tests {
             "move_base_damage": -1,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_move": false,
                 "used_mega_debuff": true
@@ -1436,6 +1534,9 @@ mod tests {
                 "first_move": false
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1450,6 +1551,11 @@ mod tests {
             "move_base_damage": -1,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "thorns_count": 5
             }
@@ -1466,6 +1572,11 @@ mod tests {
             "move_base_damage": 38,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "move_count": 5
             }
@@ -1482,6 +1593,11 @@ mod tests {
             "move_base_damage": 10,
             "move_hits": 4,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "move_count": 4,
                 "skewer_count": 4
@@ -1500,6 +1616,11 @@ mod tests {
             "move_hits": 1,
             "last_move_id": 2,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_turn": false,
                 "used_entangle": true
@@ -1518,6 +1639,11 @@ mod tests {
             "move_hits": 1,
             "last_move_id": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "used_bellow": true
             }
@@ -1535,6 +1661,11 @@ mod tests {
             "move_hits": 1,
             "last_move_id": 2,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "current_charge": 2
             }
@@ -1552,6 +1683,11 @@ mod tests {
             "move_hits": 1,
             "last_move_id": 3,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_move": false
             }
@@ -1569,6 +1705,11 @@ mod tests {
             "move_hits": 1,
             "last_move_id": 3,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_move": false
             }
@@ -1585,6 +1726,11 @@ mod tests {
             "move_base_damage": 10,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_move": false,
                 "second_move": true
@@ -1603,6 +1749,11 @@ mod tests {
             "move_hits": 1,
             "last_move_id": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_move": false,
                 "hard_mode": true
@@ -1620,6 +1771,11 @@ mod tests {
             "move_base_damage": -1,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_turn": false
             }
@@ -1636,6 +1792,11 @@ mod tests {
             "move_base_damage": -1,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "split_triggered": true
             }
@@ -1657,6 +1818,9 @@ mod tests {
             "draw_x": 900,
             "powers": [],
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         })
     }
@@ -1915,6 +2079,33 @@ mod tests {
     }
 
     #[test]
+    fn truth_import_maps_java_escaping_to_rust_escaped_not_dying() {
+        let snapshot = json!({
+            "id": "GremlinWarrior",
+            "current_hp": 20,
+            "max_hp": 24,
+            "block": 0,
+            "move_id": 99,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "powers": [],
+            "is_gone": true,
+            "is_dying": false,
+            "is_escaping": true,
+            "is_escaped": false,
+            "half_dead": false
+        });
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::GremlinWarrior as usize);
+        assert!(!entity.is_dying);
+        assert!(!entity.half_dead);
+        assert!(entity.is_escaped);
+    }
+
+    #[test]
     fn truth_import_seeds_reptomancer_dagger_slots_from_instance_ids() {
         let reptomancer_snapshot = json!({
             "id": "Reptomancer",
@@ -1925,6 +2116,11 @@ mod tests {
             "move_base_damage": -1,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_move": false,
                 "dagger_slots": [
@@ -1953,6 +2149,11 @@ mod tests {
             "move_base_damage": 9,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "first_move": false
             }
@@ -1970,7 +2171,11 @@ mod tests {
             "runtime_state": {
                 "first_move": false
             },
-            "is_gone": true
+            "is_gone": true,
+            "is_dying": true,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false
         });
 
         let mut monsters = vec![
@@ -2074,6 +2279,11 @@ mod tests {
             "move_base_damage": -1,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "initial_spawn": false,
                 "ult_used": true,
@@ -2104,7 +2314,11 @@ mod tests {
             "move_base_damage": 7,
             "move_hits": 1,
             "powers": [],
-            "is_gone": true
+            "is_gone": true,
+            "is_dying": true,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false
         });
         let torch_two_snapshot = json!({
             "id": "TorchHead",
@@ -2115,7 +2329,12 @@ mod tests {
             "move_id": 1,
             "move_base_damage": 7,
             "move_hits": 1,
-            "powers": []
+            "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false
         });
 
         let mut monsters = vec![
@@ -2170,6 +2389,11 @@ mod tests {
             "move_base_damage": -1,
             "move_hits": 1,
             "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false,
             "runtime_state": {
                 "gremlin_slots": [
                     {
@@ -2196,7 +2420,12 @@ mod tests {
             "move_id": 1,
             "move_base_damage": 4,
             "move_hits": 1,
-            "powers": []
+            "powers": [],
+            "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false
         });
         let wizard_snapshot = json!({
             "id": "GremlinWizard",
@@ -2211,7 +2440,11 @@ mod tests {
             "runtime_state": {
                 "current_charge": 2
             },
-            "is_gone": true
+            "is_gone": true,
+            "is_dying": true,
+            "is_escaping": false,
+            "is_escaped": false,
+            "half_dead": false
         });
 
         let mut monsters = vec![
@@ -2500,6 +2733,9 @@ mod tests {
                 "bite_damage": 7
             },
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         });
         let mut entity = blank_monster_entity();
@@ -2526,6 +2762,9 @@ mod tests {
             "last_move_id": 3,
             "powers": [],
             "is_gone": false,
+            "is_dying": false,
+            "is_escaping": false,
+            "is_escaped": false,
             "half_dead": false
         });
         let mut entity = blank_monster_entity();

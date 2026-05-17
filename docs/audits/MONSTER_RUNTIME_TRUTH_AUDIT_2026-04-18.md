@@ -62,6 +62,15 @@ Scope:
 
 ## Notes
 
+### Shared Monster Lifecycle
+
+- `CommunicationMod` now exports `is_dying`, `is_escaping`, and `is_escaped` separately from
+  the aggregate `is_gone`.
+- Rust state sync maps Java `isDying` to `MonsterEntity.is_dying` and maps
+  `isEscaping || escaped` to `MonsterEntity.is_escaped`.
+- `is_gone` remains only a consistency check for Java `isDeadOrEscaped()`. It must not be used to
+  infer death, because Java `isDeadOrEscaped()` also returns true while a monster is escaping.
+
 ### Byrd
 
 - `runtime_state.first_move` and `runtime_state.is_flying` are exported by `CommunicationMod`.
