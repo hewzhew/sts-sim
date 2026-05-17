@@ -712,7 +712,9 @@ fn encounter_key_to_id(key: &str) -> Option<EncounterId> {
         "Gremlin Nob" => Some(EncounterId::GremlinNob),
         "The Mushroom Lair" | "3 Fungi Beasts" => Some(EncounterId::TheMushroomLair),
         "2 Orb Walkers" => Some(EncounterId::TwoOrbWalkers),
-        "Mind Bloom Boss" => Some(EncounterId::AwakenedOne),
+        "The Guardian" => Some(EncounterId::TheGuardian),
+        "Hexaghost" => Some(EncounterId::Hexaghost),
+        "Slime Boss" => Some(EncounterId::SlimeBoss),
         _ => None,
     }
 }
@@ -913,6 +915,20 @@ mod tests {
         assert_eq!(observation.potions.len(), observation.potion_slots);
         assert!(observation.act_boss.is_some());
         assert!(!observation.next_nodes.is_empty());
+    }
+
+    #[test]
+    fn event_combat_key_mapper_uses_actual_mind_bloom_boss() {
+        assert_eq!(
+            encounter_key_to_id("The Guardian"),
+            Some(EncounterId::TheGuardian)
+        );
+        assert_eq!(encounter_key_to_id("Hexaghost"), Some(EncounterId::Hexaghost));
+        assert_eq!(
+            encounter_key_to_id("Slime Boss"),
+            Some(EncounterId::SlimeBoss)
+        );
+        assert_eq!(encounter_key_to_id("Mind Bloom Boss"), None);
     }
 
     #[test]
