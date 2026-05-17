@@ -20,6 +20,9 @@ Java evidence:
   normal combat/chest reward paths use `returnRandomRelic`.
 - If a normal front candidate fails `canSpawn`, Java falls back to the end
   path for that tier.
+- `AbstractDungeon.initializeRelicList()` populates each tier pool, shuffles
+  every full pool with `Collections.shuffle(pool, new Random(relicRng.randomLong()))`,
+  and only then removes `relicsToRemoveOnStart`.
 
 Rust result:
 - `RunState::random_relic_by_tier` now models the normal front draw path.
@@ -27,12 +30,15 @@ Rust result:
 - Both paths share the same `canSpawn` context, so shop/end paths no longer
   bypass bottled/floor/class/boss relic gates.
 - Shop generation and Courier relic-slot replacement now use the end path.
+- `RunState::init_relic_pools` now shuffles before removing already-owned
+  relics, preserving Java's remaining-pool order.
 
 Coverage:
 - `normal_and_end_relic_paths_consume_opposite_pool_ends_like_java`
 - `normal_relic_rewards_can_return_bottled_relics_but_screenless_rewards_skip_them`
 - `ectoplasm_can_spawn_only_in_act_one_and_blocks_gold_gain`
 - `rare_run_relic_can_spawn_gates_match_java_sources`
+- `init_relic_pools_shuffles_before_removing_owned_relics_like_java`
 
 ## Pool-Level Correction - Relic `canSpawn` Gates
 

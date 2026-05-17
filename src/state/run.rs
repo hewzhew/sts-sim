@@ -1069,17 +1069,6 @@ impl RunState {
         self.shop_relic_pool = build_relic_pool(RelicTier::Shop, player_class);
         self.boss_relic_pool = build_relic_pool(RelicTier::Boss, player_class);
 
-        // Remove already-owned relics from all pools
-        let owned: Vec<crate::content::relics::RelicId> =
-            self.relics.iter().map(|r| r.id).collect();
-        for &id in &owned {
-            self.common_relic_pool.retain(|&r| r != id);
-            self.uncommon_relic_pool.retain(|&r| r != id);
-            self.rare_relic_pool.retain(|&r| r != id);
-            self.shop_relic_pool.retain(|&r| r != id);
-            self.boss_relic_pool.retain(|&r| r != id);
-        }
-
         // Shuffle each pool with relicRng.randomLong() as seed (Java pattern)
         crate::runtime::rng::shuffle_with_random_long(
             &mut self.common_relic_pool,
@@ -1101,6 +1090,18 @@ impl RunState {
             &mut self.boss_relic_pool,
             &mut self.rng_pool.relic_rng,
         );
+
+        // Java shuffles full pools first, then removes relicsToRemoveOnStart.
+        // Removing before shuffle changes the order of the remaining relics.
+        let owned: Vec<crate::content::relics::RelicId> =
+            self.relics.iter().map(|r| r.id).collect();
+        for &id in &owned {
+            self.common_relic_pool.retain(|&r| r != id);
+            self.uncommon_relic_pool.retain(|&r| r != id);
+            self.rare_relic_pool.retain(|&r| r != id);
+            self.shop_relic_pool.retain(|&r| r != id);
+            self.boss_relic_pool.retain(|&r| r != id);
+        }
     }
 
     /// Initialize encounter scheduling lists for the current act.
@@ -1906,6 +1907,32 @@ mod tests {
             ]
         );
         assert_eq!(watcher.relics[0].id, RelicId::PureWater);
+    }
+
+    #[test]
+    fn init_relic_pools_shuffles_before_removing_owned_relics_like_java() {
+        let mut run = RunState::new(33, 0, false, "Ironclad");
+        run.relics
+            .push(crate::content::relics::RelicState::new(RelicId::Anchor));
+
+        let mut expected_common = crate::content::relics::build_relic_pool(
+            crate::content::relics::RelicTier::Common,
+            "Ironclad",
+        );
+        let mut expected_relic_rng = run.rng_pool.relic_rng.clone();
+        crate::runtime::rng::shuffle_with_random_long(
+            &mut expected_common,
+            &mut expected_relic_rng,
+        );
+        expected_common.retain(|&id| id != RelicId::Anchor);
+
+        run.init_relic_pools();
+
+        assert_eq!(
+            run.common_relic_pool, expected_common,
+            "Java initializeRelicList shuffles full pools before removing relicsToRemoveOnStart"
+        );
+        assert!(!run.common_relic_pool.contains(&RelicId::Anchor));
     }
 
     #[test]
