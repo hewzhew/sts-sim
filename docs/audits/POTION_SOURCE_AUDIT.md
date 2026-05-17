@@ -28,8 +28,12 @@ mechanical simulator truth and must stay anchored to the Java source under
   actions first, relic hooks second, slot clear after successful use.
 - `AbstractPotion.canUse()` blocks most potion use outside active combat, after
   the turn has ended, when monsters are basically dead, and in `WeMeetAgain`.
-  Some potion classes override this; `BloodPotion` and `FairyPotion` are the
-  important exceptions.
+  Some potion classes override this. `BloodPotion`, `FruitJuice`, and
+  `EntropicBrew` can be manually used outside combat unless `WeMeetAgain` is
+  active; `FairyPotion` cannot be manually used.
+- `AbstractPotion.canDiscard()` is true except while the current room event is
+  `WeMeetAgain`. Java `PotionPopUp` uses this for top-panel discard, so this is
+  a run-level potion lifetime rule rather than combat strategy.
 - `AbstractPotion.getPotency()` doubles potency when `SacredBark` is owned.
   Rust combat use resolves effective potency at use time.
 - `PotionHelper.getPotions(class, getAll)` order is source-parity critical.
@@ -47,6 +51,7 @@ mechanical simulator truth and must stay anchored to the Java source under
 | Liquid Memories | `BetterDiscardPileToHandAction(number, 0)` auto-moves when discard size is `<= number`; if hand fills, remaining discard cards stay in discard. Empty discard still consumes the potion and no-ops. | Immediate path now checks hand capacity before removing each discard card and leaves overflow cards in discard. | `liquid_memories_auto_move_does_not_drop_cards_when_hand_fills`; `engine_fizzles_liquid_memories_empty_discard_after_consuming_potion` |
 | Snecko Oil | Queues draw, then `RandomizeHandCostAction`; that action skips `cost < 0`, rolls 0-3 per eligible card, and changes both `cost` and `costForTurn` when different. | `handle_randomize_hand_costs` now reads current combat cost, skips X/unplayable cost, and mutates combat plus turn cost. | `snecko_oil_randomize_updates_combat_cost_and_turn_cost_like_java` |
 | Smoke Bomb | `SmokeBomb.canUse()` rejects if any monster has `BackAttack` or `EnemyType.BOSS`; it is not just a room-level boss flag. | `handle_use_potion` and `engine_local_moves` now block by room boss flag, visible boss monster type, and `BackAttack`. | `smoke_bomb_is_blocked_by_spire_shield_back_attack_power`; `smoke_bomb_is_blocked_by_boss_monster_type_even_without_room_flag`; `engine_local_moves_skip_smoke_bomb_when_visible_monster_is_boss` |
+| Run observation `canUse` / `canDiscard` | Non-combat top-panel affordances are dynamic: only Blood/Fruit/Entropic override non-combat use, `FairyPotion` is passive, and `WeMeetAgain` blocks both use and discard. During combat, potion slots live in combat state, not stale run state. | `build_potion_observations` now reads combat slots when combat is active and uses source-backed non-combat affordance helpers for run-state slots. | `non_combat_potion_observation_uses_java_can_use_overrides`; `we_meet_again_blocks_potion_use_and_discard_observation`; `combat_potion_observation_uses_combat_slots_not_stale_run_slots` |
 
 ## Short-Term Clean Areas
 
@@ -58,13 +63,20 @@ mechanical simulator truth and must stay anchored to the Java source under
   cards, hand/grid choices, and flee.
 - `FairyPotion` is not emitted as a manual legal move and remains passive.
 - `Sozu` blocks potion obtain paths through `obtain_specific_potion_if_allowed`.
+- Full-run observation no longer treats `Potion::can_use` / `can_discard` as
+  context-free truth: combat slots come from `CombatState`, and non-combat
+  affordances account for Blood/Fruit/Entropic overrides and `WeMeetAgain`.
 
 ## Boundaries Still Not Closed
 
-- Out-of-combat potion use is not treated as closed here. `BloodPotion` can be
-  used outside combat in Java; this audit only validates combat action paths.
-- Event-specific `canUse` / `canDiscard` rules such as `WeMeetAgain` are not
-  fully owned by the combat potion handler.
+- Out-of-combat potion execution is not treated as closed here. The observation
+  layer exposes Java-like use/discard affordances, but `ClientInput::UsePotion`
+  and `ClientInput::DiscardPotion` outside combat still need a source-backed
+  run-level handler before policy can actually take those actions.
+- `EntropicBrew` outside combat uses Java's non-limited
+  `returnRandomPotion()` path and effect timing around slot destruction. That
+  should be implemented deliberately with run-level RNG/slot tests, not folded
+  into combat `Action::UsePotion`.
 - The passive death-prevention path for `FairyPotion` belongs to revive/death
   handling, not `Action::UsePotion`; it should remain audited with death hooks.
 - Potion reward/drop generation is partly covered by relic/run audits, but it is
@@ -75,5 +87,4 @@ mechanical simulator truth and must stay anchored to the Java source under
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `770 passed`.
-
+- Current result after this pass: `999 passed`.

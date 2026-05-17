@@ -60,6 +60,9 @@ and reachability gates must be checked separately.
      exceptions;
    - connect combat potion audit with events, rewards, shop, and top-panel
      behavior.
+   - current progress: observation now reflects Java top-panel affordances for
+     Blood/Fruit/Entropic, `FairyPotion`, and `WeMeetAgain`; run-level
+     non-combat use/discard execution remains open.
 
 3. Relic pool and `canSpawn` closure:
    - turn the existing relic audit into pool-level validation, not just
@@ -140,4 +143,3 @@ Important boundary:
 Validation:
 
 - `cargo test events::generator --all-targets`
-

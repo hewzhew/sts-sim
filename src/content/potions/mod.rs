@@ -642,6 +642,20 @@ impl Potion {
     }
 }
 
+pub fn potion_can_discard_in_event(is_we_meet_again_event: bool) -> bool {
+    !is_we_meet_again_event
+}
+
+pub fn potion_can_use_out_of_combat(id: PotionId, is_we_meet_again_event: bool) -> bool {
+    if is_we_meet_again_event {
+        return false;
+    }
+    matches!(
+        id,
+        PotionId::BloodPotion | PotionId::FruitJuice | PotionId::EntropicBrew
+    )
+}
+
 /// Returns a random potion with rarity weighting, matching Java's `AbstractDungeon.returnRandomPotion()`.
 /// Rolls 0-99: <65 = Common, 65-89 = Uncommon, ≥90 = Rare.
 /// When `limited=true`, excludes FruitJuice (Java behavior for EntropicBrew).

@@ -41,7 +41,11 @@ pub fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
         plan_profile: build_deck_plan_profile(&ctx.run_state),
         deck_cards: build_deck_card_observations(&ctx.run_state),
         relics: build_relic_observations(&ctx.run_state),
-        potions: build_potion_observations(&ctx.run_state),
+        potions: build_potion_observations(
+            &ctx.run_state,
+            ctx.combat_state.as_ref(),
+            &ctx.engine_state,
+        ),
         map: build_map_observation_if_relevant(&ctx.engine_state, &ctx.run_state),
         next_nodes: build_next_node_observations(&ctx.run_state),
         act_boss: ctx
@@ -276,9 +280,19 @@ pub fn build_relic_observations(run_state: &RunState) -> Vec<RunRelicObservation
         .collect()
 }
 
-pub fn build_potion_observations(run_state: &RunState) -> Vec<RunPotionSlotObservationV0> {
-    run_state
-        .potions
+pub fn build_potion_observations(
+    run_state: &RunState,
+    combat: Option<&CombatState>,
+    engine_state: &EngineState,
+) -> Vec<RunPotionSlotObservationV0> {
+    let source_potions = combat
+        .map(|combat| &combat.entities.potions)
+        .unwrap_or(&run_state.potions);
+    let is_we_meet_again_event = run_state
+        .event_state
+        .as_ref()
+        .is_some_and(|event| event.id == crate::state::events::EventId::WeMeetAgain);
+    source_potions
         .iter()
         .enumerate()
         .map(|(slot_index, slot)| match slot {
@@ -286,8 +300,14 @@ pub fn build_potion_observations(run_state: &RunState) -> Vec<RunPotionSlotObser
                 slot_index,
                 potion_id: Some(format!("{:?}", potion.id)),
                 uuid: Some(potion.uuid),
-                can_use: potion.can_use,
-                can_discard: potion.can_discard,
+                can_use: potion_can_use_in_observation(
+                    potion,
+                    combat,
+                    engine_state,
+                    is_we_meet_again_event,
+                ),
+                can_discard: potion.can_discard
+                    && crate::content::potions::potion_can_discard_in_event(is_we_meet_again_event),
                 requires_target: potion.requires_target,
             },
             None => RunPotionSlotObservationV0 {
@@ -846,6 +866,42 @@ pub fn build_combat_hand_card_observations(
         .collect()
 }
 
+fn potion_can_use_in_observation(
+    potion: &crate::content::potions::Potion,
+    combat: Option<&CombatState>,
+    engine_state: &EngineState,
+    is_we_meet_again_event: bool,
+) -> bool {
+    if let Some(combat) = combat {
+        return potion.can_use
+            && matches!(engine_state, EngineState::CombatPlayerTurn)
+            && !is_we_meet_again_event
+            && potion.id != crate::content::potions::PotionId::FairyPotion
+            && !combat.are_monsters_basically_dead_java()
+            && !combat_potion_blocked_by_java_special_case(potion.id, combat);
+    }
+
+    potion.can_use
+        && crate::content::potions::potion_can_use_out_of_combat(potion.id, is_we_meet_again_event)
+}
+
+fn combat_potion_blocked_by_java_special_case(
+    id: crate::content::potions::PotionId,
+    combat: &CombatState,
+) -> bool {
+    id == crate::content::potions::PotionId::SmokeBomb
+        && (combat.meta.is_boss_fight
+            || combat.entities.monsters.iter().any(|monster| {
+                crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                    .is_some_and(|enemy_id| enemy_id.is_boss())
+                    || crate::content::powers::store::has_power(
+                        combat,
+                        monster.id,
+                        crate::content::powers::PowerId::BackAttack,
+                    )
+            }))
+}
+
 pub fn base_semantics_for_card(card_id: CardId, upgrades: u8) -> Vec<String> {
     let def = crate::content::cards::get_card_definition(card_id);
     let mut tags = Vec::new();
@@ -1032,5 +1088,80 @@ pub fn reward_item_observation(
         },
         claimable,
         opens_card_choice: matches!(item, RewardItem::Card { .. }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::potions::{Potion, PotionId};
+    use crate::state::events::{EventId, EventState};
+
+    fn potion_obs_by_id(
+        observations: &[RunPotionSlotObservationV0],
+        id: PotionId,
+    ) -> &RunPotionSlotObservationV0 {
+        let needle = format!("{id:?}");
+        observations
+            .iter()
+            .find(|slot| slot.potion_id.as_deref() == Some(needle.as_str()))
+            .expect("potion observation should exist")
+    }
+
+    #[test]
+    fn non_combat_potion_observation_uses_java_can_use_overrides() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.potions = vec![
+            Some(Potion::new(PotionId::BloodPotion, 1)),
+            Some(Potion::new(PotionId::FruitJuice, 2)),
+            Some(Potion::new(PotionId::EntropicBrew, 3)),
+            Some(Potion::new(PotionId::BlockPotion, 4)),
+            Some(Potion::new(PotionId::FairyPotion, 5)),
+        ];
+
+        let observations = build_potion_observations(&run_state, None, &EngineState::MapNavigation);
+
+        assert!(potion_obs_by_id(&observations, PotionId::BloodPotion).can_use);
+        assert!(potion_obs_by_id(&observations, PotionId::FruitJuice).can_use);
+        assert!(potion_obs_by_id(&observations, PotionId::EntropicBrew).can_use);
+        assert!(!potion_obs_by_id(&observations, PotionId::BlockPotion).can_use);
+        assert!(!potion_obs_by_id(&observations, PotionId::FairyPotion).can_use);
+        assert!(observations.iter().all(|slot| slot.can_discard));
+    }
+
+    #[test]
+    fn we_meet_again_blocks_potion_use_and_discard_observation() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(EventState::new(EventId::WeMeetAgain));
+        run_state.potions = vec![
+            Some(Potion::new(PotionId::BloodPotion, 1)),
+            Some(Potion::new(PotionId::EntropicBrew, 2)),
+            Some(Potion::new(PotionId::FirePotion, 3)),
+        ];
+
+        let observations = build_potion_observations(&run_state, None, &EngineState::EventRoom);
+
+        assert!(observations.iter().all(|slot| !slot.can_use));
+        assert!(observations.iter().all(|slot| !slot.can_discard));
+    }
+
+    #[test]
+    fn combat_potion_observation_uses_combat_slots_not_stale_run_slots() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.potions = vec![Some(Potion::new(PotionId::BloodPotion, 10))];
+        let mut combat =
+            crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
+                crate::content::monsters::EnemyId::JawWorm,
+            )]);
+        combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 20))];
+
+        let observations =
+            build_potion_observations(&run_state, Some(&combat), &EngineState::CombatPlayerTurn);
+
+        assert_eq!(observations.len(), 1);
+        assert_eq!(observations[0].potion_id.as_deref(), Some("FirePotion"));
+        assert!(observations[0].can_use);
+        assert!(observations[0].can_discard);
+        assert!(observations[0].requires_target);
     }
 }
