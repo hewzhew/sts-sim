@@ -53,8 +53,8 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         ) {
                             *_engine_state = next_state;
                         }
+                        event_state.current_screen = 1;
                     }
-                    event_state.current_screen = 1;
                 }
                 1 => {
                     // Rob: relic + Shame curse
@@ -122,6 +122,27 @@ mod tests {
         });
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn disabled_pay_does_not_advance_or_obtain_relic() {
+        let mut run_state = addict_run_for_rob(RelicId::Anchor);
+        run_state.gold = 84;
+        let mut engine_state = EngineState::EventRoom;
+
+        let choices = get_choices(&run_state, run_state.event_state.as_ref().unwrap());
+        assert!(choices[0].disabled);
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.gold, 84);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(!run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Anchor));
+        assert!(run_state.take_emitted_events().is_empty());
     }
 
     #[test]

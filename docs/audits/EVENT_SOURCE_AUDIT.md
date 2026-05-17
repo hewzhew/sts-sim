@@ -670,9 +670,12 @@ Fixes:
   current relic set.
 - The Addict rob branch snapshots Omamori before obtaining the stolen relic, then
   obtains `Shame` with that snapshot.
+- The disabled paid branch now stays inert when the player has less than 85
+  gold.
 
 Tests:
 
+- `disabled_pay_does_not_advance_or_obtain_relic`
 - `rob_new_omamori_does_not_block_shame_from_same_choice`
 - `rob_existing_omamori_still_blocks_shame_before_stolen_relic_resolves`
 - `rob_new_darkstone_still_triggers_on_shame_after_relic_obtain`
@@ -1091,8 +1094,9 @@ Tests:
 Java `events/shrines/WomanInBlue.java` buys potion rewards, not direct potion
 inventory entries. For each paid choice it loses gold, clears room rewards,
 adds one to three `RewardItem(PotionHelper.getRandomPotion())`, marks the room
-complete, and opens the combat reward screen. The purchase buttons are gated by
-gold only; potion capacity and Sozu are handled later by the reward screen.
+complete, and opens the combat reward screen. The purchase buttons are not
+disabled by gold in Java; `loseGold(cost)` clamps the player's gold to zero.
+Potion capacity and Sozu are handled later by the reward screen.
 
 The A15 leave branch applies
 `DamageInfo(null, ceil(maxHealth * 0.05), HP_LOSS)`. HP_LOSS bypasses block and
@@ -1103,6 +1107,8 @@ Fixes:
 - Buying potions now opens `EngineState::RewardScreen` containing potion reward
   items instead of calling `obtain_potion` directly.
 - Potion purchase semantics no longer require an empty potion slot.
+- Potion purchase semantics no longer require enough gold; buying with
+  insufficient gold now clamps gold to zero and still opens potion rewards.
 - A15 leave damage now emits `HpChanged` with `Event(WomanInBlue)` and applies
   Tungsten Rod's HP-loss reduction.
 
@@ -1110,6 +1116,7 @@ Tests:
 
 - `three_potion_option_exposes_trade_semantics`
 - `buying_potions_opens_reward_screen_without_filling_slots_directly`
+- `buying_potions_with_insufficient_gold_clamps_gold_like_java`
 - `ascension_leave_hp_loss_uses_event_source_and_tungsten_rod`
 
 ### Tomb of Lord Red Mask relic obtain
@@ -1464,4 +1471,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `934 passed`.
+- Current result after this pass: `936 passed`.

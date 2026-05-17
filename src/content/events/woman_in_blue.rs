@@ -1,8 +1,8 @@
 use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::EngineState;
 use crate::state::events::{
-    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionConstraint,
-    EventOptionSemantics, EventOptionTransition, EventState,
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -14,9 +14,8 @@ const COST_3: i32 = 40;
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
-            let mut choices = vec![];
-            if run_state.gold >= COST_1 {
-                choices.push(EventOption::new(
+            let mut choices = vec![
+                EventOption::new(
                     EventChoiceMeta::new(format!("[1 Potion] Lose {} Gold.", COST_1)),
                     EventOptionSemantics {
                         action: EventActionKind::Trade,
@@ -24,33 +23,13 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             EventEffect::LoseGold(COST_1),
                             EventEffect::ObtainPotion { count: 1 },
                         ],
-                        constraints: vec![EventOptionConstraint::RequiresGold(COST_1)],
+                        constraints: vec![],
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
                     },
-                ));
-            } else {
-                choices.push(EventOption::new(
-                    EventChoiceMeta::disabled(
-                        format!("[1 Potion] {} Gold.", COST_1),
-                        "Not enough Gold",
-                    ),
-                    EventOptionSemantics {
-                        action: EventActionKind::Trade,
-                        effects: vec![
-                            EventEffect::LoseGold(COST_1),
-                            EventEffect::ObtainPotion { count: 1 },
-                        ],
-                        constraints: vec![EventOptionConstraint::RequiresGold(COST_1)],
-                        transition: EventOptionTransition::AdvanceScreen,
-                        repeatable: false,
-                        terminal: false,
-                    },
-                ));
-            }
-            if run_state.gold >= COST_2 {
-                choices.push(EventOption::new(
+                ),
+                EventOption::new(
                     EventChoiceMeta::new(format!("[2 Potions] Lose {} Gold.", COST_2)),
                     EventOptionSemantics {
                         action: EventActionKind::Trade,
@@ -58,33 +37,13 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             EventEffect::LoseGold(COST_2),
                             EventEffect::ObtainPotion { count: 2 },
                         ],
-                        constraints: vec![EventOptionConstraint::RequiresGold(COST_2)],
+                        constraints: vec![],
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
                     },
-                ));
-            } else {
-                choices.push(EventOption::new(
-                    EventChoiceMeta::disabled(
-                        format!("[2 Potions] {} Gold.", COST_2),
-                        "Not enough Gold",
-                    ),
-                    EventOptionSemantics {
-                        action: EventActionKind::Trade,
-                        effects: vec![
-                            EventEffect::LoseGold(COST_2),
-                            EventEffect::ObtainPotion { count: 2 },
-                        ],
-                        constraints: vec![EventOptionConstraint::RequiresGold(COST_2)],
-                        transition: EventOptionTransition::AdvanceScreen,
-                        repeatable: false,
-                        terminal: false,
-                    },
-                ));
-            }
-            if run_state.gold >= COST_3 {
-                choices.push(EventOption::new(
+                ),
+                EventOption::new(
                     EventChoiceMeta::new(format!("[3 Potions] Lose {} Gold.", COST_3)),
                     EventOptionSemantics {
                         action: EventActionKind::Trade,
@@ -92,31 +51,13 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             EventEffect::LoseGold(COST_3),
                             EventEffect::ObtainPotion { count: 3 },
                         ],
-                        constraints: vec![EventOptionConstraint::RequiresGold(COST_3)],
+                        constraints: vec![],
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
                     },
-                ));
-            } else {
-                choices.push(EventOption::new(
-                    EventChoiceMeta::disabled(
-                        format!("[3 Potions] {} Gold.", COST_3),
-                        "Not enough Gold",
-                    ),
-                    EventOptionSemantics {
-                        action: EventActionKind::Trade,
-                        effects: vec![
-                            EventEffect::LoseGold(COST_3),
-                            EventEffect::ObtainPotion { count: 3 },
-                        ],
-                        constraints: vec![EventOptionConstraint::RequiresGold(COST_3)],
-                        transition: EventOptionTransition::AdvanceScreen,
-                        repeatable: false,
-                        terminal: false,
-                    },
-                ));
-            }
+                ),
+            ];
             if run_state.ascension_level >= 15 {
                 let dmg = ((run_state.max_hp as f32 * 0.05).ceil()) as i32;
                 choices.push(EventOption::new(
@@ -245,9 +186,13 @@ mod tests {
     #[test]
     fn three_potion_option_exposes_trade_semantics() {
         let mut rs = RunState::new(1, 0, true, "Ironclad");
-        rs.gold = 50;
+        rs.gold = 0;
         let state = EventState::new(crate::state::events::EventId::WomanInBlue);
         let options = get_options(&rs, &state);
+        assert!(
+            !options[2].ui.disabled,
+            "Java WomanInBlue potion buttons are not disabled by gold"
+        );
         assert!(matches!(
             options[2].semantics.effects.as_slice(),
             [
@@ -255,10 +200,7 @@ mod tests {
                 EventEffect::ObtainPotion { count: 3 }
             ]
         ));
-        assert_eq!(
-            options[2].semantics.constraints,
-            vec![EventOptionConstraint::RequiresGold(40)]
-        );
+        assert!(options[2].semantics.constraints.is_empty());
     }
 
     #[test]
@@ -280,6 +222,39 @@ mod tests {
                 DomainEvent::GoldChanged {
                     delta: -40,
                     new_total: 10,
+                    source: DomainEventSource::Event(EventId::WomanInBlue)
+                }
+            )
+        }));
+        match engine_state {
+            EngineState::RewardScreen(rewards) => {
+                assert_eq!(rewards.items.len(), 3);
+                assert!(rewards
+                    .items
+                    .iter()
+                    .all(|item| matches!(item, RewardItem::Potion { .. })));
+            }
+            other => panic!("expected reward screen, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn buying_potions_with_insufficient_gold_clamps_gold_like_java() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 7;
+        rs.event_state = Some(EventState::new(EventId::WomanInBlue));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        assert_eq!(rs.gold, 0);
+        assert!(rs.take_emitted_events().iter().any(|event| {
+            matches!(
+                event,
+                DomainEvent::GoldChanged {
+                    delta: -7,
+                    new_total: 0,
                     source: DomainEventSource::Event(EventId::WomanInBlue)
                 }
             )
