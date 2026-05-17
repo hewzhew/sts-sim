@@ -75,6 +75,10 @@ and reachability gates must be checked separately.
      `gold -> elite dropReward relics/key -> potion roll -> card rewards`; this
      matters because `addPotionToRewards()` checks the room reward count before
      rolling.
+   - current progress: event-combat rewards no longer borrow the full monster
+     combat reward generator just to obtain card rewards; event combat now keeps
+     event rewards, rolls the EventRoom potion reward, and appends card rewards
+     through separate helpers.
 
 3. Relic pool and `canSpawn` closure:
    - turn the existing relic audit into pool-level validation, not just

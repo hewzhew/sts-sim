@@ -915,19 +915,19 @@ pub fn tick_run(
                         };
                         if !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat) {
                             rewards.items.append(&mut cs.runtime.pending_rewards);
+                            crate::rewards::generator::add_potion_reward_like_java(
+                                run_state,
+                                &mut rewards.items,
+                            );
                         }
                         if !ecs.no_cards_in_rewards
                             && !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat)
                         {
-                            let card_reward = crate::rewards::generator::generate_combat_rewards(
-                                run_state, false, false,
+                            rewards.items.extend(
+                                crate::rewards::generator::generate_card_reward_items(
+                                    run_state, false, false, false,
+                                ),
                             );
-                            // Merge card reward items into pre-populated rewards
-                            for item in card_reward.items {
-                                if matches!(item, crate::rewards::state::RewardItem::Card { .. }) {
-                                    rewards.items.push(item);
-                                }
-                            }
                         }
                         *engine_state = EngineState::RewardScreen(rewards);
                     } else {
@@ -962,9 +962,9 @@ mod tests {
     use crate::content::relics::{RelicId, RelicState};
     use crate::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::map::state::MapState;
-    use crate::rewards::state::RewardItem;
+    use crate::rewards::state::{RewardItem, RewardState};
     use crate::runtime::combat::CombatCard;
-    use crate::state::core::{ClientInput, EngineState};
+    use crate::state::core::{ClientInput, EngineState, EventCombatState, PostCombatReturn};
     use crate::state::run::RunState;
     use crate::state::selection::{
         DomainEventSource, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
@@ -1063,6 +1063,78 @@ mod tests {
         );
         assert_eq!(run_state.boss_key, Some(EncounterId::TheHeart));
         assert!(combat_state.is_some());
+    }
+
+    #[test]
+    fn event_combat_rewards_do_not_call_standard_combat_loot_generator() {
+        use crate::content::monsters::EnemyId;
+
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::WhiteBeastStatue));
+        let treasure_before = run_state.rng_pool.treasure_rng.counter;
+        let relic_before = run_state.rng_pool.relic_rng.counter;
+        let potion_before = run_state.rng_pool.potion_rng.counter;
+
+        let mut event_rewards = RewardState::new();
+        event_rewards.items.push(RewardItem::Gold { amount: 100 });
+        let mut engine_state = EngineState::EventCombat(EventCombatState {
+            rewards: event_rewards,
+            reward_allowed: true,
+            no_cards_in_rewards: false,
+            elite_trigger: false,
+            post_combat_return: PostCombatReturn::MapNavigation,
+            encounter_key: "Test Event Combat",
+        });
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::WhiteBeastStatue));
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.current_hp = 0;
+        monster.is_dying = true;
+        combat.entities.monsters.push(monster);
+        let mut combat_state = Some(combat);
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::EndTurn),
+        ));
+
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("event combat should open a reward screen");
+        };
+        assert_eq!(
+            run_state.rng_pool.treasure_rng.counter, treasure_before,
+            "EventRoom combat does not add standard monster gold rewards"
+        );
+        assert_eq!(
+            run_state.rng_pool.relic_rng.counter, relic_before,
+            "EventRoom combat does not call MonsterRoomElite.dropReward or random relic reward generation"
+        );
+        assert!(
+            run_state.rng_pool.potion_rng.counter > potion_before,
+            "EventRoom addPotionToRewards still uses potionRng"
+        );
+        assert_eq!(run_state.potion_drop_chance_mod, -10);
+        assert!(matches!(rewards.items[0], RewardItem::Gold { amount: 100 }));
+        assert!(matches!(rewards.items[1], RewardItem::Potion { .. }));
+        assert!(matches!(rewards.items[2], RewardItem::Card { .. }));
+        assert_eq!(
+            rewards
+                .items
+                .iter()
+                .filter(|item| matches!(item, RewardItem::Gold { .. }))
+                .count(),
+            1,
+            "event combat keeps pre-populated event gold without adding standard monster gold"
+        );
     }
 
     #[test]

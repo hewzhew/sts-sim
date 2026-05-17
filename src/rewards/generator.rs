@@ -32,11 +32,6 @@ pub fn generate_combat_rewards(
 ) -> RewardState {
     let mut items = Vec::new();
 
-    let has_prayer_wheel = run_state
-        .relics
-        .iter()
-        .any(|r| r.id == crate::content::relics::RelicId::PrayerWheel);
-
     let has_ectoplasm = run_state
         .relics
         .iter()
@@ -90,6 +85,24 @@ pub fn generate_combat_rewards(
     }
 
     // 2. Generate Potions
+    add_potion_reward_like_java(run_state, &mut items);
+
+    // 3. Generate Cards
+    items.extend(generate_card_reward_items(
+        run_state, is_elite, is_boss, true,
+    ));
+
+    RewardState {
+        items,
+        skippable: !is_boss,
+        screen_context: crate::rewards::state::RewardScreenContext::Standard,
+        pending_card_choice: None,
+    }
+}
+
+/// Java `AbstractRoom.addPotionToRewards()`: caller must invoke it only for
+/// room types that are eligible for the reward potion roll.
+pub fn add_potion_reward_like_java(run_state: &mut RunState, items: &mut Vec<RewardItem>) {
     let mut chance = 40 + run_state.potion_drop_chance_mod;
     if run_state
         .relics
@@ -115,25 +128,39 @@ pub fn generate_combat_rewards(
     } else {
         run_state.potion_drop_chance_mod += 10;
     }
+}
 
-    // 3. Generate Cards
+/// Java `CombatRewardScreen.setupItemReward()`: appends card rewards after the
+/// room's existing rewards have already been copied into the reward screen.
+pub fn generate_card_reward_items(
+    run_state: &mut RunState,
+    is_elite: bool,
+    is_boss: bool,
+    prayer_wheel_allowed: bool,
+) -> Vec<RewardItem> {
+    let mut items = Vec::new();
     let num_cards_eff = adjusted_card_reward_choice_count(run_state, 3);
 
-    items.push(RewardItem::Card {
-        cards: generate_card_reward(run_state, num_cards_eff, is_elite),
-    });
-    if !is_boss && !is_elite && has_prayer_wheel {
-        items.push(RewardItem::Card {
-            cards: generate_card_reward(run_state, num_cards_eff, is_elite),
-        });
+    let cards = generate_card_reward(run_state, num_cards_eff, is_elite);
+    if !cards.is_empty() {
+        items.push(RewardItem::Card { cards });
     }
 
-    RewardState {
-        items,
-        skippable: !is_boss,
-        screen_context: crate::rewards::state::RewardScreenContext::Standard,
-        pending_card_choice: None,
+    if prayer_wheel_allowed
+        && !is_boss
+        && !is_elite
+        && run_state
+            .relics
+            .iter()
+            .any(|r| r.id == crate::content::relics::RelicId::PrayerWheel)
+    {
+        let cards = generate_card_reward(run_state, num_cards_eff, is_elite);
+        if !cards.is_empty() {
+            items.push(RewardItem::Card { cards });
+        }
     }
+
+    items
 }
 
 #[cfg(test)]
