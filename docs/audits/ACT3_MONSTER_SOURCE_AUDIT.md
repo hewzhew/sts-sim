@@ -122,6 +122,12 @@ Darkling already carries explicit runtime state for Java private fields:
 - `first_move`
 - `nip_dmg`
 
+Rust now treats these as strict runtime truth. Factory/test construction and live state import mark
+the slice as seeded, `roll_move` asserts that the slice is seeded, and the opening `firstMove`
+transition is emitted through `Action::UpdateMonsterRuntime` only when Java `getMove()` would
+actually consume the opening branch. Generic `SetMonsterMove` and `RollMonsterMove` no longer clear
+`first_move` as a side effect.
+
 The half-death / revive flow is intentionally modeled as runtime combat state rather than UI state.
 `Regrow` uses the existing sentinel power amount convention in Rust.
 

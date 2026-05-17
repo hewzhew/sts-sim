@@ -2182,6 +2182,9 @@ fn apply_monster_runtime_delta(
             "writhing_mass.used_mega_debuff" => {
                 monster.writhing_mass.used_mega_debuff = json_bool(value, field)?
             }
+            "darkling.protocol_seeded" => {
+                monster.darkling.protocol_seeded = json_bool(value, field)?
+            }
             "darkling.first_move" => monster.darkling.first_move = json_bool(value, field)?,
             "darkling.nip_dmg" => monster.darkling.nip_dmg = json_i32(value, field)?,
             "lagavulin.is_out" => monster.lagavulin.is_out = json_bool(value, field)?,
@@ -2692,6 +2695,7 @@ fn extract_monster_runtime_value(
         "writhing_mass.used_mega_debuff" => {
             ActualFieldValue::Bool(monster.writhing_mass.used_mega_debuff)
         }
+        "darkling.protocol_seeded" => ActualFieldValue::Bool(monster.darkling.protocol_seeded),
         "darkling.first_move" => ActualFieldValue::Bool(monster.darkling.first_move),
         "darkling.nip_dmg" => ActualFieldValue::Number(monster.darkling.nip_dmg as i64),
         "lagavulin.is_out" => ActualFieldValue::Bool(monster.lagavulin.is_out),

@@ -1331,6 +1331,7 @@ pub struct SphericGuardianRuntimeState {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DarklingRuntimeState {
+    pub protocol_seeded: bool,
     pub first_move: bool,
     pub nip_dmg: i32,
 }

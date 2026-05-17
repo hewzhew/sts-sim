@@ -44,7 +44,7 @@ Scope:
 | Spheric Guardian | `first_move`, `second_move` | Yes | Yes | Yes | Post-opening `lastMove(BIG_ATTACK)` branch only | Good |
 | The Collector | `initial_spawn`, `ult_used`, `turns_taken`, `enemy_slots` | Yes | Yes | Yes | `lastMove(REVIVE)` / `lastTwoMoves(FIREBALL)` sequencing only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
-| Darkling | `first_move`, `nip_dmg` | Yes | Partial | N/A | Legacy-heavy | Debt remains |
+| Darkling | `first_move`, `nip_dmg` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 
 ## Notes
 
@@ -196,8 +196,13 @@ Scope:
 
 ### Darkling
 
-- Runtime truth is protocol-exported, but the monster still relies on older legacy-style execution paths.
-- It still needs a full semantic/runtime audit before it can be marked clean.
+- `runtime_state.first_move` and `runtime_state.nip_dmg` are exported by `CommunicationMod`.
+- Rust state sync marks the Darkling runtime slice as protocol-seeded and semantic roll logic
+  requires factory/protocol seeding before branch selection.
+- Java clears `firstMove` inside `getMove()` only when the opening branch is consumed. Rust now
+  mirrors that through `Action::UpdateMonsterRuntime`; generic `SetMonsterMove` and
+  `RollMonsterMove` no longer clear the flag as a side effect.
+- Remaining history usage is limited to Java's explicit `lastMove` / `lastTwoMoves` branching.
 
 ### The Guardian
 

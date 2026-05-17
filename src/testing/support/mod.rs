@@ -187,6 +187,11 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         monster.writhing_mass.protocol_seeded = true;
         monster.writhing_mass.used_mega_debuff = false;
     }
+    if enemy_id == EnemyId::Darkling {
+        monster.darkling.protocol_seeded = true;
+        monster.darkling.first_move = true;
+        monster.darkling.nip_dmg = 9;
+    }
     if enemy_id == EnemyId::Spiker {
         monster.spiker.protocol_seeded = true;
         monster.spiker.thorns_count = 0;

@@ -907,6 +907,10 @@ fn build_monster_mechanic_state(
             }
             Some(crate::content::monsters::EnemyId::Darkling) => {
                 object.insert("half_dead".to_string(), json!(monster.half_dead));
+                object.insert(
+                    "protocol_seeded".to_string(),
+                    json!(monster.darkling.protocol_seeded),
+                );
                 object.insert("first_move".to_string(), json!(monster.darkling.first_move));
                 object.insert("nip_damage".to_string(), json!(monster.darkling.nip_dmg));
             }

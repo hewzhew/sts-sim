@@ -64,6 +64,7 @@ pub(crate) fn seed_darkling_runtime_from_snapshot(monster: &Value, entity: &mut 
 
     entity.darkling.first_move = runtime_state_bool(monster, monster_type, "first_move");
     entity.darkling.nip_dmg = runtime_state_i32(monster, monster_type, "nip_dmg");
+    entity.darkling.protocol_seeded = true;
 }
 
 pub(crate) fn seed_writhing_mass_runtime_from_snapshot(
@@ -796,6 +797,26 @@ mod tests {
         })
     }
 
+    fn darkling_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Darkling",
+            "current_hp": 48,
+            "max_hp": 56,
+            "block": 0,
+            "intent": "ATTACK",
+            "move_id": 3,
+            "move_base_damage": 11,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "first_move": false,
+                "nip_dmg": 11
+            },
+            "is_gone": false,
+            "half_dead": false
+        })
+    }
+
     fn mugger_truth_snapshot() -> serde_json::Value {
         json!({
             "id": "Mugger",
@@ -1256,6 +1277,19 @@ mod tests {
         assert_eq!(entity.planned_move_id(), 3);
         assert!(!entity.shelled_parasite.first_move);
         assert!(entity.shelled_parasite.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_darkling_runtime_state() {
+        let snapshot = darkling_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.planned_move_id(), 3);
+        assert!(!entity.darkling.first_move);
+        assert_eq!(entity.darkling.nip_dmg, 11);
+        assert!(entity.darkling.protocol_seeded);
     }
 
     #[test]

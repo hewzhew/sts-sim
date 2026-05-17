@@ -3,8 +3,8 @@ use crate::content::monsters::exordium::{
 };
 use crate::content::monsters::{MonsterBehavior, MonsterRollContext};
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, DarklingRuntimeState, MonsterEntity};
 use crate::semantics::combat::{
     ApplyPowerStep, AttackSpec, BuffSpec, DamageKind, DefendSpec, EffectStrength, HealStep,
     MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
@@ -39,6 +39,7 @@ pub fn initialize_runtime_state(
 
     entity.darkling.first_move = true;
     entity.darkling.nip_dmg = roll_nip_damage(hp_rng, ascension_level);
+    entity.darkling.protocol_seeded = true;
 }
 
 fn chomp_damage(ascension_level: u8) -> i32 {
@@ -61,19 +62,35 @@ fn is_even_position(entity: &MonsterEntity, monsters: &[MonsterEntity]) -> bool 
     position % 2 == 0
 }
 
-fn current_nip_damage(entity: &MonsterEntity, ascension_level: u8) -> i32 {
-    if entity.darkling.nip_dmg > 0 {
-        entity.darkling.nip_dmg
-    } else if entity.planned_move_id() == NIP {
-        entity
-            .turn_plan()
-            .attack()
-            .map(|attack| attack.base_damage)
-            .unwrap_or(if ascension_level >= 2 { 11 } else { 9 })
-    } else if ascension_level >= 2 {
-        11
-    } else {
-        9
+fn current_nip_damage(entity: &MonsterEntity, _ascension_level: u8) -> i32 {
+    let runtime = runtime(entity);
+    assert!(
+        runtime.nip_dmg > 0,
+        "darkling nip_dmg must be protocol-seeded or factory-seeded"
+    );
+    runtime.nip_dmg
+}
+
+fn runtime(entity: &MonsterEntity) -> &DarklingRuntimeState {
+    assert!(
+        entity.darkling.protocol_seeded,
+        "darkling runtime truth must be protocol-seeded or factory-seeded"
+    );
+    &entity.darkling
+}
+
+fn darkling_runtime_update(
+    entity: &MonsterEntity,
+    first_move: Option<bool>,
+    nip_dmg: Option<i32>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::Darkling {
+            first_move,
+            nip_dmg,
+            protocol_seeded: Some(true),
+        },
     }
 }
 
@@ -182,7 +199,7 @@ fn roll_move_custom_plan(
         return count_plan();
     }
 
-    if entity.darkling.first_move {
+    if runtime(entity).first_move {
         return if num < 50 {
             harden_plan(ascension_level)
         } else {
@@ -227,6 +244,19 @@ impl MonsterBehavior for Darkling {
         ctx: MonsterRollContext<'_>,
     ) -> MonsterTurnPlan {
         roll_move_custom_plan(rng, entity, ascension_level, num, ctx.monsters)
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if runtime(entity).first_move && !entity.half_dead && entity.current_hp > 0 {
+            vec![darkling_runtime_update(entity, Some(false), None)]
+        } else {
+            Vec::new()
+        }
     }
 
     fn use_pre_battle_actions(
@@ -343,78 +373,56 @@ impl MonsterBehavior for Darkling {
 
 #[cfg(test)]
 mod tests {
-    use super::{current_nip_damage, HARDEN, NIP};
-    use crate::content::monsters::EnemyId;
-    use crate::runtime::combat::{
-        ByrdRuntimeState, ChosenRuntimeState, DarklingRuntimeState, HexaghostRuntimeState,
-        LagavulinRuntimeState, MonsterEntity, MonsterMoveState, ShelledParasiteRuntimeState,
-        SneckoRuntimeState,
-    };
-    use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
-    use std::collections::VecDeque;
+    use super::{current_nip_damage, Darkling, HARDEN, REINCARNATE};
+    use crate::content::monsters::{EnemyId, MonsterBehavior, MonsterRollContext};
+    use crate::runtime::action::{Action, MonsterRuntimePatch};
 
     #[test]
-    fn nip_damage_uses_current_attack_plan_before_preview_projection() {
-        let entity = MonsterEntity {
-            id: 1,
-            monster_type: EnemyId::Darkling as usize,
-            current_hp: 20,
-            max_hp: 56,
-            block: 0,
-            slot: 0,
-            is_dying: false,
-            is_escaped: false,
-            half_dead: false,
-            move_state: MonsterMoveState {
-                planned_move_id: NIP,
-                history: VecDeque::from([HARDEN, NIP]),
-                planned_steps: Some(
-                    MonsterMoveSpec::Attack(AttackSpec {
-                        base_damage: 13,
-                        hits: 1,
-                        damage_kind: DamageKind::Normal,
-                    })
-                    .to_steps(),
-                ),
-                planned_visible_spec: None,
-            },
-            logical_position: 0,
-            hexaghost: HexaghostRuntimeState::default(),
-            louse: Default::default(),
-            jaw_worm: Default::default(),
-            thief: Default::default(),
-            byrd: ByrdRuntimeState::default(),
-            chosen: ChosenRuntimeState::default(),
-            snecko: SneckoRuntimeState::default(),
-            shelled_parasite: ShelledParasiteRuntimeState::default(),
-            bronze_automaton: Default::default(),
-            bronze_orb: Default::default(),
-            book_of_stabbing: Default::default(),
-            collector: Default::default(),
-            champ: Default::default(),
-            awakened_one: Default::default(),
-            corrupt_heart: Default::default(),
-            writhing_mass: Default::default(),
-            spiker: Default::default(),
-            spire_shield: Default::default(),
-            spire_spear: Default::default(),
-            slaver_red: Default::default(),
-            gremlin_leader: Default::default(),
-            gremlin_nob: Default::default(),
-            gremlin_wizard: Default::default(),
-            cultist: Default::default(),
-            sentry: Default::default(),
-            slime_boss: Default::default(),
-            large_slime: Default::default(),
-            spheric_guardian: Default::default(),
-            darkling: DarklingRuntimeState {
-                first_move: false,
-                nip_dmg: 0,
-            },
-            lagavulin: LagavulinRuntimeState::default(),
-            guardian: Default::default(),
-        };
+    fn nip_damage_uses_seeded_private_runtime_truth() {
+        let mut entity = crate::testing::support::test_monster(EnemyId::Darkling);
+        entity.darkling.nip_dmg = 13;
 
         assert_eq!(current_nip_damage(&entity, 2), 13);
+    }
+
+    #[test]
+    fn first_roll_uses_private_first_move_and_marks_it() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let entity = crate::testing::support::test_monster(EnemyId::Darkling);
+        let monsters = vec![entity.clone()];
+        let ctx = MonsterRollContext {
+            monsters: &monsters,
+            player_powers: &[],
+        };
+        let plan = Darkling::roll_move_plan_with_context(&mut rng, &entity, 0, 49, ctx);
+
+        assert_eq!(plan.move_id, HARDEN);
+        assert_eq!(
+            Darkling::on_roll_move(0, &entity, 49, &plan),
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::Darkling {
+                    first_move: Some(false),
+                    nip_dmg: None,
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn half_dead_reincarnate_roll_does_not_clear_first_move() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut entity = crate::testing::support::test_monster(EnemyId::Darkling);
+        entity.half_dead = true;
+        let monsters = vec![entity.clone()];
+        let ctx = MonsterRollContext {
+            monsters: &monsters,
+            player_powers: &[],
+        };
+        let plan = Darkling::roll_move_plan_with_context(&mut rng, &entity, 0, 49, ctx);
+
+        assert_eq!(plan.move_id, REINCARNATE);
+        assert!(Darkling::on_roll_move(0, &entity, 49, &plan).is_empty());
     }
 }

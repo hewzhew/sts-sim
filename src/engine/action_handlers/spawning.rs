@@ -547,11 +547,6 @@ pub fn handle_roll_monster_move(monster_id: usize, state: &mut CombatState) {
             m.set_planned_visible_spec(plan.visible_spec);
             m.move_history_mut().push_back(plan.move_id);
             updated_monster_id = Some(m.id);
-            if crate::content::monsters::EnemyId::from_id(m.monster_type)
-                == Some(crate::content::monsters::EnemyId::Darkling)
-            {
-                m.darkling.first_move = false;
-            }
         }
         if let Some(updated_monster_id) = updated_monster_id {
             state.clear_monster_protocol_observation(updated_monster_id);
@@ -578,12 +573,6 @@ pub fn handle_set_monster_move(
         m.set_planned_visible_spec(planned_visible_spec);
         m.move_history_mut().push_back(next_move_byte);
         updated_monster_id = Some(m.id);
-        if crate::content::monsters::EnemyId::from_id(m.monster_type)
-            == Some(crate::content::monsters::EnemyId::Darkling)
-            && next_move_byte != 0
-        {
-            m.darkling.first_move = false;
-        }
     }
     if let Some(updated_monster_id) = updated_monster_id {
         state.clear_monster_protocol_observation(updated_monster_id);
@@ -959,6 +948,31 @@ fn handle_update_awakened_one_state(
         }
         if let Some(value) = protocol_seeded {
             monster.awakened_one.protocol_seeded = value;
+        }
+    }
+}
+
+fn handle_update_darkling_state(
+    monster_id: usize,
+    first_move: Option<bool>,
+    nip_dmg: Option<i32>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = first_move {
+            monster.darkling.first_move = value;
+        }
+        if let Some(value) = nip_dmg {
+            monster.darkling.nip_dmg = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.darkling.protocol_seeded = value;
         }
     }
 }
@@ -1401,6 +1415,11 @@ pub fn handle_update_monster_runtime(
         } => {
             handle_update_awakened_one_state(monster_id, form1, first_turn, protocol_seeded, state)
         }
+        MonsterRuntimePatch::Darkling {
+            first_move,
+            nip_dmg,
+            protocol_seeded,
+        } => handle_update_darkling_state(monster_id, first_move, nip_dmg, protocol_seeded, state),
         MonsterRuntimePatch::CorruptHeart {
             first_move,
             move_count,

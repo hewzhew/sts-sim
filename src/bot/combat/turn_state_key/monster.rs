@@ -532,7 +532,10 @@ fn stable_corrupt_heart_signature(state: &CorruptHeartRuntimeState) -> String {
 }
 
 fn stable_darkling_signature(state: &DarklingRuntimeState) -> String {
-    format!("first{}:nip{}", state.first_move, state.nip_dmg)
+    format!(
+        "seed{}:first{}:nip{}",
+        state.protocol_seeded, state.first_move, state.nip_dmg
+    )
 }
 
 fn stable_writhing_mass_signature(state: &WrithingMassRuntimeState) -> String {

@@ -90,6 +90,11 @@ pub enum MonsterRuntimePatch {
         first_turn: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    Darkling {
+        first_move: Option<bool>,
+        nip_dmg: Option<i32>,
+        protocol_seeded: Option<bool>,
+    },
     CorruptHeart {
         first_move: Option<bool>,
         move_count: Option<u8>,
