@@ -923,7 +923,10 @@ mod tests {
             encounter_key_to_id("The Guardian"),
             Some(EncounterId::TheGuardian)
         );
-        assert_eq!(encounter_key_to_id("Hexaghost"), Some(EncounterId::Hexaghost));
+        assert_eq!(
+            encounter_key_to_id("Hexaghost"),
+            Some(EncounterId::Hexaghost)
+        );
         assert_eq!(
             encounter_key_to_id("Slime Boss"),
             Some(EncounterId::SlimeBoss)

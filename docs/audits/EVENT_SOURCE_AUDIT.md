@@ -35,6 +35,24 @@ Do not treat equal module counts as proof of complete event parity.
 
 ## Fixed In This Pass
 
+### EventHelper room-roll array semantics
+
+Java `helpers/EventHelper.roll(Random)` does not classify `?` room results with a simple cumulative
+threshold expression. It fills a 100-slot `RoomResult[]` initialized to `EVENT`, then overwrites
+ranges for Monster, Shop, and Treasure. The source clamps fill starts with `Math.min(99, fillIndex)`,
+so when ramped chances overflow the 100-slot table, later categories can still overwrite the final
+slot. For example, `monsterSize=90`, `shopSize=30`, and `treasureSize=2` leaves index 99 as
+`TREASURE`, not `SHOP`.
+
+Rust now mirrors that table-fill behavior instead of using direct cumulative comparisons. This keeps
+high-ramp event-room replay aligned with Java. The implementation still intentionally ignores
+`DeadlyEvents` and endless `MimicInfestation` because those mod/endless branches are outside the
+current simulator scope.
+
+Test:
+
+- `event_room_roll_uses_java_final_slot_overwrite_when_chances_overflow`
+
 ### Match and Keep start card
 
 Java `GremlinMatchGame.initializeCards()` calls

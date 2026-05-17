@@ -2,13 +2,59 @@ use crate::events::context::EventContext;
 use crate::runtime::rng::RngPool;
 use crate::state::events::EventId;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RoomRoll {
     Monster,
     Shop,
     Treasure,
     Event,
     Elite, // Requires DeadlyEvents mod
+}
+
+fn fill_java_room_results(
+    results: &mut [RoomRoll; 100],
+    fill_index: i32,
+    size: i32,
+    value: RoomRoll,
+) {
+    let from = fill_index.min(99) as usize;
+    let to = (fill_index + size).min(100) as usize;
+    if from < to {
+        for slot in &mut results[from..to] {
+            *slot = value;
+        }
+    }
+}
+
+fn java_room_choice_from_sizes(
+    roll_idx: usize,
+    monster_size: i32,
+    shop_size: i32,
+    treasure_size: i32,
+) -> RoomRoll {
+    let mut possible_results = [RoomRoll::Event; 100];
+    let mut fill_index = 0;
+
+    // Java EventHelper.roll fills a 100-entry array. The start index is clamped
+    // to 99 instead of 100, so late categories can overwrite the final slot
+    // when earlier chances have already filled the whole array.
+    fill_java_room_results(
+        &mut possible_results,
+        fill_index,
+        monster_size,
+        RoomRoll::Monster,
+    );
+    fill_index += monster_size;
+    fill_java_room_results(&mut possible_results, fill_index, shop_size, RoomRoll::Shop);
+    fill_index += shop_size;
+    fill_java_room_results(
+        &mut possible_results,
+        fill_index,
+        treasure_size,
+        RoomRoll::Treasure,
+    );
+
+    possible_results[roll_idx]
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -159,17 +205,10 @@ impl EventGenerator {
         };
         let treasure_size = (self.treasure_chance * 100.0) as i32;
 
-        let roll_idx = (roll * 100.0) as i32;
+        let roll_idx = (roll * 100.0) as usize;
 
-        let mut choice = if roll_idx < monster_size {
-            RoomRoll::Monster
-        } else if roll_idx < monster_size + shop_size {
-            RoomRoll::Shop
-        } else if roll_idx < monster_size + shop_size + treasure_size {
-            RoomRoll::Treasure
-        } else {
-            RoomRoll::Event
-        };
+        let mut choice =
+            java_room_choice_from_sizes(roll_idx, monster_size, shop_size, treasure_size);
 
         if force_chest {
             choice = RoomRoll::Treasure;
@@ -400,6 +439,16 @@ mod tests {
             generator.roll_room_type(&mut rng, &context),
             RoomRoll::Event,
             "Java EventHelper.roll sets shopSize to 0 when the previous current room is ShopRoom"
+        );
+    }
+
+    #[test]
+    fn event_room_roll_uses_java_final_slot_overwrite_when_chances_overflow() {
+        assert_eq!(java_room_choice_from_sizes(98, 90, 30, 2), RoomRoll::Shop);
+        assert_eq!(
+            java_room_choice_from_sizes(99, 90, 30, 2),
+            RoomRoll::Treasure,
+            "Java clamps the fill start to 99, so Treasure overwrites the final Shop slot"
         );
     }
 
