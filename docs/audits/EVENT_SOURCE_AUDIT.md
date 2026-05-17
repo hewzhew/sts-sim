@@ -74,6 +74,23 @@ Test:
 
 - `event_random_card_helpers_use_java_rng_streams`
 
+### Golden Idol trap damage
+
+Java `events/exordium/GoldenIdolEvent.java` handles the `[Fight]` trap option
+with `AbstractDungeon.player.damage(new DamageInfo(null, this.damage))`.
+This is normal DEFAULT damage with no owner: event rooms have no block, Torii's
+owner-based `onAttacked` reduction does not apply, but Tungsten Rod still
+applies later through `onLoseHpLast`.
+
+Fix:
+
+- `GoldenIdol` now uses the shared Java ownerless DEFAULT damage helper instead
+  of duplicating a local Tungsten-only branch.
+
+Test:
+
+- `trap_damage_uses_java_ownerless_default_damage_hooks`
+
 ### Designer selection and mutation sources
 
 Java `events/shrines/Designer.java` has several non-obvious boundaries:
@@ -1335,7 +1352,8 @@ Validation:
   Some Java handlers check candidate availability only when clicked, not when
   drawing the button, and several Rust modules still simplify those UI states.
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
-  that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`,
+  that card obtains just received. `BigFish`, `Cleric`, `GoldenIdol`,
+  `GoldenWing`,
   `FaceTrader`, `ForgottenAltar`, `Ghosts`, `Vampires`, `MoaiHead`, and
   `GremlinWheelGame`, `MindBloom`, `WindingHalls`, and `SensoryStone` are now
   covered; `ShiningLight` is also covered for damage and random upgrade
@@ -1358,4 +1376,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `915 passed`.
+- Current result after this pass: `916 passed`.
