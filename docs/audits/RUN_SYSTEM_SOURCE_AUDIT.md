@@ -99,6 +99,11 @@ and reachability gates must be checked separately.
      monster, shop, or treasure. Tiny Chest forces the post-roll result to
      treasure after still consuming the room-roll RNG; Juzu and previous-shop
      shop suppression are handled in the room roll, not in event selection.
+   - current progress: exhausted event/shrine pools no longer fabricate a
+     backup event. Java has no `Cleric` / `Golden Idol` / `Golden Shrine`
+     fallback when all candidate pools are empty, so Rust now returns `None` in
+     the inspectable event-generator path and fails explicitly in the ordinary
+     wrapper.
 
 3. Relic pool and `canSpawn` closure:
    - turn the existing relic audit into pool-level validation, not just

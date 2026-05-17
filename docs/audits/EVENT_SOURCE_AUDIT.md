@@ -53,6 +53,24 @@ Test:
 
 - `event_room_roll_uses_java_final_slot_overwrite_when_chances_overflow`
 
+### Event pool exhaustion
+
+Java `AbstractDungeon.generateEvent(Random)` does not repopulate event pools or
+choose a backup event when both ordinary events and shrine/one-time events are
+exhausted. If the shrine branch sees both pools empty it returns `null`; if
+`getEvent` cannot find candidates it delegates to `getShrine`, which also has
+no fabricated fallback.
+
+Rust previously returned one of `Cleric`, `Golden Idol`, or `Golden Shrine` in
+that state. That was a simulator-invented event source and could pollute long
+run distributions. `EventGenerator::try_generate_event` now returns `None` when
+Java has no event candidate, and the ordinary `generate_event` wrapper fails
+explicitly instead of silently inventing an event.
+
+Test:
+
+- `exhausted_event_and_shrine_pools_do_not_fabricate_fallback_event`
+
 ### Match and Keep start card
 
 Java `GremlinMatchGame.initializeCards()` calls

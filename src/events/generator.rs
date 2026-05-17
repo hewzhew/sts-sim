@@ -245,8 +245,18 @@ impl EventGenerator {
         self.treasure_chance = 0.02;
     }
 
-    /// Mirrors Java's AbstractDungeon.generateEvent(Random rng)
+    /// Mirrors Java's AbstractDungeon.generateEvent(Random rng).
+    ///
+    /// Java does not repopulate event pools or invent a fallback event when
+    /// both event and shrine pools are exhausted. The public wrapper panics
+    /// with a clear message in that invalid run state; tests and callers that
+    /// want to inspect depletion can use `try_generate_event`.
     pub fn generate_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> EventId {
+        self.try_generate_event(rng, ctx)
+            .expect("Java generateEvent has no valid event or shrine candidate")
+    }
+
+    pub fn try_generate_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> Option<EventId> {
         let shrine_roll = rng.event_rng.random_f32_range(1.0);
 
         if shrine_roll < self.shrine_chance {
@@ -256,19 +266,19 @@ impl EventGenerator {
             if !self.event_pool.is_empty() {
                 return self.get_pool_event(rng, ctx);
             }
-            return self.generate_event_fallback(rng);
+            return None;
         }
 
         if let Some(event) = self.try_get_pool_event(rng, ctx) {
-            return event;
+            return Some(event);
         }
         if !self.shrine_pool.is_empty() || !self.one_time_event_pool.is_empty() {
             return self.get_shrine_event(rng, ctx);
         }
-        self.generate_event_fallback(rng)
+        None
     }
 
-    fn get_shrine_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> EventId {
+    fn get_shrine_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> Option<EventId> {
         let mut candidates: Vec<EventId> = Vec::new();
         candidates.extend_from_slice(&self.shrine_pool);
 
@@ -280,7 +290,7 @@ impl EventGenerator {
         }
 
         if candidates.is_empty() {
-            return self.generate_event_fallback(rng);
+            return None;
         }
 
         let idx = rng.event_rng.random_range(0, (candidates.len() - 1) as i32) as usize;
@@ -293,12 +303,11 @@ impl EventGenerator {
             self.one_time_event_pool.remove(pos);
         }
 
-        chosen
+        Some(chosen)
     }
 
-    fn get_pool_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> EventId {
+    fn get_pool_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> Option<EventId> {
         self.try_get_pool_event(rng, ctx)
-            .unwrap_or_else(|| self.generate_event_fallback(rng))
     }
 
     fn try_get_pool_event(&mut self, rng: &mut RngPool, ctx: &EventContext) -> Option<EventId> {
@@ -329,12 +338,6 @@ impl EventGenerator {
         }
 
         Some(chosen)
-    }
-
-    fn generate_event_fallback(&mut self, rng: &mut RngPool) -> EventId {
-        let options = [EventId::Cleric, EventId::GoldenIdol, EventId::GoldenShrine];
-        let idx = rng.event_rng.random_range(0, 2) as usize;
-        options[idx]
     }
 }
 
@@ -562,6 +565,23 @@ mod tests {
         );
         assert!(generator.event_pool.is_empty());
         assert_eq!(generator.try_get_pool_event(&mut rng, &c), None);
+    }
+
+    #[test]
+    fn exhausted_event_and_shrine_pools_do_not_fabricate_fallback_event() {
+        let mut generator = EventGenerator::new(1);
+        let c = ctx();
+        let mut rng = RngPool::new(7);
+
+        generator.event_pool.clear();
+        generator.shrine_pool.clear();
+        generator.one_time_event_pool.clear();
+
+        assert_eq!(
+            generator.try_generate_event(&mut rng, &c),
+            None,
+            "Java generateEvent returns no event when both event and shrine pools are empty; it does not fabricate Cleric/Golden Idol/Golden Shrine"
+        );
     }
 
     #[test]
