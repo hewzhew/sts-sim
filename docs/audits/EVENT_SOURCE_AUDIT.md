@@ -434,6 +434,32 @@ Tests:
 - `hp_loss_result_uses_source_and_can_reduce_hp_to_zero`
 - `hp_loss_result_applies_tungsten_rod_on_lose_hp_last`
 
+### Mind Bloom Mark and high-floor heal
+
+Java `events/beyond/MindBloom.java` uses `spawnRelicAndObtain` for the
+`[I am Awake]` Mark of the Bloom branch, and the high-floor `[I am Rich]`
+variant calls:
+
+```text
+player.heal(player.maxHealth)
+ShowCardAndObtainEffect(new Doubt())
+```
+
+Fixes:
+
+- The Mark of the Bloom branch now obtains the relic through
+  `obtain_relic_with_source(..., Event(MindBloom))` instead of pushing directly
+  into `run_state.relics`.
+- The high-floor heal branch now uses `heal_with_source`, preserving Java heal
+  hooks such as `Mark of the Bloom`, before obtaining `Doubt` through the event
+  card path.
+
+Tests:
+
+- `remember_obtains_mark_of_the_bloom_with_event_source`
+- `high_floor_desire_heals_with_event_source_and_obtains_doubt`
+- `high_floor_desire_heal_respects_mark_of_the_bloom`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -643,10 +669,10 @@ Validation:
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
   that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`,
   `FaceTrader`, `ForgottenAltar`, `Ghosts`, `Vampires`, `MoaiHead`, and
-  `GremlinWheelGame` are now covered; the remaining direct writes should be
-  handled event-by-event against Java source.
+  `GremlinWheelGame`, and `MindBloom` are now covered; the remaining direct
+  writes should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `829 passed`.
+- Current result after this pass: `832 passed`.

@@ -1,5 +1,5 @@
 use crate::content::cards::CardId;
-use crate::content::relics::{RelicId, RelicState};
+use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::events::{
     EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
@@ -170,9 +170,13 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             card.upgrades += 1;
                         }
                     }
-                    run_state
-                        .relics
-                        .push(RelicState::new(RelicId::MarkOfTheBloom));
+                    if let Some(next_state) = run_state.obtain_relic_with_source(
+                        RelicId::MarkOfTheBloom,
+                        EngineState::EventRoom,
+                        DomainEventSource::Event(EventId::MindBloom),
+                    ) {
+                        *engine_state = next_state;
+                    }
                     event_state.current_screen = 1;
                 }
                 _ => {
@@ -187,7 +191,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         super::obtain_event_card(run_state, EventId::MindBloom, CardId::Normality);
                     } else {
                         // High floor path: heal to full + Doubt curse
-                        run_state.current_hp = run_state.max_hp;
+                        run_state.heal_with_source(
+                            run_state.max_hp,
+                            DomainEventSource::Event(EventId::MindBloom),
+                        );
                         super::obtain_event_card(run_state, EventId::MindBloom, CardId::Doubt);
                     }
                     event_state.current_screen = 1;
@@ -205,7 +212,9 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::relics::RelicState;
     use crate::state::events::{EventOptionTransition, EventRelicKind};
+    use crate::state::selection::{DomainEvent, DomainEventSource};
 
     #[test]
     fn remember_option_exposes_mark_of_the_bloom_semantics() {
@@ -224,5 +233,90 @@ mod tests {
             options[0].semantics.transition,
             EventOptionTransition::StartCombat
         );
+    }
+
+    #[test]
+    fn remember_obtains_mark_of_the_bloom_with_event_source() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.floor_num = 20;
+        rs.event_state = Some(EventState::new(EventId::MindBloom));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert!(rs
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::MarkOfTheBloom));
+        let events = rs.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicObtained {
+                relic_id: RelicId::MarkOfTheBloom,
+                source: DomainEventSource::Event(EventId::MindBloom),
+            }
+        )));
+    }
+
+    #[test]
+    fn high_floor_desire_heals_with_event_source_and_obtains_doubt() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.floor_num = 41;
+        rs.current_hp = 10;
+        rs.max_hp = 80;
+        rs.event_state = Some(EventState::new(EventId::MindBloom));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        assert_eq!(rs.current_hp, 80);
+        assert!(rs.master_deck.iter().any(|card| card.id == CardId::Doubt));
+        let events = rs.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: 70,
+                current_hp: 80,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::MindBloom),
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                source: DomainEventSource::Event(EventId::MindBloom),
+                card,
+            } if card.id == CardId::Doubt
+        )));
+    }
+
+    #[test]
+    fn high_floor_desire_heal_respects_mark_of_the_bloom() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.floor_num = 41;
+        rs.current_hp = 10;
+        rs.max_hp = 80;
+        rs.relics.push(RelicState::new(RelicId::MarkOfTheBloom));
+        rs.event_state = Some(EventState::new(EventId::MindBloom));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        assert_eq!(rs.current_hp, 10);
+        assert!(rs.master_deck.iter().any(|card| card.id == CardId::Doubt));
+        let events = rs.take_emitted_events();
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, DomainEvent::HpChanged { .. })));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                source: DomainEventSource::Event(EventId::MindBloom),
+                card,
+            } if card.id == CardId::Doubt
+        )));
     }
 }
