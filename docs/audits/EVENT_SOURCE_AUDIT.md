@@ -461,7 +461,7 @@ Tests:
 - `enter_max_hp_loss_survives_mark_but_full_heal_is_blocked`
 - `trade_removes_golden_idol_and_grants_gold_with_event_sources`
 
-### Gremlin Wheel full heal and HP-loss damage
+### Gremlin Wheel result branches
 
 Java `events/shrines/GremlinWheelGame.java` applies the spin result in
 `applyResult()`:
@@ -479,15 +479,28 @@ callbacks, but `AbstractPlayer.damage` still runs relic `onLoseHpLast`; this
 means `Tungsten Rod` reduces the loss by 1 even though the damage type is
 `HP_LOSS`.
 
+The other result branches also matter for simulator traces: gold is scaled by
+act, the relic branch opens a reward screen with one screenless relic, the curse
+branch uses `ShowCardAndObtainEffect(new Decay())`, and the remove branch opens
+`CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())` only
+when there is at least one selectable card.
+
 Fixes:
 
 - Full-heal spin result now uses `heal_with_source(..., Event(GremlinWheelGame))`
   instead of direct `current_hp = max_hp`.
 - HP-loss spin result now uses sourced HP change, allows HP to reach 0 like
   Java `damage`, and applies `Tungsten Rod`'s `onLoseHpLast`.
+- Gold, relic, curse, and purge results now have event-level regression tests
+  for source, reward-screen shape, Omamori interception, and non-bottled purge
+  selection.
 
 Tests:
 
+- `gold_result_uses_act_scaled_gold_and_event_source`
+- `relic_result_opens_reward_screen_with_one_relic_reward`
+- `curse_result_uses_obtain_pipeline_so_omamori_can_block_decay`
+- `purge_result_opens_non_bottled_purge_selection_when_possible`
 - `full_heal_uses_java_heal_source_and_respects_mark_of_the_bloom`
 - `full_heal_emits_event_source_without_mark`
 - `hp_loss_result_uses_source_and_can_reduce_hp_to_zero`
@@ -963,4 +976,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `871 passed`.
+- Current result after this pass: `875 passed`.

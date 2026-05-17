@@ -152,9 +152,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
 #[cfg(test)]
 mod tests {
     use super::handle_choice;
+    use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::rng::StsRng;
-    use crate::state::core::EngineState;
+    use crate::state::core::{EngineState, RunPendingChoiceReason};
     use crate::state::events::{EventId, EventState};
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
@@ -257,5 +258,79 @@ mod tests {
                 source: DomainEventSource::Event(EventId::GremlinWheelGame),
             }
         )));
+    }
+
+    #[test]
+    fn gold_result_uses_act_scaled_gold_and_event_source() {
+        let mut run_state = wheel_run(20, 80, 0);
+        run_state.act_num = 2;
+        run_state.gold = 10;
+        run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(0));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.gold, 210);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::GoldChanged {
+                delta: 200,
+                new_total: 210,
+                source: DomainEventSource::Event(EventId::GremlinWheelGame),
+            }
+        )));
+    }
+
+    #[test]
+    fn relic_result_opens_reward_screen_with_one_relic_reward() {
+        let mut run_state = wheel_run(20, 80, 0);
+        run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(1));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("relic result should open reward screen");
+        };
+        assert_eq!(rewards.items.len(), 1);
+        assert!(matches!(
+            rewards.items[0],
+            crate::rewards::state::RewardItem::Relic { .. }
+        ));
+    }
+
+    #[test]
+    fn curse_result_uses_obtain_pipeline_so_omamori_can_block_decay() {
+        let mut run_state = wheel_run(20, 80, 0);
+        run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(3));
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(!run_state.master_deck.iter().any(|card| card.id == CardId::Decay));
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Omamori should remain after blocking the curse");
+        assert_eq!(omamori.counter, 1);
+    }
+
+    #[test]
+    fn purge_result_opens_non_bottled_purge_selection_when_possible() {
+        let mut run_state = wheel_run(20, 80, 0);
+        run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(4));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(matches!(
+            engine_state,
+            EngineState::RunPendingChoice(ref pending)
+                if pending.reason == RunPendingChoiceReason::PurgeNonBottled
+                    && pending.min_choices == 1
+                    && pending.max_choices == 1
+        ));
     }
 }
