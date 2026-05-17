@@ -281,54 +281,9 @@ impl EventGenerator {
 
         if let Some(pos) = self.event_pool.iter().position(|&e| e == chosen) {
             self.event_pool.remove(pos);
-            if self.event_pool.is_empty() {
-                self.repopulate_event_list(ctx.act_num);
-            }
         }
 
         Some(chosen)
-    }
-
-    fn repopulate_event_list(&mut self, act_num: u8) {
-        self.event_pool = match act_num {
-            1 => vec![
-                EventId::BigFish,
-                EventId::Cleric,
-                EventId::DeadAdventurer,
-                EventId::GoldenIdol,
-                EventId::GoldenWing,
-                EventId::WorldOfGoop,
-                EventId::Ssssserpent,
-                EventId::LivingWall,
-                EventId::Mushrooms,
-                EventId::ScrapOoze,
-                EventId::ShiningLight,
-            ],
-            2 => vec![
-                EventId::Addict,
-                EventId::BackTotheBasics,
-                EventId::Beggar,
-                EventId::Colosseum,
-                EventId::CursedTome,
-                EventId::DrugDealer,
-                EventId::ForgottenAltar,
-                EventId::Ghosts,
-                EventId::MaskedBandits,
-                EventId::Nest,
-                EventId::TheLibrary,
-                EventId::Mausoleum,
-                EventId::Vampires,
-            ],
-            _ => vec![
-                EventId::Falling,
-                EventId::MindBloom,
-                EventId::MoaiHead,
-                EventId::MysteriousSphere,
-                EventId::SensoryStone,
-                EventId::TombRedMask,
-                EventId::WindingHalls,
-            ],
-        };
     }
 
     fn generate_event_fallback(&mut self, rng: &mut RngPool) -> EventId {
@@ -514,6 +469,24 @@ mod tests {
         assert!(!without_note
             .one_time_event_pool
             .contains(&EventId::NoteForYourself));
+    }
+
+    #[test]
+    fn ordinary_event_pool_does_not_repopulate_when_exhausted() {
+        let mut generator = EventGenerator::new(1);
+        let c = ctx();
+        let mut rng = RngPool::new(7);
+
+        generator.event_pool = vec![EventId::Cleric];
+        generator.shrine_pool.clear();
+        generator.one_time_event_pool.clear();
+
+        assert_eq!(
+            generator.try_get_pool_event(&mut rng, &c),
+            Some(EventId::Cleric)
+        );
+        assert!(generator.event_pool.is_empty());
+        assert_eq!(generator.try_get_pool_event(&mut rng, &c), None);
     }
 
     #[test]

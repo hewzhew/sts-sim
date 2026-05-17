@@ -295,6 +295,9 @@ Important boundary:
 - Java initializes the special one-time event list once in Exordium and carries
   the same list into later acts. Rust now preserves that lifetime: an exhausted
   one-time event pool is not repopulated by act transitions.
+- Java ordinary `eventList` is act-local and events are removed as they appear;
+  it is not rebuilt mid-act when emptied. Rust now preserves an exhausted
+  ordinary event pool until the next act's event-list initialization.
 - Java `SecretPortal` is now represented in Rust as a special one-time Act 3
   event with the Java playtime gate. The Rust event handler maps accepting the
   portal to the boss combat boundary instead of modeling Java's UI room
