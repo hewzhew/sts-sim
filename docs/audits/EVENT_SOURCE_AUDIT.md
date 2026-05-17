@@ -140,6 +140,34 @@ Tests:
 
 - `basics_upgrades_only_upgradeable_starter_strikes_and_defends`
 
+### Fountain bottled curse removal semantics
+
+Java `events/shrines/FountainOfCurseRemoval.java` removes curses by scanning the
+master deck backwards and skipping cards that are:
+
+```text
+not Curse
+or inBottleFlame
+or inBottleLightning
+or AscendersBane / CurseOfTheBell / Necronomicurse
+```
+
+Rust previously treated every non-special Curse as removable, regardless of
+bottled attachment, and emitted generic `DeckMutation` removal events.
+
+Fixes:
+
+- Fountain drink availability and actual removal now share one source-backed
+  removable-curse predicate.
+- Bottled curses are excluded from Fountain removal.
+- Removed curses now emit `CardRemoved` with
+  `Event(FountainOfCurseCleansing)`.
+
+Tests:
+
+- `fountain_removes_only_non_bottled_removable_curses_with_event_source`
+- `fountain_drink_is_disabled_when_only_bottled_or_special_curses_exist`
+
 ### Non-bottled card selection sweeps
 
 Java frequently opens deck selection through:
@@ -1285,4 +1313,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `908 passed`.
+- Current result after this pass: `910 passed`.
