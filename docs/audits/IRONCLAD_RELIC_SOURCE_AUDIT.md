@@ -23,6 +23,10 @@ Java evidence:
 - `AbstractDungeon.initializeRelicList()` populates each tier pool, shuffles
   every full pool with `Collections.shuffle(pool, new Random(relicRng.randomLong()))`,
   and only then removes `relicsToRemoveOnStart`.
+- `RelicLibrary.populateRelicPool()` iterates `sharedRelics.entrySet()` and
+  then the matching class-specific `HashMap.entrySet()`, so pre-shuffle relic
+  pool order is Java HashMap traversal order rather than source `add(...)`
+  order.
 
 Rust result:
 - `RunState::random_relic_by_tier` now models the normal front draw path.
@@ -32,6 +36,8 @@ Rust result:
 - Shop generation and Courier relic-slot replacement now use the end path.
 - `RunState::init_relic_pools` now shuffles before removing already-owned
   relics, preserving Java's remaining-pool order.
+- `build_relic_pool` now uses Java HashMap traversal order for shared and
+  class-specific registered relic maps.
 
 Coverage:
 - `normal_and_end_relic_paths_consume_opposite_pool_ends_like_java`
@@ -39,6 +45,7 @@ Coverage:
 - `ectoplasm_can_spawn_only_in_act_one_and_blocks_gold_gain`
 - `rare_run_relic_can_spawn_gates_match_java_sources`
 - `init_relic_pools_shuffles_before_removing_owned_relics_like_java`
+- `relic_pool_build_order_matches_java_hashmap_traversal`
 
 ## Pool-Level Correction - Relic `canSpawn` Gates
 

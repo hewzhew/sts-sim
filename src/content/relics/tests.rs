@@ -1873,6 +1873,77 @@ fn normal_and_end_relic_paths_consume_opposite_pool_ends_like_java() {
 }
 
 #[test]
+fn relic_pool_build_order_matches_java_hashmap_traversal() {
+    assert_eq!(
+        build_relic_pool(RelicTier::Common, "Ironclad"),
+        vec![
+            RelicId::Whetstone,
+            RelicId::Boot,
+            RelicId::BloodVial,
+            RelicId::MealTicket,
+            RelicId::PenNib,
+            RelicId::Akabeko,
+            RelicId::Lantern,
+            RelicId::RegalPillow,
+            RelicId::BagOfPreparation,
+            RelicId::AncientTeaSet,
+            RelicId::SmilingMask,
+            RelicId::PotionBelt,
+            RelicId::PreservedInsect,
+            RelicId::Omamori,
+            RelicId::MawBank,
+            RelicId::ArtOfWar,
+            RelicId::ToyOrnithopter,
+            RelicId::CeramicFish,
+            RelicId::Vajra,
+            RelicId::CentennialPuzzle,
+            RelicId::Strawberry,
+            RelicId::HappyFlower,
+            RelicId::OddlySmoothStone,
+            RelicId::WarPaint,
+            RelicId::BronzeScales,
+            RelicId::JuzuBracelet,
+            RelicId::DreamCatcher,
+            RelicId::Nunchaku,
+            RelicId::TinyChest,
+            RelicId::Orichalcum,
+            RelicId::Anchor,
+            RelicId::BagOfMarbles,
+            RelicId::RedSkull,
+        ],
+        "RelicLibrary.populateRelicPool iterates Java HashMap entrySet order, not source add order"
+    );
+    assert_eq!(
+        build_relic_pool(RelicTier::Boss, "Silent"),
+        vec![
+            RelicId::FusionHammer,
+            RelicId::VelvetChoker,
+            RelicId::RunicDome,
+            RelicId::SlaversCollar,
+            RelicId::SneckoEye,
+            RelicId::PandorasBox,
+            RelicId::CursedKey,
+            RelicId::BustedCrown,
+            RelicId::Ectoplasm,
+            RelicId::TinyHouse,
+            RelicId::Sozu,
+            RelicId::PhilosopherStone,
+            RelicId::Astrolabe,
+            RelicId::BlackStar,
+            RelicId::SacredBark,
+            RelicId::EmptyCage,
+            RelicId::RunicPyramid,
+            RelicId::CallingBell,
+            RelicId::CoffeeDripper,
+            RelicId::WristBlade,
+            RelicId::HoveringKite,
+            RelicId::RingOfTheSerpent,
+        ],
+        "Class-specific relic HashMap order is appended after the shared HashMap order"
+    );
+}
+
+#[test]
 fn shared_rare_start_and_turn_relic_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::CaptainsWheel), RelicTier::Rare);
     assert_eq!(get_relic_tier(RelicId::ClockworkSouvenir), RelicTier::Shop);
