@@ -1133,6 +1133,8 @@ impl RunState {
         self.act_num += 1;
         self.pending_boss_reward = false;
 
+        self.align_card_rng_counter_for_dungeon_transition();
+
         // Boss defeat heal
         // Java: AbstractDungeon.dungeonTransitionSetup() -> player.heal(0.75 or maxHealth)
         let missing = self.max_hp - self.current_hp;
@@ -1195,6 +1197,18 @@ impl RunState {
                 }
             } // TheEnding
         };
+    }
+
+    fn align_card_rng_counter_for_dungeon_transition(&mut self) {
+        let target = match self.rng_pool.card_rng.counter {
+            1..=249 => Some(250),
+            251..=499 => Some(500),
+            501..=749 => Some(750),
+            _ => None,
+        };
+        if let Some(target) = target {
+            self.rng_pool.card_rng.advance_counter_to(target);
+        }
     }
 
     /// Roll a random relic tier using relicRng.
@@ -1859,6 +1873,44 @@ mod tests {
         low_asc.max_hp = 80;
         low_asc.advance_act();
         assert_eq!(low_asc.current_hp, 80);
+    }
+
+    #[test]
+    fn advance_act_aligns_card_rng_counter_like_java_dungeon_transition_setup() {
+        fn card_rng_after_calls(count: u32) -> StsRng {
+            let mut rng = StsRng::new(17);
+            for _ in 0..count {
+                let _ = rng.random(999);
+            }
+            rng
+        }
+
+        for (counter_before, expected_counter_after) in [
+            (0, 0),
+            (1, 250),
+            (249, 250),
+            (250, 250),
+            (251, 500),
+            (499, 500),
+            (500, 500),
+            (501, 750),
+            (749, 750),
+            (750, 750),
+            (800, 800),
+        ] {
+            let mut run = RunState::new(17, 0, false, "Ironclad");
+            run.rng_pool.card_rng = card_rng_after_calls(counter_before);
+
+            let mut expected = run.rng_pool.card_rng.clone();
+            expected.advance_counter_to(expected_counter_after);
+
+            run.advance_act();
+
+            assert_eq!(
+                run.rng_pool.card_rng, expected,
+                "Java dungeonTransitionSetup aligns cardRng counter {counter_before} to {expected_counter_after} by consuming randomBoolean calls"
+            );
+        }
     }
 
     #[test]

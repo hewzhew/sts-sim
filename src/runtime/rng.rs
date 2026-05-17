@@ -42,6 +42,18 @@ impl StsRng {
         rng
     }
 
+    /// Advance to a target counter using Java `Random.setCounter` semantics.
+    ///
+    /// Java does not assign the counter directly. It repeatedly calls
+    /// `randomBoolean()` until the target counter is reached, which advances the
+    /// underlying RNG state as well as the public counter.
+    pub fn advance_counter_to(&mut self, target_counter: u32) {
+        while self.counter < target_counter {
+            self.counter += 1;
+            let _ = self.next_boolean();
+        }
+    }
+
     // ── Core xorshift128+ ──────────────────────────────────────────────
 
     #[inline]
@@ -364,5 +376,29 @@ impl RngPool {
         self.shuffle_rng = StsRng::new(floor_seed);
         self.card_random_rng = StsRng::new(floor_seed);
         self.misc_rng = StsRng::new(floor_seed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StsRng;
+
+    #[test]
+    fn advance_counter_to_matches_java_set_counter_random_boolean_consumption() {
+        let mut actual = StsRng::new(42);
+        let mut expected = actual.clone();
+
+        actual.advance_counter_to(250);
+        for _ in 0..250 {
+            let _ = expected.random_boolean();
+        }
+
+        assert_eq!(actual, expected);
+
+        actual.advance_counter_to(100);
+        assert_eq!(
+            actual, expected,
+            "Java Random.setCounter does not rewind when the counter is already past the target"
+        );
     }
 }

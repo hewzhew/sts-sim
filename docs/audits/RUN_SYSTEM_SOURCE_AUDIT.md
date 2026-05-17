@@ -196,6 +196,9 @@ Key source facts:
 
 - `dungeonTransitionSetup()` increments `actNum`, clears path/event/monster/
   elite/boss lists, resets event probabilities, and heals exactly once.
+- Before the heal, Java aligns `cardRng.counter` upward to the next act band:
+  1..249 -> 250, 251..499 -> 500, 501..749 -> 750. `Random.setCounter`
+  consumes `randomBoolean()` calls instead of assigning the counter directly.
 - At Ascension 5+, the heal is
   `round((maxHealth - currentHealth) * 0.75)`.
 - Below Ascension 5, the heal is full.
@@ -203,10 +206,14 @@ Key source facts:
 Rust result:
 
 - `RunState::advance_act()` no longer applies the between-act heal twice.
+- `RunState::advance_act()` now mirrors Java card reward RNG band alignment and
+  advances the underlying RNG state while moving the counter.
 
 Coverage:
 
 - `advance_act_heals_once_like_java_dungeon_transition_setup`
+- `advance_act_aligns_card_rng_counter_like_java_dungeon_transition_setup`
+- `advance_counter_to_matches_java_set_counter_random_boolean_consumption`
 
 ## Event Pool Reachability Pass
 
@@ -257,5 +264,5 @@ Important boundary:
 Validation:
 
 - `cargo test events::generator --all-targets`
-- Latest full-suite validation after between-act healing work:
-  `cargo test --all-targets` -> `1013 passed`.
+- Latest full-suite validation after between-act transition work:
+  `cargo test --all-targets` -> `1015 passed`.
