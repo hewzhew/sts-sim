@@ -1145,18 +1145,18 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
         match room_type {
             RoomType::MonsterRoomElite => run_state
                 .next_elite()
-                .unwrap_or(factory::EncounterId::JawWorm),
+                .expect("elite encounter list unexpectedly empty; do not fake JawWorm"),
             RoomType::MonsterRoomBoss => run_state
                 .next_boss()
-                .unwrap_or(factory::EncounterId::Hexaghost),
+                .expect("boss encounter key unexpectedly missing; do not fake Hexaghost"),
             _ => run_state
                 .next_encounter()
-                .unwrap_or(factory::EncounterId::JawWorm),
+                .expect("monster encounter list unexpectedly empty; do not fake JawWorm"),
         }
     } else {
         run_state
             .next_encounter()
-            .unwrap_or(factory::EncounterId::JawWorm)
+            .expect("monster encounter list unexpectedly empty; do not fake JawWorm")
     };
 
     if current_display >= DisplayMode::Summary {

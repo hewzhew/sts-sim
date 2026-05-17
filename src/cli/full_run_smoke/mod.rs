@@ -572,12 +572,20 @@ fn observation_signature_key(observation: &RunObservationV0) -> String {
 fn init_combat(run_state: &mut RunState) -> CombatState {
     let encounter_id = if let Some(room_type) = run_state.map.get_current_room_type() {
         match room_type {
-            RoomType::MonsterRoomElite => run_state.next_elite().unwrap_or(EncounterId::JawWorm),
-            RoomType::MonsterRoomBoss => run_state.next_boss().unwrap_or(EncounterId::Hexaghost),
-            _ => run_state.next_encounter().unwrap_or(EncounterId::JawWorm),
+            RoomType::MonsterRoomElite => run_state
+                .next_elite()
+                .expect("elite encounter list unexpectedly empty; do not fake JawWorm"),
+            RoomType::MonsterRoomBoss => run_state
+                .next_boss()
+                .expect("boss encounter key unexpectedly missing; do not fake Hexaghost"),
+            _ => run_state
+                .next_encounter()
+                .expect("monster encounter list unexpectedly empty; do not fake JawWorm"),
         }
     } else {
-        run_state.next_encounter().unwrap_or(EncounterId::JawWorm)
+        run_state
+            .next_encounter()
+            .expect("monster encounter list unexpectedly empty; do not fake JawWorm")
     };
     let mut combat = build_combat_state(run_state, encounter_id);
     if let Some(room_type) = run_state.map.get_current_room_type() {

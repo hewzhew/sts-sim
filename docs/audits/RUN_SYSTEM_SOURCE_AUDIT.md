@@ -334,6 +334,15 @@ Source-backed result:
   `Shield and Spear`.
 - Rust already modeled Act 4 as `ShieldAndSpear` lists. It now treats unknown
   act ids as empty encounter lists instead of silently falling back to Act 1.
+- Java room creation reads the front of `monsterList` / `eliteMonsterList`;
+  `nextRoomTransition()` removes that front entry only when leaving the current
+  MonsterRoom or MonsterRoomElite. Rust still consumes the queue at combat
+  creation through `RunState::next_encounter()` / `next_elite()`, so mid-room
+  save/replay semantics remain open. The CLI/full-run smoke entrypoints no
+  longer hide an exhausted queue by substituting `JawWorm`; an unexpected empty
+  queue is now a hard failure until the room lifecycle is modeled directly.
+- The same rule now applies to boss room creation: a missing `bossKey` /
+  `boss_list` front is not replaced with `Hexaghost`.
 
 ## Boss Chest Relic Flow Pass
 
