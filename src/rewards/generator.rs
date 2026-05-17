@@ -130,7 +130,7 @@ pub fn generate_room_rewards_before_screen(
             .iter()
             .any(|r| r.id == crate::content::relics::RelicId::BlackStar)
         {
-            let relic_id2 = run_state.random_relic();
+            let relic_id2 = run_state.random_noncampfire_relic_reward();
             items.push(RewardItem::Relic {
                 relic_id: relic_id2,
             });
@@ -249,8 +249,9 @@ mod tests {
         select_reward_card_candidate,
     };
     use crate::content::cards::{CardId, CardRarity};
-    use crate::content::relics::{RelicId, RelicState};
+    use crate::content::relics::{RelicId, RelicState, RelicTier};
     use crate::rewards::state::RewardItem;
+    use crate::runtime::rng::StsRng;
     use crate::state::run::RunState;
 
     #[test]
@@ -314,6 +315,58 @@ mod tests {
         assert!(matches!(rewards.items[2], RewardItem::Relic { .. }));
         assert!(matches!(rewards.items[3], RewardItem::Potion { .. }));
         assert!(matches!(rewards.items[4], RewardItem::Card { .. }));
+    }
+
+    #[test]
+    fn black_star_second_elite_relic_skips_campfire_relics_like_java() {
+        fn tier_from_relic_rng(rng: &mut StsRng) -> RelicTier {
+            match rng.random_range(0, 99) {
+                0..=49 => RelicTier::Common,
+                50..=82 => RelicTier::Uncommon,
+                _ => RelicTier::Rare,
+            }
+        }
+
+        let seed = (1..10_000)
+            .find(|seed| {
+                let mut rng = StsRng::new(*seed);
+                tier_from_relic_rng(&mut rng) == RelicTier::Common
+                    && tier_from_relic_rng(&mut rng) == RelicTier::Rare
+            })
+            .expect("test seed with Common then Rare relic tier rolls");
+
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::BlackStar));
+        run_state.rng_pool.relic_rng = StsRng::new(seed);
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+        run_state.uncommon_relic_pool = vec![RelicId::Sundial];
+        run_state.rare_relic_pool = vec![
+            RelicId::PeacePipe,
+            RelicId::Shovel,
+            RelicId::Girya,
+            RelicId::Mango,
+        ];
+
+        let rewards = super::generate_combat_rewards(&mut run_state, true, false);
+        let relics = rewards
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                RewardItem::Relic { relic_id } => Some(*relic_id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            relics,
+            vec![RelicId::Anchor, RelicId::Mango],
+            "Java Black Star uses returnRandomNonCampfireRelic for the second elite relic"
+        );
+        assert!(
+            run_state.rare_relic_pool.is_empty(),
+            "Java consumes skipped Peace Pipe/Shovel/Girya candidates while searching the same tier"
+        );
     }
 
     #[test]

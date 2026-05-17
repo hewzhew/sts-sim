@@ -1375,12 +1375,39 @@ impl RunState {
         }
     }
 
+    /// Returns a random non-campfire relic of the given tier.
+    /// Java: `AbstractDungeon.returnRandomNonCampfireRelic(tier)`.
+    ///
+    /// This is used by Black Star's second elite relic. Java repeatedly draws
+    /// from the same tier until the result is not Peace Pipe, Shovel, or Girya;
+    /// skipped relics are consumed from the pool.
+    pub fn random_noncampfire_relic(
+        &mut self,
+        tier: crate::content::relics::RelicTier,
+    ) -> crate::content::relics::RelicId {
+        use crate::content::relics::RelicId;
+        loop {
+            let id = self.random_relic_by_tier(tier);
+            match id {
+                RelicId::PeacePipe | RelicId::Shovel | RelicId::Girya => continue,
+                _ => return id,
+            }
+        }
+    }
+
     /// Roll a relic tier, then return a Java screenless relic from that tier.
     /// Used by events that call `AbstractDungeon.returnRandomScreenlessRelic`
     /// rather than room reward generation.
     pub fn random_screenless_relic_reward(&mut self) -> crate::content::relics::RelicId {
         let tier = self.return_random_relic_tier();
         self.random_screenless_relic(tier)
+    }
+
+    /// Roll a relic tier, then return a Java non-campfire relic from that tier.
+    /// Used by elite Black Star rewards.
+    pub fn random_noncampfire_relic_reward(&mut self) -> crate::content::relics::RelicId {
+        let tier = self.return_random_relic_tier();
+        self.random_noncampfire_relic(tier)
     }
 
     /// Default random relic reward: roll tier then return a normal relic from

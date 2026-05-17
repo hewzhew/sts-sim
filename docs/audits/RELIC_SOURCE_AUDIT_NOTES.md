@@ -21,3 +21,22 @@ Rust result:
 
 Coverage:
 - `warped_tongs_triggers_after_turn_start_draw_like_java_sources`
+
+## Black Star
+
+Java evidence:
+- `D:/rust/cardcrawl/relics/BlackStar.java`
+- `D:/rust/cardcrawl/rooms/MonsterRoomElite.java`
+- `MonsterRoomElite.dropReward()` first calls `addRelicToRewards(tier)`, then
+  if Black Star is owned calls `addNoncampRelicToRewards(returnRandomRelicTier())`.
+- `AbstractDungeon.returnRandomNonCampfireRelic(tier)` repeatedly draws from the
+  same tier while the result is `Peace Pipe`, `Shovel`, or `Girya`; skipped
+  candidates are consumed.
+
+Rust result:
+- Normal elite relic rewards continue to use `random_relic`.
+- Black Star's second elite relic now uses `random_noncampfire_relic_reward`,
+  matching Java's exclusion of the three campfire relics.
+
+Coverage:
+- `black_star_second_elite_relic_skips_campfire_relics_like_java`
