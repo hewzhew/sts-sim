@@ -230,3 +230,121 @@ impl MonsterBehavior for SlaverRed {
         actions
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{SlaverRed, ENTANGLE, SCRAPE, STAB};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
+    use crate::semantics::combat::{MonsterMoveSpec, MoveStep};
+
+    fn red_slaver_with_history(history: &[u8]) -> crate::runtime::combat::MonsterEntity {
+        let mut monster = crate::testing::support::test_monster(EnemyId::SlaverRed);
+        monster.move_history_mut().extend(history.iter().copied());
+        monster
+    }
+
+    #[test]
+    fn red_slaver_roll_logic_matches_java_private_flags_from_move_history() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+
+        let first = red_slaver_with_history(&[]);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &first, 0, 99).move_id,
+            STAB,
+            "Java firstTurn forces Stab before considering the random roll"
+        );
+
+        let after_first_stab = red_slaver_with_history(&[STAB]);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_first_stab, 0, 75).move_id,
+            ENTANGLE,
+            "Java uses Entangle once when num >= 75 and usedEntangle is false"
+        );
+
+        let after_entangle = red_slaver_with_history(&[STAB, ENTANGLE]);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_entangle, 0, 55).move_id,
+            STAB,
+            "Java post-Entangle high roll prefers Stab unless the last two moves were Stab"
+        );
+
+        let after_entangle_and_two_stabs = red_slaver_with_history(&[STAB, ENTANGLE, STAB, STAB]);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_entangle_and_two_stabs, 0, 99).move_id,
+            SCRAPE,
+            "Java falls through to Scrape when post-Entangle Stab is blocked by lastTwoMoves"
+        );
+    }
+
+    #[test]
+    fn red_slaver_a17_scrape_cannot_repeat_immediately_like_java() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+
+        let after_scrape = red_slaver_with_history(&[STAB, SCRAPE]);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_scrape, 17, 0).move_id,
+            STAB,
+            "Java A17+ checks lastMove(Scrape), not lastTwoMoves(Scrape)"
+        );
+
+        let after_non_scrape = red_slaver_with_history(&[STAB, STAB]);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_non_scrape, 17, 0).move_id,
+            SCRAPE
+        );
+    }
+
+    #[test]
+    fn red_slaver_take_turn_actions_preserve_java_order_and_amounts() {
+        let mut state = crate::testing::support::blank_test_combat();
+        state.meta.ascension_level = 17;
+        let monster = crate::testing::support::test_monster(EnemyId::SlaverRed);
+
+        let entangle_actions =
+            SlaverRed::take_turn_plan(&mut state, &monster, &super::entangle_plan());
+        assert!(matches!(
+            entangle_actions.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Entangle,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        let scrape_actions =
+            SlaverRed::take_turn_plan(&mut state, &monster, &super::scrape_plan(17));
+        assert!(matches!(
+            scrape_actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 9,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Vulnerable,
+                    amount: 2,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        assert!(matches!(
+            super::entangle_plan().summary_spec(),
+            MonsterMoveSpec::StrongDebuff(_)
+        ));
+        assert!(matches!(
+            super::scrape_plan(17).steps.as_slice(),
+            [MoveStep::Attack(_), MoveStep::ApplyPower(_)]
+        ));
+    }
+}

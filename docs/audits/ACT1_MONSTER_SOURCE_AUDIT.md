@@ -104,14 +104,20 @@ the mechanical results as runtime updates and queued actions, not as UI state.
 Existing Rust coverage includes the Twin Slam ordering where defensive block remains until after
 the two attacks and reflected damage, matching Java's `ChangeState(Offensive Mode)` queue order.
 
+### Red Slaver
+
+Java has private `firstTurn` and `usedEntangle` fields, but both are recoverable from the Java
+move-history model for simulator-owned combats: `setMove()` appends to `moveHistory` when a move
+is planned, `firstTurn` is equivalent to empty history, and `usedEntangle` is equivalent to an
+Entangle move already appearing in history. Rust keeps that representation and now has direct
+coverage for the first move, one-time Entangle gate, post-Entangle Stab preference, A17 Scrape
+repeat rule, and take-turn action order.
+
 ## Still Worth Rechecking
 
 - Slime split behavior under multi-hit player attacks: Java sets split intent immediately and also
   queues `SetMoveAction`; Rust queues `SetMonsterMove` from the Split hook. This should converge at
   the stable decision boundary, but multi-hit interleaving is worth a dedicated regression.
-- Red Slaver live-import edge: Java has private `firstTurn` and `usedEntangle`; Rust mostly infers
-  from move history. A live snapshot after Entangle is planned but before it executes may need an
-  explicit runtime field if protocol parity requires that intermediate state.
 - Guardian threshold behavior under multi-hit attacks should stay covered by the dedicated Guardian
   threshold matrix.
 
@@ -122,4 +128,7 @@ the two attacks and reflected damage, matching Java's `ChangeState(Offensive Mod
 - `protect_followup_counts_zero_hp_not_yet_dying_monsters_like_java`
 - `split_power_prebattle_uses_java_sentinel_amount`
 - `burn_increase_upgrades_only_draw_and_discard_like_java`
+- `red_slaver_roll_logic_matches_java_private_flags_from_move_history`
+- `red_slaver_a17_scrape_cannot_repeat_immediately_like_java`
+- `red_slaver_take_turn_actions_preserve_java_order_and_amounts`
 - Existing Guardian and Lagavulin source-parity tests
