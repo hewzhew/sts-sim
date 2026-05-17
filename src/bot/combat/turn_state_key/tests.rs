@@ -519,6 +519,32 @@ fn stable_monster_signature_ignores_irrelevant_runtime_fields_but_keeps_relevant
         stable_outcome_key(&EngineState::CombatPlayerTurn, &spear),
         stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_spear),
     );
+
+    let mut red_slaver = blank_test_combat();
+    red_slaver
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::SlaverRed, 1));
+    let mut changed_red_slaver = red_slaver.clone();
+    changed_red_slaver.entities.monsters[0]
+        .slaver_red
+        .used_entangle = true;
+    assert_ne!(
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &red_slaver),
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_red_slaver),
+    );
+
+    let mut changed_red_slaver_first_turn = red_slaver.clone();
+    changed_red_slaver_first_turn.entities.monsters[0]
+        .slaver_red
+        .first_turn = false;
+    assert_ne!(
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &red_slaver),
+        stable_outcome_key(
+            &EngineState::CombatPlayerTurn,
+            &changed_red_slaver_first_turn
+        ),
+    );
 }
 
 #[test]

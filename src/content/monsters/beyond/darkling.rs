@@ -398,6 +398,7 @@ mod tests {
             spiker: Default::default(),
             spire_shield: Default::default(),
             spire_spear: Default::default(),
+            slaver_red: Default::default(),
             darkling: DarklingRuntimeState {
                 first_move: false,
                 nip_dmg: 0,

@@ -47,6 +47,7 @@ pub fn sync_monsters_from_snapshots(
             spiker: Default::default(),
             spire_shield: Default::default(),
             spire_spear: Default::default(),
+            slaver_red: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),

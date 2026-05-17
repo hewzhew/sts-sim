@@ -106,6 +106,11 @@ pub enum MonsterRuntimePatch {
         move_count: Option<u8>,
         protocol_seeded: Option<bool>,
     },
+    SlaverRed {
+        first_turn: Option<bool>,
+        used_entangle: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

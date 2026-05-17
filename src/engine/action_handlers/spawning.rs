@@ -139,6 +139,7 @@ pub fn handle_spawn_monster(
         spiker: Default::default(),
         spire_shield: Default::default(),
         spire_spear: Default::default(),
+        slaver_red: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -237,6 +238,11 @@ pub fn handle_spawn_monster(
     if enemy_id == crate::content::monsters::EnemyId::SpireSpear {
         new_monster.spire_spear.protocol_seeded = true;
         new_monster.spire_spear.move_count = 0;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::SlaverRed {
+        new_monster.slaver_red.protocol_seeded = true;
+        new_monster.slaver_red.first_turn = true;
+        new_monster.slaver_red.used_entangle = false;
     }
     if matches!(
         enemy_id,
@@ -898,6 +904,31 @@ fn handle_update_spire_spear_state(
     }
 }
 
+fn handle_update_slaver_red_state(
+    monster_id: usize,
+    first_turn: Option<bool>,
+    used_entangle: Option<bool>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = first_turn {
+            monster.slaver_red.first_turn = value;
+        }
+        if let Some(value) = used_entangle {
+            monster.slaver_red.used_entangle = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.slaver_red.protocol_seeded = value;
+        }
+    }
+}
+
 pub fn handle_update_monster_runtime(
     monster_id: usize,
     patch: MonsterRuntimePatch,
@@ -1048,6 +1079,17 @@ pub fn handle_update_monster_runtime(
             move_count,
             protocol_seeded,
         } => handle_update_spire_spear_state(monster_id, move_count, protocol_seeded, state),
+        MonsterRuntimePatch::SlaverRed {
+            first_turn,
+            used_entangle,
+            protocol_seeded,
+        } => handle_update_slaver_red_state(
+            monster_id,
+            first_turn,
+            used_entangle,
+            protocol_seeded,
+            state,
+        ),
     }
 }
 

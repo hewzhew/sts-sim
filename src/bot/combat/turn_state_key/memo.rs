@@ -143,7 +143,8 @@ fn monster_signature(monster: &MonsterEntity) -> String {
             "move={:?}:hex={:?}:louse={:?}:jaw={:?}:thief={:?}:byrd={:?}:chosen={:?}:",
             "snecko={:?}:parasite={:?}:bronze_auto={:?}:bronze_orb={:?}:book={:?}:",
             "collector={:?}:champ={:?}:writhing_mass={:?}:spiker={:?}:",
-            "spire_shield={:?}:spire_spear={:?}:darkling={:?}:lagavulin={:?}:guardian={:?}"
+            "spire_shield={:?}:spire_spear={:?}:slaver_red={:?}:",
+            "darkling={:?}:lagavulin={:?}:guardian={:?}"
         ),
         monster.id,
         monster.monster_type,
@@ -173,6 +174,7 @@ fn monster_signature(monster: &MonsterEntity) -> String {
         monster.spiker,
         monster.spire_shield,
         monster.spire_spear,
+        monster.slaver_red,
         monster.darkling,
         monster.lagavulin,
         monster.guardian,

@@ -32,6 +32,7 @@ Scope:
 | Snake Plant | None | N/A | N/A | N/A | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
 | Louse | `bite_damage` | Yes | N/A | Yes | None | Good |
 | Snecko | `first_turn` | Yes | Yes | Yes | `lastTwoMoves(BITE)` sequencing | Good |
+| Red Slaver | `first_turn`, `used_entangle` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Partial | N/A | Legacy-heavy | Debt remains |
 
@@ -92,6 +93,12 @@ Scope:
 - `runtime_state.first_turn` is now exported by `CommunicationMod`.
 - Rust semantic roll logic requires `first_turn` to be protocol-seeded or factory-seeded.
 - Remaining history usage is limited to Java's explicit `lastTwoMoves(BITE)` rule.
+
+### Red Slaver
+
+- `runtime_state.first_turn` and `runtime_state.used_entangle` are now exported by `CommunicationMod`.
+- Rust semantic roll logic requires both fields to be protocol-seeded or factory-seeded.
+- Remaining history usage is limited to Java's explicit repeat rules around `STAB` and `SCRAPE`.
 
 ### Champ
 

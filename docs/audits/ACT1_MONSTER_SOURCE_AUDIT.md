@@ -110,12 +110,14 @@ Defensive Mode action itself resolves.
 
 ### Red Slaver
 
-Java has private `firstTurn` and `usedEntangle` fields, but both are recoverable from the Java
-move-history model for simulator-owned combats: `setMove()` appends to `moveHistory` when a move
-is planned, `firstTurn` is equivalent to empty history, and `usedEntangle` is equivalent to an
-Entangle move already appearing in history. Rust keeps that representation and now has direct
-coverage for the first move, one-time Entangle gate, post-Entangle Stab preference, A17 Scrape
-repeat rule, and take-turn action order.
+Java has private `firstTurn` and `usedEntangle` fields. They are not safe to reconstruct from the
+short live protocol move-history window: Java `setMove()` appends to `moveHistory` while planning,
+but the protocol only exports current / last / second-last move ids. Rust now stores both fields in
+`SlaverRedRuntimeState`, `CommunicationMod` exports them as `monster.runtime_state.first_turn` and
+`monster.runtime_state.used_entangle`, and state sync treats them as strict protocol truth.
+
+Remaining move-history use is limited to Java's explicit `lastMove` / `lastTwoMoves` repeat rules
+for Stab and Scrape. Entangle gating and first-turn behavior come from runtime truth only.
 
 ### Looter
 
@@ -147,6 +149,8 @@ jumping to the front.
 - `mode_shift_threshold_keeps_power_until_defensive_change_state_resolves`
 - `burn_increase_upgrades_only_draw_and_discard_like_java`
 - `red_slaver_roll_logic_matches_java_private_flags_from_move_history`
+- `red_slaver_used_entangle_is_private_runtime_not_truncated_history`
+- `red_slaver_first_turn_is_private_runtime_not_empty_history`
 - `red_slaver_a17_scrape_cannot_repeat_immediately_like_java`
 - `red_slaver_take_turn_actions_preserve_java_order_and_amounts`
 - `looter_escape_marks_room_mugged_even_without_stolen_gold_like_java`

@@ -58,6 +58,8 @@ Examples:
 - `monster.runtime_state.used_mega_debuff`
 - `monster.runtime_state.thorns_count`
 - `monster.runtime_state.move_count`
+- `monster.runtime_state.first_turn`
+- `monster.runtime_state.used_entangle`
 - `relic.runtime_state.used_this_combat`
 - `relic.runtime_state.used_up`
 - `relic.runtime_state.counter`

@@ -144,6 +144,7 @@ pub fn build_encounter(
             spiker: Default::default(),
             spire_shield: Default::default(),
             spire_spear: Default::default(),
+            slaver_red: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
@@ -219,6 +220,11 @@ pub fn build_encounter(
         if enemy_id == EnemyId::SpireSpear {
             monster.spire_spear.protocol_seeded = true;
             monster.spire_spear.move_count = 0;
+        }
+        if enemy_id == EnemyId::SlaverRed {
+            monster.slaver_red.protocol_seeded = true;
+            monster.slaver_red.first_turn = true;
+            monster.slaver_red.used_entangle = false;
         }
         if matches!(enemy_id, EnemyId::Looter | EnemyId::Mugger) {
             monster.thief.protocol_seeded = true;

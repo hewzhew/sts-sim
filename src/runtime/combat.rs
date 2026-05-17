@@ -941,6 +941,7 @@ pub struct MonsterEntity {
     pub spiker: SpikerRuntimeState,
     pub spire_shield: SpireShieldRuntimeState,
     pub spire_spear: SpireSpearRuntimeState,
+    pub slaver_red: SlaverRedRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
@@ -1248,6 +1249,23 @@ pub struct SpireShieldRuntimeState {
 pub struct SpireSpearRuntimeState {
     pub protocol_seeded: bool,
     pub move_count: u8,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SlaverRedRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_turn: bool,
+    pub used_entangle: bool,
+}
+
+impl Default for SlaverRedRuntimeState {
+    fn default() -> Self {
+        Self {
+            protocol_seeded: false,
+            first_turn: true,
+            used_entangle: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2135,6 +2153,7 @@ mod tests {
             spiker: SpikerRuntimeState::default(),
             spire_shield: SpireShieldRuntimeState::default(),
             spire_spear: SpireSpearRuntimeState::default(),
+            slaver_red: SlaverRedRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2202,6 +2221,7 @@ mod tests {
             spiker: SpikerRuntimeState::default(),
             spire_shield: SpireShieldRuntimeState::default(),
             spire_spear: SpireSpearRuntimeState::default(),
+            slaver_red: SlaverRedRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2266,6 +2286,7 @@ mod tests {
             spiker: SpikerRuntimeState::default(),
             spire_shield: SpireShieldRuntimeState::default(),
             spire_spear: SpireSpearRuntimeState::default(),
+            slaver_red: SlaverRedRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
