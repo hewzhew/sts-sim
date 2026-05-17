@@ -59,6 +59,7 @@ Examples:
 - `monster.runtime_state.thorns_count`
 - `monster.runtime_state.move_count`
 - `monster.runtime_state.first_turn`
+- `monster.runtime_state.first_move`
 - `monster.runtime_state.used_entangle`
 - `monster.runtime_state.used_bellow`
 - `relic.runtime_state.used_this_combat`

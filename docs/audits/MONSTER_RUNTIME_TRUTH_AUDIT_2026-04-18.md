@@ -34,6 +34,8 @@ Scope:
 | Snecko | `first_turn` | Yes | Yes | Yes | `lastTwoMoves(BITE)` sequencing | Good |
 | Red Slaver | `first_turn`, `used_entangle` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Gremlin Nob | `used_bellow` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
+| Cultist | `first_move` | Yes | Yes | Yes | None | Good |
+| Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Partial | N/A | Legacy-heavy | Debt remains |
 
@@ -106,6 +108,19 @@ Scope:
 - `runtime_state.used_bellow` is now exported by `CommunicationMod`.
 - Rust semantic roll logic requires this latch to be protocol-seeded or factory-seeded.
 - Remaining history usage is limited to Java's explicit `SKULL_BASH` / `BULL_RUSH` repeat rules.
+
+### Cultist
+
+- `runtime_state.first_move` is now exported by `CommunicationMod`.
+- Rust semantic roll logic requires it to be protocol-seeded or factory-seeded.
+- The opening Incantation gate comes from this Java private field, not from empty move history.
+
+### Sentry
+
+- `runtime_state.first_move` is now exported by `CommunicationMod`.
+- Rust semantic roll logic requires it to be protocol-seeded or factory-seeded.
+- Opening Bolt/Beam parity uses the monster slot only while `first_move` is true. After that, move
+  history is used only for Java's explicit Bolt/Beam alternation.
 
 ### Champ
 

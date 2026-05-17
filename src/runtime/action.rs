@@ -115,6 +115,14 @@ pub enum MonsterRuntimePatch {
         used_bellow: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    Cultist {
+        first_move: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
+    Sentry {
+        first_move: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

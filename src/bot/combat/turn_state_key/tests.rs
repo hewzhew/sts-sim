@@ -472,6 +472,25 @@ fn stable_monster_signature_ignores_irrelevant_runtime_fields_but_keeps_relevant
         stable_outcome_key(&EngineState::CombatPlayerTurn, &irrelevant_runtime),
     );
 
+    let mut changed_cultist = cultist.clone();
+    changed_cultist.entities.monsters[0].cultist.first_move = false;
+    assert_ne!(
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &cultist),
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_cultist),
+    );
+
+    let mut sentry = blank_test_combat();
+    sentry
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::Sentry, 3));
+    let mut changed_sentry = sentry.clone();
+    changed_sentry.entities.monsters[0].sentry.first_move = false;
+    assert_ne!(
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &sentry),
+        stable_outcome_key(&EngineState::CombatPlayerTurn, &changed_sentry),
+    );
+
     let mut hexaghost = blank_test_combat();
     hexaghost
         .entities

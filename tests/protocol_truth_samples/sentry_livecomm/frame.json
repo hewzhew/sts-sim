@@ -50,6 +50,9 @@
           "move_hits": 1,
           "intent": "ATTACK",
           "powers": [],
+          "runtime_state": {
+            "first_move": false
+          },
           "is_gone": false,
           "half_dead": false
         }

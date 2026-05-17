@@ -943,6 +943,8 @@ pub struct MonsterEntity {
     pub spire_spear: SpireSpearRuntimeState,
     pub slaver_red: SlaverRedRuntimeState,
     pub gremlin_nob: GremlinNobRuntimeState,
+    pub cultist: CultistRuntimeState,
+    pub sentry: SentryRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
@@ -1273,6 +1275,18 @@ impl Default for SlaverRedRuntimeState {
 pub struct GremlinNobRuntimeState {
     pub protocol_seeded: bool,
     pub used_bellow: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CultistRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_move: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SentryRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_move: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2162,6 +2176,8 @@ mod tests {
             spire_spear: SpireSpearRuntimeState::default(),
             slaver_red: SlaverRedRuntimeState::default(),
             gremlin_nob: GremlinNobRuntimeState::default(),
+            cultist: CultistRuntimeState::default(),
+            sentry: SentryRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2231,6 +2247,8 @@ mod tests {
             spire_spear: SpireSpearRuntimeState::default(),
             slaver_red: SlaverRedRuntimeState::default(),
             gremlin_nob: GremlinNobRuntimeState::default(),
+            cultist: CultistRuntimeState::default(),
+            sentry: SentryRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2297,6 +2315,8 @@ mod tests {
             spire_spear: SpireSpearRuntimeState::default(),
             slaver_red: SlaverRedRuntimeState::default(),
             gremlin_nob: GremlinNobRuntimeState::default(),
+            cultist: CultistRuntimeState::default(),
+            sentry: SentryRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),

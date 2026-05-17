@@ -665,6 +665,12 @@ fn compile_monster_runtime_state(monster: &AuthorMonsterSpec, move_id: i32) -> V
             "first_move": false,
             "nip_dmg": 7,
         }),
+        "cultist" => json!({
+            "first_move": false,
+        }),
+        "sentry" => json!({
+            "first_move": false,
+        }),
         "writhingmass" => json!({
             "used_mega_debuff": false,
         }),

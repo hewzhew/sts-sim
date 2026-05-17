@@ -400,6 +400,8 @@ mod tests {
             spire_spear: Default::default(),
             slaver_red: Default::default(),
             gremlin_nob: Default::default(),
+            cultist: Default::default(),
+            sentry: Default::default(),
             darkling: DarklingRuntimeState {
                 first_move: false,
                 nip_dmg: 0,

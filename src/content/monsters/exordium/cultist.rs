@@ -1,7 +1,7 @@
 use super::{attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     ApplyPowerStep, AttackSpec, AttackStep, DamageKind, EffectStrength, MonsterTurnPlan, MoveStep,
@@ -58,6 +58,24 @@ fn plan_for(move_id: u8, asc: u8) -> MonsterTurnPlan {
     }
 }
 
+fn runtime(entity: &MonsterEntity) -> bool {
+    assert!(
+        entity.cultist.protocol_seeded,
+        "cultist runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.cultist.first_move
+}
+
+fn cultist_runtime_update(entity: &MonsterEntity, first_move: Option<bool>) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::Cultist {
+            first_move,
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
 impl MonsterBehavior for Cultist {
     fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
@@ -65,10 +83,23 @@ impl MonsterBehavior for Cultist {
         asc: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        if entity.move_history().is_empty() {
+        if runtime(entity) {
             ritual_plan(asc)
         } else {
             attack_plan()
+        }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if runtime(entity) {
+            vec![cultist_runtime_update(entity, Some(false))]
+        } else {
+            Vec::new()
         }
     }
 
@@ -116,5 +147,43 @@ impl MonsterBehavior for Cultist {
             [] => panic!("cultist plan missing locked truth"),
             steps => panic!("cultist plan/steps mismatch: {:?}", steps),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cultist, ATTACK, RITUAL};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::{Action, MonsterRuntimePatch};
+
+    #[test]
+    fn cultist_first_roll_uses_private_first_move_and_marks_it() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let monster = crate::testing::support::test_monster(EnemyId::Cultist);
+        let plan = Cultist::roll_move_plan(&mut rng, &monster, 0, 99);
+
+        assert_eq!(plan.move_id, RITUAL);
+        assert_eq!(
+            Cultist::on_roll_move(0, &monster, 99, &plan),
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::Cultist {
+                    first_move: Some(false),
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn cultist_first_move_is_private_runtime_not_empty_history() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut monster = crate::testing::support::test_monster(EnemyId::Cultist);
+        monster.cultist.first_move = false;
+
+        assert_eq!(
+            Cultist::roll_move_plan(&mut rng, &monster, 0, 99).move_id,
+            ATTACK
+        );
     }
 }

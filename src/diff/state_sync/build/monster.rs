@@ -130,6 +130,26 @@ pub(crate) fn seed_gremlin_nob_runtime_from_snapshot(monster: &Value, entity: &m
     entity.gremlin_nob.protocol_seeded = true;
 }
 
+pub(crate) fn seed_cultist_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::Cultist;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.cultist.first_move = runtime_state_bool(monster, monster_type, "first_move");
+    entity.cultist.protocol_seeded = true;
+}
+
+pub(crate) fn seed_sentry_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::Sentry;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.sentry.first_move = runtime_state_bool(monster, monster_type, "first_move");
+    entity.sentry.protocol_seeded = true;
+}
+
 pub(crate) fn seed_byrd_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Byrd;
     if entity.monster_type != monster_type as usize {
@@ -440,6 +460,8 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_spire_spear_runtime_from_snapshot(monster, entity);
     seed_slaver_red_runtime_from_snapshot(monster, entity);
     seed_gremlin_nob_runtime_from_snapshot(monster, entity);
+    seed_cultist_runtime_from_snapshot(monster, entity);
+    seed_sentry_runtime_from_snapshot(monster, entity);
     seed_darkling_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -512,6 +534,8 @@ mod tests {
             spire_spear: Default::default(),
             slaver_red: Default::default(),
             gremlin_nob: Default::default(),
+            cultist: Default::default(),
+            sentry: Default::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -813,6 +837,40 @@ mod tests {
         })
     }
 
+    fn cultist_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Cultist",
+            "current_hp": 48,
+            "max_hp": 48,
+            "block": 0,
+            "move_id": 1,
+            "move_base_damage": 6,
+            "move_hits": 1,
+            "last_move_id": 3,
+            "powers": [],
+            "runtime_state": {
+                "first_move": false
+            }
+        })
+    }
+
+    fn sentry_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "Sentry",
+            "current_hp": 40,
+            "max_hp": 40,
+            "block": 0,
+            "move_id": 4,
+            "move_base_damage": 9,
+            "move_hits": 1,
+            "last_move_id": 3,
+            "powers": [],
+            "runtime_state": {
+                "first_move": false
+            }
+        })
+    }
+
     fn chosen_observation_snapshot() -> serde_json::Value {
         json!({
             "id": "Chosen",
@@ -1083,6 +1141,30 @@ mod tests {
         assert_eq!(entity.monster_type, EnemyId::GremlinNob as usize);
         assert!(entity.gremlin_nob.used_bellow);
         assert!(entity.gremlin_nob.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_cultist_runtime_state() {
+        let snapshot = cultist_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::Cultist as usize);
+        assert!(!entity.cultist.first_move);
+        assert!(entity.cultist.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_sentry_runtime_state() {
+        let snapshot = sentry_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::Sentry as usize);
+        assert!(!entity.sentry.first_move);
+        assert!(entity.sentry.protocol_seeded);
     }
 
     #[test]

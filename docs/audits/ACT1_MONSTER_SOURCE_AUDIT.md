@@ -71,16 +71,30 @@ iterate hand or exhaust pile.
 Rust `UpgradeAllBurns` now matches that zone set. This matters after Hexaghost Inferno because
 hand Burns should not be upgraded by that action.
 
+### Cultist
+
+Java has a private `firstMove` field that is flipped inside `getMove()` before the opening
+Incantation move is planned. Rust now stores it in `CultistRuntimeState`, `CommunicationMod`
+exports it as `monster.runtime_state.first_move`, and state sync treats it as strict protocol
+truth.
+
+`saidPower`, `talky`, death speech, and skeleton/animation state are UI/audio/death-timer behavior
+for this simulator boundary. They are not exported into Rust combat mechanics.
+
 ### Sentry
 
-Java first move uses the monster's index in the group:
+Java has a private `firstMove` field. When it is true, the first move uses the monster's index in
+the group:
 
 - index 0 / 2: Bolt
 - index 1: Beam
 
-Rust uses `MonsterEntity.slot` for the same parity. The Three Sentries factory assigns slots in
-group order, so this path is currently consistent. Sentry post-turn roll and Artifact pre-battle
-behavior also match the Java source.
+Rust now stores the field in `SentryRuntimeState`, `CommunicationMod` exports it as
+`monster.runtime_state.first_move`, and state sync treats it as strict protocol truth. Rust uses
+`MonsterEntity.slot` for the same initial parity. The Three Sentries factory assigns slots in group
+order, so this path is currently consistent. Later alternation uses Java's explicit last-move rule
+only after `firstMove` is false. Sentry post-turn roll and Artifact pre-battle behavior also match
+the Java source.
 
 ### Lagavulin
 
@@ -168,6 +182,10 @@ jumping to the front.
 - `gremlin_nob_used_bellow_is_private_runtime_not_empty_history`
 - `gremlin_nob_bellow_latch_is_not_inferred_from_nonempty_history`
 - `gremlin_nob_a18_keeps_java_skull_bash_sequence_after_bellow`
+- `cultist_first_roll_uses_private_first_move_and_marks_it`
+- `cultist_first_move_is_private_runtime_not_empty_history`
+- `sentry_first_roll_uses_private_first_move_and_marks_it`
+- `sentry_first_move_is_private_runtime_not_empty_history`
 - `looter_escape_marks_room_mugged_even_without_stolen_gold_like_java`
 - `gremlin_thief_escape_does_not_mark_room_mugged_like_java`
 - `killing_large_slime_does_not_queue_split_like_java_damage_override`
