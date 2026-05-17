@@ -121,11 +121,21 @@ Fixes:
   Event(Designer))` instead of mutating `upgrades` directly.
 - Designer Punch now uses the shared Java HP_LOSS helper with
   `Event(Designer)` source instead of directly mutating HP.
+- Direct calls to Java-disabled `Adjust`, `Clean Up`, and `Full Service`
+  choices now stay inert. The guards intentionally reuse the Java button
+  predicates, including the distinction where `Clean Up` / `Full Service`
+  disabling checks non-bottled master-deck size while the opened grid later uses
+  non-bottled purgeable cards.
 
 Tests:
 
 - `designer_adjust_upgrade_one_selection_uses_java_can_upgrade`
+- `designer_disabled_adjust_without_gold_does_not_pay_or_open_selection`
+- `designer_disabled_adjust_without_upgradable_card_does_not_pay_or_advance`
 - `designer_cleanup_remove_selection_excludes_bottled_and_unpurgeable_cards`
+- `designer_disabled_cleanup_without_gold_does_not_pay_or_open_selection`
+- `designer_disabled_cleanup_transform_requires_two_non_bottled_cards`
+- `designer_disabled_full_service_does_not_pay_or_open_selection`
 - `designer_random_upgrade_uses_can_upgrade_and_domain_event_source`
 - `designer_punch_emits_hp_loss_source`
 - `designer_punch_hp_loss_applies_tungsten_rod`
@@ -1230,12 +1240,17 @@ Fixes:
 - The old unsafe `transmute::<i32, CardId>` path was replaced by decoding
   against the class, colorless, curse, and event starter-card pools used by this
   event.
+- The second-flip choice list no longer inserts a synthetic disabled
+  `(First card: ...)` row. Java exposes board card hitboxes during play, not a
+  disabled dialog option; keeping that row in Rust shifted action indices and
+  let direct calls to the disabled row flip a real card.
 
 Tests:
 
 - `generated_board_stores_preview_obtain_upgrades_like_java`
 - `matching_cards_obtain_previewed_copy_with_event_source`
 - `matching_uses_card_id_not_board_type_index_like_java`
+- `second_flip_choices_do_not_include_synthetic_disabled_info_row`
 
 ### Mushrooms and Masked Bandits event-combat boundaries
 
@@ -1479,4 +1494,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `938 passed`.
+- Current result after this pass: `944 passed`.

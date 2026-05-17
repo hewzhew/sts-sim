@@ -62,6 +62,25 @@ fn non_bottled_master_deck_count(run_state: &RunState) -> usize {
         .count()
 }
 
+fn adjust_disabled(run_state: &RunState, _event_state: &EventState) -> bool {
+    run_state.gold < adjust_cost(run_state.ascension_level) || !has_upgradable_card(run_state)
+}
+
+fn cleanup_disabled(run_state: &RunState, event_state: &EventState) -> bool {
+    let non_bottled_count = non_bottled_master_deck_count(run_state);
+    run_state.gold < cleanup_cost(run_state.ascension_level)
+        || if removes_cards(event_state.internal_state) {
+            non_bottled_count == 0
+        } else {
+            non_bottled_count < 2
+        }
+}
+
+fn full_service_disabled(run_state: &RunState) -> bool {
+    run_state.gold < full_service_cost(run_state.ascension_level)
+        || non_bottled_master_deck_count(run_state) == 0
+}
+
 fn designer_random_upgrade(run_state: &mut RunState, count: usize) {
     let mut upgradable: Vec<usize> = run_state
         .master_deck
@@ -105,8 +124,6 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
         )],
         1 => {
             let asc = run_state.ascension_level;
-            let has_upgradable = has_upgradable_card(run_state);
-            let non_bottled_count = non_bottled_master_deck_count(run_state);
 
             let adj_label = if upgrades_one(event_state.internal_state) {
                 format!("[Adjust] {} Gold. Upgrade 1 card.", adjust_cost(asc))
@@ -116,25 +133,20 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                     adjust_cost(asc)
                 )
             };
-            let adj_disabled = run_state.gold < adjust_cost(asc) || !has_upgradable;
+            let adj_disabled = adjust_disabled(run_state, event_state);
 
             let clean_label = if removes_cards(event_state.internal_state) {
                 format!("[Clean Up] {} Gold. Remove 1 card.", cleanup_cost(asc))
             } else {
                 format!("[Clean Up] {} Gold. Transform 2 cards.", cleanup_cost(asc))
             };
-            let clean_disabled = run_state.gold < cleanup_cost(asc)
-                || if removes_cards(event_state.internal_state) {
-                    non_bottled_count == 0
-                } else {
-                    non_bottled_count < 2
-                };
+            let clean_disabled = cleanup_disabled(run_state, event_state);
 
             let full_label = format!(
                 "[Full Service] {} Gold. Remove 1 card + upgrade 1 random.",
                 full_service_cost(asc)
             );
-            let full_disabled = run_state.gold < full_service_cost(asc) || non_bottled_count == 0;
+            let full_disabled = full_service_disabled(run_state);
 
             let punch_label = format!("[Punch] Lose {} HP.", hp_loss(asc));
 
@@ -362,6 +374,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Adjust
+                    if adjust_disabled(run_state, &event_state) {
+                        run_state.event_state = Some(event_state);
+                        return;
+                    }
                     run_state.change_gold_with_source(
                         -adjust_cost(asc),
                         DomainEventSource::Event(EventId::Designer),
@@ -385,6 +401,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 1 => {
                     // Clean Up
+                    if cleanup_disabled(run_state, &event_state) {
+                        run_state.event_state = Some(event_state);
+                        return;
+                    }
                     run_state.change_gold_with_source(
                         -cleanup_cost(asc),
                         DomainEventSource::Event(EventId::Designer),
@@ -415,6 +435,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 2 => {
                     // Full Service: remove 1 card + upgrade 1 random (Java: REMOVE_AND_UPGRADE)
+                    if full_service_disabled(run_state) {
+                        run_state.event_state = Some(event_state);
+                        return;
+                    }
                     run_state.change_gold_with_source(
                         -full_service_cost(asc),
                         DomainEventSource::Event(EventId::Designer),
@@ -535,6 +559,38 @@ mod tests {
     }
 
     #[test]
+    fn designer_disabled_adjust_without_gold_does_not_pay_or_open_selection() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 0;
+        rs.master_deck = vec![deck_card(CardId::Defend, 12, 0)];
+        rs.event_state = Some(designer_state(1, 0b01));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.gold, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 1);
+        assert!(!rs.event_state.as_ref().unwrap().completed);
+    }
+
+    #[test]
+    fn designer_disabled_adjust_without_upgradable_card_does_not_pay_or_advance() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 99;
+        rs.master_deck = vec![deck_card(CardId::Strike, 11, 1)];
+        rs.event_state = Some(designer_state(1, 0b00));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.gold, 99);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 1);
+        assert_eq!(rs.master_deck[0].upgrades, 1);
+    }
+
+    #[test]
     fn designer_cleanup_remove_selection_excludes_bottled_and_unpurgeable_cards() {
         let mut rs = RunState::new(1, 0, true, "Ironclad");
         rs.gold = 99;
@@ -561,6 +617,51 @@ mod tests {
             vec![SelectionTargetRef::CardUuid(12)],
             "Designer opens CardGroup.getGroupWithoutBottledCards(getPurgeableCards())"
         );
+    }
+
+    #[test]
+    fn designer_disabled_cleanup_without_gold_does_not_pay_or_open_selection() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 0;
+        rs.master_deck = vec![deck_card(CardId::Strike, 11, 0)];
+        rs.event_state = Some(designer_state(1, 0b11));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert_eq!(rs.gold, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 1);
+    }
+
+    #[test]
+    fn designer_disabled_cleanup_transform_requires_two_non_bottled_cards() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 99;
+        rs.master_deck = vec![deck_card(CardId::Strike, 11, 0)];
+        rs.event_state = Some(designer_state(1, 0b00));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert_eq!(rs.gold, 99);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 1);
+    }
+
+    #[test]
+    fn designer_disabled_full_service_does_not_pay_or_open_selection() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 0;
+        rs.master_deck = vec![deck_card(CardId::Strike, 11, 0)];
+        rs.event_state = Some(designer_state(1, 0b00));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        assert_eq!(rs.gold, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 1);
     }
 
     #[test]

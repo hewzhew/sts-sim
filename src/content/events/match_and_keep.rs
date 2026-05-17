@@ -229,23 +229,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
                     continue; // can't pick the already-flipped card
                 }
 
-                // Show face-up identity if this is the already flipped card in screen 2?
-                // The prompt asks us to flip a card. If we are on screen 2, we could show the first flipped card's name.
-                // But the user clicks "[Flip card X]".
                 choices.push(EventChoiceMeta::new(format!("[Flip card {}]", pos)));
-            }
-            if event_state.current_screen == 2 && first != -1 {
-                if let Some((first_card, upgrades)) = card_entry_at(run_state, ed, first as usize) {
-                    let def = crate::content::cards::get_card_definition(first_card);
-                    let upgrade_suffix = if upgrades > 0 { "+" } else { "" };
-                    choices.insert(
-                        0,
-                        EventChoiceMeta::disabled(
-                            format!("(First card: {}{})", def.name, upgrade_suffix),
-                            "",
-                        ),
-                    );
-                }
             }
 
             if choices.is_empty() {
@@ -320,41 +304,21 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             }
         }
         2 => {
-            let first_pos = first_flipped(&event_state.extra_data) as usize;
-
-            // To be perfectly aligned with choices array:
-            let mut choice_counter = 0;
-            // The choices array inserted disabled at 0
-            let mut found_pos = None;
-
-            if first_pos != std::usize::MAX {
-                choice_counter += 1; // skip the (First card: XXX) disabled choice
+            let first_raw = first_flipped(&event_state.extra_data);
+            if first_raw < 0 {
+                run_state.event_state = Some(event_state);
+                return;
             }
+            let first_pos = first_raw as usize;
 
+            let mut available = Vec::new();
             for pos in 0..12usize {
                 if !is_matched(&event_state.extra_data, pos) && pos != first_pos {
-                    if choice_counter == choice_idx {
-                        found_pos = Some(pos);
-                        break;
-                    }
-                    choice_counter += 1;
+                    available.push(pos);
                 }
             }
 
-            // Fallback for non-adjusted choices (e.g. from tests)
-            if found_pos.is_none() {
-                let mut avail: Vec<usize> = Vec::new();
-                for pos in 0..12usize {
-                    if !is_matched(&event_state.extra_data, pos) && pos != first_pos {
-                        avail.push(pos);
-                    }
-                }
-                if let Some(&p) = avail.get(choice_idx) {
-                    found_pos = Some(p);
-                }
-            }
-
-            if let Some(second_pos) = found_pos {
+            if let Some(&second_pos) = available.get(choice_idx) {
                 if event_state.extra_data.len() > LAST_FLIPPED_2_OFFSET {
                     event_state.extra_data[LAST_FLIPPED_1_OFFSET] = first_pos as i32;
                     event_state.extra_data[LAST_FLIPPED_2_OFFSET] = second_pos as i32;
@@ -477,7 +441,7 @@ mod tests {
 
         let mut engine_state = EngineState::EventRoom;
         handle_choice(&mut engine_state, &mut run_state, 0);
-        handle_choice(&mut engine_state, &mut run_state, 1);
+        handle_choice(&mut engine_state, &mut run_state, 0);
 
         let obtained = run_state.master_deck.last().unwrap();
         assert_eq!(obtained.id, CardId::Bash);
@@ -508,12 +472,36 @@ mod tests {
 
         let mut engine_state = EngineState::EventRoom;
         handle_choice(&mut engine_state, &mut run_state, 0);
-        handle_choice(&mut engine_state, &mut run_state, 1);
+        handle_choice(&mut engine_state, &mut run_state, 0);
 
         let state = run_state.event_state.as_ref().unwrap();
         assert!(is_matched(&state.extra_data, 0));
         assert!(is_matched(&state.extra_data, 1));
         assert_eq!(run_state.master_deck.last().unwrap().id, CardId::Bash);
+    }
+
+    #[test]
+    fn second_flip_choices_do_not_include_synthetic_disabled_info_row() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut event_state = EventState::new(EventId::MatchAndKeep);
+        event_state.current_screen = 2;
+        event_state.extra_data = board_with_entries(&[
+            (CardId::Bash, 0),
+            (CardId::Bash, 0),
+            (CardId::Defend, 0),
+            (CardId::Clumsy, 0),
+            (CardId::IronWave, 0),
+            (CardId::Cleave, 0),
+        ]);
+        event_state.extra_data[14] = 0;
+
+        let choices = get_choices(&run_state, &event_state);
+
+        assert_eq!(choices[0].text, "[Flip card 1]");
+        assert!(
+            choices.iter().all(|choice| !choice.disabled),
+            "Java GremlinMatchGame exposes board card hitboxes, not a disabled dialog choice for the first flipped card"
+        );
     }
 
     fn board_with_entries(entries: &[(CardId, u8); CARD_TYPE_COUNT]) -> Vec<i32> {
