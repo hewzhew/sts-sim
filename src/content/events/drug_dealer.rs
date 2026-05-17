@@ -10,25 +10,22 @@ use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
+fn purgeable_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| crate::state::core::master_deck_card_is_purgeable(card))
+        .count()
+}
+
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     if event_state.current_screen == 1 {
         return vec![EventChoiceMeta::new("[Leave]")];
     }
 
-    let purgeable_count = run_state
-        .master_deck
-        .iter()
-        .filter(|c| {
-            // Java: getPurgeableCards() excludes non-purgeable curses
-            c.id != crate::content::cards::CardId::AscendersBane
-                && c.id != crate::content::cards::CardId::CurseOfTheBell
-                && c.id != crate::content::cards::CardId::Necronomicurse
-        })
-        .count();
-
     let mut choices = vec![EventChoiceMeta::new("[Ingest Mutagens] Obtain J.A.X.")];
 
-    if purgeable_count >= 2 {
+    if purgeable_count(run_state) >= 2 {
         choices.push(EventChoiceMeta::new(
             "[Become a Test Subject] Transform 2 cards.",
         ));
@@ -67,13 +64,15 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 1 => {
                     // Transform 2 cards (Java: gridSelectScreen.open(getPurgeableCards(), 2, ...))
-                    *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
-                        min_choices: 2,
-                        max_choices: 2,
-                        reason: RunPendingChoiceReason::Transform,
-                        return_state: Box::new(EngineState::EventRoom),
-                    });
-                    event_state.current_screen = 1;
+                    if purgeable_count(run_state) >= 2 {
+                        *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+                            min_choices: 2,
+                            max_choices: 2,
+                            reason: RunPendingChoiceReason::Transform,
+                            return_state: Box::new(EngineState::EventRoom),
+                        });
+                        event_state.current_screen = 1;
+                    }
                 }
                 2 => {
                     // Obtain MutagenicStrength relic
@@ -191,5 +190,25 @@ mod tests {
                 source: DomainEventSource::Event(EventId::DrugDealer),
             }
         )));
+    }
+
+    #[test]
+    fn disabled_test_subject_does_not_open_transform_selection_with_too_few_purgeable_cards() {
+        let mut run_state = drug_dealer_run();
+        run_state.master_deck = vec![crate::runtime::combat::CombatCard::new(
+            CardId::AscendersBane,
+            11,
+        )];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(
+            run_state.event_state.as_ref().unwrap().current_screen,
+            0,
+            "disabled Java option should not advance the event state"
+        );
+        assert!(run_state.take_emitted_events().is_empty());
     }
 }

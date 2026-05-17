@@ -617,12 +617,15 @@ Fixes:
   Event(DrugDealer))` for both `MutagenicStrength` and fallback `Circlet`.
 - Added regression coverage for `J.A.X.` event source, relic event source, and
   existing-Circlet counter increment.
+- The disabled Test Subject branch now remains inert when fewer than two
+  purgeable cards exist, matching Java's disabled grid-select option.
 
 Tests:
 
 - `ingest_mutagens_obtains_jax_with_event_source`
 - `inject_mutagens_obtains_relic_with_event_source`
 - `inject_mutagens_grants_circlet_through_obtain_pipeline_when_already_owned`
+- `disabled_test_subject_does_not_open_transform_selection_with_too_few_purgeable_cards`
 
 ### Ghosts and Vampires max-HP trades
 
@@ -1352,4 +1355,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `913 passed`.
+- Current result after this pass: `914 passed`.
