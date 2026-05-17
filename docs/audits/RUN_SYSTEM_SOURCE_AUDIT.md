@@ -88,6 +88,11 @@ and reachability gates must be checked separately.
      monster gold is skipped and the room potion base chance starts at 0, while
      the potion RNG/miss-path still runs and White Beast Statue can still force
      the potion afterward.
+   - current progress: event/start/relic potion sources now distinguish Java
+     `PotionHelper.getRandomPotion()` from
+     `AbstractDungeon.returnRandomPotion()`. Lab, Woman in Blue, Knowing Skull,
+     and Neow's three-potion reward use the flat class potion pool; Neow opens
+     potion rewards instead of directly filling slots.
 
 3. Relic pool and `canSpawn` closure:
    - turn the existing relic audit into pool-level validation, not just

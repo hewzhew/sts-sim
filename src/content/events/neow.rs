@@ -487,19 +487,16 @@ fn apply_reward(
             });
         }
         NeowRewardType::ThreeSmallPotions => {
-            // Add 3 random potions to empty potion slots
-            let pc = run_state.potion_class();
+            // Java Neow adds potion rewards through PotionHelper.getRandomPotion
+            // and opens the reward screen; it does not directly fill slots.
+            let mut reward_state = crate::rewards::state::RewardState::new();
             for _ in 0..3 {
-                let potion_id = crate::content::potions::random_potion(
-                    &mut run_state.rng_pool.potion_rng,
-                    pc,
-                    false,
-                );
-                let _ = run_state.obtain_potion_with_source(
-                    crate::content::potions::Potion::new(potion_id, 0),
-                    DomainEventSource::Event(crate::state::events::EventId::Neow),
-                );
+                let potion_id = run_state.random_potion_flat();
+                reward_state
+                    .items
+                    .push(crate::rewards::state::RewardItem::Potion { potion_id });
             }
+            *engine_state = EngineState::RewardScreen(reward_state);
         }
         NeowRewardType::ThreeCards => {
             // Generate 3 card choices from player's class pool (mixed rarity)
@@ -572,7 +569,9 @@ fn neow_pick_unique_card(
         }
     }
 
-    pool.iter().copied().find(|card_id| !selected.contains(card_id))
+    pool.iter()
+        .copied()
+        .find(|card_id| !selected.contains(card_id))
 }
 
 /// Generate 3 cards from the player's class card pool.
@@ -978,6 +977,33 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn three_small_potions_open_reward_screen_with_flat_potion_helper_rng() {
+        let mut run_state = neow_run_with_reward(NeowRewardType::ThreeSmallPotions, Vec::new());
+        let starting_potions = run_state.potions.clone();
+        let potion_rng_before = run_state.rng_pool.potion_rng.counter;
+
+        let engine_state = choose_neow_reward(&mut run_state);
+
+        assert_eq!(
+            run_state.rng_pool.potion_rng.counter,
+            potion_rng_before + 3,
+            "Java Neow uses PotionHelper.getRandomPotion(), one flat potionRng index per potion reward"
+        );
+        assert_eq!(
+            run_state.potions, starting_potions,
+            "Java Neow opens potion rewards instead of directly filling potion slots"
+        );
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("Neow three potion reward should open reward screen");
+        };
+        assert_eq!(rewards.items.len(), 3);
+        assert!(rewards
+            .items
+            .iter()
+            .all(|item| matches!(item, crate::rewards::state::RewardItem::Potion { .. })));
     }
 
     #[test]

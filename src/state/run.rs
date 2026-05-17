@@ -1385,6 +1385,16 @@ impl RunState {
         crate::content::potions::random_potion(&mut self.rng_pool.potion_rng, potion_class, false)
     }
 
+    /// Java `PotionHelper.getRandomPotion()`: pick one potion uniformly from
+    /// the current class potion pool using `AbstractDungeon.potionRng`.
+    ///
+    /// This is not the same as `AbstractDungeon.returnRandomPotion()`, which
+    /// rolls rarity first and then rejection-samples by rarity.
+    pub fn random_potion_flat(&mut self) -> crate::content::potions::PotionId {
+        let potion_class = self.potion_class_from_player();
+        crate::content::potions::random_potion_any(&mut self.rng_pool.potion_rng, potion_class)
+    }
+
     /// Maps player_class string to PotionClass enum.
     fn potion_class_from_player(&self) -> crate::content::potions::PotionClass {
         match self.player_class {

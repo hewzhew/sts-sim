@@ -168,7 +168,7 @@ fn open_potion_rewards(
     let mut rewards = RewardState::new();
     for _ in 0..count {
         rewards.items.push(RewardItem::Potion {
-            potion_id: run_state.random_potion(),
+            potion_id: run_state.random_potion_flat(),
         });
     }
     event_state.current_screen = 1;
@@ -208,6 +208,7 @@ mod tests {
         let mut rs = RunState::new(1, 0, true, "Ironclad");
         rs.gold = 50;
         let starting_potions = rs.potions.clone();
+        let potion_rng_before = rs.rng_pool.potion_rng.counter;
         rs.event_state = Some(EventState::new(EventId::WomanInBlue));
         rs.emitted_events.clear();
         let mut engine_state = EngineState::EventRoom;
@@ -216,6 +217,11 @@ mod tests {
 
         assert_eq!(rs.gold, 10);
         assert_eq!(rs.potions, starting_potions);
+        assert_eq!(
+            rs.rng_pool.potion_rng.counter,
+            potion_rng_before + 3,
+            "Java WomanInBlue uses PotionHelper.getRandomPotion(), one flat potionRng index per potion reward"
+        );
         assert!(rs.take_emitted_events().iter().any(|event| {
             matches!(
                 event,

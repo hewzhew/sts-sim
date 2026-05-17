@@ -92,7 +92,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         .iter()
                         .any(|relic| relic.id == crate::content::relics::RelicId::Sozu)
                     {
-                        let pid = run_state.random_potion();
+                        let pid = run_state.random_potion_flat();
                         let potion = crate::content::potions::Potion::new(
                             pid,
                             20000 + potion_n(event_state.internal_state) as u32,
@@ -172,6 +172,23 @@ mod tests {
         assert_eq!(potion_cost(event_state.internal_state), 7);
         assert_eq!(gold_cost(event_state.internal_state), 6);
         assert_eq!(card_cost(event_state.internal_state), 6);
+    }
+
+    #[test]
+    fn potion_reward_without_sozu_uses_flat_potion_helper_rng() {
+        let mut run_state = skull_run();
+        let potion_rng_before = run_state.rng_pool.potion_rng.counter;
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(
+            run_state.rng_pool.potion_rng.counter,
+            potion_rng_before + 1,
+            "Java Knowing Skull uses PotionHelper.getRandomPotion(), not rarity-weighted returnRandomPotion"
+        );
+        assert!(run_state.potions.iter().any(|slot| slot.is_some()));
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
     }
 
     #[test]

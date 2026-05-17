@@ -19,11 +19,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     ))]
 }
 
-pub fn handle_choice(
-    engine_state: &mut EngineState,
-    run_state: &mut RunState,
-    _choice_idx: usize,
-) {
+pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _choice_idx: usize) {
     let mut event_state = run_state.event_state.take().unwrap();
 
     match event_state.current_screen {
@@ -37,7 +33,7 @@ pub fn handle_choice(
             // Java adds potion RewardItems and opens the combat reward screen.
             let mut rewards = RewardState::new();
             for _ in 0..potion_count {
-                let pid = run_state.random_potion();
+                let pid = run_state.random_potion_flat();
                 rewards.items.push(RewardItem::Potion { potion_id: pid });
             }
             event_state.current_screen = 1;
@@ -72,11 +68,17 @@ mod tests {
     fn lab_opens_three_potion_rewards_without_directly_filling_inventory() {
         let mut run_state = lab_run(0);
         let starting_potions = run_state.potions.clone();
+        let potion_rng_before = run_state.rng_pool.potion_rng.counter;
         let mut engine_state = EngineState::EventRoom;
 
         handle_choice(&mut engine_state, &mut run_state, 0);
 
         assert_eq!(run_state.potions, starting_potions);
+        assert_eq!(
+            run_state.rng_pool.potion_rng.counter,
+            potion_rng_before + 3,
+            "Java Lab uses PotionHelper.getRandomPotion(), one flat potionRng index per reward"
+        );
         assert!(run_state.take_emitted_events().is_empty());
         match engine_state {
             EngineState::RewardScreen(rewards) => {
