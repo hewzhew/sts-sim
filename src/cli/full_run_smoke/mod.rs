@@ -1206,7 +1206,7 @@ mod tests {
     }
 
     #[test]
-    fn legal_shop_actions_keep_sozu_potion_purchase_as_executable_resource_loss() {
+    fn legal_shop_actions_block_sozu_potion_purchase_like_java_store_potion() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.gold = 200;
         run_state
@@ -1228,8 +1228,8 @@ mod tests {
         assert!(
             actions
                 .iter()
-                .any(|action| matches!(action, ClientInput::BuyPotion(0))),
-            "Sozu shop potion buys are executable: they spend gold and absorb the potion"
+                .all(|action| !matches!(action, ClientInput::BuyPotion(0))),
+            "Java StorePotion.purchasePotion returns immediately under Sozu without spending gold or removing the offer"
         );
     }
 

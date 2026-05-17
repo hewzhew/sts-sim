@@ -2272,7 +2272,7 @@ Coverage:
 - `shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources`
 - `courier_keeps_relic_slot_filled_after_purchase`
 - `courier_keeps_potion_slot_filled_after_purchase`
-- `courier_refills_sozu_absorbed_shop_potion_purchase`
+- `courier_does_not_refill_sozu_blocked_shop_potion_purchase`
 - `courier_keeps_card_slot_filled_after_purchase`
 
 ### Eternal Feather
@@ -3607,12 +3607,18 @@ Java evidence:
 
 Rust result:
 - Tier and energy delta match Java.
-- Combat/reward/shop potion obtain paths respect Sozu as a prevention/absorb
+- Combat and reward potion obtain paths respect Sozu as a prevention/absorb
   rule.
+- Shop potion purchase is stricter: Java `StorePotion.purchasePotion()` returns
+  immediately under Sozu before spending gold, attempting obtain, or triggering
+  Courier restock. Rust now treats shop potion buys under Sozu as blocked
+  no-ops rather than absorbed purchases.
 
 Coverage:
 - `shared_boss_relic_third_batch_metadata_matches_java_sources`
 - `white_beast_statue_forces_potion_reward_unless_sozu_blocks_potions`
+- `sozu_shop_potion_purchase_is_blocked_without_spending_or_removing_offer`
+- `courier_does_not_refill_sozu_blocked_shop_potion_purchase`
 
 ### Tiny House
 

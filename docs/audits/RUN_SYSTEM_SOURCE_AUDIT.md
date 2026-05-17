@@ -464,3 +464,30 @@ Rust result:
 Coverage:
 
 - `courier_membership_restock_relic_potion_discounts_round_sequentially`
+
+## Shop Sozu Potion Purchase Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/shop/StorePotion.java`
+
+Key source facts:
+
+- `StorePotion.purchasePotion()` first checks `player.hasRelic("Sozu")`.
+- If Sozu is present, Java flashes the relic and returns immediately.
+- That return happens before the gold check, `obtainPotion`, purchase metrics,
+  and Courier restock branch.
+
+Rust result:
+
+- Shop potion purchase under Sozu is now a no-op: no gold is spent, the offered
+  potion remains in the shop, no potion is obtained, and Courier does not
+  refill the slot.
+- Full-run shop legal actions no longer expose `BuyPotion` when Sozu is present,
+  matching the source behavior rather than the old absorbed-purchase model.
+
+Coverage:
+
+- `sozu_shop_potion_purchase_is_blocked_without_spending_or_removing_offer`
+- `courier_does_not_refill_sozu_blocked_shop_potion_purchase`
+- `legal_shop_actions_block_sozu_potion_purchase_like_java_store_potion`

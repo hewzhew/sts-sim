@@ -155,7 +155,7 @@ pub fn legal_shop_actions(run_state: &RunState, shop: &crate::shop::ShopState) -
         .iter()
         .any(|relic| relic.id == RelicId::Sozu);
     for (idx, potion) in shop.potions.iter().enumerate() {
-        if potion.can_buy && run_state.gold >= potion.price && (has_empty_potion_slot || has_sozu) {
+        if potion.can_buy && run_state.gold >= potion.price && has_empty_potion_slot && !has_sozu {
             actions.push(ClientInput::BuyPotion(idx));
         }
     }
