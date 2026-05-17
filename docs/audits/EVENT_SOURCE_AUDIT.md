@@ -548,6 +548,35 @@ Tests:
 - `enter_light_normal_damage_applies_torii_then_tungsten`
 - `leave_does_not_damage_or_upgrade`
 
+### Nest gold and Ritual Dagger branch
+
+Java `events/city/Nest.java` has two resource branches after the intro:
+
+```text
+Steal:
+  player.gainGold(goldGain)
+Join:
+  player.damage(new DamageInfo(null, 6))
+  ShowCardAndObtainEffect(new RitualDagger())
+```
+
+The Join damage is normal ownerless damage. That means `Tungsten Rod` still
+applies through `onLoseHpLast`, but `Torii` does not because Java Torii requires
+`info.owner != null`.
+
+Fixes:
+
+- Join damage now emits `HpChanged` with `Event(Nest)` instead of directly
+  mutating `current_hp`.
+- Tests now lock both the existing gold source path and the Ritual Dagger obtain
+  source.
+
+Tests:
+
+- `steal_gold_uses_event_source`
+- `join_cult_damage_and_ritual_dagger_use_event_source`
+- `join_cult_damage_applies_tungsten_rod`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -759,10 +788,11 @@ Validation:
   `FaceTrader`, `ForgottenAltar`, `Ghosts`, `Vampires`, `MoaiHead`, and
   `GremlinWheelGame`, `MindBloom`, `WindingHalls`, and `SensoryStone` are now
   covered; `ShiningLight` is also covered for damage and random upgrade
-  sources. The remaining direct writes should be handled event-by-event against
-  Java source.
+  sources. `Nest` is covered for gold, damage, and Ritual Dagger obtain source.
+  The remaining direct writes should be handled event-by-event against Java
+  source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `842 passed`.
+- Current result after this pass: `845 passed`.
