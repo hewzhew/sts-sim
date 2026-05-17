@@ -1,5 +1,5 @@
 use crate::content::relics::RelicId;
-use crate::rewards::state::{RewardItem, RewardState};
+use crate::rewards::state::{RewardItem, RewardScreenContext, RewardState};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -46,13 +46,16 @@ pub fn handle(
                     let item = reward_state.items.remove(idx);
                     match item {
                         RewardItem::Gold { amount } => {
-                            // Java: applyGoldBonus(false) — GoldenIdol adds 25% in non-treasure rooms
-                            let bonus =
-                                if run_state.relics.iter().any(|r| r.id == RelicId::GoldenIdol) {
-                                    crate::content::relics::golden_idol::reward_gold_bonus(amount)
-                                } else {
-                                    0
-                                };
+                            // Java RewardItem.applyGoldBonus(false): Golden Idol adds 25%
+                            // except when the current room is a TreasureRoom.
+                            let bonus = if reward_state.screen_context
+                                != RewardScreenContext::TreasureRoom
+                                && run_state.relics.iter().any(|r| r.id == RelicId::GoldenIdol)
+                            {
+                                crate::content::relics::golden_idol::reward_gold_bonus(amount)
+                            } else {
+                                0
+                            };
                             run_state.change_gold_with_source(
                                 amount + bonus,
                                 DomainEventSource::RewardScreen,

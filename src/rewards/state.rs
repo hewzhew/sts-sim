@@ -27,6 +27,7 @@ pub enum RewardItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RewardScreenContext {
     Standard,
+    TreasureRoom,
     MuggedCombat,
     SmokedCombat,
 }

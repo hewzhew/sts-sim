@@ -108,7 +108,7 @@ pub fn print_state(es: &EngineState, rs: &RunState, cs: &Option<CombatState>) {
                 RewardScreenContext::SmokedCombat => {
                     println!("    [note] You escaped with Smoke Bomb. No combat rewards.");
                 }
-                RewardScreenContext::Standard => {}
+                RewardScreenContext::Standard | RewardScreenContext::TreasureRoom => {}
             }
             for (i, item) in reward.items.iter().enumerate() {
                 println!("    [{}] {:?}", i, item);

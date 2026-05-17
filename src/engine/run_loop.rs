@@ -73,7 +73,8 @@ fn roll_treasure_chest_spec(run_state: &mut RunState) -> TreasureChestSpec {
 
 fn enter_treasure_room(run_state: &mut RunState) -> crate::rewards::state::RewardState {
     let chest = roll_treasure_chest_spec(run_state);
-    let mut reward = crate::rewards::state::RewardState::new();
+    let mut reward =
+        crate::rewards::state::RewardState::with_context(RewardScreenContext::TreasureRoom);
 
     // --- onChestOpen() relic hooks (non-boss chest) ---
     // CursedKey: add a random curse to deck
@@ -1479,6 +1480,54 @@ mod tests {
         assert_eq!(
             run_state.rng_pool.treasure_rng.counter, 3,
             "Java consumes treasureRng for chest size, chest reward roll, and non-daily gold jitter"
+        );
+    }
+
+    #[test]
+    fn treasure_room_gold_reward_does_not_receive_golden_idol_bonus() {
+        fn small_gold_common_chest_seed() -> u64 {
+            (1..10_000)
+                .find(|seed| {
+                    let mut rng = StsRng::new(*seed);
+                    rng.random_range(0, 99) < 50 && rng.random_range(0, 99) < 50
+                })
+                .expect("seed for small chest with gold and common relic")
+        }
+
+        let mut run_state = run_state_with_first_room(RoomType::TreasureRoom);
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::GoldenIdol));
+        run_state.rng_pool.treasure_rng = StsRng::new(small_gold_common_chest_seed());
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+
+        let EngineState::RewardScreen(mut rewards) = engine_state else {
+            panic!("treasure room should open a reward screen");
+        };
+        assert_eq!(rewards.screen_context, RewardScreenContext::TreasureRoom);
+        let RewardItem::Gold { amount } = rewards.items[0] else {
+            panic!("small chest seed should create chest gold");
+        };
+        let gold_before = run_state.gold;
+
+        crate::rewards::handler::handle(
+            &mut run_state,
+            &mut rewards,
+            Some(ClientInput::ClaimReward(0)),
+        );
+
+        assert_eq!(
+            run_state.gold,
+            gold_before + amount,
+            "Java RewardItem.applyGoldBonus skips Golden Idol inside TreasureRoom"
         );
     }
 

@@ -63,7 +63,11 @@ Rust result:
 - Base chest relics now use the pre-rolled chest tier via
   `random_relic_by_tier`; they no longer call `random_relic`, which would
   incorrectly consume `relic_rng` for an extra tier roll.
+- Chest reward screens now carry TreasureRoom context so Golden Idol does not
+  apply its reward-gold bonus to chest gold, matching
+  `RewardItem.applyGoldBonus(false)`.
 - UI-only chest visuals are intentionally not represented.
 
 Coverage:
 - `treasure_room_uses_java_chest_reward_rolls_before_relic_pool_draw`
+- `treasure_room_gold_reward_does_not_receive_golden_idol_bonus`
