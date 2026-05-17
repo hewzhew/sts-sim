@@ -34,6 +34,7 @@ Scope:
 | Snecko | `first_turn` | Yes | Yes | Yes | `lastTwoMoves(BITE)` sequencing | Good |
 | Red Slaver | `first_turn`, `used_entangle` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Gremlin Nob | `used_bellow` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
+| Gremlin Wizard | `current_charge` | Yes | Yes | Yes | None for charge cadence | Good |
 | Cultist | `first_move` | Yes | Yes | Yes | None | Good |
 | Jaw Worm | `first_move`, `hard_mode` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
@@ -109,6 +110,14 @@ Scope:
 - `runtime_state.used_bellow` is now exported by `CommunicationMod`.
 - Rust semantic roll logic requires this latch to be protocol-seeded or factory-seeded.
 - Remaining history usage is limited to Java's explicit `SKULL_BASH` / `BULL_RUSH` repeat rules.
+
+### Gremlin Wizard
+
+- `runtime_state.current_charge` is now exported by `CommunicationMod`.
+- Rust semantic turn execution requires this counter to be protocol-seeded or factory-seeded.
+- Charge cadence comes from Java's private `currentCharge`, not from consecutive Charge history.
+- Runtime patches are emitted during `take_turn_plan`, because Java mutates `currentCharge` inside
+  `takeTurn()` rather than `getMove()`.
 
 ### Cultist
 

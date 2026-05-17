@@ -4,8 +4,8 @@ use crate::runtime::combat::{
     AwakenedOneRuntimeState, BookOfStabbingRuntimeState, BronzeAutomatonRuntimeState,
     BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
     CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, GremlinNobRuntimeState,
-    GuardianRuntimeState, HexaghostRuntimeState, JawWormRuntimeState, LagavulinRuntimeState,
-    LouseRuntimeState, MonsterEntity, MonsterMoveState, SentryRuntimeState,
+    GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState, JawWormRuntimeState,
+    LagavulinRuntimeState, LouseRuntimeState, MonsterEntity, MonsterMoveState, SentryRuntimeState,
     ShelledParasiteRuntimeState, SlaverRedRuntimeState, SneckoRuntimeState, SpikerRuntimeState,
     SpireShieldRuntimeState, SpireSpearRuntimeState, ThiefRuntimeState, WrithingMassRuntimeState,
 };
@@ -126,6 +126,12 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
                 stable_gremlin_nob_signature(&monster.gremlin_nob)
             )
         }
+        Some(EnemyId::GremlinWizard) => {
+            format!(
+                "gremlin_wizard:{}",
+                stable_gremlin_wizard_signature(&monster.gremlin_wizard)
+            )
+        }
         Some(EnemyId::Cultist) => {
             format!("cultist:{}", stable_cultist_signature(&monster.cultist))
         }
@@ -152,7 +158,7 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
             "hex={}:louse={}:jaw={}:thief={}:byrd={}:chosen={}:",
             "snecko={}:parasite={}:bronze_auto={}:bronze_orb={}:book={}:",
             "collector={}:champ={}:awakened={}:heart={}:writhing_mass={}:spiker={}:",
-            "spire_shield={}:spire_spear={}:slaver_red={}:gremlin_nob={}:",
+            "spire_shield={}:spire_spear={}:slaver_red={}:gremlin_nob={}:gremlin_wizard={}:",
             "cultist={}:sentry={}:darkling={}:lagavulin={}:guardian={}"
         ),
         stable_hexaghost_signature(&monster.hexaghost),
@@ -176,6 +182,7 @@ fn stable_all_monster_runtime_signature(monster: &MonsterEntity) -> String {
         stable_spire_spear_signature(&monster.spire_spear),
         stable_slaver_red_signature(&monster.slaver_red),
         stable_gremlin_nob_signature(&monster.gremlin_nob),
+        stable_gremlin_wizard_signature(&monster.gremlin_wizard),
         stable_cultist_signature(&monster.cultist),
         stable_sentry_signature(&monster.sentry),
         stable_darkling_signature(&monster.darkling),
@@ -522,6 +529,13 @@ fn stable_slaver_red_signature(state: &SlaverRedRuntimeState) -> String {
 
 fn stable_gremlin_nob_signature(state: &GremlinNobRuntimeState) -> String {
     format!("seed{}:bellow{}", state.protocol_seeded, state.used_bellow)
+}
+
+fn stable_gremlin_wizard_signature(state: &GremlinWizardRuntimeState) -> String {
+    format!(
+        "seed{}:charge{}",
+        state.protocol_seeded, state.current_charge
+    )
 }
 
 fn stable_cultist_signature(state: &CultistRuntimeState) -> String {

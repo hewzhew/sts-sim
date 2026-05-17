@@ -120,6 +120,10 @@ pub enum MonsterRuntimePatch {
         used_bellow: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    GremlinWizard {
+        current_charge: Option<u8>,
+        protocol_seeded: Option<bool>,
+    },
     Cultist {
         first_move: Option<bool>,
         protocol_seeded: Option<bool>,

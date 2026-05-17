@@ -130,6 +130,20 @@ pub(crate) fn seed_gremlin_nob_runtime_from_snapshot(monster: &Value, entity: &m
     entity.gremlin_nob.protocol_seeded = true;
 }
 
+pub(crate) fn seed_gremlin_wizard_runtime_from_snapshot(
+    monster: &Value,
+    entity: &mut MonsterEntity,
+) {
+    let monster_type = EnemyId::GremlinWizard;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.gremlin_wizard.current_charge =
+        runtime_state_u8(monster, monster_type, "current_charge");
+    entity.gremlin_wizard.protocol_seeded = true;
+}
+
 pub(crate) fn seed_cultist_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Cultist;
     if entity.monster_type != monster_type as usize {
@@ -471,6 +485,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_spire_spear_runtime_from_snapshot(monster, entity);
     seed_slaver_red_runtime_from_snapshot(monster, entity);
     seed_gremlin_nob_runtime_from_snapshot(monster, entity);
+    seed_gremlin_wizard_runtime_from_snapshot(monster, entity);
     seed_cultist_runtime_from_snapshot(monster, entity);
     seed_sentry_runtime_from_snapshot(monster, entity);
     seed_jaw_worm_runtime_from_snapshot(monster, entity);
@@ -546,6 +561,7 @@ mod tests {
             spire_spear: Default::default(),
             slaver_red: Default::default(),
             gremlin_nob: Default::default(),
+            gremlin_wizard: Default::default(),
             cultist: Default::default(),
             sentry: Default::default(),
             darkling: DarklingRuntimeState::default(),
@@ -845,6 +861,23 @@ mod tests {
             "powers": [],
             "runtime_state": {
                 "used_bellow": true
+            }
+        })
+    }
+
+    fn gremlin_wizard_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "GremlinWizard",
+            "current_hp": 24,
+            "max_hp": 24,
+            "block": 0,
+            "move_id": 2,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "last_move_id": 2,
+            "powers": [],
+            "runtime_state": {
+                "current_charge": 2
             }
         })
     }
@@ -1171,6 +1204,18 @@ mod tests {
         assert_eq!(entity.monster_type, EnemyId::GremlinNob as usize);
         assert!(entity.gremlin_nob.used_bellow);
         assert!(entity.gremlin_nob.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_gremlin_wizard_runtime_state() {
+        let snapshot = gremlin_wizard_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::GremlinWizard as usize);
+        assert_eq!(entity.gremlin_wizard.current_charge, 2);
+        assert!(entity.gremlin_wizard.protocol_seeded);
     }
 
     #[test]

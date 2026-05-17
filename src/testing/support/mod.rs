@@ -110,6 +110,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         spire_spear: Default::default(),
         slaver_red: Default::default(),
         gremlin_nob: Default::default(),
+        gremlin_wizard: Default::default(),
         cultist: Default::default(),
         sentry: Default::default(),
         darkling: Default::default(),
@@ -199,6 +200,9 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
     if enemy_id == EnemyId::GremlinNob {
         monster.gremlin_nob.protocol_seeded = true;
         monster.gremlin_nob.used_bellow = false;
+    }
+    if enemy_id == EnemyId::GremlinWizard {
+        crate::content::monsters::exordium::gremlin_wizard::initialize_runtime_state(&mut monster);
     }
     if enemy_id == EnemyId::Cultist {
         monster.cultist.protocol_seeded = true;

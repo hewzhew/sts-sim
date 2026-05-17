@@ -107,6 +107,18 @@ order, so this path is currently consistent. Later alternation uses Java's expli
 only after `firstMove` is false. Sentry post-turn roll and Artifact pre-battle behavior also match
 the Java source.
 
+### Gremlin Wizard
+
+Java has a private `currentCharge` counter initialized to `1`. `takeTurn()` increments it when the
+wizard charges, sets the attack when the counter reaches `3`, and resets it to `0` immediately when
+the attack turn begins. This is not equivalent to reconstructing consecutive Charge moves from move
+history, especially for imported/truncated snapshots.
+
+Rust now stores the counter in `GremlinWizardRuntimeState`, `CommunicationMod` exports it as
+`monster.runtime_state.current_charge`, and state sync treats it as strict protocol truth. The
+runtime patch is queued before the follow-up `SetMonsterMove` / damage actions to match Java's
+immediate field mutation inside `takeTurn()`.
+
 ### Lagavulin
 
 Lagavulin remains a runtime-state monster, not a move-history-only monster. Required Java private

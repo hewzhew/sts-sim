@@ -49,6 +49,7 @@ pub fn sync_monsters_from_snapshots(
             spire_spear: Default::default(),
             slaver_red: Default::default(),
             gremlin_nob: Default::default(),
+            gremlin_wizard: Default::default(),
             cultist: Default::default(),
             sentry: Default::default(),
             darkling: Default::default(),

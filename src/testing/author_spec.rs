@@ -689,6 +689,9 @@ fn compile_monster_runtime_state(monster: &AuthorMonsterSpec, move_id: i32) -> V
         "gremlinnob" => json!({
             "used_bellow": true,
         }),
+        "gremlinwizard" => json!({
+            "current_charge": 1,
+        }),
         "lagavulin" => json!({
             "idle_count": 0,
             "debuff_turn_count": 0,

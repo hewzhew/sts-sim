@@ -141,6 +141,7 @@ pub fn handle_spawn_monster(
         spire_spear: Default::default(),
         slaver_red: Default::default(),
         gremlin_nob: Default::default(),
+        gremlin_wizard: Default::default(),
         cultist: Default::default(),
         sentry: Default::default(),
         darkling: Default::default(),
@@ -256,6 +257,11 @@ pub fn handle_spawn_monster(
     if enemy_id == crate::content::monsters::EnemyId::GremlinNob {
         new_monster.gremlin_nob.protocol_seeded = true;
         new_monster.gremlin_nob.used_bellow = false;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::GremlinWizard {
+        crate::content::monsters::exordium::gremlin_wizard::initialize_runtime_state(
+            &mut new_monster,
+        );
     }
     if enemy_id == crate::content::monsters::EnemyId::Cultist {
         new_monster.cultist.protocol_seeded = true;
@@ -996,6 +1002,27 @@ fn handle_update_gremlin_nob_state(
     }
 }
 
+fn handle_update_gremlin_wizard_state(
+    monster_id: usize,
+    current_charge: Option<u8>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = current_charge {
+            monster.gremlin_wizard.current_charge = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.gremlin_wizard.protocol_seeded = value;
+        }
+    }
+}
+
 fn handle_update_cultist_state(
     monster_id: usize,
     first_move: Option<bool>,
@@ -1210,6 +1237,10 @@ pub fn handle_update_monster_runtime(
             used_bellow,
             protocol_seeded,
         } => handle_update_gremlin_nob_state(monster_id, used_bellow, protocol_seeded, state),
+        MonsterRuntimePatch::GremlinWizard {
+            current_charge,
+            protocol_seeded,
+        } => handle_update_gremlin_wizard_state(monster_id, current_charge, protocol_seeded, state),
         MonsterRuntimePatch::Cultist {
             first_move,
             protocol_seeded,
