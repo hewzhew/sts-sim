@@ -577,6 +577,24 @@ Tests:
 - `join_cult_damage_and_ritual_dagger_use_event_source`
 - `join_cult_damage_applies_tungsten_rod`
 
+### Lab potion rewards
+
+Java `events/shrines/Lab.java` does not put potions directly into player potion
+slots. It clears room rewards, adds `RewardItem(PotionHelper.getRandomPotion())`
+twice, adds a third potion below A15, marks the room complete, and opens the
+combat reward screen.
+
+Fixes:
+
+- Lab now opens `EngineState::RewardScreen` containing potion reward items.
+- Lab no longer calls `obtain_potion` directly, so potion slot capacity, Sozu,
+  and claim/discard behavior remain in the reward handler instead of the event.
+
+Tests:
+
+- `lab_opens_three_potion_rewards_without_directly_filling_inventory`
+- `lab_ascension_fifteen_opens_two_potion_rewards`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -789,10 +807,10 @@ Validation:
   `GremlinWheelGame`, `MindBloom`, `WindingHalls`, and `SensoryStone` are now
   covered; `ShiningLight` is also covered for damage and random upgrade
   sources. `Nest` is covered for gold, damage, and Ritual Dagger obtain source.
-  The remaining direct writes should be handled event-by-event against Java
-  source.
+  `Lab` now opens potion rewards instead of directly filling potion slots. The
+  remaining direct writes should be handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `845 passed`.
+- Current result after this pass: `847 passed`.
