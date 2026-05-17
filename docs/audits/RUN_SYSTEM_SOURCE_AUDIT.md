@@ -302,6 +302,11 @@ Rust result:
   has charges and normal edge travel would not already reach that node.
 - Public next-node observation marks Wing Boots targets reachable without
   exposing multi-row jumps.
+- Full-run combat and pending-choice observations now keep public map context.
+  This matches Java top-panel behavior: during normal combat (`screen == NONE`)
+  and grid/hand/card-reward/shop-like screens, the map button can open the
+  already-known map. This is player memory/public context, not hidden future
+  event or encounter data.
 - Map observations now keep two Emerald-key concepts separate:
   `RunMapNodeObservationV0.has_emerald_key` is the Java
   `MapRoomNode.hasEmeraldKey` marker for the burning elite, while
@@ -319,6 +324,7 @@ Coverage:
 - `map_observation_separates_owned_emerald_key_from_emerald_elite_marker`
 - `boss_node_availability_is_derived_from_java_map_position`
 - `map_observation_derives_boss_node_availability_from_position`
+- `combat_observation_keeps_public_map_context_like_java_top_panel`
 - `run_observation_exposes_all_top_panel_keys`
 
 ## Between-Act Transition Pass

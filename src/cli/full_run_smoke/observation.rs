@@ -352,19 +352,12 @@ pub fn build_map_observation_if_relevant(
     run_state: &RunState,
 ) -> Option<RunMapObservationV0> {
     match engine_state {
+        EngineState::GameOver(_) => None,
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
         | EngineState::EventCombat(_)
-        | EngineState::PendingChoice(PendingChoice::GridSelect { .. })
-        | EngineState::PendingChoice(PendingChoice::HandSelect { .. })
-        | EngineState::PendingChoice(PendingChoice::DiscoverySelect(_))
-        | EngineState::PendingChoice(PendingChoice::ScrySelect { .. })
-        | EngineState::PendingChoice(PendingChoice::CardRewardSelect { .. })
-        | EngineState::PendingChoice(PendingChoice::ForeignInfluenceSelect { .. })
-        | EngineState::PendingChoice(PendingChoice::ChooseOneSelect { .. })
-        | EngineState::PendingChoice(PendingChoice::StanceChoice)
-        | EngineState::GameOver(_) => None,
-        EngineState::RewardScreen(_)
+        | EngineState::PendingChoice(_)
+        | EngineState::RewardScreen(_)
         | EngineState::TreasureRoom(_)
         | EngineState::Campfire
         | EngineState::Shop(_)
@@ -1209,6 +1202,38 @@ mod tests {
             build_map_observation(&run_state).boss_node_available,
             "TheEnding exposes the boss hitbox from the Shield/Spear node even though it is not row 14"
         );
+    }
+
+    #[test]
+    fn combat_observation_keeps_public_map_context_like_java_top_panel() {
+        let mut start = MapRoomNode::new(0, 0);
+        start.class = Some(RoomType::MonsterRoom);
+        start.edges.insert(MapEdge::new(0, 0, 0, 1));
+        let mut next = MapRoomNode::new(0, 1);
+        next.class = Some(RoomType::ShopRoom);
+
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.map = MapState::new(vec![vec![start], vec![next]]);
+        run_state.map.current_x = 0;
+        run_state.map.current_y = 0;
+
+        let ctx = EpisodeContext {
+            engine_state: EngineState::CombatPlayerTurn,
+            run_state,
+            combat_state: Some(crate::test_support::blank_test_combat()),
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+
+        let observation = build_observation(&ctx);
+
+        assert!(
+            observation.map.is_some(),
+            "Java TopPanel allows opening the map during normal combat screen NONE"
+        );
+        assert_eq!(observation.next_nodes.len(), 1);
+        assert_eq!(observation.next_nodes[0].room_type.as_deref(), Some("ShopRoom"));
     }
 
     #[test]
