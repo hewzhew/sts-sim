@@ -30,8 +30,45 @@ pub fn generate_combat_rewards(
     is_elite: bool,
     is_boss: bool,
 ) -> RewardState {
-    let mut items = Vec::new();
+    generate_combat_rewards_from_existing(run_state, is_elite, is_boss, Vec::new(), true)
+}
 
+pub fn generate_combat_rewards_from_existing(
+    run_state: &mut RunState,
+    is_elite: bool,
+    is_boss: bool,
+    existing_items: Vec<RewardItem>,
+    include_card_rewards: bool,
+) -> RewardState {
+    let mut items =
+        generate_room_rewards_before_screen(run_state, is_elite, is_boss, existing_items);
+
+    if include_card_rewards {
+        items.extend(generate_card_reward_items(
+            run_state, is_elite, is_boss, true,
+        ));
+    }
+
+    RewardState {
+        items,
+        skippable: !is_boss,
+        screen_context: crate::rewards::state::RewardScreenContext::Standard,
+        pending_card_choice: None,
+    }
+}
+
+/// Java room rewards before `CombatRewardScreen.setupItemReward()`.
+///
+/// Existing rewards are those already inserted into `currRoom.rewards` during
+/// combat, such as thief stolen gold. Java then appends/merges normal room
+/// gold, elite relic/key rewards, and the potion roll before the reward screen
+/// copies the list and optionally appends card rewards.
+pub fn generate_room_rewards_before_screen(
+    run_state: &mut RunState,
+    is_elite: bool,
+    is_boss: bool,
+    mut items: Vec<RewardItem>,
+) -> Vec<RewardItem> {
     let has_ectoplasm = run_state
         .relics
         .iter()
@@ -44,14 +81,14 @@ pub fn generate_combat_rewards(
             if run_state.ascension_level >= 13 {
                 amount = (amount as f32 * 0.75).round() as i32;
             }
-            items.push(RewardItem::Gold { amount });
+            add_gold_reward_like_java(&mut items, amount);
         } else {
             let amount = if is_elite {
                 run_state.rng_pool.treasure_rng.random_range(25, 35)
             } else {
                 run_state.rng_pool.treasure_rng.random_range(10, 20)
             };
-            items.push(RewardItem::Gold { amount });
+            add_gold_reward_like_java(&mut items, amount);
         }
     }
 
@@ -87,17 +124,17 @@ pub fn generate_combat_rewards(
     // 2. Generate Potions
     add_potion_reward_like_java(run_state, &mut items);
 
-    // 3. Generate Cards
-    items.extend(generate_card_reward_items(
-        run_state, is_elite, is_boss, true,
-    ));
+    items
+}
 
-    RewardState {
-        items,
-        skippable: !is_boss,
-        screen_context: crate::rewards::state::RewardScreenContext::Standard,
-        pending_card_choice: None,
+pub fn add_gold_reward_like_java(items: &mut Vec<RewardItem>, amount: i32) {
+    for item in items.iter_mut() {
+        if let RewardItem::Gold { amount: existing } = item {
+            *existing += amount;
+            return;
+        }
     }
+    items.push(RewardItem::Gold { amount });
 }
 
 /// Java `AbstractRoom.addPotionToRewards()`: caller must invoke it only for
@@ -235,6 +272,57 @@ mod tests {
         assert!(matches!(rewards.items[2], RewardItem::Relic { .. }));
         assert!(matches!(rewards.items[3], RewardItem::Potion { .. }));
         assert!(matches!(rewards.items[4], RewardItem::Card { .. }));
+    }
+
+    #[test]
+    fn existing_combat_rewards_precede_standard_room_rewards_like_java() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+
+        let rewards = super::generate_combat_rewards_from_existing(
+            &mut run_state,
+            false,
+            false,
+            vec![RewardItem::StolenGold { amount: 40 }],
+            true,
+        );
+
+        assert!(matches!(
+            rewards.items[0],
+            RewardItem::StolenGold { amount: 40 }
+        ));
+        assert!(
+            matches!(rewards.items[1], RewardItem::Gold { .. }),
+            "Java addStolenGoldToRewards happens during combat before normal room gold is appended"
+        );
+    }
+
+    #[test]
+    fn existing_gold_reward_is_incremented_by_standard_room_gold_like_java() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+
+        let rewards = super::generate_combat_rewards_from_existing(
+            &mut run_state,
+            false,
+            false,
+            vec![RewardItem::Gold { amount: 5 }],
+            false,
+        );
+
+        let gold_rewards = rewards
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                RewardItem::Gold { amount } => Some(*amount),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(gold_rewards.len(), 1);
+        assert!(
+            gold_rewards[0] > 5,
+            "Java AbstractRoom.addGoldToRewards increments an existing GOLD reward item instead of appending a second one"
+        );
     }
 
     #[test]

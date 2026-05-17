@@ -79,6 +79,10 @@ and reachability gates must be checked separately.
      combat reward generator just to obtain card rewards; event combat now keeps
      event rewards, rolls the EventRoom potion reward, and appends card rewards
      through separate helpers.
+   - current progress: combat-time rewards, such as stolen gold, are now treated
+     as pre-existing room rewards before ordinary room gold/relic/potion/card
+     generation. Smoked combats still consume hidden room reward RNG but expose
+     no visible reward items, matching `openCombat(..., smoked=true)`.
 
 3. Relic pool and `canSpawn` closure:
    - turn the existing relic audit into pool-level validation, not just

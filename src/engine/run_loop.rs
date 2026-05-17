@@ -375,14 +375,37 @@ pub fn tick_run(
                             } else {
                                 RewardScreenContext::Standard
                             };
-                            if !matches!(screen_context, RewardScreenContext::SmokedCombat) {
-                                // Populate the actual dropped rewards for normal/mugged combat.
-                                *rs = crate::rewards::generator::generate_combat_rewards(
-                                    run_state, is_elite, is_boss,
+                            let mut existing_items = Vec::new();
+                            existing_items.append(&mut cs.runtime.pending_rewards);
+                            if matches!(screen_context, RewardScreenContext::SmokedCombat) {
+                                let _hidden_room_rewards =
+                                    crate::rewards::generator::generate_combat_rewards_from_existing(
+                                        run_state,
+                                        is_elite,
+                                        is_boss,
+                                        existing_items,
+                                        false,
+                                    );
+                                *rs = crate::rewards::state::RewardState::with_context(
+                                    RewardScreenContext::SmokedCombat,
                                 );
-                                rs.items.append(&mut cs.runtime.pending_rewards);
+                            } else {
+                                // Populate the actual dropped rewards for normal/mugged combat.
+                                *rs = if existing_items.is_empty() {
+                                    crate::rewards::generator::generate_combat_rewards(
+                                        run_state, is_elite, is_boss,
+                                    )
+                                } else {
+                                    crate::rewards::generator::generate_combat_rewards_from_existing(
+                                        run_state,
+                                        is_elite,
+                                        is_boss,
+                                        existing_items,
+                                        true,
+                                    )
+                                };
+                                rs.screen_context = screen_context;
                             }
-                            rs.screen_context = screen_context;
 
                             if is_boss && run_state.act_num <= 2 {
                                 // Act 1 or Act 2 boss defeated — mark for act advance after rewards.
@@ -928,6 +951,13 @@ pub fn tick_run(
                                     run_state, false, false, false,
                                 ),
                             );
+                        } else {
+                            let mut hidden_items = std::mem::take(&mut rewards.items);
+                            hidden_items.append(&mut cs.runtime.pending_rewards);
+                            crate::rewards::generator::add_potion_reward_like_java(
+                                run_state,
+                                &mut hidden_items,
+                            );
                         }
                         *engine_state = EngineState::RewardScreen(rewards);
                     } else {
@@ -962,7 +992,7 @@ mod tests {
     use crate::content::relics::{RelicId, RelicState};
     use crate::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::map::state::MapState;
-    use crate::rewards::state::{RewardItem, RewardState};
+    use crate::rewards::state::{RewardItem, RewardScreenContext, RewardState};
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState, EventCombatState, PostCombatReturn};
     use crate::state::run::RunState;
@@ -1135,6 +1165,67 @@ mod tests {
             1,
             "event combat keeps pre-populated event gold without adding standard monster gold"
         );
+    }
+
+    #[test]
+    fn smoked_combat_consumes_hidden_room_reward_rng_without_visible_rewards() {
+        use crate::content::monsters::EnemyId;
+
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::WhiteBeastStatue));
+        let treasure_before = run_state.rng_pool.treasure_rng.counter;
+        let potion_before = run_state.rng_pool.potion_rng.counter;
+        let card_before = run_state.rng_pool.card_rng.counter;
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::WhiteBeastStatue));
+        combat.runtime.combat_smoked = true;
+        combat
+            .runtime
+            .pending_rewards
+            .push(RewardItem::StolenGold { amount: 40 });
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.current_hp = 0;
+        monster.is_dying = true;
+        combat.entities.monsters.push(monster);
+
+        let mut engine_state = EngineState::CombatProcessing;
+        let mut combat_state = Some(combat);
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            None,
+        ));
+
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("smoked combat should still reach a reward/proceed screen");
+        };
+        assert_eq!(rewards.screen_context, RewardScreenContext::SmokedCombat);
+        assert!(
+            rewards.items.is_empty(),
+            "Java openCombat(smoked=true) does not call setupItemReward, so generated room rewards are not visible"
+        );
+        assert!(
+            run_state.rng_pool.treasure_rng.counter > treasure_before,
+            "Java still adds normal room gold before opening the smoked reward screen"
+        );
+        assert!(
+            run_state.rng_pool.potion_rng.counter > potion_before,
+            "Java still calls addPotionToRewards before opening the smoked reward screen"
+        );
+        assert_eq!(
+            run_state.rng_pool.card_rng.counter, card_before,
+            "Java smoked reward screen skips CombatRewardScreen.setupItemReward card generation"
+        );
+        assert_eq!(run_state.potion_drop_chance_mod, -10);
     }
 
     #[test]
