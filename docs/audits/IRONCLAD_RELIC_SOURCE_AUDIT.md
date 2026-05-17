@@ -1367,7 +1367,7 @@ Coverage:
 
 ### Toy Ornithopter
 
-Status: `known-gap`
+Status: `wrong-fixed`
 
 Java source:
 - `D:/rust/cardcrawl/relics/ToyOrnithopter.java`
@@ -1390,13 +1390,22 @@ Rust result:
 - Combat potion use queues a bottom `Heal { amount: 5 }`, so combat healing
   still flows through the normal heal handler, including Magic Flower and Mark
   of the Bloom.
+- Run-level potion use now covers the Java `PotionPopUp` non-combat path for
+  Blood Potion, Fruit Juice, and Entropic Brew. Toy Ornithopter heals directly
+  through the run-state HP path after the potion effect resolves, matching the
+  Java non-combat `player.heal(5)` branch.
+- Entropic Brew keeps the Java split: in combat it uses
+  `returnRandomPotion(true)`, while outside combat it uses
+  `returnRandomPotion()` unless Sozu blocks generation. The used potion is then
+  removed and the queued/generated obtains fill open slots.
 - UI-only above-creature action is intentionally not represented.
-- Known gap: the current Rust run layer has no canonical out-of-combat potion
-  use path, so the Java non-combat `player.heal(5)` branch is not implemented.
 
 Coverage:
 - `shared_common_obtain_potion_upgrade_relic_metadata_matches_java_sources`
 - `toy_ornithopter_queues_bottom_heal_when_potion_is_used`
+- `run_level_blood_potion_uses_sacred_bark_toy_ornithopter_and_consumes_slot`
+- `run_level_entropic_brew_consumes_slot_and_refills_without_limited_filter`
+- `run_level_entropic_brew_with_sozu_consumes_without_generating_potions`
 
 ### War Paint
 
@@ -4927,7 +4936,7 @@ class-specific queue.
 | 27 | `TinyChest.java` | event generator | `exact` |
 | 28 | `Omamori.java` | deck manager | `exact` |
 | 29 | `PotionBelt.java` | `potion_belt.rs` | `exact` |
-| 30 | `ToyOrnithopter.java` | `toy_ornithopter.rs` | `known-gap` |
+| 30 | `ToyOrnithopter.java` | `toy_ornithopter.rs` / run-level potion path | `wrong-fixed` |
 | 31 | `WarPaint.java` | `war_paint.rs` | `wrong-fixed` |
 | 32 | `Whetstone.java` | `whetstone.rs` | `wrong-fixed` |
 | 33 | `DarkstonePeriapt.java` | deck manager | `wrong-fixed` |
