@@ -95,7 +95,12 @@ mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
-    use crate::state::selection::DomainEvent;
+    use crate::engine::run_loop::tick_run;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::ClientInput;
+    use crate::state::selection::{
+        DomainEvent, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
+    };
 
     fn blacksmith_run() -> RunState {
         let mut run_state = RunState::new(1, 0, true, "Ironclad");
@@ -108,6 +113,12 @@ mod tests {
             extra_data: Vec::new(),
         });
         run_state
+    }
+
+    fn deck_card(id: CardId, uuid: u32, upgrades: u8) -> CombatCard {
+        let mut card = CombatCard::new(id, uuid);
+        card.upgrades = upgrades;
+        card
     }
 
     #[test]
@@ -141,6 +152,66 @@ mod tests {
         assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
         assert!(matches!(engine_state, EngineState::EventRoom));
         assert!(run_state.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn forge_selection_uses_upgradable_cards_like_java() {
+        let mut run_state = blacksmith_run();
+        run_state.master_deck = vec![
+            deck_card(CardId::Strike, 101, 0),
+            deck_card(CardId::Defend, 102, 1),
+            deck_card(CardId::Injury, 103, 0),
+        ];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Forge should open deck upgrade selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::Upgrade);
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::Upgrade);
+        assert_eq!(
+            request.targets,
+            vec![SelectionTargetRef::CardUuid(101)],
+            "Java opens masterDeck.getUpgradableCards()"
+        );
+    }
+
+    #[test]
+    fn forge_upgrades_selected_card_with_event_source() {
+        let mut run_state = blacksmith_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101, 0)];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+        assert_eq!(run_state.master_deck[0].upgrades, 1);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                before,
+                after,
+                source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+            } if before.id == CardId::Strike
+                && before.uuid == 101
+                && before.upgrades == 0
+                && after.upgrades == 1
+        )));
     }
 
     #[test]
