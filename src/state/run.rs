@@ -809,21 +809,6 @@ impl RunState {
             .roll_room_type(&mut self.rng_pool, &ctx)
     }
 
-    /// Initialize event pools for the current act, matching Java Exordium/TheCity/TheBeyond.initializeEventList()
-    /// and AbstractDungeon.initializeSpecialOneTimeEventList().
-    pub fn generate_event(&mut self) -> crate::state::events::EventId {
-        let tiny_chest_counter = self
-            .relics
-            .iter()
-            .find(|relic| relic.id == crate::content::relics::RelicId::TinyChest)
-            .map(|relic| relic.counter)
-            .unwrap_or(0);
-        let ctx = self.build_event_context(tiny_chest_counter, false);
-
-        self.event_generator
-            .generate_event(&mut self.rng_pool, &ctx)
-    }
-
     /// Mirrors `EventRoom.onPlayerEntry()`.
     ///
     /// Java creates `new Random(Settings.seed, AbstractDungeon.eventRng.counter)`
