@@ -1,129 +1,185 @@
 # Next AI Handoff
 
-Date: 2026-05-10
+Date: 2026-05-17
 Branch: `codex/evidence-path-cleanup-20260509`
+Workspace: `D:\rust\sts_simulator`
+Java source reference: `D:\rust\cardcrawl`
+CommunicationMod reference: `D:\rust\CommunicationMod`
+
+## Purpose
+
+This file is the durable working memory for context compaction. At the start of
+any resumed turn, read only:
+
+1. `git status --short`
+2. `git log --oneline -5`
+3. this file
+
+Do not re-read broad source trees just to rediscover recent state. Use this file
+to choose the next narrow Java/Rust evidence packet.
 
 ## Current Rule
 
-Continue Java-source-backed mechanics cleanup. Do not add strategy heuristics, bot compatibility, broad abstractions, UI/VFX simulation, or CleanRL/Gym-first constraints. Preserve gameplay semantics from `D:\rust\cardcrawl`; drop UI-only effects unless they carry gameplay state.
+Continue Java-source-backed mechanics cleanup for a Rust simulator intended for
+AI use.
 
-## Last Pushed Checkpoint
+Allowed:
 
-Latest pushed branch tip: `Match unique kill reward conditions`
+- Preserve Java gameplay semantics from `D:\rust\cardcrawl`.
+- Change Rust architecture when the current one hides or distorts Java state.
+- Omit UI/VFX only when it is truly presentation-only.
+- Keep UI-tied Java behavior only when it mutates gameplay state, consumes
+  gameplay RNG, gates choices, changes visibility, or affects replay.
+- Encode resolved source comparisons as tests, audit notes, and commits.
 
-Recent pushed mechanics fixes:
+Forbidden:
 
-- `Match unique kill reward conditions`
-  - Java `FeedAction`, `GreedAction`, `RitualDaggerAction`, and `LessonLearnedAction` do not use `shouldCancelAction()`.
-  - Rust Feed / Hand of Greed / Ritual Dagger now check reward eligibility from the target's post-damage state, not only from this damage call's `outcome.died`.
-  - This preserves the retained-DAMAGE-action edge where an already `isDying` non-minion/non-halfDead target can still grant the unique reward. `LessonLearnedAction` was audited from Java, but Rust currently has no Lesson Learned implementation.
-- `Match DamageAction cancel guards`
-  - Java `DamageAction.update()` returns before damage when non-THORNS damage has a dead/half-dead/escaped target or a dying/half-dead source.
-  - Rust `handle_damage` now applies that Java `shouldCancelAction()` equivalent before damage resolution.
-  - THORNS damage explicitly bypasses this cancel guard, matching Java `DamageAction`.
-- `Match Pummel and Spot Weakness actions`
-  - Java `Pummel.use()` emits `magicNumber - 1` `PummelDamageAction` hits, then one ordinary `DamageAction`; Rust now has `Action::PummelDamage` and only the final hit is generic `Damage`.
-  - Java `PummelDamageAction` re-checks `target.currentHealth > 0` at execution time and skips without damage/death cleanup if the target is already at 0 HP; Rust now preserves that guard.
-  - Java `SpotWeaknessAction` checks `targetMonster.getIntentBaseDmg() >= 0`; Rust no longer relies solely on the UI-style visible-intent projection that hides dying/half-dead monsters.
-- `2760997 Queue Limit Break strength application`
-  - Java `LimitBreakAction` queues `ApplyPowerAction` with `addToTop`; Rust now queues `Action::ApplyPower` to the front instead of mutating Strength inline.
-  - Regression checks the queued action before applying it.
-- `329376e Match Armaments hand select order`
-  - Java `ArmamentsAction` removes non-upgradeable cards before opening the hand select screen, then returns the selected card and non-upgradeables with `addToTop`.
-  - Rust `HandSelectReason::Upgrade` now reproduces that multi-candidate hand order instead of upgrading in place.
-  - Hand select now rejects duplicate UUID submissions before mutation.
-- `0da451c Align vampire heal and Corruption timing`
-  - Java `VampireDamageAction` / `VampireDamageAllEnemiesAction` queue `HealAction`; Rust no longer heals inline.
-  - Single-target vampire heals queue to the front; Reaper/all-enemy vampire heals queue to the back, with post-combat cleanup re-run so retained `Heal` semantics match Java.
-  - Java `ApplyPowerAction` applies Corruption to existing skills with `modifyCostForCombat(-9)`; Rust now mutates combat cost on apply while preserving `CorruptionPower.onCardDraw` as `setCostForTurn(-9)`.
-- `0460ef3 Match Dual Wield hand select replacement`
-  - Java `DualWieldAction` multi-candidate flow removes the selected original from hand via `HandCardSelectScreen` before adding replacement/copy cards.
-  - Rust `HandSelectReason::Copy` now removes the selected original before making Dual Wield copies, avoiding one extra visible card.
-  - Verified pending-choice, card, and action-handler tests after the change.
-- `dda7e4e Centralize Java card cost semantics`
-  - Added centralized `CombatCard` helpers for Java `AbstractCard` cost semantics.
-  - Migrated known direct cost mutations through those helpers, including Blood for Blood, Corruption, Madness, Enlightenment, Confusion, Mummified Hand, generated-card overrides, and Liquid Memories.
-  - Added `CardZones` UUID helpers for Java battle instances and queued-card artifacts.
-  - Removed the old Blood for Blood cost rewrite from `evaluate_card`; cost changes now happen at Java lifecycle points.
-- `ce0fb76 Persist combat misc card growth`
-  - Java `RitualDaggerAction` first mutates the matching master-deck card and then the matching combat instances.
-  - Rust now emits `MetaChange::ModifyCardMisc { card_uuid, amount }` from combat and applies it to `RunState.master_deck`.
-  - Post-combat state keys include that meta change so retained action cleanup does not hide permanent growth.
-- `889a0f0 Update all matching misc card instances`
-  - `ModifyCardMisc` now matches Java `GetAllInBattleInstances` combat-zone semantics.
-  - Java `RitualDaggerAction` mutates every battle instance with the matching UUID.
-  - Rust no longer stops after the first matching card in hand/draw/discard/exhaust/limbo.
-- `e2ef01d Match Corruption cost-for-turn semantics`
-  - `Corruption` on-apply now matches Java `AbstractCard.setCostForTurn(-9)` semantics.
-  - Rust no longer subtracts from `CombatCard.cost_modifier` when Corruption is applied.
-  - Java `setCostForTurn` changes only the current turn cost field, not base cost or combat cost modifiers.
-- `f7733d6 Tighten post-combat retained actions`
-  - Refined Rust post-combat queue filtering to mirror Java `GameActionManager.clearPostCombatActions()`.
-  - Only Java DAMAGE-equivalent actions, `Heal`, `GainBlock`, and `UseCardDone` are retained after lethal cleanup.
-  - Java WAIT wrappers such as `WhirlwindAction`, `DropkickAction`, and `FiendFireAction` are not retained merely because they may later emit damage.
-- `27e0fdf Match Java post-combat damage cleanup`
-  - Added Java post-combat cleanup after lethal damage.
-  - `Hand of Greed` gold and `Ritual Dagger` misc growth now resolve immediately inside their damage handlers, matching Java unique-action timing.
-  - `Corruption` on-apply scan scope matches Java `ApplyPowerAction`: hand, draw pile, discard pile, and exhaust pile only; not `limbo`.
+- Strategy heuristics, seed patches, bot compatibility layers, CleanRL/Gym-first
+  constraints, or policy logic.
+- Simulating UI effects for their own sake.
+- Treating Java private mechanical fields as inferable from `move_history`
+  unless Java itself only uses history.
+- Re-reading large trees after compaction without first checking this file.
 
-Verification already passed for those checkpoints:
+## Latest Pushed Checkpoint
 
-- `cargo test -q content::cards::tests::lethal_damage_filters_post_combat_actions_like_java_action_manager`
-- `cargo test -q content::cards::tests::on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions`
-- `cargo test -q content::cards::tests::ironclad_power_and_debuff_runtime_actions_match_java_use_methods`
-- `cargo test -q content::cards::tests`
-- `cargo test -q content::cards::tests::ironclad`
-- `cargo check -q`
-- `cargo test -q engine::action_handlers::cards::tests`
-- `cargo test -q engine::core::tests`
+Branch tip:
 
-## Latest Mechanics Work
+- `d0adc3b Fix bandit setmove chain parity`
 
-Unique kill reward action parity:
+Recent commits:
 
-- Java `FeedAction`, `GreedAction`, `RitualDaggerAction`, and `LessonLearnedAction` do not use `shouldCancelAction()`.
-- Their reward condition is checked after `target.damage(info)` from the target's current state: reward when target is dying or at 0 HP, unless it is `halfDead` or has `Minion`.
-- Rust Feed / Hand of Greed / Ritual Dagger now use that post-damage target-state condition instead of relying only on this damage call's `outcome.died`.
-- This preserves the Java retained-DAMAGE-action edge where an already `isDying` target can still grant the unique reward. `LessonLearnedAction` was audited from Java, but Rust currently has no Lesson Learned card/action implementation.
+- `d0adc3b Fix bandit setmove chain parity`
+- `bb06207 Expose public map context during combat observations`
+- `44acc14 Fix secret portal boss transition semantics`
+- `bc09895 Preserve potion canUse overrides`
+- `69c983c Model treasure chest open boundary`
 
-Verification passed for this work:
+`d0adc3b` summary:
 
-- `cargo fmt`
-- `cargo check --lib`
-- `cargo test engine::action_handlers::damage::tests --lib`
-- `cargo test on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions --lib`
-- `cargo test content::cards::tests --lib`
-- `cargo test content::relics::tests --lib`
+- `BanditBear.getMove(int)` in Java always sets `BEAR_HUG`; Rust
+  `roll_move_plan` now always returns the Bear Hug plan. Maul/Lunge remain a
+  `take_turn` `SetMonsterMove` chain.
+- `BanditLeader.getMove(int)` in Java always sets `MOCK`; Rust
+  `roll_move_plan` now always returns the Mock plan. Attack chain remains in
+  `take_turn`.
+- `Lagavulin` no longer uses an empty-history special branch as private state.
+- `Red Slaver` tests now set explicit runtime fields (`first_turn`,
+  `used_entangle`) rather than deriving them from history.
+- Audit note updated in
+  `docs/audits/MONSTER_RUNTIME_TRUTH_AUDIT_2026-04-18.md`.
 
-Known verification limitation:
+Verification for `d0adc3b`:
 
-- `cargo test --lib` currently reports 432 passed / 13 failed because protocol fixture files under `tests/protocol_screen_action_space/...` are missing. Those failures are unrelated to this cost/instance cleanup and come from the deleted/dirty fixture tree.
+- `cargo test bandit_bear --all-targets`
+- `cargo test bandit_leader --all-targets`
+- `cargo test lagavulin --all-targets`
+- `cargo test slaver_red --all-targets`
+- `cargo test --all-targets` -> `1202 passed`
 
-## Next Work
+## Current Audit Position
 
-Resume from Ironclad card-by-card Java audit, prioritizing non-trivial mechanics over simple damage/block cards.
+We are in monster/runtime parity work after broad card parity work.
 
-Recommended next targets:
+The current monster architecture is still usable if these rules are followed:
 
-1. Continue Ironclad from the latter half, with emphasis on execution-time custom actions:
-   - `CorruptionPower.onCardDraw` vs generated-card hand insertion paths
-   - remaining custom queued actions where Java uses specialized action classes instead of plain `DamageAction`
-   - selection actions whose Java screen order mutates hand or selected-card order
-2. Keep checking Java action timing, not just card `use()` methods:
-   - queued `addToTop` vs `addToBot`
-   - state inspected at action execution time
-   - card instance mutation through `GetAllInBattleInstances`
-   - generated-card `makeStatEquivalentCopy`
-3. After Ironclad card audit stabilizes, move to shared mechanics exposed by those cards before starting full Silent/Defect/Watcher sweeps.
+- Java private gameplay fields become explicit Rust runtime fields, protocol
+  imports, or factory-seeded state. They are not reconstructed from history.
+- Java `lastMove`, `lastTwoMoves`, `lastMoveBefore` map to Rust
+  `move_history`.
+- Java `takeTurn()` chains that queue `SetMoveAction` become Rust queued
+  `SetMonsterMove`, not `roll_move_plan`.
+- Java `RollMoveAction` after a turn consumes monster AI RNG and records a move
+  when Java does so, even if the next move is deterministic.
+- UI/VFX classes are ignored only after checking that they do not mutate combat
+  state, RNG, room state, map state, or visible choices.
 
-Useful reminders:
+Current text scans after `d0adc3b`:
 
-- Rust draw pile top is index `0`.
-- Java `CardGroup` top is the list end.
-- Java `MakeTempCardInDrawPileAction`: `toBottom` -> bottom, `randomSpot` -> random spot, otherwise top.
-- Java `CardGroup.addToRandomSpot` never creates a new top when the group is nonempty; Rust helper already maps this.
-- Java UI/VFX classes are ignored only when they are UI-only. `ShowCardAndAddToHandEffect`,
-  `ShowCardAndAddToDiscardEffect`, and `ShowCardAndAddToDrawPileEffect` can call Master Reality
-  and therefore carry gameplay state for repeat-upgrade cards like `Searing Blow`.
-- Java `Shockwave.java` in this source applies Weak and Vulnerable only. Do not add Frail unless the Java source changes.
-- Master Reality is a shared generated-card rule, not a reason to start the full Watcher card sweep yet.
+- `src/content/monsters` has no remaining direct `move_history().is_empty`
+  private-state pattern from the recent search.
+- The obvious "private flags from history" smell was cleaned in the audited
+  Red Slaver/Lagavulin/Bandit cases.
+
+No uncommitted changes were present after the latest source reads.
+
+## Recent Source Findings Not Yet Needing Edits
+
+Mixed `SetMoveAction` / `RollMoveAction` audit:
+
+- `SlimeBoss`: Java split path does not queue `RollMoveAction`; Rust split path
+  does not roll.
+- `AcidSlime_L`: Java split path does not queue `RollMoveAction`; Rust guards
+  roll with `if plan.move_id != SPLIT`.
+- `SpikeSlime_L`: Java queues `RollMoveAction` after the switch, including the
+  split path; Rust always pushes the post-turn roll after `execute_steps`.
+
+Split / victory timing:
+
+- Java split uses `CannotLoseAction`, `SuicideAction`, `SpawnMonsterAction`,
+  then `CanLoseAction`.
+- Rust drains the action queue and settles victory only after pending actions
+  drain, so the checked Slime split paths do not need UI/global CannotLose
+  modeling just for premature reward prevention.
+
+Random target audit:
+
+- `src/engine/targeting.rs` has tests for manual target filtering and random
+  target behavior.
+- Random monster targeting includes zero-HP monsters when they are not dying,
+  escaped, or half-dead, matching Java `MonsterGroup.getRandomMonster(true)`.
+- `GainBlockRandomMonsterAction` is special: Java excludes source, `intent ==
+  ESCAPE`, and `isDying`, but does not exclude `isEscaping`; Rust has dedicated
+  tests for this behavior.
+- Naming caveat: Rust `is_escaped` currently represents Java
+  `isEscaping || escaped`. In normal Java escape flow this is usually safe
+  because `escape()` sets `isEscaping = true` before `escaped = true`, but the
+  lifecycle mapping should remain on the watch list.
+
+## High-Risk Evergreen List
+
+Keep these on the short list and revisit with narrow source packets:
+
+1. Draw pile API and top/bottom conventions.
+2. Generated cards entering draw/discard/hand, including random spot behavior.
+3. Random target selection and monster lifecycle flags.
+4. Pending choices, selection order, cancel/confirm behavior, and replay.
+5. Post-combat cleanup and retained queued actions.
+6. Card instance copying, UUID/misc propagation, and battle-instance mutation.
+7. Potion discard/use affordances outside combat and during phase boundaries.
+8. Map/boss/event/shop/chest/campfire visibility and room transition state.
+9. Relic counters, relic hooks, and hidden vs public state.
+10. Monster pools, event pools, and act/floor/ascension gates.
+
+## Next Work Queue
+
+Continue monster audit before jumping back to machine learning.
+
+Recommended next packets:
+
+1. Finish the mixed `SetMoveAction` / `RollMoveAction` monster sweep:
+   - Re-check `AwakenedOne`, `Darkling`, `GremlinFat`, `GremlinWizard`,
+     `Looter`, `Mugger`, and any other Java monsters whose `takeTurn()` both
+     acts and schedules a next move.
+2. For each monster packet, inspect only:
+   - Java monster file.
+   - Rust monster file.
+   - Relevant action files if `takeTurn()` queues custom actions.
+   - Existing test file or nearest module tests.
+3. If source comparison is resolved, add or adjust a focused test, run the
+   narrow tests, then commit.
+4. If a source comparison exposes an architectural issue, write the issue here
+   first before changing broad modules.
+
+## Compression Control Protocol
+
+Every meaningful chunk must end with:
+
+- Latest commit hash or `uncommitted` status.
+- Files changed.
+- Tests run and result.
+- Exact next source packet.
+- Any unresolved suspicion moved into this file.
+
+If context compacts, do not infer from memory. Resume from this file and the
+latest five commits.
