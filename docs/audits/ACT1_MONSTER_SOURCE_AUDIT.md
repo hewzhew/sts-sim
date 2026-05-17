@@ -113,11 +113,17 @@ Entangle move already appearing in history. Rust keeps that representation and n
 coverage for the first move, one-time Entangle gate, post-Entangle Stab preference, A17 Scrape
 repeat rule, and take-turn action order.
 
+### Slime Split Interrupt
+
+Java large slimes and Slime Boss run their split interrupt from `damage()` after `super.damage`.
+The interrupt is guarded by `!isDying`, half-HP, and `nextMove != 3`; when it fires, Java calls
+`setMove(Split)` immediately and also queues a `SetMoveAction` to the bottom. Rust now mirrors the
+mechanical part: killing hits do not queue Split, threshold hits update the planned split intent
+immediately, and the queued `SetMonsterMove` stays behind existing multi-hit damage rather than
+jumping to the front.
+
 ## Still Worth Rechecking
 
-- Slime split behavior under multi-hit player attacks: Java sets split intent immediately and also
-  queues `SetMoveAction`; Rust queues `SetMonsterMove` from the Split hook. This should converge at
-  the stable decision boundary, but multi-hit interleaving is worth a dedicated regression.
 - Guardian threshold behavior under multi-hit attacks should stay covered by the dedicated Guardian
   threshold matrix.
 
@@ -131,4 +137,6 @@ repeat rule, and take-turn action order.
 - `red_slaver_roll_logic_matches_java_private_flags_from_move_history`
 - `red_slaver_a17_scrape_cannot_repeat_immediately_like_java`
 - `red_slaver_take_turn_actions_preserve_java_order_and_amounts`
+- `killing_large_slime_does_not_queue_split_like_java_damage_override`
+- `large_slime_split_sets_intent_immediately_but_keeps_existing_multi_hit_queue`
 - Existing Guardian and Lagavulin source-parity tests

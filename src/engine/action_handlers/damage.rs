@@ -277,8 +277,19 @@ fn apply_damage_to_monster_via_pipeline(
                     info.damage_type,
                     false,
                 );
-                for a in hook_actions.into_iter().rev() {
-                    state.queue_action_front(a);
+                if power.power_type == PowerId::Split {
+                    // Java large slimes / Slime Boss call setMove(Split) immediately
+                    // inside damage(), then add a SetMoveAction to the bottom. The
+                    // immediate mutation prevents duplicate split interrupts during
+                    // queued multi-hit attacks while preserving the existing queue.
+                    for a in hook_actions {
+                        super::execute_action(a.clone(), state);
+                        state.queue_action_back(a);
+                    }
+                } else {
+                    for a in hook_actions.into_iter().rev() {
+                        state.queue_action_front(a);
+                    }
                 }
             }
 
@@ -1553,8 +1564,30 @@ mod tests {
     use crate::content::monsters::EnemyId;
     use crate::content::powers::PowerId;
     use crate::runtime::action::{DamageInfo, DamageType};
-    use crate::runtime::combat::{CombatCard, Power};
+    use crate::runtime::combat::{CombatCard, Power, PowerPayload};
     use crate::test_support::{blank_test_combat, test_monster};
+
+    fn split_power() -> Power {
+        Power {
+            power_type: PowerId::Split,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
+
+    fn normal_player_damage(target: usize, amount: i32) -> DamageInfo {
+        DamageInfo {
+            source: 0,
+            target,
+            base: amount,
+            output: amount,
+            damage_type: DamageType::Normal,
+            is_modified: false,
+        }
+    }
 
     #[test]
     fn pummel_damage_action_skips_target_that_is_already_at_zero_hp() {
@@ -1650,6 +1683,82 @@ mod tests {
             "Java PummelDamageAction calls clearPostCombatActions after a killing hit, retaining only Java-retained post-combat actions"
         );
         assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn killing_large_slime_does_not_queue_split_like_java_damage_override() {
+        let mut state = blank_test_combat();
+        let mut slime = test_monster(EnemyId::AcidSlimeL);
+        slime.id = 81;
+        slime.current_hp = 4;
+        slime.max_hp = 70;
+        slime.set_planned_move_id(1);
+        state.entities.monsters = vec![slime];
+        store::set_powers_for(&mut state, 81, vec![split_power()]);
+
+        handle_damage(normal_player_damage(81, 10), &mut state);
+
+        let slime = &state.entities.monsters[0];
+        assert!(slime.is_dying);
+        assert_eq!(
+            slime.planned_move_id(),
+            1,
+            "Java split interrupt is guarded by !isDying after super.damage(info)"
+        );
+        assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn large_slime_split_sets_intent_immediately_but_keeps_existing_multi_hit_queue() {
+        let mut state = blank_test_combat();
+        let mut slime = test_monster(EnemyId::AcidSlimeL);
+        slime.id = 82;
+        slime.current_hp = 40;
+        slime.max_hp = 70;
+        slime.set_planned_move_id(1);
+        state.entities.monsters = vec![slime];
+        store::set_powers_for(&mut state, 82, vec![split_power()]);
+
+        let hit = normal_player_damage(82, 6);
+        state.queue_action_back(Action::PummelDamage(hit.clone()));
+        state.queue_action_back(Action::PummelDamage(hit.clone()));
+
+        handle_pummel_damage(hit, &mut state);
+
+        assert_eq!(state.entities.monsters[0].current_hp, 34);
+        assert_eq!(
+            state.entities.monsters[0].planned_move_id(),
+            3,
+            "Java damage() calls setMove(Split) immediately when the threshold is crossed"
+        );
+
+        let Some(first_queued) = state.pop_next_action() else {
+            panic!("remaining queued PummelDamage should stay before queued SetMoveAction");
+        };
+        assert!(matches!(first_queued, Action::PummelDamage(_)));
+        crate::engine::action_handlers::execute_action(first_queued, &mut state);
+
+        let Some(second_queued) = state.pop_next_action() else {
+            panic!("second queued PummelDamage should still be preserved");
+        };
+        assert!(matches!(second_queued, Action::PummelDamage(_)));
+
+        let Some(set_move) = state.pop_next_action() else {
+            panic!("Java also queues a SetMoveAction to the bottom after the immediate setMove");
+        };
+        assert!(matches!(
+            set_move,
+            Action::SetMonsterMove {
+                monster_id: 82,
+                next_move_byte: 3,
+                ..
+            }
+        ));
+        assert_eq!(
+            state.pop_next_action(),
+            None,
+            "planned split move blocks duplicate split interrupts during queued multi-hit damage"
+        );
     }
 
     #[test]
