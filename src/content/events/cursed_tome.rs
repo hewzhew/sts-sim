@@ -6,7 +6,6 @@ use crate::state::events::{
     EventOptionTransition, EventRelicKind, EventState,
 };
 use crate::state::run::RunState;
-use crate::state::selection::DomainEventSource;
 
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
@@ -141,15 +140,27 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             }
         },
         1 => {
-            run_state.change_hp_with_source(-1, DomainEventSource::Event(EventId::CursedTome));
+            super::apply_player_hp_loss_damage(
+                run_state,
+                1,
+                crate::state::selection::DomainEventSource::Event(EventId::CursedTome),
+            );
             event_state.current_screen = 2;
         }
         2 => {
-            run_state.change_hp_with_source(-2, DomainEventSource::Event(EventId::CursedTome));
+            super::apply_player_hp_loss_damage(
+                run_state,
+                2,
+                crate::state::selection::DomainEventSource::Event(EventId::CursedTome),
+            );
             event_state.current_screen = 3;
         }
         3 => {
-            run_state.change_hp_with_source(-3, DomainEventSource::Event(EventId::CursedTome));
+            super::apply_player_hp_loss_damage(
+                run_state,
+                3,
+                crate::state::selection::DomainEventSource::Event(EventId::CursedTome),
+            );
             event_state.current_screen = 4;
         }
         4 => {
@@ -161,9 +172,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     } else {
                         10
                     };
-                    run_state.change_hp_with_source(
-                        -final_dmg,
-                        DomainEventSource::Event(EventId::CursedTome),
+                    super::apply_player_hp_loss_damage(
+                        run_state,
+                        final_dmg,
+                        crate::state::selection::DomainEventSource::Event(EventId::CursedTome),
                     );
                     // Random book relic (Java randomBook)
                     let book_relics = [
@@ -171,21 +183,20 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         RelicId::Enchiridion,
                         RelicId::NilrysCodex,
                     ];
-                    let available: Vec<RelicId> = book_relics
+                    let mut possible_books: Vec<RelicId> = book_relics
                         .iter()
                         .copied()
                         .filter(|r| !run_state.relics.iter().any(|owned| owned.id == *r))
                         .collect();
-                    let relic_id = if available.is_empty() {
-                        RelicId::Circlet
-                    } else {
-                        let idx = run_state
-                            .rng_pool
-                            .misc_rng
-                            .random_range(0, available.len() as i32 - 1)
-                            as usize;
-                        available[idx]
-                    };
+                    if possible_books.is_empty() {
+                        possible_books.push(RelicId::Circlet);
+                    }
+                    let idx = run_state
+                        .rng_pool
+                        .misc_rng
+                        .random_range(0, possible_books.len() as i32 - 1)
+                        as usize;
+                    let relic_id = possible_books[idx];
                     // Java: addRelicToRewards(r) + combatRewardScreen.open()
                     let mut rewards = RewardState::new();
                     rewards.items.push(RewardItem::Relic { relic_id });
@@ -196,8 +207,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 _ => {
                     // Stop reading: 3 damage
-                    run_state
-                        .change_hp_with_source(-3, DomainEventSource::Event(EventId::CursedTome));
+                    super::apply_player_hp_loss_damage(
+                        run_state,
+                        3,
+                        crate::state::selection::DomainEventSource::Event(EventId::CursedTome),
+                    );
                     event_state.current_screen = 5;
                 }
             }
@@ -213,21 +227,29 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::relics::RelicState;
     use crate::state::events::{
         EventActionKind, EventEffect, EventOptionTransition, EventRelicKind,
     };
 
-    #[test]
-    fn take_book_option_exposes_reward_transition() {
+    fn tome_run(screen: usize, current_hp: i32, max_hp: i32) -> RunState {
         let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.current_hp = current_hp;
+        rs.max_hp = max_hp;
         rs.event_state = Some(EventState {
             id: EventId::CursedTome,
-            current_screen: 4,
+            current_screen: screen,
             internal_state: 0,
             completed: false,
             combat_pending: false,
             extra_data: Vec::new(),
         });
+        rs
+    }
+
+    #[test]
+    fn take_book_option_exposes_reward_transition() {
+        let rs = tome_run(4, 80, 80);
         let options = get_options(&rs, rs.event_state.as_ref().unwrap());
         let take_book = &options[0];
 
@@ -243,5 +265,56 @@ mod tests {
             take_book.semantics.transition,
             EventOptionTransition::OpenReward
         );
+    }
+
+    #[test]
+    fn page_damage_uses_java_hp_loss_so_tungsten_rod_can_reduce_to_zero() {
+        let mut rs = tome_run(1, 20, 80);
+        rs.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.current_hp, 20);
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 2);
+    }
+
+    #[test]
+    fn take_book_final_damage_uses_hp_loss_and_opens_book_reward() {
+        let mut rs = tome_run(4, 30, 80);
+        rs.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.current_hp, 21);
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("taking the book should open the reward screen");
+        };
+        assert_eq!(rewards.items.len(), 1);
+        assert!(matches!(rewards.items[0], RewardItem::Relic { .. }));
+    }
+
+    #[test]
+    fn random_book_consumes_misc_rng_even_when_only_circlet_is_possible() {
+        let mut rs = tome_run(4, 80, 80);
+        rs.relics.push(RelicState::new(RelicId::Necronomicon));
+        rs.relics.push(RelicState::new(RelicId::Enchiridion));
+        rs.relics.push(RelicState::new(RelicId::NilrysCodex));
+        let before_counter = rs.rng_pool.misc_rng.counter;
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.rng_pool.misc_rng.counter, before_counter + 1);
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("taking the book should open the reward screen");
+        };
+        assert!(matches!(
+            rewards.items[0],
+            RewardItem::Relic {
+                relic_id: RelicId::Circlet
+            }
+        ));
     }
 }

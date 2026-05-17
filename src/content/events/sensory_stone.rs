@@ -40,10 +40,18 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             // AbstractPlayer.damage still applies relic onLoseHpLast.
             match choice_idx {
                 1 => {
-                    apply_hp_loss_damage(run_state, 5);
+                    super::apply_player_hp_loss_damage(
+                        run_state,
+                        5,
+                        DomainEventSource::Event(EventId::SensoryStone),
+                    );
                 }
                 2 => {
-                    apply_hp_loss_damage(run_state, 10);
+                    super::apply_player_hp_loss_damage(
+                        run_state,
+                        10,
+                        DomainEventSource::Event(EventId::SensoryStone),
+                    );
                 }
                 _ => {}
             }
@@ -67,19 +75,6 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
-}
-
-fn apply_hp_loss_damage(run_state: &mut RunState, amount: i32) {
-    let mut damage = amount;
-    if damage > 0
-        && run_state
-            .relics
-            .iter()
-            .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
-    {
-        damage -= 1;
-    }
-    run_state.change_hp_with_source(-damage, DomainEventSource::Event(EventId::SensoryStone));
 }
 
 /// Generate a row of 3 colorless uncommon cards for the card reward screen.

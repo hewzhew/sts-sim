@@ -122,17 +122,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                     } else {
                         0.10f32
                     };
-                    let mut damage = (run_state.max_hp as f32 * pct) as i32;
-                    if damage > 0
-                        && run_state
-                            .relics
-                            .iter()
-                            .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
-                    {
-                        damage -= 1;
-                    }
-                    run_state.change_hp_with_source(
-                        -damage,
+                    let damage = (run_state.max_hp as f32 * pct) as i32;
+                    super::apply_player_hp_loss_damage(
+                        run_state,
+                        damage,
                         DomainEventSource::Event(EventId::GremlinWheelGame),
                     );
                 }
@@ -308,7 +301,10 @@ mod tests {
 
         handle_choice(&mut engine_state, &mut run_state, 0);
 
-        assert!(!run_state.master_deck.iter().any(|card| card.id == CardId::Decay));
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Decay));
         let omamori = run_state
             .relics
             .iter()

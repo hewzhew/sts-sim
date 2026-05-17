@@ -200,7 +200,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     // Leave (A15: take HP loss)
                     if run_state.ascension_level >= 15 {
                         let dmg = ((run_state.max_hp as f32 * 0.05).ceil()) as i32;
-                        apply_hp_loss_damage(run_state, dmg);
+                        super::apply_player_hp_loss_damage(
+                            run_state,
+                            dmg,
+                            DomainEventSource::Event(EventId::WomanInBlue),
+                        );
                     }
                     event_state.current_screen = 1;
                 }
@@ -229,19 +233,6 @@ fn open_potion_rewards(
     event_state.current_screen = 1;
     run_state.event_state = Some(event_state.clone());
     *engine_state = EngineState::RewardScreen(rewards);
-}
-
-fn apply_hp_loss_damage(run_state: &mut RunState, amount: i32) {
-    let mut damage = amount;
-    if damage > 0
-        && run_state
-            .relics
-            .iter()
-            .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
-    {
-        damage -= 1;
-    }
-    run_state.change_hp_with_source(-damage, DomainEventSource::Event(EventId::WomanInBlue));
 }
 
 #[cfg(test)]

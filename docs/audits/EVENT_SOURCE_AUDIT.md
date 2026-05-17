@@ -902,6 +902,34 @@ Tests:
 - `first_fight_returns_to_event_room_without_rewards_or_elite_trigger`
 - `second_fight_preserves_java_elite_trigger_without_normal_elite_rewards`
 
+### Cursed Tome HP_LOSS and book reward
+
+Java `events/city/CursedTome.java` uses
+`AbstractDungeon.player.damage(new DamageInfo(null, amount, HP_LOSS))` for each
+page and for the final book/stop-reading damage. That damage bypasses block and
+owner attack callbacks, but `AbstractPlayer.damage` still runs relic
+`onLoseHpLast`, so `Tungsten Rod` reduces the HP loss by 1.
+
+Java `randomBook()` also always rolls `AbstractDungeon.miscRng.random(size - 1)`
+after constructing the possible-book list. If all three book relics are already
+owned, the list contains only `Circlet`, but `miscRng.random(0)` still consumes
+one gameplay RNG call.
+
+Fixes:
+
+- Added `content::events::apply_player_hp_loss_damage(...)` for event-owned
+  Java `DamageInfo(null, amount, HP_LOSS)` semantics.
+- `CursedTome`, `SensoryStone`, `WomanInBlue`, and `GremlinWheelGame` now share
+  that helper instead of duplicating local Tungsten Rod handling.
+- `CursedTome` book reward now consumes `misc_rng` even when only `Circlet` is
+  possible.
+
+Tests:
+
+- `page_damage_uses_java_hp_loss_so_tungsten_rod_can_reduce_to_zero`
+- `take_book_final_damage_uses_hp_loss_and_opens_book_reward`
+- `random_book_consumes_misc_rng_even_when_only_circlet_is_possible`
+
 ### SecretPortal and SpireHeart classification
 
 Java `events/beyond/SecretPortal.java` is a special one-time Act 3 portal event,
@@ -970,10 +998,11 @@ Validation:
   directly filling potion slots. `WomanInBlue` now opens potion rewards instead
   of directly filling potion slots and sources its A15 HP_LOSS leave damage.
   `TombRedMask` now routes paid `Red Mask` obtain through the relic obtain
-  helper. The remaining direct writes should be handled event-by-event against
-  Java source.
+  helper. `CursedTome` now uses shared Java HP_LOSS event semantics and preserves
+  random-book RNG consumption. The remaining direct writes should be handled
+  event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `875 passed`.
+- Current result after this pass: `878 passed`.
