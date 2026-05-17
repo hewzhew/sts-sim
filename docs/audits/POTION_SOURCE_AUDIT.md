@@ -1,98 +1,65 @@
 # Potion Source Audit
 
-This audit records the current Java-source parity pass for combat potion use.
-The intent is not to make potion logic a strategy surface; potion behavior is
-mechanical simulator truth and must stay anchored to the Java source under
-`D:/rust/cardcrawl`.
+Purpose:
+- Compare Rust potion pool, use/discard legality, and potion effects against the
+  decompiled Java source under `D:/rust/cardcrawl/potions` and
+  `D:/rust/cardcrawl/helpers/PotionHelper.java`.
+- Preserve mechanical semantics and RNG consumption. UI-only sound, flash,
+  particles, hitboxes, and render state are intentionally excluded unless they
+  change state, RNG, ordering, or visible legal decisions.
 
-## Source Files Checked
+## Pool Order And Availability
 
-- `D:/rust/cardcrawl/potions/AbstractPotion.java`
-- `D:/rust/cardcrawl/potions/*Potion.java`
-- `D:/rust/cardcrawl/ui/panels/PotionPopUp.java`
-- `D:/rust/cardcrawl/helpers/PotionHelper.java`
-- `D:/rust/cardcrawl/actions/unique/DiscoveryAction.java`
-- `D:/rust/cardcrawl/actions/defect/EssenceOfDarknessAction.java`
-- `D:/rust/cardcrawl/actions/utility/RandomizeHandCostAction.java`
-- Rust paths:
-  - `src/content/potions/mod.rs`
-  - `src/content/potions/potion_effects.rs`
-  - `src/engine/action_handlers/cards.rs`
-  - `src/engine/core.rs`
-  - `src/bot/combat/legal_moves.rs`
+Java evidence:
+- `PotionHelper.getPotions(chosenClass, false)` prepends the three
+  class-specific potions for the current class.
+- Shared potions are appended in a fixed order.
+- `PotionHelper.getPotions(null, true)` prepends all twelve class-specific
+  potions, then appends the same shared potion list.
+- `AbstractDungeon.returnRandomPotion()` first rolls rarity with `potionRng`
+  and then rejection-samples from `PotionHelper.getRandomPotion()`.
+- `AbstractDungeon.returnRandomPotion(rarity, true)` rejects `Fruit Juice`.
+- `AbstractDungeon.returnTotallyRandomPotion()` delegates directly to
+  `PotionHelper.getRandomPotion()`.
 
-## Shared Java Rules
+Rust result:
+- `potions_for_class` is the canonical Java-order pool for RNG selection.
+- `PotionClass::Any` is the Java `getAll` / upload-style list, not a normal
+  run class pool.
+- `random_potion` models the Java rarity roll and rejection-sampling path.
+- `random_potion_any` models the flat `PotionHelper.getRandomPotion()` path.
 
-- `PotionPopUp` applies `potion.use(target)`, then relic `onUsePotion`, then
-  destroys the potion slot. Rust combat use now keeps this ordering: potion
-  actions first, relic hooks second, slot clear after successful use.
-- `FairyPotion` is not a `PotionPopUp` use path. Java passive revive is handled
-  inline in `AbstractPlayer.damage`: it calls `FairyPotion.use(player)` and
-  destroys the slot directly, without relic `onUsePotion`.
-- `AbstractPotion.canUse()` blocks most potion use outside active combat, after
-  the turn has ended, when monsters are basically dead, and in `WeMeetAgain`.
-  Some potion classes override this. `BloodPotion`, `FruitJuice`, and
-  `EntropicBrew` can be manually used outside combat unless `WeMeetAgain` is
-  active; `FairyPotion` cannot be manually used.
-- `AbstractPotion.canDiscard()` is true except while the current room event is
-  `WeMeetAgain`. Java `PotionPopUp` uses this for top-panel discard, so this is
-  a run-level potion lifetime rule rather than combat strategy.
-- `AbstractPotion.getPotency()` doubles potency when `SacredBark` is owned.
-  Rust combat use resolves effective potency at use time.
-- `PotionHelper.getPotions(class, getAll)` order is source-parity critical.
-  Rust `potions_for_class()` preserves class-specific potion order followed by
-  shared potion order.
+Coverage:
+- `potion_helper_pools_match_java_order_for_all_classes`
 
-## Fixed In This Pass
+## Use And Discard Legality
 
-| Potion / path | Java source behavior | Rust fix | Tests |
-| --- | --- | --- | --- |
-| Entropic Brew | Queues one `ObtainPotionAction(returnRandomPotion(true))` per potion slot while the potion is used. Concrete potion IDs are generated before queued obtains run; Fruit Juice is excluded. | `handle_use_potion` now handles Entropic Brew statefully with `potion_rng`, limited potion generation, queued concrete obtains, relic hooks, then slot clear. | `entropic_brew_generates_concrete_limited_potions_before_obtain_actions` |
-| Attack / Skill / Power / Colorless Potion with Sacred Bark | `DiscoveryAction(type, amount)` / `DiscoveryAction(colorless, amount)` uses `amount`; selected card can create two stat-equivalent copies with Sacred Bark. | `SuspendForDiscovery` and `DiscoveryChoiceState` now carry `amount`; resolution creates that many copies, preserving Java hand-capacity split between hand and discard. | `sacred_bark_discovery_potion_adds_two_selected_copies_with_java_hand_capacity_split` |
-| Distilled Chaos | Queues `PlayTopCardAction(getRandomMonster(... cardRandomRng), false)` once per potency. Random targets are rolled at potion-use time, before top cards execute. | `handle_use_potion` now rolls random targets immediately and queues targeted `PlayTopCard` actions. | `distilled_chaos_rolls_random_targets_when_potion_is_used` |
-| Essence of Darkness | `EssenceOfDarknessAction` loops current orb slots, then channels `potency` Dark orbs per slot. Sacred Bark with 3 slots channels 6 Dark orbs. | `handle_use_potion` now expands channels as `orb_slots * potency` rather than only `potency`. | `essence_of_darkness_channels_for_each_orb_slot_and_sacred_bark_potency` |
-| Liquid Memories | `BetterDiscardPileToHandAction(number, 0)` auto-moves when discard size is `<= number`; if hand fills, remaining discard cards stay in discard. Empty discard still consumes the potion and no-ops. | Immediate path now checks hand capacity before removing each discard card and leaves overflow cards in discard. | `liquid_memories_auto_move_does_not_drop_cards_when_hand_fills`; `engine_fizzles_liquid_memories_empty_discard_after_consuming_potion` |
-| Snecko Oil | Queues draw, then `RandomizeHandCostAction`; that action skips `cost < 0`, rolls 0-3 per eligible card, and changes both `cost` and `costForTurn` when different. | `handle_randomize_hand_costs` now reads current combat cost, skips X/unplayable cost, and mutates combat plus turn cost. | `snecko_oil_randomize_updates_combat_cost_and_turn_cost_like_java` |
-| Smoke Bomb | `SmokeBomb.canUse()` rejects if any monster has `BackAttack` or `EnemyType.BOSS`; it is not just a room-level boss flag. | `handle_use_potion` and `engine_local_moves` now block by room boss flag, visible boss monster type, and `BackAttack`. | `smoke_bomb_is_blocked_by_spire_shield_back_attack_power`; `smoke_bomb_is_blocked_by_boss_monster_type_even_without_room_flag`; `engine_local_moves_skip_smoke_bomb_when_visible_monster_is_boss` |
-| Combat use legality | Java `PotionPopUp` only calls `use()` after `potion.canUse()` passes. Generic `AbstractPotion.canUse()` requires active combat, player turn not ended, monsters not basically dead, and no `WeMeetAgain`; special potions such as Fairy and Smoke Bomb override this. | Added one shared Rust combat-use legality helper and routed execution, legal moves, and observation through it, so direct action/replay inputs cannot bypass the same gate. | `combat_potion_execution_respects_java_can_use_gate`; existing Smoke Bomb and Fairy tests |
-| Run observation `canUse` / `canDiscard` | Non-combat top-panel affordances are dynamic: only Blood/Fruit/Entropic override non-combat use, `FairyPotion` is passive, and `WeMeetAgain` blocks both use and discard. During combat, potion slots live in combat state, not stale run state. | `build_potion_observations` now reads combat slots when combat is active and uses source-backed non-combat affordance helpers for run-state slots. | `non_combat_potion_observation_uses_java_can_use_overrides`; `we_meet_again_blocks_potion_use_and_discard_observation`; `combat_potion_observation_uses_combat_slots_not_stale_run_slots` |
-| Run-level top-panel potion execution | Java `PotionPopUp` allows discard outside combat unless `WeMeetAgain`, and allows Blood/Fruit/Entropic use outside combat. It applies potion effect, relic `onUsePotion`, then destroys the slot; non-combat Entropic uses non-limited `returnRandomPotion()` and Sozu consumes without generating. | `tick_run` now intercepts run-level `UsePotion` / `DiscardPotion` in non-combat states, applies Blood/Fruit/Entropic effects to `RunState`, triggers Toy Ornithopter, consumes the slot, and uses non-limited Entropic generation. | `run_level_potion_actions_follow_java_top_panel_affordances`; `run_level_blood_potion_uses_sacred_bark_toy_ornithopter_and_consumes_slot`; `run_level_potion_discard_is_blocked_by_we_meet_again`; `run_level_entropic_brew_consumes_slot_and_refills_without_limited_filter`; `run_level_entropic_brew_with_sozu_consumes_without_generating_potions` |
-| Flat potion helper sources | Java `PotionHelper.getRandomPotion()` indexes uniformly into the current class potion pool with `potionRng`; it is distinct from `AbstractDungeon.returnRandomPotion()`, which rolls rarity first. Lab, Woman in Blue, Knowing Skull, Neow three-potion reward, and Cauldron use this flat helper. | Added `RunState::random_potion_flat()` for `PotionHelper.getRandomPotion()` call sites. Lab, Woman in Blue, Knowing Skull, and Neow now use flat potion-pool RNG; Neow three-potion reward now opens potion rewards instead of directly filling potion slots. | `lab_opens_three_potion_rewards_without_directly_filling_inventory`; `buying_potions_opens_reward_screen_without_filling_slots_directly`; `potion_reward_without_sozu_uses_flat_potion_helper_rng`; `three_small_potions_open_reward_screen_with_flat_potion_helper_rng` |
-| Combat reward potion generation and claim | Java `AbstractRoom.addPotionToRewards()` ignores Sozu: it still rolls potion chance, adjusts `blizzardPotionMod`, and can create a potion reward. `RewardItem.claimReward(POTION)` then consumes the reward under Sozu without obtaining a potion; full slots without Sozu leave the reward unclaimed. | `generate_combat_rewards` now always runs the Java potion reward roll; Sozu is handled only by reward claiming. | `white_beast_statue_forces_potion_reward_even_with_sozu`; `potion_reward_claim_matches_java_sozu_and_full_slot_behavior` |
-| Combat reward potion order/size gate | Java adds gold, then elite `dropReward()` relics/key, then calls `addPotionToRewards()`. The potion chance is forced to 0 when the room reward list already has 4+ items, but the potion RNG roll and miss-path `blizzardPotionMod` update still happen. | Elite relic rewards and Emerald Key now precede potion generation; `generate_combat_rewards` applies the Java `items.len() >= 4` potion gate while still consuming potion RNG. | `elite_rewards_follow_java_drop_potion_card_order`; `elite_emerald_key_counts_toward_java_potion_reward_size_gate` |
-| All-monsters-escaped reward gate | Java ordinary `MonsterRoom` skips normal gold when `MonsterGroup.haveMonstersEscaped()` is true. `addPotionToRewards()` also starts with chance 0 for that room, but White Beast Statue is applied afterward and can still force a potion. | Normal combat reward generation now passes the current combat escape gate into the room reward phase: all-escaped ordinary rooms skip standard gold and base potion chance, still consume the potion RNG roll, and still allow White Beast Statue override. | `mugged_all_escaped_normal_combat_skips_standard_gold_and_base_potion_chance`; `white_beast_overrides_all_escaped_monster_room_potion_chance_like_java` |
-| Event combat potion reward path | Java event combats remain in `EventRoom`: pre-populated event rewards stay in `currRoom.rewards`, `AbstractRoom.dropReward()` is empty, `addPotionToRewards()` still rolls as an `EventRoom`, and `CombatRewardScreen.setupItemReward()` appends the normal single card reward unless the event set `noCardsInRewards`. | Event-combat post-victory handling now calls the standalone potion reward helper and card reward helper instead of calling the full monster combat generator and filtering out non-card rewards. | `event_combat_rewards_do_not_call_standard_combat_loot_generator` |
-| Smoke Bomb reward RNG boundary | Java `SmokeBomb.use()` marks the room smoked, but `AbstractRoom.update()` still performs room reward generation before calling `CombatRewardScreen.openCombat(..., smoked=true)`. The smoked screen skips `setupItemReward()`, so room gold/potion RNG can advance while no reward items are shown. | Smoked combat now runs hidden pre-screen room reward generation for RNG/drop-mod side effects, drains combat pending rewards into that hidden room list, and exposes an empty smoked reward screen. | `smoked_combat_consumes_hidden_room_reward_rng_without_visible_rewards` |
-| Boss combat reward boundary | Java `MonsterRoomBoss` opens ordinary combat rewards for gold/cards/potions, then the boss chest handles boss relics. It does not add a normal relic via `dropReward()` in the supported base-game path. | `generate_combat_rewards(... is_boss=true)` no longer adds a normal relic; boss relic generation stays in boss reward/chest handling. | `boss_combat_rewards_do_not_include_normal_relic`; boss reward handler tests |
-| Shop potion purchase under Sozu | Java `StorePotion.purchasePotion()` returns immediately when Sozu is present; it flashes the relic but does not spend gold, call `obtainPotion`, remove the offer, or trigger Courier restock. | `shop_handler` now treats shop potion buys under Sozu as blocked no-ops, and full-run shop legal actions do not expose `BuyPotion` with Sozu. | `sozu_shop_potion_purchase_is_blocked_without_spending_or_removing_offer`; `courier_does_not_refill_sozu_blocked_shop_potion_purchase`; `legal_shop_actions_block_sozu_potion_purchase_like_java_store_potion` |
-| Fairy Potion passive revive | `AbstractPlayer.damage` checks Mark of the Bloom first, consumes the first Fairy Potion before Lizard Tail, calls `FairyPotion.use(player)`, and destroys the slot directly. Since this path bypasses `PotionPopUp`, `ToyOrnithopter.onUsePotion()` is not called. | `try_revive` remains the only Fairy passive path: Mark blocks it, Fairy has priority over Lizard Tail, Sacred Bark potency and heal modifiers are applied, the slot is removed, and no `on_use_potion` actions are queued. | `lizard_tail_uses_java_counter_gate_and_fairy_priority`; `fairy_passive_revive_does_not_trigger_toy_ornithopter_on_use_potion` |
+Java evidence:
+- `AbstractPotion.canDiscard()` is false only during `WeMeetAgain`.
+- Base `AbstractPotion.canUse()` requires a combat room, living monsters,
+  `turnHasEnded == false`, and not `WeMeetAgain`.
+- Only `BloodPotion`, `FruitJuice`, and `EntropicBrew` override `canUse()` to
+  allow non-combat use outside `WeMeetAgain`, while still rejecting combat use
+  after the turn has ended.
+- `FairyPotion.canUse()` always returns false.
+- `SmokeBomb.canUse()` delegates to base `canUse()` and then rejects boss
+  monsters and monsters with `BackAttack`.
 
-## Short-Term Clean Areas
+Rust result:
+- Run-level potion actions expose only Blood Potion, Fruit Juice, and Entropic
+  Brew outside combat.
+- Combat potion legality rejects Fairy Potion, dead/ended combat states, and
+  Java's Smoke Bomb boss/back-attack cases.
+- We Meet Again blocks both use and discard.
 
-- Metadata for all 42 potions exists in `PotionId` / `PotionDefinition`.
-- Character-specific potion pool order matches Java `PotionHelper` ordering for
-  Ironclad, Silent, Defect, Watcher, and all-class mode.
-- Straight combat action potions are represented as mechanical actions:
-  damage, block, energy, draw, powers, stance, orb slot increase, generated
-  cards, hand/grid choices, and flee.
-- `FairyPotion` is not emitted as a manual legal move and remains passive.
-- `Sozu` blocks potion obtain paths through `obtain_specific_potion_if_allowed`.
-- Full-run observation no longer treats `Potion::can_use` / `can_discard` as
-  context-free truth: combat slots come from `CombatState`, and non-combat
-  affordances account for Blood/Fruit/Entropic overrides and `WeMeetAgain`.
-- Full-run legal actions now expose top-panel non-combat potion use/discard
-  where Java allows it. The action schema is bumped to
-  `full_run_action_candidate_set_v5_run_potion` because potion action keys are
-  no longer combat-prefixed.
+Coverage:
+- `potion_can_use_overrides_match_java_sources`
+- `non_combat_potion_observation_uses_java_can_use_overrides`
+- `we_meet_again_blocks_potion_use_and_discard_observation`
+- `combat_potion_execution_respects_java_can_use_gate`
 
-## Boundaries Still Not Closed
-
-- Potion reward/drop generation is partly covered by relic/run audits, but it is
-  not the same thing as combat potion use.
-- UI-only effects, sounds, cursor movement, hitbox movement, and visual potion
-  flags are intentionally not ported unless they host mechanical state.
-
-## Validation
-
-- `cargo test --all-targets`
-- Current result after this pass: `1004 passed`.
+Open audit work:
+- Continue per-potion effect comparison against each Java `use()` method.
+- Recheck Toy Ornithopter / Sacred Bark ordering around run-level potion use.
+- Recheck `ObtainPotionAction` and out-of-combat `ObtainPotionEffect` ordering
+  where reward screens or event flows are involved.

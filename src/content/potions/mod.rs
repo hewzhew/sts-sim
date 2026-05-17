@@ -748,6 +748,115 @@ mod tests {
     use crate::runtime::action::{Action, AddTo};
 
     #[test]
+    fn potion_helper_pools_match_java_order_for_all_classes() {
+        assert_eq!(
+            potions_for_class(PotionClass::Ironclad),
+            vec![
+                PotionId::BloodPotion,
+                PotionId::Elixir,
+                PotionId::HeartOfIron,
+                PotionId::BlockPotion,
+                PotionId::DexterityPotion,
+                PotionId::EnergyPotion,
+                PotionId::ExplosivePotion,
+                PotionId::FirePotion,
+                PotionId::StrengthPotion,
+                PotionId::SwiftPotion,
+                PotionId::WeakenPotion,
+                PotionId::FearPotion,
+                PotionId::AttackPotion,
+                PotionId::SkillPotion,
+                PotionId::PowerPotion,
+                PotionId::ColorlessPotion,
+                PotionId::SteroidPotion,
+                PotionId::SpeedPotion,
+                PotionId::BlessingOfTheForge,
+                PotionId::RegenPotion,
+                PotionId::AncientPotion,
+                PotionId::LiquidBronze,
+                PotionId::GamblersBrew,
+                PotionId::EssenceOfSteel,
+                PotionId::DuplicationPotion,
+                PotionId::DistilledChaosPotion,
+                PotionId::LiquidMemories,
+                PotionId::CultistPotion,
+                PotionId::FruitJuice,
+                PotionId::SneckoOil,
+                PotionId::FairyPotion,
+                PotionId::SmokeBomb,
+                PotionId::EntropicBrew,
+            ]
+        );
+        assert_eq!(
+            &potions_for_class(PotionClass::Silent)[..3],
+            &[
+                PotionId::PoisonPotion,
+                PotionId::CunningPotion,
+                PotionId::GhostInAJar
+            ]
+        );
+        assert_eq!(
+            &potions_for_class(PotionClass::Defect)[..3],
+            &[
+                PotionId::FocusPotion,
+                PotionId::PotionOfCapacity,
+                PotionId::EssenceOfDarkness
+            ]
+        );
+        assert_eq!(
+            &potions_for_class(PotionClass::Watcher)[..3],
+            &[
+                PotionId::BottledMiracle,
+                PotionId::StancePotion,
+                PotionId::Ambrosia
+            ]
+        );
+        assert_eq!(
+            potions_for_class(PotionClass::Any),
+            ALL_POTIONS,
+            "Java PotionHelper.getPotions(null, true) is the all-potion upload/order list"
+        );
+        assert_eq!(ALL_POTIONS.len(), 42);
+    }
+
+    #[test]
+    fn potion_can_use_overrides_match_java_sources() {
+        assert!(potion_can_use_out_of_combat(PotionId::BloodPotion, false));
+        assert!(potion_can_use_out_of_combat(PotionId::FruitJuice, false));
+        assert!(potion_can_use_out_of_combat(PotionId::EntropicBrew, false));
+        assert!(!potion_can_use_out_of_combat(PotionId::BlockPotion, false));
+        assert!(!potion_can_use_out_of_combat(PotionId::FirePotion, false));
+        assert!(!potion_can_use_out_of_combat(PotionId::FairyPotion, false));
+        assert!(!potion_can_use_out_of_combat(PotionId::BloodPotion, true));
+        assert!(!potion_can_discard_in_event(true));
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters = vec![crate::test_support::test_monster(
+            crate::content::monsters::EnemyId::JawWorm,
+        )];
+        combat.turn.current_phase = crate::runtime::combat::CombatPhase::PlayerTurn;
+        combat.meta.is_boss_fight = false;
+        assert!(potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::FirePotion, 1),
+            &combat
+        ));
+        assert!(potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::BloodPotion, 2),
+            &combat
+        ));
+        assert!(!potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::FairyPotion, 3),
+            &combat
+        ));
+
+        combat.meta.is_boss_fight = true;
+        assert!(!potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::SmokeBomb, 4),
+            &combat
+        ));
+    }
+
+    #[test]
     fn watcher_potion_metadata_matches_java_sources() {
         let bottled = get_potion_definition(PotionId::BottledMiracle);
         assert_eq!(bottled.rarity, PotionRarity::Common);
