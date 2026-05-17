@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use super::{
     RunActionCandidate, RunCardFeatureV0, RunCombatHandCardObservationV0, RunCombatObservationV0,
-    RunDeckCardObservationV0, RunDeckObservationV0, RunMapEdgeObservationV0,
+    RunDeckCardObservationV0, RunDeckObservationV0, RunKeyObservationV0, RunMapEdgeObservationV0,
     RunMapNodeObservationV0, RunMapObservationV0, RunPendingChoiceObservationV0,
     RunPendingChoiceOptionObservationV0, RunPotionSlotObservationV0, RunRelicObservationV0,
     RunRewardItemObservationV0, RunScreenObservationV0,
@@ -29,6 +29,7 @@ pub struct FullRunPublicObservationV1 {
     pub relic_count: usize,
     pub potion_slots: usize,
     pub filled_potion_slots: usize,
+    pub keys: PublicKeyObservationV1,
     pub deck: PublicDeckSummaryV1,
     pub deck_cards: Vec<PublicDeckCardV1>,
     pub relics: Vec<PublicRelicV1>,
@@ -39,6 +40,13 @@ pub struct FullRunPublicObservationV1 {
     pub reward_source: Option<String>,
     pub combat: Option<PublicCombatObservationV1>,
     pub screen: PublicScreenObservationV1,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct PublicKeyObservationV1 {
+    pub ruby: bool,
+    pub sapphire: bool,
+    pub emerald: bool,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -251,6 +259,7 @@ impl FullRunPublicObservationV1 {
             relic_count: value.relic_count,
             potion_slots: value.potion_slots,
             filled_potion_slots: value.filled_potion_slots,
+            keys: PublicKeyObservationV1::from(&value.keys),
             deck: PublicDeckSummaryV1::from(&value.deck),
             deck_cards: value
                 .deck_cards
@@ -279,6 +288,16 @@ impl FullRunPublicActionCandidatePayloadV1 {
             action: serde_json::to_value(&candidate.action)?,
             card: candidate.card.as_ref().map(PublicCardFeatureV1::from),
         })
+    }
+}
+
+impl From<&RunKeyObservationV0> for PublicKeyObservationV1 {
+    fn from(value: &RunKeyObservationV0) -> Self {
+        Self {
+            ruby: value.ruby,
+            sapphire: value.sapphire,
+            emerald: value.emerald,
+        }
     }
 }
 

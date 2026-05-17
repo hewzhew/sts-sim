@@ -49,7 +49,7 @@ pub struct RunState {
     pub shop_purge_count: i32,
     pub relics: Vec<RelicState>,
     pub potions: Vec<Option<crate::content::potions::Potion>>,
-    pub keys: [bool; 3], // Red, Green, Blue
+    pub keys: [bool; 3], // Ruby/Red, Sapphire/Blue, Emerald/Green
     pub is_final_act_available: bool,
     pub master_deck: Vec<CombatCard>,
 

@@ -37,6 +37,11 @@ pub fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
             .iter()
             .filter(|slot| slot.is_some())
             .count(),
+        keys: RunKeyObservationV0 {
+            ruby: ctx.run_state.keys[0],
+            sapphire: ctx.run_state.keys[1],
+            emerald: ctx.run_state.keys[2],
+        },
         deck: build_deck_observation(&ctx.run_state),
         plan_profile: build_deck_plan_profile(&ctx.run_state),
         deck_cards: build_deck_card_observations(&ctx.run_state),
@@ -1170,5 +1175,25 @@ mod tests {
             observation.nodes[0].has_emerald_key,
             "node-level field still reports the Emerald elite marker"
         );
+    }
+
+    #[test]
+    fn run_observation_exposes_all_top_panel_keys() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.keys = [true, false, true];
+        let ctx = EpisodeContext {
+            engine_state: EngineState::MapNavigation,
+            run_state,
+            combat_state: None,
+            stashed_event_combat: None,
+            forced_engine_ticks: 0,
+            combat_win_count: 0,
+        };
+
+        let observation = build_observation(&ctx);
+
+        assert!(observation.keys.ruby);
+        assert!(!observation.keys.sapphire);
+        assert!(observation.keys.emerald);
     }
 }

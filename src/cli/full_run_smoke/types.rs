@@ -1,6 +1,6 @@
 use super::*;
 
-pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v6_structural";
+pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v7_public_keys";
 pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v5_run_potion";
 pub(crate) const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
@@ -181,6 +181,7 @@ pub struct RunObservationV0 {
     pub relic_count: usize,
     pub potion_slots: usize,
     pub filled_potion_slots: usize,
+    pub keys: RunKeyObservationV0,
     pub deck: RunDeckObservationV0,
     pub plan_profile: DeckPlanProfileV0,
     pub deck_cards: Vec<RunDeckCardObservationV0>,
@@ -192,6 +193,13 @@ pub struct RunObservationV0 {
     pub reward_source: Option<String>,
     pub combat: Option<RunCombatObservationV0>,
     pub screen: RunScreenObservationV0,
+}
+
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct RunKeyObservationV0 {
+    pub ruby: bool,
+    pub sapphire: bool,
+    pub emerald: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

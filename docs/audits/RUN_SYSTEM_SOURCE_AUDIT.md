@@ -213,12 +213,17 @@ Rust result:
   `MapRoomNode.hasEmeraldKey` marker for the burning elite, while
   `RunMapObservationV0.has_emerald_key` is the player's owned key state
   (`Settings.hasEmeraldKey` / `RunState.keys[2]`).
+- The full-run observation now also exposes all three top-panel key states
+  explicitly as Ruby, Sapphire, and Emerald. These are public Java
+  `Settings.hasRubyKey`, `Settings.hasSapphireKey`, and `Settings.hasEmeraldKey`
+  state, not oracle data.
 
 Coverage:
 
 - `wing_boots_matches_java_next_row_only_semantics`
 - `legal_map_actions_expose_wing_boots_only_on_next_row`
 - `map_observation_separates_owned_emerald_key_from_emerald_elite_marker`
+- `run_observation_exposes_all_top_panel_keys`
 
 ## Between-Act Transition Pass
 

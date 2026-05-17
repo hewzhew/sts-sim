@@ -768,6 +768,7 @@ mod tests {
             relic_count: 1,
             potion_slots: 3,
             filled_potion_slots: 0,
+            keys: RunKeyObservationV0::default(),
             deck: RunDeckObservationV0::default(),
             plan_profile: DeckPlanProfileV0::default(),
             deck_cards: Vec::new(),
