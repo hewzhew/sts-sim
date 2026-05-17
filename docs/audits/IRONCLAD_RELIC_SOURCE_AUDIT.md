@@ -2314,13 +2314,14 @@ Java evidence:
 Rust result:
 - Existing shop purchase paths preserve the 20% discount and replenish card,
   relic, and potion slots when Courier is present.
-- Spawn gating now blocks Courier after floor 48 in non-Endless runs. Rust does
-  not currently model Endless mode or the current-room shop `canSpawn` clause in
-  the relic-pool helper.
+- Spawn gating now blocks Courier after floor 48 in non-Endless runs and rejects
+  it while the current room is a ShopRoom, matching the Java `canSpawn` clause.
+  Rust does not currently model Endless mode.
 - UI-only room-entry pulse behavior is intentionally not represented.
 
 Coverage:
 - `shared_uncommon_bottle_shop_and_rest_relic_metadata_matches_java_sources`
+- `rare_run_relic_can_spawn_gates_match_java_sources`
 - `courier_keeps_relic_slot_filled_after_purchase`
 - `courier_keeps_potion_slot_filled_after_purchase`
 - `courier_does_not_refill_sozu_blocked_shop_potion_purchase`

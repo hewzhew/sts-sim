@@ -110,6 +110,11 @@ and reachability gates must be checked separately.
      the same `canSpawn` context. This fixes the previous single
      `random_relic_by_tier` path that treated all relic rewards like shop/end
      draws.
+   - current progress: all Java relic `canSpawn()` overrides have been checked
+     against `RelicSpawnContext` for standard non-Endless runs. The modeled
+     gates cover starter-upgrade boss relic requirements, bottled relic deck
+     predicates, floor cutoffs, current-ShopRoom exclusions, Ectoplasm's Act 1
+     gate, campfire relic mutual exclusion, and Red Circlet/Circlet fallbacks.
 
 4. Monster and boss generation:
    - verify encounter pools and boss visibility before touching AI pathing;
