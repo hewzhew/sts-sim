@@ -177,6 +177,9 @@ or inBottleLightning
 or AscendersBane / CurseOfTheBell / Necronomicurse
 ```
 
+The Drink option is always clickable in Java. If no card passes that filter,
+the event removes nothing and advances to the result screen.
+
 Rust previously treated every non-special Curse as removable, regardless of
 bottled attachment, and emitted generic `DeckMutation` removal events.
 
@@ -187,11 +190,12 @@ Fixes:
 - Bottled curses are excluded from Fountain removal.
 - Removed curses now emit `CardRemoved` with
   `Event(FountainOfCurseCleansing)`.
+- Drink is no longer disabled when only bottled/special curses exist.
 
 Tests:
 
 - `fountain_removes_only_non_bottled_removable_curses_with_event_source`
-- `fountain_drink_is_disabled_when_only_bottled_or_special_curses_exist`
+- `fountain_drink_without_removable_curses_is_still_clickable_like_java`
 
 ### Non-bottled card selection sweeps
 

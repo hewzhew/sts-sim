@@ -16,25 +16,12 @@ fn is_fountain_removable_curse(
         && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
 }
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
-        0 => {
-            let has_removable_curses = run_state
-                .master_deck
-                .iter()
-                .any(|card| is_fountain_removable_curse(card, run_state));
-            if has_removable_curses {
-                vec![
-                    EventChoiceMeta::new("[Drink] Remove all removable Curses."),
-                    EventChoiceMeta::new("[Leave]"),
-                ]
-            } else {
-                vec![
-                    EventChoiceMeta::disabled("[Drink] No removable Curses.", "No curses"),
-                    EventChoiceMeta::new("[Leave]"),
-                ]
-            }
-        }
+        0 => vec![
+            EventChoiceMeta::new("[Drink] Remove all removable Curses."),
+            EventChoiceMeta::new("[Leave]"),
+        ],
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
 }
@@ -128,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn fountain_drink_is_disabled_when_only_bottled_or_special_curses_exist() {
+    fn fountain_drink_without_removable_curses_is_still_clickable_like_java() {
         let mut run_state = RunState::new(1, 0, true, "Ironclad");
         run_state.master_deck = vec![
             CombatCard::new(CardId::Pain, 21),
@@ -137,10 +124,26 @@ mod tests {
         let mut bottle = RelicState::new(RelicId::BottledLightning);
         bottle.amount = 21;
         run_state.relics.push(bottle);
-        let event_state = EventState::new(EventId::FountainOfCurseCleansing);
+        run_state.event_state = Some(EventState::new(EventId::FountainOfCurseCleansing));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
 
-        let choices = get_choices(&run_state, &event_state);
+        let choices = get_choices(&run_state, run_state.event_state.as_ref().unwrap());
 
-        assert!(choices[0].disabled);
+        assert!(!choices[0].disabled);
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(
+            run_state
+                .master_deck
+                .iter()
+                .map(|card| (card.id, card.uuid))
+                .collect::<Vec<_>>(),
+            vec![(CardId::Pain, 21), (CardId::AscendersBane, 22)]
+        );
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
     }
 }
