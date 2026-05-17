@@ -296,8 +296,10 @@ pub fn handle_spawn_monster(
         new_monster.spire_shield.move_count = 0;
     }
     if enemy_id == crate::content::monsters::EnemyId::SpireSpear {
-        new_monster.spire_spear.protocol_seeded = true;
-        new_monster.spire_spear.move_count = 0;
+        crate::content::monsters::ending::spire_spear::initialize_runtime_state(
+            &mut new_monster,
+            state.meta.ascension_level,
+        );
     }
     if enemy_id == crate::content::monsters::EnemyId::SlaverRed {
         new_monster.slaver_red.protocol_seeded = true;
@@ -1158,6 +1160,7 @@ fn handle_update_spire_shield_state(
 fn handle_update_spire_spear_state(
     monster_id: usize,
     move_count: Option<u8>,
+    skewer_count: Option<u8>,
     protocol_seeded: Option<bool>,
     state: &mut CombatState,
 ) {
@@ -1169,6 +1172,9 @@ fn handle_update_spire_spear_state(
     {
         if let Some(value) = move_count {
             monster.spire_spear.move_count = value;
+        }
+        if let Some(value) = skewer_count {
+            monster.spire_spear.skewer_count = value;
         }
         if let Some(value) = protocol_seeded {
             monster.spire_spear.protocol_seeded = value;
@@ -1764,8 +1770,15 @@ pub fn handle_update_monster_runtime(
         } => handle_update_spire_shield_state(monster_id, move_count, protocol_seeded, state),
         MonsterRuntimePatch::SpireSpear {
             move_count,
+            skewer_count,
             protocol_seeded,
-        } => handle_update_spire_spear_state(monster_id, move_count, protocol_seeded, state),
+        } => handle_update_spire_spear_state(
+            monster_id,
+            move_count,
+            skewer_count,
+            protocol_seeded,
+            state,
+        ),
         MonsterRuntimePatch::SlaverRed {
             first_turn,
             used_entangle,

@@ -248,8 +248,10 @@ pub fn build_encounter(
             monster.spire_shield.move_count = 0;
         }
         if enemy_id == EnemyId::SpireSpear {
-            monster.spire_spear.protocol_seeded = true;
-            monster.spire_spear.move_count = 0;
+            crate::content::monsters::ending::spire_spear::initialize_runtime_state(
+                &mut monster,
+                ascension_level,
+            );
         }
         if enemy_id == EnemyId::SlaverRed {
             monster.slaver_red.protocol_seeded = true;

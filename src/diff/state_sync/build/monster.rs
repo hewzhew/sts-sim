@@ -229,6 +229,7 @@ pub(crate) fn seed_spire_spear_runtime_from_snapshot(monster: &Value, entity: &m
     }
 
     entity.spire_spear.move_count = runtime_state_u8(monster, monster_type, "move_count");
+    entity.spire_spear.skewer_count = runtime_state_u8(monster, monster_type, "skewer_count");
     entity.spire_spear.protocol_seeded = true;
 }
 
@@ -1466,7 +1467,8 @@ mod tests {
             "move_hits": 4,
             "powers": [],
             "runtime_state": {
-                "move_count": 4
+                "move_count": 4,
+                "skewer_count": 4
             }
         })
     }
@@ -2334,6 +2336,7 @@ mod tests {
 
         assert_eq!(entity.monster_type, EnemyId::SpireSpear as usize);
         assert_eq!(entity.spire_spear.move_count, 4);
+        assert_eq!(entity.spire_spear.skewer_count, 4);
         assert!(entity.spire_spear.protocol_seeded);
     }
 

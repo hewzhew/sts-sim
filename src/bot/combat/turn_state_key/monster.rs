@@ -658,7 +658,10 @@ fn stable_spire_shield_signature(state: &SpireShieldRuntimeState) -> String {
 }
 
 fn stable_spire_spear_signature(state: &SpireSpearRuntimeState) -> String {
-    format!("seed{}:moves{}", state.protocol_seeded, state.move_count)
+    format!(
+        "seed{}:moves{}:skewer{}",
+        state.protocol_seeded, state.move_count, state.skewer_count
+    )
 }
 
 fn stable_slaver_red_signature(state: &SlaverRedRuntimeState) -> String {

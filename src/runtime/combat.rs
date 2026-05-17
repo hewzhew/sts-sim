@@ -1274,6 +1274,7 @@ pub struct SpireShieldRuntimeState {
 pub struct SpireSpearRuntimeState {
     pub protocol_seeded: bool,
     pub move_count: u8,
+    pub skewer_count: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -71,6 +71,7 @@ Examples:
 - `monster.runtime_state.scythe_cooldown`
 - `monster.runtime_state.count`
 - `monster.runtime_state.turn_count`
+- `monster.runtime_state.skewer_count`
 - `monster.runtime_state.roared`
 - `monster.runtime_state.used_haste`
 - `monster.runtime_state.is_attacking`
@@ -160,6 +161,7 @@ Examples of the correct pattern:
 - `CorruptHeart.moveCount`
 - `CorruptHeart.buffCount`
 - `CorruptHeart.bloodHitCount`
+- `SpireSpear.skewerCount`
 - `TimeEater.usedHaste`
 - `Donu.isAttacking`
 - `Deca.isAttacking`

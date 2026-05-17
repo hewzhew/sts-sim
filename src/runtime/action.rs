@@ -117,6 +117,7 @@ pub enum MonsterRuntimePatch {
     },
     SpireSpear {
         move_count: Option<u8>,
+        skewer_count: Option<u8>,
         protocol_seeded: Option<bool>,
     },
     SlaverRed {

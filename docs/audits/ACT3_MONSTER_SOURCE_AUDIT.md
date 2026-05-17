@@ -272,6 +272,21 @@ factory/protocol seeding before roll logic runs.
 Blood Shots multi-hit count. Rust therefore treats the exported Java value as truth rather than
 recomputing it from local ascension during live import.
 
+### Spire Spear
+
+Spire Spear runtime truth is explicit:
+
+- `moveCount`
+- `skewerCount`
+
+`CommunicationMod` exports these fields as `monster.runtime_state.move_count` and
+`monster.runtime_state.skewer_count`; Rust imports both as strict runtime truth and requires
+factory/protocol seeding before roll logic runs.
+
+`skewerCount` is constructor state derived from ascension in Java, but it directly controls Skewer
+hit count. Rust therefore treats the exported Java value as truth rather than recomputing it from
+local ascension during live import.
+
 ## Follow-Up Watch Points
 
 - Act 3 live/protocol runtime truth for `WrithingMass.usedMegaDebuff` and `Spiker.thornsCount` is

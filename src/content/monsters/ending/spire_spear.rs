@@ -71,6 +71,7 @@ mod tests {
                 monster_id: 64,
                 patch: MonsterRuntimePatch::SpireSpear {
                     move_count: Some(3),
+                    skewer_count: None,
                     protocol_seeded: Some(true),
                 },
             }]
@@ -86,12 +87,18 @@ fn burn_strike_damage(ascension_level: u8) -> i32 {
     }
 }
 
-fn skewer_hits(ascension_level: u8) -> u8 {
+fn initial_skewer_count(ascension_level: u8) -> u8 {
     if ascension_level >= 3 {
         4
     } else {
         3
     }
+}
+
+pub fn initialize_runtime_state(entity: &mut MonsterEntity, ascension_level: u8) {
+    entity.spire_spear.protocol_seeded = true;
+    entity.spire_spear.move_count = 0;
+    entity.spire_spear.skewer_count = initial_skewer_count(ascension_level);
 }
 
 fn burn_destination(ascension_level: u8) -> crate::semantics::combat::CardDestination {
@@ -156,32 +163,35 @@ fn piercer_plan() -> MonsterTurnPlan {
     )
 }
 
-fn skewer_plan(ascension_level: u8) -> MonsterTurnPlan {
+fn skewer_plan(skewer_count: u8) -> MonsterTurnPlan {
     MonsterTurnPlan::from_spec(
         SKEWER,
         MonsterMoveSpec::Attack(AttackSpec {
             base_damage: 10,
-            hits: skewer_hits(ascension_level),
+            hits: skewer_count,
             damage_kind: DamageKind::Normal,
         }),
     )
 }
 
-fn plan_for(move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
+fn plan_for(entity: &MonsterEntity, move_id: u8, ascension_level: u8) -> MonsterTurnPlan {
     match move_id {
         BURN_STRIKE => burn_strike_plan(ascension_level),
         PIERCER => piercer_plan(),
-        SKEWER => skewer_plan(ascension_level),
+        SKEWER => skewer_plan(current_runtime(entity).1),
         _ => MonsterTurnPlan::unknown(move_id),
     }
 }
 
-fn current_move_count(entity: &MonsterEntity) -> u8 {
+fn current_runtime(entity: &MonsterEntity) -> (u8, u8) {
     assert!(
         entity.spire_spear.protocol_seeded,
         "spire spear runtime truth must be protocol-seeded or factory-seeded"
     );
-    entity.spire_spear.move_count
+    (
+        entity.spire_spear.move_count,
+        entity.spire_spear.skewer_count,
+    )
 }
 
 fn increment_move_count(entity: &MonsterEntity) -> Action {
@@ -189,6 +199,7 @@ fn increment_move_count(entity: &MonsterEntity) -> Action {
         monster_id: entity.id,
         patch: MonsterRuntimePatch::SpireSpear {
             move_count: Some(entity.spire_spear.move_count.saturating_add(1)),
+            skewer_count: None,
             protocol_seeded: Some(true),
         },
     }
@@ -216,7 +227,8 @@ impl MonsterBehavior for SpireSpear {
         ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        match current_move_count(entity) % 3 {
+        let (move_count, skewer_count) = current_runtime(entity);
+        match move_count % 3 {
             0 => {
                 if entity.move_history().back().copied() == Some(BURN_STRIKE) {
                     piercer_plan()
@@ -224,7 +236,7 @@ impl MonsterBehavior for SpireSpear {
                     burn_strike_plan(ascension_level)
                 }
             }
-            1 => skewer_plan(ascension_level),
+            1 => skewer_plan(skewer_count),
             _ => {
                 if rng.random_boolean() {
                     piercer_plan()
@@ -245,7 +257,7 @@ impl MonsterBehavior for SpireSpear {
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
-        plan_for(entity.planned_move_id(), state.meta.ascension_level)
+        plan_for(entity, entity.planned_move_id(), state.meta.ascension_level)
     }
 
     fn take_turn_plan(
