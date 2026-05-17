@@ -1,3 +1,4 @@
+use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::EngineState;
 use crate::state::events::{
     EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionConstraint,
@@ -23,10 +24,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             EventEffect::LoseGold(COST_1),
                             EventEffect::ObtainPotion { count: 1 },
                         ],
-                        constraints: vec![
-                            EventOptionConstraint::RequiresGold(COST_1),
-                            EventOptionConstraint::RequiresPotionSlotValue,
-                        ],
+                        constraints: vec![EventOptionConstraint::RequiresGold(COST_1)],
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
@@ -44,10 +42,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             EventEffect::LoseGold(COST_1),
                             EventEffect::ObtainPotion { count: 1 },
                         ],
-                        constraints: vec![
-                            EventOptionConstraint::RequiresGold(COST_1),
-                            EventOptionConstraint::RequiresPotionSlotValue,
-                        ],
+                        constraints: vec![EventOptionConstraint::RequiresGold(COST_1)],
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
@@ -63,10 +58,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             EventEffect::LoseGold(COST_2),
                             EventEffect::ObtainPotion { count: 2 },
                         ],
-                        constraints: vec![
-                            EventOptionConstraint::RequiresGold(COST_2),
-                            EventOptionConstraint::RequiresPotionSlotValue,
-                        ],
+                        constraints: vec![EventOptionConstraint::RequiresGold(COST_2)],
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
@@ -84,10 +76,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             EventEffect::LoseGold(COST_2),
                             EventEffect::ObtainPotion { count: 2 },
                         ],
-                        constraints: vec![
-                            EventOptionConstraint::RequiresGold(COST_2),
-                            EventOptionConstraint::RequiresPotionSlotValue,
-                        ],
+                        constraints: vec![EventOptionConstraint::RequiresGold(COST_2)],
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
@@ -103,10 +92,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             EventEffect::LoseGold(COST_3),
                             EventEffect::ObtainPotion { count: 3 },
                         ],
-                        constraints: vec![
-                            EventOptionConstraint::RequiresGold(COST_3),
-                            EventOptionConstraint::RequiresPotionSlotValue,
-                        ],
+                        constraints: vec![EventOptionConstraint::RequiresGold(COST_3)],
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
@@ -124,10 +110,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             EventEffect::LoseGold(COST_3),
                             EventEffect::ObtainPotion { count: 3 },
                         ],
-                        constraints: vec![
-                            EventOptionConstraint::RequiresGold(COST_3),
-                            EventOptionConstraint::RequiresPotionSlotValue,
-                        ],
+                        constraints: vec![EventOptionConstraint::RequiresGold(COST_3)],
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
@@ -183,7 +166,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         .collect()
 }
 
-pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
+pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
     let mut event_state = run_state.event_state.take().unwrap();
 
     match event_state.current_screen {
@@ -194,40 +177,30 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         -COST_1,
                         DomainEventSource::Event(EventId::WomanInBlue),
                     );
-                    let pid = run_state.random_potion();
-                    let p = crate::content::potions::Potion::new(pid, 30001);
-                    run_state.obtain_potion(p);
-                    event_state.current_screen = 1;
+                    open_potion_rewards(engine_state, run_state, &mut event_state, 1);
+                    return;
                 }
                 1 => {
                     run_state.change_gold_with_source(
                         -COST_2,
                         DomainEventSource::Event(EventId::WomanInBlue),
                     );
-                    for i in 0..2u32 {
-                        let pid = run_state.random_potion();
-                        let p = crate::content::potions::Potion::new(pid, 30010 + i);
-                        run_state.obtain_potion(p);
-                    }
-                    event_state.current_screen = 1;
+                    open_potion_rewards(engine_state, run_state, &mut event_state, 2);
+                    return;
                 }
                 2 => {
                     run_state.change_gold_with_source(
                         -COST_3,
                         DomainEventSource::Event(EventId::WomanInBlue),
                     );
-                    for i in 0..3u32 {
-                        let pid = run_state.random_potion();
-                        let p = crate::content::potions::Potion::new(pid, 30020 + i);
-                        run_state.obtain_potion(p);
-                    }
-                    event_state.current_screen = 1;
+                    open_potion_rewards(engine_state, run_state, &mut event_state, 3);
+                    return;
                 }
                 _ => {
                     // Leave (A15: take HP loss)
                     if run_state.ascension_level >= 15 {
                         let dmg = ((run_state.max_hp as f32 * 0.05).ceil()) as i32;
-                        run_state.current_hp = (run_state.current_hp - dmg).max(0);
+                        apply_hp_loss_damage(run_state, dmg);
                     }
                     event_state.current_screen = 1;
                 }
@@ -241,9 +214,42 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     run_state.event_state = Some(event_state);
 }
 
+fn open_potion_rewards(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+    event_state: &mut EventState,
+    count: usize,
+) {
+    let mut rewards = RewardState::new();
+    for _ in 0..count {
+        rewards.items.push(RewardItem::Potion {
+            potion_id: run_state.random_potion(),
+        });
+    }
+    event_state.current_screen = 1;
+    run_state.event_state = Some(event_state.clone());
+    *engine_state = EngineState::RewardScreen(rewards);
+}
+
+fn apply_hp_loss_damage(run_state: &mut RunState, amount: i32) {
+    let mut damage = amount;
+    if damage > 0
+        && run_state
+            .relics
+            .iter()
+            .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
+    {
+        damage -= 1;
+    }
+    run_state.change_hp_with_source(-damage, DomainEventSource::Event(EventId::WomanInBlue));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::rewards::state::RewardItem;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
 
     #[test]
     fn three_potion_option_exposes_trade_semantics() {
@@ -258,5 +264,70 @@ mod tests {
                 EventEffect::ObtainPotion { count: 3 }
             ]
         ));
+        assert_eq!(
+            options[2].semantics.constraints,
+            vec![EventOptionConstraint::RequiresGold(40)]
+        );
+    }
+
+    #[test]
+    fn buying_potions_opens_reward_screen_without_filling_slots_directly() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.gold = 50;
+        let starting_potions = rs.potions.clone();
+        rs.event_state = Some(EventState::new(EventId::WomanInBlue));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        assert_eq!(rs.gold, 10);
+        assert_eq!(rs.potions, starting_potions);
+        assert!(rs.take_emitted_events().iter().any(|event| {
+            matches!(
+                event,
+                DomainEvent::GoldChanged {
+                    delta: -40,
+                    new_total: 10,
+                    source: DomainEventSource::Event(EventId::WomanInBlue)
+                }
+            )
+        }));
+        match engine_state {
+            EngineState::RewardScreen(rewards) => {
+                assert_eq!(rewards.items.len(), 3);
+                assert!(rewards
+                    .items
+                    .iter()
+                    .all(|item| matches!(item, RewardItem::Potion { .. })));
+            }
+            other => panic!("expected reward screen, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ascension_leave_hp_loss_uses_event_source_and_tungsten_rod() {
+        let mut rs = RunState::new(1, 15, true, "Ironclad");
+        rs.current_hp = 20;
+        rs.max_hp = 80;
+        rs.relics.push(RelicState::new(RelicId::TungstenRod));
+        rs.event_state = Some(EventState::new(EventId::WomanInBlue));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 3);
+
+        assert_eq!(rs.current_hp, 17);
+        assert!(rs.take_emitted_events().iter().any(|event| {
+            matches!(
+                event,
+                DomainEvent::HpChanged {
+                    delta: -3,
+                    current_hp: 17,
+                    max_hp: 80,
+                    source: DomainEventSource::Event(EventId::WomanInBlue)
+                }
+            )
+        }));
     }
 }

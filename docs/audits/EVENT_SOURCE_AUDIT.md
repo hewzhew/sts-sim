@@ -623,6 +623,32 @@ Tests:
 - `lab_opens_three_potion_rewards_without_directly_filling_inventory`
 - `lab_ascension_fifteen_opens_two_potion_rewards`
 
+### Woman in Blue potion rewards and HP loss
+
+Java `events/shrines/WomanInBlue.java` buys potion rewards, not direct potion
+inventory entries. For each paid choice it loses gold, clears room rewards,
+adds one to three `RewardItem(PotionHelper.getRandomPotion())`, marks the room
+complete, and opens the combat reward screen. The purchase buttons are gated by
+gold only; potion capacity and Sozu are handled later by the reward screen.
+
+The A15 leave branch applies
+`DamageInfo(null, ceil(maxHealth * 0.05), HP_LOSS)`. HP_LOSS bypasses block and
+Torii, but still reaches relic `onLoseHpLast`, so `Tungsten Rod` reduces it.
+
+Fixes:
+
+- Buying potions now opens `EngineState::RewardScreen` containing potion reward
+  items instead of calling `obtain_potion` directly.
+- Potion purchase semantics no longer require an empty potion slot.
+- A15 leave damage now emits `HpChanged` with `Event(WomanInBlue)` and applies
+  Tungsten Rod's HP-loss reduction.
+
+Tests:
+
+- `three_potion_option_exposes_trade_semantics`
+- `buying_potions_opens_reward_screen_without_filling_slots_directly`
+- `ascension_leave_hp_loss_uses_event_source_and_tungsten_rod`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -837,10 +863,12 @@ Validation:
   sources. `Nest` is covered for gold, damage, and Ritual Dagger obtain source.
   `BonfireElementals` and `BonfireSpirits` are covered for rarity reward relic,
   heal, full-heal, and max-HP paths. `Lab` now opens potion rewards instead of
-  directly filling potion slots. The remaining direct writes should be handled
-  event-by-event against Java source.
+  directly filling potion slots. `WomanInBlue` now opens potion rewards instead
+  of directly filling potion slots and sources its A15 HP_LOSS leave damage.
+  The remaining direct writes should be handled event-by-event against Java
+  source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `853 passed`.
+- Current result after this pass: `855 passed`.
