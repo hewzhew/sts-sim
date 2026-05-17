@@ -86,7 +86,7 @@ mod tests {
     use crate::runtime::combat::CombatCard;
     use crate::state::core::ClientInput;
     use crate::state::selection::{
-        DomainEvent, SelectionResolution, SelectionScope, SelectionTargetRef,
+        DomainEvent, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
     };
 
     #[test]
@@ -148,6 +148,51 @@ mod tests {
     }
 
     #[test]
+    fn take_selection_excludes_bottled_and_unpurgeable_cards_after_obtaining_note_card() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck = vec![
+            CombatCard::new(CardId::Strike, 101),
+            CombatCard::new(CardId::Defend, 102),
+            CombatCard::new(CardId::AscendersBane, 103),
+        ];
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 101;
+        rs.relics.push(bottle);
+        rs.note_for_yourself_card = CardId::Bash;
+        rs.event_state = Some(EventState {
+            id: EventId::NoteForYourself,
+            current_screen: 1,
+            completed: false,
+            combat_pending: false,
+            internal_state: 0,
+            extra_data: Vec::new(),
+        });
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        let obtained_uuid = rs
+            .master_deck
+            .last()
+            .expect("Note card should be added before selection opens")
+            .uuid;
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Taking the note card should open deck purge selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::PurgeNonBottled);
+        let request = choice.selection_request(&rs);
+        assert_eq!(request.reason, SelectionReason::Purge);
+        assert_eq!(
+            request.targets,
+            vec![
+                SelectionTargetRef::CardUuid(102),
+                SelectionTargetRef::CardUuid(obtained_uuid),
+            ],
+            "Java adds the note card, then opens CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())"
+        );
+    }
+
+    #[test]
     fn selected_saved_card_updates_note_profile_before_removal() {
         let mut rs = RunState::new(1, 0, true, "Ironclad");
         rs.master_deck = vec![
@@ -184,5 +229,12 @@ mod tests {
         assert_eq!(rs.note_for_yourself_card, CardId::ShrugItOff);
         assert_eq!(rs.note_for_yourself_upgrades, 1);
         assert!(!rs.master_deck.iter().any(|card| card.uuid == 12));
+        assert!(rs.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(EventId::NoteForYourself),
+            } if card.id == CardId::ShrugItOff && card.uuid == 12
+        )));
     }
 }

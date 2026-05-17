@@ -1366,11 +1366,16 @@ Fixes:
 - The card removed by the follow-up grid selection updates
   `RunState.note_for_yourself_*`, matching Java's delayed profile write without
   requiring the Rust simulator to touch disk preferences.
+- The follow-up selection is covered after the note card is added, so the newly
+  obtained card is included alongside existing non-bottled purgeable cards,
+  matching Java's `masterDeck.addToTop(...)` before
+  `CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())`.
 
 Tests:
 
 - `take_uses_profile_note_card_and_event_source`
 - `take_manual_obtain_is_not_blocked_by_omamori`
+- `take_selection_excludes_bottled_and_unpurgeable_cards_after_obtaining_note_card`
 - `selected_saved_card_updates_note_profile_before_removal`
 
 ### Match and Keep board card identity
@@ -1658,4 +1663,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `976 passed`.
+- Current result after this pass: `977 passed`.
