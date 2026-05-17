@@ -751,6 +751,10 @@ Fixes:
   existing-Circlet counter increment.
 - The disabled Test Subject branch now remains inert when fewer than two
   purgeable cards exist, matching Java's disabled grid-select option.
+- Test Subject opens `masterDeck.getPurgeableCards()`, so bottled purgeable cards
+  remain selectable unlike `LivingWall`/`Transmogrifier`.
+- Transforming the two selected cards now has regression coverage for
+  `Event(DrugDealer)` sourced `CardTransformed` domain events.
 
 Tests:
 
@@ -758,6 +762,8 @@ Tests:
 - `inject_mutagens_obtains_relic_with_event_source`
 - `inject_mutagens_grants_circlet_through_obtain_pipeline_when_already_owned`
 - `disabled_test_subject_does_not_open_transform_selection_with_too_few_purgeable_cards`
+- `test_subject_transform_selection_uses_purgeable_cards_including_bottled_like_java`
+- `test_subject_transforms_two_cards_with_event_source`
 
 ### Ghosts and Vampires max-HP trades
 
@@ -1576,4 +1582,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `952 passed`.
+- Current result after this pass: `954 passed`.

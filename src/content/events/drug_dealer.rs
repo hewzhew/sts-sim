@@ -110,7 +110,12 @@ mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
-    use crate::state::selection::DomainEvent;
+    use crate::engine::run_loop::tick_run;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::ClientInput;
+    use crate::state::selection::{
+        DomainEvent, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
+    };
 
     fn drug_dealer_run() -> RunState {
         let mut run_state = RunState::new(1, 0, true, "Ironclad");
@@ -124,6 +129,10 @@ mod tests {
         });
         run_state.emitted_events.clear();
         run_state
+    }
+
+    fn deck_card(id: CardId, uuid: u32) -> CombatCard {
+        CombatCard::new(id, uuid)
     }
 
     #[test]
@@ -210,5 +219,82 @@ mod tests {
             "disabled Java option should not advance the event state"
         );
         assert!(run_state.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn test_subject_transform_selection_uses_purgeable_cards_including_bottled_like_java() {
+        let mut run_state = drug_dealer_run();
+        run_state.master_deck = vec![
+            deck_card(CardId::Strike, 101),
+            deck_card(CardId::Defend, 102),
+            deck_card(CardId::AscendersBane, 103),
+        ];
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 101;
+        run_state.relics.push(bottle);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Drug Dealer test subject should open transform selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::Transform);
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::Transform);
+        assert_eq!(
+            request.targets,
+            vec![
+                SelectionTargetRef::CardUuid(101),
+                SelectionTargetRef::CardUuid(102),
+            ],
+            "Java opens masterDeck.getPurgeableCards(), not getGroupWithoutBottledCards"
+        );
+    }
+
+    #[test]
+    fn test_subject_transforms_two_cards_with_event_source() {
+        let mut run_state = drug_dealer_run();
+        run_state.master_deck = vec![
+            deck_card(CardId::Strike, 101),
+            deck_card(CardId::Defend, 102),
+        ];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![
+                    SelectionTargetRef::CardUuid(101),
+                    SelectionTargetRef::CardUuid(102),
+                ],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.master_deck.len(), 2);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardTransformed {
+                before,
+                source: DomainEventSource::Event(EventId::DrugDealer),
+                ..
+            } if before.id == CardId::Strike && before.uuid == 101
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardTransformed {
+                before,
+                source: DomainEventSource::Event(EventId::DrugDealer),
+                ..
+            } if before.id == CardId::Defend && before.uuid == 102
+        )));
     }
 }
