@@ -145,9 +145,9 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         .position(|r| r.id == RelicId::BloodVial)
                     {
                         run_state.remove_relic_at_with_source(pos, source);
+                        replace_attacks(run_state, source);
+                        event_state.current_screen = 1;
                     }
-                    replace_attacks(run_state, source);
-                    event_state.current_screen = 1;
                 }
                 _ => {
                     // Refuse
@@ -321,5 +321,32 @@ mod tests {
         assert!(!events
             .iter()
             .any(|event| matches!(event, DomainEvent::MaxHpChanged { .. })));
+    }
+
+    #[test]
+    fn disabled_give_vial_does_not_replace_strikes_without_blood_vial() {
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.current_hp = 70;
+        rs.max_hp = 80;
+        rs.event_state = Some(EventState::new(EventId::Vampires));
+        rs.emitted_events.clear();
+        let before = rs
+            .master_deck
+            .iter()
+            .map(|card| (card.id, card.uuid))
+            .collect::<Vec<_>>();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert_eq!(
+            rs.master_deck
+                .iter()
+                .map(|card| (card.id, card.uuid))
+                .collect::<Vec<_>>(),
+            before
+        );
+        assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(rs.take_emitted_events().is_empty());
     }
 }

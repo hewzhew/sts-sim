@@ -648,6 +648,8 @@ Fixes:
 - `Vampires` Blood Vial removal now calls `remove_relic_at_with_source`.
 - `Vampires` starter Strike removal now uses
   `remove_card_from_deck_with_source(..., Event(Vampires))`.
+- The disabled Blood Vial branch now remains inert when the relic is missing,
+  instead of replacing starter Strikes through a direct handler call.
 
 Tests:
 
@@ -655,6 +657,7 @@ Tests:
 - `accept_on_ascension_fifteen_obtains_three_apparitions`
 - `accept_loses_max_hp_replaces_starter_strikes_with_event_sources`
 - `give_vial_removes_relic_without_max_hp_loss_and_replaces_strikes`
+- `disabled_give_vial_does_not_replace_strikes_without_blood_vial`
 
 ### Moai Head max-HP heal and Golden Idol trade
 
@@ -1355,4 +1358,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `914 passed`.
+- Current result after this pass: `915 passed`.
