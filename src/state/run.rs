@@ -1681,6 +1681,17 @@ impl RunState {
         self.transform_card_with_source(deck_index, auto_upgrade, DomainEventSource::DeckMutation);
     }
 
+    pub fn transform_card_uuid_with_source(
+        &mut self,
+        uuid: u32,
+        auto_upgrade: bool,
+        source: DomainEventSource,
+    ) {
+        if let Some(deck_index) = self.master_deck.iter().position(|card| card.uuid == uuid) {
+            self.transform_card_with_source(deck_index, auto_upgrade, source);
+        }
+    }
+
     pub fn transform_card_with_source(
         &mut self,
         deck_index: usize,

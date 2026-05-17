@@ -280,6 +280,18 @@ mod tests {
         assert!(matches!(engine_state, EngineState::EventRoom));
         assert_eq!(run_state.master_deck.len(), 2);
         let events = run_state.take_emitted_events();
+        let transformed_before_ids = events
+            .iter()
+            .filter_map(|event| match event {
+                DomainEvent::CardTransformed { before, .. } => Some(before.id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            transformed_before_ids,
+            vec![CardId::Strike, CardId::Defend],
+            "Java DrugDealer iterates gridSelectScreen.selectedCards in selected order"
+        );
         assert!(events.iter().any(|event| matches!(
             event,
             DomainEvent::CardTransformed {

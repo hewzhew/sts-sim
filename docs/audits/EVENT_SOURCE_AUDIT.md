@@ -1858,6 +1858,38 @@ Validation:
 - Static scan: `rg "add_card_to_deck" src/content/events -g "*.rs"`
 - `cargo test --all-targets`
 
+### Run pending transform selection order
+
+Java grid-select event handlers preserve `gridSelectScreen.selectedCards` order
+when resolving multi-card transforms. `DrugDealer` iterates the selected card
+list directly, and `Designer` resolves the two transform choices as
+`selectedCards.get(0)` and then `selectedCards.get(1)`.
+
+Rust previously sorted all selected deck indices descending before resolving the
+pending choice. That is correct for removals by deck index, but wrong for
+transform operations because it changes which selected card receives each
+`miscRng` transform roll and changes the emitted transform event order.
+
+Fixes:
+
+- Pending deck selections now keep a separate selected UUID list in player
+  selection order.
+- Transform, non-bottled transform, and upgraded transform operations resolve
+  by selected UUID order.
+- Index-sorted descending order is still used where removing cards by deck index
+  needs it.
+- `DrugDealer` now has a regression check that selecting Strike then Defend
+  emits transform-before IDs in that same order.
+
+Validation:
+
+- `cargo test -q test_subject_transforms_two_cards_with_event_source`
+- `cargo test -q drug_dealer`
+- `cargo test -q designer`
+- `cargo test -q transmogrifier`
+- `cargo test -q transform`
+- `cargo test --all-targets`
+
 ## Current High-Risk Event Areas
 
 - Selection choice preconditions still need deeper event-by-event review.

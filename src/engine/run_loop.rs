@@ -602,16 +602,23 @@ pub fn tick_run(
                     seen_indices.push(idx);
                 }
 
-                let mut sorted_indices = indices.clone();
-                sorted_indices.sort_unstable();
-                sorted_indices.reverse(); // Remove from highest index to lowest
                 let source = run_selection_source(run_state, rpc_state.reason.clone());
                 let selection_reason: SelectionReason = rpc_state.reason.clone().into();
-                let selected_refs = sorted_indices
+                let selected_refs = indices
                     .iter()
                     .filter_map(|&idx| run_state.master_deck.get(idx))
                     .map(|card| SelectionTargetRef::CardUuid(card.uuid))
                     .collect::<Vec<_>>();
+                let selected_uuids_in_order = selected_refs
+                    .iter()
+                    .map(|target| match target {
+                        SelectionTargetRef::CardUuid(uuid) => *uuid,
+                    })
+                    .collect::<Vec<_>>();
+
+                let mut sorted_indices = indices.clone();
+                sorted_indices.sort_unstable();
+                sorted_indices.reverse(); // Remove from highest index to lowest
 
                 run_state.emit_event(DomainEvent::SelectionResolved {
                     scope: SelectionScope::Deck,
@@ -664,17 +671,13 @@ pub fn tick_run(
                     }
                     crate::state::core::RunPendingChoiceReason::Transform
                     | crate::state::core::RunPendingChoiceReason::TransformNonBottled => {
-                        for idx in sorted_indices {
-                            if idx < run_state.master_deck.len() {
-                                run_state.transform_card_with_source(idx, false, source);
-                            }
+                        for uuid in selected_uuids_in_order {
+                            run_state.transform_card_uuid_with_source(uuid, false, source);
                         }
                     }
                     crate::state::core::RunPendingChoiceReason::TransformUpgraded => {
-                        for idx in sorted_indices {
-                            if idx < run_state.master_deck.len() {
-                                run_state.transform_card_with_source(idx, true, source);
-                            }
+                        for uuid in selected_uuids_in_order {
+                            run_state.transform_card_uuid_with_source(uuid, true, source);
                         }
                     }
                     crate::state::core::RunPendingChoiceReason::Duplicate => {
