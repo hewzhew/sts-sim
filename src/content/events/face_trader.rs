@@ -38,28 +38,21 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Touch: damage + gold
-                    // Java: DamageInfo(null, damage) — DEFAULT damage type (not HP_LOSS)
-                    // DEFAULT damage can be reduced by Tungsten Rod (-1)
+                    // Java: DamageInfo(null, damage) — DEFAULT damage type, ownerless.
                     let gold_reward = if run_state.ascension_level >= 15 {
                         50
                     } else {
                         75
                     };
-                    let mut damage = (run_state.max_hp / 10).max(1);
-                    // Apply Tungsten Rod if present (reduces non-HP_LOSS damage by 1)
-                    if run_state
-                        .relics
-                        .iter()
-                        .any(|r| r.id == RelicId::TungstenRod)
-                    {
-                        damage = (damage - 1).max(0);
-                    }
+                    let damage = (run_state.max_hp / 10).max(1);
                     run_state.change_gold_with_source(
                         gold_reward,
                         DomainEventSource::Event(EventId::FaceTrader),
                     );
-                    run_state.change_hp_with_source(
-                        -damage,
+                    super::apply_player_default_damage(
+                        run_state,
+                        damage,
+                        super::EventDamageOwner::None,
                         DomainEventSource::Event(EventId::FaceTrader),
                     );
                     event_state.current_screen = 2;

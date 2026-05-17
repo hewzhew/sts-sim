@@ -45,16 +45,13 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     event_state.current_screen = 2;
                 }
                 _ => {
-                    // Join cult: 6 damage (DEFAULT type — Tungsten Rod reduces by 1) + Ritual Dagger
-                    let mut dmg = 6;
-                    if run_state
-                        .relics
-                        .iter()
-                        .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
-                    {
-                        dmg -= 1;
-                    }
-                    run_state.change_hp_with_source(-dmg, DomainEventSource::Event(EventId::Nest));
+                    // Join cult: Java DamageInfo(null, 6), then Ritual Dagger.
+                    super::apply_player_default_damage(
+                        run_state,
+                        6,
+                        super::EventDamageOwner::None,
+                        DomainEventSource::Event(EventId::Nest),
+                    );
                     super::obtain_event_card(run_state, EventId::Nest, CardId::RitualDagger);
                     event_state.current_screen = 2;
                 }

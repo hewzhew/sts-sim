@@ -53,9 +53,10 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     // Enter Light: take damage + upgrade 2 random cards
                     if has_upgradable_cards(run_state) {
                         let damage = get_damage(run_state);
-                        let damage = apply_enter_light_damage(run_state, damage);
-                        run_state.change_hp_with_source(
-                            -damage,
+                        super::apply_player_default_damage(
+                            run_state,
+                            damage,
+                            super::EventDamageOwner::Player,
                             DomainEventSource::Event(EventId::ShiningLight),
                         );
                         run_state.upgrade_random_cards_with_source(
@@ -80,30 +81,6 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
-}
-
-fn apply_enter_light_damage(run_state: &RunState, mut damage: i32) -> i32 {
-    // Java: DamageInfo(player, damage), normal damage. Out of combat there is no
-    // block, but relic hooks still matter: Torii runs in onAttacked and
-    // Tungsten Rod runs later in onLoseHpLast.
-    if damage > 1
-        && damage <= 5
-        && run_state
-            .relics
-            .iter()
-            .any(|r| r.id == crate::content::relics::RelicId::Torii)
-    {
-        damage = 1;
-    }
-    if damage > 0
-        && run_state
-            .relics
-            .iter()
-            .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
-    {
-        damage -= 1;
-    }
-    damage
 }
 
 #[cfg(test)]

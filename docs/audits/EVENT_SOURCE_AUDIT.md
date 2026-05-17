@@ -91,6 +91,28 @@ Test:
 
 - `trap_damage_uses_java_ownerless_default_damage_hooks`
 
+### Event DEFAULT damage helper unification
+
+Java event damage paths use both ownerless default damage and player-owned
+default damage:
+
+- `FaceTrader` Touch, `Nest` Join, `GoldenIdol` trap damage, and `ScrapOoze`
+  Reach In use `DamageInfo(null, amount)`.
+- `GoopPuddle` Gather Gold and `ShiningLight` Enter the Light use
+  `DamageInfo(AbstractDungeon.player, amount)`.
+
+Rust now routes `FaceTrader`, `Nest`, and `ShiningLight` through the shared
+`apply_player_default_damage` helper instead of duplicating relic-hook logic in
+each event. The owner flag remains explicit, preserving the Java distinction
+where ownerless event damage skips Torii while player-owned event damage can
+trigger Torii before Tungsten Rod.
+
+Tests:
+
+- `touch_damage_respects_tungsten_rod`
+- `join_cult_damage_applies_tungsten_rod`
+- `enter_light_normal_damage_applies_torii_then_tungsten`
+
 ### Designer selection and mutation sources
 
 Java `events/shrines/Designer.java` has several non-obvious boundaries:
