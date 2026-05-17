@@ -168,7 +168,10 @@ impl RunState {
             note_for_yourself_upgrades: 0,
 
             // Subsystems
-            event_generator: crate::events::generator::EventGenerator::new(1),
+            event_generator: crate::events::generator::EventGenerator::new_with_note_for_yourself(
+                1,
+                ascension_level == 0,
+            ),
             room_mugged: false,
             room_smoked: false,
 
@@ -1801,6 +1804,27 @@ mod tests {
             let _ = rng.random(999);
         }
         rng
+    }
+
+    #[test]
+    fn note_for_yourself_pool_presence_matches_java_run_initialization_gate() {
+        let a0 = RunState::new(1, 0, false, "Ironclad");
+        assert!(a0
+            .event_generator
+            .one_time_event_pool
+            .contains(&crate::state::events::EventId::NoteForYourself));
+
+        let a1 = RunState::new(1, 1, false, "Ironclad");
+        assert!(!a1
+            .event_generator
+            .one_time_event_pool
+            .contains(&crate::state::events::EventId::NoteForYourself));
+
+        let a15 = RunState::new(1, 15, false, "Ironclad");
+        assert!(!a15
+            .event_generator
+            .one_time_event_pool
+            .contains(&crate::state::events::EventId::NoteForYourself));
     }
 
     #[test]

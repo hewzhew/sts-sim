@@ -288,10 +288,10 @@ Source-backed candidate gates now covered by direct generator tests:
 Important boundary:
 
 - Java decides `NoteForYourself` availability when initializing the special
-  one-time event list. Rust still keeps the event in the pool and filters it at
-  candidate selection time. This is mechanically acceptable for ordinary
-  candidate generation, but exact empty-pool/fallback behavior remains open
-  until event-list initialization is made context-aware.
+  one-time event list. Rust now applies that initialization-time presence for
+  normal `RunState::new` runs using the run's daily/ascension defaults; custom
+  profile-highest-ascension fixtures must still construct the desired event pool
+  explicitly if they diverge from those defaults.
 - Java initializes the special one-time event list once in Exordium and carries
   the same list into later acts. Rust now preserves that lifetime: an exhausted
   one-time event pool is not repopulated by act transitions.

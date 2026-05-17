@@ -26,6 +26,10 @@ pub struct EventGenerator {
 
 impl EventGenerator {
     pub fn new(act_num: u8) -> Self {
+        Self::new_with_note_for_yourself(act_num, true)
+    }
+
+    pub fn new_with_note_for_yourself(act_num: u8, include_note_for_yourself: bool) -> Self {
         let mut gen = Self {
             event_pool: Vec::new(),
             shrine_pool: Vec::new(),
@@ -37,6 +41,10 @@ impl EventGenerator {
             shrine_chance: 0.25,
         };
         gen.initialize_event_pools(act_num);
+        if !include_note_for_yourself {
+            gen.one_time_event_pool
+                .retain(|&event| event != EventId::NoteForYourself);
+        }
         gen
     }
 
@@ -493,6 +501,19 @@ mod tests {
         assert!(generator.one_time_event_pool.is_empty());
         assert!(generator.event_pool.contains(&EventId::Addict));
         assert!(generator.shrine_pool.contains(&EventId::MatchAndKeep));
+    }
+
+    #[test]
+    fn note_for_yourself_presence_is_decided_when_one_time_pool_initializes() {
+        let with_note = EventGenerator::new_with_note_for_yourself(1, true);
+        assert!(with_note
+            .one_time_event_pool
+            .contains(&EventId::NoteForYourself));
+
+        let without_note = EventGenerator::new_with_note_for_yourself(1, false);
+        assert!(!without_note
+            .one_time_event_pool
+            .contains(&EventId::NoteForYourself));
     }
 
     #[test]
