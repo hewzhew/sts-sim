@@ -12,7 +12,7 @@ use crate::content::cards::CardId;
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
 use crate::engine::targeting;
-use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::CombatState;
 
 fn queue_exhaust_triggers(card: &crate::runtime::combat::CombatCard, state: &mut CombatState) {
@@ -2361,6 +2361,35 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
             Ok(target) => target,
             Err(_) => return,
         };
+        if potion.id == crate::content::potions::PotionId::FirePotion {
+            let Some(target_id) = resolved_target else {
+                return;
+            };
+            let mut output = potency.max(0);
+            for power in crate::content::powers::store::powers_snapshot_for(state, target_id) {
+                output = crate::content::powers::resolve_power_at_damage_final_receive(
+                    power.power_type,
+                    output,
+                    power.amount,
+                    DamageType::Thorns,
+                );
+            }
+            let mut actions = smallvec::smallvec![ActionInfo {
+                action: Action::Damage(DamageInfo {
+                    source: 0,
+                    target: target_id,
+                    base: potency,
+                    output,
+                    damage_type: DamageType::Thorns,
+                    is_modified: output != potency,
+                }),
+                insertion_mode: AddTo::Bottom,
+            }];
+            actions.extend(crate::content::relics::hooks::on_use_potion(state, 0));
+            state.queue_actions(actions);
+            state.entities.potions[slot] = None;
+            return;
+        }
         let actions = crate::content::potions::potion_effects::get_potion_actions(
             state.entities.monsters.len(),
             potion.id,
@@ -2755,6 +2784,44 @@ mod tests {
         ));
 
         assert_eq!(state.entities.potions, before);
+    }
+
+    #[test]
+    fn fire_potion_applies_enemy_final_receive_before_damage_action_like_java() {
+        let mut state = blank_test_combat();
+        let mut nemesis_like = test_monster(EnemyId::JawWorm);
+        nemesis_like.id = 1;
+        nemesis_like.current_hp = 40;
+        state.entities.monsters = vec![nemesis_like];
+        crate::content::powers::store::set_powers_for(
+            &mut state,
+            1,
+            vec![Power {
+                power_type: PowerId::Intangible,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::FirePotion,
+            1,
+        ))];
+
+        handle_use_potion(0, Some(1), &mut state);
+
+        let Some(Action::Damage(info)) = state.pop_next_action() else {
+            panic!("Fire Potion should queue one DamageAction");
+        };
+        assert_eq!(info.base, 20);
+        assert_eq!(
+            info.output, 1,
+            "Java FirePotion.use calls DamageInfo.applyEnemyPowersOnly(target), so target IntangiblePower caps the queued THORNS damage before DamageAction runs"
+        );
+        assert!(info.is_modified);
+        assert_eq!(state.entities.potions[0], None);
     }
 
     #[test]

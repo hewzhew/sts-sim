@@ -95,3 +95,22 @@ Rust result:
 Coverage:
 - `liquid_memories_auto_move_does_not_drop_cards_when_hand_fills`
 - `liquid_memories_sacred_bark_grid_select_requires_exact_potency`
+
+### Fire Potion
+
+Status: `wrong-fixed`
+
+Java evidence:
+- `FirePotion.use()` creates `DamageInfo(AbstractDungeon.player, potency,
+  DamageType.THORNS)`.
+- It immediately calls `info.applyEnemyPowersOnly(target)` before queuing
+  `DamageAction`.
+- That means target final-receive powers such as Nemesis-style
+  `IntangiblePower` are baked into the queued damage value.
+
+Rust result:
+- Fixed combat potion use so Fire Potion pre-applies target final-receive powers
+  to the THORNS damage before queuing the damage action.
+
+Coverage:
+- `fire_potion_applies_enemy_final_receive_before_damage_action_like_java`
