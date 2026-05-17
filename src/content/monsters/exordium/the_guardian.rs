@@ -133,6 +133,103 @@ mod tests {
             30
         );
     }
+
+    #[test]
+    fn mode_shift_threshold_keeps_power_until_defensive_change_state_resolves() {
+        let mut state = crate::test_support::blank_test_combat();
+
+        let mut guardian = crate::test_support::test_monster(EnemyId::TheGuardian);
+        guardian.current_hp = 100;
+        guardian.max_hp = 250;
+        guardian.guardian = GuardianRuntimeState {
+            damage_threshold: 5,
+            damage_taken: 0,
+            is_open: true,
+            close_up_triggered: false,
+        };
+        guardian.set_planned_move_id(ROLL_ATTACK);
+        guardian.set_planned_steps(roll_attack_plan(0).steps);
+        let guardian_id = guardian.id;
+        state.entities.monsters = vec![guardian];
+        state
+            .entities
+            .power_db
+            .insert(guardian_id, vec![test_power(PowerId::ModeShift, 5)]);
+
+        crate::engine::action_handlers::execute_action(
+            Action::Damage(crate::runtime::action::DamageInfo {
+                source: 0,
+                target: guardian_id,
+                base: 5,
+                output: 5,
+                damage_type: crate::runtime::action::DamageType::Normal,
+                is_modified: false,
+            }),
+            &mut state,
+        );
+
+        let marker = state.pop_next_action().expect("guardian threshold marker");
+        assert!(matches!(
+            marker,
+            Action::GuardianModeShiftThresholdTriggered { .. }
+        ));
+        crate::engine::action_handlers::execute_action(marker, &mut state);
+
+        let guardian_after_marker = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == guardian_id)
+            .unwrap();
+        assert!(
+            crate::content::powers::store::has_power(&state, guardian_id, PowerId::ModeShift),
+            "Java mutates Mode Shift amount directly and keeps the power until queued ChangeState removes it"
+        );
+        assert_eq!(
+            crate::content::powers::store::power_amount(&state, guardian_id, PowerId::ModeShift),
+            0
+        );
+        assert!(guardian_after_marker.guardian.is_open);
+        assert!(guardian_after_marker.guardian.close_up_triggered);
+        assert_eq!(guardian_after_marker.planned_move_id(), ROLL_ATTACK);
+
+        let change_state = state
+            .pop_next_action()
+            .expect("queued defensive ChangeState action");
+        assert!(matches!(
+            change_state,
+            Action::GuardianEnterDefensiveMode { .. }
+        ));
+        crate::engine::action_handlers::execute_action(change_state, &mut state);
+
+        let guardian_after_change_state = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == guardian_id)
+            .unwrap();
+        assert!(!guardian_after_change_state.guardian.is_open);
+        assert_eq!(guardian_after_change_state.guardian.damage_threshold, 15);
+        assert_eq!(guardian_after_change_state.planned_move_id(), CLOSE_UP);
+        assert_eq!(
+            guardian_after_change_state.block, 0,
+            "GainBlock is queued by ChangeState and has not resolved yet"
+        );
+
+        drain_actions(&mut state);
+        let guardian_after_queued_effects = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == guardian_id)
+            .unwrap();
+        assert_eq!(guardian_after_queued_effects.block, DEFENSIVE_BLOCK);
+        assert!(!crate::content::powers::store::has_power(
+            &state,
+            guardian_id,
+            PowerId::ModeShift
+        ));
+    }
 }
 
 fn fierce_bash_damage(asc: u8) -> i32 {
@@ -379,6 +476,70 @@ fn guardian_runtime_update(
     }
 }
 
+pub fn handle_mode_shift_threshold_triggered(
+    monster_id: crate::core::EntityId,
+    hp_lost: i32,
+    state: &mut CombatState,
+) {
+    if hp_lost <= 0 {
+        return;
+    }
+
+    let _ = crate::content::powers::store::with_power_mut(
+        state,
+        monster_id,
+        PowerId::ModeShift,
+        |power| {
+            // Java mutates ModeShiftPower.amount directly in TheGuardian.damage()
+            // and does not route through ReducePowerAction's zero-removal rule.
+            power.amount -= hp_lost;
+        },
+    );
+
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|monster| monster.id == monster_id)
+    {
+        monster.guardian.damage_taken = 0;
+        monster.guardian.close_up_triggered = true;
+    }
+}
+
+pub fn handle_enter_defensive_mode(
+    monster_id: crate::core::EntityId,
+    next_threshold: i32,
+    state: &mut CombatState,
+) {
+    let plan = close_up_plan(state.meta.ascension_level);
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|monster| monster.id == monster_id)
+    {
+        monster.guardian.damage_threshold = next_threshold;
+        monster.guardian.is_open = false;
+    }
+
+    crate::engine::action_handlers::spawning::handle_set_monster_move(
+        monster_id,
+        plan.move_id,
+        plan.steps,
+        plan.visible_spec,
+        state,
+    );
+    state.queue_action_back(Action::RemovePower {
+        target: monster_id,
+        power_id: PowerId::ModeShift,
+    });
+    state.queue_action_back(Action::GainBlock {
+        target: monster_id,
+        amount: DEFENSIVE_BLOCK,
+    });
+}
+
 impl MonsterBehavior for TheGuardian {
     fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
@@ -482,7 +643,7 @@ impl MonsterBehavior for TheGuardian {
     }
 
     fn on_damaged(
-        state: &mut CombatState,
+        _state: &mut CombatState,
         entity: &MonsterEntity,
         amount: i32,
     ) -> smallvec::SmallVec<[ActionInfo; 4]> {
@@ -500,37 +661,19 @@ impl MonsterBehavior for TheGuardian {
             let next_threshold = entity.guardian.damage_threshold + THRESHOLD_INCREASE;
             smallvec::smallvec![
                 ActionInfo {
-                    action: guardian_runtime_update(entity, None, Some(0), None, Some(true)),
+                    action: Action::GuardianModeShiftThresholdTriggered {
+                        monster_id: entity.id,
+                        hp_lost: amount,
+                    },
                     insertion_mode: AddTo::Top,
                 },
                 ActionInfo {
-                    action: guardian_runtime_update(
-                        entity,
-                        Some(next_threshold),
-                        None,
-                        Some(false),
-                        None,
-                    ),
-                    insertion_mode: AddTo::Bottom,
-                },
-                ActionInfo {
-                    action: set_next_move_action(entity, close_up_plan(state.meta.ascension_level)),
-                    insertion_mode: AddTo::Bottom,
-                },
-                ActionInfo {
-                    action: Action::RemovePower {
-                        target: entity.id,
-                        power_id: PowerId::ModeShift,
+                    action: Action::GuardianEnterDefensiveMode {
+                        monster_id: entity.id,
+                        next_threshold,
                     },
                     insertion_mode: AddTo::Bottom,
-                },
-                ActionInfo {
-                    action: Action::GainBlock {
-                        target: entity.id,
-                        amount: DEFENSIVE_BLOCK,
-                    },
-                    insertion_mode: AddTo::Bottom,
-                },
+                }
             ]
         } else {
             smallvec::smallvec![

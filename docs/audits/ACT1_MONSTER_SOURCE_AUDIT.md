@@ -103,6 +103,10 @@ the mechanical results as runtime updates and queued actions, not as UI state.
 
 Existing Rust coverage includes the Twin Slam ordering where defensive block remains until after
 the two attacks and reflected damage, matching Java's `ChangeState(Offensive Mode)` queue order.
+Threshold damage now also follows the Java split between immediate `damage()` mutation and queued
+`ChangeState(Defensive Mode)`: Mode Shift amount and `closeUpTriggered` update before the next
+queued action, but removing Mode Shift and gaining the defensive block are queued only when the
+Defensive Mode action itself resolves.
 
 ### Red Slaver
 
@@ -124,8 +128,8 @@ jumping to the front.
 
 ## Still Worth Rechecking
 
-- Guardian threshold behavior under multi-hit attacks should stay covered by the dedicated Guardian
-  threshold matrix.
+- Guardian threshold behavior now has direct queue-state coverage, but the broader multi-hit /
+  target-power matrix should still be kept in mind while auditing unusual damage actions.
 
 ## Tests Added Or Relied On
 
@@ -133,6 +137,7 @@ jumping to the front.
 - `percent_roll_uses_java_random_boolean_chance_not_integer_roll`
 - `protect_followup_counts_zero_hp_not_yet_dying_monsters_like_java`
 - `split_power_prebattle_uses_java_sentinel_amount`
+- `mode_shift_threshold_keeps_power_until_defensive_change_state_resolves`
 - `burn_increase_upgrades_only_draw_and_discard_like_java`
 - `red_slaver_roll_logic_matches_java_private_flags_from_move_history`
 - `red_slaver_a17_scrape_cannot_repeat_immediately_like_java`

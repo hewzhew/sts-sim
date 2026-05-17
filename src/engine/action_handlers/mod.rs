@@ -712,6 +712,22 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::UpdateMonsterRuntime { monster_id, patch } => {
             spawning::handle_update_monster_runtime(monster_id, patch, state)
         }
+        Action::GuardianModeShiftThresholdTriggered {
+            monster_id,
+            hp_lost,
+        } => {
+            crate::content::monsters::exordium::the_guardian::handle_mode_shift_threshold_triggered(
+                monster_id, hp_lost, state,
+            )
+        }
+        Action::GuardianEnterDefensiveMode {
+            monster_id,
+            next_threshold,
+        } => crate::content::monsters::exordium::the_guardian::handle_enter_defensive_mode(
+            monster_id,
+            next_threshold,
+            state,
+        ),
         Action::ReviveMonster { target } => spawning::handle_revive_monster(target, state),
         Action::UpdateRelicCounter { relic_id, counter } => {
             spawning::handle_update_relic_counter(relic_id, counter, state)

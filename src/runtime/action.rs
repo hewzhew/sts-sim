@@ -804,6 +804,21 @@ pub enum Action {
         monster_id: EntityId,
         patch: MonsterRuntimePatch,
     },
+    /// Java `TheGuardian.damage`: when Mode Shift reaches its threshold,
+    /// damage accounting and `closeUpTriggered` update immediately, while the
+    /// actual Defensive Mode state change is still a queued ChangeStateAction.
+    GuardianModeShiftThresholdTriggered {
+        monster_id: EntityId,
+        hp_lost: i32,
+    },
+    /// Java `ChangeStateAction(this, "Defensive Mode")` for The Guardian.
+    /// This is intentionally a single queued action because its body queues
+    /// RemovePower/GainBlock at execution time, not when damage crossed the
+    /// threshold.
+    GuardianEnterDefensiveMode {
+        monster_id: EntityId,
+        next_threshold: i32,
+    },
     ReviveMonster {
         target: EntityId,
     },
