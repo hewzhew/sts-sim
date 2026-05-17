@@ -4,7 +4,7 @@ use crate::content::monsters::exordium::{
 };
 use crate::content::monsters::{EnemyId, MonsterBehavior};
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     AddCardStep, AttackSpec, AttackStep, CardDestination, DamageKind, EffectStrength,
@@ -18,6 +18,11 @@ const SPLIT: u8 = 3;
 const STICKY: u8 = 4;
 
 pub struct SlimeBoss;
+
+pub fn initialize_runtime_state(entity: &mut MonsterEntity) {
+    entity.slime_boss.protocol_seeded = true;
+    entity.slime_boss.first_turn = true;
+}
 
 enum SlimeBossTurn<'a> {
     Sticky(&'a AddCardStep),
@@ -113,6 +118,24 @@ fn plan_for(move_id: u8, asc: u8) -> MonsterTurnPlan {
     }
 }
 
+fn runtime(entity: &MonsterEntity) -> bool {
+    assert!(
+        entity.slime_boss.protocol_seeded,
+        "slime boss runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.slime_boss.first_turn
+}
+
+fn slime_boss_runtime_update(entity: &MonsterEntity, first_turn: Option<bool>) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::SlimeBoss {
+            first_turn,
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
 fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> SlimeBossTurn<'a> {
     match (plan.move_id, plan.steps.as_slice()) {
         (STICKY, [MoveStep::AddCard(add_card)])
@@ -148,13 +171,23 @@ impl MonsterBehavior for SlimeBoss {
         ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        match entity.move_history().back().copied() {
-            None => sticky_plan(ascension_level),
-            Some(STICKY) => prep_slam_plan(),
-            Some(PREP_SLAM) => slam_plan(ascension_level),
-            Some(SLAM) => sticky_plan(ascension_level),
-            Some(SPLIT) => split_plan(),
-            Some(move_id) => plan_for(move_id, ascension_level),
+        if runtime(entity) {
+            sticky_plan(ascension_level)
+        } else {
+            plan_for(entity.planned_move_id(), ascension_level)
+        }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if runtime(entity) {
+            vec![slime_boss_runtime_update(entity, Some(false))]
+        } else {
+            Vec::new()
         }
     }
 
@@ -213,5 +246,46 @@ impl MonsterBehavior for SlimeBoss {
                 actions
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SlimeBoss, SLAM, STICKY};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::{Action, MonsterRuntimePatch};
+
+    #[test]
+    fn slime_boss_first_roll_uses_private_first_turn_and_marks_it() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let monster = crate::test_support::test_monster(EnemyId::SlimeBoss);
+        let plan = SlimeBoss::roll_move_plan(&mut rng, &monster, 0, 99);
+
+        assert_eq!(plan.move_id, STICKY);
+        assert_eq!(
+            SlimeBoss::on_roll_move(0, &monster, 99, &plan),
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::SlimeBoss {
+                    first_turn: Some(false),
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn slime_boss_non_first_roll_keeps_existing_move_instead_of_advancing_history_cycle() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut monster = crate::test_support::test_monster(EnemyId::SlimeBoss);
+        monster.slime_boss.first_turn = false;
+        monster.set_planned_move_id(SLAM);
+        monster.move_history_mut().clear();
+
+        assert_eq!(
+            SlimeBoss::roll_move_plan(&mut rng, &monster, 0, 99).move_id,
+            SLAM,
+            "Java SlimeBoss.getMove() is a no-op after firstTurn is false; the normal cycle is set in takeTurn()"
+        );
     }
 }

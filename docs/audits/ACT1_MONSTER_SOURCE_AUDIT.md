@@ -119,6 +119,19 @@ Rust now stores the counter in `GremlinWizardRuntimeState`, `CommunicationMod` e
 runtime patch is queued before the follow-up `SetMonsterMove` / damage actions to match Java's
 immediate field mutation inside `takeTurn()`.
 
+### Slime Boss
+
+Java has a private `firstTurn` field. `getMove()` only does work while this flag is true: it flips
+the flag to false and plans opening Sticky. After that, Slime Boss' normal Sticky -> Prep Slam ->
+Slam loop is driven by direct `setMove(...)` calls inside `takeTurn()`, not by future `rollMove()`
+branching.
+
+Rust now stores `firstTurn` in `SlimeBossRuntimeState`, `CommunicationMod` exports it as
+`monster.runtime_state.first_turn`, and state sync treats it as strict protocol truth. Rust no
+longer advances Slime Boss' cycle from empty/last move history inside `roll_move_plan`; after
+`first_turn=false`, a stray roll preserves the currently planned move, matching Java's no-op
+`getMove()` branch.
+
 ### Lagavulin
 
 Lagavulin remains a runtime-state monster, not a move-history-only monster. Required Java private

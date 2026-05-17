@@ -675,6 +675,9 @@ fn compile_monster_runtime_state(monster: &AuthorMonsterSpec, move_id: i32) -> V
             "first_move": false,
             "hard_mode": false,
         }),
+        "slimeboss" => json!({
+            "first_turn": false,
+        }),
         "writhingmass" => json!({
             "used_mega_debuff": false,
         }),

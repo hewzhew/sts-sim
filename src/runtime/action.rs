@@ -132,6 +132,10 @@ pub enum MonsterRuntimePatch {
         first_move: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    SlimeBoss {
+        first_turn: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

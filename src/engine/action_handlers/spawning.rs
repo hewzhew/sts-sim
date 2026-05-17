@@ -144,6 +144,7 @@ pub fn handle_spawn_monster(
         gremlin_wizard: Default::default(),
         cultist: Default::default(),
         sentry: Default::default(),
+        slime_boss: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -270,6 +271,9 @@ pub fn handle_spawn_monster(
     if enemy_id == crate::content::monsters::EnemyId::Sentry {
         new_monster.sentry.protocol_seeded = true;
         new_monster.sentry.first_move = true;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::SlimeBoss {
+        crate::content::monsters::exordium::slime_boss::initialize_runtime_state(&mut new_monster);
     }
     if matches!(
         enemy_id,
@@ -1065,6 +1069,27 @@ fn handle_update_sentry_state(
     }
 }
 
+fn handle_update_slime_boss_state(
+    monster_id: usize,
+    first_turn: Option<bool>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = first_turn {
+            monster.slime_boss.first_turn = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.slime_boss.protocol_seeded = value;
+        }
+    }
+}
+
 pub fn handle_update_monster_runtime(
     monster_id: usize,
     patch: MonsterRuntimePatch,
@@ -1249,6 +1274,10 @@ pub fn handle_update_monster_runtime(
             first_move,
             protocol_seeded,
         } => handle_update_sentry_state(monster_id, first_move, protocol_seeded, state),
+        MonsterRuntimePatch::SlimeBoss {
+            first_turn,
+            protocol_seeded,
+        } => handle_update_slime_boss_state(monster_id, first_turn, protocol_seeded, state),
     }
 }
 

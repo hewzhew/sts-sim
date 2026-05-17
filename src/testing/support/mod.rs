@@ -113,6 +113,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         gremlin_wizard: Default::default(),
         cultist: Default::default(),
         sentry: Default::default(),
+        slime_boss: Default::default(),
         darkling: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
@@ -211,6 +212,9 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
     if enemy_id == EnemyId::Sentry {
         monster.sentry.protocol_seeded = true;
         monster.sentry.first_move = true;
+    }
+    if enemy_id == EnemyId::SlimeBoss {
+        crate::content::monsters::exordium::slime_boss::initialize_runtime_state(&mut monster);
     }
     if matches!(enemy_id, EnemyId::Looter | EnemyId::Mugger) {
         monster.thief.protocol_seeded = true;

@@ -175,6 +175,16 @@ pub(crate) fn seed_jaw_worm_runtime_from_snapshot(monster: &Value, entity: &mut 
     entity.jaw_worm.protocol_seeded = true;
 }
 
+pub(crate) fn seed_slime_boss_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::SlimeBoss;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.slime_boss.first_turn = runtime_state_bool(monster, monster_type, "first_turn");
+    entity.slime_boss.protocol_seeded = true;
+}
+
 pub(crate) fn seed_byrd_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Byrd;
     if entity.monster_type != monster_type as usize {
@@ -489,6 +499,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_cultist_runtime_from_snapshot(monster, entity);
     seed_sentry_runtime_from_snapshot(monster, entity);
     seed_jaw_worm_runtime_from_snapshot(monster, entity);
+    seed_slime_boss_runtime_from_snapshot(monster, entity);
     seed_darkling_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
@@ -564,6 +575,7 @@ mod tests {
             gremlin_wizard: Default::default(),
             cultist: Default::default(),
             sentry: Default::default(),
+            slime_boss: Default::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -934,6 +946,22 @@ mod tests {
         })
     }
 
+    fn slime_boss_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "SlimeBoss",
+            "current_hp": 150,
+            "max_hp": 150,
+            "block": 0,
+            "move_id": 4,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "first_turn": false
+            }
+        })
+    }
+
     fn chosen_observation_snapshot() -> serde_json::Value {
         json!({
             "id": "Chosen",
@@ -1253,6 +1281,18 @@ mod tests {
         assert!(!entity.jaw_worm.first_move);
         assert!(entity.jaw_worm.hard_mode);
         assert!(entity.jaw_worm.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_slime_boss_runtime_state() {
+        let snapshot = slime_boss_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.monster_type, EnemyId::SlimeBoss as usize);
+        assert!(!entity.slime_boss.first_turn);
+        assert!(entity.slime_boss.protocol_seeded);
     }
 
     #[test]

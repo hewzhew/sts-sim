@@ -199,6 +199,7 @@ pub fn build_combat_state_from_snapshots(
             gremlin_wizard: Default::default(),
             cultist: Default::default(),
             sentry: Default::default(),
+            slime_boss: Default::default(),
             darkling: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),

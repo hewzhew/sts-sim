@@ -403,6 +403,7 @@ mod tests {
             gremlin_wizard: Default::default(),
             cultist: Default::default(),
             sentry: Default::default(),
+            slime_boss: Default::default(),
             darkling: DarklingRuntimeState {
                 first_move: false,
                 nip_dmg: 0,

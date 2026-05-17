@@ -946,6 +946,7 @@ pub struct MonsterEntity {
     pub gremlin_wizard: GremlinWizardRuntimeState,
     pub cultist: CultistRuntimeState,
     pub sentry: SentryRuntimeState,
+    pub slime_boss: SlimeBossRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
@@ -1296,6 +1297,12 @@ pub struct CultistRuntimeState {
 pub struct SentryRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SlimeBossRuntimeState {
+    pub protocol_seeded: bool,
+    pub first_turn: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2188,6 +2195,7 @@ mod tests {
             gremlin_wizard: GremlinWizardRuntimeState::default(),
             cultist: CultistRuntimeState::default(),
             sentry: SentryRuntimeState::default(),
+            slime_boss: SlimeBossRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2260,6 +2268,7 @@ mod tests {
             gremlin_wizard: GremlinWizardRuntimeState::default(),
             cultist: CultistRuntimeState::default(),
             sentry: SentryRuntimeState::default(),
+            slime_boss: SlimeBossRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
@@ -2329,6 +2338,7 @@ mod tests {
             gremlin_wizard: GremlinWizardRuntimeState::default(),
             cultist: CultistRuntimeState::default(),
             sentry: SentryRuntimeState::default(),
+            slime_boss: SlimeBossRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),

@@ -37,6 +37,7 @@ Scope:
 | Gremlin Wizard | `current_charge` | Yes | Yes | Yes | None for charge cadence | Good |
 | Cultist | `first_move` | Yes | Yes | Yes | None | Good |
 | Jaw Worm | `first_move`, `hard_mode` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
+| Slime Boss | `first_turn` | Yes | Yes | Yes | None for post-opening cycle | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Partial | N/A | Legacy-heavy | Debt remains |
@@ -133,6 +134,15 @@ Scope:
 - Jaw Worm Horde uses Java hard mode: `hard_mode=true` and `first_move=false`; the pre-battle
   Strength/Block bonus still comes from `hard_mode`.
 - Remaining history usage is limited to Java's explicit Chomp/Bellow/Thrash repeat rules.
+
+### Slime Boss
+
+- `runtime_state.first_turn` is now exported by `CommunicationMod`.
+- Rust semantic roll logic requires this field to be protocol-seeded or factory-seeded.
+- The opening Sticky gate comes from Java's private `firstTurn`, not from empty move history.
+- After `first_turn=false`, Java `getMove()` is a no-op; Rust therefore preserves the current
+  planned move if a roll is requested, while the ordinary cycle remains driven by `takeTurn()`
+  `SetMonsterMove` actions.
 
 ### Sentry
 
