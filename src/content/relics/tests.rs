@@ -1607,7 +1607,7 @@ fn singing_bowl_card_reward_option_grants_two_max_hp_with_reward_source() {
 }
 
 #[test]
-fn white_beast_statue_forces_potion_reward_unless_sozu_blocks_potions() {
+fn white_beast_statue_forces_potion_reward_even_with_sozu() {
     let mut run_state = crate::state::run::RunState::new(1, 0, false, "Ironclad");
     run_state.relics.clear();
     run_state
@@ -1633,11 +1633,11 @@ fn white_beast_statue_forces_potion_reward_unless_sozu_blocks_potions() {
     let sozu_rewards =
         crate::rewards::generator::generate_combat_rewards(&mut sozu_state, false, false);
     assert!(
-        !sozu_rewards
+        sozu_rewards
             .items
             .iter()
             .any(|item| matches!(item, crate::rewards::state::RewardItem::Potion { .. })),
-        "Java Sozu prevents potion rewards before White Beast can matter"
+        "Java addPotionToRewards ignores Sozu; RewardItem.claimReward handles Sozu later"
     );
 }
 

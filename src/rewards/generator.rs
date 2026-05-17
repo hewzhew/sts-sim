@@ -61,33 +61,27 @@ pub fn generate_combat_rewards(
     }
 
     // 2. Generate Potions
-    let has_sozu = run_state
+    let mut chance = 40 + run_state.potion_drop_chance_mod;
+    if run_state
         .relics
         .iter()
-        .any(|r| r.id == crate::content::relics::RelicId::Sozu);
-    if !has_sozu {
-        let mut chance = 40 + run_state.potion_drop_chance_mod;
-        if run_state
-            .relics
-            .iter()
-            .any(|r| r.id == crate::content::relics::RelicId::WhiteBeastStatue)
-        {
-            chance = 100;
-        }
+        .any(|r| r.id == crate::content::relics::RelicId::WhiteBeastStatue)
+    {
+        chance = 100;
+    }
 
-        let roll = run_state.rng_pool.potion_rng.random_range(0, 99);
-        if roll < chance {
-            run_state.potion_drop_chance_mod -= 10;
-            let potion_class = run_state.potion_class();
-            let potion_id = crate::content::potions::random_potion(
-                &mut run_state.rng_pool.potion_rng,
-                potion_class,
-                false,
-            );
-            items.push(RewardItem::Potion { potion_id });
-        } else {
-            run_state.potion_drop_chance_mod += 10;
-        }
+    let roll = run_state.rng_pool.potion_rng.random_range(0, 99);
+    if roll < chance {
+        run_state.potion_drop_chance_mod -= 10;
+        let potion_class = run_state.potion_class();
+        let potion_id = crate::content::potions::random_potion(
+            &mut run_state.rng_pool.potion_rng,
+            potion_class,
+            false,
+        );
+        items.push(RewardItem::Potion { potion_id });
+    } else {
+        run_state.potion_drop_chance_mod += 10;
     }
 
     // 3. Generate Cards

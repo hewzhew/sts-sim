@@ -178,7 +178,8 @@ fn handle_card_choice(
 mod tests {
     use super::handle;
     use crate::content::cards::CardId;
-    use crate::content::relics::RelicId;
+    use crate::content::potions::PotionId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::rewards::state::{RewardItem, RewardState};
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState};
@@ -214,6 +215,61 @@ mod tests {
         assert_eq!(
             returned_rewards.items,
             vec![RewardItem::Gold { amount: 25 }]
+        );
+    }
+
+    #[test]
+    fn potion_reward_claim_matches_java_sozu_and_full_slot_behavior() {
+        let mut sozu_run = RunState::new(1, 0, false, "Ironclad");
+        sozu_run.relics.clear();
+        sozu_run.relics.push(RelicState::new(RelicId::Sozu));
+        sozu_run.potions = vec![None, None, None];
+        let mut sozu_rewards = RewardState::new();
+        sozu_rewards.items = vec![RewardItem::Potion {
+            potion_id: PotionId::FirePotion,
+        }];
+
+        handle(
+            &mut sozu_run,
+            &mut sozu_rewards,
+            Some(ClientInput::ClaimReward(0)),
+        );
+
+        assert!(sozu_rewards.items.is_empty());
+        assert!(sozu_run.potions.iter().all(|slot| slot.is_none()));
+
+        let mut full_run = RunState::new(1, 0, false, "Ironclad");
+        full_run.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                PotionId::BlockPotion,
+                1,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::EnergyPotion,
+                2,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::DexterityPotion,
+                3,
+            )),
+        ];
+        let mut full_rewards = RewardState::new();
+        full_rewards.items = vec![RewardItem::Potion {
+            potion_id: PotionId::FirePotion,
+        }];
+
+        handle(
+            &mut full_run,
+            &mut full_rewards,
+            Some(ClientInput::ClaimReward(0)),
+        );
+
+        assert_eq!(
+            full_rewards.items,
+            vec![RewardItem::Potion {
+                potion_id: PotionId::FirePotion
+            }],
+            "Java RewardItem.claimReward returns false on full potion slots, leaving the reward"
         );
     }
 

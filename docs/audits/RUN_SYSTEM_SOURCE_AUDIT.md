@@ -64,7 +64,10 @@ and reachability gates must be checked separately.
    - current progress: observation now reflects Java top-panel affordances for
      Blood/Fruit/Entropic, `FairyPotion`, and `WeMeetAgain`; run-level
      non-combat use/discard execution is implemented for discard, Blood,
-     Fruit, Entropic, Sozu, Sacred Bark, and Toy Ornithopter.
+     Fruit, Entropic, Sozu, Sacred Bark, and Toy Ornithopter. Combat reward
+     potion generation now follows Java's split: reward generation ignores
+     Sozu, while reward claiming consumes the potion reward without obtaining
+     a potion under Sozu.
 
 3. Relic pool and `canSpawn` closure:
    - turn the existing relic audit into pool-level validation, not just
