@@ -88,8 +88,11 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                     return;
                 }
                 2 => {
-                    // Heal to full
-                    run_state.current_hp = run_state.max_hp;
+                    // Java: player.heal(player.maxHealth)
+                    run_state.heal_with_source(
+                        run_state.max_hp,
+                        DomainEventSource::Event(EventId::GremlinWheelGame),
+                    );
                 }
                 3 => {
                     // Obtain Decay curse
@@ -111,14 +114,27 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                     }
                 }
                 _ => {
-                    // Lose HP
+                    // Java: player.damage(DamageInfo(null, damage, HP_LOSS)).
+                    // HP_LOSS bypasses block, but AbstractPlayer.damage still applies
+                    // onLoseHpLast, so Tungsten Rod reduces this by 1.
                     let pct = if run_state.ascension_level >= 15 {
                         0.15f32
                     } else {
                         0.10f32
                     };
-                    let damage = (run_state.max_hp as f32 * pct) as i32;
-                    run_state.current_hp = (run_state.current_hp - damage).max(1);
+                    let mut damage = (run_state.max_hp as f32 * pct) as i32;
+                    if damage > 0
+                        && run_state
+                            .relics
+                            .iter()
+                            .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
+                    {
+                        damage -= 1;
+                    }
+                    run_state.change_hp_with_source(
+                        -damage,
+                        DomainEventSource::Event(EventId::GremlinWheelGame),
+                    );
                 }
             }
 
@@ -131,4 +147,115 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::rng::StsRng;
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    fn seed_for_wheel_result(result: i32) -> u64 {
+        (1..10_000)
+            .find(|seed| {
+                let mut rng = StsRng::new(*seed);
+                rng.random_range(0, 5) == result
+            })
+            .expect("test seed for Gremlin Wheel result")
+    }
+
+    fn wheel_run(current_hp: i32, max_hp: i32, ascension_level: u8) -> RunState {
+        let mut run_state = RunState::new(1, ascension_level, false, "Ironclad");
+        run_state.current_hp = current_hp;
+        run_state.max_hp = max_hp;
+        run_state.event_state = Some(EventState::new(EventId::GremlinWheelGame));
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    #[test]
+    fn full_heal_uses_java_heal_source_and_respects_mark_of_the_bloom() {
+        let mut run_state = wheel_run(20, 80, 0);
+        run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(2));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::MarkOfTheBloom));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 20);
+        assert!(!run_state
+            .take_emitted_events()
+            .iter()
+            .any(|event| matches!(event, DomainEvent::HpChanged { .. })));
+    }
+
+    #[test]
+    fn full_heal_emits_event_source_without_mark() {
+        let mut run_state = wheel_run(20, 80, 0);
+        run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(2));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 80);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: 60,
+                current_hp: 80,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::GremlinWheelGame),
+            }
+        )));
+    }
+
+    #[test]
+    fn hp_loss_result_uses_source_and_can_reduce_hp_to_zero() {
+        let mut run_state = wheel_run(5, 80, 0);
+        run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(5));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 0);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -5,
+                current_hp: 0,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::GremlinWheelGame),
+            }
+        )));
+    }
+
+    #[test]
+    fn hp_loss_result_applies_tungsten_rod_on_lose_hp_last() {
+        let mut run_state = wheel_run(20, 80, 0);
+        run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(5));
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 13);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -7,
+                current_hp: 13,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::GremlinWheelGame),
+            }
+        )));
+    }
 }

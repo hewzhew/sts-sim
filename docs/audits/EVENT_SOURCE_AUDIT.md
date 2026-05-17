@@ -402,6 +402,38 @@ Tests:
 - `enter_max_hp_loss_survives_mark_but_full_heal_is_blocked`
 - `trade_removes_golden_idol_and_grants_gold_with_event_sources`
 
+### Gremlin Wheel full heal and HP-loss damage
+
+Java `events/shrines/GremlinWheelGame.java` applies the spin result in
+`applyResult()`:
+
+```text
+case 2:
+  player.heal(player.maxHealth)
+default:
+  player.damage(new DamageInfo(null, damageAmount, HP_LOSS))
+```
+
+The full heal is therefore a normal Java heal and can be blocked by `Mark of the
+Bloom`. The damage branch is HP-loss damage, so it bypasses block/attack
+callbacks, but `AbstractPlayer.damage` still runs relic `onLoseHpLast`; this
+means `Tungsten Rod` reduces the loss by 1 even though the damage type is
+`HP_LOSS`.
+
+Fixes:
+
+- Full-heal spin result now uses `heal_with_source(..., Event(GremlinWheelGame))`
+  instead of direct `current_hp = max_hp`.
+- HP-loss spin result now uses sourced HP change, allows HP to reach 0 like
+  Java `damage`, and applies `Tungsten Rod`'s `onLoseHpLast`.
+
+Tests:
+
+- `full_heal_uses_java_heal_source_and_respects_mark_of_the_bloom`
+- `full_heal_emits_event_source_without_mark`
+- `hp_loss_result_uses_source_and_can_reduce_hp_to_zero`
+- `hp_loss_result_applies_tungsten_rod_on_lose_hp_last`
+
 ### N'loth relic trade
 
 Java `events/shrines/Nloth.java` shuffles a copy of the player's relic list with
@@ -610,11 +642,11 @@ Validation:
   drawing the button, and several Rust modules still simplify those UI states.
 - Event HP/max-HP/gold direct mutations still need the same domain-source pass
   that card obtains just received. `BigFish`, `Cleric`, `GoldenWing`,
-  `FaceTrader`, `ForgottenAltar`, `Ghosts`, `Vampires`, and `MoaiHead` are now
-  covered; the remaining direct writes should be handled event-by-event against
-  Java source.
+  `FaceTrader`, `ForgottenAltar`, `Ghosts`, `Vampires`, `MoaiHead`, and
+  `GremlinWheelGame` are now covered; the remaining direct writes should be
+  handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `825 passed`.
+- Current result after this pass: `829 passed`.
