@@ -151,24 +151,21 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     }
                 }
                 1 => {
-                    // +5 Max HP, lose HP
+                    // +5 Max HP, then Java DamageInfo(null, hpLoss).
                     let source = DomainEventSource::Event(EventId::ForgottenAltar);
                     let hp_loss_pct = if run_state.ascension_level >= 15 {
                         0.35
                     } else {
                         0.25
                     };
-                    let mut hp_loss = (run_state.max_hp as f32 * hp_loss_pct).round() as i32;
-                    // DEFAULT damage type — Tungsten Rod reduces by 1
-                    if run_state
-                        .relics
-                        .iter()
-                        .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
-                    {
-                        hp_loss = (hp_loss - 1).max(0);
-                    }
+                    let hp_loss = (run_state.max_hp as f32 * hp_loss_pct).round() as i32;
                     run_state.gain_max_hp_with_source(5, 5, source);
-                    run_state.change_hp_with_source(-hp_loss, source);
+                    super::apply_player_default_damage(
+                        run_state,
+                        hp_loss,
+                        super::EventDamageOwner::None,
+                        source,
+                    );
                     event_state.current_screen = 1;
                 }
                 _ => {

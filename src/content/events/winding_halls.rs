@@ -119,23 +119,17 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
         1 => {
             match choice_idx {
                 0 => {
-                    // Embrace Madness: take damage (DEFAULT type) + 2 Madness
+                    // Embrace Madness: Java DamageInfo(null, hpAmt) + 2 Madness.
                     let hp_loss_pct = if run_state.ascension_level >= 15 {
                         0.18
                     } else {
                         0.125
                     };
-                    let mut hp_loss = (run_state.max_hp as f32 * hp_loss_pct).round() as i32;
-                    // Tungsten Rod reduces DEFAULT damage by 1
-                    if run_state
-                        .relics
-                        .iter()
-                        .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
-                    {
-                        hp_loss = (hp_loss - 1).max(0);
-                    }
-                    run_state.change_hp_with_source(
-                        -hp_loss,
+                    let hp_loss = (run_state.max_hp as f32 * hp_loss_pct).round() as i32;
+                    super::apply_player_default_damage(
+                        run_state,
+                        hp_loss,
+                        super::EventDamageOwner::None,
                         DomainEventSource::Event(EventId::WindingHalls),
                     );
                     super::obtain_event_card(run_state, EventId::WindingHalls, CardId::Madness);
