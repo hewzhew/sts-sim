@@ -10,6 +10,30 @@ Purpose:
 Cards are already tracked in `docs/audits/IRONCLAD_CARD_SOURCE_AUDIT.md`.
 This file starts the same evidence-driven pass for Ironclad relics.
 
+## Pool-Level Correction - Normal vs End Relic Draws
+
+Java evidence:
+- `AbstractDungeon.returnRandomRelicKey(tier)` removes from index `0`.
+- `AbstractDungeon.returnEndRandomRelicKey(tier)` removes from the end for
+  common/uncommon/rare/shop pools.
+- Shop relic generation and Courier replacement use `returnRandomRelicEnd`;
+  normal combat/chest reward paths use `returnRandomRelic`.
+- If a normal front candidate fails `canSpawn`, Java falls back to the end
+  path for that tier.
+
+Rust result:
+- `RunState::random_relic_by_tier` now models the normal front draw path.
+- `RunState::random_relic_end_by_tier` now models the shop/end draw path.
+- Both paths share the same `canSpawn` context, so shop/end paths no longer
+  bypass bottled/floor/class/boss relic gates.
+- Shop generation and Courier relic-slot replacement now use the end path.
+
+Coverage:
+- `normal_and_end_relic_paths_consume_opposite_pool_ends_like_java`
+- `normal_relic_rewards_can_return_bottled_relics_but_screenless_rewards_skip_them`
+- `ectoplasm_can_spawn_only_in_act_one_and_blocks_gold_gain`
+- `rare_run_relic_can_spawn_gates_match_java_sources`
+
 ## Batch 1 - Blood / Bloodied / Vulnerable Relics
 
 ### Burning Blood

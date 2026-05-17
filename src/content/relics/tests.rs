@@ -1826,7 +1826,7 @@ fn normal_relic_rewards_can_return_bottled_relics_but_screenless_rewards_skip_th
     normal
         .master_deck
         .push(CombatCard::new(CardId::PommelStrike, 1001));
-    normal.uncommon_relic_pool = vec![RelicId::Pear, RelicId::BottledFlame];
+    normal.uncommon_relic_pool = vec![RelicId::BottledFlame, RelicId::Pear];
     assert_eq!(
         normal.random_relic_by_tier(RelicTier::Uncommon),
         RelicId::BottledFlame,
@@ -1837,12 +1837,33 @@ fn normal_relic_rewards_can_return_bottled_relics_but_screenless_rewards_skip_th
     screenless
         .master_deck
         .push(CombatCard::new(CardId::PommelStrike, 1001));
-    screenless.uncommon_relic_pool = vec![RelicId::Pear, RelicId::BottledFlame];
+    screenless.uncommon_relic_pool = vec![RelicId::BottledFlame, RelicId::Pear];
     assert_eq!(
         screenless.random_screenless_relic(RelicTier::Uncommon),
         RelicId::Pear,
         "Java returnRandomScreenlessRelic skips Bottled Flame/Lightning/Tornado and Whetstone"
     );
+}
+
+#[test]
+fn normal_and_end_relic_paths_consume_opposite_pool_ends_like_java() {
+    let mut normal = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    normal.common_relic_pool = vec![RelicId::Anchor, RelicId::Akabeko];
+    assert_eq!(
+        normal.random_relic_by_tier(RelicTier::Common),
+        RelicId::Anchor,
+        "Java returnRandomRelicKey removes index 0 for normal rewards"
+    );
+    assert_eq!(normal.common_relic_pool, vec![RelicId::Akabeko]);
+
+    let mut end = crate::state::run::RunState::new(1, 0, false, "Ironclad");
+    end.common_relic_pool = vec![RelicId::Anchor, RelicId::Akabeko];
+    assert_eq!(
+        end.random_relic_end_by_tier(RelicTier::Common),
+        RelicId::Akabeko,
+        "Java returnEndRandomRelicKey removes the last pool entry for shop/end paths"
+    );
+    assert_eq!(end.common_relic_pool, vec![RelicId::Anchor]);
 }
 
 #[test]
@@ -2586,7 +2607,7 @@ fn ectoplasm_can_spawn_only_in_act_one_and_blocks_gold_gain() {
     fn boss_spawn_result(act_num: u8) -> RelicId {
         let mut run = crate::state::run::RunState::new(13, 0, false, "Ironclad");
         run.act_num = act_num;
-        run.boss_relic_pool = vec![RelicId::CoffeeDripper, RelicId::Ectoplasm];
+        run.boss_relic_pool = vec![RelicId::Ectoplasm, RelicId::CoffeeDripper];
         run.random_relic_by_tier(RelicTier::Boss)
     }
 
@@ -4376,7 +4397,7 @@ fn rare_run_relic_can_spawn_gates_match_java_sources() {
         let mut run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
         run.floor_num = floor_num;
         run.relics = owned_relics;
-        run.rare_relic_pool = vec![RelicId::Mango, blocked_candidate];
+        run.rare_relic_pool = vec![blocked_candidate, RelicId::Mango];
         run.random_relic_by_tier(RelicTier::Rare)
     }
 

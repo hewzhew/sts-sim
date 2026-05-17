@@ -2,6 +2,10 @@ use crate::content::relics::RelicState;
 use crate::map::state::MapState;
 use crate::runtime::combat::{CombatCard, PlayerEntity};
 use crate::runtime::rng::{RngPool, StsRng};
+use crate::state::relic_pool::{
+    random_relic_by_tier_from_pools, random_relic_end_by_tier_from_pools, RelicPoolsMut,
+    RelicSpawnContext,
+};
 use crate::state::selection::{DomainCardSnapshot, DomainEvent, DomainEventSource};
 use std::cell::Cell;
 
@@ -71,7 +75,8 @@ pub struct RunState {
     /// next room. Used for reward-screen semantics and future parity.
     pub room_smoked: bool,
 
-    // Relic pools — filled at dungeon init, popped from end when obtaining relics.
+    // Relic pools — filled at dungeon init. Normal rewards consume from the
+    // front; shop/end relic paths consume from the end.
     // Java: commonRelicPool, uncommonRelicPool, rareRelicPool, shopRelicPool, bossRelicPool
     pub common_relic_pool: Vec<crate::content::relics::RelicId>,
     pub uncommon_relic_pool: Vec<crate::content::relics::RelicId>,
@@ -641,6 +646,8 @@ impl RunState {
             card_blizz_randomizer: self.card_blizz_randomizer,
         };
 
+        let spawn_context = RelicSpawnContext::from_run(self);
+
         let crate::state::run::RunState {
             ref mut rng_pool,
             ref mut common_relic_pool,
@@ -651,42 +658,17 @@ impl RunState {
             ..
         } = self;
 
-        crate::shop::shop_screen::generate_shop(
-            rng_pool,
-            &config,
-            |mut tier| -> crate::content::relics::RelicId {
-                use crate::content::relics::{RelicId, RelicTier};
-                loop {
-                    match tier {
-                        RelicTier::Common => {
-                            if let Some(id) = common_relic_pool.pop() {
-                                return id;
-                            }
-                            tier = RelicTier::Uncommon;
-                        }
-                        RelicTier::Uncommon => {
-                            if let Some(id) = uncommon_relic_pool.pop() {
-                                return id;
-                            }
-                            tier = RelicTier::Rare;
-                        }
-                        RelicTier::Rare => {
-                            return rare_relic_pool.pop().unwrap_or(RelicId::Circlet)
-                        }
-                        RelicTier::Shop => {
-                            if let Some(id) = shop_relic_pool.pop() {
-                                return id;
-                            }
-                            tier = RelicTier::Uncommon;
-                        }
-                        RelicTier::Boss => {
-                            return boss_relic_pool.pop().unwrap_or(RelicId::Circlet)
-                        }
-                        _ => return RelicId::Circlet,
-                    }
-                }
-            },
-        )
+        let mut relic_pools = RelicPoolsMut {
+            common: common_relic_pool,
+            uncommon: uncommon_relic_pool,
+            rare: rare_relic_pool,
+            shop: shop_relic_pool,
+            boss: boss_relic_pool,
+        };
+
+        crate::shop::shop_screen::generate_shop(rng_pool, &config, |tier| {
+            random_relic_end_by_tier_from_pools(tier, &mut relic_pools, &spawn_context)
+        })
     }
 
     /// Initialize event pools for the current act, matching Java Exordium/TheCity/TheBeyond.initializeEventList()
@@ -1206,105 +1188,50 @@ impl RunState {
         }
     }
 
-    /// Pop a relic from the specified tier pool. Falls back on exhaustion:
-    /// Common→Uncommon, Uncommon→Rare, Rare/Shop/Boss→Circlet.
-    /// Java: returnEndRandomRelicKey(tier)
+    /// Pop a relic from the specified tier pool using Java's normal reward
+    /// path. Common/uncommon/rare/shop pools consume from the front
+    /// (`returnRandomRelicKey` / `remove(0)`), while boss relics also consume
+    /// from the front. Shop screens use `random_relic_end_by_tier`.
+    ///
+    /// Java quirk: if a front candidate fails `canSpawn`, the fallback is
+    /// `returnEndRandomRelicKey(tier)`, not another front draw.
     pub fn random_relic_by_tier(
         &mut self,
         tier: crate::content::relics::RelicTier,
     ) -> crate::content::relics::RelicId {
-        use crate::content::relics::{RelicId, RelicTier};
-        let id = match tier {
-            RelicTier::Common => {
-                if let Some(id) = self.common_relic_pool.pop() {
-                    id
-                } else {
-                    self.random_relic_by_tier(RelicTier::Uncommon)
-                }
-            }
-            RelicTier::Uncommon => {
-                if let Some(id) = self.uncommon_relic_pool.pop() {
-                    id
-                } else {
-                    self.random_relic_by_tier(RelicTier::Rare)
-                }
-            }
-            RelicTier::Rare => self.rare_relic_pool.pop().unwrap_or(RelicId::Circlet),
-            RelicTier::Shop => {
-                if let Some(id) = self.shop_relic_pool.pop() {
-                    id
-                } else {
-                    self.random_relic_by_tier(RelicTier::Uncommon)
-                }
-            }
-            RelicTier::Boss => self.boss_relic_pool.pop().unwrap_or(RelicId::Circlet),
-            _ => RelicId::Circlet,
+        let spawn_context = RelicSpawnContext::from_run(self);
+        let mut relic_pools = RelicPoolsMut {
+            common: &mut self.common_relic_pool,
+            uncommon: &mut self.uncommon_relic_pool,
+            rare: &mut self.rare_relic_pool,
+            shop: &mut self.shop_relic_pool,
+            boss: &mut self.boss_relic_pool,
         };
-
-        if id != RelicId::Circlet && !self.relic_can_spawn_now(id) {
-            self.random_relic_by_tier(tier)
-        } else {
-            id
-        }
+        random_relic_by_tier_from_pools(tier, &mut relic_pools, &spawn_context)
     }
 
+    /// Pop a relic using Java's shop/end path
+    /// (`returnEndRandomRelicKey`). Common/uncommon/rare/shop pools consume
+    /// from the end. Empty common/uncommon/shop pools fall back to the normal
+    /// front path of the next tier, matching Java's odd mixed fallback.
+    pub fn random_relic_end_by_tier(
+        &mut self,
+        tier: crate::content::relics::RelicTier,
+    ) -> crate::content::relics::RelicId {
+        let spawn_context = RelicSpawnContext::from_run(self);
+        let mut relic_pools = RelicPoolsMut {
+            common: &mut self.common_relic_pool,
+            uncommon: &mut self.uncommon_relic_pool,
+            rare: &mut self.rare_relic_pool,
+            shop: &mut self.shop_relic_pool,
+            boss: &mut self.boss_relic_pool,
+        };
+        random_relic_end_by_tier_from_pools(tier, &mut relic_pools, &spawn_context)
+    }
+
+    #[cfg(test)]
     fn relic_can_spawn_now(&self, id: crate::content::relics::RelicId) -> bool {
-        use crate::content::cards::{CardRarity, CardType};
-        use crate::content::relics::RelicId;
-
-        match id {
-            RelicId::BlackBlood => self
-                .relics
-                .iter()
-                .any(|relic| relic.id == RelicId::BurningBlood),
-            RelicId::FrozenCore => self
-                .relics
-                .iter()
-                .any(|relic| relic.id == RelicId::CrackedCore),
-            RelicId::HolyWater => self
-                .relics
-                .iter()
-                .any(|relic| relic.id == RelicId::PureWater),
-            RelicId::RingOfTheSerpent => self
-                .relics
-                .iter()
-                .any(|relic| relic.id == RelicId::SnakeRing),
-            RelicId::BottledFlame => self.master_deck.iter().any(|card| {
-                let def = crate::content::cards::get_card_definition(card.id);
-                def.card_type == CardType::Attack && def.rarity != CardRarity::Basic
-            }),
-            RelicId::BottledLightning => self.master_deck.iter().any(|card| {
-                let def = crate::content::cards::get_card_definition(card.id);
-                def.card_type == CardType::Skill && def.rarity != CardRarity::Basic
-            }),
-            RelicId::BottledTornado => self.master_deck.iter().any(|card| {
-                crate::content::cards::get_card_definition(card.id).card_type == CardType::Power
-            }),
-            RelicId::Courier | RelicId::MeatOnTheBone | RelicId::SingingBowl => {
-                self.floor_num <= 48
-            }
-            RelicId::Ectoplasm => self.act_num <= 1,
-            RelicId::OldCoin | RelicId::PrayerWheel => self.floor_num <= 48,
-            RelicId::Matryoshka => self.floor_num <= 40,
-            RelicId::WingBoots => self.floor_num <= 40,
-            RelicId::Girya | RelicId::PeacePipe | RelicId::Shovel => {
-                self.floor_num < 48 && self.campfire_relic_count() < 2
-            }
-            _ => true,
-        }
-    }
-
-    fn campfire_relic_count(&self) -> usize {
-        use crate::content::relics::RelicId;
-        self.relics
-            .iter()
-            .filter(|relic| {
-                matches!(
-                    relic.id,
-                    RelicId::Girya | RelicId::PeacePipe | RelicId::Shovel
-                )
-            })
-            .count()
+        crate::state::relic_pool::relic_can_spawn_in_context(id, &RelicSpawnContext::from_run(self))
     }
 
     /// Returns a random "screenless" relic of the given tier.

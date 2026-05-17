@@ -69,6 +69,12 @@ and reachability gates must be checked separately.
    - turn the existing relic audit into pool-level validation, not just
      per-relic behavior;
    - verify boss/shop/class/floor exclusions and replacement rules.
+   - current progress: normal reward relic draws now model Java
+     `returnRandomRelicKey` front-of-pool consumption, shop/end draws model
+     `returnEndRandomRelicKey` back-of-pool consumption, and both paths apply
+     the same `canSpawn` context. This fixes the previous single
+     `random_relic_by_tier` path that treated all relic rewards like shop/end
+     draws.
 
 4. Monster and boss generation:
    - verify encounter pools and boss visibility before touching AI pathing;
@@ -144,3 +150,5 @@ Important boundary:
 Validation:
 
 - `cargo test events::generator --all-targets`
+- Latest full-suite validation after potion and relic-pool work:
+  `cargo test --all-targets` -> `1006 passed`.

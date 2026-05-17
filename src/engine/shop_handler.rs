@@ -111,7 +111,7 @@ fn reprice_card_price(run_state: &mut RunState, card_id: CardId) -> i32 {
 fn replace_shop_relic_slot(run_state: &mut RunState, shop: &mut ShopState, idx: usize) {
     let replacement = loop {
         let tier = roll_shop_relic_tier(run_state);
-        let relic_id = run_state.random_relic_by_tier(tier);
+        let relic_id = run_state.random_relic_end_by_tier(tier);
         if matches!(
             relic_id,
             RelicId::OldCoin | RelicId::SmilingMask | RelicId::MawBank | RelicId::Courier
@@ -299,7 +299,7 @@ pub fn handle(
 
 #[cfg(test)]
 mod tests {
-    use super::handle;
+    use super::{handle, replace_shop_relic_slot};
     use crate::content::cards::CardId;
     use crate::content::potions::PotionId;
     use crate::content::relics::{RelicId, RelicState};
@@ -437,6 +437,31 @@ mod tests {
         assert!(next.is_none());
         assert_eq!(shop.relics.len(), 1);
         assert_ne!(shop.relics[0].relic_id, RelicId::Courier);
+    }
+
+    #[test]
+    fn courier_relic_replacement_uses_end_path_and_can_spawn_filter() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.common_relic_pool = vec![RelicId::Anchor, RelicId::BottledFlame];
+        run_state.uncommon_relic_pool = vec![RelicId::Anchor, RelicId::BottledFlame];
+        run_state.rare_relic_pool = vec![RelicId::Anchor, RelicId::BottledFlame];
+
+        let mut shop = ShopState::new();
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::Courier,
+            price: 150,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        replace_shop_relic_slot(&mut run_state, &mut shop, 0);
+
+        assert_eq!(
+            shop.relics[0].relic_id,
+            RelicId::Anchor,
+            "Java shop/end relic replacement draws from the end, but rejects Bottled Flame when canSpawn is false"
+        );
     }
 
     #[test]

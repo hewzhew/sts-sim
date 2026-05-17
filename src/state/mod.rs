@@ -1,6 +1,7 @@
 pub mod core;
 
 pub mod events;
+pub(crate) mod relic_pool;
 pub mod run;
 pub mod selection;
 pub mod semantics;
