@@ -929,6 +929,32 @@ Tests:
 - `rummage_uses_event_sources_for_pain_and_warped_tongs`
 - `rummage_pain_can_be_blocked_by_omamori_without_blocking_warped_tongs`
 
+### The Mausoleum relic-before-curse timing
+
+Java `events/city/TheMausoleum.java` always calls
+`miscRng.randomBoolean()` when opening the coffin, then forces the curse result
+to true on A15+. On a cursed result it adds `ShowCardAndObtainEffect(new
+Writhe())` to the effect list, but then immediately obtains the random
+screenless relic through `spawnRelicAndObtain`.
+
+Mechanically, that means the relic is owned before the Writhe obtain effect
+resolves. This matters for relics such as `DarkstonePeriapt`: if Mausoleum rolls
+Darkstone and also gives Writhe, Darkstone should see that curse obtain and
+grant max HP.
+
+Fixes:
+
+- Mausoleum now obtains the random relic before routing Writhe through the event
+  card obtain helper.
+- Added regression coverage for Darkstone timing, A15 RNG consumption, and
+  Omamori blocking Writhe after the relic has already been obtained.
+
+Tests:
+
+- `cursed_open_obtains_relic_before_writhe_effect_resolves_like_java`
+- `cursed_open_still_rolls_misc_rng_before_a15_forces_curse`
+- `omamori_blocks_writhe_after_relic_obtain_so_darkstone_does_not_trigger`
+
 ### Cursed Tome HP_LOSS and book reward
 
 Java `events/city/CursedTome.java` uses
@@ -1027,10 +1053,11 @@ Validation:
   `TombRedMask` now routes paid `Red Mask` obtain through the relic obtain
   helper. `CursedTome` now uses shared Java HP_LOSS event semantics and preserves
   random-book RNG consumption. `AccursedBlacksmith` now routes `WarpedTongs`
-  through the event-sourced relic obtain pipeline. The remaining direct writes
-  should be handled event-by-event against Java source.
+  through the event-sourced relic obtain pipeline. `Mausoleum` now preserves the
+  Java relic-before-Writhe effect timing. The remaining direct writes should be
+  handled event-by-event against Java source.
 
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `881 passed`.
+- Current result after this pass: `884 passed`.
