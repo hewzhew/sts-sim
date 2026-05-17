@@ -5,7 +5,7 @@ pub fn legal_actions(
     run_state: &RunState,
     combat_state: &Option<CombatState>,
 ) -> Vec<ClientInput> {
-    match engine_state {
+    let mut actions = match engine_state {
         EngineState::CombatPlayerTurn | EngineState::PendingChoice(_) => combat_state
             .as_ref()
             .map(|combat| crate::bot::combat::legal_moves_for_audit(engine_state, combat))
@@ -33,6 +33,53 @@ pub fn legal_actions(
         }
         EngineState::CombatProcessing | EngineState::EventCombat(_) | EngineState::GameOver(_) => {
             Vec::new()
+        }
+    };
+    extend_run_level_potion_actions(engine_state, run_state, &mut actions);
+    actions
+}
+
+fn extend_run_level_potion_actions(
+    engine_state: &EngineState,
+    run_state: &RunState,
+    actions: &mut Vec<ClientInput>,
+) {
+    if !matches!(
+        engine_state,
+        EngineState::MapNavigation
+            | EngineState::EventRoom
+            | EngineState::RewardScreen(_)
+            | EngineState::Campfire
+            | EngineState::Shop(_)
+            | EngineState::RunPendingChoice(_)
+            | EngineState::BossRelicSelect(_)
+    ) {
+        return;
+    }
+
+    let is_we_meet_again_event = run_state
+        .event_state
+        .as_ref()
+        .is_some_and(|event| event.id == crate::state::events::EventId::WeMeetAgain);
+    for (slot_index, maybe_potion) in run_state.potions.iter().enumerate() {
+        let Some(potion) = maybe_potion else {
+            continue;
+        };
+        if potion.can_use
+            && crate::content::potions::potion_can_use_out_of_combat(
+                potion.id,
+                is_we_meet_again_event,
+            )
+        {
+            actions.push(ClientInput::UsePotion {
+                potion_index: slot_index,
+                target: None,
+            });
+        }
+        if potion.can_discard
+            && crate::content::potions::potion_can_discard_in_event(is_we_meet_again_event)
+        {
+            actions.push(ClientInput::DiscardPotion(slot_index));
         }
     }
 }
@@ -225,10 +272,10 @@ pub fn action_key_for_input(input: &ClientInput, combat: Option<&CombatState>) -
             potion_index,
             target,
         } => format!(
-            "combat/use_potion/slot:{potion_index}/target:{}",
+            "potion/use/slot:{potion_index}/target:{}",
             target_label(*target, combat)
         ),
-        ClientInput::DiscardPotion(index) => format!("combat/discard_potion/slot:{index}"),
+        ClientInput::DiscardPotion(index) => format!("potion/discard/slot:{index}"),
         ClientInput::EndTurn => "combat/end_turn".to_string(),
         ClientInput::SubmitCardChoice(indices) => format!("combat/card_choice/{indices:?}"),
         ClientInput::SubmitDiscoverChoice(index) => format!("choice/discover/{index}"),
@@ -286,6 +333,58 @@ pub fn campfire_choice_key(choice: &CampfireChoice) -> String {
         CampfireChoice::Lift => "lift".to_string(),
         CampfireChoice::Toke(idx) => format!("toke/{idx}"),
         CampfireChoice::Recall => "recall".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::potions::{Potion, PotionId};
+    use crate::state::events::{EventId, EventState};
+
+    #[test]
+    fn run_level_potion_actions_follow_java_top_panel_affordances() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.potions = vec![
+            Some(Potion::new(PotionId::BloodPotion, 1)),
+            Some(Potion::new(PotionId::FirePotion, 2)),
+            Some(Potion::new(PotionId::FairyPotion, 3)),
+        ];
+
+        let actions = legal_actions(&EngineState::MapNavigation, &run_state, &None);
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            ClientInput::UsePotion {
+                potion_index: 0,
+                target: None
+            }
+        )));
+        assert!(!actions.iter().any(|action| matches!(
+            action,
+            ClientInput::UsePotion {
+                potion_index: 1 | 2,
+                ..
+            }
+        )));
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, ClientInput::DiscardPotion(0))));
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, ClientInput::DiscardPotion(1))));
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, ClientInput::DiscardPotion(2))));
+
+        run_state.event_state = Some(EventState::new(EventId::WeMeetAgain));
+        let blocked = legal_actions(&EngineState::EventRoom, &run_state, &None);
+        assert!(!blocked
+            .iter()
+            .any(|action| matches!(action, ClientInput::UsePotion { .. })));
+        assert!(!blocked
+            .iter()
+            .any(|action| matches!(action, ClientInput::DiscardPotion(_))));
     }
 }
 

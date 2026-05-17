@@ -52,6 +52,7 @@ mechanical simulator truth and must stay anchored to the Java source under
 | Snecko Oil | Queues draw, then `RandomizeHandCostAction`; that action skips `cost < 0`, rolls 0-3 per eligible card, and changes both `cost` and `costForTurn` when different. | `handle_randomize_hand_costs` now reads current combat cost, skips X/unplayable cost, and mutates combat plus turn cost. | `snecko_oil_randomize_updates_combat_cost_and_turn_cost_like_java` |
 | Smoke Bomb | `SmokeBomb.canUse()` rejects if any monster has `BackAttack` or `EnemyType.BOSS`; it is not just a room-level boss flag. | `handle_use_potion` and `engine_local_moves` now block by room boss flag, visible boss monster type, and `BackAttack`. | `smoke_bomb_is_blocked_by_spire_shield_back_attack_power`; `smoke_bomb_is_blocked_by_boss_monster_type_even_without_room_flag`; `engine_local_moves_skip_smoke_bomb_when_visible_monster_is_boss` |
 | Run observation `canUse` / `canDiscard` | Non-combat top-panel affordances are dynamic: only Blood/Fruit/Entropic override non-combat use, `FairyPotion` is passive, and `WeMeetAgain` blocks both use and discard. During combat, potion slots live in combat state, not stale run state. | `build_potion_observations` now reads combat slots when combat is active and uses source-backed non-combat affordance helpers for run-state slots. | `non_combat_potion_observation_uses_java_can_use_overrides`; `we_meet_again_blocks_potion_use_and_discard_observation`; `combat_potion_observation_uses_combat_slots_not_stale_run_slots` |
+| Run-level top-panel potion execution | Java `PotionPopUp` allows discard outside combat unless `WeMeetAgain`, and allows Blood/Fruit/Entropic use outside combat. It applies potion effect, relic `onUsePotion`, then destroys the slot; non-combat Entropic uses non-limited `returnRandomPotion()` and Sozu consumes without generating. | `tick_run` now intercepts run-level `UsePotion` / `DiscardPotion` in non-combat states, applies Blood/Fruit/Entropic effects to `RunState`, triggers Toy Ornithopter, consumes the slot, and uses non-limited Entropic generation. | `run_level_potion_actions_follow_java_top_panel_affordances`; `run_level_blood_potion_uses_sacred_bark_toy_ornithopter_and_consumes_slot`; `run_level_potion_discard_is_blocked_by_we_meet_again`; `run_level_entropic_brew_consumes_slot_and_refills_without_limited_filter`; `run_level_entropic_brew_with_sozu_consumes_without_generating_potions` |
 
 ## Short-Term Clean Areas
 
@@ -66,17 +67,13 @@ mechanical simulator truth and must stay anchored to the Java source under
 - Full-run observation no longer treats `Potion::can_use` / `can_discard` as
   context-free truth: combat slots come from `CombatState`, and non-combat
   affordances account for Blood/Fruit/Entropic overrides and `WeMeetAgain`.
+- Full-run legal actions now expose top-panel non-combat potion use/discard
+  where Java allows it. The action schema is bumped to
+  `full_run_action_candidate_set_v5_run_potion` because potion action keys are
+  no longer combat-prefixed.
 
 ## Boundaries Still Not Closed
 
-- Out-of-combat potion execution is not treated as closed here. The observation
-  layer exposes Java-like use/discard affordances, but `ClientInput::UsePotion`
-  and `ClientInput::DiscardPotion` outside combat still need a source-backed
-  run-level handler before policy can actually take those actions.
-- `EntropicBrew` outside combat uses Java's non-limited
-  `returnRandomPotion()` path and effect timing around slot destruction. That
-  should be implemented deliberately with run-level RNG/slot tests, not folded
-  into combat `Action::UsePotion`.
 - The passive death-prevention path for `FairyPotion` belongs to revive/death
   handling, not `Action::UsePotion`; it should remain audited with death hooks.
 - Potion reward/drop generation is partly covered by relic/run audits, but it is
@@ -87,4 +84,4 @@ mechanical simulator truth and must stay anchored to the Java source under
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `999 passed`.
+- Current result after this pass: `1004 passed`.

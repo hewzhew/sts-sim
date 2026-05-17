@@ -109,6 +109,7 @@ pub struct SelectionResolution {
 pub enum DomainEventSource {
     Event(EventId),
     Relic(RelicId),
+    Potion(PotionId),
     CampfireSmith,
     CampfireToke,
     Selection(SelectionReason),

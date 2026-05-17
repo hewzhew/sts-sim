@@ -1,8 +1,7 @@
 use super::*;
 
 pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v6_structural";
-pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str =
-    "full_run_action_candidate_set_v4_structural_delta";
+pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v5_run_potion";
 pub(crate) const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

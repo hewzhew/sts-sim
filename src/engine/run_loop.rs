@@ -153,6 +153,144 @@ fn resolve_out_of_combat_defeat(engine_state: &mut EngineState, run_state: &RunS
     false
 }
 
+fn is_run_level_potion_context(engine_state: &EngineState) -> bool {
+    matches!(
+        engine_state,
+        EngineState::MapNavigation
+            | EngineState::EventRoom
+            | EngineState::RewardScreen(_)
+            | EngineState::Campfire
+            | EngineState::Shop(_)
+            | EngineState::RunPendingChoice(_)
+            | EngineState::BossRelicSelect(_)
+    )
+}
+
+fn run_event_is_we_meet_again(run_state: &RunState) -> bool {
+    run_state
+        .event_state
+        .as_ref()
+        .is_some_and(|event| event.id == crate::state::events::EventId::WeMeetAgain)
+}
+
+fn run_has_relic(run_state: &RunState, relic_id: crate::content::relics::RelicId) -> bool {
+    run_state.relics.iter().any(|relic| relic.id == relic_id)
+}
+
+fn run_potion_potency(run_state: &RunState, potion_id: crate::content::potions::PotionId) -> i32 {
+    let mut potency = crate::content::potions::get_potion_definition(potion_id).base_potency;
+    if run_has_relic(run_state, crate::content::relics::RelicId::SacredBark) {
+        potency *= 2;
+    }
+    potency
+}
+
+fn apply_run_level_on_use_potion_relics(run_state: &mut RunState) {
+    if run_has_relic(run_state, crate::content::relics::RelicId::ToyOrnithopter) {
+        run_state.heal_with_source(
+            5,
+            DomainEventSource::Relic(crate::content::relics::RelicId::ToyOrnithopter),
+        );
+    }
+}
+
+fn handle_run_level_potion_input(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+    input: &Option<ClientInput>,
+) -> bool {
+    if !is_run_level_potion_context(engine_state) {
+        return false;
+    }
+
+    let is_we_meet_again_event = run_event_is_we_meet_again(run_state);
+    match input {
+        Some(ClientInput::DiscardPotion(slot)) => {
+            if !crate::content::potions::potion_can_discard_in_event(is_we_meet_again_event) {
+                return true;
+            }
+            let Some(potion_id) = run_state
+                .potions
+                .get(*slot)
+                .and_then(|slot| slot.as_ref())
+                .map(|potion| potion.id)
+            else {
+                return true;
+            };
+            run_state.remove_potion_at_with_source(*slot, DomainEventSource::Potion(potion_id));
+            true
+        }
+        Some(ClientInput::UsePotion {
+            potion_index,
+            target,
+        }) => {
+            if target.is_some() {
+                return true;
+            }
+            let Some(potion_id) = run_state
+                .potions
+                .get(*potion_index)
+                .and_then(|slot| slot.as_ref())
+                .map(|potion| potion.id)
+            else {
+                return true;
+            };
+            if !crate::content::potions::potion_can_use_out_of_combat(
+                potion_id,
+                is_we_meet_again_event,
+            ) {
+                return true;
+            }
+
+            let source = DomainEventSource::Potion(potion_id);
+            match potion_id {
+                crate::content::potions::PotionId::BloodPotion => {
+                    let potency = run_potion_potency(run_state, potion_id);
+                    let heal_amount = (run_state.max_hp as f32 * (potency as f32 / 100.0)) as i32;
+                    run_state.heal_with_source(heal_amount, source);
+                    apply_run_level_on_use_potion_relics(run_state);
+                    run_state.remove_potion_at_with_source(*potion_index, source);
+                }
+                crate::content::potions::PotionId::FruitJuice => {
+                    let potency = run_potion_potency(run_state, potion_id);
+                    run_state.gain_max_hp_with_source(potency, potency, source);
+                    apply_run_level_on_use_potion_relics(run_state);
+                    run_state.remove_potion_at_with_source(*potion_index, source);
+                }
+                crate::content::potions::PotionId::EntropicBrew => {
+                    let generated =
+                        if run_has_relic(run_state, crate::content::relics::RelicId::Sozu) {
+                            Vec::new()
+                        } else {
+                            let potion_slots = run_state.potions.len();
+                            let potion_class = run_state.potion_class();
+                            (0..potion_slots)
+                                .map(|_| {
+                                    crate::content::potions::random_potion(
+                                        &mut run_state.rng_pool.potion_rng,
+                                        potion_class,
+                                        false,
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        };
+                    apply_run_level_on_use_potion_relics(run_state);
+                    run_state.remove_potion_at_with_source(*potion_index, source);
+                    for potion_id in generated {
+                        run_state.obtain_potion_with_source(
+                            crate::content::potions::Potion::new(potion_id, 0),
+                            source,
+                        );
+                    }
+                }
+                _ => {}
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 fn apply_combat_meta_change(run_state: &mut RunState, change: crate::runtime::combat::MetaChange) {
     match change {
         crate::runtime::combat::MetaChange::AddCardToMasterDeck(card_id) => {
@@ -176,6 +314,13 @@ pub fn tick_run(
     combat_state: &mut Option<CombatState>,
     input: Option<ClientInput>,
 ) -> bool {
+    if handle_run_level_potion_input(engine_state, run_state, &input) {
+        if resolve_out_of_combat_defeat(engine_state, run_state) {
+            return false;
+        }
+        return true;
+    }
+
     // Top level controller redirecting inputs
     match engine_state {
         EngineState::CombatPlayerTurn
@@ -915,6 +1060,180 @@ mod tests {
         ));
         assert_eq!(blocked.current_hp, 20);
         assert!(matches!(blocked_engine, EngineState::Campfire));
+    }
+
+    #[test]
+    fn run_level_blood_potion_uses_sacred_bark_toy_ornithopter_and_consumes_slot() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 10;
+        run_state.max_hp = 80;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::SacredBark));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::ToyOrnithopter));
+        run_state.potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::BloodPotion,
+            101,
+        ))];
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            }),
+        ));
+
+        assert_eq!(run_state.current_hp, 47);
+        assert!(run_state.potions[0].is_none());
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::HpChanged {
+                delta: 32,
+                source: DomainEventSource::Potion(crate::content::potions::PotionId::BloodPotion),
+                ..
+            }
+        )));
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::HpChanged {
+                delta: 5,
+                source: DomainEventSource::Relic(RelicId::ToyOrnithopter),
+                ..
+            }
+        )));
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::PotionLost {
+                potion_id: crate::content::potions::PotionId::BloodPotion,
+                slot: 0,
+                source: DomainEventSource::Potion(crate::content::potions::PotionId::BloodPotion),
+            }
+        )));
+    }
+
+    #[test]
+    fn run_level_potion_discard_is_blocked_by_we_meet_again() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(crate::state::events::EventState::new(
+            crate::state::events::EventId::WeMeetAgain,
+        ));
+        run_state.potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FirePotion,
+            101,
+        ))];
+        let mut engine_state = EngineState::EventRoom;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::DiscardPotion(0)),
+        ));
+
+        assert_eq!(
+            run_state.potions[0].as_ref().map(|potion| potion.id),
+            Some(crate::content::potions::PotionId::FirePotion)
+        );
+    }
+
+    #[test]
+    fn run_level_entropic_brew_consumes_slot_and_refills_without_limited_filter() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                crate::content::potions::PotionId::EntropicBrew,
+                101,
+            )),
+            None,
+            None,
+        ];
+        let mut engine_state = EngineState::RewardScreen(crate::rewards::state::RewardState::new());
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            }),
+        ));
+
+        assert_eq!(
+            run_state
+                .potions
+                .iter()
+                .filter(|slot| slot.is_some())
+                .count(),
+            3
+        );
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::PotionLost {
+                potion_id: crate::content::potions::PotionId::EntropicBrew,
+                slot: 0,
+                source: DomainEventSource::Potion(crate::content::potions::PotionId::EntropicBrew),
+            }
+        )));
+        assert_eq!(
+            run_state
+                .emitted_events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    crate::state::selection::DomainEvent::PotionObtained {
+                        source: DomainEventSource::Potion(
+                            crate::content::potions::PotionId::EntropicBrew
+                        ),
+                        ..
+                    }
+                ))
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn run_level_entropic_brew_with_sozu_consumes_without_generating_potions() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Sozu));
+        run_state.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                crate::content::potions::PotionId::EntropicBrew,
+                101,
+            )),
+            None,
+            None,
+        ];
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            }),
+        ));
+
+        assert!(run_state.potions.iter().all(|slot| slot.is_none()));
+        assert!(!run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::PotionObtained { .. }
+        )));
     }
 
     #[test]
