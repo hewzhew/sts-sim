@@ -117,6 +117,13 @@ Entangle move already appearing in history. Rust keeps that representation and n
 coverage for the first move, one-time Entangle gate, post-Entangle Stab preference, A17 Scrape
 repeat rule, and take-turn action order.
 
+### Looter
+
+Java Looter escape sets `AbstractDungeon.getCurrRoom().mugged = true` before queuing
+`EscapeAction`, regardless of whether the monster actually stole any gold. Rust now keys the
+combat mugged flag off the escaping monster type for Looter/Mugger rather than the stolen-gold
+amount. Gremlin Thief escape remains separate and does not mark the room mugged in Java.
+
 ### Slime Split Interrupt
 
 Java large slimes and Slime Boss run their split interrupt from `damage()` after `super.damage`.
@@ -142,6 +149,8 @@ jumping to the front.
 - `red_slaver_roll_logic_matches_java_private_flags_from_move_history`
 - `red_slaver_a17_scrape_cannot_repeat_immediately_like_java`
 - `red_slaver_take_turn_actions_preserve_java_order_and_amounts`
+- `looter_escape_marks_room_mugged_even_without_stolen_gold_like_java`
+- `gremlin_thief_escape_does_not_mark_room_mugged_like_java`
 - `killing_large_slime_does_not_queue_split_like_java_damage_override`
 - `large_slime_split_sets_intent_immediately_but_keeps_existing_multi_hit_queue`
 - Existing Guardian and Lagavulin source-parity tests

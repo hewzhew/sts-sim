@@ -337,7 +337,11 @@ pub fn handle_suicide(target: usize, state: &mut CombatState) {
 pub fn handle_escape(target: usize, state: &mut CombatState) {
     if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
         m.is_escaped = true;
-        if m.thief.stolen_gold > 0 {
+        if matches!(
+            crate::content::monsters::EnemyId::from_id(m.monster_type),
+            Some(crate::content::monsters::EnemyId::Looter)
+                | Some(crate::content::monsters::EnemyId::Mugger)
+        ) {
             state.runtime.combat_mugged = true;
         }
     }
@@ -1014,7 +1018,7 @@ pub fn handle_update_relic_used_up(
 
 #[cfg(test)]
 mod tests {
-    use super::handle_roll_monster_move;
+    use super::{handle_escape, handle_roll_monster_move};
     use crate::content::monsters::EnemyId;
 
     #[test]
@@ -1044,6 +1048,40 @@ mod tests {
                 .copied()
                 .collect::<Vec<_>>(),
             vec![3]
+        );
+    }
+
+    #[test]
+    fn looter_escape_marks_room_mugged_even_without_stolen_gold_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut looter = crate::test_support::test_monster(EnemyId::Looter);
+        looter.id = 7;
+        looter.thief.stolen_gold = 0;
+        state.entities.monsters = vec![looter];
+
+        handle_escape(7, &mut state);
+
+        assert!(state.entities.monsters[0].is_escaped);
+        assert!(
+            state.runtime.combat_mugged,
+            "Looter.java escape sets AbstractDungeon.getCurrRoom().mugged = true before EscapeAction, regardless of stolenGold"
+        );
+    }
+
+    #[test]
+    fn gremlin_thief_escape_does_not_mark_room_mugged_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut thief = crate::test_support::test_monster(EnemyId::GremlinThief);
+        thief.id = 7;
+        thief.thief.stolen_gold = 99;
+        state.entities.monsters = vec![thief];
+
+        handle_escape(7, &mut state);
+
+        assert!(state.entities.monsters[0].is_escaped);
+        assert!(
+            !state.runtime.combat_mugged,
+            "GremlinThief.java escape path does not set AbstractRoom.mugged"
         );
     }
 }

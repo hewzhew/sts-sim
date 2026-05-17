@@ -99,7 +99,8 @@ Mugger is one of the rare cases where UI/dialogue code consumes gameplay RNG. Ja
 branch.
 
 Rust already burns those `aiRng` calls and keeps the stolen-gold reward path on death. The escape
-path marks the combat as mugged when stolen gold exists.
+path marks the combat as mugged by Looter/Mugger monster identity, not by stolen-gold amount,
+because Java sets `AbstractRoom.mugged = true` even if the player had no gold left to steal.
 
 ### Taskmaster
 
