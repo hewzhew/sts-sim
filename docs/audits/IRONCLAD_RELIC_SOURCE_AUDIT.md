@@ -3948,6 +3948,37 @@ Rust result:
 - Kept the Java-backed `RelicId::BlackBlood` and `RelicId::BurningBlood`
   implementations.
 
+### Dodecahedron
+
+Status: `wrong-fixed`
+
+Java source:
+- `D:/rust/cardcrawl/relics/deprecated/DEPRECATEDDodecahedron.java`
+
+Rust source:
+- `src/content/relics/dodecahedron.rs`
+- `src/content/relics/hooks.rs`
+- `src/content/relics/mod.rs`
+
+Java evidence:
+- The only Java class for ID `"Dodecahedron"` is
+  `DEPRECATEDDodecahedron`, under `relics/deprecated`.
+- `atBattleStart`, `onVictory`, `onPlayerHeal`, and `onAttacked` only control
+  relic pulse UI.
+- `atTurnStart` queues a deferred action; when it updates, if
+  `currentHealth >= maxHealth`, it queues `GainEnergyAction(1)`.
+
+Rust result:
+- Marked Dodecahedron as `Deprecated`, keeping it out of normal relic pools
+  while preserving the Java-backed ID.
+- Removed the incorrect battle-start energy hook.
+- Registered the turn-start hook and emits one bottom-queued
+  `GainEnergy { amount: 1 }` only when player HP is at least max HP.
+- UI-only pulse/flash/above-creature actions are intentionally not modeled.
+
+Coverage:
+- `deprecated_dodecahedron_triggers_energy_at_turn_start_only_like_java_source`
+
 ### Discerning Monocle
 
 Status: `wrong-fixed`
@@ -4993,3 +5024,4 @@ class-specific queue.
 | 142 | `SymbioticVirus.java` | `symbiotic_virus.rs` / pre-battle Dark | `exact` |
 | 143 | `RunicCapacitor.java` | `runic_capacitor.rs` / first-turn orb slots | `wrong-fixed` |
 | 144 | `Inserter.java` | `inserter.rs` / every-second-turn orb slot | `wrong-fixed` |
+| 145 | `deprecated/DEPRECATEDDodecahedron.java` | `dodecahedron.rs` / deprecated turn-start energy | `wrong-fixed` |

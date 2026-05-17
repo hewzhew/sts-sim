@@ -137,9 +137,6 @@ pub fn at_battle_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 crate::content::relics::clockwork_souvenir::ClockworkSouvenir::at_battle_start(),
             ),
             RelicId::CultistMask => {}
-            RelicId::Dodecahedron => actions.extend(
-                crate::content::relics::dodecahedron::Dodecahedron::at_battle_start(&*state),
-            ),
             RelicId::FossilizedHelix => actions.extend(
                 crate::content::relics::fossilized_helix::FossilizedHelix::at_battle_start(),
             ),
@@ -531,6 +528,8 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
+            RelicId::Dodecahedron => actions
+                .extend(crate::content::relics::dodecahedron::Dodecahedron::at_turn_start(&*state)),
             RelicId::EmotionChip => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::emotion_chip::at_turn_start(

@@ -470,8 +470,8 @@ pub fn get_relic_tier(id: RelicId) -> RelicTier {
         | GremlinMask | MarkOfTheBloom | MutagenicStrength | Necronomicon | NeowsLament
         | NilrysCodex | NlothsGift | NlothsMask | OddMushroom | RedCirclet | RedMask
         | SpiritPoop | SsserpentHead | WarpedTongs => RelicTier::Special,
-        // Fallback
-        _ => RelicTier::Special,
+        // Deprecated Java relics are source-backed but not reachable through normal pools.
+        Dodecahedron => RelicTier::Deprecated,
     }
 }
 
@@ -902,7 +902,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::FrozenEgg => {}
         RelicId::FrozenEye => {}
-        RelicId::Dodecahedron => sub.at_battle_start = true,
+        RelicId::Dodecahedron => sub.at_turn_start = true,
         RelicId::FossilizedHelix => sub.at_battle_start = true,
         RelicId::Girya => sub.at_battle_start = true,
         RelicId::GremlinHorn => sub.on_monster_death = true,

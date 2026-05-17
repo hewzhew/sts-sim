@@ -3081,6 +3081,44 @@ fn shared_shop_special_relic_gap_batch_metadata_matches_java_sources() {
 }
 
 #[test]
+fn deprecated_dodecahedron_triggers_energy_at_turn_start_only_like_java_source() {
+    assert_eq!(get_relic_tier(RelicId::Dodecahedron), RelicTier::Deprecated);
+
+    let sub = get_relic_subscriptions(RelicId::Dodecahedron);
+    assert!(
+        !sub.at_battle_start,
+        "Java DEPRECATEDDodecahedron.atBattleStart is UI pulse only"
+    );
+    assert!(sub.at_turn_start);
+
+    let mut full_hp = crate::test_support::blank_test_combat();
+    full_hp.entities.player.max_hp = 80;
+    full_hp.entities.player.current_hp = 80;
+    full_hp
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Dodecahedron));
+
+    assert!(hooks::at_battle_start(&mut full_hp).is_empty());
+    let actions = hooks::at_turn_start(&mut full_hp);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainEnergy { amount: 1 }
+    ));
+
+    let mut damaged = crate::test_support::blank_test_combat();
+    damaged.entities.player.max_hp = 80;
+    damaged.entities.player.current_hp = 79;
+    damaged
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::Dodecahedron));
+    assert!(hooks::at_turn_start(&mut damaged).is_empty());
+}
+
+#[test]
 fn abacus_grants_six_block_on_shuffle() {
     let mut state = crate::test_support::blank_test_combat();
     state
