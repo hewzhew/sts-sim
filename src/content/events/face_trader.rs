@@ -54,12 +54,12 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     {
                         damage = (damage - 1).max(0);
                     }
-                    run_state.change_hp_with_source(
-                        -damage,
-                        DomainEventSource::Event(EventId::FaceTrader),
-                    );
                     run_state.change_gold_with_source(
                         gold_reward,
+                        DomainEventSource::Event(EventId::FaceTrader),
+                    );
+                    run_state.change_hp_with_source(
+                        -damage,
                         DomainEventSource::Event(EventId::FaceTrader),
                     );
                     event_state.current_screen = 2;
@@ -144,6 +144,22 @@ mod tests {
         assert_eq!(run_state.current_hp, 12);
         assert_eq!(run_state.gold, 75);
         let events = run_state.take_emitted_events();
+        assert!(matches!(
+            events.as_slice(),
+            [
+                DomainEvent::GoldChanged {
+                    delta: 75,
+                    new_total: 75,
+                    source: DomainEventSource::Event(EventId::FaceTrader),
+                },
+                DomainEvent::HpChanged {
+                    delta: -8,
+                    current_hp: 12,
+                    max_hp: 80,
+                    source: DomainEventSource::Event(EventId::FaceTrader),
+                },
+            ]
+        ));
         assert!(events.iter().any(|event| matches!(
             event,
             DomainEvent::HpChanged {

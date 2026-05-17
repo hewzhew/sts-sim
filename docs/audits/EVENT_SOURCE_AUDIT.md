@@ -303,6 +303,8 @@ Java `events/shrines/FaceTrader.java` has two relevant resource boundaries:
 
 Fixes:
 
+- Touch now emits gold before HP loss, matching Java's `gainGold` then
+  `damage` execution order.
 - Touch damage now emits `HpChanged` with `Event(FaceTrader)` source and
   preserves the Java `Tungsten Rod` one-point reduction path.
 - Trade now routes the selected face relic or Circlet through
