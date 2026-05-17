@@ -838,6 +838,26 @@ Tests:
 - `leave_does_not_damage_or_upgrade`
 - `disabled_enter_light_does_not_apply_damage_when_no_cards_can_upgrade`
 
+### Scrap Ooze null-owner damage
+
+Java `events/exordium/ScrapOoze.java` applies reach-in damage through:
+
+```text
+player.damage(new DamageInfo(null, dmg))
+```
+
+That is DEFAULT damage with no owner. It does not get the player-owned Torii
+`onAttacked` reduction, but Tungsten Rod still applies at the HP-loss hook.
+
+Fixes:
+
+- Scrap Ooze now uses the shared event DEFAULT-damage helper with
+  `EventDamageOwner::None` instead of a local Tungsten-only branch.
+
+Tests:
+
+- `reach_in_default_null_damage_ignores_torii_but_applies_tungsten`
+
 ### Nest gold and Ritual Dagger branch
 
 Java `events/city/Nest.java` has two resource branches after the intro:
@@ -1317,4 +1337,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `911 passed`.
+- Current result after this pass: `912 passed`.

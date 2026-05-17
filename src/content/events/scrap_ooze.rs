@@ -1,4 +1,3 @@
-use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
@@ -61,17 +60,12 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                         decode_state(event_state.internal_state)
                     };
 
-                    // Take damage (DEFAULT type — Tungsten Rod reduces by 1)
-                    let mut actual_dmg = dmg;
-                    if run_state
-                        .relics
-                        .iter()
-                        .any(|r| r.id == RelicId::TungstenRod)
-                    {
-                        actual_dmg = (actual_dmg - 1).max(0);
-                    }
-                    run_state.change_hp_with_source(
-                        -actual_dmg,
+                    // Java uses DamageInfo(null, dmg): no block, no Torii owner hook,
+                    // but Tungsten Rod still applies on HP loss.
+                    super::apply_player_default_damage(
+                        run_state,
+                        dmg,
+                        super::EventDamageOwner::None,
                         DomainEventSource::Event(EventId::ScrapOoze),
                     );
 
@@ -108,4 +102,42 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    #[test]
+    fn reach_in_default_null_damage_ignores_torii_but_applies_tungsten() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.current_hp = 30;
+        run_state.max_hp = 80;
+        run_state.relics.push(RelicState::new(RelicId::Torii));
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        run_state.event_state = Some(EventState::new(EventId::ScrapOoze));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(
+            run_state.current_hp, 28,
+            "Java DamageInfo(null, 3) skips Torii but Tungsten reduces HP loss by 1"
+        );
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -2,
+                current_hp: 28,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::ScrapOoze),
+            }
+        )));
+    }
 }
