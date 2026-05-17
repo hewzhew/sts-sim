@@ -432,8 +432,9 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 _ => {
                     // Punch: HP loss
-                    run_state.change_hp_with_source(
-                        -hp_loss(asc),
+                    super::apply_player_hp_loss_damage(
+                        run_state,
+                        hp_loss(asc),
                         DomainEventSource::Event(EventId::Designer),
                     );
                     event_state.current_screen = 2;
@@ -604,6 +605,28 @@ mod tests {
             DomainEvent::HpChanged {
                 delta: -3,
                 current_hp: 7,
+                source: DomainEventSource::Event(EventId::Designer),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn designer_punch_hp_loss_applies_tungsten_rod() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.current_hp = 10;
+        rs.relics.push(RelicState::new(RelicId::TungstenRod));
+        rs.event_state = Some(designer_state(1, 0b00));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 3);
+
+        assert_eq!(rs.current_hp, 8);
+        assert!(rs.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -2,
+                current_hp: 8,
                 source: DomainEventSource::Event(EventId::Designer),
                 ..
             }

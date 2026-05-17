@@ -89,8 +89,8 @@ Java `events/shrines/Designer.java` has several non-obvious boundaries:
   one "reasonable" predicate.
 - `Adjust` random upgrades and `Full Service` follow-up upgrades use
   `Collections.shuffle(upgradableCards, new Random(miscRng.randomLong()))`.
-- `Punch` applies HP_LOSS damage; Rust records this through a Designer-sourced
-  HP domain event instead of directly mutating `current_hp`.
+- `Punch` applies `DamageInfo(null, hpLoss, HP_LOSS)`; it bypasses block but
+  still reaches player `onLoseHpLast` relic hooks such as `Tungsten Rod`.
 
 Fixes:
 
@@ -102,7 +102,8 @@ Fixes:
   Designer-style `getGroupWithoutBottledCards(getPurgeableCards())` flows.
 - Designer random upgrades now call `upgrade_card_with_source(...,
   Event(Designer))` instead of mutating `upgrades` directly.
-- Designer Punch now calls `change_hp_with_source(..., Event(Designer))`.
+- Designer Punch now uses the shared Java HP_LOSS helper with
+  `Event(Designer)` source instead of directly mutating HP.
 
 Tests:
 
@@ -110,6 +111,7 @@ Tests:
 - `designer_cleanup_remove_selection_excludes_bottled_and_unpurgeable_cards`
 - `designer_random_upgrade_uses_can_upgrade_and_domain_event_source`
 - `designer_punch_emits_hp_loss_source`
+- `designer_punch_hp_loss_applies_tungsten_rod`
 - `designer_full_service_followup_upgrade_uses_domain_event_source`
 - `designer_run_pending_choice_rejects_invalid_direct_deck_input`
 
@@ -1169,4 +1171,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `898 passed`.
+- Current result after this pass: `899 passed`.
