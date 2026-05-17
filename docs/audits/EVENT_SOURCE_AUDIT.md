@@ -469,8 +469,9 @@ AbstractDungeon.player.damage(new DamageInfo(AbstractDungeon.player, damage))
 ```
 
 That is normal player damage, not a direct HP assignment. In practice, the
-out-of-combat simulator currently needs at least the `onLoseHpLast` portion
-that affects HP loss such as `Tungsten Rod`.
+out-of-combat simulator currently needs the same normal-damage relic hook shape:
+player-owned reductions such as `Torii` when applicable, then `onLoseHpLast`
+such as `Tungsten Rod`.
 
 The attack option is gated by `CardHelper.hasCardWithXDamage(10)`. The helper
 ignores its parameter name in practice and checks `c.type == ATTACK` plus the
@@ -484,8 +485,12 @@ Fixes:
   `Event(GoldenWing)` source.
 - The same path now applies the Java `Tungsten Rod` one-point reduction before
   opening the purge selection.
+- The remove-path damage now uses the shared player-owned DEFAULT damage helper
+  instead of a local Tungsten-only branch.
 - Golden Wing's attack option now uses upgraded master-deck attack damage,
   matching Java's card instance `baseDamage` gate.
+- Direct calls to the disabled attack option now stay inert, matching Java's
+  `if (!canAttack) break` guard instead of advancing to the leave screen.
 
 Tests:
 
@@ -493,6 +498,7 @@ Tests:
 - `remove_path_damage_respects_tungsten_rod_like_java_player_damage`
 - `attack_option_uses_upgraded_master_deck_base_damage_like_java`
 - `attack_option_does_not_count_non_attack_base_damage`
+- `disabled_attack_option_does_not_advance_or_grant_gold`
 
 ### World of Goop constructor gold loss and gather order
 
@@ -1376,4 +1382,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `916 passed`.
+- Current result after this pass: `917 passed`.

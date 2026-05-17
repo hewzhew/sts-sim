@@ -56,17 +56,10 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Remove card: take damage, then purge
-                    let damage = if run_state
-                        .relics
-                        .iter()
-                        .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
-                    {
-                        (DAMAGE - 1).max(0)
-                    } else {
-                        DAMAGE
-                    };
-                    run_state.change_hp_with_source(
-                        -damage,
+                    super::apply_player_default_damage(
+                        run_state,
+                        DAMAGE,
+                        super::EventDamageOwner::Player,
                         DomainEventSource::Event(EventId::GoldenWing),
                     );
                     event_state.current_screen = 1;
@@ -87,8 +80,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             gold,
                             DomainEventSource::Event(EventId::GoldenWing),
                         );
+                        event_state.current_screen = 1;
                     }
-                    event_state.current_screen = 1;
                 }
                 _ => {
                     // Leave
@@ -194,5 +187,20 @@ mod tests {
         let choices = super::get_choices(&run_state, run_state.event_state.as_ref().unwrap());
 
         assert!(choices[1].disabled);
+    }
+
+    #[test]
+    fn disabled_attack_option_does_not_advance_or_grant_gold() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck.clear();
+        let starting_gold = run_state.gold;
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.gold, starting_gold);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
     }
 }
