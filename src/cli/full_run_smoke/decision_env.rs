@@ -161,6 +161,7 @@ fn action_kind(action: &TraceClientInput) -> &'static str {
         | TraceClientInput::SubmitGridSelect { .. }
         | TraceClientInput::SubmitDeckSelect { .. } => "selection",
         TraceClientInput::ClaimReward { .. } => "claim_reward",
+        TraceClientInput::OpenChest => "open_chest",
         TraceClientInput::SelectCard { .. } => "select_card",
         TraceClientInput::BuyCard { .. } => "buy_card",
         TraceClientInput::BuyRelic { .. } => "buy_relic",

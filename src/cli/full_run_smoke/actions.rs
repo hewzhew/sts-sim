@@ -18,6 +18,7 @@ pub fn legal_actions(
             .map(|(idx, _)| ClientInput::EventChoice(idx))
             .collect(),
         EngineState::RewardScreen(reward_state) => legal_reward_actions(run_state, reward_state),
+        EngineState::TreasureRoom(_) => vec![ClientInput::OpenChest, ClientInput::Proceed],
         EngineState::BossRelicSelect(state) => {
             let mut actions = (0..state.relics.len())
                 .map(ClientInput::SubmitRelicChoice)
@@ -49,6 +50,7 @@ fn extend_run_level_potion_actions(
         EngineState::MapNavigation
             | EngineState::EventRoom
             | EngineState::RewardScreen(_)
+            | EngineState::TreasureRoom(_)
             | EngineState::Campfire
             | EngineState::Shop(_)
             | EngineState::RunPendingChoice(_)
@@ -304,6 +306,7 @@ pub fn action_key_for_input(input: &ClientInput, combat: Option<&CombatState>) -
         }
         ClientInput::SubmitDeckSelect(indices) => format!("deck/select_indices/{indices:?}"),
         ClientInput::ClaimReward(index) => format!("reward/claim/{index}"),
+        ClientInput::OpenChest => "treasure/open_chest".to_string(),
         ClientInput::SelectCard(index) => format!("reward/select_card/{index}"),
         ClientInput::BuyCard(index) => format!("shop/buy_card/{index}"),
         ClientInput::BuyRelic(index) => format!("shop/buy_relic/{index}"),

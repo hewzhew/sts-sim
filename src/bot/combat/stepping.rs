@@ -181,6 +181,7 @@ fn stable_boundary_kind(
             Some(StableBoundaryKind::PostCombat)
         }
         EngineState::RewardScreen(_)
+        | EngineState::TreasureRoom(_)
         | EngineState::Campfire
         | EngineState::Shop(_)
         | EngineState::MapNavigation

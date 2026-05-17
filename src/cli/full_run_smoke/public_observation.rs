@@ -10,7 +10,7 @@ use super::{
 };
 
 pub const FULL_RUN_PUBLIC_OBSERVATION_SCHEMA_VERSION: &str = "full_run_public_observation_v1";
-pub const FULL_RUN_PUBLIC_ACTION_SCHEMA_VERSION: &str = "full_run_public_action_candidate_v1";
+pub const FULL_RUN_PUBLIC_ACTION_SCHEMA_VERSION: &str = "full_run_public_action_candidate_v2";
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct FullRunPublicObservationV1 {

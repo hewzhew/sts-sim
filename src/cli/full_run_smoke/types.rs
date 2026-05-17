@@ -500,6 +500,7 @@ pub enum TraceClientInput {
     ClaimReward {
         index: usize,
     },
+    OpenChest,
     SelectCard {
         index: usize,
     },

@@ -8,7 +8,7 @@ use super::pending_choice::pending_choice_key;
 use super::postcombat::{
     stable_boss_relic_key, stable_event_combat_key, stable_meta_key, stable_postcombat_player_key,
     stable_postcombat_runtime_key, stable_reward_key, stable_run_pending_choice_key,
-    stable_run_result_signature, stable_shop_key,
+    stable_run_result_signature, stable_shop_key, stable_treasure_chest_key,
 };
 use super::types::{
     StableCombatPlayerKey, StableEngineKey, StableOutcomeKey, StableOutcomePayload, StableTurnKey,
@@ -93,6 +93,9 @@ fn stable_combat_engine_key(engine: &EngineState, combat: &CombatState) -> Stabl
 fn stable_postcombat_engine_key(engine: &EngineState, combat: &CombatState) -> StableEngineKey {
     match engine {
         EngineState::RewardScreen(reward) => StableEngineKey::Reward(stable_reward_key(reward)),
+        EngineState::TreasureRoom(chest) => {
+            StableEngineKey::TreasureRoom(stable_treasure_chest_key(chest))
+        }
         EngineState::Campfire => StableEngineKey::Campfire,
         EngineState::Shop(shop) => StableEngineKey::Shop(stable_shop_key(shop)),
         EngineState::MapNavigation => StableEngineKey::MapNavigation,

@@ -1,4 +1,6 @@
-use crate::rewards::state::{BossRelicChoiceState, RewardCard, RewardItem, RewardState};
+use crate::rewards::state::{
+    BossRelicChoiceState, RewardCard, RewardItem, RewardState, TreasureChestState,
+};
 use crate::runtime::combat::{CombatMeta, CombatState, MetaChange, PlayerEntity};
 use crate::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 use crate::state::core::{EventCombatState, PostCombatReturn, RunPendingChoiceState, RunResult};
@@ -8,7 +10,7 @@ use super::types::{
     StableBossRelicKey, StableEventCombatKey, StableMetaChangeKey, StableMetaKey,
     StablePostCombatReturnKey, StablePostcombatPlayerKey, StablePostcombatRuntimeKey,
     StableRewardCardKey, StableRewardItemKey, StableRewardKey, StableRunPendingChoiceKey,
-    StableRunPendingReturnKey, StableShopKey, StableShopRowKey,
+    StableRunPendingReturnKey, StableShopKey, StableShopRowKey, StableTreasureChestKey,
 };
 
 pub(super) fn stable_postcombat_player_key(player: &PlayerEntity) -> StablePostcombatPlayerKey {
@@ -103,6 +105,14 @@ pub(super) fn stable_shop_key(state: &ShopState) -> StableShopKey {
     }
 }
 
+pub(super) fn stable_treasure_chest_key(state: &TreasureChestState) -> StableTreasureChestKey {
+    StableTreasureChestKey {
+        size: format!("{:?}", state.size),
+        base_relic_tier: format!("{:?}", state.base_relic_tier),
+        gold_reward: state.gold_reward_base_amount,
+    }
+}
+
 pub(super) fn stable_run_pending_choice_key(
     state: &RunPendingChoiceState,
 ) -> StableRunPendingChoiceKey {
@@ -118,6 +128,9 @@ pub(super) fn stable_run_pending_return_key(state: &EngineState) -> StableRunPen
     match state {
         EngineState::RewardScreen(reward) => {
             StableRunPendingReturnKey::Reward(stable_reward_key(reward))
+        }
+        EngineState::TreasureRoom(chest) => {
+            StableRunPendingReturnKey::TreasureRoom(stable_treasure_chest_key(chest))
         }
         EngineState::Campfire => StableRunPendingReturnKey::Campfire,
         EngineState::Shop(shop) => StableRunPendingReturnKey::Shop(stable_shop_key(shop)),

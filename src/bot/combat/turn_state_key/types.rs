@@ -16,6 +16,7 @@ pub(in crate::bot::combat) enum StableEngineKey {
     CombatProcessing,
     PendingChoice(StablePendingChoiceKey),
     Reward(StableRewardKey),
+    TreasureRoom(StableTreasureChestKey),
     Campfire,
     Shop(StableShopKey),
     MapNavigation,
@@ -166,6 +167,7 @@ pub(in crate::bot::combat) struct StableRunPendingChoiceKey {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(in crate::bot::combat) enum StableRunPendingReturnKey {
     Reward(StableRewardKey),
+    TreasureRoom(StableTreasureChestKey),
     Campfire,
     Shop(StableShopKey),
     MapNavigation,
@@ -184,6 +186,13 @@ pub(in crate::bot::combat) struct StableEventCombatKey {
     pub elite_trigger: bool,
     pub post_combat_return: StablePostCombatReturnKey,
     pub rewards: StableRewardKey,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(in crate::bot::combat) struct StableTreasureChestKey {
+    pub size: String,
+    pub base_relic_tier: String,
+    pub gold_reward: Option<i32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -302,6 +311,9 @@ impl StableEngineKey {
                 format!("pending_choice:{}", value.diagnostic_string())
             }
             StableEngineKey::Reward(value) => format!("reward:{}", value.diagnostic_string()),
+            StableEngineKey::TreasureRoom(value) => {
+                format!("treasure:{}", value.diagnostic_string())
+            }
             StableEngineKey::Campfire => "campfire".to_string(),
             StableEngineKey::Shop(value) => format!("shop:{}", value.diagnostic_string()),
             StableEngineKey::MapNavigation => "map_navigation".to_string(),
@@ -500,6 +512,9 @@ impl StableRunPendingReturnKey {
             StableRunPendingReturnKey::Reward(value) => {
                 format!("reward:{}", value.diagnostic_string())
             }
+            StableRunPendingReturnKey::TreasureRoom(value) => {
+                format!("treasure:{}", value.diagnostic_string())
+            }
             StableRunPendingReturnKey::Campfire => "campfire".to_string(),
             StableRunPendingReturnKey::Shop(value) => {
                 format!("shop:{}", value.diagnostic_string())
@@ -586,6 +601,19 @@ impl StablePendingChoiceKey {
             StablePendingChoiceKey::ChooseOne(cards) => format!("choose_one:{}", cards.join("|")),
             StablePendingChoiceKey::StanceChoice => "stance_choice".to_string(),
         }
+    }
+}
+
+impl StableTreasureChestKey {
+    fn diagnostic_string(&self) -> String {
+        format!(
+            "size{}:tier{}:gold{}",
+            self.size,
+            self.base_relic_tier,
+            self.gold_reward
+                .map(|amount| amount.to_string())
+                .unwrap_or_else(|| "_".to_string())
+        )
     }
 }
 

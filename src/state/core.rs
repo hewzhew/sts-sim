@@ -10,6 +10,7 @@ pub enum EngineState {
     CombatPlayerTurn,
     CombatProcessing,
     RewardScreen(crate::rewards::state::RewardState),
+    TreasureRoom(crate::rewards::state::TreasureChestState),
     Campfire,
     Shop(crate::shop::ShopState),
     MapNavigation,
@@ -222,7 +223,8 @@ pub enum ClientInput {
     SubmitGridSelect(Vec<u32>),   // Array of card UUIDs selected from grid (discard/draw)
     SubmitDeckSelect(Vec<usize>), // Array of absolute master_deck indices selected
     ClaimReward(usize),           // Index of the RewardItem to claim
-    SelectCard(usize),            // Pick card at index from pending_card_choice
+    OpenChest,
+    SelectCard(usize), // Pick card at index from pending_card_choice
     BuyCard(usize),
     BuyRelic(usize),
     BuyPotion(usize),

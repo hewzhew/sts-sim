@@ -143,6 +143,7 @@ fn describe_bot_decision(
         } => combat_state
             .as_ref()
             .and_then(|combat| display::describe_potion_use_choice(combat, *potion_index, *target)),
+        ClientInput::OpenChest => Some("Treasure: Open Chest".to_string()),
         ClientInput::SelectMapNode(x) => Some(display::describe_bot_map_choice(run_state, *x)),
         _ => None,
     }
@@ -725,6 +726,7 @@ fn main() {
                             println!("  [BOT] Reward #{}", idx);
                         }
                     }
+                    ClientInput::OpenChest => println!("  [BOT] Treasure: Open Chest"),
                     ClientInput::SubmitRelicChoice(idx) => println!("  [BOT] Boss Relic #{}", idx),
                     ClientInput::SelectMapNode(_) => {
                         if let Some(description) =

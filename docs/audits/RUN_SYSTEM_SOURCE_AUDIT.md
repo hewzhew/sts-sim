@@ -499,6 +499,15 @@ Rust result:
   hooks are `Cursed Key`, `Matryoshka`, and `Nloth's Mask`; boss chests pass
   `bossChest=true`, Cursed Key/Nloth's Mask do nothing in that case, and
   `BossChest.open(true)` explicitly skips Matryoshka.
+- `TreasureRoom` is `RoomPhase.COMPLETE` in Java and constructs/randomizes the
+  chest on room entry, but `AbstractChest.open(false)` runs only when the chest
+  is clicked. Rust now has an explicit `TreasureRoom` state: entering the room
+  consumes chest size/reward RNG, `OpenChest` consumes chest-open hooks and
+  non-daily gold jitter, and `Proceed` can skip the unopened chest.
+- `AbstractRoom.addSapphireKey(lastRelicReward)` creates a linked reward item:
+  Java `RewardItem.claimReward(RELIC)` cancels the linked Sapphire Key, and
+  `claimReward(SAPPHIRE_KEY)` cancels the linked relic. Rust reward handling now
+  removes the adjacent linked relic/key pair in the same way.
 
 Coverage:
 
@@ -509,6 +518,9 @@ Coverage:
 - `natural_combat_start_applies_ring_of_the_serpent_opening_hand_size`
 - `natural_defect_combat_start_has_java_orb_slots_before_cracked_core`
 - `natural_non_defect_prismatic_shard_combat_start_has_one_empty_orb_slot`
+- `linked_relic_claim_cancels_sapphire_key_reward_like_java`
+- `sapphire_key_claim_cancels_linked_relic_reward_like_java`
+- `treasure_room_chest_can_be_skipped_after_entry_like_java_complete_room`
 
 ## Reward Card Pool / Prismatic Shard Pass
 

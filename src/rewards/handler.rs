@@ -67,6 +67,7 @@ pub fn handle(
                                 .change_gold_with_source(amount, DomainEventSource::RewardScreen);
                         }
                         RewardItem::Relic { relic_id: id } => {
+                            remove_linked_sapphire_key_after_claiming_relic(reward_state, idx);
                             let return_state = EngineState::RewardScreen(reward_state.clone());
                             if let Some(next_state) = run_state.obtain_relic_with_source(
                                 id,
@@ -107,8 +108,9 @@ pub fn handle(
                         }
                         RewardItem::SapphireKey => {
                             // Java: ObtainKeyEffect(BLUE) — sets blue key
-                            // Also cancels the linked relic reward
+                            // Also cancels the linked relic reward.
                             run_state.keys[1] = true; // keys[1] = Blue/Sapphire
+                            remove_linked_relic_after_claiming_sapphire_key(reward_state, idx);
                         }
                     }
                 }
@@ -176,6 +178,34 @@ fn handle_card_choice(
         }
     }
     None
+}
+
+fn remove_linked_sapphire_key_after_claiming_relic(
+    reward_state: &mut crate::rewards::state::RewardState,
+    removed_relic_index: usize,
+) {
+    if matches!(
+        reward_state.items.get(removed_relic_index),
+        Some(RewardItem::SapphireKey)
+    ) {
+        reward_state.items.remove(removed_relic_index);
+    }
+}
+
+fn remove_linked_relic_after_claiming_sapphire_key(
+    reward_state: &mut crate::rewards::state::RewardState,
+    removed_key_index: usize,
+) {
+    if removed_key_index == 0 {
+        return;
+    }
+    let linked_relic_index = removed_key_index - 1;
+    if matches!(
+        reward_state.items.get(linked_relic_index),
+        Some(RewardItem::Relic { .. })
+    ) {
+        reward_state.items.remove(linked_relic_index);
+    }
 }
 
 #[cfg(test)]
@@ -323,5 +353,67 @@ mod tests {
             run_state.map.has_emerald_key,
             "legacy map-level key visibility mirrors the owned Emerald key after claiming it"
         );
+    }
+
+    #[test]
+    fn sapphire_key_claim_cancels_linked_relic_reward_like_java() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.keys[1] = false;
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![
+            RewardItem::Gold { amount: 25 },
+            RewardItem::Relic {
+                relic_id: RelicId::Mango,
+            },
+            RewardItem::SapphireKey,
+        ];
+
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(2)),
+        );
+
+        assert!(run_state.keys[1]);
+        assert_eq!(
+            reward_state.items,
+            vec![RewardItem::Gold { amount: 25 }],
+            "Java RewardItem.claimReward(SAPPHIRE_KEY) marks its relicLink ignored/done"
+        );
+        assert!(!run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Mango));
+    }
+
+    #[test]
+    fn linked_relic_claim_cancels_sapphire_key_reward_like_java() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.keys[1] = false;
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![
+            RewardItem::Gold { amount: 25 },
+            RewardItem::Relic {
+                relic_id: RelicId::Mango,
+            },
+            RewardItem::SapphireKey,
+        ];
+
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(1)),
+        );
+
+        assert!(!run_state.keys[1]);
+        assert_eq!(
+            reward_state.items,
+            vec![RewardItem::Gold { amount: 25 }],
+            "Java RewardItem.claimReward(RELIC) marks its sapphire key relicLink ignored/done"
+        );
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Mango));
     }
 }

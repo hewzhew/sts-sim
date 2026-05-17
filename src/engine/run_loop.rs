@@ -1,5 +1,5 @@
 use crate::map::node::RoomType;
-use crate::rewards::state::RewardScreenContext;
+use crate::rewards::state::{RewardScreenContext, TreasureChestSize, TreasureChestState};
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
@@ -8,21 +8,7 @@ use crate::state::selection::{
     SelectionTargetRef,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TreasureChestSize {
-    Small,
-    Medium,
-    Large,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct TreasureChestSpec {
-    size: TreasureChestSize,
-    base_relic_tier: crate::content::relics::RelicTier,
-    gold_reward: Option<i32>,
-}
-
-fn roll_treasure_chest_spec(run_state: &mut RunState) -> TreasureChestSpec {
+fn roll_treasure_chest_spec(run_state: &mut RunState) -> TreasureChestState {
     let roll = run_state.rng_pool.treasure_rng.random_range(0, 99);
     let size = if run_state.act_num >= 4 {
         TreasureChestSize::Medium
@@ -48,31 +34,23 @@ fn roll_treasure_chest_spec(run_state: &mut RunState) -> TreasureChestSpec {
     } else {
         crate::content::relics::RelicTier::Rare
     };
-    let gold_reward = if reward_roll < gold_chance {
-        if run_state.is_daily_run {
-            Some(gold_amount)
-        } else {
-            Some(
-                run_state
-                    .rng_pool
-                    .treasure_rng
-                    .random_f32_min_max(gold_amount as f32 * 0.9, gold_amount as f32 * 1.1)
-                    .round() as i32,
-            )
-        }
+    let gold_reward_base_amount = if reward_roll < gold_chance {
+        Some(gold_amount)
     } else {
         None
     };
 
-    TreasureChestSpec {
+    TreasureChestState {
         size,
         base_relic_tier,
-        gold_reward,
+        gold_reward_base_amount,
     }
 }
 
-fn enter_treasure_room(run_state: &mut RunState) -> crate::rewards::state::RewardState {
-    let chest = roll_treasure_chest_spec(run_state);
+fn open_treasure_chest(
+    run_state: &mut RunState,
+    chest: TreasureChestState,
+) -> crate::rewards::state::RewardState {
     let mut reward =
         crate::rewards::state::RewardState::with_context(RewardScreenContext::TreasureRoom);
 
@@ -121,7 +99,16 @@ fn enter_treasure_room(run_state: &mut RunState) -> crate::rewards::state::Rewar
         });
     }
 
-    if let Some(amount) = chest.gold_reward {
+    if let Some(base_amount) = chest.gold_reward_base_amount {
+        let amount = if run_state.is_daily_run {
+            base_amount
+        } else {
+            run_state
+                .rng_pool
+                .treasure_rng
+                .random_f32_min_max(base_amount as f32 * 0.9, base_amount as f32 * 1.1)
+                .round() as i32
+        };
         crate::rewards::generator::add_gold_reward_like_java(&mut reward.items, amount);
     }
 
@@ -306,6 +293,7 @@ fn is_run_level_potion_context(engine_state: &EngineState) -> bool {
         EngineState::MapNavigation
             | EngineState::EventRoom
             | EngineState::RewardScreen(_)
+            | EngineState::TreasureRoom(_)
             | EngineState::Campfire
             | EngineState::Shop(_)
             | EngineState::RunPendingChoice(_)
@@ -921,8 +909,8 @@ pub fn tick_run(
                                 *engine_state = EngineState::EventRoom;
                             }
                             RoomType::TreasureRoom => {
-                                let reward = enter_treasure_room(run_state);
-                                *engine_state = EngineState::RewardScreen(reward);
+                                *engine_state =
+                                    EngineState::TreasureRoom(roll_treasure_chest_spec(run_state));
                             }
                             RoomType::TrueVictoryRoom => {
                                 // Act 4 ending — true victory after defeating the Heart
@@ -932,6 +920,22 @@ pub fn tick_run(
                         }
                     }
                 }
+            }
+            if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return false;
+            }
+            true
+        }
+        EngineState::TreasureRoom(chest) => {
+            match input {
+                Some(ClientInput::OpenChest) => {
+                    let reward = open_treasure_chest(run_state, *chest);
+                    *engine_state = EngineState::RewardScreen(reward);
+                }
+                Some(ClientInput::Proceed) | Some(ClientInput::Cancel) => {
+                    *engine_state = EngineState::MapNavigation;
+                }
+                _ => {}
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
                 return false;
@@ -1466,6 +1470,13 @@ mod tests {
             &mut combat_state,
             Some(ClientInput::SelectMapNode(0)),
         ));
+        assert!(matches!(engine_state, EngineState::TreasureRoom(_)));
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::OpenChest),
+        ));
 
         let EngineState::RewardScreen(rewards) = engine_state else {
             panic!("treasure room should open a reward screen");
@@ -1521,6 +1532,13 @@ mod tests {
             &mut combat_state,
             Some(ClientInput::SelectMapNode(0)),
         ));
+        assert!(matches!(engine_state, EngineState::TreasureRoom(_)));
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::OpenChest),
+        ));
 
         let EngineState::RewardScreen(mut rewards) = engine_state else {
             panic!("treasure room should open a reward screen");
@@ -1541,6 +1559,62 @@ mod tests {
             run_state.gold,
             gold_before + amount,
             "Java RewardItem.applyGoldBonus skips Golden Idol inside TreasureRoom"
+        );
+    }
+
+    #[test]
+    fn treasure_room_chest_can_be_skipped_after_entry_like_java_complete_room() {
+        fn small_gold_common_chest_seed() -> u64 {
+            (1..10_000)
+                .find(|seed| {
+                    let mut rng = StsRng::new(*seed);
+                    rng.random_range(0, 99) < 50 && rng.random_range(0, 99) < 50
+                })
+                .expect("seed for small chest with gold and common relic")
+        }
+
+        let mut run_state = run_state_with_first_room(RoomType::TreasureRoom);
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::CursedKey));
+        run_state.rng_pool.treasure_rng = StsRng::new(small_gold_common_chest_seed());
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+        let deck_before = run_state.master_deck.len();
+        let relic_pool_before = run_state.common_relic_pool.clone();
+
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+        assert!(matches!(engine_state, EngineState::TreasureRoom(_)));
+        assert_eq!(
+            run_state.rng_pool.treasure_rng.counter, 2,
+            "Java TreasureRoom.onPlayerEntry constructs/randomizes the chest before opening"
+        );
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::Proceed),
+        ));
+
+        assert!(matches!(engine_state, EngineState::MapNavigation));
+        assert_eq!(
+            run_state.master_deck.len(),
+            deck_before,
+            "Cursed Key only fires from AbstractChest.open(false), not from entering or skipping the room"
+        );
+        assert_eq!(
+            run_state.common_relic_pool, relic_pool_before,
+            "Skipping the chest must not consume the chest relic reward"
+        );
+        assert_eq!(
+            run_state.rng_pool.treasure_rng.counter, 2,
+            "Skipping avoids the non-daily chest gold jitter consumed inside AbstractChest.open"
         );
     }
 
@@ -1600,6 +1674,13 @@ mod tests {
             run_state.event_state.is_none(),
             "forced treasure must not continue into specific event generation"
         );
+        assert!(matches!(engine_state, EngineState::TreasureRoom(_)));
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::OpenChest),
+        ));
         assert!(matches!(engine_state, EngineState::RewardScreen(_)));
     }
 

@@ -343,6 +343,7 @@ pub fn client_input_from_trace_input(input: TraceClientInput) -> ClientInput {
         }
         TraceClientInput::SubmitDeckSelect { indices } => ClientInput::SubmitDeckSelect(indices),
         TraceClientInput::ClaimReward { index } => ClientInput::ClaimReward(index),
+        TraceClientInput::OpenChest => ClientInput::OpenChest,
         TraceClientInput::SelectCard { index } => ClientInput::SelectCard(index),
         TraceClientInput::BuyCard { index } => ClientInput::BuyCard(index),
         TraceClientInput::BuyRelic { index } => ClientInput::BuyRelic(index),
@@ -428,6 +429,7 @@ pub fn trace_input_from_client_input(input: &ClientInput) -> TraceClientInput {
             indices: indices.clone(),
         },
         ClientInput::ClaimReward(index) => TraceClientInput::ClaimReward { index: *index },
+        ClientInput::OpenChest => TraceClientInput::OpenChest,
         ClientInput::SelectCard(index) => TraceClientInput::SelectCard { index: *index },
         ClientInput::BuyCard(index) => TraceClientInput::BuyCard { index: *index },
         ClientInput::BuyRelic(index) => TraceClientInput::BuyRelic { index: *index },
@@ -465,6 +467,7 @@ pub fn engine_state_label(engine_state: &EngineState) -> &'static str {
         EngineState::CombatPlayerTurn => "combat_player_turn",
         EngineState::CombatProcessing => "combat_processing",
         EngineState::RewardScreen(_) => "reward_screen",
+        EngineState::TreasureRoom(_) => "treasure_room",
         EngineState::Campfire => "campfire",
         EngineState::Shop(_) => "shop",
         EngineState::MapNavigation => "map_navigation",
@@ -494,6 +497,7 @@ pub fn decision_type(engine_state: &EngineState) -> &'static str {
             "reward_card_choice"
         }
         EngineState::RewardScreen(_) => "reward",
+        EngineState::TreasureRoom(_) => "treasure",
         EngineState::Campfire => "campfire",
         EngineState::Shop(_) => "shop",
         EngineState::MapNavigation => "map",

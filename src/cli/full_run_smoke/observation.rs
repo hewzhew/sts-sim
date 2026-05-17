@@ -365,6 +365,7 @@ pub fn build_map_observation_if_relevant(
         | EngineState::PendingChoice(PendingChoice::StanceChoice)
         | EngineState::GameOver(_) => None,
         EngineState::RewardScreen(_)
+        | EngineState::TreasureRoom(_)
         | EngineState::Campfire
         | EngineState::Shop(_)
         | EngineState::MapNavigation

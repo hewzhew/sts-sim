@@ -1,5 +1,6 @@
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
+use crate::content::relics::RelicTier;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RewardCard {
@@ -59,6 +60,20 @@ impl BossRelicChoiceState {
     pub fn new(relics: Vec<RelicId>) -> Self {
         Self { relics }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TreasureChestSize {
+    Small,
+    Medium,
+    Large,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TreasureChestState {
+    pub size: TreasureChestSize,
+    pub base_relic_tier: RelicTier,
+    pub gold_reward_base_amount: Option<i32>,
 }
 
 impl RewardState {

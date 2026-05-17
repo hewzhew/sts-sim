@@ -61,6 +61,7 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
         }
         EngineState::CombatProcessing => StableFrontierScope::Unstable,
         EngineState::RewardScreen(_)
+        | EngineState::TreasureRoom(_)
         | EngineState::Campfire
         | EngineState::Shop(_)
         | EngineState::MapNavigation
