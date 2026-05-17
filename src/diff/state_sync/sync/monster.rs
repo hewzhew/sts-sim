@@ -63,6 +63,7 @@ pub fn sync_monsters_from_snapshots(
             darkling: Default::default(),
             nemesis: Default::default(),
             giant_head: Default::default(),
+            time_eater: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
         });

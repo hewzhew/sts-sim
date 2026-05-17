@@ -144,6 +144,10 @@ pub enum MonsterRuntimePatch {
         count: Option<i32>,
         protocol_seeded: Option<bool>,
     },
+    TimeEater {
+        used_haste: Option<bool>,
+        protocol_seeded: Option<bool>,
+    },
     GremlinWizard {
         current_charge: Option<u8>,
         protocol_seeded: Option<bool>,

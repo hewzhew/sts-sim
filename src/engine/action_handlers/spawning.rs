@@ -152,6 +152,7 @@ pub fn handle_spawn_monster(
         darkling: Default::default(),
         nemesis: Default::default(),
         giant_head: Default::default(),
+        time_eater: Default::default(),
         lagavulin: Default::default(),
         guardian: Default::default(),
     };
@@ -187,6 +188,9 @@ pub fn handle_spawn_monster(
     }
     if enemy_id == crate::content::monsters::EnemyId::GiantHead {
         crate::content::monsters::beyond::giant_head::initialize_runtime_state(&mut new_monster);
+    }
+    if enemy_id == crate::content::monsters::EnemyId::TimeEater {
+        crate::content::monsters::beyond::time_eater::initialize_runtime_state(&mut new_monster);
     }
     if enemy_id == crate::content::monsters::EnemyId::JawWorm {
         crate::content::monsters::exordium::jaw_worm::initialize_runtime_state(
@@ -1277,6 +1281,27 @@ fn handle_update_giant_head_state(
     }
 }
 
+fn handle_update_time_eater_state(
+    monster_id: usize,
+    used_haste: Option<bool>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = used_haste {
+            monster.time_eater.used_haste = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.time_eater.protocol_seeded = value;
+        }
+    }
+}
+
 fn handle_update_gremlin_wizard_state(
     monster_id: usize,
     current_charge: Option<u8>,
@@ -1616,6 +1641,10 @@ pub fn handle_update_monster_runtime(
             count,
             protocol_seeded,
         } => handle_update_giant_head_state(monster_id, count, protocol_seeded, state),
+        MonsterRuntimePatch::TimeEater {
+            used_haste,
+            protocol_seeded,
+        } => handle_update_time_eater_state(monster_id, used_haste, protocol_seeded, state),
         MonsterRuntimePatch::GremlinWizard {
             current_charge,
             protocol_seeded,

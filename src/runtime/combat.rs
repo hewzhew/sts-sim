@@ -954,6 +954,7 @@ pub struct MonsterEntity {
     pub darkling: DarklingRuntimeState,
     pub nemesis: NemesisRuntimeState,
     pub giant_head: GiantHeadRuntimeState,
+    pub time_eater: TimeEaterRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
 }
@@ -1357,6 +1358,12 @@ pub struct NemesisRuntimeState {
 pub struct GiantHeadRuntimeState {
     pub protocol_seeded: bool,
     pub count: i32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TimeEaterRuntimeState {
+    pub protocol_seeded: bool,
+    pub used_haste: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2251,6 +2258,7 @@ mod tests {
             darkling: DarklingRuntimeState::default(),
             nemesis: NemesisRuntimeState::default(),
             giant_head: GiantHeadRuntimeState::default(),
+            time_eater: TimeEaterRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2330,6 +2338,7 @@ mod tests {
             darkling: DarklingRuntimeState::default(),
             nemesis: NemesisRuntimeState::default(),
             giant_head: GiantHeadRuntimeState::default(),
+            time_eater: TimeEaterRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2406,6 +2415,7 @@ mod tests {
             darkling: DarklingRuntimeState::default(),
             nemesis: NemesisRuntimeState::default(),
             giant_head: GiantHeadRuntimeState::default(),
+            time_eater: TimeEaterRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };

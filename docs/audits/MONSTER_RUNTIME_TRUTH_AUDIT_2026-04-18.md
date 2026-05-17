@@ -48,6 +48,7 @@ Scope:
 | Reptomancer | `first_move`, `dagger_slots` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Nemesis | `first_move`, `scythe_cooldown` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Giant Head | `count` | Yes | Yes | Yes | `lastTwoMoves(GLARE/COUNT)` sequencing only | Good |
+| Time Eater | `used_haste` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 
 ## Notes
 
@@ -241,6 +242,19 @@ Scope:
 - `It Is Time` damage is computed from the Java private count after the roll-time decrement, not
   from move-history length.
 - Remaining history usage is limited to Java's explicit Glare/Count repeat rules.
+
+### Time Eater
+
+- `runtime_state.used_haste` is exported by `CommunicationMod`.
+- Rust state sync marks the Time Eater runtime slice as protocol-seeded and semantic roll logic
+  requires factory/protocol seeding before branch selection.
+- Java sets `usedHaste=true` inside `getMove()` when the half-HP Haste branch is selected. Rust
+  mirrors that roll-time mutation through `Action::UpdateMonsterRuntime`.
+- Java private `firstTurn` controls only dialogue in `takeTurn()` and is intentionally omitted.
+- Haste heal amount remains execution-time state, matching Java's queued
+  `HealAction(this.maxHealth / 2 - this.currentHealth)`.
+- Remaining history usage is limited to Java's explicit repeat rules around Reverberate, Head Slam,
+  and Ripple.
 
 ### The Guardian
 

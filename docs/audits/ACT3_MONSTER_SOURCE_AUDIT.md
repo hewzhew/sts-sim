@@ -139,9 +139,12 @@ Java private fields:
 - `firstTurn`
 
 `firstTurn` only controls dialogue and is omitted as non-mechanical. `usedHaste` is set during
-`getMove()` when Haste is selected. Rust reconstructs this from move history; because Time Eater has
-no Reactive-style reroll of its own intent, this matches the normal roll boundary. Haste heal amount
-is read at take-turn queue time, matching Java `HealAction(this.maxHealth / 2 - this.currentHealth)`.
+`getMove()` when Haste is selected. Rust now carries this as explicit `TimeEaterRuntimeState`,
+imports it from `monster.runtime_state.used_haste`, and updates it through
+`Action::UpdateMonsterRuntime` during roll resolution. `move_history` is used only for Java's
+explicit repeat checks around Reverberate, Head Slam, and Ripple, not to recover Haste usage.
+Haste heal amount is read at take-turn queue time, matching Java
+`HealAction(this.maxHealth / 2 - this.currentHealth)`.
 
 ### Donu / Deca
 

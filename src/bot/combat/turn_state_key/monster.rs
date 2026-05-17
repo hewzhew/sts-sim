@@ -10,7 +10,7 @@ use crate::runtime::combat::{
     NemesisRuntimeState, ReptomancerRuntimeState, SentryRuntimeState, ShelledParasiteRuntimeState,
     SlaverRedRuntimeState, SlimeBossRuntimeState, SneckoRuntimeState, SphericGuardianRuntimeState,
     SpikerRuntimeState, SpireShieldRuntimeState, SpireSpearRuntimeState, ThiefRuntimeState,
-    WrithingMassRuntimeState,
+    TimeEaterRuntimeState, WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
@@ -109,6 +109,12 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
             format!(
                 "giant_head:{}",
                 stable_giant_head_signature(&monster.giant_head)
+            )
+        }
+        Some(EnemyId::TimeEater) => {
+            format!(
+                "time_eater:{}",
+                stable_time_eater_signature(&monster.time_eater)
             )
         }
         Some(EnemyId::WrithingMass) => {
@@ -570,6 +576,10 @@ fn stable_nemesis_signature(state: &NemesisRuntimeState) -> String {
 
 fn stable_giant_head_signature(state: &GiantHeadRuntimeState) -> String {
     format!("seed{}:count{}", state.protocol_seeded, state.count)
+}
+
+fn stable_time_eater_signature(state: &TimeEaterRuntimeState) -> String {
+    format!("seed{}:haste{}", state.protocol_seeded, state.used_haste)
 }
 
 fn stable_writhing_mass_signature(state: &WrithingMassRuntimeState) -> String {

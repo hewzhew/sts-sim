@@ -5,8 +5,8 @@ use crate::content::monsters::exordium::{
 };
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, MonsterEntity, TimeEaterRuntimeState};
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DamageKind, DebuffSpec,
     DefendSpec, EffectStrength, HealSpec, MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget,
@@ -21,10 +21,18 @@ const RIPPLE: u8 = 3;
 const HEAD_SLAM: u8 = 4;
 const HASTE: u8 = 5;
 
+pub fn initialize_runtime_state(entity: &mut MonsterEntity) {
+    entity.time_eater = TimeEaterRuntimeState {
+        protocol_seeded: true,
+        used_haste: false,
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
+    use crate::runtime::rng::StsRng;
 
     #[test]
     fn haste_heal_amount_is_read_at_execution_time_like_java() {
@@ -66,6 +74,44 @@ mod tests {
             }))
         );
     }
+
+    #[test]
+    fn haste_selection_marks_private_used_haste_during_roll() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.max_hp = 456;
+        time_eater.current_hp = 200;
+
+        let plan = TimeEater::roll_move_plan(&mut StsRng::new(0), &time_eater, 0, 0);
+        let actions = TimeEater::on_roll_move(0, &time_eater, 0, &plan);
+
+        assert_eq!(plan.move_id, HASTE);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::TimeEater {
+                    used_haste: Some(true),
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn imported_used_haste_true_with_empty_history_does_not_force_haste() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.max_hp = 456;
+        time_eater.current_hp = 200;
+        time_eater.time_eater.used_haste = true;
+        time_eater.move_history_mut().clear();
+
+        let plan = TimeEater::roll_move_plan(&mut StsRng::new(0), &time_eater, 0, 0);
+
+        assert_eq!(
+            plan.move_id, REVERBERATE,
+            "Java gates Haste on private usedHaste, not move history"
+        );
+    }
 }
 
 fn reverberate_damage(ascension_level: u8) -> i32 {
@@ -100,8 +146,22 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
     )
 }
 
-fn used_haste(entity: &MonsterEntity) -> bool {
-    entity.move_history().contains(&HASTE)
+fn runtime(entity: &MonsterEntity) -> &TimeEaterRuntimeState {
+    assert!(
+        entity.time_eater.protocol_seeded,
+        "time eater runtime truth must be protocol-seeded or factory-seeded"
+    );
+    &entity.time_eater
+}
+
+fn time_eater_runtime_update(entity: &MonsterEntity, used_haste: Option<bool>) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::TimeEater {
+            used_haste,
+            protocol_seeded: Some(true),
+        },
+    }
 }
 
 fn reverberate_plan(ascension_level: u8) -> MonsterTurnPlan {
@@ -295,10 +355,23 @@ impl MonsterBehavior for TimeEater {
         ascension_level: u8,
         num: i32,
     ) -> MonsterTurnPlan {
-        if entity.current_hp < entity.max_hp / 2 && !used_haste(entity) {
+        if entity.current_hp < entity.max_hp / 2 && !runtime(entity).used_haste {
             return haste_plan(entity, ascension_level);
         }
         recursive_plan(rng, entity, ascension_level, num)
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if plan.move_id == HASTE && !runtime(entity).used_haste {
+            vec![time_eater_runtime_update(entity, Some(true))]
+        } else {
+            Vec::new()
+        }
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {

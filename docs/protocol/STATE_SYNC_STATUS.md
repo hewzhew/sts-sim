@@ -90,6 +90,7 @@ Rust currently consumes explicit Java runtime fields for:
 - `Nemesis.first_move`
 - `Nemesis.scythe_cooldown`
 - `GiantHead.count`
+- `TimeEater.used_haste`
 - `Chosen.first_turn`
 - `Chosen.used_hex`
 - `Lagavulin.idle_count`

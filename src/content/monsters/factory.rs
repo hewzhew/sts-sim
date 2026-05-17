@@ -157,6 +157,7 @@ pub fn build_encounter(
             darkling: Default::default(),
             nemesis: Default::default(),
             giant_head: Default::default(),
+            time_eater: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
         };
@@ -296,6 +297,9 @@ pub fn build_encounter(
         }
         if enemy_id == EnemyId::GiantHead {
             crate::content::monsters::beyond::giant_head::initialize_runtime_state(&mut monster);
+        }
+        if enemy_id == EnemyId::TimeEater {
+            crate::content::monsters::beyond::time_eater::initialize_runtime_state(&mut monster);
         }
         if enemy_id == EnemyId::TheGuardian {
             crate::content::monsters::exordium::the_guardian::initialize_runtime_state(
