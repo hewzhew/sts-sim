@@ -25,7 +25,10 @@ pub(crate) use cards::{
     build_draw_pile_from_snapshot, build_hand_from_snapshot, build_limbo_from_snapshot,
     build_pile_from_ids, build_runtime_hints_from_snapshots,
 };
-pub(crate) use monster::{apply_monster_split_snapshot, seed_collector_enemy_slots_from_snapshots};
+pub(crate) use monster::{
+    apply_monster_split_snapshot, seed_collector_enemy_slots_from_snapshots,
+    seed_gremlin_leader_slots_from_snapshots,
+};
 
 fn stable_u32_from_str(s: &str) -> u32 {
     let mut hash = 0x811C9DC5u32;
@@ -195,6 +198,7 @@ pub fn build_combat_state_from_snapshots(
             spire_shield: Default::default(),
             spire_spear: Default::default(),
             slaver_red: Default::default(),
+            gremlin_leader: Default::default(),
             gremlin_nob: Default::default(),
             gremlin_wizard: Default::default(),
             cultist: Default::default(),
@@ -215,6 +219,11 @@ pub fn build_combat_state_from_snapshots(
         monsters.push(entity);
     }
     monster::seed_collector_enemy_slots_from_snapshots(
+        truth_monsters,
+        &monster_protocol,
+        &mut monsters,
+    );
+    monster::seed_gremlin_leader_slots_from_snapshots(
         truth_monsters,
         &monster_protocol,
         &mut monsters,

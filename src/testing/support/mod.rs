@@ -109,6 +109,7 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         spire_shield: Default::default(),
         spire_spear: Default::default(),
         slaver_red: Default::default(),
+        gremlin_leader: Default::default(),
         gremlin_nob: Default::default(),
         gremlin_wizard: Default::default(),
         cultist: Default::default(),
@@ -202,6 +203,10 @@ pub fn test_monster(enemy_id: EnemyId) -> MonsterEntity {
         monster.slaver_red.protocol_seeded = true;
         monster.slaver_red.first_turn = true;
         monster.slaver_red.used_entangle = false;
+    }
+    if enemy_id == EnemyId::GremlinLeader {
+        monster.gremlin_leader.protocol_seeded = true;
+        monster.gremlin_leader.gremlin_slots = [None, None, None];
     }
     if enemy_id == EnemyId::GremlinNob {
         monster.gremlin_nob.protocol_seeded = true;

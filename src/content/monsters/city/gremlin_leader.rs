@@ -100,6 +100,33 @@ mod tests {
 
         assert!(matches!(actions.as_slice(), [Action::Escape { target: 2 }]));
     }
+
+    #[test]
+    fn rally_uses_java_gremlins_slots_not_position_inference() {
+        let mut leader = crate::test_support::test_monster(EnemyId::GremlinLeader);
+        leader.gremlin_leader.gremlin_slots = [Some(2), None, None];
+        let mut slot_zero = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+        slot_zero.id = 2;
+        slot_zero.logical_position = GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS[0];
+        let mut unrelated_alive_gremlin = crate::test_support::test_monster(EnemyId::GremlinFat);
+        unrelated_alive_gremlin.id = 3;
+        unrelated_alive_gremlin.logical_position = GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS[1];
+        let mut state = crate::test_support::combat_with_monsters(vec![
+            slot_zero,
+            unrelated_alive_gremlin,
+            leader.clone(),
+        ]);
+
+        let actions = GremlinLeader::take_turn_plan(&mut state, &leader, &rally_plan());
+
+        assert!(
+            actions.iter().any(|action| matches!(
+                action,
+                Action::SpawnGremlinLeaderMinion { slot: 1, .. }
+            )),
+            "Java SummonGremlinAction identifies the first empty GremlinLeader.gremlins slot, not the nearest occupied draw_x"
+        );
+    }
 }
 
 fn stab_plan() -> MonsterTurnPlan {
@@ -288,23 +315,29 @@ impl GremlinLeader {
     }
 
     fn occupied_summon_slots(state: &CombatState, leader_id: usize) -> [bool; 3] {
+        let Some(leader) = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == leader_id)
+        else {
+            return [true, true, true];
+        };
+        assert!(
+            leader.gremlin_leader.protocol_seeded,
+            "gremlin leader slot truth must be protocol-seeded or factory-seeded"
+        );
         let mut occupied = [false; 3];
-        let slot_draw_xs = Self::gremlin_slot_draw_xs(state, leader_id);
-        for monster in &state.entities.monsters {
-            if monster.id == leader_id || monster.is_dying {
-                continue;
-            }
-            let draw_x = state
-                .monster_protocol_identity(monster.id)
-                .and_then(|identity| identity.draw_x)
-                .unwrap_or(monster.logical_position);
-            if let Some((slot, _)) = slot_draw_xs
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, slot_draw_x)| (draw_x - **slot_draw_x).abs())
-            {
-                occupied[slot] = true;
-            }
+        for (slot, monster_id) in leader.gremlin_leader.gremlin_slots.iter().enumerate() {
+            occupied[slot] = monster_id
+                .and_then(|monster_id| {
+                    state
+                        .entities
+                        .monsters
+                        .iter()
+                        .find(|monster| monster.id == monster_id)
+                })
+                .is_some_and(|monster| !monster.is_dying);
         }
         occupied
     }
@@ -383,7 +416,9 @@ impl MonsterBehavior for GremlinLeader {
                     occupied_slots[slot] = true;
                     let monster_id = Self::random_summoned_gremlin(&mut state.rng.ai_rng);
                     let draw_x = Self::protocol_draw_x_for_minion(slot_draw_xs, slot, monster_id);
-                    actions.push(Action::SpawnMonsterSmart {
+                    actions.push(Action::SpawnGremlinLeaderMinion {
+                        leader_id: entity.id,
+                        slot: slot as u8,
                         monster_id,
                         logical_position: draw_x,
                         hp: SpawnHpSpec {
@@ -391,7 +426,6 @@ impl MonsterBehavior for GremlinLeader {
                             max: SpawnHpValue::Rolled,
                         },
                         protocol_draw_x: Some(draw_x),
-                        is_minion: true,
                     });
                 }
                 actions

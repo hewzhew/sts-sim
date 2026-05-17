@@ -135,9 +135,13 @@ The relevant Java rules are preserved:
 Gremlin Leader's move selection depends on the number of non-dying gremlin allies; Java does not
 check current HP or escaping in `numAliveGremlins`. Rust matches that flag behavior.
 
+Java also keeps a public `gremlins[3]` slot array, and `SummonGremlinAction` identifies the first
+slot whose stored monster is null or dying. Rust now tracks that slot truth explicitly instead of
+inferring slots only from draw positions.
+
 Other source-backed details already modeled:
 
-- Rally uses the Java summon pool and `aiRng` selection.
+- Rally uses the Java summon pool, `aiRng` selection, and `gremlins[3]` slot occupancy.
 - Encourage consumes `aiRng` for its quote even though the quote is UI text.
 - Encourage applies Strength to the leader and Strength/Block to non-dying allies.
 - Leader death makes every non-dying ally escape.

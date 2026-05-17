@@ -140,6 +140,7 @@ pub fn handle_spawn_monster(
         spire_shield: Default::default(),
         spire_spear: Default::default(),
         slaver_red: Default::default(),
+        gremlin_leader: Default::default(),
         gremlin_nob: Default::default(),
         gremlin_wizard: Default::default(),
         cultist: Default::default(),
@@ -261,6 +262,10 @@ pub fn handle_spawn_monster(
         new_monster.slaver_red.protocol_seeded = true;
         new_monster.slaver_red.first_turn = true;
         new_monster.slaver_red.used_entangle = false;
+    }
+    if enemy_id == crate::content::monsters::EnemyId::GremlinLeader {
+        new_monster.gremlin_leader.protocol_seeded = true;
+        new_monster.gremlin_leader.gremlin_slots = [None, None, None];
     }
     if enemy_id == crate::content::monsters::EnemyId::GremlinNob {
         new_monster.gremlin_nob.protocol_seeded = true;
@@ -446,6 +451,43 @@ pub fn handle_spawn_collector_torch(
     {
         collector.collector.enemy_slots[usize::from(collector_slot - 1)] = Some(new_entity_id);
         collector.collector.protocol_seeded = true;
+    }
+}
+
+pub fn handle_spawn_gremlin_leader_minion(
+    leader_id: usize,
+    gremlin_slot: u8,
+    monster_id: crate::content::monsters::EnemyId,
+    logical_position: i32,
+    hp: SpawnHpSpec,
+    protocol_draw_x: Option<i32>,
+    state: &mut CombatState,
+) {
+    assert!(
+        gremlin_slot < 3,
+        "gremlin leader slot must be one of Java gremlins[0..3)"
+    );
+    let (current_hp, max_hp) = resolve_spawn_hp(monster_id, hp, state);
+    let target_slot = smart_spawn_slot(state, logical_position, protocol_draw_x);
+    let new_entity_id = handle_spawn_monster(
+        monster_id,
+        target_slot,
+        current_hp,
+        max_hp,
+        logical_position,
+        protocol_draw_x,
+        true,
+        state,
+    );
+
+    if let Some(leader) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|monster| monster.id == leader_id)
+    {
+        leader.gremlin_leader.gremlin_slots[usize::from(gremlin_slot)] = Some(new_entity_id);
+        leader.gremlin_leader.protocol_seeded = true;
     }
 }
 
@@ -1080,6 +1122,27 @@ fn handle_update_gremlin_nob_state(
     }
 }
 
+fn handle_update_gremlin_leader_state(
+    monster_id: usize,
+    gremlin_slots: Option<[Option<usize>; 3]>,
+    protocol_seeded: Option<bool>,
+    state: &mut CombatState,
+) {
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|m| m.id == monster_id)
+    {
+        if let Some(value) = gremlin_slots {
+            monster.gremlin_leader.gremlin_slots = value;
+        }
+        if let Some(value) = protocol_seeded {
+            monster.gremlin_leader.protocol_seeded = value;
+        }
+    }
+}
+
 fn handle_update_gremlin_wizard_state(
     monster_id: usize,
     current_charge: Option<u8>,
@@ -1384,6 +1447,10 @@ pub fn handle_update_monster_runtime(
             used_bellow,
             protocol_seeded,
         } => handle_update_gremlin_nob_state(monster_id, used_bellow, protocol_seeded, state),
+        MonsterRuntimePatch::GremlinLeader {
+            gremlin_slots,
+            protocol_seeded,
+        } => handle_update_gremlin_leader_state(monster_id, gremlin_slots, protocol_seeded, state),
         MonsterRuntimePatch::GremlinWizard {
             current_charge,
             protocol_seeded,

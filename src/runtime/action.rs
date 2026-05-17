@@ -121,6 +121,10 @@ pub enum MonsterRuntimePatch {
         used_bellow: Option<bool>,
         protocol_seeded: Option<bool>,
     },
+    GremlinLeader {
+        gremlin_slots: Option<[Option<EntityId>; 3]>,
+        protocol_seeded: Option<bool>,
+    },
     GremlinWizard {
         current_charge: Option<u8>,
         protocol_seeded: Option<bool>,
@@ -901,6 +905,14 @@ pub enum Action {
     SpawnCollectorTorch {
         collector_id: EntityId,
         slot: u8,
+        logical_position: i32,
+        hp: crate::semantics::combat::SpawnHpSpec,
+        protocol_draw_x: Option<i32>,
+    },
+    SpawnGremlinLeaderMinion {
+        leader_id: EntityId,
+        slot: u8,
+        monster_id: crate::content::monsters::EnemyId,
         logical_position: i32,
         hp: crate::semantics::combat::SpawnHpSpec,
         protocol_draw_x: Option<i32>,

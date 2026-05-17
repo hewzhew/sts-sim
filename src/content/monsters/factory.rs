@@ -145,6 +145,7 @@ pub fn build_encounter(
             spire_shield: Default::default(),
             spire_spear: Default::default(),
             slaver_red: Default::default(),
+            gremlin_leader: Default::default(),
             gremlin_nob: Default::default(),
             gremlin_wizard: Default::default(),
             cultist: Default::default(),
@@ -243,6 +244,10 @@ pub fn build_encounter(
             monster.slaver_red.protocol_seeded = true;
             monster.slaver_red.first_turn = true;
             monster.slaver_red.used_entangle = false;
+        }
+        if enemy_id == EnemyId::GremlinLeader {
+            monster.gremlin_leader.protocol_seeded = true;
+            monster.gremlin_leader.gremlin_slots = [None, None, None];
         }
         if enemy_id == EnemyId::GremlinNob {
             monster.gremlin_nob.protocol_seeded = true;
@@ -664,17 +669,21 @@ pub fn build_encounter(
             let mut first = spawn_monster(g1, monster_hp_rng, slot_counter);
             first.logical_position =
                 crate::content::monsters::city::gremlin_leader::GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS[0];
+            let first_id = first.id;
             monsters.push(first);
             slot_counter += 1;
             let g2 = gremlin_pool[misc_rng.random_range(0, 7) as usize];
             let mut second = spawn_monster(g2, monster_hp_rng, slot_counter);
             second.logical_position =
                 crate::content::monsters::city::gremlin_leader::GremlinLeader::GREMLIN_SLOT_LOGICAL_POSITIONS[1];
+            let second_id = second.id;
             monsters.push(second);
             slot_counter += 1;
             let mut leader = spawn_monster(EnemyId::GremlinLeader, monster_hp_rng, slot_counter);
             leader.logical_position =
                 crate::content::monsters::city::gremlin_leader::GremlinLeader::LEADER_LOGICAL_POSITION;
+            leader.gremlin_leader.protocol_seeded = true;
+            leader.gremlin_leader.gremlin_slots = [Some(first_id), Some(second_id), None];
             monsters.push(leader);
         }
         EncounterId::Slavers => {

@@ -3,12 +3,13 @@ use crate::runtime::combat::CollectorRuntimeState;
 use crate::runtime::combat::{
     AwakenedOneRuntimeState, BookOfStabbingRuntimeState, BronzeAutomatonRuntimeState,
     BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
-    CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, GremlinNobRuntimeState,
-    GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState, JawWormRuntimeState,
-    LagavulinRuntimeState, LargeSlimeRuntimeState, LouseRuntimeState, MonsterEntity,
-    MonsterMoveState, SentryRuntimeState, ShelledParasiteRuntimeState, SlaverRedRuntimeState,
-    SlimeBossRuntimeState, SneckoRuntimeState, SphericGuardianRuntimeState, SpikerRuntimeState,
-    SpireShieldRuntimeState, SpireSpearRuntimeState, ThiefRuntimeState, WrithingMassRuntimeState,
+    CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, GremlinLeaderRuntimeState,
+    GremlinNobRuntimeState, GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState,
+    JawWormRuntimeState, LagavulinRuntimeState, LargeSlimeRuntimeState, LouseRuntimeState,
+    MonsterEntity, MonsterMoveState, SentryRuntimeState, ShelledParasiteRuntimeState,
+    SlaverRedRuntimeState, SlimeBossRuntimeState, SneckoRuntimeState, SphericGuardianRuntimeState,
+    SpikerRuntimeState, SpireShieldRuntimeState, SpireSpearRuntimeState, ThiefRuntimeState,
+    WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
@@ -119,6 +120,12 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
             format!(
                 "slaver_red:{}",
                 stable_slaver_red_signature(&monster.slaver_red)
+            )
+        }
+        Some(EnemyId::GremlinLeader) => {
+            format!(
+                "gremlin_leader:{}",
+                stable_gremlin_leader_signature(&monster.gremlin_leader)
             )
         }
         Some(EnemyId::GremlinNob) => {
@@ -551,6 +558,13 @@ fn stable_slaver_red_signature(state: &SlaverRedRuntimeState) -> String {
     format!(
         "seed{}:first{}:entangle{}",
         state.protocol_seeded, state.first_turn, state.used_entangle
+    )
+}
+
+fn stable_gremlin_leader_signature(state: &GremlinLeaderRuntimeState) -> String {
+    format!(
+        "seed{}:slots{:?}",
+        state.protocol_seeded, state.gremlin_slots
     )
 }
 

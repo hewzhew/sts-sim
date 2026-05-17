@@ -399,6 +399,7 @@ mod tests {
             spire_shield: Default::default(),
             spire_spear: Default::default(),
             slaver_red: Default::default(),
+            gremlin_leader: Default::default(),
             gremlin_nob: Default::default(),
             gremlin_wizard: Default::default(),
             cultist: Default::default(),

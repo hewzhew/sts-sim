@@ -66,6 +66,7 @@ Examples:
 - `monster.runtime_state.used_bellow`
 - `monster.runtime_state.second_move`
 - `monster.runtime_state.enemy_slots`
+- `monster.runtime_state.gremlin_slots`
 - `relic.runtime_state.used_this_combat`
 - `relic.runtime_state.used_up`
 - `relic.runtime_state.counter`

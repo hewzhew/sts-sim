@@ -34,6 +34,7 @@ Scope:
 | Snecko | `first_turn` | Yes | Yes | Yes | `lastTwoMoves(BITE)` sequencing | Good |
 | Red Slaver | `first_turn`, `used_entangle` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Gremlin Nob | `used_bellow` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
+| Gremlin Leader | `gremlin_slots` | Yes | Yes | Yes | Rally/Encourage/Stab sequencing only | Good |
 | Gremlin Wizard | `current_charge` | Yes | Yes | Yes | None for charge cadence | Good |
 | Cultist | `first_move` | Yes | Yes | Yes | None | Good |
 | Jaw Worm | `first_move`, `hard_mode` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
@@ -120,6 +121,15 @@ Scope:
 - `runtime_state.used_bellow` is now exported by `CommunicationMod`.
 - Rust semantic roll logic requires this latch to be protocol-seeded or factory-seeded.
 - Remaining history usage is limited to Java's explicit `SKULL_BASH` / `BULL_RUSH` repeat rules.
+
+### Gremlin Leader
+
+- `runtime_state.gremlin_slots` is now exported by `CommunicationMod` from Java
+  `GremlinLeader.gremlins`.
+- Rust Rally execution uses the exported slot members to find the first null/dying slot, matching
+  Java `SummonGremlinAction.identifySlot(...)`.
+- Draw positions are still used to place the summoned monster in the same coordinate frame, but
+  they are no longer the source of slot occupancy truth.
 
 ### Gremlin Wizard
 

@@ -942,6 +942,7 @@ pub struct MonsterEntity {
     pub spire_shield: SpireShieldRuntimeState,
     pub spire_spear: SpireSpearRuntimeState,
     pub slaver_red: SlaverRedRuntimeState,
+    pub gremlin_leader: GremlinLeaderRuntimeState,
     pub gremlin_nob: GremlinNobRuntimeState,
     pub gremlin_wizard: GremlinWizardRuntimeState,
     pub cultist: CultistRuntimeState,
@@ -1277,6 +1278,12 @@ impl Default for SlaverRedRuntimeState {
             used_entangle: false,
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GremlinLeaderRuntimeState {
+    pub protocol_seeded: bool,
+    pub gremlin_slots: [Option<EntityId>; 3],
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2208,6 +2215,7 @@ mod tests {
             spire_shield: SpireShieldRuntimeState::default(),
             spire_spear: SpireSpearRuntimeState::default(),
             slaver_red: SlaverRedRuntimeState::default(),
+            gremlin_leader: GremlinLeaderRuntimeState::default(),
             gremlin_nob: GremlinNobRuntimeState::default(),
             gremlin_wizard: GremlinWizardRuntimeState::default(),
             cultist: CultistRuntimeState::default(),
@@ -2283,6 +2291,7 @@ mod tests {
             spire_shield: SpireShieldRuntimeState::default(),
             spire_spear: SpireSpearRuntimeState::default(),
             slaver_red: SlaverRedRuntimeState::default(),
+            gremlin_leader: GremlinLeaderRuntimeState::default(),
             gremlin_nob: GremlinNobRuntimeState::default(),
             gremlin_wizard: GremlinWizardRuntimeState::default(),
             cultist: CultistRuntimeState::default(),
@@ -2355,6 +2364,7 @@ mod tests {
             spire_shield: SpireShieldRuntimeState::default(),
             spire_spear: SpireSpearRuntimeState::default(),
             slaver_red: SlaverRedRuntimeState::default(),
+            gremlin_leader: GremlinLeaderRuntimeState::default(),
             gremlin_nob: GremlinNobRuntimeState::default(),
             gremlin_wizard: GremlinWizardRuntimeState::default(),
             cultist: CultistRuntimeState::default(),
