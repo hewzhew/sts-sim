@@ -552,9 +552,6 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
-            RelicId::WarpedTongs => {
-                actions.extend(crate::content::relics::warped_tongs::at_turn_start(&*state))
-            }
             RelicId::ArtOfWar => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::art_of_war::at_turn_start(
@@ -598,6 +595,9 @@ pub fn at_turn_start_post_draw(state: &mut CombatState) -> SmallVec<[ActionInfo;
                     crate::content::relics::gambling_chip::at_turn_start_post_draw(&mut rs),
                 );
                 state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::WarpedTongs => {
+                actions.extend(crate::content::relics::warped_tongs::at_turn_start_post_draw())
             }
             _ => unreachable!(
                 "Relic present in at_turn_start_post_draw bus but unhandled in hooks.rs match arm"

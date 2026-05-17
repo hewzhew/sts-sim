@@ -3493,6 +3493,32 @@ fn shared_shop_relic_gap_batch_two_metadata_matches_java_sources() {
 }
 
 #[test]
+fn warped_tongs_triggers_after_turn_start_draw_like_java_sources() {
+    assert_eq!(get_relic_tier(RelicId::WarpedTongs), RelicTier::Special);
+    let subs = get_relic_subscriptions(RelicId::WarpedTongs);
+    assert!(
+        !subs.at_turn_start,
+        "Java WarpedTongs implements atTurnStartPostDraw, not atTurnStart"
+    );
+    assert!(subs.at_turn_start_post_draw);
+
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::WarpedTongs));
+
+    assert!(
+        hooks::at_turn_start(&mut state).is_empty(),
+        "Warped Tongs must not run before the start-of-turn draw"
+    );
+    let actions = hooks::at_turn_start_post_draw(&mut state);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
+    assert!(matches!(actions[0].action, Action::UpgradeRandomCard));
+}
+
+#[test]
 fn medical_kit_allows_status_cards_to_be_played() {
     let burn = CombatCard::new(CardId::Burn, 901);
     let mut state = crate::test_support::blank_test_combat();
