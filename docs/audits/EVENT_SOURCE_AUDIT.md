@@ -71,6 +71,26 @@ Test:
 
 - `exhausted_event_and_shrine_pools_do_not_fabricate_fallback_event`
 
+### Event ID mapping
+
+Java event identity comes from each event class's static `ID` string, not from
+the visible title used by a bridge or UI. The simulator's live/trace rebuild
+path must accept those exact IDs, including odd source names such as
+`Liars Game`, `MindBloom`, `SensoryStone`, `The Moai Head`,
+`Tomb of Lord Red Mask`, `FaceTrader`, `N'loth`, `NoteForYourself`,
+`WeMeetAgain`, `Match and Keep!`, `Wheel of Change`, and Java's typo
+`Transmorgrifier`.
+
+Rust previously accepted several friendly aliases but missed a number of exact
+Java IDs. That could make a real event trace look unsupported even though the
+simulator had the event implementation. `event_id_from_name` now accepts the
+exact Java IDs for all generated events and shrines while keeping the existing
+aliases.
+
+Test:
+
+- `event_id_from_name_accepts_exact_java_event_ids`
+
 ### Match and Keep start card
 
 Java `GremlinMatchGame.initializeCards()` calls
