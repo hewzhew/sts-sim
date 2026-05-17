@@ -106,6 +106,10 @@ Rust currently consumes explicit Java runtime fields for:
 - `Sentry.first_move`
 - `SphericGuardian.first_move`
 - `SphericGuardian.second_move`
+- `TheCollector.initial_spawn`
+- `TheCollector.ult_used`
+- `TheCollector.turns_taken`
+- `TheCollector.enemy_slots`
 
 ### Relics
 

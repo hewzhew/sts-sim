@@ -1,7 +1,9 @@
 use crate::runtime::combat::{MonsterEntity, MonsterMoveState};
 use serde_json::Value;
 
-use super::super::build::apply_monster_split_snapshot;
+use super::super::build::{
+    apply_monster_split_snapshot, seed_collector_enemy_slots_from_snapshots,
+};
 use super::power::sync_monster_powers_from_snapshot;
 
 pub fn sync_monsters_from_snapshots(
@@ -79,4 +81,9 @@ pub fn sync_monsters_from_snapshots(
             .insert(cs.entities.monsters[i].id, protocol);
         sync_monster_powers_from_snapshot(cs, i, truth_monster);
     }
+    seed_collector_enemy_slots_from_snapshots(
+        truth_monsters,
+        &cs.runtime.monster_protocol,
+        &mut cs.entities.monsters,
+    );
 }

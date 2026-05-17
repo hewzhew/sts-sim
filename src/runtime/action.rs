@@ -75,6 +75,7 @@ pub enum MonsterRuntimePatch {
         initial_spawn: Option<bool>,
         ult_used: Option<bool>,
         turns_taken: Option<u8>,
+        enemy_slots: Option<[Option<EntityId>; 2]>,
         protocol_seeded: Option<bool>,
     },
     Champ {
@@ -896,6 +897,13 @@ pub enum Action {
         hp: crate::semantics::combat::SpawnHpSpec,
         protocol_draw_x: Option<i32>,
         is_minion: bool,
+    },
+    SpawnCollectorTorch {
+        collector_id: EntityId,
+        slot: u8,
+        logical_position: i32,
+        hp: crate::semantics::combat::SpawnHpSpec,
+        protocol_draw_x: Option<i32>,
     },
     SpawnEncounter {
         encounter: crate::content::monsters::factory::EncounterId,

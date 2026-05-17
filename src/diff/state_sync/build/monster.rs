@@ -1,8 +1,9 @@
 use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::content::monsters::EnemyId;
 use crate::protocol::java::{intent_from_java, monster_id_from_java};
-use crate::runtime::combat::MonsterEntity;
+use crate::runtime::combat::{MonsterEntity, MonsterProtocolState};
 
 fn runtime_state<'a>(monster: &'a Value, monster_type: EnemyId) -> &'a Value {
     monster.get("runtime_state").unwrap_or_else(|| {
@@ -318,6 +319,67 @@ pub(crate) fn seed_collector_runtime_from_snapshot(monster: &Value, entity: &mut
     entity.collector.protocol_seeded = true;
 }
 
+pub(crate) fn seed_collector_enemy_slots_from_snapshots(
+    truth_monsters: &[Value],
+    monster_protocol: &HashMap<usize, MonsterProtocolState>,
+    monsters: &mut [MonsterEntity],
+) {
+    let mut entity_by_instance_id = HashMap::new();
+    for monster in monsters.iter() {
+        if let Some(instance_id) = monster_protocol
+            .get(&monster.id)
+            .and_then(|protocol| protocol.identity.instance_id)
+        {
+            entity_by_instance_id.insert(instance_id, monster.id);
+        }
+    }
+
+    for (index, snapshot) in truth_monsters.iter().enumerate() {
+        if monsters[index].monster_type != EnemyId::TheCollector as usize {
+            continue;
+        }
+        let slots = runtime_state(snapshot, EnemyId::TheCollector)
+            .get("enemy_slots")
+            .and_then(|value| value.as_array())
+            .unwrap_or_else(|| {
+                panic!(
+                    "strict state_sync: monster.runtime_state.enemy_slots missing for TheCollector"
+                )
+            });
+        let mut enemy_slots = [None, None];
+        for slot in slots {
+            let java_slot = slot
+                .get("slot")
+                .and_then(|value| value.as_u64())
+                .unwrap_or_else(|| {
+                    panic!("strict state_sync: Collector enemy_slots entry missing slot")
+                });
+            assert!(
+                matches!(java_slot, 1 | 2),
+                "strict state_sync: Collector enemySlots key must be 1 or 2"
+            );
+            let instance_id = slot
+                .get("monster_instance_id")
+                .and_then(|value| value.as_u64())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "strict state_sync: Collector enemy_slots entry missing monster_instance_id"
+                    )
+                });
+            let entity_id = entity_by_instance_id
+                .get(&instance_id)
+                .copied()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "strict state_sync: Collector enemySlots referenced unknown monster_instance_id {instance_id}"
+                    )
+                });
+            enemy_slots[java_slot as usize - 1] = Some(entity_id);
+        }
+        monsters[index].collector.enemy_slots = enemy_slots;
+    }
+}
+
 pub(crate) fn seed_champ_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
     let monster_type = EnemyId::Champ;
     if entity.monster_type != monster_type as usize {
@@ -557,7 +619,7 @@ mod tests {
 
     use super::{
         apply_monster_observation_snapshot, apply_monster_split_snapshot,
-        apply_monster_truth_snapshot,
+        apply_monster_truth_snapshot, seed_collector_enemy_slots_from_snapshots,
     };
     use crate::content::monsters::EnemyId;
     use crate::runtime::combat::{
@@ -731,7 +793,8 @@ mod tests {
             "runtime_state": {
                 "initial_spawn": false,
                 "ult_used": true,
-                "turns_taken": 4
+                "turns_taken": 4,
+                "enemy_slots": []
             },
             "is_gone": false,
             "half_dead": false
@@ -1170,6 +1233,102 @@ mod tests {
         assert!(entity.collector.ult_used);
         assert_eq!(entity.collector.turns_taken, 4);
         assert!(entity.collector.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_collector_enemy_slots_from_instance_ids() {
+        let collector_snapshot = json!({
+            "id": "TheCollector",
+            "current_hp": 282,
+            "max_hp": 282,
+            "block": 0,
+            "move_id": 5,
+            "move_base_damage": -1,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "initial_spawn": false,
+                "ult_used": true,
+                "turns_taken": 5,
+                "enemy_slots": [
+                    {
+                        "slot": 1,
+                        "monster_instance_id": 101,
+                        "monster_id": "TorchHead",
+                        "is_dying": true
+                    },
+                    {
+                        "slot": 2,
+                        "monster_instance_id": 202,
+                        "monster_id": "TorchHead",
+                        "is_dying": false
+                    }
+                ]
+            }
+        });
+        let torch_one_snapshot = json!({
+            "id": "TorchHead",
+            "monster_instance_id": 101,
+            "current_hp": 0,
+            "max_hp": 40,
+            "block": 0,
+            "move_id": 1,
+            "move_base_damage": 7,
+            "move_hits": 1,
+            "powers": [],
+            "is_gone": true
+        });
+        let torch_two_snapshot = json!({
+            "id": "TorchHead",
+            "monster_instance_id": 202,
+            "current_hp": 40,
+            "max_hp": 40,
+            "block": 0,
+            "move_id": 1,
+            "move_base_damage": 7,
+            "move_hits": 1,
+            "powers": []
+        });
+
+        let mut monsters = vec![
+            blank_monster_entity(),
+            blank_monster_entity(),
+            blank_monster_entity(),
+        ];
+        for (index, snapshot) in [
+            &collector_snapshot,
+            &torch_one_snapshot,
+            &torch_two_snapshot,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            apply_monster_truth_snapshot(snapshot, index, &mut monsters[index]);
+            monsters[index].id = index + 1;
+        }
+        let mut protocol = std::collections::HashMap::new();
+        for (index, instance_id) in [10, 101, 202].into_iter().enumerate() {
+            protocol.insert(
+                index + 1,
+                crate::runtime::combat::MonsterProtocolState {
+                    observation: Default::default(),
+                    identity: crate::runtime::combat::MonsterProtocolIdentity {
+                        instance_id: Some(instance_id),
+                        spawn_order: Some(instance_id),
+                        draw_x: None,
+                        group_index: Some(index),
+                    },
+                },
+            );
+        }
+
+        seed_collector_enemy_slots_from_snapshots(
+            &[collector_snapshot, torch_one_snapshot, torch_two_snapshot],
+            &protocol,
+            &mut monsters,
+        );
+
+        assert_eq!(monsters[0].collector.enemy_slots, [Some(2), Some(3)]);
     }
 
     #[test]

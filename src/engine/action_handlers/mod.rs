@@ -667,16 +667,18 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             logical_position,
             protocol_draw_x,
             is_minion,
-        } => spawning::handle_spawn_monster(
-            monster_id,
-            slot,
-            current_hp,
-            max_hp,
-            logical_position,
-            protocol_draw_x,
-            is_minion,
-            state,
-        ),
+        } => {
+            let _ = spawning::handle_spawn_monster(
+                monster_id,
+                slot,
+                current_hp,
+                max_hp,
+                logical_position,
+                protocol_draw_x,
+                is_minion,
+                state,
+            );
+        }
         Action::SpawnMonsterSmart {
             monster_id,
             logical_position,
@@ -689,6 +691,20 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             hp,
             protocol_draw_x,
             is_minion,
+            state,
+        ),
+        Action::SpawnCollectorTorch {
+            collector_id,
+            slot,
+            logical_position,
+            hp,
+            protocol_draw_x,
+        } => spawning::handle_spawn_collector_torch(
+            collector_id,
+            slot,
+            logical_position,
+            hp,
+            protocol_draw_x,
             state,
         ),
         Action::Suicide { target } => spawning::handle_suicide(target, state),

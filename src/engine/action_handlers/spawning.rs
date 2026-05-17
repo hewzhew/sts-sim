@@ -82,7 +82,7 @@ pub fn handle_spawn_monster(
     protocol_draw_x: Option<i32>,
     is_minion: bool,
     state: &mut CombatState,
-) {
+) -> usize {
     let new_entity_id = state
         .entities
         .monsters
@@ -335,17 +335,16 @@ pub fn handle_spawn_monster(
     // spawned monster rolls its first move immediately instead of waiting behind
     // the rest of the current action queue.
     handle_roll_monster_move(new_entity_id, state);
+
+    new_entity_id
 }
 
-pub fn handle_spawn_monster_smart(
+fn resolve_spawn_hp(
     monster_id: crate::content::monsters::EnemyId,
-    logical_position: i32,
     hp: SpawnHpSpec,
-    protocol_draw_x: Option<i32>,
-    is_minion: bool,
     state: &mut CombatState,
-) {
-    let (current_hp, max_hp) = match (hp.current, hp.max) {
+) -> (i32, i32) {
+    match (hp.current, hp.max) {
         (SpawnHpValue::Rolled, SpawnHpValue::Rolled) => {
             let rolled = spawn_hp_for_monster(
                 monster_id,
@@ -370,7 +369,14 @@ pub fn handle_spawn_monster_smart(
                 resolve_hp(max, &mut state.rng.monster_hp_rng),
             )
         }
-    };
+    }
+}
+
+fn smart_spawn_slot(
+    state: &CombatState,
+    logical_position: i32,
+    protocol_draw_x: Option<i32>,
+) -> u8 {
     let spawn_sort_key = protocol_draw_x.unwrap_or(logical_position);
     let mut target_slot = 0;
     for m in &state.entities.monsters {
@@ -382,6 +388,19 @@ pub fn handle_spawn_monster_smart(
             target_slot += 1;
         }
     }
+    target_slot
+}
+
+pub fn handle_spawn_monster_smart(
+    monster_id: crate::content::monsters::EnemyId,
+    logical_position: i32,
+    hp: SpawnHpSpec,
+    protocol_draw_x: Option<i32>,
+    is_minion: bool,
+    state: &mut CombatState,
+) {
+    let (current_hp, max_hp) = resolve_spawn_hp(monster_id, hp, state);
+    let target_slot = smart_spawn_slot(state, logical_position, protocol_draw_x);
     state.queue_action_front(Action::SpawnMonster {
         monster_id,
         slot: target_slot,
@@ -391,6 +410,43 @@ pub fn handle_spawn_monster_smart(
         protocol_draw_x,
         is_minion,
     });
+}
+
+pub fn handle_spawn_collector_torch(
+    collector_id: usize,
+    collector_slot: u8,
+    logical_position: i32,
+    hp: SpawnHpSpec,
+    protocol_draw_x: Option<i32>,
+    state: &mut CombatState,
+) {
+    assert!(
+        matches!(collector_slot, 1 | 2),
+        "collector torch slot must be the Java enemySlots key 1 or 2"
+    );
+    let monster_id = crate::content::monsters::EnemyId::TorchHead;
+    let (current_hp, max_hp) = resolve_spawn_hp(monster_id, hp, state);
+    let target_slot = smart_spawn_slot(state, logical_position, protocol_draw_x);
+    let new_entity_id = handle_spawn_monster(
+        monster_id,
+        target_slot,
+        current_hp,
+        max_hp,
+        logical_position,
+        protocol_draw_x,
+        true,
+        state,
+    );
+
+    if let Some(collector) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|monster| monster.id == collector_id)
+    {
+        collector.collector.enemy_slots[usize::from(collector_slot - 1)] = Some(new_entity_id);
+        collector.collector.protocol_seeded = true;
+    }
 }
 
 pub fn handle_suicide(target: usize, state: &mut CombatState) {
@@ -758,6 +814,7 @@ fn handle_update_collector_state(
     initial_spawn: Option<bool>,
     ult_used: Option<bool>,
     turns_taken: Option<u8>,
+    enemy_slots: Option<[Option<usize>; 2]>,
     protocol_seeded: Option<bool>,
     state: &mut CombatState,
 ) {
@@ -775,6 +832,9 @@ fn handle_update_collector_state(
         }
         if let Some(value) = turns_taken {
             monster.collector.turns_taken = value;
+        }
+        if let Some(value) = enemy_slots {
+            monster.collector.enemy_slots = value;
         }
         if let Some(value) = protocol_seeded {
             monster.collector.protocol_seeded = value;
@@ -1245,12 +1305,14 @@ pub fn handle_update_monster_runtime(
             initial_spawn,
             ult_used,
             turns_taken,
+            enemy_slots,
             protocol_seeded,
         } => handle_update_collector_state(
             monster_id,
             initial_spawn,
             ult_used,
             turns_taken,
+            enemy_slots,
             protocol_seeded,
             state,
         ),

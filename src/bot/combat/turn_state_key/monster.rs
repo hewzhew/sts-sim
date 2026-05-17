@@ -490,8 +490,12 @@ fn stable_book_of_stabbing_signature(state: &BookOfStabbingRuntimeState) -> Stri
 
 fn stable_collector_signature(state: &CollectorRuntimeState) -> String {
     format!(
-        "seed{}:spawn{}:ult{}:turns{}",
-        state.protocol_seeded, state.initial_spawn, state.ult_used, state.turns_taken
+        "seed{}:spawn{}:ult{}:turns{}:slots{:?}",
+        state.protocol_seeded,
+        state.initial_spawn,
+        state.ult_used,
+        state.turns_taken,
+        state.enemy_slots
     )
 }
 

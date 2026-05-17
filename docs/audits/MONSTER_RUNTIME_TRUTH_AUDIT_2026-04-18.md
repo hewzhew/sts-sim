@@ -41,6 +41,7 @@ Scope:
 | Large Slimes | `split_triggered` | Yes | Yes | Yes | Attack/debuff sequencing only | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
 | Spheric Guardian | `first_move`, `second_move` | Yes | Yes | Yes | Post-opening `lastMove(BIG_ATTACK)` branch only | Good |
+| The Collector | `initial_spawn`, `ult_used`, `turns_taken`, `enemy_slots` | Yes | Yes | Yes | `lastMove(REVIVE)` / `lastTwoMoves(FIREBALL)` sequencing only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Partial | N/A | Legacy-heavy | Debt remains |
 
@@ -166,6 +167,15 @@ Scope:
 - The opening Harden and Bash+Frail gates come from Java's private latches, not from move-history
   length. After both latches are false, move history is used only for Java's explicit
   `lastMove(BIG_ATTACK)` branch.
+
+### The Collector
+
+- `runtime_state.initial_spawn`, `ult_used`, `turns_taken`, and `enemy_slots` are exported by
+  `CommunicationMod`.
+- `enemy_slots` is mapped from Java monster instance ids to Rust entity ids during state sync.
+- Rust move selection and revive execution use the current slot members, not a scan of every
+  TorchHead in the monster group. This matches Java's private `enemySlots` map and avoids reviving
+  stale dying TorchHead objects left behind after prior revives.
 
 ### Champ
 

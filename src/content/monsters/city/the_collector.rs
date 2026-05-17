@@ -1,5 +1,5 @@
 use crate::content::monsters::exordium::{apply_power_action, attack_actions, PLAYER};
-use crate::content::monsters::{EnemyId, MonsterBehavior, MonsterRollContext};
+use crate::content::monsters::{MonsterBehavior, MonsterRollContext};
 use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
@@ -69,12 +69,13 @@ mod tests {
 
     #[test]
     fn revive_considers_dying_torch_even_if_escape_flag_is_set_like_java_enemy_slots() {
-        let collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        let mut collector = crate::test_support::test_monster(EnemyId::TheCollector);
         let mut torch = crate::test_support::test_monster(EnemyId::TorchHead);
         torch.id = 2;
         torch.is_dying = true;
         torch.is_escaped = true;
         torch.logical_position = 647;
+        collector.collector.enemy_slots = [None, Some(2)];
         let mut state = crate::test_support::combat_with_monsters(vec![collector.clone(), torch]);
         state.monster_protocol_identity_mut(2).draw_x = Some(647);
 
@@ -83,13 +84,48 @@ mod tests {
         assert!(
             actions.iter().any(|action| matches!(
                 action,
-                Action::SpawnMonsterSmart {
-                    monster_id: EnemyId::TorchHead,
+                Action::SpawnCollectorTorch {
+                    collector_id: 1,
+                    slot: 2,
                     protocol_draw_x: Some(647),
                     ..
                 }
             )),
             "Java Collector revive only checks the stored TorchHead isDying flag"
+        );
+    }
+
+    #[test]
+    fn revive_ignores_stale_dying_torch_not_in_java_enemy_slots() {
+        let mut collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        collector.collector.initial_spawn = false;
+        collector.collector.ult_used = true;
+        collector.collector.turns_taken = 1;
+        collector.collector.enemy_slots = [None, Some(3)];
+
+        let mut stale_torch = crate::test_support::test_monster(EnemyId::TorchHead);
+        stale_torch.id = 2;
+        stale_torch.is_dying = true;
+        let mut current_torch = crate::test_support::test_monster(EnemyId::TorchHead);
+        current_torch.id = 3;
+        current_torch.is_dying = false;
+        let state = crate::test_support::combat_with_monsters(vec![
+            collector.clone(),
+            stale_torch,
+            current_torch,
+        ]);
+
+        let plan = TheCollector::roll_move_custom_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &collector,
+            state.meta.ascension_level,
+            1,
+            &state.entities.monsters,
+        );
+
+        assert_eq!(
+            plan.move_id, FIREBALL,
+            "Java Collector.isMinionDead only checks current enemySlots values, not stale dead TorchHead instances left in the monster group"
         );
     }
 }
@@ -254,6 +290,7 @@ fn collector_runtime_update(
             initial_spawn,
             ult_used,
             turns_taken,
+            enemy_slots: None,
             protocol_seeded: Some(true),
         },
     }
@@ -270,10 +307,18 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
         && history[history.len() - 2] == move_id
 }
 
-fn minion_dead(monsters: &[MonsterEntity]) -> bool {
-    monsters
+fn monster_by_id(monsters: &[MonsterEntity], id: usize) -> Option<&MonsterEntity> {
+    monsters.iter().find(|monster| monster.id == id)
+}
+
+fn minion_dead(entity: &MonsterEntity, monsters: &[MonsterEntity]) -> bool {
+    entity
+        .collector
+        .enemy_slots
         .iter()
-        .any(|monster| monster.monster_type == EnemyId::TorchHead as usize && monster.is_dying)
+        .flatten()
+        .filter_map(|monster_id| monster_by_id(monsters, *monster_id))
+        .any(|monster| monster.is_dying)
 }
 
 fn living_monster_ids(state: &CombatState) -> Vec<usize> {
@@ -286,33 +331,38 @@ fn living_monster_ids(state: &CombatState) -> Vec<usize> {
         .collect()
 }
 
-fn dying_torch_draw_xs(state: &CombatState) -> Vec<i32> {
-    let mut positions = state
-        .entities
-        .monsters
+fn dying_torch_slots(entity: &MonsterEntity, state: &CombatState) -> Vec<(u8, i32)> {
+    let mut slots = entity
+        .collector
+        .enemy_slots
         .iter()
-        .filter(|monster| monster.monster_type == EnemyId::TorchHead as usize && monster.is_dying)
-        .map(|monster| {
-            state
-                .monster_protocol_identity(monster.id)
-                .and_then(|identity| identity.draw_x)
-                .unwrap_or(monster.logical_position)
+        .enumerate()
+        .filter_map(|(slot_index, monster_id)| {
+            let monster = monster_by_id(&state.entities.monsters, (*monster_id)?)?;
+            monster.is_dying.then(|| {
+                let java_slot = slot_index as u8 + 1;
+                let draw_x = state
+                    .monster_protocol_identity(monster.id)
+                    .and_then(|identity| identity.draw_x)
+                    .unwrap_or(monster.logical_position);
+                (java_slot, draw_x)
+            })
         })
         .collect::<Vec<_>>();
-    positions.sort_by(|left, right| right.cmp(left));
-    positions
+    slots.sort_by(|left, right| right.1.cmp(&left.1));
+    slots
 }
 
-fn spawn_torch_action(draw_x: i32) -> Action {
-    Action::SpawnMonsterSmart {
-        monster_id: EnemyId::TorchHead,
+fn spawn_torch_action(collector_id: usize, slot: u8, draw_x: i32) -> Action {
+    Action::SpawnCollectorTorch {
+        collector_id,
+        slot,
         logical_position: draw_x,
         hp: SpawnHpSpec {
             current: SpawnHpValue::Rolled,
             max: SpawnHpValue::Rolled,
         },
         protocol_draw_x: Some(draw_x),
-        is_minion: true,
     }
 }
 
@@ -332,7 +382,7 @@ impl TheCollector {
         if turns_taken >= 3 && !ult_used {
             return mega_debuff_plan(ascension_level);
         }
-        if num <= 25 && minion_dead(monsters) && !last_move(entity, REVIVE) {
+        if num <= 25 && minion_dead(entity, monsters) && !last_move(entity, REVIVE) {
             return revive_plan();
         }
         if num <= 70 && !last_two_moves(entity, FIREBALL) {
@@ -377,7 +427,10 @@ impl MonsterBehavior for TheCollector {
         let mut actions = match plan.move_id {
             SPAWN => TORCH_DRAW_X
                 .into_iter()
-                .map(spawn_torch_action)
+                .enumerate()
+                .map(|(slot_index, draw_x)| {
+                    spawn_torch_action(entity.id, slot_index as u8 + 1, draw_x)
+                })
                 .collect::<Vec<_>>(),
             FIREBALL => attack_actions(
                 entity.id,
@@ -438,9 +491,9 @@ impl MonsterBehavior for TheCollector {
                     ),
                 ]
             }
-            REVIVE => dying_torch_draw_xs(state)
+            REVIVE => dying_torch_slots(entity, state)
                 .into_iter()
-                .map(spawn_torch_action)
+                .map(|(slot, draw_x)| spawn_torch_action(entity.id, slot, draw_x))
                 .collect::<Vec<_>>(),
             _ => panic!(
                 "collector take_turn received unsupported move {}",

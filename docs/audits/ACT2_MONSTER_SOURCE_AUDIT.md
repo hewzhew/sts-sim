@@ -182,16 +182,22 @@ Collector private runtime truth is represented explicitly:
 - `initialSpawn`
 - `ultUsed`
 - `turnsTaken`
+- `enemySlots`
 
 Rust matches the Java macro rules:
 
 - initial turn spawns two Torch Heads;
 - after three turns, if the ultimate has not been used, Mega Debuff is forced;
-- Revive is considered when a stored Torch Head is dying and the previous move was not Revive;
+- Revive is considered when a Torch Head currently stored in Java `enemySlots` is dying and the
+  previous move was not Revive;
 - Buff blocks self first, then applies Strength to every monster that is not dead/dying/escaping.
 
 Torch Head's update-loop fire effect is UI-only. Its constructor-set move is followed by Java
 `init()` rolling a move during spawn; Rust's spawn handler likewise rolls the spawned monster.
+
+Rust now tracks Collector torch slots explicitly instead of scanning all TorchHead instances in the
+monster group. This matters because Java leaves old dying minion objects in the group after revive,
+while `enemySlots` is updated to point at the replacement TorchHead.
 
 ### Masked Bandits
 
@@ -219,9 +225,6 @@ omitting them.
 
 ## Still Worth Rechecking
 
-- Collector's `enemySlots` map is represented in Rust by Torch Head identity/position rather than a
-  literal map. That is mechanically equivalent for the current fight shape, but should be reopened
-  if nonstandard Torch Head spawning or live snapshot import creates extra Torch Heads.
 - Torch Head constructor `setMove` appends to Java move history before `init()` rolls again. Rust
   preserves the planned move and behavior but does not currently need the extra constructor-history
   entry because Torch Head has no history-dependent decisions.

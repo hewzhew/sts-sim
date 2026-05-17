@@ -1166,6 +1166,7 @@ pub struct CollectorRuntimeState {
     pub initial_spawn: bool,
     pub ult_used: bool,
     pub turns_taken: u8,
+    pub enemy_slots: [Option<EntityId>; 2],
 }
 
 impl Default for CollectorRuntimeState {
@@ -1175,6 +1176,7 @@ impl Default for CollectorRuntimeState {
             initial_spawn: true,
             ult_used: false,
             turns_taken: 0,
+            enemy_slots: [None, None],
         }
     }
 }
