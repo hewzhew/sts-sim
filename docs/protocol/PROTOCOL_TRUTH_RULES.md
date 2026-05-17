@@ -55,6 +55,8 @@ Examples:
 - `monster.runtime_state.guardian_threshold`
 - `monster.runtime_state.angry_amount`
 - `monster.runtime_state.activated`
+- `monster.runtime_state.used_mega_debuff`
+- `monster.runtime_state.thorns_count`
 - `relic.runtime_state.used_this_combat`
 - `relic.runtime_state.used_up`
 - `relic.runtime_state.counter`

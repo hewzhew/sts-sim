@@ -53,6 +53,8 @@ executes. Rust now carries this as explicit `SpikerRuntimeState` instead of deri
 history. This matters because Java `setMove` appends to move history when a move is planned; a
 planned-but-unexecuted thorns buff must not count as an executed buff for the `thornsCount > 5`
 attack-forcing rule.
+`CommunicationMod` exports Java's private `thornsCount` as `monster.runtime_state.thorns_count`,
+and Rust state sync treats it as strict protocol truth.
 
 ### Shapes Encounter Construction
 
@@ -110,6 +112,8 @@ Rust now carries explicit `WrithingMassRuntimeState`:
 The runtime flag is set only by the Mega Debuff take-turn action, before adding Parasite to the
 master deck. Search/memo state keys include this runtime field, so branches where Parasite has been
 executed are not merged with branches where Mega Debuff was only a transient Reactive intent.
+`CommunicationMod` exports Java's private `usedMegaDebuff` as
+`monster.runtime_state.used_mega_debuff`, and Rust state sync treats it as strict protocol truth.
 
 ### Darkling
 
@@ -198,8 +202,7 @@ in Java:
 
 ## Follow-Up Watch Points
 
-- Protocol/live snapshots must export `WrithingMass.runtime_state.used_mega_debuff`; otherwise
-  state import cannot distinguish "Mega Debuff intent appeared under Reactive" from "Parasite was
-  actually executed."
-- Protocol/live snapshots must export `Spiker.runtime_state.thorns_count`; otherwise state import
-  cannot distinguish planned thorns buffs from executed thorns buffs.
+- Act 3 live/protocol runtime truth for `WrithingMass.usedMegaDebuff` and `Spiker.thornsCount` is
+  now exported and strictly imported. Future Act 3 monster fixes should continue using this pattern:
+  Java private field -> protocol `runtime_state` -> Rust runtime field, not move-history inference
+  when planning and execution can diverge.

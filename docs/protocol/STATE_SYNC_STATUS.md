@@ -89,6 +89,8 @@ Rust currently consumes explicit Java runtime fields for:
 - `Chosen.used_hex`
 - `Lagavulin.idle_count`
 - `Lagavulin.is_out_triggered`
+- `WrithingMass.used_mega_debuff`
+- `Spiker.thorns_count`
 
 ### Relics
 
