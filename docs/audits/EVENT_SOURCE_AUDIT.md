@@ -146,16 +146,24 @@ Rust previously incremented `upgrades` directly for every locally classified
 starter basic card. That could over-upgrade an already upgraded Strike/Defend
 and bypass the normal master-deck upgrade path.
 
+Java also always exposes the `[Simplicity]` remove-card button. If there are no
+non-bottled purgeable cards, clicking it advances to the complete screen without
+opening a grid selection. Rust previously presented that button as disabled and
+still opened a pending purge selection if called directly.
+
 Fixes:
 
 - `[Basics]` now filters through Java-equivalent starter-basic plus
   `master_deck_card_can_upgrade`.
 - Upgrades now go through `upgrade_card_with_source(...,
   Event(BackTotheBasics))`.
+- `[Simplicity]` is no longer marked disabled solely because no removable card
+  exists; the no-candidate path now advances without opening pending selection.
 
 Tests:
 
 - `basics_upgrades_only_upgradeable_starter_strikes_and_defends`
+- `simplicity_without_purgeable_cards_advances_without_pending_like_java`
 
 ### Fountain bottled curse removal semantics
 
@@ -482,11 +490,14 @@ Fixes:
 
 - Donation now only pays 75 gold and advances to the paid prompt.
 - The next event click opens `RunPendingChoiceReason::PurgeNonBottled`.
+- Direct calls to disabled donation now stay inert when the player has less
+  than 75 gold.
 
 Tests:
 
 - `donate_pays_gold_before_opening_purge_prompt_like_java`
 - `paid_continue_opens_non_bottled_purge_selection`
+- `disabled_donate_does_not_pay_or_advance`
 
 ### Golden Wing remove damage and attack gate
 
@@ -1414,4 +1425,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `923 passed`.
+- Current result after this pass: `925 passed`.

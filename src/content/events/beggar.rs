@@ -38,9 +38,13 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     match event_state.current_screen {
         0 => match choice_idx {
             0 => {
-                run_state
-                    .change_gold_with_source(-GOLD_COST, DomainEventSource::Event(EventId::Beggar));
-                event_state.current_screen = 1;
+                if run_state.gold >= GOLD_COST {
+                    run_state.change_gold_with_source(
+                        -GOLD_COST,
+                        DomainEventSource::Event(EventId::Beggar),
+                    );
+                    event_state.current_screen = 1;
+                }
             }
             _ => {
                 event_state.completed = true;
@@ -116,5 +120,19 @@ mod tests {
             EngineState::RunPendingChoice(ref pending)
                 if pending.reason == RunPendingChoiceReason::PurgeNonBottled
         ));
+    }
+
+    #[test]
+    fn disabled_donate_does_not_pay_or_advance() {
+        let mut run_state = beggar_run(0);
+        run_state.gold = 50;
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.gold, 50);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
     }
 }

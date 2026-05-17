@@ -3,18 +3,12 @@ use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
         0 => {
             // Simplicity: Purge a card; Basics: Upgrade all Strikes/Defends
-            let has_purgeable =
-                crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state);
             vec![
-                if has_purgeable {
-                    EventChoiceMeta::new("[Simplicity] Remove a card from your deck.")
-                } else {
-                    EventChoiceMeta::disabled("[Simplicity] No removable cards.", "No cards")
-                },
+                EventChoiceMeta::new("[Simplicity] Remove a card from your deck."),
                 EventChoiceMeta::new("[Basics] Upgrade all Strikes and Defends."),
                 EventChoiceMeta::new("[Leave]"),
             ]
@@ -33,14 +27,16 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 0 => {
                     // Purge a card: transition to RunPendingChoice::Purge
                     event_state.current_screen = 1;
-                    run_state.event_state = Some(event_state);
-                    *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
-                        min_choices: 1,
-                        max_choices: 1,
-                        reason: RunPendingChoiceReason::PurgeNonBottled,
-                        return_state: Box::new(EngineState::EventRoom),
-                    });
-                    return;
+                    if crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state) {
+                        run_state.event_state = Some(event_state);
+                        *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+                            min_choices: 1,
+                            max_choices: 1,
+                            reason: RunPendingChoiceReason::PurgeNonBottled,
+                            return_state: Box::new(EngineState::EventRoom),
+                        });
+                        return;
+                    }
                 }
                 1 => {
                     // Upgrade all Strikes and Defends
@@ -124,5 +120,26 @@ mod tests {
                 source: DomainEventSource::Event(EventId::BackTotheBasics),
             } if before.uuid == 11 && before.upgrades == 0 && after.upgrades == 1
         )));
+    }
+
+    #[test]
+    fn simplicity_without_purgeable_cards_advances_without_pending_like_java() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.master_deck = vec![card(CardId::AscendersBane, 11, 0)];
+        run_state.event_state = Some(EventState::new(EventId::BackTotheBasics));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        let choices = super::get_choices(&run_state, run_state.event_state.as_ref().unwrap());
+        assert!(
+            !choices[0].disabled,
+            "Java BackToBasics always exposes the Simplicity button"
+        );
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
     }
 }
