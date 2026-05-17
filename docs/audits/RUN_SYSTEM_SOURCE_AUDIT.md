@@ -277,6 +277,7 @@ Source-backed candidate gates now covered by direct generator tests:
 | `TheJoust` | Act 2; at least 50 gold | `act == 2 && gold >= 50` |
 | `WomanInBlue` | at least 50 gold | `gold >= 50` |
 | `NoteForYourself` | non-daily; A0, or A1-A14 lower than profile's highest unlocked ascension | explicit `is_daily_run`, `ascension_level`, and `highest_unlocked_ascension_level` in `EventContext` |
+| `SecretPortal` | Act 3 and `CardCrawlGame.playtime >= 800.0f` | `act_num == 3 && playtime_seconds >= 800.0` |
 | `DeadAdventurer` | floor greater than 6 | `floor_num > 6` |
 | `Mushrooms` | floor greater than 6 | `floor_num > 6` |
 | `MoaiHead` | has Golden Idol or HP percentage is at most 50% | `has_golden_idol || hp_pct <= 0.5` |
@@ -291,15 +292,16 @@ Important boundary:
   candidate selection time. This is mechanically acceptable for ordinary
   candidate generation, but exact empty-pool/fallback behavior remains open
   until event-list initialization is made context-aware.
-- Java `SecretPortal` is a special one-time Act 3 portal event, but the Rust
-  simulator intentionally excludes it from `EventId`; this remains documented in
-  `EVENT_SOURCE_AUDIT.md` rather than silently treated as implemented.
+- Java `SecretPortal` is now represented in Rust as a special one-time Act 3
+  event with the Java playtime gate. The Rust event handler maps accepting the
+  portal to the boss combat boundary instead of modeling Java's UI room
+  transition objects (`MapRoomNode(-1, 15)`, `pathX`, `pathY`).
 
 Validation:
 
 - `cargo test events::generator --all-targets`
-- Latest full-suite validation after boss chest flow work:
-  `cargo test --all-targets` -> `1022 passed`.
+- Latest full-suite validation after Secret Portal event work:
+  `cargo test --all-targets` -> `1045 passed`.
 
 ## Boss Chest Relic Flow Pass
 

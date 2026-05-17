@@ -105,6 +105,7 @@ pub fn event_id_from_name(raw: &str) -> Option<EventId> {
         "Lab" => Some(EventId::Lab),
         "Note For Yourself" => Some(EventId::NoteForYourself),
         "Purification Shrine" => Some(EventId::Purifier),
+        "SecretPortal" | "Secret Portal" => Some(EventId::SecretPortal),
         "Transmogrifier" => Some(EventId::Transmorgrifier),
         "Upgrade Shrine" => Some(EventId::UpgradeShrine),
         "We Meet Again" => Some(EventId::WeMeetAgain),
@@ -526,6 +527,11 @@ pub fn handle_event_choice(
         EventId::TheJoust => {
             crate::content::events::the_joust::handle_choice(engine_state, run_state, choice_idx)
         }
+        EventId::SecretPortal => crate::content::events::secret_portal::handle_choice(
+            engine_state,
+            run_state,
+            choice_idx,
+        ),
         EventId::Neow => {
             crate::content::events::neow::handle_choice(engine_state, run_state, choice_idx)
         }
@@ -603,6 +609,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::Designer => crate::content::events::designer::get_options(run_state, event_state),
         EventId::WomanInBlue => {
             crate::content::events::woman_in_blue::get_options(run_state, event_state)
+        }
+        EventId::SecretPortal => {
+            crate::content::events::secret_portal::get_options(run_state, event_state)
         }
         EventId::Cleric => crate::content::events::cleric::get_options(run_state, event_state),
         _ => return None,
@@ -920,6 +929,9 @@ pub fn get_event_choices(run_state: &RunState) -> Vec<EventChoiceMeta> {
             EventId::TheJoust => {
                 crate::content::events::the_joust::get_choices(run_state, event_state)
             }
+            EventId::SecretPortal => {
+                crate::content::events::secret_portal::get_choices(run_state, event_state)
+            }
             EventId::Neow => crate::content::events::neow::get_choices(run_state, event_state),
         }
     } else {
@@ -938,6 +950,10 @@ mod tests {
         assert_eq!(event_id_from_name("Neow Event"), Some(EventId::Neow));
         assert_eq!(event_id_from_name("Liars Game"), Some(EventId::Ssssserpent));
         assert_eq!(event_id_from_name("Wing Statue"), Some(EventId::GoldenWing));
+        assert_eq!(
+            event_id_from_name("SecretPortal"),
+            Some(EventId::SecretPortal)
+        );
     }
 
     #[test]

@@ -186,7 +186,10 @@ mod tests {
         let mut run_state = shining_run(30, 30);
         run_state.master_deck = vec![
             crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Injury, 11),
-            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::AscendersBane, 12),
+            crate::runtime::combat::CombatCard::new(
+                crate::content::cards::CardId::AscendersBane,
+                12,
+            ),
         ];
         let mut engine_state = EngineState::EventRoom;
 

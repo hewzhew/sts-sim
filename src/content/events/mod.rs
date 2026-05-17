@@ -133,6 +133,7 @@ pub mod dead_adventurer;
 pub mod match_and_keep;
 pub mod mind_bloom;
 pub mod note_for_yourself;
+pub mod secret_portal;
 pub mod sensory_stone;
 pub mod we_meet_again;
 

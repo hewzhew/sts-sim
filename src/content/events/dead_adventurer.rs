@@ -143,20 +143,16 @@ fn build_combat_rewards(
     internal_state: i32,
 ) -> crate::rewards::state::RewardState {
     let mut rewards = crate::rewards::state::RewardState::new();
-    rewards
-        .items
-        .push(crate::rewards::state::RewardItem::Gold {
-            amount: combat_gold_reward(internal_state),
-        });
+    rewards.items.push(crate::rewards::state::RewardItem::Gold {
+        amount: combat_gold_reward(internal_state),
+    });
     let n = num_rewards(internal_state) as usize;
     for i in n..3 {
         let rt = reward_type(internal_state, i as i32);
         match rt {
-            0 => rewards
-                .items
-                .push(crate::rewards::state::RewardItem::Gold {
-                    amount: GOLD_REWARD,
-                }),
+            0 => rewards.items.push(crate::rewards::state::RewardItem::Gold {
+                amount: GOLD_REWARD,
+            }),
             2 => {
                 let relic_id = run_state.random_relic();
                 rewards

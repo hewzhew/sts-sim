@@ -57,6 +57,7 @@ pub enum EventId {
     Lab,
     NoteForYourself,
     Purifier,
+    SecretPortal,
     Transmorgrifier,
     UpgradeShrine,
     WeMeetAgain,

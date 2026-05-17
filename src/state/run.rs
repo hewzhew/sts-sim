@@ -30,6 +30,10 @@ pub struct RunState {
     pub highest_unlocked_ascension_level: u8,
     pub act_num: u8,
     pub floor_num: i32,
+    /// Java `CardCrawlGame.playtime`, in seconds. The simulator does not
+    /// advance this from wall-clock time; callers may set it for source-parity
+    /// event generation such as Secret Portal.
+    pub playtime_seconds: f32,
     pub player_class: &'static str, // "Ironclad", "Silent", "Defect", "Watcher"
 
     pub map: MapState,
@@ -132,6 +136,7 @@ impl RunState {
             highest_unlocked_ascension_level: ascension_level,
             act_num: 1,
             floor_num: 0,
+            playtime_seconds: 0.0,
             player_class,
             map: MapState::new(first_map),
             rng_pool: RngPool::new(seed),
@@ -766,6 +771,7 @@ impl RunState {
             gold: self.gold,
             current_hp: self.current_hp,
             max_hp: self.max_hp,
+            playtime_seconds: self.playtime_seconds,
             has_curses,
             has_golden_idol,
             tiny_chest_counter,

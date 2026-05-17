@@ -120,6 +120,7 @@ impl EventGenerator {
                 EventId::Lab,
                 EventId::Nloth,
                 EventId::NoteForYourself,
+                EventId::SecretPortal,
                 EventId::TheJoust,
                 EventId::WeMeetAgain,
                 EventId::WomanInBlue,
@@ -343,6 +344,7 @@ fn is_one_time_event_candidate(event: EventId, ctx: &EventContext) -> bool {
         EventId::Nloth => ctx.act_num == 2 && ctx.relic_count >= 2,
         EventId::TheJoust => ctx.act_num == 2 && ctx.gold >= 50,
         EventId::WomanInBlue => ctx.gold >= 50,
+        EventId::SecretPortal => ctx.act_num == 3 && ctx.playtime_seconds >= 800.0,
         EventId::NoteForYourself => is_note_for_yourself_available(ctx),
         _ => true,
     }
@@ -379,6 +381,7 @@ mod tests {
             gold: 99,
             current_hp: 80,
             max_hp: 80,
+            playtime_seconds: 0.0,
             has_curses: false,
             tiny_chest_counter: 0,
             has_golden_idol: false,
@@ -462,6 +465,15 @@ mod tests {
         assert!(!is_one_time_event_candidate(EventId::WomanInBlue, &c));
         c.gold = 50;
         assert!(is_one_time_event_candidate(EventId::WomanInBlue, &c));
+
+        c.act_num = 2;
+        c.playtime_seconds = 900.0;
+        assert!(!is_one_time_event_candidate(EventId::SecretPortal, &c));
+        c.act_num = 3;
+        c.playtime_seconds = 799.9;
+        assert!(!is_one_time_event_candidate(EventId::SecretPortal, &c));
+        c.playtime_seconds = 800.0;
+        assert!(is_one_time_event_candidate(EventId::SecretPortal, &c));
     }
 
     #[test]

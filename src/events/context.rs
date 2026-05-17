@@ -12,6 +12,9 @@ pub struct EventContext {
     pub gold: i32,
     pub current_hp: i32,
     pub max_hp: i32,
+    /// Java `CardCrawlGame.playtime`, in seconds. Used by the Act 3
+    /// `SecretPortal` special one-time event gate.
+    pub playtime_seconds: f32,
 
     // Conditions used for specific events (e.g., Fountain of Curse Cleansing requires a curse)
     pub has_curses: bool,

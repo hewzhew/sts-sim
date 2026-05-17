@@ -89,13 +89,19 @@ mod tests {
         handle_choice(&mut engine_state, &mut run_state, 0);
 
         assert_eq!(run_state.gold, 0);
-        assert!(!run_state.master_deck.iter().any(|card| card.id == CardId::Doubt));
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Doubt));
         assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
 
         handle_choice(&mut engine_state, &mut run_state, 0);
 
         assert_eq!(run_state.gold, 175);
-        assert!(run_state.master_deck.iter().any(|card| card.id == CardId::Doubt));
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Doubt));
         let events = run_state.take_emitted_events();
         assert!(events.iter().any(|event| matches!(
             event,
@@ -135,7 +141,10 @@ mod tests {
         handle_choice(&mut engine_state, &mut run_state, 0);
 
         assert_eq!(run_state.gold, 175);
-        assert!(!run_state.master_deck.iter().any(|card| card.id == CardId::Doubt));
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Doubt));
         let omamori = run_state
             .relics
             .iter()
