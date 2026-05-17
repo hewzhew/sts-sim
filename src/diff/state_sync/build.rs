@@ -209,6 +209,7 @@ pub fn build_combat_state_from_snapshots(
             reptomancer: Default::default(),
             darkling: Default::default(),
             nemesis: Default::default(),
+            giant_head: Default::default(),
             lagavulin: Default::default(),
             guardian: Default::default(),
         };

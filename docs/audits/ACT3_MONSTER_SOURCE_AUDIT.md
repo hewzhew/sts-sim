@@ -179,8 +179,13 @@ Snake Dagger source-backed details preserved:
 ### Giant Head
 
 Java has private `count`, starting at 5 and reduced to 4 at A18+ during pre-battle. It decrements
-inside `getMove()` before selecting/counting the attack. Rust derives count from move history and
-the A18 starting offset. This matches Java roll timing in normal decision-boundary flow.
+inside `getMove()` before selecting/counting the attack.
+
+Rust now carries `count` explicitly in `GiantHeadRuntimeState`, imports it from
+`monster.runtime_state.count`, mutates the A18 pre-battle decrement immediately in
+`use_pre_battle_actions`, and updates the roll-time decrement through `Action::UpdateMonsterRuntime`.
+`move_history` is used only for Java's explicit repeat checks around Glare and Count, not to recover
+the private countdown.
 
 ### Nemesis
 

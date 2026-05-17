@@ -69,6 +69,7 @@ Examples:
 - `monster.runtime_state.gremlin_slots`
 - `monster.runtime_state.dagger_slots`
 - `monster.runtime_state.scythe_cooldown`
+- `monster.runtime_state.count`
 - `relic.runtime_state.used_this_combat`
 - `relic.runtime_state.used_up`
 - `relic.runtime_state.counter`
@@ -142,6 +143,7 @@ Examples of the correct pattern:
 - `Reptomancer.daggers`
 - `Nemesis.firstMove`
 - `Nemesis.scytheCooldown`
+- `GiantHead.count`
 - `AcidSlime_L.splitTriggered`
 - `SpikeSlime_L.splitTriggered`
 - `SphericGuardian.firstMove`

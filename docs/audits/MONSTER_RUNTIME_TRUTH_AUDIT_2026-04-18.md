@@ -47,6 +47,7 @@ Scope:
 | Darkling | `first_move`, `nip_dmg` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Reptomancer | `first_move`, `dagger_slots` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Nemesis | `first_move`, `scythe_cooldown` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
+| Giant Head | `count` | Yes | Yes | Yes | `lastTwoMoves(GLARE/COUNT)` sequencing only | Good |
 
 ## Notes
 
@@ -227,6 +228,19 @@ Scope:
   `on_roll_move`.
 - The opening branch is gated by Java private `firstMove`, not by empty move history.
 - Remaining history usage is limited to Java's explicit `lastMove` / `lastTwoMoves` repeat rules.
+
+### Giant Head
+
+- `runtime_state.count` is exported by `CommunicationMod`.
+- Rust state sync marks the Giant Head runtime slice as protocol-seeded and semantic roll logic
+  requires factory/protocol seeding before branch selection.
+- Java initializes `count=5`, decrements it once in `usePreBattleAction()` at A18+, and then
+  decrements it inside every `getMove()` until it reaches -6. Rust mirrors the A18 pre-battle
+  mutation immediately in the pre-battle hook and roll-time mutation through
+  `Action::UpdateMonsterRuntime`.
+- `It Is Time` damage is computed from the Java private count after the roll-time decrement, not
+  from move-history length.
+- Remaining history usage is limited to Java's explicit Glare/Count repeat rules.
 
 ### The Guardian
 

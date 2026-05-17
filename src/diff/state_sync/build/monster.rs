@@ -78,6 +78,16 @@ pub(crate) fn seed_nemesis_runtime_from_snapshot(monster: &Value, entity: &mut M
     entity.nemesis.protocol_seeded = true;
 }
 
+pub(crate) fn seed_giant_head_runtime_from_snapshot(monster: &Value, entity: &mut MonsterEntity) {
+    let monster_type = EnemyId::GiantHead;
+    if entity.monster_type != monster_type as usize {
+        return;
+    }
+
+    entity.giant_head.count = runtime_state_i32(monster, monster_type, "count");
+    entity.giant_head.protocol_seeded = true;
+}
+
 pub(crate) fn seed_writhing_mass_runtime_from_snapshot(
     monster: &Value,
     entity: &mut MonsterEntity,
@@ -739,6 +749,7 @@ pub(crate) fn apply_monster_truth_snapshot(
     seed_reptomancer_runtime_from_snapshot(monster, entity);
     seed_darkling_runtime_from_snapshot(monster, entity);
     seed_nemesis_runtime_from_snapshot(monster, entity);
+    seed_giant_head_runtime_from_snapshot(monster, entity);
     seed_lagavulin_runtime_from_snapshot(monster, entity);
     seed_guardian_runtime_from_snapshot(monster, entity);
 }
@@ -772,9 +783,9 @@ mod tests {
     };
     use crate::content::monsters::EnemyId;
     use crate::runtime::combat::{
-        ByrdRuntimeState, ChosenRuntimeState, DarklingRuntimeState, GuardianRuntimeState,
-        HexaghostRuntimeState, LagavulinRuntimeState, MonsterEntity, MonsterMoveState,
-        NemesisRuntimeState, ShelledParasiteRuntimeState, SneckoRuntimeState,
+        ByrdRuntimeState, ChosenRuntimeState, DarklingRuntimeState, GiantHeadRuntimeState,
+        GuardianRuntimeState, HexaghostRuntimeState, LagavulinRuntimeState, MonsterEntity,
+        MonsterMoveState, NemesisRuntimeState, ShelledParasiteRuntimeState, SneckoRuntimeState,
     };
 
     fn blank_monster_entity() -> MonsterEntity {
@@ -821,6 +832,7 @@ mod tests {
             reptomancer: Default::default(),
             darkling: DarklingRuntimeState::default(),
             nemesis: NemesisRuntimeState::default(),
+            giant_head: GiantHeadRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         }
@@ -938,6 +950,25 @@ mod tests {
             "runtime_state": {
                 "first_move": false,
                 "scythe_cooldown": 2
+            },
+            "is_gone": false,
+            "half_dead": false
+        })
+    }
+
+    fn giant_head_truth_snapshot() -> serde_json::Value {
+        json!({
+            "id": "GiantHead",
+            "current_hp": 500,
+            "max_hp": 500,
+            "block": 0,
+            "intent": "ATTACK",
+            "move_id": 2,
+            "move_base_damage": 40,
+            "move_hits": 1,
+            "powers": [],
+            "runtime_state": {
+                "count": 0
             },
             "is_gone": false,
             "half_dead": false
@@ -1442,6 +1473,18 @@ mod tests {
         assert!(!entity.nemesis.first_move);
         assert_eq!(entity.nemesis.scythe_cooldown, 2);
         assert!(entity.nemesis.protocol_seeded);
+    }
+
+    #[test]
+    fn truth_import_seeds_giant_head_runtime_state() {
+        let snapshot = giant_head_truth_snapshot();
+        let mut entity = blank_monster_entity();
+
+        apply_monster_truth_snapshot(&snapshot, 0, &mut entity);
+
+        assert_eq!(entity.planned_move_id(), 2);
+        assert_eq!(entity.giant_head.count, 0);
+        assert!(entity.giant_head.protocol_seeded);
     }
 
     #[test]

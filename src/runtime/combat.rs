@@ -953,6 +953,7 @@ pub struct MonsterEntity {
     pub reptomancer: ReptomancerRuntimeState,
     pub darkling: DarklingRuntimeState,
     pub nemesis: NemesisRuntimeState,
+    pub giant_head: GiantHeadRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
 }
@@ -1350,6 +1351,12 @@ pub struct NemesisRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub scythe_cooldown: i32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GiantHeadRuntimeState {
+    pub protocol_seeded: bool,
+    pub count: i32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -2243,6 +2250,7 @@ mod tests {
             reptomancer: ReptomancerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             nemesis: NemesisRuntimeState::default(),
+            giant_head: GiantHeadRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2321,6 +2329,7 @@ mod tests {
             reptomancer: ReptomancerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             nemesis: NemesisRuntimeState::default(),
+            giant_head: GiantHeadRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };
@@ -2396,6 +2405,7 @@ mod tests {
             reptomancer: ReptomancerRuntimeState::default(),
             darkling: DarklingRuntimeState::default(),
             nemesis: NemesisRuntimeState::default(),
+            giant_head: GiantHeadRuntimeState::default(),
             lagavulin: LagavulinRuntimeState::default(),
             guardian: GuardianRuntimeState::default(),
         };

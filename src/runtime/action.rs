@@ -140,6 +140,10 @@ pub enum MonsterRuntimePatch {
         scythe_cooldown: Option<i32>,
         protocol_seeded: Option<bool>,
     },
+    GiantHead {
+        count: Option<i32>,
+        protocol_seeded: Option<bool>,
+    },
     GremlinWizard {
         current_charge: Option<u8>,
         protocol_seeded: Option<bool>,

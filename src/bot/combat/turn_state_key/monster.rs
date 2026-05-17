@@ -3,13 +3,14 @@ use crate::runtime::combat::CollectorRuntimeState;
 use crate::runtime::combat::{
     AwakenedOneRuntimeState, BookOfStabbingRuntimeState, BronzeAutomatonRuntimeState,
     BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
-    CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, GremlinLeaderRuntimeState,
-    GremlinNobRuntimeState, GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState,
-    JawWormRuntimeState, LagavulinRuntimeState, LargeSlimeRuntimeState, LouseRuntimeState,
-    MonsterEntity, MonsterMoveState, NemesisRuntimeState, ReptomancerRuntimeState,
-    SentryRuntimeState, ShelledParasiteRuntimeState, SlaverRedRuntimeState, SlimeBossRuntimeState,
-    SneckoRuntimeState, SphericGuardianRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
-    SpireSpearRuntimeState, ThiefRuntimeState, WrithingMassRuntimeState,
+    CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, GiantHeadRuntimeState,
+    GremlinLeaderRuntimeState, GremlinNobRuntimeState, GremlinWizardRuntimeState,
+    GuardianRuntimeState, HexaghostRuntimeState, JawWormRuntimeState, LagavulinRuntimeState,
+    LargeSlimeRuntimeState, LouseRuntimeState, MonsterEntity, MonsterMoveState,
+    NemesisRuntimeState, ReptomancerRuntimeState, SentryRuntimeState, ShelledParasiteRuntimeState,
+    SlaverRedRuntimeState, SlimeBossRuntimeState, SneckoRuntimeState, SphericGuardianRuntimeState,
+    SpikerRuntimeState, SpireShieldRuntimeState, SpireSpearRuntimeState, ThiefRuntimeState,
+    WrithingMassRuntimeState,
 };
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
@@ -103,6 +104,12 @@ fn stable_monster_runtime_signature(monster: &MonsterEntity) -> String {
         }
         Some(EnemyId::Nemesis) => {
             format!("nemesis:{}", stable_nemesis_signature(&monster.nemesis))
+        }
+        Some(EnemyId::GiantHead) => {
+            format!(
+                "giant_head:{}",
+                stable_giant_head_signature(&monster.giant_head)
+            )
         }
         Some(EnemyId::WrithingMass) => {
             format!(
@@ -559,6 +566,10 @@ fn stable_nemesis_signature(state: &NemesisRuntimeState) -> String {
         "seed{}:first{}:scythe_cd{}",
         state.protocol_seeded, state.first_move, state.scythe_cooldown
     )
+}
+
+fn stable_giant_head_signature(state: &GiantHeadRuntimeState) -> String {
+    format!("seed{}:count{}", state.protocol_seeded, state.count)
 }
 
 fn stable_writhing_mass_signature(state: &WrithingMassRuntimeState) -> String {
