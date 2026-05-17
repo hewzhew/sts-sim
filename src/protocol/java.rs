@@ -890,6 +890,13 @@ mod tests {
     }
 
     #[test]
+    fn relic_id_from_java_maps_java_egg2_ids_to_rust_egg_ids() {
+        assert_eq!(relic_id_from_java("Molten Egg 2"), Some(RelicId::MoltenEgg));
+        assert_eq!(relic_id_from_java("Toxic Egg 2"), Some(RelicId::ToxicEgg));
+        assert_eq!(relic_id_from_java("Frozen Egg 2"), Some(RelicId::FrozenEgg));
+    }
+
+    #[test]
     fn build_noncombat_affordance_snapshot_maps_protocol_actions() {
         let action_space = json!({
             "noncombat_action_space": {

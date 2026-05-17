@@ -1709,21 +1709,21 @@
                         "Toxic Egg 2"
                     ],
                     "scope": "card_reward",
-                    "rust": null
+                    "rust": "ToxicEgg"
                 },
                 "FrozenEgg2": {
                     "java": [
                         "Frozen Egg 2"
                     ],
                     "scope": "card_reward",
-                    "rust": null
+                    "rust": "FrozenEgg"
                 },
                 "MoltenEgg2": {
                     "java": [
                         "Molten Egg 2"
                     ],
                     "scope": "card_reward",
-                    "rust": null
+                    "rust": "MoltenEgg"
                 },
                 "TheAbacus": {
                     "java": [

@@ -1521,6 +1521,7 @@ Coverage:
 - `initial_shop_card_previews_apply_existing_egg_relics`
 - `shop_card_purchase_preserves_preview_upgrades`
 - `buying_egg_relic_previews_existing_shop_cards_like_java_store_relic`
+- `relic_id_from_java_maps_java_egg2_ids_to_rust_egg_ids`
 
 ### Toxic Egg
 
@@ -1549,6 +1550,7 @@ Coverage:
 - `shared_uncommon_card_reward_relic_metadata_matches_java_sources`
 - `egg_relics_preview_obtain_upgrades_without_double_upgrading_existing_plus_cards`
 - `initial_shop_card_previews_apply_existing_egg_relics`
+- `relic_id_from_java_maps_java_egg2_ids_to_rust_egg_ids`
 
 ### Frozen Egg
 
@@ -1577,6 +1579,7 @@ Coverage:
 - `shared_uncommon_card_reward_relic_metadata_matches_java_sources`
 - `egg_relics_preview_obtain_upgrades_without_double_upgrading_existing_plus_cards`
 - `initial_shop_card_previews_apply_existing_egg_relics`
+- `relic_id_from_java_maps_java_egg2_ids_to_rust_egg_ids`
 
 ### Question Card
 

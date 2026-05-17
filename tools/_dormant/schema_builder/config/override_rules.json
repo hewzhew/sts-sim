@@ -1029,19 +1029,9 @@
                 "Yang"
             ]
         },
-        "FrozenEgg": {
-            "java": [
-                "UNKNOWN_PLEASE_MAP_MANUALLY"
-            ]
-        },
         "GoldPlatedCables": {
             "java": [
                 "Cables"
-            ]
-        },
-        "MoltenEgg": {
-            "java": [
-                "UNKNOWN_PLEASE_MAP_MANUALLY"
             ]
         },
         "RingOfTheSerpent": {
@@ -1057,11 +1047,6 @@
         "ThreadAndNeedle": {
             "java": [
                 "Thread and Needle"
-            ]
-        },
-        "ToxicEgg": {
-            "java": [
-                "UNKNOWN_PLEASE_MAP_MANUALLY"
             ]
         },
         "Waffle": {

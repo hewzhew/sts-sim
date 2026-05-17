@@ -3925,17 +3925,6 @@
           "confidence": 1.0,
           "status": "mapped"
         },
-        "FrozenEgg": {
-          "rust": "FrozenEgg",
-          "java": [],
-          "sources": [
-            "override_rules"
-          ],
-          "candidates": [],
-          "match_rule": "override",
-          "confidence": 1.0,
-          "status": "unsupported"
-        },
         "FrozenEye": {
           "rust": "FrozenEye",
           "java": [
@@ -4621,17 +4610,6 @@
           "match_rule": "override",
           "confidence": 1.0,
           "status": "mapped"
-        },
-        "MoltenEgg": {
-          "rust": "MoltenEgg",
-          "java": [],
-          "sources": [
-            "override_rules"
-          ],
-          "candidates": [],
-          "match_rule": "override",
-          "confidence": 1.0,
-          "status": "unsupported"
         },
         "MummifiedHand": {
           "rust": "MummifiedHand",
@@ -5923,17 +5901,6 @@
           "confidence": 1.0,
           "status": "mapped"
         },
-        "ToxicEgg": {
-          "rust": "ToxicEgg",
-          "java": [],
-          "sources": [
-            "override_rules"
-          ],
-          "candidates": [],
-          "match_rule": "override",
-          "confidence": 1.0,
-          "status": "unsupported"
-        },
         "ToyOrnithopter": {
           "rust": "ToyOrnithopter",
           "java": [
@@ -6279,42 +6246,42 @@
             "Toxic Egg 2"
           ],
           "scope": "card_reward",
-          "rust": null,
+          "rust": "ToxicEgg",
           "sources": [
             "baseline"
           ],
           "candidates": [],
           "confidence": 1.0,
           "match_rule": "baseline",
-          "status": "unsupported"
+          "status": "mapped"
         },
         "FrozenEgg2": {
           "java": [
             "Frozen Egg 2"
           ],
           "scope": "card_reward",
-          "rust": null,
+          "rust": "FrozenEgg",
           "sources": [
             "baseline"
           ],
           "candidates": [],
           "confidence": 1.0,
           "match_rule": "baseline",
-          "status": "unsupported"
+          "status": "mapped"
         },
         "MoltenEgg2": {
           "java": [
             "Molten Egg 2"
           ],
           "scope": "card_reward",
-          "rust": null,
+          "rust": "MoltenEgg",
           "sources": [
             "baseline"
           ],
           "candidates": [],
           "confidence": 1.0,
           "match_rule": "baseline",
-          "status": "unsupported"
+          "status": "mapped"
         },
         "RedCirclet": {
           "java": [
