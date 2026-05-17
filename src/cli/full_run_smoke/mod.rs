@@ -148,6 +148,7 @@ impl FullRunEnv {
         run.room_mugged.hash(&mut hasher);
         run.room_smoked.hash(&mut hasher);
         run.pending_boss_reward.hash(&mut hasher);
+        run.pending_boss_act_transition.hash(&mut hasher);
 
         if let Some(combat) = &self.ctx.combat_state {
             combat.meta.ascension_level.hash(&mut hasher);

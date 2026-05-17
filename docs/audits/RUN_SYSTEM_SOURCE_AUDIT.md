@@ -270,5 +270,36 @@ Important boundary:
 Validation:
 
 - `cargo test events::generator --all-targets`
-- Latest full-suite validation after between-act transition work:
-  `cargo test --all-targets` -> `1016 passed`.
+- Latest full-suite validation after boss chest flow work:
+  `cargo test --all-targets` -> `1018 passed`.
+
+## Boss Chest Relic Flow Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/rewards/chests/BossChest.java`
+- `D:/rust/cardcrawl/screens/select/BossRelicSelectScreen.java`
+- `D:/rust/cardcrawl/relics/AbstractRelic.java`
+- `D:/rust/cardcrawl/ui/buttons/ProceedButton.java`
+
+Key source facts:
+
+- `BossChest.open(true)` opens `bossRelicScreen` in the current
+  `TreasureRoomBoss`; it does not transition dungeons.
+- Selecting a boss relic calls `AbstractRelic.bossObtainLogic()`, which obtains
+  normal boss relics immediately. The room is marked `choseRelic`, but the
+  dungeon transition happens later when the boss chest is left through the
+  proceed flow.
+- State-interrupting boss relics therefore run their on-equip selection in the
+  old act, not after `dungeonTransitionSetup()`.
+
+Rust result:
+
+- Boss relic selection now obtains the selected relic before advancing the act.
+- If the selected relic opens a run-level selection such as Astrolabe, Rust
+  defers `advance_act()` until that selection resolves.
+
+Coverage:
+
+- `boss_relic_choice_obtains_normal_relic_before_advancing_act`
+- `boss_relic_choice_defers_act_transition_until_on_equip_selection_resolves`

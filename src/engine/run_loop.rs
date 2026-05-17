@@ -537,6 +537,9 @@ pub fn tick_run(
 
                 // Return to the previous stashed state (e.g. Map, Event, or Shop)
                 *engine_state = *rpc_state.return_state.clone();
+                if run_state.complete_pending_boss_act_transition() {
+                    *engine_state = EngineState::MapNavigation;
+                }
                 if matches!(engine_state, EngineState::EventRoom) {
                     if let Err(e) =
                         crate::engine::event_handler::handle_event_post_run_pending_choice(
@@ -551,6 +554,9 @@ pub fn tick_run(
             } else if let Some(ClientInput::Cancel) = input {
                 // Return to stashed state without mutating deck
                 *engine_state = *rpc_state.return_state.clone();
+                if run_state.complete_pending_boss_act_transition() {
+                    *engine_state = EngineState::MapNavigation;
+                }
             } else {
                 // Input wasn't matched, preserve State
             }

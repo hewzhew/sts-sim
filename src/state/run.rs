@@ -97,6 +97,10 @@ pub struct RunState {
 
     /// Set to true after boss combat ends, consumed by post_reward_state() to trigger act advance.
     pub pending_boss_reward: bool,
+    /// Set when a boss relic's on-equip effect opens a run-level selection.
+    /// Java obtains the boss relic before the dungeon transition; the transition
+    /// happens only after that selection resolves and the boss chest is left.
+    pub pending_boss_act_transition: bool,
     pub emitted_events: Vec<DomainEvent>,
 }
 
@@ -177,6 +181,7 @@ impl RunState {
             boss_list: Vec::new(),
 
             pending_boss_reward: false,
+            pending_boss_act_transition: false,
             emitted_events: Vec::new(),
         };
         rs.init_relic_pools();
@@ -1114,6 +1119,7 @@ impl RunState {
     pub fn enter_final_act(&mut self) {
         self.act_num = 4;
         self.pending_boss_reward = false;
+        self.pending_boss_act_transition = false;
         self.apply_dungeon_transition_setup_effects();
         self.map = crate::map::state::MapState::new(crate::map::generator::generate_ending_map());
         self.init_encounter_lists();
@@ -1133,6 +1139,7 @@ impl RunState {
     pub fn advance_act(&mut self) {
         self.act_num += 1;
         self.pending_boss_reward = false;
+        self.pending_boss_act_transition = false;
 
         self.apply_dungeon_transition_setup_effects();
 
@@ -1188,6 +1195,15 @@ impl RunState {
                 }
             } // TheEnding
         };
+    }
+
+    pub fn complete_pending_boss_act_transition(&mut self) -> bool {
+        if self.pending_boss_act_transition {
+            self.advance_act();
+            true
+        } else {
+            false
+        }
     }
 
     fn apply_dungeon_transition_setup_effects(&mut self) {
