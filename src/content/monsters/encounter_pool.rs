@@ -503,6 +503,83 @@ pub fn generate_boss_list(
 mod tests {
     use super::*;
 
+    fn assert_java_normal_repeat_rule(monsters: &[EncounterId], first_strong_index: usize) {
+        for window in monsters.windows(2) {
+            assert_ne!(
+                window[0], window[1],
+                "Java normal encounter list rejects immediate repeats"
+            );
+        }
+        for (start, window) in monsters.windows(3).enumerate() {
+            let end = start + 2;
+            if end == first_strong_index {
+                continue;
+            }
+            assert_ne!(
+                window[0], window[2],
+                "Java normal encounter list rejects repeats from two encounters ago"
+            );
+        }
+    }
+
+    fn assert_java_elite_repeat_rule(elites: &[EncounterId]) {
+        for window in elites.windows(2) {
+            assert_ne!(
+                window[0], window[1],
+                "Java elite encounter list rejects immediate repeats"
+            );
+        }
+    }
+
+    fn assert_first_strong_exclusions(monsters: &[EncounterId]) {
+        let last_weak = monsters[2];
+        let first_strong = monsters[3];
+        assert!(
+            !match last_weak {
+                EncounterId::Looter => [EncounterId::ExordiumThugs].contains(&first_strong),
+                EncounterId::BlueSlaver => {
+                    [EncounterId::RedSlaver, EncounterId::ExordiumThugs].contains(&first_strong)
+                }
+                EncounterId::TwoLouse => [EncounterId::ThreeLouse].contains(&first_strong),
+                EncounterId::SmallSlimes => {
+                    [EncounterId::LargeSlime, EncounterId::LotsOfSlimes].contains(&first_strong)
+                }
+                _ => false,
+            },
+            "Java populateFirstStrongEnemy rerolls act-specific exclusions"
+        );
+    }
+
+    #[test]
+    fn encounter_lists_preserve_java_generation_invariants() {
+        for seed in [1, 7, 17, 42, 5201, 99991] {
+            let mut rng = StsRng::new(seed);
+
+            let (act1_monsters, act1_elites) = generate_encounter_lists(1, &mut rng);
+            assert_eq!(act1_monsters.len(), 16);
+            assert_eq!(act1_elites.len(), 10);
+            assert_java_normal_repeat_rule(&act1_monsters, 3);
+            assert_java_elite_repeat_rule(&act1_elites);
+            assert_first_strong_exclusions(&act1_monsters);
+
+            let (act2_monsters, act2_elites) = generate_encounter_lists(2, &mut rng);
+            assert_eq!(act2_monsters.len(), 15);
+            assert_eq!(act2_elites.len(), 10);
+            assert_java_normal_repeat_rule(&act2_monsters, 2);
+            assert_java_elite_repeat_rule(&act2_elites);
+
+            let (act3_monsters, act3_elites) = generate_encounter_lists(3, &mut rng);
+            assert_eq!(act3_monsters.len(), 15);
+            assert_eq!(act3_elites.len(), 10);
+            assert_java_normal_repeat_rule(&act3_monsters, 2);
+            assert_java_elite_repeat_rule(&act3_elites);
+
+            let (act4_monsters, act4_elites) = generate_encounter_lists(4, &mut rng);
+            assert_eq!(act4_monsters, vec![EncounterId::ShieldAndSpear; 3]);
+            assert_eq!(act4_elites, vec![EncounterId::ShieldAndSpear; 3]);
+        }
+    }
+
     #[test]
     fn unknown_act_does_not_fall_back_to_exordium_encounter_lists() {
         let mut rng = StsRng::new(7);

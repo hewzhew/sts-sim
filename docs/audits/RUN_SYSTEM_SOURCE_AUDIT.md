@@ -129,6 +129,9 @@ and reachability gates must be checked separately.
      the full Java queue so A20 Act 3 double-boss logic can test the
      post-entry `bossList.size() == 2` condition. Act 4 now initializes the
      The Ending encounter lists to Shield/Spear and the boss key/list to Heart.
+     Encounter-list generation now has invariant coverage for Java list
+     lengths, normal/elite repeat rules, first-strong exclusion handling, and
+     Act 4 Shield/Spear lists.
 
 5. Map and room visibility:
    - define what the player knows on the map at each point;
@@ -199,6 +202,44 @@ Coverage:
 - `final_act_initializes_shield_spear_and_heart_context`
 - `act3_a20_first_boss_starts_second_boss_without_reward_or_victory`
 - `act3_boss_with_all_keys_enters_initialized_final_act`
+
+## Monster Encounter Scheduling Pass
+
+Java sources checked:
+
+- `D:/rust/cardcrawl/dungeons/AbstractDungeon.java`
+- `D:/rust/cardcrawl/dungeons/Exordium.java`
+- `D:/rust/cardcrawl/dungeons/TheCity.java`
+- `D:/rust/cardcrawl/dungeons/TheBeyond.java`
+- `D:/rust/cardcrawl/dungeons/TheEnding.java`
+- `D:/rust/cardcrawl/monsters/MonsterInfo.java`
+
+Key source facts:
+
+- `MonsterInfo.normalizeWeights` sorts entries by weight, divides by total,
+  and `MonsterInfo.roll` uses the cumulative normalized list.
+- Normal `populateMonsterList` rejects an encounter equal to the previous entry
+  or the entry two positions back.
+- Elite `populateMonsterList` rejects only immediate repeats.
+- `populateFirstStrongEnemy` is a separate path: it rerolls only the
+  act-specific exclusion list and does not apply the two-back normal-repeat
+  rule.
+- The Ending fills both normal and elite lists with `Shield and Spear`.
+
+Rust result:
+
+- Encounter scheduling uses the same weighted roll shape, repeat rules, and
+  first-strong exclusion boundary.
+- Act 1 generates 3 weak encounters, then 1 first strong encounter, then 12
+  additional strong encounters, matching Java's call sequence rather than the
+  misleading method name alone.
+- Act 2 and Act 3 generate 2 weak encounters, then 1 first strong encounter,
+  then 12 additional strong encounters.
+- Act 4 encounter lists are fixed to Shield/Spear.
+
+Coverage:
+
+- `encounter_lists_preserve_java_generation_invariants`
 
 ## Map Movement and Visibility Pass
 
