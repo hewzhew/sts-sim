@@ -230,6 +230,8 @@ Rust result:
 
 - Encounter scheduling uses the same weighted roll shape, repeat rules, and
   first-strong exclusion boundary.
+- Exordium, City, and Beyond first-strong exclusion tables are covered directly
+  against the Java `generateExclusions` cases.
 - Act 1 generates 3 weak encounters, then 1 first strong encounter, then 12
   additional strong encounters, matching Java's call sequence rather than the
   misleading method name alone.
@@ -239,6 +241,7 @@ Rust result:
 
 Coverage:
 
+- `first_strong_exclusion_tables_match_java_sources`
 - `encounter_lists_preserve_java_generation_invariants`
 
 ## Map Movement and Visibility Pass

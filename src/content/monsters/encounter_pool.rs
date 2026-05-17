@@ -531,7 +531,7 @@ mod tests {
         }
     }
 
-    fn assert_first_strong_exclusions(monsters: &[EncounterId]) {
+    fn assert_exordium_first_strong_exclusions(monsters: &[EncounterId]) {
         let last_weak = monsters[2];
         let first_strong = monsters[3];
         assert!(
@@ -550,6 +550,90 @@ mod tests {
         );
     }
 
+    fn assert_city_first_strong_exclusions(monsters: &[EncounterId]) {
+        let last_weak = monsters[1];
+        let first_strong = monsters[2];
+        assert!(
+            !match last_weak {
+                EncounterId::SphericGuardian => {
+                    [EncounterId::SentryAndSphere].contains(&first_strong)
+                }
+                EncounterId::ThreeByrds => [EncounterId::ChosenAndByrds].contains(&first_strong),
+                EncounterId::ChosenAlone => {
+                    [EncounterId::ChosenAndByrds, EncounterId::CultistAndChosen]
+                        .contains(&first_strong)
+                }
+                _ => false,
+            },
+            "Java TheCity.generateExclusions rerolls the first strong encounter"
+        );
+    }
+
+    fn assert_beyond_first_strong_exclusions(monsters: &[EncounterId]) {
+        let last_weak = monsters[1];
+        let first_strong = monsters[2];
+        assert!(
+            !match last_weak {
+                EncounterId::ThreeDarklings =>
+                    [EncounterId::ThreeDarklings].contains(&first_strong),
+                EncounterId::OrbWalker => [EncounterId::OrbWalker].contains(&first_strong),
+                EncounterId::ThreeShapes => [EncounterId::FourShapes].contains(&first_strong),
+                _ => false,
+            },
+            "Java TheBeyond.generateExclusions rerolls the first strong encounter"
+        );
+    }
+
+    #[test]
+    fn first_strong_exclusion_tables_match_java_sources() {
+        assert_eq!(
+            exordium_exclusions(&[EncounterId::Looter]),
+            vec![EncounterId::ExordiumThugs]
+        );
+        assert_eq!(
+            exordium_exclusions(&[EncounterId::BlueSlaver]),
+            vec![EncounterId::RedSlaver, EncounterId::ExordiumThugs]
+        );
+        assert_eq!(
+            exordium_exclusions(&[EncounterId::TwoLouse]),
+            vec![EncounterId::ThreeLouse]
+        );
+        assert_eq!(
+            exordium_exclusions(&[EncounterId::SmallSlimes]),
+            vec![EncounterId::LargeSlime, EncounterId::LotsOfSlimes]
+        );
+        assert!(exordium_exclusions(&[EncounterId::JawWorm]).is_empty());
+        assert!(exordium_exclusions(&[EncounterId::Cultist]).is_empty());
+
+        assert_eq!(
+            city_exclusions(&[EncounterId::SphericGuardian]),
+            vec![EncounterId::SentryAndSphere]
+        );
+        assert_eq!(
+            city_exclusions(&[EncounterId::ThreeByrds]),
+            vec![EncounterId::ChosenAndByrds]
+        );
+        assert_eq!(
+            city_exclusions(&[EncounterId::ChosenAlone]),
+            vec![EncounterId::ChosenAndByrds, EncounterId::CultistAndChosen]
+        );
+        assert!(city_exclusions(&[EncounterId::ShellParasite]).is_empty());
+        assert!(city_exclusions(&[EncounterId::TwoThieves]).is_empty());
+
+        assert_eq!(
+            beyond_exclusions(&[EncounterId::ThreeDarklings]),
+            vec![EncounterId::ThreeDarklings]
+        );
+        assert_eq!(
+            beyond_exclusions(&[EncounterId::OrbWalker]),
+            vec![EncounterId::OrbWalker]
+        );
+        assert_eq!(
+            beyond_exclusions(&[EncounterId::ThreeShapes]),
+            vec![EncounterId::FourShapes]
+        );
+    }
+
     #[test]
     fn encounter_lists_preserve_java_generation_invariants() {
         for seed in [1, 7, 17, 42, 5201, 99991] {
@@ -560,19 +644,21 @@ mod tests {
             assert_eq!(act1_elites.len(), 10);
             assert_java_normal_repeat_rule(&act1_monsters, 3);
             assert_java_elite_repeat_rule(&act1_elites);
-            assert_first_strong_exclusions(&act1_monsters);
+            assert_exordium_first_strong_exclusions(&act1_monsters);
 
             let (act2_monsters, act2_elites) = generate_encounter_lists(2, &mut rng);
             assert_eq!(act2_monsters.len(), 15);
             assert_eq!(act2_elites.len(), 10);
             assert_java_normal_repeat_rule(&act2_monsters, 2);
             assert_java_elite_repeat_rule(&act2_elites);
+            assert_city_first_strong_exclusions(&act2_monsters);
 
             let (act3_monsters, act3_elites) = generate_encounter_lists(3, &mut rng);
             assert_eq!(act3_monsters.len(), 15);
             assert_eq!(act3_elites.len(), 10);
             assert_java_normal_repeat_rule(&act3_monsters, 2);
             assert_java_elite_repeat_rule(&act3_elites);
+            assert_beyond_first_strong_exclusions(&act3_monsters);
 
             let (act4_monsters, act4_elites) = generate_encounter_lists(4, &mut rng);
             assert_eq!(act4_monsters, vec![EncounterId::ShieldAndSpear; 3]);
