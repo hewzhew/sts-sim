@@ -1177,6 +1177,7 @@ impl RunState {
         self.pending_boss_act_transition = false;
         self.apply_dungeon_transition_setup_effects();
         self.map = crate::map::state::MapState::new(crate::map::generator::generate_ending_map());
+        self.map.has_emerald_key = self.keys[2];
         self.init_encounter_lists();
         self.init_boss_list();
         self.event_generator.initialize_event_pools(self.act_num);
@@ -1213,6 +1214,7 @@ impl RunState {
         }
 
         self.map = crate::map::state::MapState::new(new_map);
+        self.map.has_emerald_key = self.keys[2];
 
         // Regenerate encounter lists for the new act
         self.init_encounter_lists();

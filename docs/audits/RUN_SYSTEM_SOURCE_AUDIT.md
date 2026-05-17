@@ -208,11 +208,17 @@ Rust result:
   has charges and normal edge travel would not already reach that node.
 - Public next-node observation marks Wing Boots targets reachable without
   exposing multi-row jumps.
+- Map observations now keep two Emerald-key concepts separate:
+  `RunMapNodeObservationV0.has_emerald_key` is the Java
+  `MapRoomNode.hasEmeraldKey` marker for the burning elite, while
+  `RunMapObservationV0.has_emerald_key` is the player's owned key state
+  (`Settings.hasEmeraldKey` / `RunState.keys[2]`).
 
 Coverage:
 
 - `wing_boots_matches_java_next_row_only_semantics`
 - `legal_map_actions_expose_wing_boots_only_on_next_row`
+- `map_observation_separates_owned_emerald_key_from_emerald_elite_marker`
 
 ## Between-Act Transition Pass
 

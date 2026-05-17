@@ -336,7 +336,7 @@ pub fn build_map_observation(run_state: &RunState) -> RunMapObservationV0 {
         current_x: run_state.map.current_x,
         current_y: run_state.map.current_y,
         boss_node_available: run_state.map.boss_node_available,
-        has_emerald_key: run_state.map.has_emerald_key,
+        has_emerald_key: run_state.keys[2],
         nodes,
     }
 }
@@ -1077,6 +1077,8 @@ pub fn reward_item_observation(
 mod tests {
     use super::*;
     use crate::content::potions::{Potion, PotionId};
+    use crate::map::node::{MapRoomNode, RoomType};
+    use crate::map::state::MapState;
     use crate::state::events::{EventId, EventState};
 
     fn potion_obs_by_id(
@@ -1145,5 +1147,28 @@ mod tests {
         assert!(observations[0].can_use);
         assert!(observations[0].can_discard);
         assert!(observations[0].requires_target);
+    }
+
+    #[test]
+    fn map_observation_separates_owned_emerald_key_from_emerald_elite_marker() {
+        let mut emerald_elite = MapRoomNode::new(0, 0);
+        emerald_elite.class = Some(RoomType::MonsterRoomElite);
+        emerald_elite.has_emerald_key = true;
+
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.map = MapState::new(vec![vec![emerald_elite]]);
+        run_state.map.has_emerald_key = false;
+        run_state.keys[2] = true;
+
+        let observation = build_map_observation(&run_state);
+
+        assert!(
+            observation.has_emerald_key,
+            "top-level map observation reports the player's obtained Emerald key"
+        );
+        assert!(
+            observation.nodes[0].has_emerald_key,
+            "node-level field still reports the Emerald elite marker"
+        );
     }
 }

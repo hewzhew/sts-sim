@@ -100,6 +100,7 @@ pub fn handle(
                         RewardItem::EmeraldKey => {
                             // Java: ObtainKeyEffect(GREEN) — sets green key
                             run_state.keys[2] = true; // keys[2] = Green/Emerald
+                            run_state.map.has_emerald_key = true;
                         }
                         RewardItem::SapphireKey => {
                             // Java: ObtainKeyEffect(BLUE) — sets blue key
@@ -298,5 +299,26 @@ mod tests {
             "Java BossChest calls returnRandomRelic(BOSS) exactly three times"
         );
         assert!(run_state.boss_relic_pool.is_empty());
+    }
+
+    #[test]
+    fn emerald_key_reward_claim_updates_owned_key_visibility_state() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.keys[2] = false;
+        run_state.map.has_emerald_key = false;
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::EmeraldKey];
+
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(0)),
+        );
+
+        assert!(run_state.keys[2]);
+        assert!(
+            run_state.map.has_emerald_key,
+            "legacy map-level key visibility mirrors the owned Emerald key after claiming it"
+        );
     }
 }
