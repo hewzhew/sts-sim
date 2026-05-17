@@ -164,25 +164,21 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
                 1 => {
                     // Remember: upgrade all upgradable cards + MarkOfTheBloom
-                    // Java checks canUpgrade() — most cards: upgrades == 0, SearingBlow: always
-                    for card in run_state.master_deck.iter_mut() {
-                        let def = crate::content::cards::get_card_definition(card.id);
-                        let can_upgrade = match def.rarity {
-                            crate::content::cards::CardRarity::Curse => false,
-                            _ => {
-                                // SearingBlow can upgrade infinitely; others only once
-                                card.id == crate::content::cards::CardId::SearingBlow
-                                    || card.upgrades == 0
-                            }
-                        };
-                        if can_upgrade {
-                            card.upgrades += 1;
-                        }
+                    // Java checks canUpgrade() and calls c.upgrade() for each card.
+                    let source = DomainEventSource::Event(EventId::MindBloom);
+                    let upgrade_uuids: Vec<u32> = run_state
+                        .master_deck
+                        .iter()
+                        .filter(|card| crate::state::core::master_deck_card_can_upgrade(card))
+                        .map(|card| card.uuid)
+                        .collect();
+                    for uuid in upgrade_uuids {
+                        run_state.upgrade_card_with_source(uuid, source);
                     }
                     if let Some(next_state) = run_state.obtain_relic_with_source(
                         RelicId::MarkOfTheBloom,
                         EngineState::EventRoom,
-                        DomainEventSource::Event(EventId::MindBloom),
+                        source,
                     ) {
                         *engine_state = next_state;
                     }
@@ -222,8 +218,15 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 mod tests {
     use super::*;
     use crate::content::relics::RelicState;
+    use crate::runtime::combat::CombatCard;
     use crate::state::events::{EventOptionTransition, EventRelicKind};
     use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    fn deck_card(id: CardId, uuid: u32, upgrades: u8) -> CombatCard {
+        let mut card = CombatCard::new(id, uuid);
+        card.upgrades = upgrades;
+        card
+    }
 
     #[test]
     fn remember_option_exposes_mark_of_the_bloom_semantics() {
@@ -269,6 +272,61 @@ mod tests {
     }
 
     #[test]
+    fn remember_upgrades_all_java_can_upgrade_cards_with_event_source() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.floor_num = 20;
+        rs.master_deck = vec![
+            deck_card(CardId::Strike, 11, 0),
+            deck_card(CardId::Defend, 12, 1),
+            deck_card(CardId::SearingBlow, 13, 3),
+            deck_card(CardId::Injury, 14, 0),
+        ];
+        rs.event_state = Some(EventState::new(EventId::MindBloom));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 1);
+
+        assert_eq!(
+            rs.master_deck
+                .iter()
+                .map(|card| (card.id, card.upgrades))
+                .collect::<Vec<_>>(),
+            vec![
+                (CardId::Strike, 1),
+                (CardId::Defend, 1),
+                (CardId::SearingBlow, 4),
+                (CardId::Injury, 0),
+            ]
+        );
+        let events = rs.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                before,
+                after,
+                source: DomainEventSource::Event(EventId::MindBloom),
+            } if before.uuid == 11 && before.upgrades == 0 && after.upgrades == 1
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                before,
+                after,
+                source: DomainEventSource::Event(EventId::MindBloom),
+            } if before.uuid == 13 && before.upgrades == 3 && after.upgrades == 4
+        )));
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                before,
+                source: DomainEventSource::Event(EventId::MindBloom),
+                ..
+            } if before.uuid == 12 || before.uuid == 14
+        )));
+    }
+
+    #[test]
     fn fight_uses_java_shuffled_act1_boss_key_and_rare_relic_reward() {
         let mut rs = RunState::new(123, 0, true, "Ironclad");
         rs.floor_num = 20;
@@ -289,10 +347,11 @@ mod tests {
             panic!("Mind Bloom fight should enter EventCombat");
         };
         assert_eq!(combat.encounter_key, expected_key);
-        assert!(combat.rewards.items.iter().any(|item| matches!(
-            item,
-            crate::rewards::state::RewardItem::Gold { amount: 50 }
-        )));
+        assert!(combat
+            .rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, crate::rewards::state::RewardItem::Gold { amount: 50 })));
         assert!(combat.rewards.items.iter().any(|item| matches!(
             item,
             crate::rewards::state::RewardItem::Relic {

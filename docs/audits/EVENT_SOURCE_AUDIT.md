@@ -1014,6 +1014,11 @@ Fixes:
 - The Mark of the Bloom branch now obtains the relic through
   `obtain_relic_with_source(..., Event(MindBloom))` instead of pushing directly
   into `run_state.relics`.
+- The Mark of the Bloom branch now upgrades each Java `canUpgrade()` eligible
+  master-deck card through `upgrade_card_with_source(..., Event(MindBloom))`
+  instead of mutating `card.upgrades` directly. This preserves sourced upgrade
+  events and keeps Searing Blow's repeat-upgrade exception centralized in the
+  shared master-deck predicate.
 - The high-floor heal branch now uses `heal_with_source`, preserving Java heal
   hooks such as `Mark of the Bloom`, before obtaining `Doubt` through the event
   card path.
@@ -1022,6 +1027,7 @@ Tests:
 
 - `fight_uses_java_shuffled_act1_boss_key_and_rare_relic_reward`
 - `remember_obtains_mark_of_the_bloom_with_event_source`
+- `remember_upgrades_all_java_can_upgrade_cards_with_event_source`
 - `high_floor_desire_heals_with_event_source_and_obtains_doubt`
 - `high_floor_desire_heal_respects_mark_of_the_bloom`
 
@@ -1761,4 +1767,4 @@ Validation:
 ## Validation
 
 - `cargo test --all-targets`
-- Current result after this pass: `992 passed`.
+- Current result after this pass: `993 passed`.
