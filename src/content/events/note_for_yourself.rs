@@ -148,6 +148,84 @@ mod tests {
     }
 
     #[test]
+    fn take_manual_obtain_runs_relic_hooks_before_card_obtained_event() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.note_for_yourself_card = CardId::Bash;
+        rs.relics.push(RelicState::new(RelicId::CeramicFish));
+        rs.event_state = Some(EventState {
+            id: EventId::NoteForYourself,
+            current_screen: 1,
+            completed: false,
+            combat_pending: false,
+            internal_state: 0,
+            extra_data: Vec::new(),
+        });
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        let events = rs.take_emitted_events();
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(EventId::NoteForYourself),
+                        ..
+                    }
+                )
+            })
+            .expect("NoteForYourself should manually run relic onObtainCard");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::NoteForYourself),
+                    } if card.id == CardId::Bash
+                )
+            })
+            .expect("NoteForYourself should add the stored note card to the master deck");
+
+        assert!(
+            fish_gold_pos < obtained_pos,
+            "Java NoteForYourself manually calls relic onObtainCard before masterDeck.addToTop"
+        );
+    }
+
+    #[test]
+    fn take_manual_obtain_applies_egg_upgrade_to_note_card() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.note_for_yourself_card = CardId::Strike;
+        rs.relics.push(RelicState::new(RelicId::MoltenEgg));
+        rs.event_state = Some(EventState {
+            id: EventId::NoteForYourself,
+            current_screen: 1,
+            completed: false,
+            combat_pending: false,
+            internal_state: 0,
+            extra_data: Vec::new(),
+        });
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        let obtained = rs
+            .master_deck
+            .last()
+            .expect("NoteForYourself should add the note card to the top of master deck");
+        assert_eq!(obtained.id, CardId::Strike);
+        assert_eq!(
+            obtained.upgrades, 1,
+            "Java NoteForYourself calls relic onObtainCard before addToTop, so Molten Egg upgrades the stored Attack"
+        );
+    }
+
+    #[test]
     fn take_selection_excludes_bottled_and_unpurgeable_cards_after_obtaining_note_card() {
         let mut rs = RunState::new(1, 0, true, "Ironclad");
         rs.master_deck = vec![
