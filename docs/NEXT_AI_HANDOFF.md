@@ -45,15 +45,29 @@ Forbidden:
 
 Branch tip:
 
-- `1ad40f2 Add snake plant move parity tests`
+- `632492c Fix snecko confusion amount parity`
 
 Recent commits:
 
+- `632492c Fix snecko confusion amount parity`
+- `4316cb0 Update handoff after snake plant audit`
 - `1ad40f2 Add snake plant move parity tests`
 - `09b6d51 Update handoff after healer audit`
 - `8d16e69 Add healer ally loop parity tests`
-- `12f34b3 Update handoff after byrd audit`
-- `a4d74f4 Fix byrd headbutt setmove timing`
+
+`632492c` summary:
+
+- `Snecko` Java/Rust behavior was checked.
+- Fixed Glare's `Confusion` action to carry no numeric amount (`0`) like Java
+  `new ConfusionPower(player)` and Rust `SneckoEye`; runtime application still
+  canonicalizes sentinel powers internally.
+- Added tests for Glare's no-stack Confusion action, A17 Tail queuing Weak
+  before Vulnerable, and Java `lastTwoMoves(BITE)` forcing Tail.
+
+Verification for `632492c`:
+
+- `cargo test snecko --all-targets` -> `7 passed`
+- `cargo test --all-targets` -> `1222 passed`
 
 `1ad40f2` summary:
 
@@ -212,7 +226,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `1ad40f2`.
+No uncommitted changes were present after `632492c`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -245,6 +259,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   needed; added Healer tests for zero-HP non-dying ally inclusion.
 - `SnakePlant`: checked in `1ad40f2`. No business logic change needed; added
   A17 `lastMoveBefore` and triple-hit queue tests.
+- `Snecko`: fixed in `632492c`. Glare now emits Confusion with no numeric
+  amount (`0`) like Java `new ConfusionPower(player)`, and tests lock Glare,
+  A17 Tail debuff ordering, and the `lastTwoMoves(BITE)` Tail rule.
 
 Split / victory timing:
 
@@ -303,10 +320,11 @@ Recommended next packets:
    - `Byrd` was fixed in `a4d74f4`.
    - `Centurion` + `Healer` were checked in `8d16e69`.
    - `SnakePlant` was checked in `1ad40f2`.
-   - Next narrow packet: `Snecko`
-     (`D:\rust\cardcrawl\monsters\city\Snecko.java` and
-     `src/content/monsters/city/snecko.rs`). It is compact but exercises
-     Confusion debuff sequencing and post-turn `RollMoveAction`.
+   - `Snecko` was fixed in `632492c`.
+   - Next narrow packet: `SphericGuardian`
+     (`D:\rust\cardcrawl\monsters\city\SphericGuardian.java` and
+     `src/content/monsters/city/spheric_guardian.rs`). It exercises Artifact,
+     block, attack/debuff ordering, and post-turn `RollMoveAction`.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
