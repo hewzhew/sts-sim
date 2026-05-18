@@ -3615,6 +3615,39 @@ mod tests {
             overflow_state.zones.discard_pile[0].upgrades, 0,
             "Java Stasis full-hand path uses MakeTempCardInDiscardAction(card, true), whose sameUUID constructor skips Master Reality"
         );
+
+        let mut execution_overflow_state = blank_test_combat();
+        execution_overflow_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        for uuid in 1..=10 {
+            execution_overflow_state
+                .zones
+                .hand
+                .push(CombatCard::new(CardId::Strike, uuid));
+        }
+        execution_overflow_state
+            .zones
+            .limbo
+            .push(CombatCard::new(CardId::SearingBlow, 99));
+
+        handle_return_stasis_card(99, true, &mut execution_overflow_state);
+
+        assert!(execution_overflow_state.zones.limbo.is_empty());
+        assert_eq!(execution_overflow_state.zones.discard_pile.len(), 1);
+        assert_eq!(execution_overflow_state.zones.discard_pile[0].uuid, 99);
+        assert_eq!(
+            execution_overflow_state.zones.discard_pile[0].upgrades, 1,
+            "If Stasis queued the hand action but hand is full at execution, Java keeps the constructor Master Reality upgrade and the discard visual copy upgrade does not affect the srcCard"
+        );
     }
 
     #[test]
@@ -3694,6 +3727,35 @@ mod tests {
         assert_ne!(
             state.zones.discard_pile[0].uuid, state.zones.draw_pile[0].uuid,
             "Java MakeTempCardInDiscardAndDeckAction uses separate stat-equivalent copies"
+        );
+    }
+
+    #[test]
+    fn make_temp_card_in_discard_and_deck_applies_one_master_reality_per_destination() {
+        let mut state = blank_test_combat();
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        handle_make_temp_card_in_discard_and_deck(CardId::SearingBlow, 1, &mut state);
+
+        assert_eq!(state.zones.draw_pile.len(), 1);
+        assert_eq!(state.zones.discard_pile.len(), 1);
+        assert_eq!(
+            state.zones.draw_pile[0].upgrades, 1,
+            "Java draw-pile effect upgrades its inserted stat-equivalent copy once"
+        );
+        assert_eq!(
+            state.zones.discard_pile[0].upgrades, 1,
+            "Java discard effect upgrades its separate stat-equivalent copy once"
         );
     }
 
