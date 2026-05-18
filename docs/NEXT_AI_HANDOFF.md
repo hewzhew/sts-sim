@@ -1,6 +1,6 @@
 # Next AI Handoff
 
-Date: 2026-05-17
+Date: 2026-05-18
 Branch: `codex/evidence-path-cleanup-20260509`
 Workspace: `D:\rust\sts_simulator`
 Java source reference: `D:\rust\cardcrawl`
@@ -45,17 +45,35 @@ Forbidden:
 
 Branch tip:
 
-- `874605d Fix thief move chaining parity`
+- `1ac61f2 Fix gremlin setmove timing parity`
 
 Recent commits:
 
+- `1ac61f2 Fix gremlin setmove timing parity`
+- `e0c2ded Update handoff after thief parity`
 - `874605d Fix thief move chaining parity`
 - `da4095f Update parity handoff state`
 - `d0adc3b Fix bandit setmove chain parity`
 - `bb06207 Expose public map context during combat observations`
-- `44acc14 Fix secret portal boss transition semantics`
-- `bc09895 Preserve potion canUse overrides`
-- `69c983c Model treasure chest open boundary`
+
+`1ac61f2` summary:
+
+- Gremlin escape turns now preserve Java's queued post-escape
+  `SetMoveAction(ESCAPE)` for Fat Gremlin, Gremlin Warrior, Gremlin Thief,
+  Gremlin Wizard, and Gremlin Tsundere.
+- Gremlin Tsundere Protect now models Java timing: queued
+  `GainBlockRandomMonsterAction` is preceded by the synchronous next-move
+  update from `setMove(...)`, so the visible next intent changes before the
+  queued block action can be interrupted.
+- Gremlin Wizard Dope Magic now models Java timing: reset `currentCharge`, then
+  record the synchronous next-move update, then execute queued damage.
+- Added focused tests for the escape follow-up move and timing-sensitive Wizard
+  / Tsundere branches.
+
+Verification for `1ac61f2`:
+
+- `cargo test gremlin --all-targets` -> `34 passed`
+- `cargo test --all-targets` -> `1212 passed`
 
 `874605d` summary:
 
@@ -114,14 +132,14 @@ The current monster architecture is still usable if these rules are followed:
 - UI/VFX classes are ignored only after checking that they do not mutate combat
   state, RNG, room state, map state, or visible choices.
 
-Current text scans after `874605d`:
+Current text scans after `1ac61f2`:
 
 - `src/content/monsters` has no remaining direct `move_history().is_empty`
   private-state pattern from the recent search.
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after the latest source reads.
+No uncommitted changes were present after `1ac61f2`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -136,6 +154,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `Looter` / `Mugger`: fixed in `874605d`. Java contains both synchronous
   `setMove(...)` branches and queued `SetMoveAction(...)` branches; Rust now
   preserves the meaningful timing split for lunge/smoke/escape paths.
+- Gremlin packet: fixed in `1ac61f2`. Java Gremlin escape paths queue
+  `SetMoveAction(ESCAPE)` after `EscapeAction`; Rust now mirrors that for the
+  audited Exordium Gremlins. Timing-sensitive synchronous `setMove(...)`
+  branches in Gremlin Wizard and Gremlin Tsundere were preserved before queued
+  actions.
 
 Split / victory timing:
 
@@ -187,8 +210,12 @@ Recommended next packets:
      Keep Java duplicate move-history behavior from immediate `setMove(...)`
      plus later `SetMoveAction(...)` on the watch list.
    - `Looter` and `Mugger` were fixed in `874605d`.
-   - Next narrow packet: `GremlinFat` and `GremlinWizard`, then any remaining
-     monsters whose `takeTurn()` both acts and schedules a next move.
+   - Exordium Gremlins were fixed in `1ac61f2`.
+   - Next narrow packet: `BanditPointy`
+     (`D:\rust\cardcrawl\monsters\city\BanditPointy.java` and
+     `src/content/monsters/city/bandit_pointy.rs`). It is small and has a
+     queued `SetMoveAction` chain, so it is a good continuation point before
+     larger City monsters.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
