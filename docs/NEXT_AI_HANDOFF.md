@@ -60,6 +60,29 @@ Forbidden:
 
 Latest monster-runtime documentation reconciliation:
 
+- Rechecked Bandit Bear, Bandit Leader, and Bandit Pointy against Java/Rust
+  owners without code changes.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\city\BanditBear.java`
+  - `D:\rust\cardcrawl\monsters\city\BanditLeader.java`
+  - `D:\rust\cardcrawl\monsters\city\BanditPointy.java`
+- Rust checked:
+  - `src\content\monsters\city\bandit_bear.rs`
+  - `src\content\monsters\city\bandit_leader.rs`
+  - `src\content\monsters\city\bandit_pointy.rs`
+- Result:
+  - These three monsters require no hidden runtime truth from protocol.
+  - Bear and Leader preserve Java's unusual `takeTurn()` `SetMoveAction`
+    chains instead of moving those transitions into `roll_move_plan`.
+  - Leader's Cross Slash repeat guard remains ordinary Java `lastTwoMoves`
+    sequence logic.
+  - Bear death reactions are dialogue-only for surviving vanilla bandits, so
+    they are not imported as mechanical runtime truth.
+- Verification:
+  - `cargo test bandit --all-targets` -> `7 passed`
+
+Latest monster-runtime documentation reconciliation:
+
 - Rechecked Centurion, Orb Walker, and Spire Growth against Java/Rust owners
   without code changes.
 - Java checked:

@@ -30,6 +30,9 @@ Scope:
 | Shelled Parasite | `first_move` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Healer | None | N/A | N/A | N/A | Heal/attack/buff sequencing only | Good |
 | Centurion | None | N/A | N/A | N/A | Slash/Protect/Fury repeat rules only | Good |
+| Bandit Bear | None | N/A | N/A | N/A | SetMoveAction chain only | Good |
+| Bandit Leader | None | N/A | N/A | N/A | SetMoveAction chain plus Cross Slash `lastTwoMoves` guard only | Good |
+| Bandit Pointy | None | N/A | N/A | N/A | Repeated attack SetMoveAction only | Good |
 | Snake Plant | None | N/A | N/A | N/A | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
 | Louse | `bite_damage` | Yes | N/A | Yes | None | Good |
 | Snecko | `first_turn` | Yes | Yes | Yes | `lastTwoMoves(BITE)` sequencing | Good |
@@ -138,6 +141,27 @@ Scope:
 - `Healer` does not require hidden runtime truth from protocol.
 - The semantic migration exposed a small framework gap, so group-heal intent is now represented explicitly as `MonsterMoveSpec::Heal(HealSpec { target: AllMonsters, ... })`.
 - Execution still expands group heal and group strength buff into per-monster `Action::Heal` / `Action::ApplyPower` calls in `take_turn_plan`, which keeps the target set explicit and avoids pretending helpers already support generic group targeting.
+
+### Bandit Bear / Bandit Leader / Bandit Pointy
+
+- The bandit trio does not require hidden runtime truth from protocol.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\city\BanditBear.java`
+  - `D:\rust\cardcrawl\monsters\city\BanditLeader.java`
+  - `D:\rust\cardcrawl\monsters\city\BanditPointy.java`
+- Rust checked:
+  - `src\content\monsters\city\bandit_bear.rs`
+  - `src\content\monsters\city\bandit_leader.rs`
+  - `src\content\monsters\city\bandit_pointy.rs`
+- `BanditBear.getMove(int)` always sets `BEAR_HUG`; Java advances Bear Hug -> Lunge -> Maul through `SetMoveAction` inside `takeTurn()`. Rust mirrors this in `take_turn_plan` and keeps `roll_move_plan` as Bear Hug only.
+- `BanditLeader.getMove(int)` always sets `MOCK`; Java advances Mock -> Agonizing Slash -> Cross Slash through `SetMoveAction` inside `takeTurn()`. The only history-dependent branch is Java's Ascension 17 `lastTwoMoves(CROSS_SLASH)` guard after Cross Slash, and Rust keeps that as sequence logic instead of hidden-state recovery.
+- `BanditPointy.getMove(int)` and the follow-up `SetMoveAction` both set the same repeated two-hit attack, so no separate runtime field is needed.
+- `BanditBear.die()` calls surviving bandits' `deathReact()`, but the vanilla survivors queue only `TalkAction`; this remains UI/dialogue-only and is not imported as runtime truth.
+- Verification:
+  - `cargo test bandit --all-targets` -> `7 passed`
+
+### Generic Action-Family Checks
+
 - Action-family review aligned two generic handlers with Java:
   - `handle_heal` now ignores `is_dying` monster targets, matching `AbstractCreature.heal(...)`.
   - `handle_apply_power` now ignores escaped monster targets, matching `ApplyPowerAction.update()`.
