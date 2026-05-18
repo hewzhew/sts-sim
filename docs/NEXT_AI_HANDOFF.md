@@ -45,15 +45,38 @@ Forbidden:
 
 Branch tip:
 
-- `a8e2118 Add repulsor parity tests`
+- `5aa6309 Fix exploder turn count timing`
 
 Recent commits:
 
+- `5aa6309 Fix exploder turn count timing`
+- `7c621ab Update handoff after repulsor audit`
 - `a8e2118 Add repulsor parity tests`
 - `d4d7b57 Update handoff after orb walker audit`
 - `945681d Add orb walker parity tests`
-- `46c52af Update handoff after writhing mass audit`
-- `87044fb Fix writhing mass reactive parity`
+
+`5aa6309` summary:
+
+- `Exploder` and Java `ExplosivePower` were checked.
+- Fixed `Exploder.takeTurn()` timing:
+  - Java synchronously increments private `turnCount` before the queued
+    attack body and before `RollMoveAction`.
+  - Rust now emits the `Exploder` runtime update first, then the attack body
+    when present, then `RollMonsterMove`.
+  - The Java UNKNOWN/BLOCK branch still increments `turnCount` before rolling,
+    even though the switch body has no queued gameplay action.
+- Confirmed pre-battle `ExplosivePower` amount is 3.
+- Confirmed existing Rust `ExplosivePower` countdown order already matches
+  Java: countdown reduces the power until amount 1, then queues suicide before
+  the 30 THORNS player damage.
+- Java `AnimateSlowAttackAction`, animation startup randomness, and explosion
+  VFX were treated as presentation-only.
+
+Verification for `5aa6309`:
+
+- `cargo test exploder --all-targets` -> `5 passed`
+- `cargo test explosive --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1304 passed`
 
 `a8e2118` summary:
 
@@ -724,7 +747,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `a8e2118` before this handoff
+No uncommitted code changes were present after `5aa6309` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -838,6 +861,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `Repulsor`: checked in `a8e2118`. No business logic change was needed; tests
   lock low-roll/lastMove Attack gating, A2+ attack damage, and Dazed random
   draw-pile insertion action before roll.
+- `Exploder`: fixed in `5aa6309`. Java `takeTurn()` synchronously increments
+  private `turnCount` before queued damage or the empty UNKNOWN/BLOCK body and
+  before `RollMoveAction`; Rust now emits the runtime update first in both
+  attack and block turns. Tests also lock pre-battle Explosive amount 3 and the
+  existing Explosive countdown suicide/damage ordering.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -927,10 +955,11 @@ Recommended next packets:
    - `WrithingMass` was fixed in `87044fb`.
    - `OrbWalker` was checked in `945681d`.
    - `Repulsor` was checked in `a8e2118`.
-   - Next narrow packet: `Exploder`
-     (`D:\rust\cardcrawl\monsters\beyond\Exploder.java`,
-     `src/content/monsters/beyond/exploder.rs`, and relevant death/power
-     files if source comparison requires them).
+   - `Exploder` was fixed in `5aa6309`.
+   - Next narrow packet: dedicated `Reptomancer` move/slot behavior
+     (`D:\rust\cardcrawl\monsters\beyond\Reptomancer.java`,
+     `src/content/monsters/beyond/reptomancer.rs`, and `SnakeDagger` files if
+     summon/minion source comparison requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
