@@ -45,15 +45,41 @@ Forbidden:
 
 Branch tip:
 
-- `9e6e73f Add giant head count parity tests`
+- `6c142a3 Add time eater move parity tests`
 
 Recent commits:
 
+- `6c142a3 Add time eater move parity tests`
 - `9e6e73f Add giant head count parity tests`
 - `98ee287 Add nemesis action parity tests`
 - `fcf0f0b Fix suicide action relic parity`
 - `c7a3546 Fix darkling half-death parity`
-- `e3fd301 Update handoff after awakened one audit`
+
+`6c142a3` summary:
+
+- `TimeEater` Java/Rust behavior was checked.
+- No business logic change was needed.
+- Added tests proving:
+  - `lastTwoMoves(REVERBERATE)` blocks Reverberate and consumes Java
+    `aiRng.random(50, 99)`;
+  - `lastMove(HEAD_SLAM)` blocks Head Slam and consumes Java
+    `aiRng.randomBoolean(0.66f)`;
+  - `lastMove(RIPPLE)` blocks Ripple and consumes Java `aiRng.random(74)`;
+  - A19 Ripple queues block, Vulnerable, Weak, Frail, then roll;
+  - A19 Head Slam queues damage, Draw Reduction, two Slimed, then roll;
+  - A19 Haste queues debuff removal, Shackled removal, execution-time heal,
+    block, then roll.
+- Existing TimeEater tests already covered execution-time Haste heal amount,
+  Haste visible-spec placeholder, private `usedHaste`, and imported
+  `usedHaste` not being reconstructed from history.
+- Java first-turn `TalkAction`, `ChangeStateAction`, `WaitAction`, VFX/SFX,
+  BGM, and unlock calls remain presentation/meta side effects outside the Rust
+  combat simulator's modeled mechanics.
+
+Verification for `6c142a3`:
+
+- `cargo test time_eater --all-targets` -> `11 passed`
+- `cargo test --all-targets` -> `1280 passed`
 
 `9e6e73f` summary:
 
@@ -585,6 +611,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `GiantHead`: checked in `9e6e73f`. No business logic change was needed; tests
   lock A18 pre-battle count decrement, SlowPower amount 0, lastTwoMove gates,
   private count floor, and `IT_IS_TIME` damage.
+- `TimeEater`: checked in `6c142a3`. No business logic change was needed; tests
+  lock Haste private state, recursive reroll RNG consumption, A19 move queues,
+  and execution-time Haste healing.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -665,11 +694,13 @@ Recommended next packets:
      in `fcf0f0b`.
    - `Nemesis` was checked in `98ee287`.
    - `GiantHead` was checked in `9e6e73f`.
-   - Next narrow packet: `TimeEater`
-     (`D:\rust\cardcrawl\monsters\beyond\TimeEater.java`,
-     `src/content/monsters/beyond/time_eater.rs`, and relevant Time Warp /
-     Haste / heal / cleanse action/power files if its turn source requires
-     them).
+   - `TimeEater` was checked in `6c142a3`.
+   - Next narrow packet: `Donu` + `Deca`
+     (`D:\rust\cardcrawl\monsters\beyond\Donu.java`,
+     `D:\rust\cardcrawl\monsters\beyond\Deca.java`,
+     `src/content/monsters/beyond/donu.rs`,
+     `src/content/monsters/beyond/deca.rs`, and relevant artifact/strength
+     action/power files if their turn source requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
