@@ -630,22 +630,50 @@ pub fn tick_run(
                                 .iter()
                                 .position(|card| card.uuid == uuid)
                             {
+                                let event_id_for_selection =
+                                    run_state.event_state.as_ref().map(|es| es.id);
                                 // Store removed card's rarity in event_state.internal_state
                                 // so events (bonfire_elementals, bonfire_spirits) can apply
                                 // rarity-based rewards after purge returns.
                                 // Encoding: 0=Curse, 1=Basic, 2=Common, 3=Special, 4=Uncommon, 5=Rare
+                                let def = crate::content::cards::get_card_definition(
+                                    run_state.master_deck[idx].id,
+                                );
+                                let rarity_state = match def.rarity {
+                                    crate::content::cards::CardRarity::Curse => 0,
+                                    crate::content::cards::CardRarity::Basic => 1,
+                                    crate::content::cards::CardRarity::Common => 2,
+                                    crate::content::cards::CardRarity::Special => 3,
+                                    crate::content::cards::CardRarity::Uncommon => 4,
+                                    crate::content::cards::CardRarity::Rare => 5,
+                                };
                                 if let Some(ref mut es) = run_state.event_state {
-                                    let def = crate::content::cards::get_card_definition(
-                                        run_state.master_deck[idx].id,
-                                    );
-                                    es.internal_state = match def.rarity {
-                                        crate::content::cards::CardRarity::Curse => 0,
-                                        crate::content::cards::CardRarity::Basic => 1,
-                                        crate::content::cards::CardRarity::Common => 2,
-                                        crate::content::cards::CardRarity::Special => 3,
-                                        crate::content::cards::CardRarity::Uncommon => 4,
-                                        crate::content::cards::CardRarity::Rare => 5,
-                                    };
+                                    es.internal_state = rarity_state;
+                                }
+                                match event_id_for_selection {
+                                    Some(crate::state::events::EventId::BonfireElementals) => {
+                                        let mut reward_engine_state = EngineState::EventRoom;
+                                        crate::content::events::bonfire_elementals::apply_offer_reward(
+                                            &mut reward_engine_state,
+                                            run_state,
+                                            rarity_state,
+                                        );
+                                        if let Some(ref mut es) = run_state.event_state {
+                                            es.current_screen = 3;
+                                        }
+                                    }
+                                    Some(crate::state::events::EventId::BonfireSpirits) => {
+                                        let mut reward_engine_state = EngineState::EventRoom;
+                                        crate::content::events::bonfire_spirits::apply_offer_reward(
+                                            &mut reward_engine_state,
+                                            run_state,
+                                            rarity_state,
+                                        );
+                                        if let Some(ref mut es) = run_state.event_state {
+                                            es.current_screen = 3;
+                                        }
+                                    }
+                                    _ => {}
                                 }
                                 if run_state.event_state.as_ref().is_some_and(|es| {
                                     es.id == crate::state::events::EventId::NoteForYourself

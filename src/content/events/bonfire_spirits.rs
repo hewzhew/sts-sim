@@ -3,8 +3,10 @@
 // to Java's single Bonfire.java (ID: "Bonfire Elementals").
 //
 // Screen 0: [Approach] → Screen 1
-// Screen 1: [Offer] → grid-select (Purge) → screen 2
-// Screen 2: reward based on removed card's rarity (read from internal_state)
+// Screen 1: [Offer] → grid-select (Purge)
+// During grid-select resolution, reward based on offered card's rarity is
+// applied before ordinary master-deck removal, matching Java update().
+// Screen 2 exists only for direct reward helper tests.
 // Screen 3: [Leave]
 
 use crate::content::relics::RelicId;
@@ -53,39 +55,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
             // Post-purge: apply rarity-based reward from internal_state
             // (set by Purge handler: 0=Curse, 1=Basic, 2=Common, 3=Special, 4=Uncommon, 5=Rare)
             let rarity = event_state.internal_state;
-            let source = DomainEventSource::Event(EventId::BonfireSpirits);
-            match rarity {
-                0 => {
-                    // Curse → SpiritPoop relic (Circlet if already owned)
-                    let relic_id = if run_state.relics.iter().any(|r| r.id == RelicId::SpiritPoop) {
-                        RelicId::Circlet
-                    } else {
-                        RelicId::SpiritPoop
-                    };
-                    if let Some(next_state) =
-                        run_state.obtain_relic_with_source(relic_id, EngineState::EventRoom, source)
-                    {
-                        *engine_state = next_state;
-                    }
-                }
-                1 => {
-                    // Basic → nothing
-                }
-                2 | 3 => {
-                    // Common / Special → heal 5
-                    run_state.heal_with_source(5, source);
-                }
-                4 => {
-                    // Uncommon → heal to full
-                    run_state.heal_with_source(run_state.max_hp, source);
-                }
-                5 => {
-                    // Rare → Java increaseMaxHp(10, false), then heal(maxHealth).
-                    run_state.gain_max_hp_with_source(10, 10, source);
-                    run_state.heal_with_source(run_state.max_hp, source);
-                }
-                _ => {}
-            }
+            apply_offer_reward(engine_state, run_state, rarity);
             event_state.current_screen = 3;
         }
         _ => {
@@ -94,6 +64,42 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
     }
 
     run_state.event_state = Some(event_state);
+}
+
+pub fn apply_offer_reward(engine_state: &mut EngineState, run_state: &mut RunState, rarity: i32) {
+    let source = DomainEventSource::Event(EventId::BonfireSpirits);
+    match rarity {
+        0 => {
+            // Curse -> SpiritPoop relic (Circlet if already owned)
+            let relic_id = if run_state.relics.iter().any(|r| r.id == RelicId::SpiritPoop) {
+                RelicId::Circlet
+            } else {
+                RelicId::SpiritPoop
+            };
+            if let Some(next_state) =
+                run_state.obtain_relic_with_source(relic_id, EngineState::EventRoom, source)
+            {
+                *engine_state = next_state;
+            }
+        }
+        1 => {
+            // Basic -> nothing
+        }
+        2 | 3 => {
+            // Common / Special -> heal 5
+            run_state.heal_with_source(5, source);
+        }
+        4 => {
+            // Uncommon -> heal to full
+            run_state.heal_with_source(run_state.max_hp, source);
+        }
+        5 => {
+            // Rare -> Java increaseMaxHp(10, false), then heal(maxHealth).
+            run_state.gain_max_hp_with_source(10, 10, source);
+            run_state.heal_with_source(run_state.max_hp, source);
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,8 @@
 // Java: Bonfire (shrines) — "Bonfire Elementals"
 // Screen 0 (INTRO): [Approach] → Screen 1
 // Screen 1 (CHOOSE): [Offer card] → grid-select to sacrifice a card
-// After grid-select returns to screen 2: reward based on offered card's rarity
+// After grid-select selects a card: reward based on offered card's rarity is
+// applied before ordinary master-deck removal, matching Java update().
 //   (rarity stored in internal_state by Purge handler in run_loop.rs)
 //   Curse → SpiritPoop relic (Circlet if already owned)
 //   Basic → nothing
@@ -56,39 +57,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
             // Returned from purge. Read rarity from internal_state
             // (set by Purge handler: 0=Curse, 1=Basic, 2=Common, 3=Special, 4=Uncommon, 5=Rare)
             let rarity = event_state.internal_state;
-            let source = DomainEventSource::Event(EventId::BonfireElementals);
-            match rarity {
-                0 => {
-                    // Curse → SpiritPoop relic (Circlet if already owned)
-                    let relic_id = if run_state.relics.iter().any(|r| r.id == RelicId::SpiritPoop) {
-                        RelicId::Circlet
-                    } else {
-                        RelicId::SpiritPoop
-                    };
-                    if let Some(next_state) =
-                        run_state.obtain_relic_with_source(relic_id, EngineState::EventRoom, source)
-                    {
-                        *engine_state = next_state;
-                    }
-                }
-                1 => {
-                    // Basic → nothing
-                }
-                2 | 3 => {
-                    // Common / Special → heal 5
-                    run_state.heal_with_source(5, source);
-                }
-                4 => {
-                    // Uncommon → heal to full
-                    run_state.heal_with_source(run_state.max_hp, source);
-                }
-                5 => {
-                    // Rare → Java increaseMaxHp(10, false), then heal(maxHealth).
-                    run_state.gain_max_hp_with_source(10, 10, source);
-                    run_state.heal_with_source(run_state.max_hp, source);
-                }
-                _ => {}
-            }
+            apply_offer_reward(engine_state, run_state, rarity);
             event_state.current_screen = 3;
         }
         _ => {
@@ -97,6 +66,42 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
     }
 
     run_state.event_state = Some(event_state);
+}
+
+pub fn apply_offer_reward(engine_state: &mut EngineState, run_state: &mut RunState, rarity: i32) {
+    let source = DomainEventSource::Event(EventId::BonfireElementals);
+    match rarity {
+        0 => {
+            // Curse -> SpiritPoop relic (Circlet if already owned)
+            let relic_id = if run_state.relics.iter().any(|r| r.id == RelicId::SpiritPoop) {
+                RelicId::Circlet
+            } else {
+                RelicId::SpiritPoop
+            };
+            if let Some(next_state) =
+                run_state.obtain_relic_with_source(relic_id, EngineState::EventRoom, source)
+            {
+                *engine_state = next_state;
+            }
+        }
+        1 => {
+            // Basic -> nothing
+        }
+        2 | 3 => {
+            // Common / Special -> heal 5
+            run_state.heal_with_source(5, source);
+        }
+        4 => {
+            // Uncommon -> heal to full
+            run_state.heal_with_source(run_state.max_hp, source);
+        }
+        5 => {
+            // Rare -> Java increaseMaxHp(10, false), then heal(maxHealth).
+            run_state.gain_max_hp_with_source(10, 10, source);
+            run_state.heal_with_source(run_state.max_hp, source);
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -272,6 +277,78 @@ mod tests {
                 source: DomainEventSource::Event(EventId::BonfireElementals),
             }
         )));
+    }
+
+    #[test]
+    fn curse_offer_selection_applies_reward_before_remove_hook_like_java() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 80;
+        run_state.max_hp = 80;
+        run_state.master_deck = vec![deck_card(CardId::Parasite, 101)];
+        let mut event_state = EventState::new(EventId::BonfireElementals);
+        event_state.current_screen = 1;
+        run_state.event_state = Some(event_state);
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 3);
+        assert_eq!(run_state.max_hp, 77);
+        let events = run_state.take_emitted_events();
+        let relic_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::RelicObtained {
+                        relic_id: RelicId::SpiritPoop,
+                        source: DomainEventSource::Event(EventId::BonfireElementals),
+                    }
+                )
+            })
+            .expect("curse offer should obtain Spirit Poop");
+        let removed_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardRemoved {
+                        card,
+                        source: DomainEventSource::Event(EventId::BonfireElementals),
+                    } if card.id == CardId::Parasite && card.uuid == 101
+                )
+            })
+            .expect("the offered curse should still be removed");
+        let max_hp_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::MaxHpChanged {
+                        delta: -3,
+                        source: DomainEventSource::Event(EventId::BonfireElementals),
+                        ..
+                    }
+                )
+            })
+            .expect("Parasite remove hook should still run");
+
+        assert!(
+            relic_pos < removed_pos && relic_pos < max_hp_pos,
+            "Java Bonfire.setReward(offeredCard.rarity) runs before masterDeck.removeCard(offeredCard)"
+        );
     }
 
     #[test]
