@@ -29,6 +29,43 @@ mod tests {
     use crate::runtime::rng::StsRng;
 
     #[test]
+    fn pre_battle_artifact_amount_matches_java_ascension_gate() {
+        let mut state = crate::test_support::blank_test_combat();
+        let deca = crate::test_support::test_monster(EnemyId::Deca);
+
+        let normal = Deca::use_pre_battle_actions(
+            &mut state,
+            &deca,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+        state.meta.ascension_level = 19;
+        let asc19 = Deca::use_pre_battle_actions(
+            &mut state,
+            &deca,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+
+        assert!(matches!(
+            normal.as_slice(),
+            [Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Artifact,
+                amount: 2
+            }]
+        ));
+        assert!(matches!(
+            asc19.as_slice(),
+            [Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Artifact,
+                amount: 3
+            }]
+        ));
+    }
+
+    #[test]
     fn imported_is_attacking_false_with_empty_history_rolls_square() {
         let mut deca = crate::test_support::test_monster(EnemyId::Deca);
         deca.deca.is_attacking = false;
@@ -49,16 +86,30 @@ mod tests {
                 EnemyId::Deca,
             )]);
         let deca = state.entities.monsters[0].clone();
-        let plan = beam_plan(0);
+        let plan = beam_plan(4);
 
         let actions = Deca::take_turn_plan(&mut state, &deca, &plan);
 
         assert!(matches!(
             actions.as_slice(),
             [
-                Action::MonsterAttack { .. },
-                Action::MonsterAttack { .. },
-                Action::MakeTempCardInDiscard { .. },
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 12,
+                    damage_kind: DamageKind::Normal
+                },
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 12,
+                    damage_kind: DamageKind::Normal
+                },
+                Action::MakeTempCardInDiscard {
+                    card_id: CardId::Dazed,
+                    amount: 2,
+                    upgraded: false
+                },
                 Action::UpdateMonsterRuntime {
                     patch: MonsterRuntimePatch::Deca {
                         is_attacking: Some(false),
@@ -72,21 +123,47 @@ mod tests {
     }
 
     #[test]
-    fn square_turn_sets_private_is_attacking_true_before_roll() {
-        let mut state =
-            crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
-                EnemyId::Deca,
-            )]);
+    fn asc19_square_turn_blocks_and_plates_each_monster_before_roll() {
+        let mut deca_entity = crate::test_support::test_monster(EnemyId::Deca);
+        deca_entity.id = 1;
+        let mut donu_entity = crate::test_support::test_monster(EnemyId::Donu);
+        donu_entity.id = 2;
+        donu_entity.current_hp = 0;
+        donu_entity.is_dying = false;
+        donu_entity.is_escaped = false;
+        let mut state = crate::test_support::combat_with_monsters(vec![
+            deca_entity.clone(),
+            donu_entity.clone(),
+        ]);
         let mut deca = state.entities.monsters[0].clone();
         deca.deca.is_attacking = false;
-        let plan = square_plan(0);
+        let plan = square_plan(19);
 
         let actions = Deca::take_turn_plan(&mut state, &deca, &plan);
 
         assert!(matches!(
             actions.as_slice(),
             [
-                Action::GainBlock { .. },
+                Action::GainBlock {
+                    target: 1,
+                    amount: 16
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::PlatedArmor,
+                    amount: 3
+                },
+                Action::GainBlock {
+                    target: 2,
+                    amount: 16
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 2,
+                    power_id: PowerId::PlatedArmor,
+                    amount: 3
+                },
                 Action::UpdateMonsterRuntime {
                     patch: MonsterRuntimePatch::Deca {
                         is_attacking: Some(true),

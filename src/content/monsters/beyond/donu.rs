@@ -28,6 +28,43 @@ mod tests {
     use crate::runtime::rng::StsRng;
 
     #[test]
+    fn pre_battle_artifact_amount_matches_java_ascension_gate() {
+        let mut state = crate::test_support::blank_test_combat();
+        let donu = crate::test_support::test_monster(EnemyId::Donu);
+
+        let normal = Donu::use_pre_battle_actions(
+            &mut state,
+            &donu,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+        state.meta.ascension_level = 19;
+        let asc19 = Donu::use_pre_battle_actions(
+            &mut state,
+            &donu,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+
+        assert!(matches!(
+            normal.as_slice(),
+            [Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Artifact,
+                amount: 2
+            }]
+        ));
+        assert!(matches!(
+            asc19.as_slice(),
+            [Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Artifact,
+                amount: 3
+            }]
+        ));
+    }
+
+    #[test]
     fn imported_is_attacking_true_with_empty_history_rolls_beam() {
         let mut donu = crate::test_support::test_monster(EnemyId::Donu);
         donu.donu.is_attacking = true;
@@ -43,10 +80,17 @@ mod tests {
 
     #[test]
     fn circle_turn_sets_private_is_attacking_true_before_roll() {
-        let mut state =
-            crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
-                EnemyId::Donu,
-            )]);
+        let mut donu_entity = crate::test_support::test_monster(EnemyId::Donu);
+        donu_entity.id = 1;
+        let mut deca_entity = crate::test_support::test_monster(EnemyId::Deca);
+        deca_entity.id = 2;
+        deca_entity.current_hp = 0;
+        deca_entity.is_dying = false;
+        deca_entity.is_escaped = false;
+        let mut state = crate::test_support::combat_with_monsters(vec![
+            donu_entity.clone(),
+            deca_entity.clone(),
+        ]);
         let donu = state.entities.monsters[0].clone();
         let plan = circle_plan();
 
@@ -55,7 +99,18 @@ mod tests {
         assert!(matches!(
             actions.as_slice(),
             [
-                Action::ApplyPower { .. },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Strength,
+                    amount: 3
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 2,
+                    power_id: PowerId::Strength,
+                    amount: 3
+                },
                 Action::UpdateMonsterRuntime {
                     patch: MonsterRuntimePatch::Donu {
                         is_attacking: Some(true),
@@ -76,15 +131,25 @@ mod tests {
             )]);
         let mut donu = state.entities.monsters[0].clone();
         donu.donu.is_attacking = true;
-        let plan = beam_plan(0);
+        let plan = beam_plan(4);
 
         let actions = Donu::take_turn_plan(&mut state, &donu, &plan);
 
         assert!(matches!(
             actions.as_slice(),
             [
-                Action::MonsterAttack { .. },
-                Action::MonsterAttack { .. },
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 12,
+                    damage_kind: DamageKind::Normal
+                },
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 12,
+                    damage_kind: DamageKind::Normal
+                },
                 Action::UpdateMonsterRuntime {
                     patch: MonsterRuntimePatch::Donu {
                         is_attacking: Some(false),
