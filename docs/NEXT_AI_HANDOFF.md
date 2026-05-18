@@ -45,15 +45,39 @@ Forbidden:
 
 Branch tip:
 
-- `87044fb Fix writhing mass reactive parity`
+- `945681d Add orb walker parity tests`
 
 Recent commits:
 
+- `945681d Add orb walker parity tests`
+- `46c52af Update handoff after writhing mass audit`
 - `87044fb Fix writhing mass reactive parity`
 - `9ce0e12 Add spire growth parity tests`
 - `17d05fd Add spiker parity tests`
-- `bcbd851 Fix maw roar timing parity`
-- `d6a62f4 Fix transient move timing and shifting amount`
+
+`945681d` summary:
+
+- `OrbWalker`, Java `GenericStrengthUpPower`, and Java
+  `MakeTempCardInDiscardAndDeckAction` were checked.
+- No business logic change was needed.
+- Added tests proving:
+  - pre-battle `GenericStrengthUpPower` uses Java's A17 gate: amount 3 below
+    A17, amount 5 at A17+;
+  - `getMove(int)` uses Java `lastTwoMoves(CLAW)` / `lastTwoMoves(LASER)`
+    gates without recursive rerolling;
+  - A2+ Laser queues damage 11, `MakeTempCardInDiscardAndDeckAction(Burn)`,
+    then `RollMoveAction`;
+  - existing Laser test keeps the shared action as one
+    `MakeTempCardInDiscardAndDeck`, not two hand-expanded add-card actions.
+- Java `AnimateSlowAttackAction`, `ChangeStateAction`, `WaitAction`, hit
+  animation, animation startup randomness, and card-display effects were
+  treated as presentation-only after confirming the gameplay mutation is the
+  underlying draw/discard pile insertion.
+
+Verification for `945681d`:
+
+- `cargo test orb_walker --all-targets` -> `4 passed`
+- `cargo test --all-targets` -> `1299 passed`
 
 `87044fb` summary:
 
@@ -680,7 +704,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `87044fb` before this handoff
+No uncommitted code changes were present after `945681d` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -788,6 +812,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   `ReactivePower.onAttacked` queues `RollMonsterMove` to the back like Java
   `addToBot`. Existing runtime truth tests lock `firstMove`,
   `usedMegaDebuff`, recursive reroll gating, and Mega-Debuff Parasite ordering.
+- `OrbWalker`: checked in `945681d`. No business logic change was needed; tests
+  lock GenericStrengthUp A17 gate, lastTwoMoves gates, Laser damage/Burn/roll
+  order, and use of the shared `MakeTempCardInDiscardAndDeck` action.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -875,9 +902,10 @@ Recommended next packets:
    - `Spiker` was checked in `17d05fd`.
    - `SpireGrowth` was checked in `9ce0e12`.
    - `WrithingMass` was fixed in `87044fb`.
-   - Next narrow packet: `OrbWalker`
-     (`D:\rust\cardcrawl\monsters\beyond\OrbWalker.java`,
-     `src/content/monsters/beyond/orb_walker.rs`, and relevant power/action
+   - `OrbWalker` was checked in `945681d`.
+   - Next narrow packet: `Repulsor`
+     (`D:\rust\cardcrawl\monsters\beyond\Repulsor.java`,
+     `src/content/monsters/beyond/repulsor.rs`, and relevant card-generation
      files if source comparison requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
