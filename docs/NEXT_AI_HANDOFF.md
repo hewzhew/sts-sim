@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `aadd74e Defer multi-transform obtains like Java effects`
+- `81789e4 Lock delayed event card obtain ordering`
 
 Recent commits:
 
+- `81789e4 Lock delayed event card obtain ordering`
 - `aadd74e Defer multi-transform obtains like Java effects`
 - `84ad08f Use Java upgrade helper for master deck upgrades`
 - `7529c30 Match Bonfire reward before card removal`
@@ -80,6 +81,46 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`81789e4` summary:
+
+- Continued the Java-source-backed delayed `ShowCardAndObtainEffect` audit for
+  event branches where the Rust behavior was already aligned but not locked by
+  focused ordering tests.
+- Java checked:
+  - `D:\rust\cardcrawl\events\shrines\GoldShrine.java`
+  - `D:\rust\cardcrawl\events\exordium\Sssserpent.java`
+  - `D:\rust\cardcrawl\events\beyond\WindingHalls.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+  - `D:\rust\cardcrawl\vfx\RainingGoldEffect.java`
+  - `D:\rust\cardcrawl\relics\CeramicFish.java`
+  - `D:\rust\cardcrawl\relics\BloodyIdol.java`
+  - `D:\rust\cardcrawl\characters\AbstractPlayer.java`
+- Java result:
+  - `ShowCardAndObtainEffect` performs curse/Omamori interception in the
+    constructor but performs relic `onObtainCard`, `souls.obtain`, and
+    `onMasterDeckChange` only when the effect later updates.
+  - `GoldShrine` Desecrate gains 275 gold immediately, then the delayed Regret
+    effect later runs obtain hooks and adds the card.
+  - `Sssserpent` confirm constructs the Doubt obtain effect before adding
+    `RainingGoldEffect`, but `player.gainGold` is immediate and the actual
+    Doubt obtain happens later.
+  - `WindingHalls` Embrace deals damage immediately, then the two delayed
+    Madness effects later resolve one by one; each effect runs `onObtainCard`
+    before `souls.obtain`.
+- Rust result:
+  - No business logic change was needed in these three event paths.
+  - Added regressions using `CeramicFish` to prove event gold/damage happens
+    before delayed card obtain hooks and `CardObtained` events.
+  - Added `GoldenShrine` tests for A15 pray gold and Omamori blocking Regret
+    without blocking the immediate 275 gold.
+
+Verification for `81789e4`:
+
+- `cargo test golden_shrine --all-targets` -> `3 passed`
+- `cargo test sssserpent --all-targets` -> `4 passed`
+- `cargo test winding_halls --all-targets` -> `6 passed`
+- `cargo test --all-targets` -> `1375 passed`
 
 `aadd74e` summary:
 
@@ -2943,9 +2984,8 @@ Recommended next packets:
      `ShowCardAndObtainEffect` or `effectsQueue/topLevelEffectsQueue` while
      also mutating relics/gold/deck state in the same event branch.
    - Good candidates:
-     - `Mushrooms`, `Sssserpent`, `GoldShrine`, `GremlinWheelGame`, and
-       `WindingHalls` for card-only delayed obtain order and Omamori/relic hook
-       implications.
+     - `Mushrooms` and `GremlinWheelGame` for card-only delayed obtain order
+       and Omamori/relic hook implications.
      - Other event branches that construct `ShowCardAndObtainEffect` before or
        after immediate gameplay mutation. Do not assume constructor order and
        actual obtain order are the same.
@@ -2955,6 +2995,9 @@ Recommended next packets:
      - `Designer`, `Transmogrifier`, `DrugDealer`: generic multi-card
        transform now removes/transforms all selected cards before deferred
        replacement obtains, except the existing Java-backed Neow special case.
+     - `GoldShrine`, `Sssserpent`, and `WindingHalls`: no business change
+       needed; delayed obtain ordering is now locked by CeramicFish event-order
+       regressions in `81789e4`.
    - Use the established pattern from `BigFish`, `Addict`, `Mausoleum`, and
      `AccursedBlacksmith`: if Java constructs the card obtain effect before a
      later immediate mutation, take an Omamori snapshot at construction time
