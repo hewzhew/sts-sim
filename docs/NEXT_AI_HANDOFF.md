@@ -45,15 +45,35 @@ Forbidden:
 
 Branch tip:
 
-- `945681d Add orb walker parity tests`
+- `a8e2118 Add repulsor parity tests`
 
 Recent commits:
 
+- `a8e2118 Add repulsor parity tests`
+- `d4d7b57 Update handoff after orb walker audit`
 - `945681d Add orb walker parity tests`
 - `46c52af Update handoff after writhing mass audit`
 - `87044fb Fix writhing mass reactive parity`
-- `9ce0e12 Add spire growth parity tests`
-- `17d05fd Add spiker parity tests`
+
+`a8e2118` summary:
+
+- `Repulsor` and Java `MakeTempCardInDrawPileAction` were checked.
+- No business logic change was needed.
+- Added tests proving:
+  - low roll selects Attack only when Java `lastMove(ATTACK)` is false;
+  - `num >= 20` selects Daze;
+  - A2+ Attack queues one 13-damage attack before `RollMoveAction`;
+  - Daze queues `MakeTempCardInDrawPileAction(new Dazed(), 2, true, true)`
+    as `MakeTempCardInDrawPile { random_spot: true, to_bottom: false }`,
+    then `RollMoveAction`.
+- Java `AnimateSlowAttackAction`, animation startup randomness, and card-display
+  effects were treated as presentation-only after confirming the gameplay
+  mutation is the underlying draw-pile insertion.
+
+Verification for `a8e2118`:
+
+- `cargo test repulsor --all-targets` -> `3 passed`
+- `cargo test --all-targets` -> `1302 passed`
 
 `945681d` summary:
 
@@ -704,7 +724,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `945681d` before this handoff
+No uncommitted code changes were present after `a8e2118` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -815,6 +835,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `OrbWalker`: checked in `945681d`. No business logic change was needed; tests
   lock GenericStrengthUp A17 gate, lastTwoMoves gates, Laser damage/Burn/roll
   order, and use of the shared `MakeTempCardInDiscardAndDeck` action.
+- `Repulsor`: checked in `a8e2118`. No business logic change was needed; tests
+  lock low-roll/lastMove Attack gating, A2+ attack damage, and Dazed random
+  draw-pile insertion action before roll.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -903,9 +926,10 @@ Recommended next packets:
    - `SpireGrowth` was checked in `9ce0e12`.
    - `WrithingMass` was fixed in `87044fb`.
    - `OrbWalker` was checked in `945681d`.
-   - Next narrow packet: `Repulsor`
-     (`D:\rust\cardcrawl\monsters\beyond\Repulsor.java`,
-     `src/content/monsters/beyond/repulsor.rs`, and relevant card-generation
+   - `Repulsor` was checked in `a8e2118`.
+   - Next narrow packet: `Exploder`
+     (`D:\rust\cardcrawl\monsters\beyond\Exploder.java`,
+     `src/content/monsters/beyond/exploder.rs`, and relevant death/power
      files if source comparison requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
