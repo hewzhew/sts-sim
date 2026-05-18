@@ -100,11 +100,7 @@ pub fn build_encounter(
 
     let spawn_monster = |enemy_id: EnemyId, hp_rng: &mut StsRng, slot: u8| -> MonsterEntity {
         let (min, max) = crate::content::monsters::get_hp_range(enemy_id, ascension_level);
-        let current_hp = if min == max {
-            min
-        } else {
-            hp_rng.random_range(min as i32, max as i32) as i32
-        };
+        let current_hp = hp_rng.random_range(min as i32, max as i32) as i32;
         let id = (slot + 1) as usize; // Naive unique engine IDs for this batch
         let louse_bite_damage = match enemy_id {
             EnemyId::LouseNormal | EnemyId::LouseDefensive => Some(if ascension_level >= 2 {
@@ -405,7 +401,9 @@ pub fn build_encounter(
         EncounterId::ExordiumThugs => {
             // Java: bottomHumanoid() — weakWildlife + strongHumanoid
 
-            // bottomGetWeakWildlife: getLouse(), SpikeSlimeM, AcidSlimeM
+            // Java constructs all bottomGetWeakWildlife candidates before
+            // picking one, so discarded candidates still consume constructor
+            // monsterHpRng rolls.
             let get_louse = |rng: &mut StsRng| -> EnemyId {
                 if rng.random_boolean() {
                     EnemyId::LouseNormal
@@ -413,60 +411,57 @@ pub fn build_encounter(
                     EnemyId::LouseDefensive
                 }
             };
-            let weak_pool = [
-                get_louse(misc_rng),
-                EnemyId::SpikeSlimeM,
-                EnemyId::AcidSlimeM,
+            let mut weak_candidates = vec![
+                spawn_monster(get_louse(misc_rng), monster_hp_rng, slot_counter),
+                spawn_monster(EnemyId::SpikeSlimeM, monster_hp_rng, slot_counter),
+                spawn_monster(EnemyId::AcidSlimeM, monster_hp_rng, slot_counter),
             ];
             let weak_idx = misc_rng.random_range(0, 2) as usize;
-            monsters.push(spawn_monster(
-                weak_pool[weak_idx],
-                monster_hp_rng,
-                slot_counter,
-            ));
+            monsters.push(weak_candidates.remove(weak_idx));
             slot_counter += 1;
 
-            // bottomGetStrongHumanoid: Cultist, getSlaver(), Looter
-            // Java: getSlaver() = miscRng.randomBoolean() ? SlaverRed : SlaverBlue
+            // Java constructs Cultist, getSlaver(), and Looter before picking
+            // one. getSlaver consumes miscRng during that construction step.
             let slaver = if misc_rng.random_boolean() {
                 EnemyId::SlaverRed
             } else {
                 EnemyId::SlaverBlue
             };
-            let strong_pool = [EnemyId::Cultist, slaver, EnemyId::Looter];
+            let mut strong_candidates = vec![
+                spawn_monster(EnemyId::Cultist, monster_hp_rng, slot_counter),
+                spawn_monster(slaver, monster_hp_rng, slot_counter),
+                spawn_monster(EnemyId::Looter, monster_hp_rng, slot_counter),
+            ];
             let strong_idx = misc_rng.random_range(0, 2) as usize;
-            monsters.push(spawn_monster(
-                strong_pool[strong_idx],
-                monster_hp_rng,
-                slot_counter,
-            ));
+            monsters.push(strong_candidates.remove(strong_idx));
         }
         EncounterId::ExordiumWildlife => {
             // Java: bottomWildlife() — numMonster=2: strongWildlife + weakWildlife
 
-            // bottomGetStrongWildlife: FungiBeast, JawWorm
-            let strong_pool = [EnemyId::FungiBeast, EnemyId::JawWorm];
+            // Java constructs both bottomGetStrongWildlife candidates before
+            // selecting one.
+            let mut strong_candidates = vec![
+                spawn_monster(EnemyId::FungiBeast, monster_hp_rng, slot_counter),
+                spawn_monster(EnemyId::JawWorm, monster_hp_rng, slot_counter),
+            ];
             let strong_idx = misc_rng.random_range(0, 1) as usize;
-            monsters.push(spawn_monster(
-                strong_pool[strong_idx],
-                monster_hp_rng,
-                slot_counter,
-            ));
+            monsters.push(strong_candidates.remove(strong_idx));
             slot_counter += 1;
 
-            // bottomGetWeakWildlife: getLouse(), SpikeSlimeM, AcidSlimeM
+            // Same bottomGetWeakWildlife constructor-before-selection behavior
+            // as Exordium Thugs.
             let louse = if misc_rng.random_boolean() {
                 EnemyId::LouseNormal
             } else {
                 EnemyId::LouseDefensive
             };
-            let weak_pool = [louse, EnemyId::SpikeSlimeM, EnemyId::AcidSlimeM];
+            let mut weak_candidates = vec![
+                spawn_monster(louse, monster_hp_rng, slot_counter),
+                spawn_monster(EnemyId::SpikeSlimeM, monster_hp_rng, slot_counter),
+                spawn_monster(EnemyId::AcidSlimeM, monster_hp_rng, slot_counter),
+            ];
             let weak_idx = misc_rng.random_range(0, 2) as usize;
-            monsters.push(spawn_monster(
-                weak_pool[weak_idx],
-                monster_hp_rng,
-                slot_counter,
-            ));
+            monsters.push(weak_candidates.remove(weak_idx));
         }
         EncounterId::ThreeLouse => {
             // Java: getLouse() × 3 — each independently random Normal/Defensive
@@ -1067,6 +1062,33 @@ fn get_ancient_shape(misc_rng: &mut StsRng) -> EnemyId {
 mod tests {
     use super::*;
 
+    fn monster_summary(monster: &MonsterEntity) -> (EnemyId, i32, Option<i32>) {
+        (
+            EnemyId::from_id(monster.monster_type)
+                .expect("factory should create known monster ids"),
+            monster.current_hp,
+            monster.louse.bite_damage,
+        )
+    }
+
+    fn java_constructor_summary(
+        enemy_id: EnemyId,
+        hp_rng: &mut StsRng,
+        ascension_level: u8,
+    ) -> (EnemyId, i32, Option<i32>) {
+        let (min, max) = crate::content::monsters::get_hp_range(enemy_id, ascension_level);
+        let current_hp = hp_rng.random_range(min, max);
+        let louse_bite_damage = match enemy_id {
+            EnemyId::LouseNormal | EnemyId::LouseDefensive => Some(if ascension_level >= 2 {
+                hp_rng.random_range(6, 8)
+            } else {
+                hp_rng.random_range(5, 7)
+            }),
+            _ => None,
+        };
+        (enemy_id, current_hp, louse_bite_damage)
+    }
+
     fn java_spawn_shapes_sequence(seed: u64, count: usize) -> Vec<EnemyId> {
         let mut rng = StsRng::new(seed);
         let mut pool = vec![
@@ -1113,14 +1135,17 @@ mod tests {
     }
 
     #[test]
-    fn fixed_hp_act4_encounters_do_not_consume_monster_hp_rng_like_java_set_hp_int() {
+    fn fixed_hp_act4_encounters_still_consume_monster_hp_rng_like_java_set_hp_int() {
         let mut misc_rng = StsRng::new(1);
         let mut hp_rng = StsRng::new(2);
 
         let shield_spear =
             build_encounter(EncounterId::ShieldAndSpear, &mut misc_rng, &mut hp_rng, 20);
 
-        assert_eq!(hp_rng.counter, 0);
+        assert_eq!(
+            hp_rng.counter, 2,
+            "Java setHp(int) calls setHp(hp, hp), and Random.random(start,end) still increments the counter"
+        );
         assert_eq!(shield_spear.len(), 2);
         assert_eq!(shield_spear[0].current_hp, 125);
         assert_eq!(shield_spear[1].current_hp, 180);
@@ -1128,7 +1153,7 @@ mod tests {
         let mut heart_hp_rng = StsRng::new(3);
         let heart = build_encounter(EncounterId::TheHeart, &mut misc_rng, &mut heart_hp_rng, 20);
 
-        assert_eq!(heart_hp_rng.counter, 0);
+        assert_eq!(heart_hp_rng.counter, 1);
         assert_eq!(heart.len(), 1);
         assert_eq!(heart[0].current_hp, 800);
     }
@@ -1142,5 +1167,107 @@ mod tests {
 
         assert_eq!(monsters.len(), 1);
         assert_eq!(hp_rng.counter, 1);
+    }
+
+    #[test]
+    fn exordium_thugs_constructs_discarded_java_candidates_before_selection() {
+        let misc_seed = 17;
+        let hp_seed = 23;
+        let ascension_level = 0;
+
+        let mut expected_misc = StsRng::new(misc_seed);
+        let mut expected_hp = StsRng::new(hp_seed);
+
+        let louse = if expected_misc.random_boolean() {
+            EnemyId::LouseNormal
+        } else {
+            EnemyId::LouseDefensive
+        };
+        let mut weak_candidates = vec![
+            java_constructor_summary(louse, &mut expected_hp, ascension_level),
+            java_constructor_summary(EnemyId::SpikeSlimeM, &mut expected_hp, ascension_level),
+            java_constructor_summary(EnemyId::AcidSlimeM, &mut expected_hp, ascension_level),
+        ];
+        let weak_idx = expected_misc.random_range(0, 2) as usize;
+        let expected_weak = weak_candidates.remove(weak_idx);
+
+        let slaver = if expected_misc.random_boolean() {
+            EnemyId::SlaverRed
+        } else {
+            EnemyId::SlaverBlue
+        };
+        let mut strong_candidates = vec![
+            java_constructor_summary(EnemyId::Cultist, &mut expected_hp, ascension_level),
+            java_constructor_summary(slaver, &mut expected_hp, ascension_level),
+            java_constructor_summary(EnemyId::Looter, &mut expected_hp, ascension_level),
+        ];
+        let strong_idx = expected_misc.random_range(0, 2) as usize;
+        let expected_strong = strong_candidates.remove(strong_idx);
+
+        let mut actual_misc = StsRng::new(misc_seed);
+        let mut actual_hp = StsRng::new(hp_seed);
+        let monsters = build_encounter(
+            EncounterId::ExordiumThugs,
+            &mut actual_misc,
+            &mut actual_hp,
+            ascension_level,
+        );
+
+        assert_eq!(monsters.len(), 2);
+        assert_eq!(monster_summary(&monsters[0]), expected_weak);
+        assert_eq!(monster_summary(&monsters[1]), expected_strong);
+        assert_eq!(actual_misc, expected_misc);
+        assert_eq!(
+            actual_hp.counter, expected_hp.counter,
+            "bottomHumanoid constructs 3 weak candidates and 3 strong candidates before selection"
+        );
+    }
+
+    #[test]
+    fn exordium_wildlife_constructs_discarded_java_candidates_before_selection() {
+        let misc_seed = 31;
+        let hp_seed = 37;
+        let ascension_level = 0;
+
+        let mut expected_misc = StsRng::new(misc_seed);
+        let mut expected_hp = StsRng::new(hp_seed);
+
+        let mut strong_candidates = vec![
+            java_constructor_summary(EnemyId::FungiBeast, &mut expected_hp, ascension_level),
+            java_constructor_summary(EnemyId::JawWorm, &mut expected_hp, ascension_level),
+        ];
+        let strong_idx = expected_misc.random_range(0, 1) as usize;
+        let expected_strong = strong_candidates.remove(strong_idx);
+
+        let louse = if expected_misc.random_boolean() {
+            EnemyId::LouseNormal
+        } else {
+            EnemyId::LouseDefensive
+        };
+        let mut weak_candidates = vec![
+            java_constructor_summary(louse, &mut expected_hp, ascension_level),
+            java_constructor_summary(EnemyId::SpikeSlimeM, &mut expected_hp, ascension_level),
+            java_constructor_summary(EnemyId::AcidSlimeM, &mut expected_hp, ascension_level),
+        ];
+        let weak_idx = expected_misc.random_range(0, 2) as usize;
+        let expected_weak = weak_candidates.remove(weak_idx);
+
+        let mut actual_misc = StsRng::new(misc_seed);
+        let mut actual_hp = StsRng::new(hp_seed);
+        let monsters = build_encounter(
+            EncounterId::ExordiumWildlife,
+            &mut actual_misc,
+            &mut actual_hp,
+            ascension_level,
+        );
+
+        assert_eq!(monsters.len(), 2);
+        assert_eq!(monster_summary(&monsters[0]), expected_strong);
+        assert_eq!(monster_summary(&monsters[1]), expected_weak);
+        assert_eq!(actual_misc, expected_misc);
+        assert_eq!(
+            actual_hp.counter, expected_hp.counter,
+            "bottomWildlife constructs all strong and weak candidates before selecting them"
+        );
     }
 }
