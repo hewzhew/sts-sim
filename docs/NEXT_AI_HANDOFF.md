@@ -45,18 +45,72 @@ Forbidden:
 
 Latest code commit:
 
-- `3ec5e96 Construct potion hand cards with state`
+- `59ce922 Lock draw pile large temp card semantics`
 
 Recent commits:
 
+- `59ce922 Lock draw pile large temp card semantics`
+- `5531d87 Update handoff after potion hand card audit`
 - `3ec5e96 Construct potion hand cards with state`
 - `9ba64f7 Update handoff after static hand card audit`
 - `d618731 Construct static hand card producers with state`
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
-- `24d3c00 Separate constructed hand card effects`
-- `0e0b90c Use Java colorless combat pool for rewards`
+
+`59ce922` summary:
+
+- Continued the generated-card audit into draw-pile insertion semantics.
+- Java checked:
+  - `D:\rust\cardcrawl\actions\common\MakeTempCardInDrawPileAction.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndAddToDrawPileEffect.java`
+  - `D:\rust\cardcrawl\cards\CardGroup.java`
+  - Representative producers: Pride, Wild Strike, Mark of Pain,
+    Metamorphosis, Chrysalis, Conjure Blade.
+- Java result:
+  - `MakeTempCardInDrawPileAction` itself does not apply Master Reality in its
+    constructor.
+  - On update, each action card copy receives one Master Reality upgrade if
+    applicable.
+  - For `amount < 6`, the `ShowCardAndAddToDrawPileEffect(x, y, ...)`
+    constructor copies again and applies a second Master Reality upgrade to the
+    actual inserted card.
+  - For `amount >= 6`, the short effect constructor inserts the source card
+    directly, so the actual inserted card only receives the action-update
+    Master Reality upgrade.
+  - Java draw-pile top is `CardGroup.group.last`; Rust draw-pile top is index
+    0, so all top/bottom/random insertion must stay behind the existing
+    helper API.
+- Rust result:
+  - Existing draw-pile top/bottom/random helper semantics already matched the
+    Java `CardGroup` ordering.
+  - Existing `handle_make_temp_card_in_draw_pile` / `handle_make_copy_in_draw_pile`
+    already modeled `amount < 6` vs `amount >= 6` Master Reality call counts.
+  - Added a focused `amount == 6` Searing Blow regression to lock the Java
+    source-card effect path.
+  - Removed stale Pride comments that still described `MakeTempCardInDrawPile`
+    as a temporary stub.
+
+Verification for `59ce922`:
+
+- `cargo test make_temp_card_in_draw_pile_large_amount_uses_java_src_card_path --all-targets`
+  -> `1 passed`
+- `cargo fmt` was run; the two known unrelated rustfmt noise files were
+  restored afterwards.
+- `cargo test --all-targets` -> `1352 passed`
+
+Next narrow packet:
+
+- Continue generated-card cleanup by auditing remaining discard-pile and
+  discard+deck paths against Java:
+  - `MakeTempCardInDiscardAction`
+  - `ShowCardAndAddToDiscardEffect`
+  - `MakeTempCardInDiscardAndDeckAction`
+- Confirm whether existing Rust one-call Master Reality handling for discard
+  paths is complete for concrete copies, status/curse exclusions, and
+  source-copy UUID behavior.
+- Keep the Exordium monster helper on the watch list, but do not fold it into
+  player generated-card/Master Reality handling without Java evidence.
 
 `3ec5e96` summary:
 
@@ -104,15 +158,8 @@ Remaining `MakeTempCardInHand` audit surface after `3ec5e96`:
   now reports only comments/tests around Java source names and Stasis behavior,
   not potion `Action::MakeTempCardInHand` production.
 
-Next narrow packet:
-
-- Inspect `MakeTempCardInDrawPileAction` /
-  `ShowCardAndAddToDrawPileEffect` constructor/effect Master Reality and
-  random/bottom/top insertion behavior from Java source.
-- Check all Rust producers of temporary draw-pile cards against the established
-  draw pile top/bottom API and Java `CardGroup` ordering.
-- Keep the Exordium monster helper on the watch list, but do not fold it into
-  the player generated-card/Master Reality path without Java evidence.
+Next narrow packet at `3ec5e96` was draw-pile generated-card behavior; resolved
+in `59ce922`.
 
 `d618731` summary:
 
