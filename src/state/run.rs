@@ -1764,6 +1764,26 @@ impl RunState {
         }
     }
 
+    pub fn transform_card_uuids_deferred_obtain_with_source(
+        &mut self,
+        uuids: &[u32],
+        auto_upgrade: bool,
+        source: DomainEventSource,
+    ) {
+        let mut transformed = Vec::new();
+
+        for &uuid in uuids {
+            if let Some(before) = self.remove_card_for_transform_with_source(uuid, source) {
+                let new_id = self.transform_result_card_id(before.id, source);
+                transformed.push((before, new_id));
+            }
+        }
+
+        for (before, new_id) in transformed {
+            self.obtain_transformed_card(before, new_id, auto_upgrade, source);
+        }
+    }
+
     pub fn transform_card_with_source(
         &mut self,
         deck_index: usize,

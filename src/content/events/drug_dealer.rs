@@ -358,11 +358,11 @@ mod tests {
             relevant,
             vec![
                 "remove_parasite",
-                "obtain_replacement",
                 "remove_parasite",
+                "obtain_replacement",
                 "obtain_replacement"
             ],
-            "Java DrugDealer removes, transforms, and queues obtain for each selected card before moving to the next selected card"
+            "Java DrugDealer queues ShowCardAndObtainEffect for each transformed card; actual obtains resolve after both selected cards have been removed"
         );
     }
 }

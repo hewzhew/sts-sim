@@ -705,6 +705,12 @@ pub fn tick_run(
                                 false,
                                 source,
                             );
+                        } else if selected_uuids_in_order.len() > 1 {
+                            run_state.transform_card_uuids_deferred_obtain_with_source(
+                                &selected_uuids_in_order,
+                                false,
+                                source,
+                            );
                         } else {
                             run_state.transform_card_uuids_with_source(
                                 &selected_uuids_in_order,
