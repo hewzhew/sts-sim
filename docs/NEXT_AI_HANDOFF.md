@@ -45,15 +45,61 @@ Forbidden:
 
 Branch tip:
 
-- `24e4618 Fix spawn monster relic hook timing`
+- `5fe09ea Fix shield spear back attack parity`
 
 Recent commits:
 
+- `5fe09ea Fix shield spear back attack parity`
+- `6d1201d Update handoff after spawn hook audit`
 - `24e4618 Fix spawn monster relic hook timing`
 - `14130c9 Update handoff after reptomancer audit`
 - `bf619c7 Fix minion prebattle source parity`
-- `b36e04b Update handoff after exploder audit`
-- `5aa6309 Fix exploder turn count timing`
+
+`5fe09ea` summary:
+
+- `SpireShield`, `SpireSpear`, Java `SurroundedPower`, Java
+  `BackAttackPower`, and Java `AbstractMonster.calculateDamage()` BackAttack
+  placement were checked.
+- Fixed Shield pre-battle `Surrounded` action trace parity:
+  - Java `new SurroundedPower(player)` has sentinel `amount == -1`.
+  - Rust now emits `ApplyPower { power_id: Surrounded, amount: -1 }` before
+    the Shield Artifact action.
+- Fixed existing `BackAttack` damage behavior in the shared monster damage
+  pipeline:
+  - Java multiplies monster damage by `1.5` when `applyBackAttack()` /
+    `BackAttackPower` is active, after player receive modifiers and before
+    final receive powers such as Intangible.
+  - Rust now applies the same multiplier when the source monster already has
+    `PowerId::BackAttack`.
+- Added Shield tests proving:
+  - Surrounded sentinel then Artifact A18 pre-battle order;
+  - Bash does not consume the Focus/Strength random roll when the player has
+    no orbs;
+  - Bash consumes `ai_rng.randomBoolean()` during `takeTurn()` when the player
+    has an orb and can apply Focus;
+  - Fortify loops every monster in the group, including zero-HP non-dying
+    monsters.
+- Added Spear tests proving:
+  - Artifact uses Java's A18 gate;
+  - A18 Burn Strike queues two attacks, then two Burns to draw pile top, then
+    `RollMonsterMove`;
+  - Piercer buffs every monster in the group, including zero-HP non-dying
+    monsters;
+  - Skewer uses imported/runtime `skewer_count`, not just ascension defaults.
+- Important unresolved boundary:
+  - Java automatic BackAttack application/removal depends on UI-tied facing
+    state (`player.flipHorizontal`, `drawX`, `AbstractMonster.applyBackAttack()`).
+  - Rust currently has no player facing/drawX model. This packet fixed the
+    damage multiplier when `BackAttack` is already present, but did not fake
+    automatic facing-based BackAttack creation. Treat that as a separate
+    architecture packet if live protocol or parity work requires it.
+
+Verification for `5fe09ea`:
+
+- `cargo test back_attack --all-targets` -> `3 passed`
+- `cargo test spire_shield --all-targets` -> `9 passed`
+- `cargo test spire_spear --all-targets` -> `8 passed`
+- `cargo test --all-targets` -> `1318 passed`
 
 `24e4618` summary:
 
@@ -807,7 +853,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `24e4618` before this handoff
+No uncommitted code changes were present after `5fe09ea` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -938,6 +984,21 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   instead of queuing `ApplyPowerAction`. Rust now applies the spawn relic hook
   as immediate state mutation before insertion and before the spawned monster's
   first roll. `Darkling` reincarnate now uses the same direct hook semantics.
+- `SpireShield` + `SpireSpear`: fixed/locked in `5fe09ea`. Shield
+  pre-battle `Surrounded` now uses Java sentinel amount `-1`; existing
+  `BackAttack` power now multiplies monster damage in the shared damage
+  pipeline; tests lock Shield Bash Focus/Strength RNG timing, Fortify/Piercer
+  all-monster loops without HP filtering, Spear Burn Strike queue order, Spear
+  Artifact A18 gate, and runtime Skewer hit count.
+
+Source suspicion remaining after `5fe09ea`:
+
+- Java automatic BackAttack application/removal is tied to `Surrounded`,
+  `player.flipHorizontal`, `drawX`, and `AbstractMonster.applyBackAttack()`.
+  Rust does not currently model player facing/drawX. Do not fake this inside
+  Shield/Spear content; if needed, design a dedicated facing/BackAttack state
+  packet and keep the multiplier behavior separate from automatic power
+  creation.
 
 Source suspicion resolved in `24e4618`:
 
@@ -985,6 +1046,8 @@ Keep these on the short list and revisit with narrow source packets:
 10. Monster pools, event pools, and act/floor/ascension gates.
 11. Java synchronous `setMove(...)` vs queued `SetMoveAction(...)`; do not
     collapse these when queued damage, death, or cleanup can intervene.
+12. UI-tied but gameplay-relevant facing state, especially Act 4
+    `Surrounded` / `BackAttack` creation and removal.
 
 ## Next Work Queue
 
@@ -1031,11 +1094,14 @@ Recommended next packets:
    - Dedicated `Reptomancer` move/slot behavior was fixed/locked in
      `bf619c7`.
    - Java `SpawnMonsterAction.update()` hook ordering was fixed in `24e4618`.
-   - Next narrow packet: Act 4 `SpireShield` + `SpireSpear` coordinated
-     runtime/move audit (`D:\rust\cardcrawl\monsters\ending\SpireShield.java`,
-     `D:\rust\cardcrawl\monsters\ending\SpireSpear.java`,
-     `src/content/monsters/ending/spire_shield.rs`,
-     `src/content/monsters/ending/spire_spear.rs`).
+   - Act 4 `SpireShield` + `SpireSpear` coordinated runtime/move audit was
+     fixed/locked in `5fe09ea`.
+   - Next narrow packet: `CorruptHeart` runtime/power audit
+     (`D:\rust\cardcrawl\monsters\ending\CorruptHeart.java`,
+     `D:\rust\cardcrawl\powers\BeatOfDeathPower.java`,
+     `D:\rust\cardcrawl\powers\InvinciblePower.java`,
+     `src/content/monsters/ending/corrupt_heart.rs`,
+     `src/content/powers/mod.rs`).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
