@@ -64,6 +64,8 @@ Latest code commit:
 
 Recent commits:
 
+- `154df37 Reconcile monster runtime truth audit index`
+- `e19acc2 Update handoff after Fruit Juice audit`
 - `07645cb Match Fruit Juice increaseMaxHp timing`
 - `bb558bc Add mechanics acceptance standard`
 - `157e50d Close Empty Cage audit loop`
@@ -158,6 +160,32 @@ Next source-backed lane:
 
 - Continue remaining potion target/use timing only for concrete uncovered
   potions, or move to monster private intent fields.
+
+Documentation note after `154df37`:
+
+- Reconciled the monster runtime truth audit index with already source-checked
+  Bronze Automaton, Bronze Orb, and Book of Stabbing runtime fields.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\city\BronzeAutomaton.java`
+  - `D:\rust\cardcrawl\monsters\city\BronzeOrb.java`
+  - `D:\rust\cardcrawl\monsters\city\BookOfStabbing.java`
+  - `D:\rust\CommunicationMod\src\main\java\communicationmod\GameStateConverter.java`
+- Rust checked:
+  - `src\content\monsters\city\bronze_automaton.rs`
+  - `src\content\monsters\city\bronze_orb.rs`
+  - `src\content\monsters\city\book_of_stabbing.rs`
+  - `src\diff\state_sync\build\monster.rs`
+- Result:
+  - `docs\audits\MONSTER_RUNTIME_TRUTH_AUDIT_2026-04-18.md` now lists
+    Bronze Automaton `first_turn/num_turns`, Bronze Orb `used_stasis`, and
+    Book of Stabbing `stab_count`.
+  - `docs\MECHANICS_AUDIT_LEDGER.md` no longer labels the entire monster
+    AI/intent row as `suspect`; it is `partial`, with remaining risk limited to
+    non-migrated or newly touched monster modules.
+- Verification:
+  - `cargo test bronze_automaton --all-targets` -> `7 passed`
+  - `cargo test bronze_orb --all-targets` -> `5 passed`
+  - `cargo test book_of_stabbing --all-targets` -> `5 passed`
 
 Previous source-checked note after `157e50d`:
 
