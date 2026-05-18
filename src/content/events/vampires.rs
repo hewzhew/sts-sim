@@ -168,6 +168,7 @@ fn replace_attacks(run_state: &mut RunState, source: DomainEventSource) {
     let strikes_to_remove: Vec<u32> = run_state
         .master_deck
         .iter()
+        .rev()
         .filter(|card| {
             let def = crate::content::cards::get_card_definition(card.id);
             def.tags.contains(&CardTag::StarterStrike)
@@ -285,6 +286,40 @@ mod tests {
                 ))
                 .count(),
             5
+        );
+    }
+
+    #[test]
+    fn replace_attacks_removes_starter_strikes_in_reverse_master_deck_order_like_java() {
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.master_deck = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 101),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 102),
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 103),
+            crate::runtime::combat::CombatCard::new(CardId::StrikeG, 104),
+        ];
+        rs.event_state = Some(EventState::new(EventId::Vampires));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        let removed_uuids = rs
+            .take_emitted_events()
+            .iter()
+            .filter_map(|event| match event {
+                DomainEvent::CardRemoved {
+                    card,
+                    source: DomainEventSource::Event(EventId::Vampires),
+                } => Some(card.uuid),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            removed_uuids,
+            vec![104, 103, 101],
+            "Java Vampires.replaceAttacks iterates masterDeck from size - 1 down to 0"
         );
     }
 
