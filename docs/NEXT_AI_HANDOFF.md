@@ -222,6 +222,32 @@ Current documentation note after encounter-pool reconciliation:
   - `cargo test boss_lists --all-targets` -> `2 passed`
   - `cargo test factory --all-targets` -> `5 passed`
 
+Current documentation note after event-pool reconciliation:
+
+- Rechecked event generator coverage against Java without changing code.
+- Java checked:
+  - `D:\rust\cardcrawl\dungeons\AbstractDungeon.java`
+  - `D:\rust\cardcrawl\dungeons\Exordium.java`
+  - `D:\rust\cardcrawl\dungeons\TheCity.java`
+  - `D:\rust\cardcrawl\dungeons\TheBeyond.java`
+  - `D:\rust\cardcrawl\dungeons\TheEnding.java`
+  - `D:\rust\cardcrawl\helpers\EventHelper.java`
+- Rust checked:
+  - `src\events\generator.rs`
+  - `src\state\run.rs`
+  - `src\engine\run_loop.rs`
+- Result:
+  - Event/shrine pool ordering, one-time pool initialization, ordinary and
+    one-time event gates, Act 4 empty pools, no fallback fabrication,
+    EventHelper room-roll probabilities, Juzu/Tiny Chest/previous-shop
+    handling, and duplicate event RNG selection are already source-checked.
+  - `docs\MECHANICS_AUDIT_LEDGER.md` now narrows remaining event risk to
+    per-event handlers and events that start/resume combats or reward screens.
+  - `docs\JAVA_SOURCE_MAP.md` now has an event pool / `?` room-roll owner row.
+- Verification:
+  - `cargo test events::generator --all-targets` -> `10 passed`
+  - `cargo test event_room --all-targets` -> `5 passed`
+
 Previous source-checked note after `157e50d`:
 
 - Rechecked `EmptyCage` against Java without code changes.
