@@ -853,6 +853,22 @@ pub fn apply_master_reality_to_generated_card(
     }
 }
 
+/// Applies the mechanical part of Java `MakeTempCardInHandAction` construction
+/// to a concrete generated card.
+///
+/// Java calls `upgrade()` for Master Reality in the action constructor, before
+/// the action later resolves through `ShowCardAndAddToHandEffect` or
+/// `ShowCardAndAddToDiscardEffect`. Rust paths that have already materialized a
+/// concrete card should pass it through this helper before queuing
+/// `Action::MakeConstructedCopyInHand`.
+pub fn prepare_make_temp_card_in_hand_constructor(
+    mut card: CombatCard,
+    state: &CombatState,
+) -> CombatCard {
+    apply_master_reality_to_generated_card(&mut card, state, 1);
+    card
+}
+
 /// Returns the card's intrinsic exhaust-on-play behavior after applying
 /// upgrade-sensitive card rules.
 pub fn exhausts_when_played(card: &CombatCard) -> bool {

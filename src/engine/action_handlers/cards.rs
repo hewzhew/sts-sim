@@ -136,8 +136,10 @@ fn apply_card_trigger_when_drawn(
                 - state.turn.counters.cards_discarded_this_turn as i32,
         );
     } else if card.id == CardId::EndlessAgony {
-        state.queue_action_front(Action::MakeCopyInHand {
-            original: Box::new(card.clone()),
+        let constructed =
+            crate::content::cards::prepare_make_temp_card_in_hand_constructor(card.clone(), state);
+        state.queue_action_front(Action::MakeConstructedCopyInHand {
+            original: Box::new(constructed),
             amount: 1,
         });
     } else if card.id == CardId::DeusExMachina {
@@ -936,8 +938,11 @@ fn materialize_random_class_card_in_hand_action(action: &mut Action, state: &mut
         card.set_cost_for_turn_java(cost as i32);
     }
 
-    *action = Action::MakeCopyInHand {
-        original: Box::new(card),
+    let constructed =
+        crate::content::cards::prepare_make_temp_card_in_hand_constructor(card, state);
+
+    *action = Action::MakeConstructedCopyInHand {
+        original: Box::new(constructed),
         amount: 1,
     };
 }
@@ -992,8 +997,11 @@ fn materialize_random_colorless_card_in_hand_action(action: &mut Action, state: 
         card.set_cost_for_turn_java(cost as i32);
     }
 
-    *action = Action::MakeCopyInHand {
-        original: Box::new(card),
+    let constructed =
+        crate::content::cards::prepare_make_temp_card_in_hand_constructor(card, state);
+
+    *action = Action::MakeConstructedCopyInHand {
+        original: Box::new(constructed),
         amount: 1,
     };
 }
@@ -2662,8 +2670,8 @@ mod tests {
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
-    use crate::content::powers::store;
     use crate::content::potions::PotionId;
+    use crate::content::powers::store;
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::action::Action;

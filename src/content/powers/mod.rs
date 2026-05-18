@@ -1074,8 +1074,11 @@ pub fn resolve_power_instance_at_turn_start(
             }
             for _ in 0..amount {
                 let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
-                let card = crate::runtime::combat::CombatCard::new(pool[idx], 0);
-                acts.push(crate::runtime::action::Action::MakeCopyInHand {
+                let card = crate::content::cards::prepare_make_temp_card_in_hand_constructor(
+                    crate::runtime::combat::CombatCard::new(pool[idx], 0),
+                    state,
+                );
+                acts.push(crate::runtime::action::Action::MakeConstructedCopyInHand {
                     original: Box::new(card),
                     amount: 1,
                 });
@@ -1136,7 +1139,10 @@ pub fn resolve_power_instance_at_turn_start(
                     state,
                     Some(crate::content::cards::CardType::Power),
                 ) {
-                    acts.push(crate::runtime::action::Action::MakeCopyInHand {
+                    let card = crate::content::cards::prepare_make_temp_card_in_hand_constructor(
+                        card, state,
+                    );
+                    acts.push(crate::runtime::action::Action::MakeConstructedCopyInHand {
                         original: Box::new(card),
                         amount: 1,
                     });
@@ -1153,7 +1159,10 @@ pub fn resolve_power_instance_at_turn_start(
                 if let Some(card) =
                     random_class_card_by_rarity(state, crate::content::cards::CardRarity::Common)
                 {
-                    acts.push(crate::runtime::action::Action::MakeCopyInHand {
+                    let card = crate::content::cards::prepare_make_temp_card_in_hand_constructor(
+                        card, state,
+                    );
+                    acts.push(crate::runtime::action::Action::MakeConstructedCopyInHand {
                         original: Box::new(card),
                         amount: 1,
                     });
@@ -1164,7 +1173,7 @@ pub fn resolve_power_instance_at_turn_start(
         PowerId::Poison => core::poison::at_turn_start(owner, amount),
         PowerId::Choked => silent::choked::at_turn_start(owner),
         PowerId::Phantasmal => silent::phantasmal::at_start_of_turn(owner),
-        PowerId::Nightmare => silent::nightmare::at_start_of_turn(owner, power),
+        PowerId::Nightmare => silent::nightmare::at_start_of_turn(owner, state, power),
         PowerId::Invincible => {
             let _ = store::with_power_mut(state, owner, PowerId::Invincible, |invincible| {
                 invincible.amount = invincible.extra_data;

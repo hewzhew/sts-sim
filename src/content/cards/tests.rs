@@ -9371,7 +9371,7 @@ fn creative_ai_and_hello_world_powers_sample_defect_random_pools() {
     assert_eq!(creative_actions.len(), 2);
     for action in creative_actions {
         match action {
-            Action::MakeCopyInHand { original, amount } => {
+            Action::MakeConstructedCopyInHand { original, amount } => {
                 assert_eq!(amount, 1);
                 assert_eq!(get_card_definition(original.id).card_type, CardType::Power);
                 assert!(
@@ -9391,7 +9391,7 @@ fn creative_ai_and_hello_world_powers_sample_defect_random_pools() {
         crate::content::powers::resolve_power_at_turn_start(PowerId::Hello, &mut hello_state, 0, 1);
     assert_eq!(hello_actions.len(), 1);
     match &hello_actions[0] {
-        Action::MakeCopyInHand { original, amount } => {
+        Action::MakeConstructedCopyInHand { original, amount } => {
             assert_eq!(*amount, 1);
             assert!(
                 DEFECT_COMMON_POOL.contains(&original.id),
@@ -11298,7 +11298,7 @@ fn ironclad_copy_and_block_runtime_actions_match_java_use_methods() {
         resolve_card_play(CardId::DualWield, &state, &dual_wield_plus, None);
     assert_eq!(dual_wield_auto_actions.len(), 1);
     match &dual_wield_auto_actions[0].action {
-        Action::MakeCopyInHand { original, amount } => {
+        Action::MakeConstructedCopyInHand { original, amount } => {
             assert_eq!(original.id, CardId::Strike);
             assert_eq!(*amount, 2);
         }
@@ -12593,7 +12593,7 @@ fn ironclad_hp_loss_and_generated_attack_runtime_actions_match_java_use_methods(
         "Java InfernalBlade.use samples the random attack before queuing MakeTempCardInHandAction"
     );
     match play_state.pop_next_action() {
-        Some(Action::MakeCopyInHand { original, amount }) => {
+        Some(Action::MakeConstructedCopyInHand { original, amount }) => {
             assert_eq!(amount, 1);
             assert_eq!(
                 crate::content::cards::get_card_definition(original.id).card_type,
@@ -14800,7 +14800,7 @@ fn transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing() {
     let mut generated = 0;
     while let Some(action) = state.pop_next_action() {
         match action {
-            Action::MakeCopyInHand { original, amount } => {
+            Action::MakeConstructedCopyInHand { original, amount } => {
                 assert_eq!(amount, 1);
                 assert!(state.colorless_combat_pool().contains(&original.id));
                 assert_eq!(original.upgrades, 1);
@@ -14844,13 +14844,56 @@ fn magnetism_power_locks_random_colorless_cards_at_turn_start() {
     assert_eq!(actions.len(), 2);
     for action in actions {
         match action {
-            Action::MakeCopyInHand { original, amount } => {
+            Action::MakeConstructedCopyInHand { original, amount } => {
                 assert_eq!(amount, 1);
                 assert!(state.colorless_combat_pool().contains(&original.id));
             }
             other => panic!("Magnetism should queue concrete colorless cards, got {other:?}"),
         }
     }
+}
+
+#[test]
+fn magnetism_make_temp_constructor_master_reality_persists_until_execution() {
+    let monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    let mut state = crate::test_support::combat_with_monsters(vec![monster]);
+    crate::content::powers::store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::MasterRealityPower,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    let actions = crate::content::powers::resolve_power_at_turn_start(
+        PowerId::MagnetismPower,
+        &mut state,
+        0,
+        1,
+    );
+    let Action::MakeConstructedCopyInHand { original, amount } = actions[0].clone() else {
+        panic!("Magnetism should queue a concrete constructed MakeTempCardInHandAction payload");
+    };
+    assert_eq!(amount, 1);
+    assert_eq!(
+        original.upgrades, 1,
+        "Java MakeTempCardInHandAction constructor applies Master Reality before the action executes"
+    );
+
+    crate::content::powers::store::set_powers_for(&mut state, 0, vec![]);
+    crate::engine::action_handlers::execute_action(
+        Action::MakeConstructedCopyInHand { original, amount },
+        &mut state,
+    );
+    assert_eq!(
+        state.zones.hand[0].upgrades, 1,
+        "Removing Master Reality before action execution does not erase the constructor-time upgrade"
+    );
 }
 
 #[test]
@@ -14890,7 +14933,7 @@ fn jack_of_all_trades_locks_random_colorless_cards_when_used() {
     );
     for _ in 0..2 {
         match state.pop_next_action() {
-            Some(Action::MakeCopyInHand { original, amount }) => {
+            Some(Action::MakeConstructedCopyInHand { original, amount }) => {
                 assert_eq!(amount, 1);
                 assert!(state.colorless_combat_pool().contains(&original.id));
             }
@@ -17544,12 +17587,12 @@ fn silent_special_attack_cards_match_java_draw_and_mutation_hooks() {
         .pop_next_action()
         .expect("Endless Agony.triggerWhenDrawn should queue MakeTempCardInHandAction");
     match trigger {
-        Action::MakeCopyInHand { original, amount } => {
+        Action::MakeConstructedCopyInHand { original, amount } => {
             assert_eq!(original.id, CardId::EndlessAgony);
             assert_eq!(original.upgrades, 1);
             assert_eq!(amount, 1);
             crate::engine::action_handlers::execute_action(
-                Action::MakeCopyInHand { original, amount },
+                Action::MakeConstructedCopyInHand { original, amount },
                 &mut draw_state,
             );
         }
@@ -18443,7 +18486,7 @@ fn distraction_matches_java_random_skill_free_for_turn() {
         "Java Distraction.use calls returnTrulyRandomCardInCombat before queuing MakeTempCardInHandAction"
     );
     match play_state.pop_next_action() {
-        Some(Action::MakeCopyInHand { original, amount }) => {
+        Some(Action::MakeConstructedCopyInHand { original, amount }) => {
             assert_eq!(amount, 1);
             let generated_def = get_card_definition(original.id);
             assert_eq!(generated_def.card_type, CardType::Skill);
@@ -18952,7 +18995,7 @@ fn nightmare_selection_returns_original_and_start_turn_copies_payload() {
         crate::content::powers::resolve_power_instance_at_turn_start(&power, &mut combat_state, 0);
     assert_eq!(start_actions.len(), 2);
     match &start_actions[0] {
-        Action::MakeCopyInHand { original, amount } => {
+        Action::MakeConstructedCopyInHand { original, amount } => {
             assert_eq!(original.id, CardId::StrikeG);
             assert_eq!(*amount, 2);
         }

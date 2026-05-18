@@ -291,8 +291,13 @@ pub fn handle_hand_select(
                             combat_state.zones.hand.push(card);
                         }
                         for card in selected_cards {
-                            crate::engine::action_handlers::cards::handle_make_copy_in_hand(
-                                Box::new(card),
+                            let constructed =
+                                crate::content::cards::prepare_make_temp_card_in_hand_constructor(
+                                    card,
+                                    combat_state,
+                                );
+                            crate::engine::action_handlers::cards::handle_make_constructed_copy_in_hand(
+                                Box::new(constructed),
                                 amount,
                                 combat_state,
                             );
@@ -303,8 +308,13 @@ pub fn handle_hand_select(
                                 combat_state.zones.hand.iter().position(|c| c.uuid == *uuid)
                             {
                                 let card = combat_state.zones.hand.remove(pos);
-                                crate::engine::action_handlers::cards::handle_make_copy_in_hand(
-                                    Box::new(card),
+                                let constructed =
+                                    crate::content::cards::prepare_make_temp_card_in_hand_constructor(
+                                        card,
+                                        combat_state,
+                                    );
+                                crate::engine::action_handlers::cards::handle_make_constructed_copy_in_hand(
+                                    Box::new(constructed),
                                     amount,
                                     combat_state,
                                 );

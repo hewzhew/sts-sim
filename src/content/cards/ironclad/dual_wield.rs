@@ -49,9 +49,13 @@ pub fn dual_wield_play(state: &CombatState, card: &CombatCard) -> SmallVec<[Acti
     }
 
     if valid_cards.len() == 1 {
+        let constructed = crate::content::cards::prepare_make_temp_card_in_hand_constructor(
+            valid_cards[0].clone(),
+            state,
+        );
         actions.push(ActionInfo {
-            action: Action::MakeCopyInHand {
-                original: Box::new(valid_cards[0].clone()),
+            action: Action::MakeConstructedCopyInHand {
+                original: Box::new(constructed),
                 amount,
             },
             insertion_mode: AddTo::Bottom,
