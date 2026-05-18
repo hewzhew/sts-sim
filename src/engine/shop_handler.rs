@@ -320,6 +320,7 @@ mod tests {
     use crate::shop::state::{ShopCard, ShopPotion, ShopRelic, ShopState};
     use crate::state::core::{ClientInput, EngineState};
     use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
 
     #[test]
     fn courier_membership_restock_relic_potion_discounts_round_sequentially() {
@@ -362,6 +363,103 @@ mod tests {
             .expect("MawBank should still be present");
         assert!(maw_bank.used_up);
         assert_eq!(maw_bank.counter, -2);
+    }
+
+    #[test]
+    fn buying_shop_card_spends_gold_before_fast_obtain_hooks_and_card_obtained() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::PommelStrike,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyCard(0)));
+        assert!(next.is_none());
+
+        let events = run_state.take_emitted_events();
+        let spend_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: -50,
+                        source: DomainEventSource::Shop,
+                        ..
+                    }
+                )
+            })
+            .expect("Shop card purchase should spend gold");
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Shop,
+                        ..
+                    }
+                )
+            })
+            .expect("Shop card purchase should run Ceramic Fish obtain hook");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Shop,
+                    } if card.id == CardId::PommelStrike
+                )
+            })
+            .expect("Shop card purchase should obtain the bought card");
+
+        assert!(
+            spend_pos < fish_gold_pos && fish_gold_pos < obtained_pos,
+            "Java ShopScreen.purchaseCard queues FastCardObtainEffect, then loses gold; the effect later runs onObtainCard before Soul.obtain"
+        );
+    }
+
+    #[test]
+    fn buying_shop_curse_still_spends_gold_when_omamori_blocks_fast_obtain() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::Regret,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        handle(&mut run_state, &mut shop, Some(ClientInput::BuyCard(0)));
+
+        assert_eq!(
+            run_state.gold, 150,
+            "Java FastCardObtainEffect can be blocked by Omamori, but ShopScreen.purchaseCard still loses gold after constructing it"
+        );
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Regret));
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Omamori should remain after blocking shop curse");
+        assert_eq!(omamori.counter, 1);
     }
 
     #[test]
