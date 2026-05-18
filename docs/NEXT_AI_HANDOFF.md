@@ -45,15 +45,30 @@ Forbidden:
 
 Branch tip:
 
-- `0b984ca Add chosen move parity tests`
+- `f511731 Add taskmaster move parity tests`
 
 Recent commits:
 
+- `f511731 Add taskmaster move parity tests`
+- `f0d3107 Update handoff after chosen audit`
 - `0b984ca Add chosen move parity tests`
 - `bfc7aca Update handoff after book audit`
 - `dc4622d Fix book of stabbing sentinel parity`
-- `250caf9 Update handoff after guardian sentinel audit`
-- `aa55e3d Use Java sentinel amounts for guardian powers`
+
+`f511731` summary:
+
+- `Taskmaster` Java/Rust behavior was checked.
+- No business logic change was needed.
+- Added tests proving Java's constant `SCOURING_WHIP` roll, wound-count
+  ascension thresholds, below-A18 no-Strength path, and A18 queue order:
+  damage, Wounds, Strength, then `RollMonsterMove`.
+- Java `playSfx()` burns `MathUtils` only for voice selection and remains
+  presentation-only for the Rust simulator.
+
+Verification for `f511731`:
+
+- `cargo test taskmaster --all-targets` -> `4 passed`
+- `cargo test --all-targets` -> `1235 passed`
 
 `0b984ca` summary:
 
@@ -268,7 +283,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `0b984ca`.
+No uncommitted changes were present after `f511731`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -312,6 +327,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `Chosen`: checked in `0b984ca`. No business logic change was needed; tests
   lock below-A17 Hex transition, Drain/Debilitate ordering, and Poke two-hit
   execution.
+- `Taskmaster`: checked in `f511731`. No business logic change was needed;
+  tests lock constant Scouring Whip roll, wound thresholds, A18 Strength
+  ordering, and below-A18 no-Strength behavior.
 
 Split / victory timing:
 
@@ -374,10 +392,12 @@ Recommended next packets:
    - `SphericGuardian` was fixed in `aa55e3d`.
    - `BookOfStabbing` was fixed in `dc4622d`.
    - `Chosen` was checked in `0b984ca`.
-   - Next narrow packet: `Taskmaster`
-     (`D:\rust\cardcrawl\monsters\city\Taskmaster.java` and
-     `src/content/monsters/city/taskmaster.rs`). It is compact and exercises
-     wound/debuff turn sequencing and post-turn `RollMoveAction`.
+   - `Taskmaster` was checked in `f511731`.
+   - Next narrow packet: `GremlinLeader`
+     (`D:\rust\cardcrawl\monsters\city\GremlinLeader.java` and
+     `src/content/monsters/city/gremlin_leader.rs`). It exercises ally spawn
+     slots, multi-ally buff targeting, attack scheduling, and post-turn
+     `RollMoveAction`.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
