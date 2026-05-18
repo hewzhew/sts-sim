@@ -66,4 +66,5 @@ reward UI classes.
 | Orrery card rewards and reward screen append | `relics/Orrery.java`, `rooms/AbstractRoom.java`, `screens/CombatRewardScreen.java`, `rewards/RewardItem.java` | `78aa564` |
 | Dolly's Mirror stat-equivalent copy | `relics/DollysMirror.java`, `cards/AbstractCard.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `c87f213` |
 | Bottled relic equip selection | `relics/BottledFlame.java`, `relics/BottledLightning.java`, `relics/BottledTornado.java`, `cards/CardGroup.java`, `helpers/CardHelper.java` | `ff3b846` |
+| Empty Cage purge selection | `relics/EmptyCage.java`, `cards/CardGroup.java`, `screens/select/GridCardSelectScreen.java` | `empty_cage_uses_java_purgeable_cards_and_auto_deletes_two_or_fewer` |
 | Potion top-panel discard affordance | `ui/panels/PotionPopUp.java`, `potions/AbstractPotion.java` | `98208ad` |

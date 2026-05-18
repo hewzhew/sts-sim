@@ -113,6 +113,27 @@ Recent commits:
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
 
+Current source-checked note after `03779ed`:
+
+- Rechecked `EmptyCage` against Java without code changes.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\EmptyCage.java`
+  - `D:\rust\cardcrawl\cards\CardGroup.java`
+  - `D:\rust\cardcrawl\screens\select\GridCardSelectScreen.java`
+- Rust checked:
+  - `src\content\relics\empty_cage.rs`
+  - `empty_cage_uses_java_purgeable_cards_and_auto_deletes_two_or_fewer`
+- Result:
+  - Empty Cage uses Java `masterDeck.getPurgeableCards()` semantics, so bottled
+    cards remain eligible and only the three special unpurgeable curses are
+    excluded.
+  - Rust already auto-deletes when there are two or fewer purgeable cards,
+    opens an exact two-card purge choice for larger decks, rejects stale or
+    unpurgeable direct input without mutation, and records removals under the
+    Empty Cage relic source.
+- Verification:
+  - `cargo test empty_cage --all-targets` -> `1 passed`
+
 `03779ed` summary:
 
 - Audited boss chest hook exclusion against Java.
@@ -145,10 +166,8 @@ Verification for `03779ed`:
 
 Next source-backed lane:
 
-- `EmptyCage` appears implementation-aligned from prior reading; document/lock
-  it if we want to close that loop.
-- Otherwise continue potion top-panel/use timing or move to monster private
-  intent fields.
+- Continue potion top-panel/use timing, or move to monster private intent
+  fields.
 
 `98208ad` summary:
 
