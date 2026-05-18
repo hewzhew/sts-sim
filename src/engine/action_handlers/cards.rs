@@ -2431,11 +2431,10 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
             return;
         }
         let actions = crate::content::potions::potion_effects::get_potion_actions(
-            state.entities.monsters.len(),
+            state,
             potion.id,
             resolved_target,
             potency,
-            state.entities.player.max_hp,
         );
         let relic_actions = crate::content::relics::hooks::on_use_potion(state, 0);
         let mut combined = actions;

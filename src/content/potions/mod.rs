@@ -761,6 +761,7 @@ mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::runtime::action::{Action, AddTo};
+    use crate::runtime::combat::{Power, PowerPayload};
 
     #[test]
     fn potion_helper_pools_match_java_order_for_all_classes() {
@@ -935,26 +936,69 @@ mod tests {
 
     #[test]
     fn watcher_potion_actions_match_java_sources() {
-        let bottled = potion_effects::get_potion_actions(0, PotionId::BottledMiracle, None, 2, 80);
+        let state = crate::test_support::blank_test_combat();
+
+        let bottled = potion_effects::get_potion_actions(&state, PotionId::BottledMiracle, None, 2);
         assert_eq!(bottled.len(), 1);
         assert_eq!(bottled[0].insertion_mode, AddTo::Bottom);
-        assert!(matches!(
-            bottled[0].action,
-            Action::MakeTempCardInHand {
-                card_id: CardId::Miracle,
-                amount: 2,
-                upgraded: false
+        match &bottled[0].action {
+            Action::MakeConstructedCopyInHand { original, amount } => {
+                assert_eq!(original.id, CardId::Miracle);
+                assert_eq!(original.upgrades, 0);
+                assert_eq!(*amount, 2);
             }
-        ));
+            other => panic!("Bottled Miracle should queue constructed Miracles, got {other:?}"),
+        }
 
-        let stance = potion_effects::get_potion_actions(0, PotionId::StancePotion, None, 0, 80);
+        let stance = potion_effects::get_potion_actions(&state, PotionId::StancePotion, None, 0);
         assert_eq!(stance.len(), 1);
         assert_eq!(stance[0].insertion_mode, AddTo::Bottom);
         assert!(matches!(stance[0].action, Action::SuspendForStanceChoice));
 
-        let ambrosia = potion_effects::get_potion_actions(0, PotionId::Ambrosia, None, 2, 80);
+        let ambrosia = potion_effects::get_potion_actions(&state, PotionId::Ambrosia, None, 2);
         assert_eq!(ambrosia.len(), 1);
         assert_eq!(ambrosia[0].insertion_mode, AddTo::Bottom);
         assert!(matches!(&ambrosia[0].action, Action::EnterStance(stance) if stance == "Divinity"));
+    }
+
+    #[test]
+    fn generated_card_potions_use_make_temp_constructor_master_reality() {
+        let mut state = crate::test_support::blank_test_combat();
+        crate::content::powers::store::set_powers_for(
+            &mut state,
+            0,
+            vec![Power {
+                power_type: crate::content::powers::PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        let bottled = potion_effects::get_potion_actions(&state, PotionId::BottledMiracle, None, 2);
+        match &bottled[0].action {
+            Action::MakeConstructedCopyInHand { original, amount } => {
+                assert_eq!(original.id, CardId::Miracle);
+                assert_eq!(original.upgrades, 1);
+                assert_eq!(*amount, 2);
+            }
+            other => {
+                panic!("Bottled Miracle should construct Miracle before queueing, got {other:?}")
+            }
+        }
+
+        let cunning = potion_effects::get_potion_actions(&state, PotionId::CunningPotion, None, 3);
+        match &cunning[0].action {
+            Action::MakeConstructedCopyInHand { original, amount } => {
+                assert_eq!(original.id, CardId::Shiv);
+                assert_eq!(original.upgrades, 1);
+                assert_eq!(*amount, 3);
+            }
+            other => panic!(
+                "Cunning Potion should construct upgraded Shiv before queueing, got {other:?}"
+            ),
+        }
     }
 }
