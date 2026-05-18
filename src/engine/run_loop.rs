@@ -1164,7 +1164,8 @@ mod tests {
     use crate::state::core::{ClientInput, EngineState, EventCombatState, PostCombatReturn};
     use crate::state::run::RunState;
     use crate::state::selection::{
-        DomainEventSource, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
+        DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
+        SelectionTargetRef,
     };
 
     fn run_state_with_first_room(room_type: RoomType) -> RunState {
@@ -1665,6 +1666,63 @@ mod tests {
         assert_eq!(
             run_state.rng_pool.treasure_rng.counter, 2,
             "Skipping avoids the non-daily chest gold jitter consumed inside AbstractChest.open"
+        );
+    }
+
+    #[test]
+    fn cursed_key_chest_obtain_hooks_run_before_curse_obtained_event() {
+        let mut run_state = run_state_with_first_room(RoomType::TreasureRoom);
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::CursedKey));
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+        assert!(matches!(engine_state, EngineState::TreasureRoom(_)));
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::OpenChest),
+        ));
+
+        let events = run_state.take_emitted_events();
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Relic(RelicId::CursedKey),
+                        ..
+                    }
+                )
+            })
+            .expect("Cursed Key chest curse should run Ceramic Fish obtain hook");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Relic(RelicId::CursedKey),
+                    } if crate::content::cards::get_curse_pool().contains(&card.id)
+                )
+            })
+            .expect("Cursed Key chest opening should obtain a random curse");
+
+        assert!(
+            fish_gold_pos < obtained_pos,
+            "Java CursedKey.onChestOpen queues ShowCardAndObtainEffect; that effect runs onObtainCard before Soul.obtain"
         );
     }
 
