@@ -859,15 +859,6 @@ pub fn tick_engine(
                             store::remove_entity_powers(combat_state, id);
                         }
                         for monster in &monster_snapshots {
-                            // Reset monster Invincible limit
-                            let _ = store::with_power_mut(
-                                combat_state,
-                                monster.id,
-                                crate::content::powers::PowerId::Invincible,
-                                |inv| {
-                                    inv.amount = inv.extra_data;
-                                },
-                            );
                             let actions = crate::content::monsters::resolve_monster_turn(
                                 combat_state,
                                 monster,
@@ -2700,5 +2691,60 @@ mod tests {
             "Java MonsterGroup.areMonstersBasicallyDead ignores currentHealth; only isDying/isEscaping count"
         );
         assert_eq!(engine_state, EngineState::CombatProcessing);
+    }
+
+    #[test]
+    fn monster_pre_turn_invincible_resets_before_poison_like_java_at_start_of_turn() {
+        let mut combat_state = blank_test_combat();
+        let mut monster = planned_monster(EnemyId::JawWorm, 1);
+        monster.id = 31;
+        monster.current_hp = 100;
+        combat_state.entities.monsters = vec![monster];
+        crate::content::powers::store::set_powers_for(
+            &mut combat_state,
+            31,
+            vec![
+                Power {
+                    power_type: PowerId::Invincible,
+                    instance_id: None,
+                    amount: 0,
+                    extra_data: 300,
+                    payload: crate::runtime::combat::PowerPayload::None,
+                    just_applied: false,
+                },
+                Power {
+                    power_type: PowerId::Poison,
+                    instance_id: None,
+                    amount: 5,
+                    extra_data: 0,
+                    payload: crate::runtime::combat::PowerPayload::None,
+                    just_applied: false,
+                },
+            ],
+        );
+        combat_state.turn.begin_turn_transition();
+        let mut engine_state = EngineState::CombatProcessing;
+
+        for _ in 0..64 {
+            if engine_state == EngineState::CombatPlayerTurn {
+                break;
+            }
+            assert!(super::tick_engine(
+                &mut engine_state,
+                &mut combat_state,
+                None
+            ));
+        }
+
+        assert_eq!(engine_state, EngineState::CombatPlayerTurn);
+        assert_eq!(
+            crate::content::powers::store::power_amount(
+                &combat_state,
+                31,
+                PowerId::Invincible
+            ),
+            295,
+            "Java InvinciblePower.atStartOfTurn resets maxAmt before PoisonPower queues start-of-turn HP loss; it is not reset again before the monster's takeTurn"
+        );
     }
 }

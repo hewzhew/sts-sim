@@ -1165,6 +1165,12 @@ pub fn resolve_power_instance_at_turn_start(
         PowerId::Choked => silent::choked::at_turn_start(owner),
         PowerId::Phantasmal => silent::phantasmal::at_start_of_turn(owner),
         PowerId::Nightmare => silent::nightmare::at_start_of_turn(owner, power),
+        PowerId::Invincible => {
+            let _ = store::with_power_mut(state, owner, PowerId::Invincible, |invincible| {
+                invincible.amount = invincible.extra_data;
+            });
+            smallvec::smallvec![]
+        }
         PowerId::Flight => core::flight::at_turn_start(state, owner, amount),
         _ => smallvec::smallvec![],
     }

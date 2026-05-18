@@ -1336,29 +1336,15 @@ pub fn handle_poison_lose_hp(target: usize, amount: i32, state: &mut CombatState
         .iter()
         .any(|m| m.id == target && m.current_hp > 0)
     {
-        let mut actual_lost = 0;
-        if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
-            let prev = m.current_hp;
-            m.current_hp = (m.current_hp - amount).max(0);
-            actual_lost = prev - m.current_hp;
-        }
-        super::check_and_trigger_monster_death(state, target);
-
-        if actual_lost > 0 {
-            if let Some(m) = state
-                .entities
-                .monsters
-                .iter()
-                .find(|m| m.id == target)
-                .cloned()
-            {
-                if let Some(eid) = crate::content::monsters::EnemyId::from_id(m.monster_type) {
-                    let monster_actions =
-                        crate::content::monsters::dispatch_on_damaged(eid, state, &m, actual_lost);
-                    state.queue_actions(monster_actions);
-                }
-            }
-        }
+        let info = DamageInfo {
+            source: NO_SOURCE,
+            target,
+            base: amount.max(0),
+            output: amount.max(0),
+            damage_type: DamageType::HpLoss,
+            is_modified: false,
+        };
+        let _ = apply_damage_to_monster_via_pipeline(state, &info, amount.max(0));
     }
 
     let should_remove_poison = store::with_power_mut(state, target, PowerId::Poison, |power| {
