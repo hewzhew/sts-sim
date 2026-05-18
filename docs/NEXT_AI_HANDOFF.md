@@ -45,15 +45,31 @@ Forbidden:
 
 Branch tip:
 
-- `a4d74f4 Fix byrd headbutt setmove timing`
+- `8d16e69 Add healer ally loop parity tests`
 
 Recent commits:
 
+- `8d16e69 Add healer ally loop parity tests`
+- `12f34b3 Update handoff after byrd audit`
 - `a4d74f4 Fix byrd headbutt setmove timing`
 - `5967a3c Update handoff after torch head audit`
 - `5ad39bc Add torch head queue parity test`
-- `5260b59 Update handoff after bandit pointy audit`
-- `0b0eec3 Add bandit pointy queue parity test`
+
+`8d16e69` summary:
+
+- `Centurion` + `Healer` Java/Rust behavior was checked as a pair because both
+  depend on ally state.
+- No business logic change was needed.
+- Existing Centurion tests already cover zero-HP non-dying ally counting for
+  Protect rolls and `GainBlockRandomMonsterAction`.
+- Added Healer tests proving Java-style loops count/target zero-HP non-dying
+  allies for heal selection and heal execution.
+
+Verification for `8d16e69`:
+
+- `cargo test healer --all-targets` -> `2 passed`
+- `cargo test centurion --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1217 passed`
 
 `a4d74f4` summary:
 
@@ -175,14 +191,14 @@ The current monster architecture is still usable if these rules are followed:
 - UI/VFX classes are ignored only after checking that they do not mutate combat
   state, RNG, room state, map state, or visible choices.
 
-Current text scans after `a4d74f4`:
+Current text scans after `8d16e69`:
 
 - `src/content/monsters` has no remaining direct `move_history().is_empty`
   private-state pattern from the recent search.
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `a4d74f4`.
+No uncommitted changes were present after `8d16e69`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -211,6 +227,8 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   Plated Armor break.
 - `Byrd`: fixed in `a4d74f4`. Headbutt now applies synchronous Java
   `setMove(GO_AIRBORNE)` timing before queued damage.
+- `Centurion` + `Healer`: checked in `8d16e69`. No business logic change
+  needed; added Healer tests for zero-HP non-dying ally inclusion.
 
 Split / victory timing:
 
@@ -267,12 +285,11 @@ Recommended next packets:
    - `TorchHead` was checked in `5ad39bc`.
    - `ShelledParasite` was checked; no code change needed.
    - `Byrd` was fixed in `a4d74f4`.
-   - Next narrow packet: `Centurion` + `Healer`
-     (`D:\rust\cardcrawl\monsters\city\Centurion.java`,
-     `D:\rust\cardcrawl\monsters\city\Healer.java`,
-     `src/content/monsters/city/centurion.rs`, and
-     `src/content/monsters/city/healer.rs`). Audit them as a pair because their
-     behavior depends on ally state and random/support targeting.
+   - `Centurion` + `Healer` were checked in `8d16e69`.
+   - Next narrow packet: `SnakePlant`
+     (`D:\rust\cardcrawl\monsters\city\SnakePlant.java` and
+     `src/content/monsters/city/snake_plant.rs`). It is a compact City monster
+     with debuff/attack sequencing and post-turn `RollMoveAction`.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
