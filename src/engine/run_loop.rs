@@ -2090,6 +2090,17 @@ mod tests {
         let mut original = CombatCard::new(CardId::RitualDagger, 101);
         original.upgrades = 2;
         original.misc_value = 17;
+        original.base_damage_override = Some(23);
+        original.cost_modifier = -1;
+        original.cost_for_turn = Some(0);
+        original.free_to_play_once = true;
+        original.base_damage_mut = 99;
+        original.base_block_mut = 88;
+        original.base_magic_num_mut = 77;
+        original.multi_damage = smallvec::smallvec![1, 2, 3];
+        original.exhaust_override = Some(true);
+        original.retain_override = Some(true);
+        original.energy_on_use = 5;
         run_state.master_deck = vec![original];
 
         let next_state = run_state
@@ -2122,6 +2133,17 @@ mod tests {
         assert_eq!(copied.id, CardId::RitualDagger);
         assert_eq!(copied.upgrades, 2);
         assert_eq!(copied.misc_value, 17);
+        assert_eq!(copied.base_damage_override, Some(23));
+        assert_eq!(copied.cost_modifier, -1);
+        assert_eq!(copied.cost_for_turn, Some(0));
+        assert!(copied.free_to_play_once);
+        assert_eq!(copied.base_damage_mut, 0);
+        assert_eq!(copied.base_block_mut, 0);
+        assert_eq!(copied.base_magic_num_mut, 0);
+        assert!(copied.multi_damage.is_empty());
+        assert_eq!(copied.exhaust_override, None);
+        assert_eq!(copied.retain_override, None);
+        assert_eq!(copied.energy_on_use, 0);
         assert_ne!(copied.uuid, 101);
         assert_eq!(
             run_state

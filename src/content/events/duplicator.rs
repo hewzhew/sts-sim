@@ -102,6 +102,13 @@ mod tests {
         let mut rs = RunState::new(1, 0, true, "Ironclad");
         let mut original = deck_card(CardId::RitualDagger, 101, 2);
         original.misc_value = 17;
+        original.base_damage_override = Some(23);
+        original.cost_modifier = -1;
+        original.cost_for_turn = Some(0);
+        original.free_to_play_once = true;
+        original.base_damage_mut = 99;
+        original.base_block_mut = 88;
+        original.base_magic_num_mut = 77;
         rs.master_deck = vec![original];
         rs.event_state = Some(EventState::new(EventId::Duplicator));
 
@@ -133,6 +140,13 @@ mod tests {
         assert_eq!(copied.id, CardId::RitualDagger);
         assert_eq!(copied.upgrades, 2);
         assert_eq!(copied.misc_value, 17);
+        assert_eq!(copied.base_damage_override, Some(23));
+        assert_eq!(copied.cost_modifier, -1);
+        assert_eq!(copied.cost_for_turn, Some(0));
+        assert!(copied.free_to_play_once);
+        assert_eq!(copied.base_damage_mut, 0);
+        assert_eq!(copied.base_block_mut, 0);
+        assert_eq!(copied.base_magic_num_mut, 0);
         assert_ne!(copied.uuid, 101);
         assert!(rs.take_emitted_events().iter().any(|event| matches!(
             event,

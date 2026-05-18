@@ -944,9 +944,11 @@ impl RunState {
     ///
     /// This is the headless equivalent of Java's `makeStatEquivalentCopy()`
     /// followed by `ShowCardAndObtainEffect`: obtain hooks still run, but
-    /// persistent per-card state such as `misc` is preserved on the obtained
-    /// copy. Bottle ownership is represented by relic UUIDs in Rust, so the new
-    /// UUID naturally clears bottle attachment.
+    /// persistent per-card state such as `misc`, cost flags, and base-stat
+    /// mutations is preserved on the obtained copy. Transient rendered
+    /// damage/block/magic values are not copied. Bottle ownership is
+    /// represented by relic UUIDs in Rust, so the new UUID naturally clears
+    /// bottle attachment.
     pub fn add_card_instance_copy_to_deck_from(
         &mut self,
         template: &crate::runtime::combat::CombatCard,
@@ -969,9 +971,8 @@ impl RunState {
                 card.misc_value = template.misc_value;
                 card.base_damage_override = template.base_damage_override;
                 card.cost_modifier = template.cost_modifier;
-                card.base_damage_mut = template.base_damage_mut;
-                card.base_block_mut = template.base_block_mut;
-                card.base_magic_num_mut = template.base_magic_num_mut;
+                card.cost_for_turn = template.cost_for_turn;
+                card.free_to_play_once = template.free_to_play_once;
                 self.emit_event(DomainEvent::CardObtained {
                     card: Self::snapshot_card(&card),
                     source,
