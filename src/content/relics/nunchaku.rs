@@ -8,9 +8,6 @@ pub fn on_use_card(
     let mut actions = SmallVec::new();
 
     // The dispatcher only triggers `on_use_card` here if the card is an Attack.
-    if relic_state.counter < 0 {
-        relic_state.counter = 0;
-    }
     relic_state.counter += 1;
 
     if relic_state.counter % 10 == 0 {

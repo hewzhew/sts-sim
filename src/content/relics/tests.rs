@@ -740,6 +740,18 @@ fn nunchaku_counter_updates_immediately_like_java() {
         actions[0].action,
         Action::GainEnergy { amount: 1 }
     ));
+
+    relic.counter = -1;
+    let actions = nunchaku::on_use_card(&mut relic);
+    assert_eq!(
+        relic.counter, 0,
+        "Java ++counter from -1 reaches 0 and then the modulo condition fires"
+    );
+    assert_eq!(actions.len(), 1);
+    assert!(matches!(
+        actions[0].action,
+        Action::GainEnergy { amount: 1 }
+    ));
 }
 
 #[test]
@@ -777,6 +789,13 @@ fn pen_nib_counter_and_power_timing_match_java() {
         }
     ));
     assert!(pen_nib::at_battle_start(8).is_empty());
+
+    relic.counter = -1;
+    assert!(pen_nib::on_use_card(&mut relic).is_empty());
+    assert_eq!(
+        relic.counter, 0,
+        "Java ++counter from -1 reaches 0 without adding Pen Nib power"
+    );
 }
 
 #[test]

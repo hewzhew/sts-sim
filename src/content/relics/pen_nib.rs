@@ -7,9 +7,6 @@ pub fn on_use_card(
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
 
-    if relic_state.counter < 0 {
-        relic_state.counter = 0;
-    }
     relic_state.counter += 1;
 
     if relic_state.counter == 10 {
