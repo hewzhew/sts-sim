@@ -2199,6 +2199,7 @@ mod tests {
         original.upgrades = 2;
         original.misc_value = 17;
         original.base_damage_override = Some(23);
+        original.base_block_override = Some(14);
         original.cost_modifier = -1;
         original.cost_for_turn = Some(0);
         original.free_to_play_once = true;
@@ -2242,6 +2243,7 @@ mod tests {
         assert_eq!(copied.upgrades, 2);
         assert_eq!(copied.misc_value, 17);
         assert_eq!(copied.base_damage_override, Some(23));
+        assert_eq!(copied.base_block_override, Some(14));
         assert_eq!(copied.cost_modifier, -1);
         assert_eq!(copied.cost_for_turn, Some(0));
         assert!(copied.free_to_play_once);

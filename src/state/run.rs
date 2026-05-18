@@ -974,6 +974,7 @@ impl RunState {
             for mut card in result.final_cards {
                 card.misc_value = template.misc_value;
                 card.base_damage_override = template.base_damage_override;
+                card.base_block_override = template.base_block_override;
                 card.cost_modifier = template.cost_modifier;
                 card.cost_for_turn = template.cost_for_turn;
                 card.free_to_play_once = template.free_to_play_once;
