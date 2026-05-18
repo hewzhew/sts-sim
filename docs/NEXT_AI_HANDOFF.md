@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `a3b9be9 Lock relic-before-curse obtain hooks`
+- `1022eb3 Lock delayed obtain hooks in Mausoleum and Mind Bloom`
 
 Recent commits:
 
+- `1022eb3 Lock delayed obtain hooks in Mausoleum and Mind Bloom`
 - `a3b9be9 Lock relic-before-curse obtain hooks`
 - `298b8b1 Lock remaining match event obtain hooks`
 - `3426913 Lock event card obtain after deck costs`
@@ -86,6 +87,36 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`1022eb3` summary:
+
+- Continued the Java event `ShowCardAndObtainEffect` sweep into delayed obtain
+  paths with meaningful pre-obtain ordering:
+  - `Mausoleum` constructs the possible Writhe effect before immediately
+    obtaining the random relic.
+  - `MindBloom` low-floor Desire immediately gains 999 gold before queueing two
+    Normality `ShowCardAndObtainEffect`s.
+- Java checked:
+  - `D:\rust\cardcrawl\events\city\TheMausoleum.java`
+  - `D:\rust\cardcrawl\events\beyond\MindBloom.java`
+  - Previously in the same lane:
+    `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+    and `D:\rust\cardcrawl\relics\CeramicFish.java`
+- Rust result:
+  - No business logic change was needed.
+  - Added `CeramicFish` ordering regressions:
+    - `Mausoleum`: forced newly obtained `CeramicFish` is obtained before the
+      delayed Writhe obtain hook, and that hook emits gold before Writhe's
+      `CardObtained` record.
+    - `MindBloom`: the 999-gold event precedes both Normality obtain hooks, and
+      each Normality hook emits `CeramicFish` gold before that Normality's
+      `CardObtained` record.
+
+Verification for `1022eb3`:
+
+- `cargo test mausoleum --all-targets` -> `5 passed`
+- `cargo test mind_bloom --all-targets` -> `8 passed`
+- `cargo test --all-targets` -> `1387 passed`
 
 `a3b9be9` summary:
 
