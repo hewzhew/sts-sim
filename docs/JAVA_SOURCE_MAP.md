@@ -63,3 +63,4 @@ reward UI classes.
 | Cauldron potion rewards and card-reward removal | `relics/Cauldron.java`, `helpers/PotionHelper.java`, `screens/CombatRewardScreen.java`, `rewards/RewardItem.java` | `00d2ecb` |
 | Orrery card rewards and reward screen append | `relics/Orrery.java`, `rooms/AbstractRoom.java`, `screens/CombatRewardScreen.java`, `rewards/RewardItem.java` | `78aa564` |
 | Dolly's Mirror stat-equivalent copy | `relics/DollysMirror.java`, `cards/AbstractCard.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `c87f213` |
+| Bottled relic equip selection | `relics/BottledFlame.java`, `relics/BottledLightning.java`, `relics/BottledTornado.java`, `cards/CardGroup.java`, `helpers/CardHelper.java` | `ff3b846` |

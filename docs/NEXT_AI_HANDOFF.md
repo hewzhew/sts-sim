@@ -53,10 +53,11 @@ Forbidden:
 
 Latest code commit:
 
-- `c87f213 Preserve copied base block state`
+- `ff3b846 Share bottled relic candidate filtering`
 
 Recent commits:
 
+- `ff3b846 Share bottled relic candidate filtering`
 - `c87f213 Preserve copied base block state`
 - `f3179ac Update handoff after Orrery audit`
 - `78aa564 Match Orrery reward screen composition`
@@ -106,6 +107,42 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`ff3b846` summary:
+
+- Audited bottled relic selection against Java.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\BottledFlame.java`
+  - `D:\rust\cardcrawl\relics\BottledLightning.java`
+  - `D:\rust\cardcrawl\relics\BottledTornado.java`
+  - `D:\rust\cardcrawl\cards\CardGroup.java`
+  - `D:\rust\cardcrawl\helpers\CardHelper.java`
+- Java result:
+  - `onEquip` for bottled relics opens a non-cancelable grid select only from
+    `masterDeck.getPurgeableCards().getAttacks()/getSkills()/getPowers()`.
+  - `canSpawn` is a separate relic-pool gate: Flame/Lightning require at least
+    one non-basic attack/skill, while Tornado requires any power.
+  - Once selected, Java stores the selected concrete card and marks its bottle
+    flag; Rust represents the same gameplay attachment by storing the selected
+    master-deck UUID in the relic amount.
+- Rust result:
+  - Bottle `on_equip` candidate existence now uses the same
+    `run_pending_choice_allows_card_for_run` predicate as request generation and
+    submitted-selection validation.
+  - Bottle pending choices now explicitly require Java purgeable candidates in
+    addition to matching attack/skill/power type.
+  - Existing spawn, selection, and combat innate regressions cover the path.
+
+Verification for `ff3b846`:
+
+- `cargo test bottled_relic --all-targets` -> `3 passed`
+- `cargo test --all-targets` -> `1408 passed`
+
+Next source-backed lane:
+
+- Empty Cage already appears implementation-aligned; record/lock it if desired.
+- Then continue with chest hook phases or another relic family with selection,
+  reward-screen, or RNG-interrupt behavior.
 
 `c87f213` summary:
 
