@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `a69430d Lock basic curse obtain hooks`
+- `4d3d455 Lock Note For Yourself manual obtain hooks`
 
 Recent commits:
 
+- `4d3d455 Lock Note For Yourself manual obtain hooks`
 - `a69430d Lock basic curse obtain hooks`
 - `b84fd78 Lock grid event obtain hooks`
 - `1022eb3 Lock delayed obtain hooks in Mausoleum and Mind Bloom`
@@ -89,6 +90,35 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`4d3d455` summary:
+
+- Audited the non-`ShowCardAndObtainEffect` manual obtain path in
+  `NoteForYourself`.
+- Java checked:
+  - `D:\rust\cardcrawl\events\shrines\NoteForYourself.java`
+  - `D:\rust\cardcrawl\cards\CardGroup.java`
+- Java result:
+  - Taking the stored note card manually calls every relic's `onObtainCard`.
+  - Then it calls `masterDeck.addToTop(obtainCard)`.
+  - Then it calls every relic's `onMasterDeckChange`.
+  - Then it opens
+    `CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())`.
+  - This path does not use `ShowCardAndObtainEffect`, so Omamori does not
+    intercept curses, but normal obtain hooks such as `CeramicFish` and Egg
+    upgrades still apply.
+- Rust result:
+  - No business logic change was needed.
+  - Added regressions proving:
+    - `CeramicFish` gold is emitted before the note card `CardObtained`
+      record.
+    - `MoltenEgg` upgrades an unupgraded stored Attack note card before it is
+      added to the master deck.
+
+Verification for `4d3d455`:
+
+- `cargo test note_for_yourself --all-targets` -> `9 passed`
+- `cargo test --all-targets` -> `1393 passed`
 
 `a69430d` summary:
 
