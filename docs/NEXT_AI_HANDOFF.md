@@ -89,6 +89,41 @@ Verification for `d245435`:
 - `cargo test spire_spear --all-targets` -> `8 passed`
 - `cargo test --all-targets` -> `1346 passed`
 
+No-code relic audit after `d245435`:
+
+- Java checked:
+  - `Damaru`
+  - `AncientTeaSet`
+  - `ArtOfWar`
+  - `RunicCapacitor`
+  - `EmotionChip`
+  - `HoveringKite`
+- Rust checked:
+  - `src/content/relics/damaru.rs`
+  - `src/content/relics/ancient_tea_set.rs`
+  - `src/content/relics/art_of_war.rs`
+  - `src/content/relics/runic_capacitor.rs`
+  - `src/content/relics/emotion_chip.rs`
+  - `src/content/relics/hovering_kite.rs`
+  - `src/content/relics/hooks.rs`
+- Result:
+  - No code change needed.
+  - Java private booleans are already represented by Rust `counter`, `amount`,
+    or `used_up` and are mutated synchronously in relic hooks.
+  - Java visual-only `RelicAboveCreatureAction`, flash, pulse, and sound paths
+    remain intentionally omitted where they do not alter mechanics.
+  - Existing Rust tests cover the mechanical hooks for Ancient Tea Set, Art of
+    War, Damaru via the watcher relic hook test, Emotion Chip, Hovering Kite,
+    and Runic Capacitor.
+
+Verification for no-code relic audit:
+
+- `cargo test ancient_tea_set --all-targets` -> `1 passed`
+- `cargo test art_of_war --all-targets` -> `1 passed`
+- `cargo test emotion_chip --all-targets` -> `1 passed`
+- `cargo test hovering_kite --all-targets` -> `1 passed`
+- `cargo test runic_capacitor --all-targets` -> `1 passed`
+
 `63487e7` summary:
 
 - Java checked:
@@ -1732,11 +1767,14 @@ Recommended next packets:
      Ornamental Fan, Orange Pellets, and Inserter was fixed in `52fb5c8`.
    - Orichalcum `trigger` was source-checked: Java source only clears it and no
      normal source path sets it true, so no Rust state was added in this packet.
+   - `Damaru`, `EmotionChip`, `HoveringKite`, `RunicCapacitor`,
+     `AncientTeaSet`, and `ArtOfWar` were source-checked after `d245435`; no
+     code change was needed.
    - Next narrow packet: continue Java relic `atTurnStart` / public counter
      hook coverage with the remaining stateful relics one Java relic file at a
-     time. Good candidates are `Damaru`, `EmotionChip`, `HoveringKite`,
-     `RunicCapacitor`, `AncientTeaSet`, and `ArtOfWar`, checking for immediate
-     state mutation vs queued-action leftovers.
+     time. Good candidates are `Dodecahedron`, `HappyFlower`, `IncenseBurner`,
+     `HornCleat`, `CaptainsWheel`, `StoneCalendar`, and `MercuryHourglass`,
+     checking for immediate state mutation vs queued-action leftovers.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
