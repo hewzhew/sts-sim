@@ -45,15 +45,46 @@ Forbidden:
 
 Branch tip:
 
-- `ea1570c Match Java end-of-round queue timing`
+- `012e056 Match Java post-draw hook queue order`
 
 Recent commits:
 
+- `012e056 Match Java post-draw hook queue order`
+- `133883b Update handoff after end-of-round timing audit`
 - `ea1570c Match Java end-of-round queue timing`
 - `5a568a7 Update handoff after invincible poison audit`
 - `10997a8 Fix monster start-turn invincible poison timing`
-- `a22f6d8 Update handoff after victory predicate audit`
-- `4fd646b Use Java basically-dead flags for victory settlement`
+
+`012e056` summary:
+
+- Java `GameActionManager`, Java `AbstractCreature.atStartOfTurnPostDraw`,
+  Java post-draw powers, Java `VoidCard`, Rust `PostDrawTrigger`, and Rust
+  draw-card handling were checked.
+- Fixed regular new-turn post-draw hook queue ordering:
+  - Java calls `atStartOfTurnPostDraw` hook methods before `DrawCardAction`
+    executes.
+  - Those hook methods use `addToBot`, so their actions land behind the
+    already-queued turn-start `DrawCardAction`, but ahead of actions generated
+    while that draw action executes.
+  - Rust's synthetic `PostDrawTrigger` now runs before the queued
+    `DrawCards`, so it appends hook actions behind `DrawCards` and ahead of
+    draw-generated actions.
+- Fixed `Void` draw trigger ordering:
+  - Java `VoidCard.triggerWhenDrawn()` uses `addToBot(new LoseEnergyAction(1))`.
+  - Rust had modeled it as top insertion.
+  - Rust now queues the energy loss to the bottom.
+- Added a regression test proving `DrawCardNextTurn` post-draw actions remain
+  ahead of Void's draw-generated energy loss.
+
+Verification for `012e056`:
+
+- `cargo test turn_start_post_draw_hooks_queue_before_draw_generated_actions_like_java --all-targets`
+  -> `1 passed`
+- `cargo test post_draw --all-targets` -> `3 passed`
+- `cargo test draw_card_next --all-targets` -> `0 matched`
+- `cargo test gambling_chip --all-targets` -> `1 passed`
+- `cargo test void --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1331 passed`
 
 `ea1570c` summary:
 
@@ -1078,7 +1109,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `ea1570c` before this handoff
+No uncommitted code changes were present after `012e056` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -1249,6 +1280,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   following player start-of-turn hook methods and constructs `DrawCardAction`
   before the queued cleanup actions execute. Rust now preserves that queue
   order; `DrawReduction` expiration is the locked regression case.
+- Regular new-turn post-draw hook action order: fixed in `012e056`. Rust's
+  synthetic `PostDrawTrigger` now runs before the queued `DrawCards` so hook
+  actions append behind the turn-start draw but ahead of draw-generated actions.
+  `VoidCard.triggerWhenDrawn()` now uses bottom insertion like Java
+  `addToBot(new LoseEnergyAction(1))`.
 
 Source suspicion remaining after `5fe09ea`:
 
@@ -1373,11 +1409,16 @@ Recommended next packets:
    - Java collective end-of-turn / atEndOfRound action queue timing was
      fixed/locked in `ea1570c`, with `DrawReductionPower` as the regression
      case.
-   - Next narrow packet: audit player start-of-turn post-draw hook timing
-     (`D:\rust\cardcrawl\actions\GameActionManager.java`,
-     `D:\rust\cardcrawl\core\AbstractCreature.java`,
-     Java powers overriding `atStartOfTurnPostDraw`, `src/engine/core.rs`,
-     `src/engine/action_handlers/cards.rs`, and Rust `PostDrawTrigger`).
+   - Regular new-turn `atStartOfTurnPostDraw` hook action order and
+     `VoidCard.triggerWhenDrawn()` insertion were fixed/locked in `012e056`.
+   - Next narrow packet: audit initial combat start hook ordering around
+     `AbstractRoom.update()`:
+     `GainEnergyAndEnableControlsAction`, `applyStartOfCombatPreDrawLogic`,
+     initial `DrawCardAction`, `applyStartOfCombatLogic`,
+     `applyStartOfTurnRelics`, `applyStartOfTurnPostDrawRelics`,
+     `applyStartOfTurnCards`, `applyStartOfTurnPowers`,
+     `applyStartOfTurnOrbs`, and Rust `PreBattleTrigger` /
+     `BattleStartPreDrawTrigger` / `BattleStartTrigger`.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
