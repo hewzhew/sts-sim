@@ -118,6 +118,23 @@ fn apply_awakened_one_rebirth_interrupt(state: &mut CombatState, target_id: usiz
     });
 }
 
+fn clear_darkling_powers_after_death_relics(state: &mut CombatState) {
+    let ids_to_clear: Vec<_> = state
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| {
+            crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                == Some(crate::content::monsters::EnemyId::Darkling)
+                && (monster.current_hp <= 0 || monster.half_dead || monster.is_dying)
+        })
+        .map(|monster| monster.id)
+        .collect();
+    for id in ids_to_clear {
+        store::remove_entity_powers(state, id);
+    }
+}
+
 /// Centralized monster death handler.
 /// Fires power on_death hooks, monster on_death, relic hooks, and Darkling specials.
 pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize) {
@@ -154,6 +171,13 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
             if is_awakened_rebirth {
                 m.half_dead = true;
                 m.is_dying = false;
+            } else if dying_monster_type == Some(crate::content::monsters::EnemyId::Darkling) {
+                // Java Darkling.damage() marks the monster half-dead before
+                // power onDeath and relic onMonsterDeath hooks. Darkling.die()
+                // is a no-op while the room cannot lose, so isDying remains
+                // false for those hooks.
+                m.half_dead = true;
+                m.is_dying = false;
             } else {
                 m.is_dying = true;
             }
@@ -176,7 +200,7 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
         }
 
         if let Some(m_id) = dying_monster_type {
-            if !is_awakened_rebirth {
+            if !is_awakened_rebirth && m_id != crate::content::monsters::EnemyId::Darkling {
                 let m_clone = state
                     .entities
                     .monsters
@@ -194,6 +218,27 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
 
         let death_actions = crate::content::relics::hooks::on_monster_death(state, target_id);
         state.queue_actions(death_actions);
+        if dying_monster_type == Some(crate::content::monsters::EnemyId::Darkling) {
+            // Java Darkling.damage(): halfDead mutation happens before relic
+            // onMonsterDeath hooks, but powers.clear(), all-dead handling, and
+            // setMove(COUNT)/SetMoveAction(COUNT) happen after those hooks.
+            clear_darkling_powers_after_death_relics(state);
+            let m_clone = state
+                .entities
+                .monsters
+                .iter()
+                .find(|m| m.id == target_id)
+                .unwrap()
+                .clone();
+            let darkling_actions = crate::content::monsters::resolve_on_death(
+                crate::content::monsters::EnemyId::Darkling,
+                state,
+                &m_clone,
+            );
+            for a in darkling_actions {
+                state.queue_action_back(a);
+            }
+        }
         if is_awakened_rebirth {
             apply_awakened_one_rebirth_interrupt(state, target_id);
             let mut cleared_protocol_monster_id = None;
