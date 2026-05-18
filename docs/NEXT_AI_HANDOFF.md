@@ -45,18 +45,74 @@ Forbidden:
 
 Latest code commit:
 
-- `d618731 Construct static hand card producers with state`
+- `3ec5e96 Construct potion hand cards with state`
 
 Recent commits:
 
+- `3ec5e96 Construct potion hand cards with state`
+- `9ba64f7 Update handoff after static hand card audit`
 - `d618731 Construct static hand card producers with state`
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
 - `24d3c00 Separate constructed hand card effects`
 - `0e0b90c Use Java colorless combat pool for rewards`
-- `a304973 Update handoff after attack relic audit`
-- `29e0699 Match Java counter increments for attack relics`
+
+`3ec5e96` summary:
+
+- Finished the potion side of the Java `MakeTempCardInHandAction` audit.
+- Java checked:
+  - `D:\rust\cardcrawl\potions\BottledMiracle.java`
+  - `D:\rust\cardcrawl\potions\CunningPotion.java`
+  - `D:\rust\cardcrawl\potions\AttackPotion.java`
+  - `D:\rust\cardcrawl\potions\SkillPotion.java`
+  - `D:\rust\cardcrawl\potions\PowerPotion.java`
+  - `D:\rust\cardcrawl\potions\ColorlessPotion.java`
+- Java result:
+  - Only Bottled Miracle and Cunning Potion directly queue
+    `MakeTempCardInHandAction`.
+  - Attack / Skill / Power / Colorless potions queue `DiscoveryAction`, so they
+    are not part of the static generated-hand-card constructor issue.
+- Rust changes:
+  - `get_potion_actions` now receives `&CombatState`, not only scalar context.
+  - Bottled Miracle and Cunning Potion now use
+    `make_constructed_temp_card_in_hand_action(...)`.
+  - Cunning Potion preserves Java's explicit upgraded Shiv before the
+    `MakeTempCardInHandAction` constructor boundary.
+- Added regression coverage for Master Reality:
+  - Bottled Miracle constructs upgraded Miracle payloads when Master Reality is
+    present.
+  - Cunning Potion constructs upgraded Shiv payloads and does not invent extra
+    upgrade state.
+
+Verification for `3ec5e96`:
+
+- `cargo test potion --all-targets` -> `68 passed`
+- `cargo fmt` was run; the two known unrelated rustfmt noise files were
+  restored afterwards.
+- `cargo test --all-targets` -> `1351 passed`
+
+Remaining `MakeTempCardInHand` audit surface after `3ec5e96`:
+
+- Central execution arm:
+  - `src/engine/action_handlers/mod.rs`
+- Monster helper:
+  - `src/content/monsters/exordium/mod.rs`
+- Tests/comments still mention Java `MakeTempCardInHandAction` where the Java
+  source name is intentionally being referenced.
+- `rg -n "MakeTempCardInHand" src\content\potions src\engine\action_handlers\cards.rs -g "*.rs"`
+  now reports only comments/tests around Java source names and Stasis behavior,
+  not potion `Action::MakeTempCardInHand` production.
+
+Next narrow packet:
+
+- Inspect `MakeTempCardInDrawPileAction` /
+  `ShowCardAndAddToDrawPileEffect` constructor/effect Master Reality and
+  random/bottom/top insertion behavior from Java source.
+- Check all Rust producers of temporary draw-pile cards against the established
+  draw pile top/bottom API and Java `CardGroup` ordering.
+- Keep the Exordium monster helper on the watch list, but do not fold it into
+  the player generated-card/Master Reality path without Java evidence.
 
 `d618731` summary:
 
@@ -72,9 +128,8 @@ Recent commits:
   - Carve Reality, Deceive Reality, Deus Ex Machina, Battle Hymn, and Collect.
   - Infinite Blades and Blade Fury.
   - Ninja Scroll, Pure Water, and Holy Water battle-start relic hooks.
-- Kept potion generated-card paths for a later packet because the current
-  `get_potion_actions` path does not pass `CombatState`, so it cannot read
-  Master Reality without an API change.
+- Potion generated-card paths were intentionally left for a later packet at
+  this commit; they were fixed in `3ec5e96`.
 - Kept the Exordium monster status-card helper static for now; it is a
   status-card monster path, not the player generated-card/Master Reality path.
 
@@ -90,26 +145,14 @@ Remaining `MakeTempCardInHand` audit surface after `d618731`:
 
 - Central execution arm:
   - `src/engine/action_handlers/mod.rs`
-- Potion generated-card paths:
-  - `src/content/potions/mod.rs`
-  - `src/content/potions/potion_effects.rs`
 - Monster helper:
   - `src/content/monsters/exordium/mod.rs`
 - Tests/comments for the converted paths still mention Java
   `MakeTempCardInHandAction` where the Java source name is intentionally being
   referenced.
 
-Next narrow packet:
-
-- Audit potion generated-card actions from Java source and decide the smallest
-  state-aware API change for `get_potion_actions` / `potion_effects` so potions
-  that create hand cards can use the same constructor boundary when Master
-  Reality is present.
-- Then inspect `MakeTempCardInDrawPileAction` /
-  `ShowCardAndAddToDrawPileEffect` constructor/effect Master Reality and
-  random/bottom/top insertion behavior.
-- After hand/draw/discard generated-card actions are clean, resume relic audit
-  around custom actions, execution-time state, and source-sensitive effects.
+Next narrow packet at `d618731` was potion generated-card actions; resolved in
+`3ec5e96`.
 
 `7d9e17a` summary:
 
