@@ -248,6 +248,36 @@ Current documentation note after event-pool reconciliation:
   - `cargo test events::generator --all-targets` -> `10 passed`
   - `cargo test event_room --all-targets` -> `5 passed`
 
+Current documentation note after map visibility reconciliation:
+
+- Rechecked map visibility / boss-key coverage against Java without changing
+  code.
+- Java checked:
+  - `D:\rust\cardcrawl\map\MapRoomNode.java`
+  - `D:\rust\cardcrawl\map\DungeonMap.java`
+  - `D:\rust\cardcrawl\dungeons\AbstractDungeon.java`
+  - `D:\rust\cardcrawl\ui\panels\TopPanel.java`
+  - `D:\rust\cardcrawl\ui\buttons\ProceedButton.java`
+- Rust checked:
+  - `src\map\state.rs`
+  - `src\state\run.rs`
+  - full-run observation and map action code
+- Result:
+  - Wing Boots next-row reachability, boss-node availability, public map
+    context during combat/choices, top-panel key visibility, and Emerald elite
+    marker versus owned Emerald key are already source-checked.
+  - `docs\MECHANICS_AUDIT_LEDGER.md` now narrows remaining map risk to full map
+    generation/room assignment parity and future observation schema leakage.
+  - `docs\JAVA_SOURCE_MAP.md` now has a map movement/visibility owner row.
+- Verification:
+  - `cargo test map_observation --all-targets` -> `2 passed`
+  - `cargo test boss_node_availability_is_derived_from_java_map_position --all-targets`
+    -> `1 passed`
+  - `cargo test wing_boots_matches_java_next_row_only_semantics --all-targets`
+    -> `1 passed`
+  - `cargo test run_observation_exposes_all_top_panel_keys --all-targets`
+    -> `1 passed`
+
 Previous source-checked note after `157e50d`:
 
 - Rechecked `EmptyCage` against Java without code changes.
