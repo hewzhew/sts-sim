@@ -127,6 +127,116 @@ mod tests {
             "Java SummonGremlinAction identifies the first empty GremlinLeader.gremlins slot, not the nearest occupied draw_x"
         );
     }
+
+    #[test]
+    fn pre_battle_applies_minion_sentinel_amount_like_java() {
+        let mut first = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+        first.id = 2;
+        let mut second = crate::test_support::test_monster(EnemyId::GremlinFat);
+        second.id = 3;
+        let leader = crate::test_support::test_monster(EnemyId::GremlinLeader);
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![first, second, leader.clone()]);
+
+        let actions = GremlinLeader::use_pre_battle_actions(
+            &mut state,
+            &leader,
+            crate::content::monsters::PreBattleLegacyRng::MonsterHp,
+        );
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::ApplyPower {
+                    source: leader.id,
+                    target: 2,
+                    power_id: PowerId::Minion,
+                    amount: -1,
+                },
+                Action::ApplyPower {
+                    source: leader.id,
+                    target: 3,
+                    power_id: PowerId::Minion,
+                    amount: -1,
+                },
+            ],
+            "Java MinionPower constructor never sets amount, so AbstractPower.amount remains the sentinel -1"
+        );
+    }
+
+    #[test]
+    fn encourage_queue_order_matches_java_loop() {
+        let mut leader = crate::test_support::test_monster(EnemyId::GremlinLeader);
+        leader.id = 10;
+        let mut first = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+        first.id = 2;
+        let mut dying = crate::test_support::test_monster(EnemyId::GremlinFat);
+        dying.id = 3;
+        dying.is_dying = true;
+        let mut second = crate::test_support::test_monster(EnemyId::GremlinThief);
+        second.id = 4;
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![first, leader.clone(), dying, second]);
+        state.meta.ascension_level = 18;
+
+        let actions = GremlinLeader::take_turn_plan(&mut state, &leader, &encourage_plan(18));
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::ApplyPower {
+                    source: 10,
+                    target: 10,
+                    power_id: PowerId::Strength,
+                    amount: 5,
+                },
+                Action::ApplyPower {
+                    source: 10,
+                    target: 2,
+                    power_id: PowerId::Strength,
+                    amount: 5,
+                },
+                Action::GainBlock {
+                    target: 2,
+                    amount: 10,
+                },
+                Action::ApplyPower {
+                    source: 10,
+                    target: 4,
+                    power_id: PowerId::Strength,
+                    amount: 5,
+                },
+                Action::GainBlock {
+                    target: 4,
+                    amount: 10,
+                },
+                Action::RollMonsterMove { monster_id: 10 },
+            ],
+            "Java Encourage buffs the leader first, skips only isDying allies, then applies Strength and block in monster-list order before RollMoveAction"
+        );
+    }
+
+    #[test]
+    fn stab_queues_three_hits_before_roll_like_java() {
+        let leader = crate::test_support::test_monster(EnemyId::GremlinLeader);
+        let mut state = crate::test_support::combat_with_monsters(vec![leader.clone()]);
+
+        let actions = GremlinLeader::take_turn_plan(&mut state, &leader, &stab_plan());
+
+        assert_eq!(actions.len(), 4);
+        assert!(
+            actions[..3]
+                .iter()
+                .all(|action| matches!(action, Action::MonsterAttack { .. })),
+            "Java STAB queues three DamageActions before RollMoveAction"
+        );
+        assert_eq!(
+            actions[3],
+            Action::RollMonsterMove {
+                monster_id: leader.id,
+            }
+        );
+    }
 }
 
 fn stab_plan() -> MonsterTurnPlan {
@@ -390,7 +500,7 @@ impl MonsterBehavior for GremlinLeader {
                 source: entity.id,
                 target: ally_id,
                 power_id: PowerId::Minion,
-                amount: 1,
+                amount: -1,
             })
             .collect()
     }

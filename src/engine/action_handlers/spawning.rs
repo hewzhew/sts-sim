@@ -375,7 +375,7 @@ pub fn handle_spawn_monster(
             source: new_entity_id,
             target: new_entity_id,
             power_id: crate::content::powers::PowerId::Minion,
-            amount: 1,
+            amount: -1,
         });
     }
 
@@ -1944,8 +1944,10 @@ pub fn handle_update_relic_used_up(
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_escape, handle_roll_monster_move};
+    use super::{handle_escape, handle_roll_monster_move, handle_spawn_monster};
     use crate::content::monsters::EnemyId;
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
 
     #[test]
     fn roll_monster_move_still_executes_for_dying_monster_like_java_action() {
@@ -2008,6 +2010,33 @@ mod tests {
         assert!(
             !state.runtime.combat_mugged,
             "GremlinThief.java escape path does not set AbstractRoom.mugged"
+        );
+    }
+
+    #[test]
+    fn spawned_minion_power_uses_java_sentinel_amount() {
+        let mut state = crate::test_support::blank_test_combat();
+
+        let new_entity_id = handle_spawn_monster(
+            EnemyId::GremlinWarrior,
+            0,
+            20,
+            20,
+            0,
+            None,
+            true,
+            &mut state,
+        );
+
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::ApplyPower {
+                source: new_entity_id,
+                target: new_entity_id,
+                power_id: PowerId::Minion,
+                amount: -1,
+            }),
+            "Java SpawnMonsterAction/SummonGremlinAction apply new MinionPower, whose amount remains AbstractPower's sentinel -1"
         );
     }
 }

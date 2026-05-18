@@ -74,6 +74,31 @@ mod tests {
             [Action::Suicide { target: 2 }]
         ));
     }
+
+    #[test]
+    fn pre_battle_applies_minion_sentinel_amount_like_java() {
+        let reptomancer = crate::test_support::test_monster(EnemyId::Reptomancer);
+        let mut dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        dagger.id = 2;
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![dagger, reptomancer.clone()]);
+
+        let actions = Reptomancer::use_pre_battle_actions(
+            &mut state,
+            &reptomancer,
+            PreBattleLegacyRng::MonsterHp,
+        );
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            Action::ApplyPower {
+                source,
+                target: 2,
+                power_id: PowerId::Minion,
+                amount: -1,
+            } if *source == reptomancer.id
+        )));
+    }
 }
 
 const SNAKE_STRIKE: u8 = 1;
@@ -296,7 +321,7 @@ impl MonsterBehavior for Reptomancer {
                 source: entity.id,
                 target: monster.id,
                 power_id: PowerId::Minion,
-                amount: 1,
+                amount: -1,
             })
             .collect()
     }
