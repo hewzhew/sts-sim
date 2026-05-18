@@ -1004,6 +1004,10 @@ pub enum Action {
     PreBattleTrigger,
     BattleStartPreDrawTrigger,
     BattleStartTrigger,
+    /// Java `RedSkull.atBattleStart()` queues a custom action that checks
+    /// bloodied state when it executes, after earlier top-inserted battle-start
+    /// effects such as Blood Vial have resolved.
+    RedSkullBattleStartCheck,
     ClearCardQueue,
     AddCardToMasterDeck {
         card_id: crate::content::cards::CardId,

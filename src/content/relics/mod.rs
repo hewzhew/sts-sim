@@ -1032,7 +1032,10 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::Sling => sub.at_battle_start = true,
         RelicId::WristBlade => {} // Passive — damage calc checks
         RelicId::PaperCrane => {} // Passive — damage calc constant
-        RelicId::RedSkull => sub.at_battle_start = true,
+        RelicId::RedSkull => {
+            sub.at_battle_start = true;
+            sub.on_victory = true;
+        }
         RelicId::TheSpecimen => sub.on_monster_death = true,
         RelicId::Matryoshka => {} // Passive — treasure room check
         RelicId::SlaversCollar => {

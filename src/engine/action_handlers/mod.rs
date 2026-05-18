@@ -748,6 +748,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::BattleStartTrigger => cards::handle_battle_start_trigger(state),
         Action::PreBattleTrigger => cards::handle_pre_battle_trigger(state),
         Action::BattleStartPreDrawTrigger => cards::handle_battle_start_pre_draw_trigger(state),
+        Action::RedSkullBattleStartCheck => {
+            crate::content::relics::red_skull::battle_start_check(state);
+        }
 
         // === Spawning / Monster lifecycle domain ===
         Action::SpawnMonster {

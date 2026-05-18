@@ -233,13 +233,9 @@ pub fn at_battle_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 actions.extend(crate::content::relics::sling::at_battle_start(&*state))
             }
             RelicId::RedSkull => {
-                let (hp, max_hp) = (
-                    state.entities.player.current_hp,
-                    state.entities.player.max_hp,
-                );
-                actions.extend(crate::content::relics::red_skull::at_battle_start(
-                    hp, max_hp,
-                ));
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                actions.extend(crate::content::relics::red_skull::at_battle_start(&mut rs));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::SlaversCollar => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
@@ -456,6 +452,11 @@ pub fn on_victory(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]
                 actions.extend(crate::content::relics::slavers_collar::on_victory(
                     state, &mut rs,
                 ));
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::RedSkull => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::red_skull::on_victory(&mut rs);
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::VelvetChoker => {

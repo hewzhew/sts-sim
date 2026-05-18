@@ -66,18 +66,12 @@ fn queue_hp_lost_power_actions(
 }
 
 fn queue_red_skull_threshold_actions(state: &mut CombatState, previous_hp: i32, current_hp: i32) {
-    if !state
-        .entities
-        .player
-        .has_relic(crate::content::relics::RelicId::RedSkull)
-    {
-        return;
-    }
-
+    let max_hp = state.entities.player.max_hp;
     let actions = crate::content::relics::red_skull::on_player_hp_changed(
+        state,
         previous_hp,
         current_hp,
-        state.entities.player.max_hp,
+        max_hp,
     );
     state.queue_actions(actions);
 }

@@ -23,6 +23,7 @@ fn ironclad_blood_skull_and_frog_relic_metadata_matches_java_sources() {
     assert!(get_relic_subscriptions(RelicId::BurningBlood).on_victory);
     assert!(get_relic_subscriptions(RelicId::BlackBlood).on_victory);
     assert!(get_relic_subscriptions(RelicId::RedSkull).at_battle_start);
+    assert!(get_relic_subscriptions(RelicId::RedSkull).on_victory);
     assert!(get_relic_subscriptions(RelicId::PaperFrog).on_calculate_vulnerable_multiplier);
 }
 
@@ -84,17 +85,16 @@ fn red_skull_threshold_hooks_match_java_bloodied_edges() {
     assert_eq!(start_actions[0].insertion_mode, AddTo::Bottom);
     assert!(matches!(
         start_actions[0].action,
-        Action::ApplyPower {
-            source: 0,
-            target: 0,
-            power_id: PowerId::Strength,
-            amount: 3
-        }
+        Action::RedSkullBattleStartCheck
     ));
 
-    assert!(red_skull::at_battle_start(31, 60).is_empty());
+    let mut relic = RelicState::new(RelicId::RedSkull);
     assert!(matches!(
-        red_skull::on_player_hp_changed(31, 30, 60)[0].action,
+        red_skull::at_battle_start(&mut relic)[0].action,
+        Action::RedSkullBattleStartCheck
+    ));
+    assert!(matches!(
+        red_skull::on_player_hp_changed(&mut state, 31, 30, 60)[0].action,
         Action::ApplyPower {
             source: 0,
             target: 0,
@@ -103,7 +103,7 @@ fn red_skull_threshold_hooks_match_java_bloodied_edges() {
         }
     ));
     assert!(matches!(
-        red_skull::on_player_hp_changed(30, 31, 60)[0].action,
+        red_skull::on_player_hp_changed(&mut state, 30, 31, 60)[0].action,
         Action::ApplyPower {
             source: 0,
             target: 0,
@@ -111,7 +111,80 @@ fn red_skull_threshold_hooks_match_java_bloodied_edges() {
             amount: -3
         }
     ));
-    assert!(red_skull::on_player_hp_changed(30, 20, 60).is_empty());
+    assert!(red_skull::on_player_hp_changed(&mut state, 30, 20, 60).is_empty());
+}
+
+#[test]
+fn red_skull_battle_start_check_uses_execution_time_hp_like_java() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.current_hp = 29;
+    state.entities.player.max_hp = 60;
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::BloodVial));
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::RedSkull));
+
+    let actions = hooks::at_battle_start(&mut state);
+    state.queue_actions(actions);
+    drain_test_actions(&mut state);
+
+    assert_eq!(
+        state.entities.player.current_hp, 31,
+        "Java Blood Vial addToTop heal resolves before Red Skull's addToBot battle-start check"
+    );
+    assert_eq!(
+        store::power_amount(&state, 0, PowerId::Strength),
+        0,
+        "Java Red Skull checks isBloodied when its queued battle-start action executes, not when atBattleStart() is called"
+    );
+}
+
+#[test]
+fn red_skull_tracks_private_active_flag_for_battle_start_and_heal_edges() {
+    let mut state = crate::test_support::blank_test_combat();
+    state.entities.player.current_hp = 30;
+    state.entities.player.max_hp = 60;
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::RedSkull));
+
+    let actions = hooks::at_battle_start(&mut state);
+    state.queue_actions(actions);
+    drain_test_actions(&mut state);
+
+    assert_eq!(store::power_amount(&state, 0, PowerId::Strength), 3);
+    assert!(
+        state
+            .entities
+            .player
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::RedSkull)
+            .is_some_and(|relic| relic.used_up),
+        "Rust stores Java RedSkull.isActive in RelicState.used_up"
+    );
+
+    crate::engine::action_handlers::damage::handle_heal(0, 1, &mut state);
+    drain_test_actions(&mut state);
+
+    assert_eq!(state.entities.player.current_hp, 31);
+    assert_eq!(
+        store::power_amount(&state, 0, PowerId::Strength),
+        0,
+        "Java Red Skull onNotBloodied removes Strength only after it was active"
+    );
+    assert!(state
+        .entities
+        .player
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::RedSkull)
+        .is_some_and(|relic| !relic.used_up));
 }
 
 #[test]
