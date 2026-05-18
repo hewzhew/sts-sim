@@ -141,6 +141,67 @@ mod tests {
     use crate::runtime::rng::StsRng;
 
     #[test]
+    fn pre_battle_thorns_amount_matches_java_ascension_gates() {
+        let mut state = crate::test_support::blank_test_combat();
+        let spiker = crate::test_support::test_monster(EnemyId::Spiker);
+
+        let normal = Spiker::use_pre_battle_actions(
+            &mut state,
+            &spiker,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+        state.meta.ascension_level = 2;
+        let asc2 = Spiker::use_pre_battle_actions(
+            &mut state,
+            &spiker,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+        state.meta.ascension_level = 17;
+        let asc17 = Spiker::use_pre_battle_actions(
+            &mut state,
+            &spiker,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+
+        assert!(matches!(
+            normal.as_slice(),
+            [Action::ApplyPower {
+                power_id: PowerId::Thorns,
+                amount: 3,
+                ..
+            }]
+        ));
+        assert!(matches!(
+            asc2.as_slice(),
+            [Action::ApplyPower {
+                power_id: PowerId::Thorns,
+                amount: 4,
+                ..
+            }]
+        ));
+        assert!(matches!(
+            asc17.as_slice(),
+            [Action::ApplyPower {
+                power_id: PowerId::Thorns,
+                amount: 7,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn executed_thorns_count_over_java_cap_forces_attack() {
+        let mut spiker = crate::test_support::test_monster(EnemyId::Spiker);
+        spiker.spiker.thorns_count = 6;
+        spiker.move_history_mut().push_back(BUFF_THORNS);
+
+        let plan = Spiker::roll_move_plan(&mut StsRng::new(0), &spiker, 2, 99);
+
+        assert_eq!(plan.move_id, ATTACK);
+        assert_eq!(plan.attack().map(|attack| attack.base_damage), Some(9));
+    }
+
+    #[test]
     fn planned_but_unexecuted_thorns_buff_does_not_advance_spiker_count() {
         let mut spiker = crate::test_support::test_monster(EnemyId::Spiker);
         spiker.spiker.thorns_count = 5;
@@ -153,6 +214,43 @@ mod tests {
             plan.move_id, BUFF_THORNS,
             "Java thornsCount increments only when BUFF_THORNS executes; a planned move in moveHistory must not count as already executed"
         );
+    }
+
+    #[test]
+    fn low_roll_attacks_only_when_previous_move_was_not_attack() {
+        let mut after_buff = crate::test_support::test_monster(EnemyId::Spiker);
+        after_buff.spiker.thorns_count = 0;
+        after_buff.move_history_mut().push_back(BUFF_THORNS);
+        let mut after_attack = crate::test_support::test_monster(EnemyId::Spiker);
+        after_attack.spiker.thorns_count = 0;
+        after_attack.move_history_mut().push_back(ATTACK);
+
+        let attack_plan = Spiker::roll_move_plan(&mut StsRng::new(0), &after_buff, 0, 49);
+        let buff_plan = Spiker::roll_move_plan(&mut StsRng::new(0), &after_attack, 0, 49);
+
+        assert_eq!(attack_plan.move_id, ATTACK);
+        assert_eq!(buff_plan.move_id, BUFF_THORNS);
+    }
+
+    #[test]
+    fn attack_turn_queues_damage_before_roll_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        let spiker = crate::test_support::test_monster(EnemyId::Spiker);
+
+        let actions = Spiker::take_turn_plan(&mut state, &spiker, &attack_plan(2));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 9,
+                    damage_kind: DamageKind::Normal
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
     }
 
     #[test]
