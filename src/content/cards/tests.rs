@@ -18897,6 +18897,8 @@ fn nightmare_matches_java_card_and_power_payload_flow() {
     let mut state = crate::test_support::blank_test_combat();
     let mut copied = CombatCard::new(CardId::Bash, 51);
     copied.upgrades = 1;
+    copied.misc_value = 7;
+    copied.base_damage_override = Some(42);
     copied.cost_modifier = -1;
     copied.cost_for_turn = Some(0);
     copied.base_damage_mut = 99;
@@ -18915,6 +18917,8 @@ fn nightmare_matches_java_card_and_power_payload_flow() {
                 crate::runtime::combat::PowerPayload::Card(crate::runtime::combat::CombatCard {
                     id,
                     upgrades,
+                    misc_value,
+                    base_damage_override,
                     cost_modifier,
                     cost_for_turn,
                     base_damage_mut,
@@ -18930,6 +18934,8 @@ fn nightmare_matches_java_card_and_power_payload_flow() {
             assert_eq!(instance_id, Some(1));
             assert_eq!(id, CardId::Bash);
             assert_eq!(upgrades, 1);
+            assert_eq!(misc_value, 7);
+            assert_eq!(base_damage_override, Some(42));
             assert_eq!(cost_modifier, -1);
             assert_eq!(cost_for_turn, None);
             assert_eq!(base_damage_mut, 0);
