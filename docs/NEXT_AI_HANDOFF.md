@@ -45,15 +45,43 @@ Forbidden:
 
 Branch tip:
 
-- `9ce0e12 Add spire growth parity tests`
+- `87044fb Fix writhing mass reactive parity`
 
 Recent commits:
 
+- `87044fb Fix writhing mass reactive parity`
 - `9ce0e12 Add spire growth parity tests`
 - `17d05fd Add spiker parity tests`
 - `bcbd851 Fix maw roar timing parity`
 - `d6a62f4 Fix transient move timing and shifting amount`
-- `2aae03b Add donu deca parity tests`
+
+`87044fb` summary:
+
+- `WrithingMass`, Java `ReactivePower`, Java `MalleablePower`, and Java
+  `AddCardToDeckAction` were checked.
+- Fixed Writhing Mass pre-battle `Reactive` amount:
+  - Java `ReactivePower` does not set amount and therefore inherits
+    `AbstractPower.amount == -1`.
+  - Rust now applies `Reactive` with amount `-1` and treats `Reactive` as a
+    sentinel amount power.
+- Fixed `ReactivePower.onAttacked` queue direction:
+  - Java `ReactivePower` calls `addToBot(new RollMoveAction(owner))`.
+  - Rust now queues Reactive rerolls to the back, preserving existing queued
+    actions ahead of the reroll.
+- Confirmed existing Rust Writhing Mass runtime state already models Java
+  `firstMove` and `usedMegaDebuff`, including first-move clearing and
+  Mega-Debuff runtime update before adding Parasite.
+- Java `FastShakeAction`, `AnimateFastAttackAction`, `AnimateSlowAttackAction`,
+  `ChangeStateAction`, `WaitAction`, hit animation, and animation startup
+  randomness were treated as presentation-only.
+
+Verification for `87044fb`:
+
+- `cargo test writhing_mass --all-targets` -> `6 passed`
+- `cargo test reactive_power --all-targets` -> `2 passed`
+- `cargo test sentinel_power_reapplication_matches_java_apply_power_special_cases --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1296 passed`
 
 `9ce0e12` summary:
 
@@ -652,7 +680,8 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `30c73bb`.
+No uncommitted code changes were present after `87044fb` before this handoff
+update.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -754,6 +783,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `SpireGrowth`: checked in `9ce0e12`. No business logic change was needed;
   tests lock player Constricted context, A17 branch priority, low-roll Quick
   Tackle, Smash fallback, and Constricted/Smash execution queues.
+- `WrithingMass`: fixed in `87044fb`. `Reactive` now uses Java sentinel amount
+  `-1`, duplicate Reactive follows default `stackPower(-1)`, and
+  `ReactivePower.onAttacked` queues `RollMonsterMove` to the back like Java
+  `addToBot`. Existing runtime truth tests lock `firstMove`,
+  `usedMegaDebuff`, recursive reroll gating, and Mega-Debuff Parasite ordering.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -840,10 +874,11 @@ Recommended next packets:
    - `Maw` was fixed in `bcbd851`.
    - `Spiker` was checked in `17d05fd`.
    - `SpireGrowth` was checked in `9ce0e12`.
-   - Next narrow packet: `WrithingMass`
-     (`D:\rust\cardcrawl\monsters\beyond\WrithingMass.java`,
-     `src/content/monsters/beyond/writhing_mass.rs`, and relevant damage /
-     status / move-change action files if source comparison requires them).
+   - `WrithingMass` was fixed in `87044fb`.
+   - Next narrow packet: `OrbWalker`
+     (`D:\rust\cardcrawl\monsters\beyond\OrbWalker.java`,
+     `src/content/monsters/beyond/orb_walker.rs`, and relevant power/action
+     files if source comparison requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
