@@ -310,6 +310,57 @@ fn brimstone_turn_start_matches_java_strength_sources_and_top_order() {
 }
 
 #[test]
+fn mutagenic_strength_battle_start_matches_java_add_to_top_order() {
+    assert_eq!(
+        get_relic_tier(RelicId::MutagenicStrength),
+        RelicTier::Special
+    );
+    assert!(get_relic_subscriptions(RelicId::MutagenicStrength).at_battle_start);
+
+    let mut state = crate::test_support::blank_test_combat();
+    let actions = mutagenic_strength::at_battle_start();
+    assert_eq!(actions.len(), 2);
+    assert!(matches!(
+        actions[0].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 3
+        }
+    ));
+    assert!(matches!(
+        actions[1].action,
+        Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::LoseStrength,
+            amount: 3
+        }
+    ));
+
+    state.queue_actions(actions);
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::LoseStrength,
+            amount: 3
+        })
+    ));
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 0,
+            target: 0,
+            power_id: PowerId::Strength,
+            amount: 3
+        })
+    ));
+}
+
+#[test]
 fn champion_belt_respects_java_player_source_and_artifact_guard() {
     let mut state = crate::test_support::blank_test_combat();
     let mut target = crate::test_support::test_monster(EnemyId::JawWorm);
