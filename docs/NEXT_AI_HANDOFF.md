@@ -45,15 +45,37 @@ Forbidden:
 
 Branch tip:
 
-- `17d05fd Add spiker parity tests`
+- `9ce0e12 Add spire growth parity tests`
 
 Recent commits:
 
+- `9ce0e12 Add spire growth parity tests`
 - `17d05fd Add spiker parity tests`
 - `bcbd851 Fix maw roar timing parity`
 - `d6a62f4 Fix transient move timing and shifting amount`
 - `2aae03b Add donu deca parity tests`
-- `6c142a3 Add time eater move parity tests`
+
+`9ce0e12` summary:
+
+- `SpireGrowth` Java/Rust behavior was checked.
+- No business logic change was needed.
+- Added tests proving:
+  - A17+ without player Constricted forces Constrict before the RNG Quick
+    Tackle branch;
+  - below A17, a low roll selects Quick Tackle before the non-constricted
+    branch;
+  - when player already has Constricted and the last two moves were Smash,
+    Java fallback is Quick Tackle;
+  - Constrict at A17 queues Constricted 12 before `RollMoveAction`;
+  - Smash at A2+ queues one 25-damage attack before `RollMoveAction`.
+- Java `AnimateFastAttackAction`, `AnimateSlowAttackAction`,
+  `ChangeStateAction`, `WaitAction`, animation startup randomness, and Hurt
+  animation were treated as presentation-only.
+
+Verification for `9ce0e12`:
+
+- `cargo test spire_growth --all-targets` -> `5 passed`
+- `cargo test --all-targets` -> `1294 passed`
 
 `17d05fd` summary:
 
@@ -729,6 +751,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `Spiker`: checked in `17d05fd`. No business logic change was needed; tests
   lock pre-battle Thorns gates, private `thornsCount`, low-roll/lastMove gates,
   attack damage, and Buff ordering.
+- `SpireGrowth`: checked in `9ce0e12`. No business logic change was needed;
+  tests lock player Constricted context, A17 branch priority, low-roll Quick
+  Tackle, Smash fallback, and Constricted/Smash execution queues.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -814,10 +839,11 @@ Recommended next packets:
    - `Transient` was fixed in `d6a62f4`.
    - `Maw` was fixed in `bcbd851`.
    - `Spiker` was checked in `17d05fd`.
-   - Next narrow packet: `SpireGrowth`
-     (`D:\rust\cardcrawl\monsters\beyond\SpireGrowth.java`,
-     `src/content/monsters/beyond/spire_growth.rs`, and relevant constricted
-     or strength action/power files if source comparison requires them).
+   - `SpireGrowth` was checked in `9ce0e12`.
+   - Next narrow packet: `WrithingMass`
+     (`D:\rust\cardcrawl\monsters\beyond\WrithingMass.java`,
+     `src/content/monsters/beyond/writhing_mass.rs`, and relevant damage /
+     status / move-change action files if source comparison requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
