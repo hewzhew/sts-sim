@@ -629,18 +629,8 @@ pub fn tick_engine(
                         }
                         CardRewardPool::Colorless => {
                             // Java: returnTrulyRandomColorlessCardInCombat()
-                            for &id in crate::content::cards::COLORLESS_UNCOMMON_POOL {
-                                let def = crate::content::cards::get_card_definition(id);
-                                if !def.tags.contains(&crate::content::cards::CardTag::Healing) {
-                                    card_pool.push(id);
-                                }
-                            }
-                            for &id in crate::content::cards::COLORLESS_RARE_POOL {
-                                let def = crate::content::cards::get_card_definition(id);
-                                if !def.tags.contains(&crate::content::cards::CardTag::Healing) {
-                                    card_pool.push(id);
-                                }
-                            }
+                            card_pool
+                                .extend(crate::content::cards::random_colorless_in_combat_pool());
                         }
                     }
                     let mut cards = Vec::new();
@@ -1671,7 +1661,7 @@ mod tests {
     use crate::content::monsters::EnemyId;
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
-    use crate::runtime::action::{Action, CardDestination};
+    use crate::runtime::action::{Action, CardDestination, CardRewardPool};
     use crate::runtime::combat::{CombatCard, Power, StanceId};
     use crate::state::core::{
         ClientInput, DiscoveryChoiceState, EngineState, GridSelectFilter, GridSelectReason,
@@ -2385,6 +2375,50 @@ mod tests {
         assert_eq!(
             combat_state.zones.draw_pile[0].upgrades, 1,
             "Java CodexAction relies on ShowCardAndAddToDrawPileEffect for one Master Reality upgrade"
+        );
+    }
+
+    #[test]
+    fn colorless_card_reward_uses_java_random_colorless_combat_pool_order() {
+        let mut combat_state = blank_test_combat();
+        let pool = crate::content::cards::random_colorless_in_combat_pool();
+        let mut expected_rng = combat_state.rng.card_random_rng.clone();
+        let mut expected = Vec::new();
+        while expected.len() < 3 {
+            let idx = expected_rng.random(pool.len() as i32 - 1) as usize;
+            let id = pool[idx];
+            if !expected.contains(&id) {
+                expected.push(id);
+            }
+        }
+
+        combat_state.queue_action_back(Action::SuspendForCardReward {
+            pool: CardRewardPool::Colorless,
+            destination: CardDestination::Hand,
+            can_skip: false,
+            skip_if_monsters_basically_dead: false,
+        });
+        let mut engine_state = EngineState::CombatProcessing;
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+
+        let EngineState::PendingChoice(PendingChoice::CardRewardSelect {
+            cards,
+            destination,
+            can_skip,
+        }) = engine_state
+        else {
+            panic!("Toolbox-style colorless reward should open a card reward selection");
+        };
+        assert_eq!(cards, expected);
+        assert_eq!(destination, CardDestination::Hand);
+        assert!(!can_skip);
+        assert_eq!(
+            combat_state.rng.card_random_rng.counter, expected_rng.counter,
+            "Java ChooseOneColorless consumes cardRandomRng against srcColorlessCardPool order, not rarity-grouped colorless pools"
         );
     }
 
