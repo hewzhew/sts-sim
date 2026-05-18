@@ -4168,7 +4168,18 @@ pub fn handle_battle_start_pre_draw_trigger(state: &mut CombatState) {
     let pre_draw_actions = crate::content::relics::hooks::at_battle_start_pre_draw(state);
     state.queue_actions(pre_draw_actions);
 
-    // Auto-chain Phase 3 Initial Draw
+    // Java AbstractRoom.update() constructs the whole opening queue before
+    // actionManager drains it:
+    //   atBattleStartPreDraw hooks
+    //   DrawCardAction
+    //   atBattleStart hooks
+    //   atTurnStart relics
+    //   atTurnStartPostDraw relics
+    //   card / power / orb atTurnStart hooks
+    //
+    // Therefore these hook methods must run synchronously here. Queuing a later
+    // synthetic BattleStartTrigger would incorrectly let the initial draw execute
+    // before atBattleStart / atTurnStart hooks have had a chance to enqueue.
     let draw_amount = crate::engine::core::compute_player_turn_start_draw_count(state);
     if draw_amount > 0 {
         state.queue_action_back(crate::runtime::action::Action::DrawCards(
@@ -4176,12 +4187,46 @@ pub fn handle_battle_start_pre_draw_trigger(state: &mut CombatState) {
         ));
     }
 
-    // Auto-chain Phase 4
-    state.queue_action_back(crate::runtime::action::Action::BattleStartTrigger);
+    queue_initial_battle_start_hooks_after_draw_is_queued(state);
 }
 
 pub fn handle_battle_start_trigger(state: &mut CombatState) {
     // Relic battle-start hooks (e.g. Akabeko, Marbles)
     let battle_start_actions = crate::content::relics::hooks::at_battle_start(state);
     state.queue_actions(battle_start_actions);
+}
+
+fn queue_initial_battle_start_hooks_after_draw_is_queued(state: &mut CombatState) {
+    let battle_start_actions = crate::content::relics::hooks::at_battle_start(state);
+    state.queue_actions(battle_start_actions);
+
+    // Java AbstractPlayer.applyStartOfTurnRelics() calls stance.atStartOfTurn()
+    // before relic atTurnStart hooks. Divinity queues a return to Neutral here.
+    if state.entities.player.stance == crate::runtime::combat::StanceId::Divinity {
+        state.queue_action_back(crate::runtime::action::Action::EnterStance(
+            "Neutral".to_string(),
+        ));
+    }
+
+    let turn_start_actions = crate::content::relics::hooks::at_turn_start(state);
+    state.queue_actions(turn_start_actions);
+
+    // Initial combat is special: AbstractRoom.update() calls only relic
+    // atTurnStartPostDraw here, not power atStartOfTurnPostDraw.
+    let post_draw_relic_actions = crate::content::relics::hooks::at_turn_start_post_draw(state);
+    state.queue_actions(post_draw_relic_actions);
+
+    let card_actions = crate::content::cards::hooks::at_turn_start_in_hand(state);
+    state.queue_actions(card_actions);
+
+    for power in &crate::content::powers::store::powers_snapshot_for(state, 0) {
+        let power_actions =
+            crate::content::powers::resolve_power_instance_at_turn_start(power, state, 0);
+        for action in power_actions {
+            state.queue_action_back(action);
+        }
+    }
+
+    let orb_actions = crate::content::orbs::hooks::at_turn_start(state);
+    state.queue_actions(orb_actions);
 }

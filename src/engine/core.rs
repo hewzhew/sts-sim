@@ -2682,6 +2682,118 @@ mod tests {
     }
 
     #[test]
+    fn initial_battle_start_runs_turn_start_relics_before_opening_draw_like_java() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.monsters = vec![planned_monster(EnemyId::Cultist, 1)];
+        combat_state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::Lantern));
+        combat_state.queue_action_back(Action::PreBattleTrigger);
+        let mut engine_state = EngineState::CombatProcessing;
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+        assert_eq!(
+            combat_state.engine.action_queue.front(),
+            Some(&Action::BattleStartPreDrawTrigger)
+        );
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+        assert_eq!(
+            combat_state.engine.action_queue.iter().take(2).collect::<Vec<_>>(),
+            vec![&Action::GainEnergy { amount: 1 }, &Action::DrawCards(5)],
+            "Java calls applyStartOfTurnRelics after queuing the initial DrawCardAction but before it executes; Lantern addToTop therefore runs before the opening draw"
+        );
+    }
+
+    #[test]
+    fn initial_battle_start_gambling_chip_suspends_after_opening_draw_like_java() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.monsters = vec![planned_monster(EnemyId::Cultist, 1)];
+        combat_state.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 81),
+            CombatCard::new(CardId::Defend, 82),
+            CombatCard::new(CardId::Strike, 83),
+            CombatCard::new(CardId::Defend, 84),
+            CombatCard::new(CardId::Strike, 85),
+        ];
+        combat_state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::GamblingChip));
+        combat_state.queue_action_back(Action::PreBattleTrigger);
+        let mut engine_state = EngineState::CombatProcessing;
+
+        for _ in 0..16 {
+            if matches!(engine_state, EngineState::PendingChoice(_)) {
+                break;
+            }
+            assert!(super::tick_engine(
+                &mut engine_state,
+                &mut combat_state,
+                None
+            ));
+        }
+
+        assert_eq!(
+            combat_state.zones.hand.len(),
+            5,
+            "Gambling Chip atTurnStartPostDraw is called before the initial DrawCardAction executes, but its addToBot action must remain behind that draw"
+        );
+        assert!(matches!(
+            engine_state,
+            EngineState::PendingChoice(PendingChoice::HandSelect {
+                reason: crate::state::HandSelectReason::GamblingChip,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn initial_battle_start_does_not_run_power_post_draw_hooks_like_java() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.monsters = vec![planned_monster(EnemyId::Cultist, 1)];
+        combat_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::DrawCardNextTurn,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat_state.queue_action_back(Action::PreBattleTrigger);
+        let mut engine_state = EngineState::CombatProcessing;
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+
+        assert_eq!(
+            combat_state.engine.action_queue.iter().collect::<Vec<_>>(),
+            vec![&Action::DrawCards(5)],
+            "Java initial AbstractRoom.update calls applyStartOfTurnPostDrawRelics, but not applyStartOfTurnPostDrawPowers"
+        );
+    }
+
+    #[test]
     fn vault_skip_monster_turn_bypasses_monster_actions_and_end_of_round_powers() {
         let mut combat_state = blank_test_combat();
         combat_state.entities.player.current_hp = 50;
