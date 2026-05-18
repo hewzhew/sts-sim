@@ -45,15 +45,39 @@ Forbidden:
 
 Branch tip:
 
-- `369d112 Make Neows Lament mutate battle start state immediately`
+- `4c05934 Queue Plated Armor hp loss reduction at bottom`
 
 Recent commits:
 
+- `4c05934 Queue Plated Armor hp loss reduction at bottom`
+- `9b53052 Update handoff after Neows Lament audit`
 - `369d112 Make Neows Lament mutate battle start state immediately`
 - `e94c895 Update handoff after Necronomicon activation audit`
 - `c52b087 Make Necronomicon activation mutate immediately`
-- `52fb5c8 Make relic counter hooks mutate immediately`
-- `227a871 Route Orange Pellets turn reset through relic hook`
+
+`4c05934` summary:
+
+- Java checked:
+  - `PlatedArmorPower`, `RupturePower`, `SplitPower`, and large slime / Slime
+    Boss damage overrides.
+- Fixed HP-loss power action insertion:
+  - Java `RupturePower.wasHPLost()` uses `addToTop`.
+  - Java `PlatedArmorPower.wasHPLost()` uses `addToBot`.
+  - Rust previously queued all hp-lost power actions to the front.
+  - Rust now routes Plated Armor's `ReducePower` to the back while preserving
+    existing top behavior for Rupture and existing immediate/bottom split
+    interrupt handling for large slimes.
+- Added regression:
+  - Existing queued actions stay ahead of Plated Armor's `ReducePower`.
+
+Verification for `4c05934`:
+
+- `cargo test plated_armor_hp_loss_reduction_is_added_to_bottom_like_java --all-targets`
+  -> `1 passed`
+- `cargo test rupture_and_reaper_execution_hooks_match_java_sources --all-targets`
+  -> `1 passed`
+- `cargo test large_slime_split --all-targets` -> `3 passed`
+- `cargo test --all-targets` -> `1339 passed`
 
 `369d112` summary:
 
