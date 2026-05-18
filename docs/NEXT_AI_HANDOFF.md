@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `59ce922 Lock draw pile large temp card semantics`
+- `3f90fe6 Match Java discard temp card amount gate`
 
 Recent commits:
 
+- `3f90fe6 Match Java discard temp card amount gate`
 - `59ce922 Lock draw pile large temp card semantics`
 - `5531d87 Update handoff after potion hand card audit`
 - `3ec5e96 Construct potion hand cards with state`
@@ -57,6 +58,52 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`3f90fe6` summary:
+
+- Continued generated-card cleanup into discard-pile insertion semantics.
+- Java checked:
+  - `D:\rust\cardcrawl\actions\common\MakeTempCardInDiscardAction.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndAddToDiscardEffect.java`
+  - `D:\rust\cardcrawl\actions\common\MakeTempCardInDiscardAndDeckAction.java`
+- Java result:
+  - `MakeTempCardInDiscardAction(AbstractCard card, int amount)` does not apply
+    Master Reality in its constructor.
+  - `MakeTempCardInDiscardAction.update()` only creates discard effects inside
+    `if (this.numCards < 6)`. In the decompiled Java source there is no large
+    amount fallback branch, so `amount >= 6` is a no-op.
+  - `ShowCardAndAddToDiscardEffect(AbstractCard card)` applies one Master
+    Reality upgrade to the actual card that is inserted into discard.
+  - `ShowCardAndAddToDiscardEffect(AbstractCard srcCard, float x, float y)`
+    applies Master Reality only to the visual copy and inserts `srcCard`, which
+    matches the previously audited hand-overflow source-card path.
+  - `MakeTempCardInDiscardAndDeckAction` queues separate draw and discard
+    effects from separate stat-equivalent copies.
+- Rust result:
+  - `handle_make_temp_card_in_discard` and `handle_make_copy_in_discard` now
+    return without mutation when `amount >= 6`, matching Java's missing large
+    amount fallback.
+  - Added a focused regression covering both generated-by-id and copied-card
+    discard paths for `amount == 6`.
+  - Existing discard+deck handling already uses separate draw/discard copies
+    and remains on the watch list for source-copy UUID and Master Reality tests.
+
+Verification for `3f90fe6`:
+
+- `cargo test make_temp_card_in_discard_large_amount_matches_java_no_effect --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1353 passed`
+
+Next narrow packet:
+
+- Finish the discard/discard+deck audit:
+  - Confirm Stasis same-UUID discard path behavior against Java.
+  - Confirm `MakeTempCardInDiscardAndDeckAction` UUID separation and one Master
+    Reality call per destination are adequately locked by tests.
+  - If existing coverage is enough, record that and move to remaining generated
+    card source-copy / UUID / misc propagation paths.
+- Keep the Exordium monster helper on the watch list, but do not fold it into
+  player generated-card/Master Reality handling without Java evidence.
 
 `59ce922` summary:
 
