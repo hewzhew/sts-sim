@@ -45,10 +45,12 @@ Forbidden:
 
 Latest code commit:
 
-- `773cc7a Lock stasis and discard deck generated card semantics`
+- `ab78536 Lock stat equivalent copy state for queued copies`
 
 Recent commits:
 
+- `ab78536 Lock stat equivalent copy state for queued copies`
+- `23d034d Lock Nightmare stat equivalent payload state`
 - `773cc7a Lock stasis and discard deck generated card semantics`
 - `3f90fe6 Match Java discard temp card amount gate`
 - `59ce922 Lock draw pile large temp card semantics`
@@ -59,6 +61,76 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`ab78536` summary:
+
+- Continued the source-copy / UUID / misc propagation audit into queued copy
+  paths.
+- Java checked:
+  - `D:\rust\cardcrawl\actions\watcher\OmniscienceAction.java`
+  - `D:\rust\cardcrawl\actions\unique\DualWieldAction.java`
+  - `D:\rust\cardcrawl\actions\common\MakeTempCardInHandAction.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndAddToHandEffect.java`
+- Java result:
+  - Omniscience queues the selected original once, then queues
+    `playAmt - 1` stat-equivalent copies with `purgeOnUse`.
+  - The selected original keeps its current rendered fields; the extra copies
+    come from `makeStatEquivalentCopy()`.
+  - Dual Wield's selected branch removes the selected original first, then
+    creates `amount` hand/discard copies through `MakeTempCardInHandAction`.
+  - Copies that enter hand have powers applied after stat-equivalent copying;
+    overflow discard copies keep the reset source-card rendered fields.
+- Rust result:
+  - Existing implementation already matched these paths.
+  - Strengthened Omniscience and Dual Wield tests to distinguish permanent
+    card state (`upgrades`, `misc`, base-damage override, free-to-play) from
+    transient rendered damage.
+
+Verification for `ab78536`:
+
+- `cargo test copy --all-targets` -> `15 passed`
+- `cargo test omniscience_selection_removes_draw_card_and_queues_autoplay_copies --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1354 passed`
+
+`23d034d` summary:
+
+- Continued source-copy / UUID / misc propagation audit into Nightmare.
+- Java checked:
+  - `D:\rust\cardcrawl\actions\unique\NightmareAction.java`
+  - `D:\rust\cardcrawl\powers\NightmarePower.java`
+  - `D:\rust\cardcrawl\cards\AbstractCard.java`
+- Java result:
+  - `NightmareAction` applies a `NightmarePower` carrying the selected card.
+  - `NightmarePower` stores `copyMe.makeStatEquivalentCopy()` and immediately
+    calls `resetAttributes()`.
+  - `AbstractCard.triggerWhenCopied()` is empty in the Java base class, and no
+    current card override was found in the decompiled card sources.
+- Rust result:
+  - Existing implementation already matched the Nightmare payload flow.
+  - Strengthened the Nightmare test to prove permanent stat-equivalent fields
+    are preserved while `costForTurn` and rendered damage are reset.
+
+Verification for `23d034d`:
+
+- `cargo test nightmare_matches_java_card_and_power_payload_flow --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1354 passed`
+
+Next narrow packet:
+
+- Continue the generated/source-copy audit through remaining Java
+  `makeStatEquivalentCopy()` call sites:
+  - Discovery / Foreign Influence / ChooseOneColorless / Codex choice
+    resolution.
+  - Omniscience and Dual Wield are now locked more tightly.
+  - `MakeTempCardAtBottomOfDeckAction` is only used by the Controlled Chaos
+    daily mod in Java; do not implement unless daily mods become in scope.
+- Keep an eye on bottle flags: Java `makeStatEquivalentCopy()` copies
+  `inBottle*` flags, while Rust represents bottle ownership at run/relic UUID
+  level. This is already intentionally different for master-deck duplication,
+  but should be revisited if combat-generated bottled flags ever affect
+  mechanics.
 
 `773cc7a` summary:
 
