@@ -45,10 +45,14 @@ Forbidden:
 
 Latest code commit:
 
-- `d4155a0 Match shop purge selection with Java`
+- `f6abf75 Match Neow transform-two removal order`
 
 Recent commits:
 
+- `f6abf75 Match Neow transform-two removal order`
+- `7dd8cf4 Match campfire toke selection with Java`
+- `08bcd42 Match fountain curse removal order with Java`
+- `e841d93 Update handoff after shop purge audit`
 - `d4155a0 Match shop purge selection with Java`
 - `d8c5796 Separate direct master deck removal paths`
 - `efbf00f Match master deck removal hooks with Java`
@@ -67,6 +71,115 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`f6abf75` summary:
+
+- Continued the permanent master-deck transform audit into Neow transform
+  rewards.
+- Java checked:
+  - `D:\rust\cardcrawl\neow\NeowReward.java`
+  - `D:\rust\cardcrawl\dungeons\AbstractDungeon.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+  - Nearby transform references in `DrugDealer`, `Designer`,
+    `Transmogrifier`, `LivingWall`, and `Astrolabe`.
+- Java result:
+  - `TRANSFORM_CARD` computes the transformed card with `NeowEvent.rng`,
+    then removes the selected card through `masterDeck.removeCard`, then
+    queues `ShowCardAndObtainEffect`.
+  - `TRANSFORM_TWO_CARDS` is special: it removes both selected cards through
+    `masterDeck.removeCard` first, then transforms/obtains replacement 1 and
+    replacement 2 with `NeowEvent.rng`.
+  - Other checked multi-transform paths are not the same batch-removal shape:
+    Drug Dealer, Designer, and Astrolabe remove/transform/obtain each selected
+    card sequentially.
+- Rust result:
+  - `RunState` now separates transform removal, transform-result generation,
+    and transformed-card obtain.
+  - Ordinary transform selection still processes selected cards sequentially.
+  - Neow multi-transform selection now uses a dedicated
+    `transform_card_uuids_after_removing_all_with_source` path so all selected
+    cards run their Java `onRemoveFromMasterDeck` hooks and deck-change refresh
+    before any replacement is obtained.
+  - Added a Neow regression using two Parasites: both `MaxHpChanged(-3)`
+    events must occur before the first `CardTransformed` event.
+
+Verification for `f6abf75`:
+
+- `cargo test transform_two --all-targets` -> `2 passed`
+- `cargo test neow --all-targets` -> `15 passed`
+- `cargo test drug_dealer --all-targets` -> `6 passed`
+- `cargo test designer --all-targets` -> `18 passed`
+- `cargo test astrolabe --all-targets` -> `1 passed`
+- `cargo test transmogrifier --all-targets` -> `2 passed`
+- `cargo test living_wall --all-targets` -> `5 passed`
+- `cargo test --all-targets` -> `1364 passed`
+
+`7dd8cf4` summary:
+
+- Continued the permanent master-deck removal audit into Java campfire toke /
+  Peace Pipe selection.
+- Java checked:
+  - `D:\rust\cardcrawl\vfx\campfire\CampfireTokeEffect.java`
+  - `D:\rust\cardcrawl\ui\campfire\TokeOption.java`
+  - `D:\rust\cardcrawl\relics\PeacePipe.java`
+- Java result:
+  - Peace Pipe option is usable only when
+    `CardGroup.getGroupWithoutBottledCards(player.masterDeck.getPurgeableCards())`
+    is non-empty.
+  - Campfire toke opens the same non-bottled purgeable card list.
+  - The chosen card is removed through ordinary `masterDeck.removeCard`, so
+    card removal hooks and master-deck-change hooks should run.
+- Rust result:
+  - Campfire toke availability now uses the Java non-bottled purgeable gate.
+  - Direct campfire toke execution rejects unpurgeable and bottled indices.
+  - Full-run legal campfire actions expose only non-bottled purgeable cards.
+
+Verification for `7dd8cf4`:
+
+- `cargo test toke --all-targets` -> `3 passed`
+- `cargo test campfire --all-targets` -> `8 passed`
+
+`08bcd42` summary:
+
+- Continued the permanent master-deck removal audit into Fountain of Curse
+  Removal.
+- Java checked:
+  - `D:\rust\cardcrawl\events\shrines\FountainOfCurseRemoval.java`
+  - `D:\rust\cardcrawl\cards\curses\Parasite.java`
+  - `D:\rust\cardcrawl\cards\CardGroup.java`
+- Java result:
+  - Fountain iterates the master deck from `size() - 1` down to `0`, removing
+    removable curses through ordinary `masterDeck.removeCard`.
+  - Therefore removable curses are removed in reverse master-deck order and
+    `onRemoveFromMasterDeck` hooks run.
+- Rust result:
+  - Fountain now removes removable curses in reverse master-deck order.
+  - Regression covers removable curses, bottled curses, and unpurgeable special
+    curses. It verifies `Parasite` max HP loss and `CardRemoved` order:
+    `Doubt`, `Parasite`, `Injury`.
+
+Verification for `08bcd42`:
+
+- `cargo test fountain --all-targets` -> `2 passed`
+
+Next narrow packet:
+
+- Continue the Java-source-backed audit from permanent master-deck mutation
+  into the remaining transform/remove edges:
+  - `Cleric`, `EmptyCage`, and any remaining event/relic removal paths not yet
+    checked in this packet.
+  - Transform paths where Java order differs by source:
+    `Designer`, `DrugDealer`, `Transmogrifier`, `LivingWall`, `Astrolabe`, and
+    Neow are now source-compared at least once; future work should add
+    source-specific event-order tests if a new relic/card hook makes the
+    ordering observable.
+- Keep the current distinction:
+  - ordinary `CardGroup.removeCard(...)` paths run card removal hooks and
+    master-deck-change hooks;
+  - direct `masterDeck.group.remove(...)` / iterator removal paths bypass those
+    hooks;
+  - Neow `TRANSFORM_TWO_CARDS` removes all selected old cards before obtaining
+    replacements, unlike the other checked multi-transform sources.
 
 `d4155a0` summary:
 
