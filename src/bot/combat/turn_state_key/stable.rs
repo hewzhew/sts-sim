@@ -138,6 +138,7 @@ fn stable_turn_key(turn: &TurnRuntime) -> StableTurnKey {
 fn stable_player_key(player: &PlayerEntity) -> StableCombatPlayerKey {
     StableCombatPlayerKey {
         max_hp: player.max_hp,
+        facing_left: player.facing_left,
         orbs: format!("{:?}", player.orbs),
         max_orbs: player.max_orbs,
         stance: format!("{:?}", player.stance),

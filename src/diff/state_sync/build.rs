@@ -106,6 +106,11 @@ pub fn build_combat_state_from_snapshots(
             .unwrap_or(player_val["hp"].as_i64().unwrap_or(80)) as i32,
         max_hp: player_val["max_hp"].as_i64().unwrap_or(80) as i32,
         block: player_val["block"].as_i64().unwrap_or(0) as i32,
+        facing_left: player_val
+            .get("flip_horizontal")
+            .or_else(|| player_val.get("flipHorizontal"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         gold_delta_this_combat: 0,
         gold: 99,
         max_orbs: 0,

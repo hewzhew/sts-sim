@@ -711,6 +711,12 @@ pub struct PlayerEntity {
     pub current_hp: i32,
     pub max_hp: i32,
     pub block: i32,
+    /// Java `AbstractPlayer.flipHorizontal`.
+    ///
+    /// This is a mechanical combat field in the Shield/Spear fight: while the
+    /// player has Surrounded, Java uses the player's facing and monster drawX
+    /// positions to decide which monster receives BackAttack.
+    pub facing_left: bool,
     pub gold_delta_this_combat: i32,
     pub gold: i32,
     pub max_orbs: u8,

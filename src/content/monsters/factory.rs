@@ -246,12 +246,14 @@ pub fn build_encounter(
         if enemy_id == EnemyId::SpireShield {
             monster.spire_shield.protocol_seeded = true;
             monster.spire_shield.move_count = 0;
+            monster.logical_position = -1;
         }
         if enemy_id == EnemyId::SpireSpear {
             crate::content::monsters::ending::spire_spear::initialize_runtime_state(
                 &mut monster,
                 ascension_level,
             );
+            monster.logical_position = 1;
         }
         if enemy_id == EnemyId::SlaverRed {
             monster.slaver_red.protocol_seeded = true;
@@ -1149,6 +1151,10 @@ mod tests {
         assert_eq!(shield_spear.len(), 2);
         assert_eq!(shield_spear[0].current_hp, 125);
         assert_eq!(shield_spear[1].current_hp, 180);
+        assert!(
+            shield_spear[0].logical_position < 0 && shield_spear[1].logical_position > 0,
+            "Shield starts left of the player and Spear starts right; Surrounded BackAttack depends on this Java positioning"
+        );
 
         let mut heart_hp_rng = StsRng::new(3);
         let heart = build_encounter(EncounterId::TheHeart, &mut misc_rng, &mut heart_hp_rng, 20);

@@ -294,12 +294,14 @@ pub fn handle_spawn_monster(
     if enemy_id == crate::content::monsters::EnemyId::SpireShield {
         new_monster.spire_shield.protocol_seeded = true;
         new_monster.spire_shield.move_count = 0;
+        new_monster.logical_position = -1;
     }
     if enemy_id == crate::content::monsters::EnemyId::SpireSpear {
         crate::content::monsters::ending::spire_spear::initialize_runtime_state(
             &mut new_monster,
             state.meta.ascension_level,
         );
+        new_monster.logical_position = 1;
     }
     if enemy_id == crate::content::monsters::EnemyId::SlaverRed {
         new_monster.slaver_red.protocol_seeded = true;

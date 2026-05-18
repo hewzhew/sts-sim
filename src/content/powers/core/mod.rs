@@ -40,6 +40,7 @@ pub mod split;
 pub mod spore_cloud;
 pub mod stasis;
 pub mod strength;
+pub mod surrounded;
 pub mod thievery;
 pub mod thorns;
 pub mod time_warp;

@@ -51,6 +51,7 @@ pub fn blank_test_combat() -> CombatState {
                 current_hp: 80,
                 max_hp: 80,
                 block: 0,
+                facing_left: false,
                 gold_delta_this_combat: 0,
                 gold: 99,
                 max_orbs: 0,

@@ -2117,6 +2117,8 @@ pub fn handle_play_card_from_hand(
         return Err("Not enough energy");
     }
 
+    crate::content::powers::core::surrounded::face_target_for_surrounded_if_needed(state, target);
+
     if !is_x_cost {
         state.turn.spend_energy(energy_on_use);
     }

@@ -336,6 +336,7 @@ impl RunState {
             current_hp: self.current_hp,
             max_hp: self.max_hp,
             block: 0,
+            facing_left: false,
             gold_delta_this_combat: 0,
             gold: self.gold,
             max_orbs: master_max_orbs,

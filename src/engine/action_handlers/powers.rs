@@ -487,6 +487,9 @@ fn handle_apply_power_detailed_internal(
     if power_id == PowerId::Corruption {
         crate::content::cards::ironclad::corruption::corruption_on_apply(state);
     }
+    if power_id == PowerId::Surrounded && target == 0 {
+        crate::content::powers::core::surrounded::sync_back_attack_markers(state);
+    }
 
     // Java MantraPower.stackPower(): only stacking an existing Mantra power
     // checks for the 10-point threshold, then subtracts 10 and enters Divinity.
@@ -609,6 +612,9 @@ pub fn handle_remove_power(target: usize, power_id: PowerId, state: &mut CombatS
     }
 
     store::remove_power_type(state, target, power_id);
+    if power_id == PowerId::Surrounded && target == 0 {
+        crate::content::powers::core::surrounded::sync_back_attack_markers(state);
+    }
 }
 
 pub fn handle_remove_power_instance(

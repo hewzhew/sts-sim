@@ -65,6 +65,7 @@ pub(in crate::bot::combat) struct StableTurnKey {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(in crate::bot::combat) struct StableCombatPlayerKey {
     pub max_hp: i32,
+    pub facing_left: bool,
     pub orbs: String,
     pub max_orbs: u8,
     pub stance: String,
