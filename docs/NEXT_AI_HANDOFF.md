@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `d8c5796 Separate direct master deck removal paths`
+- `d4155a0 Match shop purge selection with Java`
 
 Recent commits:
 
+- `d4155a0 Match shop purge selection with Java`
 - `d8c5796 Separate direct master deck removal paths`
 - `efbf00f Match master deck removal hooks with Java`
 - `d3c080e Align master deck copy state with Java`
@@ -66,6 +67,55 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`d4155a0` summary:
+
+- Continued the permanent master-deck removal audit into Java shop purge
+  selection.
+- Java checked:
+  - `D:\rust\cardcrawl\screens\shop\ShopScreen.java`
+- Java result:
+  - `ShopScreen.purchasePurge()` opens
+    `CardGroup.getGroupWithoutBottledCards(AbstractDungeon.player.masterDeck.getPurgeableCards())`.
+  - Therefore the shop purge picker excludes unpurgeable cards such as
+    Ascender's Bane and excludes cards attached to bottle relics.
+  - The selected card is removed from `player.masterDeck` through the ordinary
+    master-deck removal path, so removal hooks and master-deck-change hooks
+    should run.
+- Rust result:
+  - `legal_shop_actions()` now exposes `ClientInput::PurgeCard(idx)` only for
+    cards that are both purgeable and not bottled.
+  - `shop_handler` now rejects unpurgeable or bottled purge indices even if a
+    caller sends them directly.
+  - Shop purge now calls
+    `remove_card_from_deck_with_source(uuid, DomainEventSource::Shop)` instead
+    of the generic deck-mutation source.
+  - Added action-mask and handler regressions using Strike, Ascender's Bane,
+    and a Bottled Flame-attached Defend.
+
+Verification for `d4155a0`:
+
+- `cargo test legal_shop_purge_actions_use_java_non_bottled_purgeable_cards --all-targets`
+  -> `1 passed`
+- `cargo test shop_purge_uses_java_non_bottled_purgeable_cards_and_shop_source --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1360 passed`
+
+Next narrow packet:
+
+- Continue permanent master-deck mutation audit by checking event/relic remove
+  and transform paths against Java's two explicit families:
+  - `CardGroup.removeCard(...)`: should run card removal hooks, then
+    master-deck-change relic hooks.
+  - Direct `masterDeck.group.remove(...)` / iterator remove: should bypass
+    those hooks.
+- Good next Java/Rust comparison targets:
+  - `FountainOfCurseRemoval`, `Cleric`, `CampfireTokeEffect`, `EmptyCage`,
+    `Falling`, `WeMeetAgain`, `Bonfire`, `GoldenWing`.
+  - Transform paths in `LivingWall`, `DrugDealer`, `Designer`,
+    `Transmogrifier`, `Astrolabe`, and Neow transform rewards.
+  - For each, verify both the execution handler and any full-run action mask,
+    because shop purge proved mask and execution can drift together.
 
 `d8c5796` summary:
 
