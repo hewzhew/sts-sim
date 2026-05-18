@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `4d3d455 Lock Note For Yourself manual obtain hooks`
+- `dcec769 Lock reward card obtain hooks`
 
 Recent commits:
 
+- `dcec769 Lock reward card obtain hooks`
 - `4d3d455 Lock Note For Yourself manual obtain hooks`
 - `a69430d Lock basic curse obtain hooks`
 - `b84fd78 Lock grid event obtain hooks`
@@ -90,6 +91,35 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`dcec769` summary:
+
+- Audited ordinary reward-screen card selection against Java's
+  `RewardItem.claimReward` -> `CardRewardScreen` -> `FastCardObtainEffect`
+  path.
+- Java checked:
+  - `D:\rust\cardcrawl\rewards\RewardItem.java`
+  - `D:\rust\cardcrawl\screens\CardRewardScreen.java`
+  - `D:\rust\cardcrawl\vfx\FastCardObtainEffect.java`
+  - `D:\rust\cardcrawl\cards\Soul.java`
+- Java result:
+  - Claiming a `CARD` reward opens `CardRewardScreen` and does not immediately
+    remove the reward item via `RewardItem.claimReward`.
+  - Selecting a card queues `FastCardObtainEffect`.
+  - `FastCardObtainEffect` has the same key obtain mechanics as
+    `ShowCardAndObtainEffect`: Omamori can intercept curses in the constructor,
+    and later update runs relic `onObtainCard` before `souls.obtain`.
+- Rust result:
+  - No business logic change was needed.
+  - Added reward-handler regressions proving:
+    - Reward card selection emits `CeramicFish` gold before `CardObtained`.
+    - Omamori intercepts a curse selected from a reward-card row and no
+      `CardObtained` event is emitted for that curse.
+
+Verification for `dcec769`:
+
+- `cargo test rewards::handler --all-targets` -> `8 passed`
+- `cargo test --all-targets` -> `1395 passed`
 
 `4d3d455` summary:
 
