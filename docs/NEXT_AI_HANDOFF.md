@@ -58,6 +58,28 @@ Forbidden:
 
 ## Latest Documentation Checkpoint
 
+Latest code checkpoint:
+
+- Fixed Daily Run combat gold generation in `src\rewards\generator.rs`.
+- Java checked:
+  - `D:\rust\cardcrawl\rooms\AbstractRoom.java`
+  - `D:\rust\cardcrawl\rooms\MonsterRoom.java`
+  - `D:\rust\cardcrawl\rooms\MonsterRoomElite.java`
+  - `D:\rust\cardcrawl\rooms\MonsterRoomBoss.java`
+- Rust changed:
+  - `src\rewards\generator.rs`
+- Result:
+  - Daily normal combat now grants fixed 15 gold without consuming
+    `treasure_rng`.
+  - Daily elite combat now grants fixed 30 gold without consuming
+    `treasure_rng`.
+  - Daily boss combat now grants fixed 100 gold without consuming `misc_rng`.
+  - Non-Daily reward generation still uses the existing normal/elite/boss RNG
+    branches and reward ordering.
+- Verification:
+  - `cargo test rewards::generator --all-targets` -> `16 passed`
+  - `cargo test --all-targets` -> `1417 passed`
+
 Latest documentation reconciliation:
 
 - Event-started combats were rechecked against Java/Rust owners without code

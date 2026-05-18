@@ -101,15 +101,26 @@ pub fn generate_room_rewards_before_screen(
     // 1. Generate Gold
     if !has_ectoplasm {
         if is_boss {
-            let mut amount = 100 + run_state.rng_pool.misc_rng.random_range(-5, 5);
-            if run_state.ascension_level >= 13 {
-                amount = (amount as f32 * 0.75).round() as i32;
-            }
+            let amount = if run_state.is_daily_run {
+                100
+            } else {
+                let mut amount = 100 + run_state.rng_pool.misc_rng.random_range(-5, 5);
+                if run_state.ascension_level >= 13 {
+                    amount = (amount as f32 * 0.75).round() as i32;
+                }
+                amount
+            };
             add_gold_reward_like_java(&mut items, amount);
         } else if !is_elite && !normal_monster_rewards_allowed {
             // Java skips ordinary MonsterRoom gold when every monster escaped.
         } else {
-            let amount = if is_elite {
+            let amount = if run_state.is_daily_run {
+                if is_elite {
+                    30
+                } else {
+                    15
+                }
+            } else if is_elite {
                 run_state.rng_pool.treasure_rng.random_range(25, 35)
             } else {
                 run_state.rng_pool.treasure_rng.random_range(10, 20)
@@ -417,6 +428,73 @@ mod tests {
         assert!(
             gold_rewards[0] > 5,
             "Java AbstractRoom.addGoldToRewards increments an existing GOLD reward item instead of appending a second one"
+        );
+    }
+
+    #[test]
+    fn daily_normal_combat_gold_is_fixed_and_does_not_consume_treasure_rng() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.is_daily_run = true;
+        let treasure_before = run_state.rng_pool.treasure_rng.counter;
+
+        let rewards = super::generate_combat_rewards_from_existing(
+            &mut run_state,
+            false,
+            false,
+            Vec::new(),
+            false,
+        );
+
+        assert!(matches!(rewards.items[0], RewardItem::Gold { amount: 15 }));
+        assert_eq!(
+            run_state.rng_pool.treasure_rng.counter, treasure_before,
+            "Java Daily normal combat uses fixed 15 gold and does not consume treasureRng"
+        );
+    }
+
+    #[test]
+    fn daily_elite_combat_gold_is_fixed_and_does_not_consume_treasure_rng() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+        let treasure_before = run_state.rng_pool.treasure_rng.counter;
+        run_state.is_daily_run = true;
+
+        let rewards = super::generate_combat_rewards_from_existing(
+            &mut run_state,
+            true,
+            false,
+            Vec::new(),
+            false,
+        );
+
+        assert!(matches!(rewards.items[0], RewardItem::Gold { amount: 30 }));
+        assert_eq!(
+            run_state.rng_pool.treasure_rng.counter, treasure_before,
+            "Java Daily elite combat uses fixed 30 gold and does not consume treasureRng"
+        );
+    }
+
+    #[test]
+    fn daily_boss_combat_gold_is_fixed_and_does_not_consume_misc_rng() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.is_daily_run = true;
+        let misc_before = run_state.rng_pool.misc_rng.counter;
+
+        let rewards = super::generate_combat_rewards_from_existing(
+            &mut run_state,
+            false,
+            true,
+            Vec::new(),
+            false,
+        );
+
+        assert!(matches!(rewards.items[0], RewardItem::Gold { amount: 100 }));
+        assert_eq!(
+            run_state.rng_pool.misc_rng.counter, misc_before,
+            "Java Daily boss combat uses fixed 100 gold and does not consume miscRng"
         );
     }
 
