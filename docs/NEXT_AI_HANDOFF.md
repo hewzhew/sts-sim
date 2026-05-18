@@ -45,15 +45,64 @@ Forbidden:
 
 Latest code commit:
 
-- `0e0b90c Use Java colorless combat pool for rewards`
+- `24d3c00 Separate constructed hand card effects`
 
 Recent commits:
 
+- `24d3c00 Separate constructed hand card effects`
 - `0e0b90c Use Java colorless combat pool for rewards`
 - `a304973 Update handoff after attack relic audit`
 - `29e0699 Match Java counter increments for attack relics`
 - `2007560 Align relic delayed checks and null sources`
 - `35c414b Update handoff after stateful relic audit`
+
+`24d3c00` summary:
+
+- Java checked:
+  - `actions/common/MakeTempCardInHandAction.java`
+  - `vfx/cardManip/ShowCardAndAddToHandEffect.java`
+  - `vfx/cardManip/ShowCardAndAddToDiscardEffect.java`
+  - `DeadBranch`
+  - `Enchiridion`
+- Fixed concrete generated-card hand actions:
+  - Java `MakeTempCardInHandAction` applies Master Reality in its constructor
+    before the action is queued.
+  - Java `ShowCardAndAddToHandEffect` applies Master Reality again when the
+    generated card enters hand, then runs copied-card/hand refresh mechanics.
+  - Java hand-full overflow through
+    `ShowCardAndAddToDiscardEffect(srcCard, x, y)` upgrades only the visual
+    copy at effect time; the actual `srcCard` added to discard has only the
+    constructor-time upgrade.
+  - Rust added `Action::MakeConstructedCopyInHand` for cards that have already
+    passed the Java constructor boundary.
+  - `DeadBranch` and `Enchiridion` now apply constructor-time Master Reality
+    before queuing the constructed action.
+- Regression coverage:
+  - hand path receives constructor + hand-effect Master Reality upgrades.
+  - delayed execution keeps constructor-time upgrade after Master Reality is
+    removed before action execution.
+  - full-hand overflow discard receives only the constructor-upgraded actual
+    card.
+  - Enchiridion queued payload is already constructor-upgraded.
+
+Verification for current dirty work:
+
+- `cargo test enchiridion_applies_make_temp_card_constructor_reality_before_queue_execution --all-targets`
+  -> `1 passed`
+- `cargo test constructed_make_copy_in_hand_separates_constructor_and_effect_reality_calls --all-targets`
+  -> `1 passed`
+- `cargo test dead_branch --all-targets` -> `1 passed`
+- `cargo test enchiridion --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1349 passed`
+
+Next narrow packet:
+
+- Continue generated-card/source audit for other concrete producers of Java
+  `MakeTempCardInHandAction`, especially card/potion/relic paths that hand a
+  preselected concrete card into the action rather than sampling inside the
+  shared Rust handler.
+- Then resume relic audit around custom actions, private execution-time state,
+  and source-sensitive effects.
 
 `0e0b90c` summary:
 
