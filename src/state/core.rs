@@ -393,9 +393,15 @@ pub(crate) fn run_pending_choice_allows_card(
         | RunPendingChoiceReason::TransformNonBottled
         | RunPendingChoiceReason::TransformUpgraded => master_deck_card_is_purgeable(card),
         RunPendingChoiceReason::Upgrade => master_deck_card_can_upgrade(card),
-        RunPendingChoiceReason::BottleFlame => def.card_type == CardType::Attack,
-        RunPendingChoiceReason::BottleLightning => def.card_type == CardType::Skill,
-        RunPendingChoiceReason::BottleTornado => def.card_type == CardType::Power,
+        RunPendingChoiceReason::BottleFlame => {
+            master_deck_card_is_purgeable(card) && def.card_type == CardType::Attack
+        }
+        RunPendingChoiceReason::BottleLightning => {
+            master_deck_card_is_purgeable(card) && def.card_type == CardType::Skill
+        }
+        RunPendingChoiceReason::BottleTornado => {
+            master_deck_card_is_purgeable(card) && def.card_type == CardType::Power
+        }
         _ => true,
     }
 }

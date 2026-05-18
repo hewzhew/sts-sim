@@ -1,18 +1,15 @@
-use crate::content::cards::CardType;
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
 fn bottle_on_equip(
     run_state: &RunState,
-    card_type: CardType,
     reason: crate::state::core::RunPendingChoiceReason,
     return_state: EngineState,
 ) -> Option<EngineState> {
-    let has_candidate = run_state
-        .master_deck
-        .iter()
-        .any(|card| crate::content::cards::get_card_definition(card.id).card_type == card_type);
+    let has_candidate = run_state.master_deck.iter().any(|card| {
+        crate::state::core::run_pending_choice_allows_card_for_run(&reason, card, run_state)
+    });
     if !has_candidate {
         return None;
     }
@@ -62,19 +59,16 @@ pub fn on_equip(
         // === State-interrupting Relics (return an EngineState override) ===
         RelicId::BottledFlame => bottle_on_equip(
             run_state,
-            CardType::Attack,
             crate::state::core::RunPendingChoiceReason::BottleFlame,
             return_state,
         ),
         RelicId::BottledLightning => bottle_on_equip(
             run_state,
-            CardType::Skill,
             crate::state::core::RunPendingChoiceReason::BottleLightning,
             return_state,
         ),
         RelicId::BottledTornado => bottle_on_equip(
             run_state,
-            CardType::Power,
             crate::state::core::RunPendingChoiceReason::BottleTornado,
             return_state,
         ),
