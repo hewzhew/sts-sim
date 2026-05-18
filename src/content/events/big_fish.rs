@@ -229,4 +229,57 @@ mod tests {
             .any(|card| card.id == CardId::Regret));
         assert_eq!(run_state.max_hp, 86);
     }
+
+    #[test]
+    fn box_new_ceramic_fish_triggers_before_regret_obtained_event() {
+        let mut run_state = big_fish_run(80, 80);
+        force_box_relic(&mut run_state, RelicId::CeramicFish);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        let events = run_state.take_emitted_events();
+        let relic_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::RelicObtained {
+                        relic_id: RelicId::CeramicFish,
+                        source: DomainEventSource::Event(EventId::BigFish),
+                    }
+                )
+            })
+            .expect("Box should obtain the forced relic before the delayed curse resolves");
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(EventId::BigFish),
+                        ..
+                    }
+                )
+            })
+            .expect("New Ceramic Fish should see the delayed Regret obtain hook");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::BigFish),
+                    } if card.id == CardId::Regret
+                )
+            })
+            .expect("Box should obtain Regret through the delayed ShowCardAndObtainEffect");
+
+        assert!(
+            relic_pos < fish_gold_pos && fish_gold_pos < obtained_pos,
+            "Java BigFish constructs the curse effect before spawnRelicAndObtain, but the effect resolves after the new relic is owned and runs onObtainCard before Soul.obtain"
+        );
+    }
 }

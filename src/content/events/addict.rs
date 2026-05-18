@@ -222,4 +222,56 @@ mod tests {
             "ShowCardAndObtainEffect obtains the card after spawnRelicAndObtain"
         );
     }
+
+    #[test]
+    fn rob_new_ceramic_fish_triggers_before_shame_obtained_event() {
+        let mut run_state = addict_run_for_rob(RelicId::CeramicFish);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let events = run_state.take_emitted_events();
+        let relic_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::RelicObtained {
+                        relic_id: RelicId::CeramicFish,
+                        source: DomainEventSource::Event(EventId::Addict),
+                    }
+                )
+            })
+            .expect("Rob should obtain the forced relic before the delayed curse resolves");
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(EventId::Addict),
+                        ..
+                    }
+                )
+            })
+            .expect("New Ceramic Fish should see the delayed Shame obtain hook");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::Addict),
+                    } if card.id == CardId::Shame
+                )
+            })
+            .expect("Rob should obtain Shame through the delayed ShowCardAndObtainEffect");
+
+        assert!(
+            relic_pos < fish_gold_pos && fish_gold_pos < obtained_pos,
+            "Java Addict constructs the curse effect before spawnRelicAndObtain, but the effect resolves after the new relic is owned and runs onObtainCard before Soul.obtain"
+        );
+    }
 }
