@@ -732,7 +732,13 @@ mod tests {
             });
         let mut combat_state = blank_test_combat();
         combat_state.zones.card_uuid_counter = 100;
-        combat_state.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+        let mut selected = CombatCard::new(CardId::Strike, 10);
+        selected.upgrades = 1;
+        selected.misc_value = 5;
+        selected.base_damage_override = Some(16);
+        selected.base_damage_mut = 99;
+        selected.free_to_play_once = true;
+        combat_state.zones.hand = vec![selected];
         for uuid in 11..20 {
             combat_state
                 .zones
@@ -786,6 +792,31 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(CardId::Strike, 102), (CardId::Strike, 103),]
         );
+        let hand_copy = combat_state
+            .zones
+            .hand
+            .iter()
+            .find(|card| card.id == CardId::Strike)
+            .expect("one Dual Wield replacement copy should fit in hand");
+        assert_eq!(hand_copy.upgrades, 1);
+        assert_eq!(hand_copy.misc_value, 5);
+        assert_eq!(hand_copy.base_damage_override, Some(16));
+        assert_eq!(
+            hand_copy.base_damage_mut, 16,
+            "Java hand insertion applies powers after makeStatEquivalentCopy resets rendered damage"
+        );
+        assert!(hand_copy.free_to_play_once);
+
+        for copy in combat_state.zones.discard_pile.iter() {
+            assert_eq!(copy.upgrades, 1);
+            assert_eq!(copy.misc_value, 5);
+            assert_eq!(copy.base_damage_override, Some(16));
+            assert_eq!(
+                copy.base_damage_mut, 0,
+                "Java DualWieldAction overflow discard keeps the reset stat-equivalent source card, not the hand-applied rendered damage"
+            );
+            assert!(copy.free_to_play_once);
+        }
     }
 
     #[test]

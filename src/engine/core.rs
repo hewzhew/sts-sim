@@ -1948,7 +1948,13 @@ mod tests {
         let mut combat_state = blank_test_combat();
         combat_state.zones.card_uuid_counter = 100;
         combat_state.turn.energy = 1;
-        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::StrikeP, 10)];
+        let mut selected = CombatCard::new(CardId::StrikeP, 10);
+        selected.upgrades = 1;
+        selected.misc_value = 4;
+        selected.base_damage_override = Some(17);
+        selected.base_damage_mut = 99;
+        selected.free_to_play_once = true;
+        combat_state.zones.draw_pile = vec![selected];
         let mut engine_state = EngineState::PendingChoice(PendingChoice::GridSelect {
             source_pile: PileType::Draw,
             candidate_uuids: vec![10],
@@ -1976,6 +1982,14 @@ mod tests {
                 assert!(!in_front);
                 assert_eq!(item.card.id, CardId::StrikeP);
                 assert_eq!(item.card.uuid, 10);
+                assert_eq!(item.card.upgrades, 1);
+                assert_eq!(item.card.misc_value, 4);
+                assert_eq!(item.card.base_damage_override, Some(17));
+                assert_eq!(
+                    item.card.base_damage_mut, 99,
+                    "Java Omniscience queues the selected original first, not a reset copy"
+                );
+                assert!(item.card.free_to_play_once);
                 assert_eq!(item.card.exhaust_override, Some(true));
                 assert_eq!(item.energy_on_use, 1);
                 assert!(item.autoplay);
@@ -1993,6 +2007,14 @@ mod tests {
                 assert!(!in_front);
                 assert_eq!(item.card.id, CardId::StrikeP);
                 assert_ne!(item.card.uuid, 10);
+                assert_eq!(item.card.upgrades, 1);
+                assert_eq!(item.card.misc_value, 4);
+                assert_eq!(item.card.base_damage_override, Some(17));
+                assert_eq!(
+                    item.card.base_damage_mut, 0,
+                    "Java Omniscience extra plays use makeStatEquivalentCopy, not the rendered damage"
+                );
+                assert!(item.card.free_to_play_once);
                 assert_eq!(item.card.exhaust_override, None);
                 assert_eq!(item.energy_on_use, 1);
                 assert!(!item.ignore_energy_total);
@@ -2011,6 +2033,11 @@ mod tests {
                 assert!(!in_front);
                 assert_eq!(item.card.id, CardId::StrikeP);
                 assert_ne!(item.card.uuid, 10);
+                assert_eq!(item.card.upgrades, 1);
+                assert_eq!(item.card.misc_value, 4);
+                assert_eq!(item.card.base_damage_override, Some(17));
+                assert_eq!(item.card.base_damage_mut, 0);
+                assert!(item.card.free_to_play_once);
                 assert_eq!(item.card.exhaust_override, None);
                 assert_eq!(item.energy_on_use, 1);
                 assert!(!item.ignore_energy_total);
