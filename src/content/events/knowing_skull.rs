@@ -245,6 +245,45 @@ mod tests {
     }
 
     #[test]
+    fn card_reward_hp_loss_resolves_before_delayed_card_obtain_hooks() {
+        let mut run_state = skull_run();
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        assert_eq!(run_state.current_hp, 24);
+        assert_eq!(run_state.gold, 9);
+        let labels = run_state
+            .take_emitted_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                DomainEvent::HpChanged {
+                    delta: -6,
+                    source: DomainEventSource::Event(EventId::KnowingSkull),
+                    ..
+                } => Some("hp_loss"),
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::KnowingSkull),
+                    ..
+                } => Some("ceramic_fish_gold"),
+                DomainEvent::CardObtained {
+                    source: DomainEventSource::Event(EventId::KnowingSkull),
+                    ..
+                } => Some("card_obtained"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec!["hp_loss", "ceramic_fish_gold", "card_obtained"],
+            "Java KnowingSkull card reward pays HP first, then delayed ShowCardAndObtainEffect runs onObtainCard before Soul.obtain"
+        );
+    }
+
+    #[test]
     fn leave_hp_loss_respects_tungsten_and_moves_to_complete_screen() {
         let mut run_state = skull_run();
         run_state.relics.push(RelicState::new(RelicId::TungstenRod));

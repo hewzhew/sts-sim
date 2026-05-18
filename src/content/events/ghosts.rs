@@ -114,6 +114,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 mod tests {
     use super::handle_choice;
     use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
     use crate::state::events::{EventId, EventState};
     use crate::state::run::RunState;
@@ -181,6 +182,63 @@ mod tests {
                 ))
                 .count(),
             3
+        );
+    }
+
+    #[test]
+    fn accept_max_hp_loss_resolves_before_delayed_apparition_obtains() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 70;
+        run_state.max_hp = 80;
+        run_state.gold = 0;
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        run_state.event_state = Some(EventState::new(EventId::Ghosts));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.max_hp, 40);
+        assert_eq!(run_state.current_hp, 40);
+        assert_eq!(run_state.gold, 45);
+        let labels = run_state
+            .take_emitted_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                DomainEvent::MaxHpChanged {
+                    delta: -40,
+                    source: DomainEventSource::Event(EventId::Ghosts),
+                    ..
+                } => Some("max_hp_loss"),
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::Ghosts),
+                    ..
+                } => Some("ceramic_fish_gold"),
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Event(EventId::Ghosts),
+                } if card.id == CardId::Apparition => Some("apparition_obtained"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec![
+                "max_hp_loss",
+                "ceramic_fish_gold",
+                "apparition_obtained",
+                "ceramic_fish_gold",
+                "apparition_obtained",
+                "ceramic_fish_gold",
+                "apparition_obtained",
+                "ceramic_fish_gold",
+                "apparition_obtained",
+                "ceramic_fish_gold",
+                "apparition_obtained",
+            ],
+            "Java decreases max HP immediately, then each queued Apparition ShowCardAndObtainEffect later runs onObtainCard before Soul.obtain"
         );
     }
 }
