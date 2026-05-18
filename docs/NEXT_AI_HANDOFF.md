@@ -45,15 +45,44 @@ Forbidden:
 
 Branch tip:
 
-- `3d4805e Fix monster factory constructor RNG parity`
+- `894274a Fix monster pre-battle RNG stream`
 
 Recent commits:
 
+- `894274a Fix monster pre-battle RNG stream`
+- `347e96c Update handoff after monster factory RNG audit`
 - `3d4805e Fix monster factory constructor RNG parity`
 - `06e5f9f Avoid HP RNG for fixed HP monsters`
 - `3a6c58f Update handoff after corrupt heart audit`
-- `1879996 Fix corrupt heart buff timing parity`
-- `8e548a0 Update handoff after shield spear audit`
+
+`894274a` summary:
+
+- Java `MonsterGroup.usePreBattleAction()`, Java `AbstractMonster` universal
+  pre-battle hook, Java Louse pre-battle code, and Rust
+  `handle_pre_battle_trigger` were checked.
+- Fixed Rust normal combat pre-battle RNG stream:
+  - Java `MonsterGroup.usePreBattleAction()` calls each monster's
+    `usePreBattleAction()` without changing RNG streams.
+  - The only monster pre-battle code found in Java that consumes dungeon RNG is
+    Louse Curl Up, and it explicitly uses `AbstractDungeon.monsterHpRng`.
+  - Rust was passing `PreBattleLegacyRng::Misc` from the group-level
+    `PreBattleTrigger`, causing Louse Curl Up to consume `misc_rng`.
+  - Rust now passes `PreBattleLegacyRng::MonsterHp` for group pre-battle,
+    matching Java.
+- Added a handler-level test proving Louse Curl Up consumes `monster_hp_rng`,
+  leaves `misc_rng` untouched, and queues `BattleStartPreDrawTrigger` after the
+  monster pre-battle action.
+- Java `useUniversalPreBattleAction()` contains Daily/Endless/blight mechanics
+  (`Lethality`, blights, `Time Dilation`) and was not implemented in this
+  packet because those global modifiers are outside the currently modeled
+  normal-run mechanics.
+
+Verification for `894274a`:
+
+- `cargo test monster_group_pre_battle_uses_monster_hp_rng_for_louse_curl_up_like_java --all-targets`
+  -> `1 passed`
+- `cargo test pre_battle --all-targets` -> `24 passed`
+- `cargo test --all-targets` -> `1326 passed`
 
 `3d4805e` summary:
 
@@ -932,7 +961,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `3d4805e` before this handoff
+No uncommitted code changes were present after `894274a` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -1080,6 +1109,10 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   consume one monster HP RNG roll. Java `bottomHumanoid()` / `bottomWildlife()`
   also construct unselected candidate monsters before selecting one; Rust now
   preserves those discarded candidate HP RNG and louse bite RNG consumptions.
+- MonsterGroup pre-battle RNG stream: fixed in `894274a`. Rust group-level
+  pre-battle now passes `MonsterHp` so Louse Curl Up consumes the same
+  `AbstractDungeon.monsterHpRng` stream as Java. Java universal pre-battle
+  Daily/Endless/blight hooks remain intentionally unmodeled.
 
 Source suspicion remaining after `5fe09ea`:
 
@@ -1193,11 +1226,13 @@ Recommended next packets:
    - Java `MonsterHelper` encounter composition and factory constructor RNG
      audit was fixed/locked in `3d4805e`, including discarded candidate
      construction for Exordium Thugs / Wildlife.
-   - Next narrow packet: Java `MonsterGroup` lifecycle semantics vs Rust combat
-     lifecycle (`D:\rust\cardcrawl\monsters\MonsterGroup.java`, plus the
-     narrow Rust combat start / pre-turn / end-turn files discovered with `rg`
-     from `usePreBattleAction`, `applyPreTurnLogic`, `queueMonsters`, and
-     `applyEndOfTurnPowers`).
+   - Java `MonsterGroup.usePreBattleAction()` RNG stream was fixed/locked in
+     `894274a`.
+   - Next narrow packet: remaining Java `MonsterGroup` lifecycle semantics vs
+     Rust combat lifecycle (`D:\rust\cardcrawl\monsters\MonsterGroup.java`,
+     `D:\rust\cardcrawl\actions\GameActionManager.java`,
+     `src/engine/core.rs`, and any narrow power/action files needed for
+     `applyPreTurnLogic`, `queueMonsters`, and `applyEndOfTurnPowers`).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
