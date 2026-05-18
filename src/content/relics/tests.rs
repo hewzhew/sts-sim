@@ -250,10 +250,10 @@ fn brimstone_turn_start_matches_java_strength_sources_and_top_order() {
     assert!(matches!(
         actions[0].action,
         Action::ApplyPower {
-            source: 902,
-            target: 902,
+            source: 0,
+            target: 0,
             power_id: PowerId::Strength,
-            amount: 1
+            amount: 2
         }
     ));
 
@@ -272,11 +272,40 @@ fn brimstone_turn_start_matches_java_strength_sources_and_top_order() {
     assert!(matches!(
         actions[2].action,
         Action::ApplyPower {
+            source: 902,
+            target: 902,
+            power_id: PowerId::Strength,
+            amount: 1
+        }
+    ));
+
+    state.queue_actions(actions);
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 902,
+            target: 902,
+            power_id: PowerId::Strength,
+            amount: 1
+        })
+    ));
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::ApplyPower {
+            source: 901,
+            target: 901,
+            power_id: PowerId::Strength,
+            amount: 1
+        })
+    ));
+    assert!(matches!(
+        state.pop_next_action(),
+        Some(Action::ApplyPower {
             source: 0,
             target: 0,
             power_id: PowerId::Strength,
             amount: 2
-        }
+        })
     ));
 }
 
