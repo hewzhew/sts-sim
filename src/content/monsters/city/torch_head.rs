@@ -67,3 +67,29 @@ impl MonsterBehavior for TorchHead {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{tackle_plan, TorchHead};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn tackle_queues_damage_before_setmove_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::TorchHead);
+
+        let actions = TorchHead::take_turn_plan(&mut state, &entity, &tackle_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack { base_damage: 7, .. },
+                Action::SetMonsterMove {
+                    next_move_byte: super::TACKLE,
+                    ..
+                }
+            ]
+        ));
+    }
+}
