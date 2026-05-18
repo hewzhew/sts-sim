@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `ab78536 Lock stat equivalent copy state for queued copies`
+- `8d48e33 Match generated reward discard upgrade counts`
 
 Recent commits:
 
+- `8d48e33 Match generated reward discard upgrade counts`
 - `ab78536 Lock stat equivalent copy state for queued copies`
 - `23d034d Lock Nightmare stat equivalent payload state`
 - `773cc7a Lock stasis and discard deck generated card semantics`
@@ -61,6 +62,62 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`8d48e33` summary:
+
+- Continued the Java `makeStatEquivalentCopy()` choice-resolution audit into
+  Discovery / Foreign Influence / ChooseOneColorless / Codex.
+- Java checked:
+  - `D:\rust\cardcrawl\actions\unique\DiscoveryAction.java`
+  - `D:\rust\cardcrawl\actions\watcher\ForeignInfluenceAction.java`
+  - `D:\rust\cardcrawl\actions\utility\ChooseOneColorless.java`
+  - `D:\rust\cardcrawl\actions\unique\CodexAction.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndAddToHandEffect.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndAddToDiscardEffect.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndAddToDrawPileEffect.java`
+- Java result:
+  - Discovery explicitly applies Master Reality to both generated source
+    copies, then `ShowCardAndAddToHandEffect` applies another Master Reality
+    upgrade to actual hand cards.
+  - Discovery cards that overflow to discard go through
+    `ShowCardAndAddToDiscardEffect(src, x, y)`, where the second Master Reality
+    upgrade applies only to a visual stat-equivalent copy. The actual inserted
+    source card keeps only the explicit upgrade.
+  - ChooseOneColorless has the same hand-vs-discard Master Reality split:
+    hand gets explicit + hand-effect upgrades; full-hand discard keeps only
+    the explicit upgrade.
+  - Foreign Influence has no explicit Master Reality upgrade; hand gets one
+    effect upgrade, full-hand discard gets none on the inserted source card.
+  - Codex uses the draw-pile effect path, so the inserted stat-equivalent copy
+    gets one Master Reality upgrade.
+- Rust result:
+  - Discovery pending-choice resolution now applies one or two Master Reality
+    call sites depending on whether each selected copy enters discard or hand.
+  - CardReward `Hand` destination now applies two call sites only for actual
+    hand insertion and one call site for full-hand discard overflow.
+  - Added Searing Blow regressions because ordinary cards hide duplicate
+    upgrade calls after the first upgrade.
+
+Verification for `8d48e33`:
+
+- `cargo test discovery --all-targets` -> `7 passed`
+- `cargo test foreign_influence --all-targets` -> `4 passed`
+- `cargo test card_reward --all-targets` -> `12 passed`
+- `cargo test --all-targets` -> `1356 passed`
+
+Next narrow packet:
+
+- Continue the Java-source generated/source-copy audit through remaining
+  gameplay-relevant `makeStatEquivalentCopy()` paths that are not pure preview
+  UI:
+  - Watcher generated draw/hand chain: `Alpha`, `Beta`, `Pray`, `CarveReality`,
+    `DeceiveReality`, and `DivinePunishmentAction`.
+  - Anger discard copy path.
+  - `MakeTempCardAtBottomOfDeckAction` remains daily-mod-only in Java; keep out
+    of scope unless daily mods become in scope.
+- For each path, check whether Java uses source-card insertion, stat-equivalent
+  effect copy insertion, Master Reality explicit/effect upgrades, UUID
+  preservation, `misc`, cost, and rendered-stat reset.
 
 `ab78536` summary:
 
