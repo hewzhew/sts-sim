@@ -162,8 +162,12 @@ pub fn legal_shop_actions(run_state: &RunState, shop: &crate::shop::ShopState) -
         }
     }
     if shop.purge_available && run_state.gold >= shop.purge_cost {
-        for idx in 0..run_state.master_deck.len() {
-            actions.push(ClientInput::PurgeCard(idx));
+        for (idx, card) in run_state.master_deck.iter().enumerate() {
+            if crate::state::core::master_deck_card_is_purgeable(card)
+                && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
+            {
+                actions.push(ClientInput::PurgeCard(idx));
+            }
         }
     }
     actions
@@ -348,10 +352,13 @@ pub fn campfire_choice_key(choice: &CampfireChoice) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::cards::CardId;
     use crate::content::potions::{Potion, PotionId};
     use crate::content::relics::{RelicId, RelicState};
     use crate::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::map::state::MapState;
+    use crate::runtime::combat::CombatCard;
+    use crate::shop::ShopState;
     use crate::state::events::{EventId, EventState};
 
     fn map_node(x: i32, y: i32, class: Option<RoomType>) -> MapRoomNode {
@@ -434,6 +441,36 @@ mod tests {
         assert!(!blocked
             .iter()
             .any(|action| matches!(action, ClientInput::DiscardPotion(_))));
+    }
+
+    #[test]
+    fn legal_shop_purge_actions_use_java_non_bottled_purgeable_cards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::AscendersBane, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ];
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 12;
+        run_state.relics.push(bottle);
+
+        let mut shop = ShopState::new();
+        shop.purge_available = true;
+        shop.purge_cost = 75;
+
+        let actions = legal_shop_actions(&run_state, &shop);
+
+        assert!(actions.contains(&ClientInput::PurgeCard(0)));
+        assert!(
+            !actions.contains(&ClientInput::PurgeCard(1)),
+            "Java shop purge opens masterDeck.getPurgeableCards(), so Ascender's Bane is excluded"
+        );
+        assert!(
+            !actions.contains(&ClientInput::PurgeCard(2)),
+            "Java shop purge wraps getPurgeableCards in getGroupWithoutBottledCards"
+        );
     }
 }
 

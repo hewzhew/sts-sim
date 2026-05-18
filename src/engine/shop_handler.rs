@@ -287,11 +287,18 @@ pub fn handle(
                 if shop.purge_available
                     && run_state.gold >= shop.purge_cost
                     && idx < run_state.master_deck.len()
+                    && crate::state::core::master_deck_card_is_purgeable(
+                        &run_state.master_deck[idx],
+                    )
+                    && !crate::state::core::master_deck_card_is_bottled(
+                        &run_state.master_deck[idx],
+                        &run_state.relics,
+                    )
                 {
                     let uuid = run_state.master_deck[idx].uuid;
                     run_state.change_gold_with_source(-shop.purge_cost, DomainEventSource::Shop);
                     shop.purge_available = false;
-                    run_state.remove_card_from_deck(uuid);
+                    run_state.remove_card_from_deck_with_source(uuid, DomainEventSource::Shop);
                     run_state.shop_purge_count += 1;
                 }
             }
@@ -374,6 +381,45 @@ mod tests {
             .expect("MawBank should still be present");
         assert!(!maw_bank.used_up);
         assert_eq!(maw_bank.counter, -1);
+    }
+
+    #[test]
+    fn shop_purge_uses_java_non_bottled_purgeable_cards_and_shop_source() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state.master_deck = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 10),
+            crate::runtime::combat::CombatCard::new(CardId::AscendersBane, 11),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 12),
+        ];
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 12;
+        run_state.relics.push(bottle);
+        run_state.emitted_events.clear();
+
+        let mut shop = ShopState::new();
+        shop.purge_available = true;
+        shop.purge_cost = 75;
+
+        assert!(handle(&mut run_state, &mut shop, Some(ClientInput::PurgeCard(1))).is_none());
+        assert_eq!(run_state.gold, 200);
+        assert_eq!(run_state.master_deck.len(), 3);
+
+        assert!(handle(&mut run_state, &mut shop, Some(ClientInput::PurgeCard(2))).is_none());
+        assert_eq!(run_state.gold, 200);
+        assert_eq!(run_state.master_deck.len(), 3);
+
+        assert!(handle(&mut run_state, &mut shop, Some(ClientInput::PurgeCard(0))).is_none());
+        assert_eq!(run_state.gold, 125);
+        assert_eq!(run_state.master_deck.len(), 2);
+        assert!(!shop.purge_available);
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::CardRemoved {
+                card,
+                source: crate::state::selection::DomainEventSource::Shop,
+            } if card.id == CardId::Strike && card.uuid == 10
+        )));
     }
 
     #[test]
