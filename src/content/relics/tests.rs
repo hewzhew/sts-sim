@@ -3709,17 +3709,12 @@ fn bloody_idol_heals_from_run_level_gold_gain_unless_ectoplasm_blocks_gold() {
 }
 
 #[test]
-fn cauldron_opens_potion_reward_screen_and_removes_first_card_reward() {
+fn cauldron_opens_potion_reward_screen_and_removes_auto_card_reward() {
     let mut run = crate::state::run::RunState::new(21, 0, false, "Ironclad");
     let mut existing_rewards = crate::rewards::state::RewardState::new();
     existing_rewards
         .items
         .push(crate::rewards::state::RewardItem::Gold { amount: 12 });
-    existing_rewards
-        .items
-        .push(crate::rewards::state::RewardItem::Card {
-            cards: vec![crate::rewards::state::RewardCard::new(CardId::Strike, 0)],
-        });
     existing_rewards
         .items
         .push(crate::rewards::state::RewardItem::Relic {
@@ -3755,6 +3750,27 @@ fn cauldron_opens_potion_reward_screen_and_removes_first_card_reward() {
             relic_id: RelicId::Akabeko
         }
     )));
+}
+
+#[test]
+fn cauldron_burns_standard_card_reward_rng_before_removing_it_like_java_open() {
+    let mut run = crate::state::run::RunState::new(21, 0, false, "Ironclad");
+    let card_rng_before = run.rng_pool.card_rng.counter;
+
+    let Some(crate::state::core::EngineState::RewardScreen(rewards)) =
+        cauldron::on_equip(&mut run, crate::state::core::EngineState::MapNavigation)
+    else {
+        panic!("expected Cauldron to open a reward screen");
+    };
+
+    assert!(
+        run.rng_pool.card_rng.counter > card_rng_before,
+        "Java CombatRewardScreen.open() creates the ordinary card reward before Cauldron removes it"
+    );
+    assert!(rewards
+        .items
+        .iter()
+        .all(|item| !matches!(item, crate::rewards::state::RewardItem::Card { .. })));
 }
 
 #[test]

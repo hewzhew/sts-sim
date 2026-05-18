@@ -1,4 +1,4 @@
-use crate::rewards::state::{RewardItem, RewardState};
+use crate::rewards::state::{RewardItem, RewardScreenContext, RewardState};
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
@@ -15,6 +15,17 @@ pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<E
             potion_class,
         );
         reward_state.items.push(RewardItem::Potion { potion_id });
+    }
+
+    if !matches!(
+        reward_state.screen_context,
+        RewardScreenContext::TreasureRoom
+    ) {
+        let num_cards = crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3);
+        let cards = crate::rewards::generator::generate_card_reward(run_state, num_cards, false);
+        if !cards.is_empty() {
+            reward_state.items.push(RewardItem::Card { cards });
+        }
     }
 
     if let Some(index) = reward_state
