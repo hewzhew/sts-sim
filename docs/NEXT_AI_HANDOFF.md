@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `dcec769 Lock reward card obtain hooks`
+- `b2cc6ce Lock shop card fast obtain ordering`
 
 Recent commits:
 
+- `b2cc6ce Lock shop card fast obtain ordering`
 - `dcec769 Lock reward card obtain hooks`
 - `4d3d455 Lock Note For Yourself manual obtain hooks`
 - `a69430d Lock basic curse obtain hooks`
@@ -91,6 +92,32 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`b2cc6ce` summary:
+
+- Audited shop card purchase against Java's `ShopScreen.purchaseCard` and
+  `FastCardObtainEffect`.
+- Java checked:
+  - `D:\rust\cardcrawl\shop\ShopScreen.java`
+  - `D:\rust\cardcrawl\vfx\FastCardObtainEffect.java`
+- Java result:
+  - `purchaseCard` first creates a `FastCardObtainEffect` for the hovered card.
+  - It then spends gold and handles Courier replacement/removal.
+  - The fast obtain effect later runs relic `onObtainCard` before
+    `souls.obtain`.
+  - If Omamori blocks a curse in the effect constructor, the purchase still
+    spends gold because the spend happens after the effect is constructed.
+- Rust result:
+  - No business logic change was needed.
+  - Added shop-handler regressions proving:
+    - Shop spend is emitted before `CeramicFish` obtain-hook gold, which is
+      emitted before `CardObtained`.
+    - A shop curse blocked by Omamori is not obtained, but gold is still spent.
+
+Verification for `b2cc6ce`:
+
+- `cargo test shop_handler --all-targets` -> `16 passed`
+- `cargo test --all-targets` -> `1397 passed`
 
 `dcec769` summary:
 
