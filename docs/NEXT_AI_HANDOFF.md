@@ -45,15 +45,58 @@ Forbidden:
 
 Latest code commit:
 
-- `2007560 Align relic delayed checks and null sources`
+- `29e0699 Match Java counter increments for attack relics`
 
 Recent commits:
 
+- `29e0699 Match Java counter increments for attack relics`
 - `2007560 Align relic delayed checks and null sources`
 - `35c414b Update handoff after stateful relic audit`
 - `09e6128 Update handoff after Surrounded audit`
 - `d245435 Model Surrounded facing back attack`
-- `63487e7 Document Mutagenic Strength addToTop order`
+
+`29e0699` summary:
+
+- Java checked:
+  - `Nunchaku`
+  - `PenNib`
+  - `InkBottle`
+  - `Sundial`
+  - `UnceasingTop`
+- Fixed attack-counter relic edge semantics:
+  - Java `Nunchaku.onUseCard()` and `PenNib.onUseCard()` increment the counter
+    directly with `++counter`.
+  - Rust previously normalized negative counters to 0 before incrementing.
+  - Rust now preserves Java's direct increment semantics.
+  - Regression tests cover `counter = -1`:
+    - Nunchaku goes to 0 and fires because Java uses `counter % 10 == 0`.
+    - Pen Nib goes to 0 and does not add Pen Nib power because Java checks
+      `counter == 9`.
+- Confirmed without code changes:
+  - `InkBottle` already uses Java `++counter` / `counter == 10` semantics.
+  - `Sundial` already uses Java `++counter` / `counter == 3` semantics.
+  - `UnceasingTop` keeps only mechanical state (`canDraw` as `amount`,
+    `disabledUntilEndOfTurn` as `used_up`) and omits UI-only screen/pulse
+    behavior.
+
+Verification for `29e0699`:
+
+- `cargo test nunchaku --all-targets` -> `1 passed`
+- `cargo test pen_nib --all-targets` -> `1 passed`
+- `cargo test ink_bottle --all-targets` -> `1 passed`
+- `cargo test sundial --all-targets` -> `1 passed`
+- `cargo test unceasing_top --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1346 passed`
+
+Next narrow packet:
+
+- Continue relic audit from Java source.
+- Good candidates:
+  - `NilrysCodex`, `DeadBranch`, `Toolbox`, `Enchiridion`, `Discovery`-like
+    generated-card paths if still suspicious.
+  - Source-sensitive `NO_SOURCE` interactions if broad search finds more relic
+    `DamageAllEnemiesAction(null, ...)` mismatches.
+  - Relics with custom anonymous actions or state read at action execution time.
 
 `2007560` summary:
 
