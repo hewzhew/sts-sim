@@ -1071,10 +1071,13 @@ pub fn tick_engine(
                     // Rust still derives the same result locally until a broader
                     // draw-target state is justified.
                     let draw_count = compute_player_turn_start_draw_count(combat_state);
+                    // Java calls post-draw hook methods before DrawCardAction
+                    // executes; their addToBot actions therefore land behind
+                    // DrawCardAction but ahead of actions produced while drawing.
+                    combat_state.queue_action_back(Action::PostDrawTrigger);
                     if draw_count > 0 {
                         combat_state.queue_action_back(Action::DrawCards(draw_count as u32));
                     }
-                    combat_state.queue_action_back(Action::PostDrawTrigger);
 
                     *engine_state = EngineState::CombatProcessing;
                 }
@@ -2601,6 +2604,80 @@ mod tests {
         assert!(
             !crate::content::powers::store::has_power(&combat_state, 0, PowerId::DrawReduction),
             "The queued ReducePowerAction still removes DrawReduction before player control returns"
+        );
+    }
+
+    #[test]
+    fn turn_start_post_draw_hooks_queue_before_draw_generated_actions_like_java() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.monsters = vec![planned_monster(EnemyId::Cultist, 1)];
+        combat_state.zones.draw_pile = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Void, 71),
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 72),
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 73),
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 74),
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 75),
+        ];
+        combat_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::DrawCardNextTurn,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat_state.turn.mark_skip_monster_turn_pending();
+        combat_state.turn.begin_turn_transition();
+        let mut engine_state = EngineState::CombatProcessing;
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+        assert_eq!(
+            combat_state.engine.action_queue.front(),
+            Some(&Action::PostDrawTrigger),
+            "Rust synthetic hook action must run before DrawCards so hook actions append behind DrawCards like Java addToBot"
+        );
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+        assert_eq!(
+            combat_state.engine.action_queue.iter().take(3).collect::<Vec<_>>(),
+            vec![
+                &Action::DrawCards(5),
+                &Action::DrawCards(1),
+                &Action::RemovePower {
+                    target: 0,
+                    power_id: PowerId::DrawCardNextTurn,
+                },
+            ],
+            "Java runs atStartOfTurnPostDraw hook methods before DrawCardAction executes, so their addToBot actions are already behind the turn-start draw"
+        );
+
+        assert!(super::tick_engine(
+            &mut engine_state,
+            &mut combat_state,
+            None
+        ));
+        assert_eq!(
+            combat_state.engine.action_queue.iter().take(3).collect::<Vec<_>>(),
+            vec![
+                &Action::DrawCards(1),
+                &Action::RemovePower {
+                    target: 0,
+                    power_id: PowerId::DrawCardNextTurn,
+                },
+                &Action::GainEnergy { amount: -1 },
+            ],
+            "Java VoidCard.triggerWhenDrawn uses addToBot, so it lands after already-queued post-draw hook actions"
         );
     }
 
