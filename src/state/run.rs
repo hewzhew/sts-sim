@@ -1732,6 +1732,34 @@ impl RunState {
         }
     }
 
+    pub fn transform_card_uuids_with_source(
+        &mut self,
+        uuids: &[u32],
+        auto_upgrade: bool,
+        source: DomainEventSource,
+    ) {
+        for &uuid in uuids {
+            self.transform_card_uuid_with_source(uuid, auto_upgrade, source);
+        }
+    }
+
+    pub fn transform_card_uuids_after_removing_all_with_source(
+        &mut self,
+        uuids: &[u32],
+        auto_upgrade: bool,
+        source: DomainEventSource,
+    ) {
+        let removed = uuids
+            .iter()
+            .filter_map(|&uuid| self.remove_card_for_transform_with_source(uuid, source))
+            .collect::<Vec<_>>();
+
+        for before in removed {
+            let new_id = self.transform_result_card_id(before.id, source);
+            self.obtain_transformed_card(before, new_id, auto_upgrade, source);
+        }
+    }
+
     pub fn transform_card_with_source(
         &mut self,
         deck_index: usize,
@@ -1742,14 +1770,36 @@ impl RunState {
             return;
         }
 
-        let old_card_id = self.master_deck[deck_index].id;
         let old_card_uuid = self.master_deck[deck_index].uuid;
-        let before = Self::snapshot_card(&self.master_deck[deck_index]);
-        let def = crate::content::cards::get_card_definition(old_card_id);
+        if let Some(before) = self.remove_card_for_transform_with_source(old_card_uuid, source) {
+            let new_id = self.transform_result_card_id(before.id, source);
+            self.obtain_transformed_card(before, new_id, auto_upgrade, source);
+        }
+    }
 
+    fn remove_card_for_transform_with_source(
+        &mut self,
+        uuid: u32,
+        source: DomainEventSource,
+    ) -> Option<DomainCardSnapshot> {
+        let pos = self.master_deck.iter().position(|card| card.uuid == uuid)?;
+        let removed = self.master_deck.remove(pos);
+        let before = Self::snapshot_card(&removed);
+        let remove_result = crate::deck::manager::DeckManager::remove_card(removed.id);
+        self.resolve_deck_actions(remove_result.actions, source);
+        self.dispatch_on_master_deck_change();
+        Some(before)
+    }
+
+    fn transform_result_card_id(
+        &mut self,
+        old_card_id: crate::content::cards::CardId,
+        source: DomainEventSource,
+    ) -> crate::content::cards::CardId {
         use crate::content::cards::*;
 
-        let new_id = if def.card_type == CardType::Curse {
+        let def = crate::content::cards::get_card_definition(old_card_id);
+        if def.card_type == CardType::Curse {
             let curse_pool = get_curse_pool();
             let filtered: Vec<CardId> = curse_pool
                 .iter()
@@ -1814,24 +1864,16 @@ impl RunState {
                 let idx = self.transform_random_index(pool.len(), source);
                 pool[idx]
             }
-        };
-
-        // 1. Remove logically without emitting a standalone remove event.
-        let mut removed_id = None;
-        if let Some(pos) = self
-            .master_deck
-            .iter()
-            .position(|c| c.uuid == old_card_uuid)
-        {
-            let removed = self.master_deck.remove(pos);
-            removed_id = Some(removed.id);
         }
-        if let Some(card_id) = removed_id {
-            let remove_result = crate::deck::manager::DeckManager::remove_card(card_id);
-            self.resolve_deck_actions(remove_result.actions, source);
-        }
+    }
 
-        // 2. Add logically
+    fn obtain_transformed_card(
+        &mut self,
+        before: DomainCardSnapshot,
+        new_id: crate::content::cards::CardId,
+        auto_upgrade: bool,
+        source: DomainEventSource,
+    ) {
         let ctx = self.build_deck_context();
         let mut target_uuid = self.next_card_uuid(); // This is just the base UUID, DeckManager will increment for actual insertions
 
@@ -1853,12 +1895,11 @@ impl RunState {
             self.master_deck.push(card);
             obtained_any = true;
         }
-        let _ = def;
-        let _ = obtained_any;
-
         // 4. Resolve obtain-triggered deck actions
         self.resolve_deck_actions(result.actions, source);
-        self.dispatch_on_master_deck_change();
+        if obtained_any {
+            self.dispatch_on_master_deck_change();
+        }
     }
 
     fn transform_random_index(&mut self, len: usize, source: DomainEventSource) -> usize {

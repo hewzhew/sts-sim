@@ -950,6 +950,67 @@ mod tests {
     }
 
     #[test]
+    fn transform_two_removes_both_selected_cards_before_obtaining_replacements() {
+        let mut run_state = neow_run_with_reward(
+            NeowRewardType::TransformTwoCards,
+            vec![
+                deck_card(CardId::Parasite, 11, 0),
+                deck_card(CardId::Parasite, 12, 0),
+                deck_card(CardId::Strike, 13, 0),
+            ],
+        );
+        let mut engine_state = choose_neow_reward(&mut run_state);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![
+                    SelectionTargetRef::CardUuid(11),
+                    SelectionTargetRef::CardUuid(12),
+                ],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.max_hp, 74);
+        assert_eq!(run_state.current_hp, 74);
+
+        let events = run_state.take_emitted_events();
+        let first_transform_pos = events
+            .iter()
+            .position(|event| matches!(event, DomainEvent::CardTransformed { .. }))
+            .expect("Neow transform two should obtain transformed replacements");
+        let parasite_loss_positions = events
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, event)| match event {
+                DomainEvent::MaxHpChanged {
+                    delta: -3,
+                    source: DomainEventSource::Event(EventId::Neow),
+                    ..
+                } => Some(idx),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            parasite_loss_positions.len(),
+            2,
+            "both selected Parasites should run their Java onRemoveFromMasterDeck hooks"
+        );
+        assert!(
+            parasite_loss_positions
+                .iter()
+                .all(|idx| *idx < first_transform_pos),
+            "Java Neow TRANSFORM_TWO_CARDS removes both selected cards before creating ShowCardAndObtainEffect replacements"
+        );
+    }
+
+    #[test]
     fn setup_preserves_java_neow_rng_counter_after_choice_generation() {
         let run_state = RunState::new(7, 0, true, "Ironclad");
 

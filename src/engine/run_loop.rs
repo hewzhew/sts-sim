@@ -669,14 +669,28 @@ pub fn tick_run(
                     }
                     crate::state::core::RunPendingChoiceReason::Transform
                     | crate::state::core::RunPendingChoiceReason::TransformNonBottled => {
-                        for uuid in selected_uuids_in_order {
-                            run_state.transform_card_uuid_with_source(uuid, false, source);
+                        if source == DomainEventSource::Event(crate::state::events::EventId::Neow)
+                            && selected_uuids_in_order.len() > 1
+                        {
+                            run_state.transform_card_uuids_after_removing_all_with_source(
+                                &selected_uuids_in_order,
+                                false,
+                                source,
+                            );
+                        } else {
+                            run_state.transform_card_uuids_with_source(
+                                &selected_uuids_in_order,
+                                false,
+                                source,
+                            );
                         }
                     }
                     crate::state::core::RunPendingChoiceReason::TransformUpgraded => {
-                        for uuid in selected_uuids_in_order {
-                            run_state.transform_card_uuid_with_source(uuid, true, source);
-                        }
+                        run_state.transform_card_uuids_with_source(
+                            &selected_uuids_in_order,
+                            true,
+                            source,
+                        );
                     }
                     crate::state::core::RunPendingChoiceReason::Duplicate => {
                         let cards_to_copy: Vec<_> = sorted_indices
