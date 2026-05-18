@@ -45,15 +45,59 @@ Forbidden:
 
 Branch tip:
 
-- `012e056 Match Java post-draw hook queue order`
+- `3fda120 Match Java initial combat hook queue order`
 
 Recent commits:
 
+- `3fda120 Match Java initial combat hook queue order`
+- `f59c6da Update handoff after post-draw queue audit`
 - `012e056 Match Java post-draw hook queue order`
 - `133883b Update handoff after end-of-round timing audit`
 - `ea1570c Match Java end-of-round queue timing`
-- `5a568a7 Update handoff after invincible poison audit`
-- `10997a8 Fix monster start-turn invincible poison timing`
+
+`3fda120` summary:
+
+- Java `AbstractRoom.update()`, Java `AbstractPlayer.applyStartOfCombat*`,
+  Java `AbstractPlayer.applyStartOfTurn*`, Java `AbstractCreature`
+  start-of-turn hooks, Rust `PreBattleTrigger`, Rust
+  `BattleStartPreDrawTrigger`, and Rust `BattleStartTrigger` were checked.
+- Fixed Rust initial combat hook queue construction:
+  - Java constructs the whole opening action queue before `actionManager`
+    drains it.
+  - `atBattleStartPreDraw` hook methods run before the initial
+    `DrawCardAction` is appended, so their bottom actions stay before the
+    opening draw.
+  - `atBattleStart`, `atTurnStart` relics, `atTurnStartPostDraw` relics,
+    card `atTurnStart`, power `atStartOfTurn`, and orb start hooks run after
+    the opening draw action is already queued but before it executes.
+  - Rust no longer queues a later synthetic `BattleStartTrigger` behind the
+    draw; `BattleStartPreDrawTrigger` now synchronously builds the Java-order
+    queue.
+  - Initial combat calls post-draw relic hooks but not post-draw power hooks,
+    matching `AbstractRoom.update()`.
+- Added regression tests proving:
+  - Lantern fires through first-turn `applyStartOfTurnRelics` and its
+    `addToTop` energy action lands before the opening draw;
+  - Gambling Chip opens its hand-select after the opening draw has populated
+    the hand;
+  - an artificial `DrawCardNextTurn` power does not fire its post-draw hook at
+    initial battle start.
+
+Verification for `3fda120`:
+
+- `cargo test initial_battle_start_runs_turn_start_relics_before_opening_draw_like_java --all-targets`
+  -> `1 passed`
+- `cargo test initial_battle_start_gambling_chip_suspends_after_opening_draw_like_java --all-targets`
+  -> `1 passed`
+- `cargo test initial_battle_start_does_not_run_power_post_draw_hooks_like_java --all-targets`
+  -> `1 passed`
+- `cargo test initial_battle_start --all-targets` -> `3 passed`
+- `cargo test post_draw --all-targets` -> `4 passed`
+- `cargo test gambling_chip --all-targets` -> `2 passed`
+- `cargo test lantern --all-targets` -> `1 passed`
+- `cargo test ring_of_the_serpent_increases_opening_and_turn_start_draw_count --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1334 passed`
 
 `012e056` summary:
 
@@ -1285,6 +1329,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   actions append behind the turn-start draw but ahead of draw-generated actions.
   `VoidCard.triggerWhenDrawn()` now uses bottom insertion like Java
   `addToBot(new LoseEnergyAction(1))`.
+- Initial combat hook queue construction: fixed in `3fda120`. Java
+  `AbstractRoom.update()` builds the whole opening queue before draining
+  actions; Rust now runs battle-start, first-turn relic, initial post-draw
+  relic, card, power, and orb hook methods synchronously after queuing the
+  opening draw. Initial post-draw power hooks are intentionally not called.
 
 Source suspicion remaining after `5fe09ea`:
 
@@ -1411,14 +1460,14 @@ Recommended next packets:
      case.
    - Regular new-turn `atStartOfTurnPostDraw` hook action order and
      `VoidCard.triggerWhenDrawn()` insertion were fixed/locked in `012e056`.
-   - Next narrow packet: audit initial combat start hook ordering around
-     `AbstractRoom.update()`:
-     `GainEnergyAndEnableControlsAction`, `applyStartOfCombatPreDrawLogic`,
-     initial `DrawCardAction`, `applyStartOfCombatLogic`,
-     `applyStartOfTurnRelics`, `applyStartOfTurnPostDrawRelics`,
-     `applyStartOfTurnCards`, `applyStartOfTurnPowers`,
-     `applyStartOfTurnOrbs`, and Rust `PreBattleTrigger` /
-     `BattleStartPreDrawTrigger` / `BattleStartTrigger`.
+   - Java initial combat hook queue construction around
+     `AbstractRoom.update()` was fixed/locked in `3fda120`.
+   - Next narrow packet: audit Java initial `GainEnergyAndEnableControlsAction`
+     vs Rust first-turn energy initialization. Rust currently sets first-turn
+     energy during combat construction/reset rather than modeling a queued
+     opening energy action. Check whether any Java `onEnergyRecharge`,
+     `triggerOnGainEnergy`, or first-turn queued action can make this
+     mechanically observable before introducing a new action.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
