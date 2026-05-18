@@ -12,7 +12,7 @@ pub fn at_turn_start(relic_state: &mut crate::content::relics::RelicState) {
 
 pub fn on_use_card(
     card_id: crate::content::cards::CardId,
-    counter: i32,
+    relic_state: &mut crate::content::relics::RelicState,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let def = crate::content::cards::get_card_definition(card_id);
@@ -24,17 +24,8 @@ pub fn on_use_card(
         _ => 0,
     };
 
-    let new_counter = counter | bit;
-
-    if new_counter != counter {
-        actions.push(ActionInfo {
-            action: Action::UpdateRelicCounter {
-                relic_id: crate::content::relics::RelicId::OrangePellets,
-                counter: new_counter,
-            },
-            insertion_mode: AddTo::Top,
-        });
-    }
+    let new_counter = relic_state.counter.max(0) | bit;
+    relic_state.counter = new_counter;
 
     // All 3 types played -> Java RemoveDebuffsAction removes all debuffs.
     if new_counter & 0b111 == 0b111 {
@@ -43,13 +34,7 @@ pub fn on_use_card(
             insertion_mode: AddTo::Bottom,
         });
         // Reset counter for next combo
-        actions.push(ActionInfo {
-            action: Action::UpdateRelicCounter {
-                relic_id: crate::content::relics::RelicId::OrangePellets,
-                counter: 0,
-            },
-            insertion_mode: AddTo::Top,
-        });
+        relic_state.counter = 0;
     }
 
     actions

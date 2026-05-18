@@ -515,10 +515,11 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Inserter => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::inserter::Inserter::at_turn_start(
-                    counter,
+                    &mut rs,
                 ));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::RunicCapacitor => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
@@ -532,8 +533,16 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 actions.extend(crate::content::relics::lantern::at_turn_start(&mut rs));
                 state.entities.player.relics[relic_index] = rs;
             }
-            RelicId::Kunai => actions.extend(crate::content::relics::kunai::at_turn_start()),
-            RelicId::Shuriken => actions.extend(crate::content::relics::shuriken::at_turn_start()),
+            RelicId::Kunai => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::kunai::at_turn_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::Shuriken => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::shuriken::at_turn_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
             RelicId::MercuryHourglass => actions.extend(
                 crate::content::relics::mercury_hourglass::at_turn_start(&*state),
             ),
@@ -541,10 +550,14 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 actions.extend(crate::content::relics::necronomicon::at_turn_start())
             }
             RelicId::LetterOpener => {
-                actions.extend(crate::content::relics::letter_opener::at_turn_start())
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::letter_opener::at_turn_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::OrnamentalFan => {
-                actions.extend(crate::content::relics::ornamental_fan::at_turn_start())
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::ornamental_fan::at_turn_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Damaru => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
@@ -708,8 +721,9 @@ pub fn on_use_card(
                 state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Kunai => {
-                let counter = state.entities.player.relics[relic_index].counter;
-                actions.extend(crate::content::relics::kunai::on_use_card(card_id, counter));
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                actions.extend(crate::content::relics::kunai::on_use_card(card_id, &mut rs));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Nunchaku => {
                 if is_attack {
@@ -720,8 +734,9 @@ pub fn on_use_card(
             }
             RelicId::OrnamentalFan => {
                 if is_attack {
-                    let counter = state.entities.player.relics[relic_index].counter;
-                    actions.extend(crate::content::relics::ornamental_fan::on_use_card(counter));
+                    let mut rs = state.entities.player.relics[relic_index].clone();
+                    actions.extend(crate::content::relics::ornamental_fan::on_use_card(&mut rs));
+                    state.entities.player.relics[relic_index] = rs;
                 }
             }
             RelicId::Pocketwatch => {
@@ -756,16 +771,18 @@ pub fn on_use_card(
                 ));
             }
             RelicId::Shuriken => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::shuriken::on_use_card(
-                    card_id, counter,
+                    card_id, &mut rs,
                 ));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::LetterOpener => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::letter_opener::on_use_card(
-                    &*state, card_id, counter,
+                    &*state, card_id, &mut rs,
                 ));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::Necronomicon => {
                 let cost = card.get_cost() as i32;
@@ -775,10 +792,11 @@ pub fn on_use_card(
                 ));
             }
             RelicId::OrangePellets => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::orange_pellets::on_use_card(
-                    card_id, counter,
+                    card_id, &mut rs,
                 ));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::VelvetChoker => {
                 let mut rs = state.entities.player.relics[relic_index].clone();

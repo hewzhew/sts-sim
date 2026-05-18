@@ -1318,35 +1318,21 @@ fn letter_opener_resets_each_turn_and_fires_on_third_skill() {
         .monsters
         .push(crate::test_support::test_monster(EnemyId::Cultist));
 
-    let start_actions = letter_opener::at_turn_start();
-    assert!(matches!(
-        start_actions[0].action,
-        Action::UpdateRelicCounter {
-            relic_id: RelicId::LetterOpener,
-            counter: 0
-        }
-    ));
+    let mut relic = RelicState::new(RelicId::LetterOpener);
+    relic.counter = 2;
+    letter_opener::at_turn_start(&mut relic);
+    assert_eq!(relic.counter, 0);
 
-    let first_skill = letter_opener::on_use_card(&state, CardId::Defend, -1);
-    assert_eq!(first_skill.len(), 1);
-    assert!(matches!(
-        first_skill[0].action,
-        Action::UpdateRelicCounter {
-            relic_id: RelicId::LetterOpener,
-            counter: 1
-        }
-    ));
+    relic.counter = -1;
+    let first_skill = letter_opener::on_use_card(&state, CardId::Defend, &mut relic);
+    assert!(first_skill.is_empty());
+    assert_eq!(relic.counter, 1);
 
-    let third_skill = letter_opener::on_use_card(&state, CardId::Defend, 2);
-    assert_eq!(third_skill.len(), 2);
-    assert!(matches!(
-        third_skill[0].action,
-        Action::UpdateRelicCounter {
-            relic_id: RelicId::LetterOpener,
-            counter: 0
-        }
-    ));
-    match &third_skill[1].action {
+    relic.counter = 2;
+    let third_skill = letter_opener::on_use_card(&state, CardId::Defend, &mut relic);
+    assert_eq!(relic.counter, 0);
+    assert_eq!(third_skill.len(), 1);
+    match &third_skill[0].action {
         Action::DamageAllEnemies {
             damages,
             damage_type,
@@ -1361,29 +1347,30 @@ fn letter_opener_resets_each_turn_and_fires_on_third_skill() {
 
 #[test]
 fn attack_counter_relics_fire_on_third_attack_and_reset_on_victory() {
-    let kunai_actions = kunai::on_use_card(CardId::Strike, 2);
-    assert_eq!(kunai_actions.len(), 2);
+    let mut kunai_relic = RelicState::new(RelicId::Kunai);
+    kunai_relic.counter = 2;
+    let kunai_actions = kunai::on_use_card(CardId::Strike, &mut kunai_relic);
+    assert_eq!(kunai_relic.counter, 0);
+    assert_eq!(kunai_actions.len(), 1);
     assert!(matches!(
         kunai_actions[0].action,
-        Action::UpdateRelicCounter {
-            relic_id: RelicId::Kunai,
-            counter: 0
-        }
-    ));
-    assert!(matches!(
-        kunai_actions[1].action,
         Action::ApplyPower {
             power_id: PowerId::Dexterity,
             amount: 1,
             ..
         }
     ));
-    assert!(kunai::on_use_card(CardId::Defend, 2).is_empty());
+    kunai_relic.counter = 2;
+    assert!(kunai::on_use_card(CardId::Defend, &mut kunai_relic).is_empty());
+    assert_eq!(kunai_relic.counter, 2);
 
-    let shuriken_actions = shuriken::on_use_card(CardId::Strike, 2);
-    assert_eq!(shuriken_actions.len(), 2);
+    let mut shuriken_relic = RelicState::new(RelicId::Shuriken);
+    shuriken_relic.counter = 2;
+    let shuriken_actions = shuriken::on_use_card(CardId::Strike, &mut shuriken_relic);
+    assert_eq!(shuriken_relic.counter, 0);
+    assert_eq!(shuriken_actions.len(), 1);
     assert!(matches!(
-        shuriken_actions[1].action,
+        shuriken_actions[0].action,
         Action::ApplyPower {
             power_id: PowerId::Strength,
             amount: 1,
@@ -1391,17 +1378,13 @@ fn attack_counter_relics_fire_on_third_attack_and_reset_on_victory() {
         }
     ));
 
-    let fan_actions = ornamental_fan::on_use_card(2);
-    assert_eq!(fan_actions.len(), 2);
+    let mut fan_relic = RelicState::new(RelicId::OrnamentalFan);
+    fan_relic.counter = 2;
+    let fan_actions = ornamental_fan::on_use_card(&mut fan_relic);
+    assert_eq!(fan_relic.counter, 0);
+    assert_eq!(fan_actions.len(), 1);
     assert!(matches!(
         fan_actions[0].action,
-        Action::UpdateRelicCounter {
-            relic_id: RelicId::OrnamentalFan,
-            counter: 0
-        }
-    ));
-    assert!(matches!(
-        fan_actions[1].action,
         Action::GainBlock {
             target: 0,
             amount: 4
@@ -3595,18 +3578,19 @@ fn medical_kit_allows_status_cards_to_be_played() {
 
 #[test]
 fn orange_pellets_uses_remove_all_debuffs_action_and_resets_combo_counter() {
-    let actions = orange_pellets::on_use_card(CardId::Inflame, 0b011);
+    let mut relic = RelicState::new(RelicId::OrangePellets);
+    let first = orange_pellets::on_use_card(CardId::Strike, &mut relic);
+    assert!(first.is_empty());
+    assert_eq!(relic.counter, 0b001);
+
+    relic.counter = 0b011;
+    let actions = orange_pellets::on_use_card(CardId::Inflame, &mut relic);
+    assert_eq!(relic.counter, 0);
 
     assert!(actions
         .iter()
         .any(|info| matches!(info.action, Action::RemoveAllDebuffs { target: 0 })));
-    assert!(actions.iter().any(|info| matches!(
-        info.action,
-        Action::UpdateRelicCounter {
-            relic_id: RelicId::OrangePellets,
-            counter: 0
-        }
-    )));
+    assert_eq!(actions.len(), 1);
 }
 
 #[test]
@@ -4268,27 +4252,14 @@ fn inserter_counter_starts_at_zero_and_adds_orb_slot_every_second_turn() {
     let mut relic = RelicState::new(RelicId::Inserter);
     assert_eq!(relic.counter, 0);
 
-    let first = inserter::Inserter::at_turn_start(relic.counter);
-    assert_eq!(first.len(), 1);
-    assert!(matches!(
-        first[0].action,
-        Action::UpdateRelicCounter {
-            relic_id: RelicId::Inserter,
-            counter: 1
-        }
-    ));
-    relic.counter = 1;
+    let first = inserter::Inserter::at_turn_start(&mut relic);
+    assert!(first.is_empty());
+    assert_eq!(relic.counter, 1);
 
-    let second = inserter::Inserter::at_turn_start(relic.counter);
-    assert_eq!(second.len(), 2);
+    let second = inserter::Inserter::at_turn_start(&mut relic);
+    assert_eq!(relic.counter, 0);
+    assert_eq!(second.len(), 1);
     assert!(matches!(second[0].action, Action::IncreaseMaxOrb(1)));
-    assert!(matches!(
-        second[1].action,
-        Action::UpdateRelicCounter {
-            relic_id: RelicId::Inserter,
-            counter: 0
-        }
-    ));
 }
 
 #[test]
