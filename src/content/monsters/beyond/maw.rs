@@ -192,9 +192,9 @@ impl MonsterBehavior for Maw {
         let mut actions = match (plan.move_id, plan.steps.as_slice()) {
             (ROAR, [MoveStep::ApplyPower(weak), MoveStep::ApplyPower(frail)]) => {
                 vec![
+                    maw_runtime_update(entity, Some(true), None),
                     apply_power_action(entity, weak),
                     apply_power_action(entity, frail),
-                    maw_runtime_update(entity, Some(true), None),
                 ]
             }
             (SLAM, [MoveStep::Attack(attack)]) => attack_actions(entity.id, PLAYER, &attack.attack),
@@ -243,6 +243,42 @@ mod tests {
     }
 
     #[test]
+    fn last_slam_or_nom_forces_drool_like_java() {
+        let mut after_slam = crate::test_support::test_monster(EnemyId::Maw);
+        after_slam.maw.roared = true;
+        after_slam.move_history_mut().push_back(SLAM);
+        let mut after_nom = crate::test_support::test_monster(EnemyId::Maw);
+        after_nom.maw.roared = true;
+        after_nom.move_history_mut().push_back(NOMNOMNOM);
+
+        let slam_plan = Maw::roll_move_plan(&mut StsRng::new(0), &after_slam, 17, 99);
+        let nom_plan = Maw::roll_move_plan(&mut StsRng::new(0), &after_nom, 17, 0);
+
+        assert_eq!(slam_plan.move_id, DROOL);
+        assert_eq!(nom_plan.move_id, DROOL);
+        assert!(matches!(
+            slam_plan.steps.as_slice(),
+            [MoveStep::ApplyPower(ApplyPowerStep {
+                power_id: PowerId::Strength,
+                amount: 5,
+                ..
+            })]
+        ));
+    }
+
+    #[test]
+    fn high_roll_after_non_attack_selects_slam_like_java() {
+        let mut maw = crate::test_support::test_monster(EnemyId::Maw);
+        maw.maw.roared = true;
+        maw.move_history_mut().push_back(DROOL);
+
+        let plan = Maw::roll_move_plan(&mut StsRng::new(0), &maw, 2, 50);
+
+        assert_eq!(plan.move_id, SLAM);
+        assert_eq!(plan.attack().map(|attack| attack.base_damage), Some(30));
+    }
+
+    #[test]
     fn roll_move_increments_java_turn_count() {
         let mut maw = crate::test_support::test_monster(EnemyId::Maw);
         maw.maw.turn_count = 2;
@@ -264,31 +300,33 @@ mod tests {
     }
 
     #[test]
-    fn roar_turn_marks_private_roared_before_roll_move() {
+    fn roar_turn_marks_private_roared_before_queued_debuffs_like_java() {
         let mut state = crate::test_support::blank_test_combat();
         state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::Maw)];
         let maw = state.entities.monsters[0].clone();
-        let plan = roar_plan(0);
+        let plan = roar_plan(17);
 
         let actions = Maw::take_turn_plan(&mut state, &maw, &plan);
 
         assert!(matches!(
             actions.as_slice(),
             [
-                Action::ApplyPower {
-                    power_id: PowerId::Weak,
-                    ..
-                },
-                Action::ApplyPower {
-                    power_id: PowerId::Frail,
-                    ..
-                },
                 Action::UpdateMonsterRuntime {
                     patch: MonsterRuntimePatch::Maw {
                         roared: Some(true),
                         turn_count: None,
                         protocol_seeded: Some(true),
                     },
+                    ..
+                },
+                Action::ApplyPower {
+                    power_id: PowerId::Weak,
+                    amount: 5,
+                    ..
+                },
+                Action::ApplyPower {
+                    power_id: PowerId::Frail,
+                    amount: 5,
                     ..
                 },
                 Action::RollMonsterMove { .. },
