@@ -45,16 +45,28 @@ Forbidden:
 
 Branch tip:
 
-- `1ac61f2 Fix gremlin setmove timing parity`
+- `0b0eec3 Add bandit pointy queue parity test`
 
 Recent commits:
 
+- `0b0eec3 Add bandit pointy queue parity test`
+- `c8d7133 Update handoff after gremlin parity`
 - `1ac61f2 Fix gremlin setmove timing parity`
 - `e0c2ded Update handoff after thief parity`
 - `874605d Fix thief move chaining parity`
-- `da4095f Update parity handoff state`
-- `d0adc3b Fix bandit setmove chain parity`
-- `bb06207 Expose public map context during combat observations`
+
+`0b0eec3` summary:
+
+- `BanditPointy` Java source was checked against Rust.
+- No business logic change was needed: Rust already emits two separate
+  `MonsterAttack` actions followed by queued `SetMonsterMove`, matching Java's
+  two `DamageAction`s followed by `SetMoveAction`.
+- Added a focused parity test to lock that queue order.
+
+Verification for `0b0eec3`:
+
+- `cargo test bandit_pointy --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1213 passed`
 
 `1ac61f2` summary:
 
@@ -132,14 +144,14 @@ The current monster architecture is still usable if these rules are followed:
 - UI/VFX classes are ignored only after checking that they do not mutate combat
   state, RNG, room state, map state, or visible choices.
 
-Current text scans after `1ac61f2`:
+Current text scans after `0b0eec3`:
 
 - `src/content/monsters` has no remaining direct `move_history().is_empty`
   private-state pattern from the recent search.
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `1ac61f2`.
+No uncommitted changes were present after `0b0eec3`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -159,6 +171,8 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   audited Exordium Gremlins. Timing-sensitive synchronous `setMove(...)`
   branches in Gremlin Wizard and Gremlin Tsundere were preserved before queued
   actions.
+- `BanditPointy`: checked in `0b0eec3`. No logic change needed; added a test
+  for the two-hit damage queue before queued `SetMoveAction`.
 
 Split / victory timing:
 
@@ -211,11 +225,11 @@ Recommended next packets:
      plus later `SetMoveAction(...)` on the watch list.
    - `Looter` and `Mugger` were fixed in `874605d`.
    - Exordium Gremlins were fixed in `1ac61f2`.
-   - Next narrow packet: `BanditPointy`
-     (`D:\rust\cardcrawl\monsters\city\BanditPointy.java` and
-     `src/content/monsters/city/bandit_pointy.rs`). It is small and has a
-     queued `SetMoveAction` chain, so it is a good continuation point before
-     larger City monsters.
+   - `BanditPointy` was checked in `0b0eec3`.
+   - Next narrow packet: `TorchHead`
+     (`D:\rust\cardcrawl\monsters\city\TorchHead.java` and
+     `src/content/monsters/city/torch_head.rs`). It is another small City
+     monster with a queued `SetMoveAction` chain.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
