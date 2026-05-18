@@ -1,6 +1,6 @@
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{QueuedCardPlay, QueuedCardSource};
-use crate::state::selection::{DomainCardSnapshot, DomainEvent, DomainEventSource};
+use crate::state::selection::DomainEventSource;
 use smallvec::SmallVec;
 
 /// Necronomicon: The first Attack you play each turn that costs 2 or more is played twice.
@@ -24,16 +24,8 @@ pub fn on_unequip(run_state: &mut crate::state::run::RunState, source: DomainEve
         .iter()
         .position(|card| card.id == crate::content::cards::CardId::Necronomicurse)
     {
-        let removed = run_state.master_deck.remove(pos);
-        run_state.emit_event(DomainEvent::CardRemoved {
-            card: DomainCardSnapshot {
-                id: removed.id,
-                upgrades: removed.upgrades,
-                uuid: removed.uuid,
-            },
-            source,
-        });
-        run_state.dispatch_on_master_deck_change();
+        let uuid = run_state.master_deck[pos].uuid;
+        run_state.remove_card_from_deck_without_removal_hooks_with_source(uuid, source);
     }
 }
 

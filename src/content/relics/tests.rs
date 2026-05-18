@@ -5473,6 +5473,9 @@ fn necronomicon_on_unequip_removes_one_necronomicurse_without_regenerating_it() 
     let mut run = crate::state::run::RunState::new(5, 0, false, "Ironclad");
     run.relics.clear();
     run.relics.push(RelicState::new(RelicId::Necronomicon));
+    let mut du_vu = RelicState::new(RelicId::DuVuDoll);
+    du_vu.counter = 1;
+    run.relics.push(du_vu);
     run.master_deck.clear();
     run.master_deck
         .push(CombatCard::new(CardId::Necronomicurse, 6001));
@@ -5491,6 +5494,14 @@ fn necronomicon_on_unequip_removes_one_necronomicurse_without_regenerating_it() 
         .iter()
         .any(|card| card.id == CardId::Necronomicurse));
     assert!(run.master_deck.iter().any(|card| card.id == CardId::Strike));
+    assert_eq!(
+        run.relics
+            .iter()
+            .find(|relic| relic.id == RelicId::DuVuDoll)
+            .map(|relic| relic.counter),
+        Some(1),
+        "Java Necronomicon.onUnequip uses masterDeck.group.remove, so it does not call onMasterDeckChange"
+    );
     assert_eq!(
         run.emitted_events
             .iter()

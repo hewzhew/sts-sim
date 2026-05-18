@@ -1,7 +1,8 @@
 /// Pandora's Box — Boss Relic
 ///
 /// Java: PandorasBox.onEquip()
-///   1. Iterate masterDeck, remove all cards with STARTER_STRIKE or STARTER_DEFEND tags
+///   1. Iterate masterDeck.group directly, remove all cards with STARTER_STRIKE
+///      or STARTER_DEFEND tags. This bypasses CardGroup.removeCard hooks.
 ///   2. Count removed cards
 ///   3. For each removed card, call `returnTrulyRandomCard()` (uses `cardRandomRng`)
 ///   4. Call `onPreviewObtainCard` on each new card (egg relics auto-upgrade)
@@ -30,7 +31,7 @@ pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
     }
 
     for uuid in to_remove_uuids {
-        run_state.remove_card_from_deck_with_source(
+        run_state.remove_card_from_deck_without_removal_hooks_with_source(
             uuid,
             DomainEventSource::Relic(RelicId::PandorasBox),
         );

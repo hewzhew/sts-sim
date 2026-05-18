@@ -993,21 +993,28 @@ impl RunState {
     }
 
     pub fn remove_card_from_deck_with_source(&mut self, uuid: u32, source: DomainEventSource) {
-        let mut removed_id = None;
-        if let Some(pos) = self.master_deck.iter().position(|c| c.uuid == uuid) {
-            let removed = self.master_deck.remove(pos);
-            self.emit_event(DomainEvent::CardRemoved {
-                card: Self::snapshot_card(&removed),
-                source,
-            });
-            removed_id = Some(removed.id);
-        }
-
-        if let Some(card_id) = removed_id {
-            let result = crate::deck::manager::DeckManager::remove_card(card_id);
+        if let Some(removed) =
+            self.remove_card_from_deck_without_removal_hooks_with_source(uuid, source)
+        {
+            let result = crate::deck::manager::DeckManager::remove_card(removed.id);
             self.resolve_deck_actions(result.actions, source);
             self.dispatch_on_master_deck_change();
         }
+    }
+
+    pub fn remove_card_from_deck_without_removal_hooks_with_source(
+        &mut self,
+        uuid: u32,
+        source: DomainEventSource,
+    ) -> Option<DomainCardSnapshot> {
+        let pos = self.master_deck.iter().position(|c| c.uuid == uuid)?;
+        let removed = self.master_deck.remove(pos);
+        let snapshot = Self::snapshot_card(&removed);
+        self.emit_event(DomainEvent::CardRemoved {
+            card: snapshot,
+            source,
+        });
+        Some(snapshot)
     }
 
     fn build_deck_context(&self) -> crate::deck::context::DeckContext {
