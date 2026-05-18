@@ -218,6 +218,7 @@ mod tests {
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState};
     use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
 
     #[test]
     fn interrupting_relic_claim_preserves_remaining_reward_screen_items() {
@@ -415,5 +416,106 @@ mod tests {
             .relics
             .iter()
             .any(|relic| relic.id == RelicId::Mango));
+    }
+
+    #[test]
+    fn card_reward_selection_runs_obtain_hooks_before_card_obtained_event() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Card {
+            cards: vec![crate::rewards::state::RewardCard::new(
+                CardId::PommelStrike,
+                0,
+            )],
+        }];
+
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(0)),
+        );
+        assert!(reward_state.pending_card_choice.is_some());
+
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::SelectCard(0)),
+        );
+
+        let events = run_state.take_emitted_events();
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::RewardScreen,
+                        ..
+                    }
+                )
+            })
+            .expect("Reward card selection should run Ceramic Fish obtain hook");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::RewardScreen,
+                    } if card.id == CardId::PommelStrike
+                )
+            })
+            .expect("Reward card selection should obtain the selected card");
+
+        assert!(
+            fish_gold_pos < obtained_pos,
+            "Java CardRewardScreen queues FastCardObtainEffect; that effect runs onObtainCard before Soul.obtain"
+        );
+    }
+
+    #[test]
+    fn card_reward_selection_omamori_intercepts_curse_like_fast_obtain_effect() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Card {
+            cards: vec![crate::rewards::state::RewardCard::new(CardId::Regret, 0)],
+        }];
+
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(0)),
+        );
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::SelectCard(0)),
+        );
+
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Regret));
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Omamori should remain after blocking reward curse");
+        assert_eq!(omamori.counter, 1);
+        assert!(
+            !run_state.take_emitted_events().iter().any(|event| matches!(
+                event,
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::RewardScreen,
+                } if card.id == CardId::Regret
+            ))
+        );
     }
 }
