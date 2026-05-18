@@ -45,15 +45,42 @@ Forbidden:
 
 Branch tip:
 
-- `6c142a3 Add time eater move parity tests`
+- `2aae03b Add donu deca parity tests`
 
 Recent commits:
 
+- `2aae03b Add donu deca parity tests`
 - `6c142a3 Add time eater move parity tests`
 - `9e6e73f Add giant head count parity tests`
 - `98ee287 Add nemesis action parity tests`
 - `fcf0f0b Fix suicide action relic parity`
-- `c7a3546 Fix darkling half-death parity`
+
+`2aae03b` summary:
+
+- `Donu` and `Deca` Java/Rust behavior were checked as a pair.
+- No business logic change was needed.
+- Added tests proving:
+  - pre-battle Artifact uses Java's A19 gate: amount 2 below A19, amount 3
+    at A19+;
+  - Donu Beam at A4+ queues two 12-damage monster attacks, then updates
+    private `isAttacking=false`, then rolls;
+  - Donu Circle of Protection queues Strength for every monster in the current
+    group, including a zero-HP non-dying ally object, before updating private
+    `isAttacking=true` and rolling;
+  - Deca Beam at A4+ queues two 12-damage monster attacks, then two Dazed into
+    discard, then updates private `isAttacking=false`, then rolls;
+  - Deca A19 Square of Protection queues block and Plated Armor interleaved per
+    monster in Java loop order before updating private `isAttacking=true` and
+    rolling.
+- Java `ChangeStateAction`, `WaitAction`, SFX, BGM, unlock, death shake, and
+  animation side effects were treated as presentation/meta-only because they do
+  not mutate modeled gameplay state or gameplay RNG.
+
+Verification for `2aae03b`:
+
+- `cargo test donu --all-targets` -> `7 passed`
+- `cargo test deca --all-targets` -> `15 passed`
+- `cargo test --all-targets` -> `1282 passed`
 
 `6c142a3` summary:
 
@@ -614,6 +641,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `TimeEater`: checked in `6c142a3`. No business logic change was needed; tests
   lock Haste private state, recursive reroll RNG consumption, A19 move queues,
   and execution-time Haste healing.
+- `Donu` + `Deca`: checked in `2aae03b`. No business logic change was needed;
+  tests lock Artifact amount gates, private `isAttacking`, Beam damage/add-card
+  ordering, and all-monster buff/protect loop ordering.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -695,12 +725,11 @@ Recommended next packets:
    - `Nemesis` was checked in `98ee287`.
    - `GiantHead` was checked in `9e6e73f`.
    - `TimeEater` was checked in `6c142a3`.
-   - Next narrow packet: `Donu` + `Deca`
-     (`D:\rust\cardcrawl\monsters\beyond\Donu.java`,
-     `D:\rust\cardcrawl\monsters\beyond\Deca.java`,
-     `src/content/monsters/beyond/donu.rs`,
-     `src/content/monsters/beyond/deca.rs`, and relevant artifact/strength
-     action/power files if their turn source requires them).
+   - `Donu` + `Deca` were checked in `2aae03b`.
+   - Next narrow packet: `Transient`
+     (`D:\rust\cardcrawl\monsters\beyond\Transient.java`,
+     `src/content/monsters/beyond/transient.rs`, and relevant strength/shackle
+     or death/escape action files if source comparison requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
