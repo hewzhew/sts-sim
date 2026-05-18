@@ -53,10 +53,12 @@ Forbidden:
 
 Latest code commit:
 
-- `ff3b846 Share bottled relic candidate filtering`
+- `72d5620 Lock chest relic hook ordering`
 
 Recent commits:
 
+- `72d5620 Lock chest relic hook ordering`
+- `7faf842 Update handoff after bottled relic audit`
 - `ff3b846 Share bottled relic candidate filtering`
 - `c87f213 Preserve copied base block state`
 - `f3179ac Update handoff after Orrery audit`
@@ -107,6 +109,45 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`72d5620` summary:
+
+- Audited non-boss chest hook ordering against Java.
+- Java checked:
+  - `D:\rust\cardcrawl\rewards\chests\AbstractChest.java`
+  - `D:\rust\cardcrawl\rewards\chests\SmallChest.java`
+  - `D:\rust\cardcrawl\rewards\chests\MediumChest.java`
+  - `D:\rust\cardcrawl\rewards\chests\LargeChest.java`
+  - `D:\rust\cardcrawl\rooms\TreasureRoom.java`
+  - `D:\rust\cardcrawl\relics\CursedKey.java`
+  - `D:\rust\cardcrawl\relics\Matryoshka.java`
+  - `D:\rust\cardcrawl\relics\NlothsMask.java`
+- Java result:
+  - `TreasureRoom.onPlayerEntry` constructs and randomizes the chest before the
+    player opens it.
+  - `AbstractChest.open(false)` runs all `onChestOpen(false)` relic hooks first.
+  - Matryoshka inserts its extra relic during `onChestOpen`, before chest gold,
+    the base chest relic, and the Sapphire key link.
+  - `onChestOpenAfter(false)` runs after the base relic/key pair; N'loth's Mask
+    removes the first relic reward at that point, also removing a directly linked
+    Sapphire key when applicable.
+- Rust result:
+  - Added full treasure chest regressions for Matryoshka extra-before-base order
+    and N'loth's Mask removing Matryoshka's extra relic before the base relic.
+  - Existing Cursed Key and chest roll tests continue to cover curse obtain,
+    gold ordering, skip behavior, and treasure RNG consumption.
+
+Verification for `72d5620`:
+
+- `cargo test chest --all-targets` -> `9 passed`
+- `cargo test --all-targets` -> `1410 passed`
+
+Next source-backed lane:
+
+- Boss chest / boss reward handling is already partly covered; if continuing
+  chest work, inspect `BossChest.java` and boss relic choice edge cases.
+- Otherwise move to another high-value run subsystem: potion top-panel
+  use/discard, event gates/pools, or monster private intent fields.
 
 `ff3b846` summary:
 

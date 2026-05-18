@@ -55,6 +55,7 @@ reward UI classes.
 | Reward card selection | `rewards/RewardItem.java`, `screens/CardRewardScreen.java`, `vfx/FastCardObtainEffect.java`, `cards/Soul.java` | `dcec769` |
 | Shop card purchase | `shop/ShopScreen.java`, `vfx/FastCardObtainEffect.java` | `b2cc6ce` |
 | Cursed Key chest curse | `relics/CursedKey.java`, `rewards/chests/AbstractChest.java`, `helpers/CardLibrary.java` | `4895ac6` |
+| Non-boss chest hook ordering | `rewards/chests/AbstractChest.java`, `rewards/chests/SmallChest.java`, `rewards/chests/MediumChest.java`, `rewards/chests/LargeChest.java`, `rooms/TreasureRoom.java`, `relics/Matryoshka.java`, `relics/NlothsMask.java`, `relics/CursedKey.java` | `72d5620` |
 | Calling Bell curse and relic rewards | `relics/CallingBell.java`, `screens/select/GridCardSelectScreen.java`, `vfx/FastCardObtainEffect.java` | `72da496` |
 | Necronomicon curse obtain | `relics/Necronomicon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `71c92b1` |
 | Astrolabe transform-upgrade | `relics/Astrolabe.java`, `cards/CardGroup.java`, `dungeons/AbstractDungeon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `586fff0` |
