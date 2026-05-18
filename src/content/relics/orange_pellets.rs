@@ -6,6 +6,10 @@ use smallvec::SmallVec;
 /// Tracks which card types have been played via bit flags in the counter:
 ///   bit 0 = Attack played, bit 1 = Skill played, bit 2 = Power played
 ///   When all 3 set (counter & 0b111 == 0b111), remove debuffs and reset.
+pub fn at_turn_start(relic_state: &mut crate::content::relics::RelicState) {
+    relic_state.counter = 0;
+}
+
 pub fn on_use_card(
     card_id: crate::content::cards::CardId,
     counter: i32,

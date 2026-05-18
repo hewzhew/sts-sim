@@ -1025,7 +1025,10 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.on_use_card = true;
             sub.on_victory = true;
         }
-        RelicId::OrangePellets => sub.on_use_card = true,
+        RelicId::OrangePellets => {
+            sub.at_turn_start = true;
+            sub.on_use_card = true;
+        }
         RelicId::Sling => sub.at_battle_start = true,
         RelicId::WristBlade => {} // Passive — damage calc checks
         RelicId::PaperCrane => {} // Passive — damage calc constant

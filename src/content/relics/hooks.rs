@@ -584,6 +584,11 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
+            RelicId::OrangePellets => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::orange_pellets::at_turn_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
             RelicId::UnceasingTop => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 crate::content::relics::unceasing_top::at_turn_start(&mut rs);

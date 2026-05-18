@@ -1008,14 +1008,6 @@ pub fn tick_engine(
                     crate::engine::action_handlers::powers::apply_player_turn_energy_recharge_hooks(
                         combat_state,
                     );
-                    // Reset per-turn relic counters (OrangePellets)
-                    for relic in combat_state.entities.player.relics.iter_mut() {
-                        match relic.id {
-                            crate::content::relics::RelicId::OrangePellets => relic.counter = 0,
-                            _ => {}
-                        }
-                    }
-
                     // Reset player Invincible limit
                     let _ = store::with_power_mut(
                         combat_state,

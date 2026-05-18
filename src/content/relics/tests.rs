@@ -3548,7 +3548,9 @@ fn shared_shop_relic_gap_batch_two_metadata_matches_java_sources() {
     assert_eq!(get_relic_tier(RelicId::Sling), RelicTier::Shop);
 
     assert!(get_relic_subscriptions(RelicId::MedicalKit).on_use_card);
-    assert!(get_relic_subscriptions(RelicId::OrangePellets).on_use_card);
+    let pellets = get_relic_subscriptions(RelicId::OrangePellets);
+    assert!(pellets.at_turn_start);
+    assert!(pellets.on_use_card);
     assert!(get_relic_subscriptions(RelicId::Sling).at_battle_start);
 }
 
@@ -3605,6 +3607,38 @@ fn orange_pellets_uses_remove_all_debuffs_action_and_resets_combo_counter() {
             counter: 0
         }
     )));
+}
+
+#[test]
+fn orange_pellets_turn_start_resets_stale_combo_counter_like_java() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::OrangePellets));
+    state.entities.player.relics[0].counter = 0b011;
+
+    assert!(hooks::at_turn_start(&mut state).is_empty());
+    assert_eq!(
+        state.entities.player.relics[0].counter, 0,
+        "Java OrangePellets.atTurnStart clears the attack/skill/power combo flags"
+    );
+}
+
+#[test]
+fn orange_pellets_initial_battle_start_resets_cross_combat_combo_counter_like_java() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::OrangePellets));
+    state.entities.player.relics[0].counter = 0b011;
+
+    crate::engine::action_handlers::cards::handle_battle_start_pre_draw_trigger(&mut state);
+    assert_eq!(
+        state.entities.player.relics[0].counter, 0,
+        "Java initial combat calls relic atTurnStart, so stale Orange Pellets state from the previous combat must not survive into the first turn"
+    );
 }
 
 #[test]
