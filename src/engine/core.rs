@@ -1236,17 +1236,19 @@ fn resolve_pending_choice(
                             uuid,
                             combat_state,
                         );
+                        let enters_hand = copy_idx < hand_copies;
+                        let master_reality_call_sites = if enters_hand { 2 } else { 1 };
                         crate::content::cards::apply_master_reality_to_generated_card(
                             &mut card,
                             combat_state,
-                            2,
+                            master_reality_call_sites,
                         );
                         // Java DiscoveryAction applies setCostForTurn(0) after
                         // Master Reality upgrades the generated copies.
                         if let Some(cost) = cost_for_turn {
                             card.set_cost_for_turn_java(cost as i32);
                         }
-                        if copy_idx < hand_copies {
+                        if enters_hand {
                             if crate::content::powers::store::has_power(
                                 combat_state,
                                 0,
@@ -1298,12 +1300,12 @@ fn resolve_pending_choice(
                         match destination {
                             crate::runtime::action::CardDestination::Hand => {
                                 // Java ChooseOneColorless: hand (or discard if full)
-                                crate::content::cards::apply_master_reality_to_generated_card(
-                                    &mut card,
-                                    combat_state,
-                                    2,
-                                );
                                 if combat_state.zones.hand.len() < 10 {
+                                    crate::content::cards::apply_master_reality_to_generated_card(
+                                        &mut card,
+                                        combat_state,
+                                        2,
+                                    );
                                     if crate::content::powers::store::has_power(
                                         combat_state,
                                         0,
@@ -1321,6 +1323,11 @@ fn resolve_pending_choice(
                                     );
                                     combat_state.zones.hand.push(card);
                                 } else {
+                                    crate::content::cards::apply_master_reality_to_generated_card(
+                                        &mut card,
+                                        combat_state,
+                                        1,
+                                    );
                                     combat_state.add_card_to_discard_pile_top(card);
                                 }
                             }
@@ -2330,6 +2337,52 @@ mod tests {
     }
 
     #[test]
+    fn discovery_full_hand_discard_copy_gets_only_constructor_master_reality_upgrade() {
+        let mut combat_state = blank_test_combat();
+        combat_state.zones.hand = (0..9)
+            .map(|idx| CombatCard::new(CardId::Defend, 10 + idx))
+            .collect();
+        combat_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        let mut engine_state =
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(DiscoveryChoiceState {
+                cards: vec![CardId::SearingBlow],
+                colorless: false,
+                card_type: None,
+                amount: 2,
+                can_skip: false,
+            }));
+
+        resolve_pending_choice(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("valid discovery choice should resolve");
+
+        assert_eq!(engine_state, EngineState::CombatProcessing);
+        assert_eq!(combat_state.zones.hand[9].id, CardId::SearingBlow);
+        assert_eq!(
+            combat_state.zones.hand[9].upgrades, 2,
+            "Discovery hand copies get the explicit Master Reality upgrade and the ShowCardAndAddToHandEffect upgrade"
+        );
+        assert_eq!(combat_state.zones.discard_pile[0].id, CardId::SearingBlow);
+        assert_eq!(
+            combat_state.zones.discard_pile[0].upgrades, 1,
+            "Discovery discard copies use ShowCardAndAddToDiscardEffect(src, x, y), whose second Master Reality upgrade applies only to a visual copy"
+        );
+    }
+
+    #[test]
     fn pending_choice_generated_cards_use_combat_uuid_counter() {
         let mut combat_state = blank_test_combat();
         combat_state.zones.card_uuid_counter = 100;
@@ -2402,6 +2455,74 @@ mod tests {
         assert_eq!(
             combat_state.zones.draw_pile[0].upgrades, 1,
             "Java CodexAction relies on ShowCardAndAddToDrawPileEffect for one Master Reality upgrade"
+        );
+    }
+
+    #[test]
+    fn card_reward_hand_destination_master_reality_branch_counts_match_java_effects() {
+        let mut hand_state = blank_test_combat();
+        hand_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        let mut hand_engine = EngineState::PendingChoice(PendingChoice::CardRewardSelect {
+            cards: vec![CardId::SearingBlow],
+            destination: CardDestination::Hand,
+            can_skip: false,
+        });
+
+        resolve_pending_choice(
+            &mut hand_engine,
+            &mut hand_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("valid hand reward choice should resolve");
+
+        assert_eq!(hand_state.zones.hand[0].id, CardId::SearingBlow);
+        assert_eq!(
+            hand_state.zones.hand[0].upgrades, 2,
+            "ChooseOneColorless hand path gets the explicit Master Reality upgrade and the ShowCardAndAddToHandEffect upgrade"
+        );
+
+        let mut discard_state = blank_test_combat();
+        discard_state.zones.hand = (0..10)
+            .map(|idx| CombatCard::new(CardId::Defend, 1_000 + idx))
+            .collect();
+        discard_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        let mut discard_engine = EngineState::PendingChoice(PendingChoice::CardRewardSelect {
+            cards: vec![CardId::SearingBlow],
+            destination: CardDestination::Hand,
+            can_skip: false,
+        });
+
+        resolve_pending_choice(
+            &mut discard_engine,
+            &mut discard_state,
+            ClientInput::SubmitDiscoverChoice(0),
+        )
+        .expect("valid full-hand reward choice should resolve");
+
+        assert_eq!(discard_state.zones.discard_pile[0].id, CardId::SearingBlow);
+        assert_eq!(
+            discard_state.zones.discard_pile[0].upgrades, 1,
+            "ChooseOneColorless discard path keeps only the explicit Master Reality upgrade; the discard effect's extra upgrade is visual-only"
         );
     }
 
