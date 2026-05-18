@@ -42,6 +42,9 @@ Scope:
 | Large Slimes | `split_triggered` | Yes | Yes | Yes | Attack/debuff sequencing only | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
 | Spheric Guardian | `first_move`, `second_move` | Yes | Yes | Yes | Post-opening `lastMove(BIG_ATTACK)` branch only | Good |
+| Bronze Automaton | `first_turn`, `num_turns` | Yes | Yes | Yes | `lastMove(HYPER_BEAM/STUNNED/BOOST/SPAWN_ORBS)` sequencing only | Good |
+| Bronze Orb | `used_stasis` | Yes | Yes | Yes | `lastTwoMoves(SUPPORT_BEAM/BEAM)` sequencing only | Good |
+| Book of Stabbing | `stab_count` | Yes | Yes | Yes | `lastMove(BIG_STAB)` / `lastTwoMoves(STAB)` sequencing only | Good |
 | The Collector | `initial_spawn`, `ult_used`, `turns_taken`, `enemy_slots` | Yes | Yes | Yes | `lastMove(REVIVE)` / `lastTwoMoves(FIREBALL)` sequencing only | Good |
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Exploder | `turn_count` | Yes | Yes | Yes | None | Good |
@@ -274,6 +277,25 @@ Scope:
 - The opening Harden and Bash+Frail gates come from Java's private latches, not from move-history
   length. After both latches are false, move history is used only for Java's explicit
   `lastMove(BIG_ATTACK)` branch.
+
+### Bronze Automaton / Bronze Orb / Book of Stabbing
+
+- `BronzeAutomaton.firstTurn` and `numTurns`, `BronzeOrb.usedStasis`, and
+  `BookOfStabbing.stabCount` are exported by `CommunicationMod`.
+- Rust state sync seeds each runtime slice from `monster.runtime_state`, and
+  factory/test construction seeds the same fields for authored combats.
+- Roll-time mutations are emitted as `Action::UpdateMonsterRuntime` rather than
+  reconstructed from truncated visible move history.
+- Remaining history usage is source-backed Java sequence logic only:
+  - Bronze Automaton checks the previous Hyper Beam / Stun / Boost / Spawn Orbs
+    move while `numTurns` remains the private Hyper Beam calendar.
+  - Bronze Orb uses `lastTwoMoves` only for Support Beam / Beam repeat guards.
+  - Book of Stabbing uses `lastMove(BIG_STAB)` and `lastTwoMoves(STAB)` while
+    `stabCount` remains private runtime truth.
+- Verification:
+  - `cargo test bronze_automaton --all-targets` -> `7 passed`
+  - `cargo test bronze_orb --all-targets` -> `5 passed`
+  - `cargo test book_of_stabbing --all-targets` -> `5 passed`
 
 ### The Collector
 
