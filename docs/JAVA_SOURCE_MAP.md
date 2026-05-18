@@ -68,3 +68,4 @@ reward UI classes.
 | Bottled relic equip selection | `relics/BottledFlame.java`, `relics/BottledLightning.java`, `relics/BottledTornado.java`, `cards/CardGroup.java`, `helpers/CardHelper.java` | `ff3b846` |
 | Empty Cage purge selection | `relics/EmptyCage.java`, `cards/CardGroup.java`, `screens/select/GridCardSelectScreen.java` | `empty_cage_uses_java_purgeable_cards_and_auto_deletes_two_or_fewer` |
 | Potion top-panel discard affordance | `ui/panels/PotionPopUp.java`, `potions/AbstractPotion.java` | `98208ad` |
+| Fruit Juice combat use timing | `potions/FruitJuice.java`, `core/AbstractCreature.java`, `ui/panels/PotionPopUp.java`, `relics/MagicFlower.java`, `relics/ToyOrnithopter.java`, `actions/unique/FeedAction.java` | `combat_fruit_juice_increases_max_hp_immediately_before_toy_heal_queue`, `feed_max_hp_reward_uses_java_increase_max_hp_heal_hooks` |

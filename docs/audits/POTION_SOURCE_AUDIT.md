@@ -140,6 +140,32 @@ Coverage:
 - `blood_potion_queues_fixed_use_time_heal_amount_without_minimum_one`
 - `blood_potion_heal_amount_is_computed_when_used_not_when_heal_executes`
 
+### Fruit Juice
+
+Status: `wrong-fixed`
+
+Java evidence:
+- `FruitJuice.use()` calls `AbstractDungeon.player.increaseMaxHp(potency, true)`
+  directly, both in combat and outside combat.
+- `AbstractCreature.increaseMaxHp()` increments `maxHealth`, then calls
+  `heal(amount, true)`.
+- That internal heal runs `AbstractRelic.onPlayerHeal`, so combat-only heal
+  modifiers such as `MagicFlower` apply and `MarkOfTheBloom` can block the heal
+  portion while still allowing the max HP increase.
+- `PotionPopUp` calls relic `onUsePotion()` only after `potion.use(...)`
+  returns, so `ToyOrnithopter` queues its combat `HealAction(5)` after Fruit
+  Juice has already changed max HP.
+
+Rust result:
+- Combat Fruit Juice now applies Java `increaseMaxHp` semantics immediately
+  during potion use instead of queuing a later `GainMaxHp` action.
+- Shared combat `GainMaxHp` / Feed max-HP rewards now route through the same
+  Java-style max-HP-plus-heal helper so heal hooks are not skipped.
+
+Coverage:
+- `combat_fruit_juice_increases_max_hp_immediately_before_toy_heal_queue`
+- `feed_max_hp_reward_uses_java_increase_max_hp_heal_hooks`
+
 ### Run-Level Potion Relic Ordering
 
 Status: `reviewed-clean`
@@ -159,6 +185,7 @@ Rust result:
 
 Coverage:
 - `run_level_blood_potion_uses_sacred_bark_toy_ornithopter_and_consumes_slot`
+- `combat_fruit_juice_increases_max_hp_immediately_before_toy_heal_queue`
 - `run_level_entropic_brew_with_sozu_consumes_without_generating_potions`
 
 ### Run-Level Potion Affordance Gate

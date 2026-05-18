@@ -2344,6 +2344,13 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
             state.entities.potions[slot] = None;
             return;
         }
+        if potion.id == crate::content::potions::PotionId::FruitJuice {
+            super::damage::increase_player_max_hp_like_java(potency, state);
+            let relic_actions = crate::content::relics::hooks::on_use_potion(state, 0);
+            state.queue_actions(relic_actions);
+            state.entities.potions[slot] = None;
+            return;
+        }
         if potion.id == crate::content::potions::PotionId::DistilledChaosPotion {
             let mut actions = smallvec::SmallVec::<[ActionInfo; 4]>::new();
             for _ in 0..potency.max(0) {
@@ -2952,6 +2959,52 @@ mod tests {
         assert_eq!(
             state.entities.player.current_hp, 3,
             "Java BloodPotion.use computes the HealAction amount before it is queued; later max HP changes do not recalculate the potion heal"
+        );
+    }
+
+    #[test]
+    fn combat_fruit_juice_increases_max_hp_immediately_before_toy_heal_queue() {
+        let mut state = blank_test_combat();
+        state.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        state.entities.player.max_hp = 80;
+        state.entities.player.current_hp = 10;
+        state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::MagicFlower));
+        state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::ToyOrnithopter));
+        state.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            PotionId::FruitJuice,
+            1,
+        ))];
+
+        handle_use_potion(0, None, &mut state);
+
+        assert_eq!(
+            state.entities.player.max_hp, 85,
+            "Java FruitJuice.use calls increaseMaxHp immediately, not via a later action"
+        );
+        assert_eq!(
+            state.entities.player.current_hp, 18,
+            "Java increaseMaxHp heals through combat onPlayerHeal hooks before PotionPopUp calls relic onUsePotion"
+        );
+        assert!(state.entities.potions[0].is_none());
+
+        let Some(Action::Heal { target, amount }) = state.pop_next_action() else {
+            panic!("Toy Ornithopter should queue its Java HealAction after Fruit Juice is used");
+        };
+        assert_eq!(target, 0);
+        assert_eq!(
+            amount, 5,
+            "Toy Ornithopter queues a fixed HealAction(5); Magic Flower modifies it when that action resolves"
+        );
+        assert_eq!(
+            state.action_queue_len(),
+            0,
+            "Fruit Juice itself should not leave a queued GainMaxHp action"
         );
     }
 

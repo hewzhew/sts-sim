@@ -819,9 +819,7 @@ pub fn handle_double_energy(state: &mut CombatState) {
 }
 
 pub fn handle_gain_max_hp(amount: i32, state: &mut CombatState) {
-    state.entities.player.max_hp += amount;
-    state.entities.player.current_hp =
-        (state.entities.player.current_hp + amount).min(state.entities.player.max_hp);
+    super::damage::increase_player_max_hp_like_java(amount, state);
 }
 
 pub fn handle_lose_max_hp(target: usize, amount: i32, state: &mut CombatState) {
