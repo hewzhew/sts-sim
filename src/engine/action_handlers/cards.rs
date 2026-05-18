@@ -1099,6 +1099,9 @@ pub fn handle_make_temp_card_in_discard(
     upgraded: bool,
     state: &mut CombatState,
 ) {
+    if amount >= 6 {
+        return;
+    }
     for _ in 0..amount {
         let mut card =
             make_generated_card_from_id(card_id, state.next_card_uuid(), upgraded, state);
@@ -1237,6 +1240,9 @@ pub fn handle_make_copy_in_discard(
     amount: u8,
     state: &mut CombatState,
 ) {
+    if amount >= 6 {
+        return;
+    }
     for _ in 0..amount {
         let mut card = original.make_stat_equivalent_copy_with_uuid(state.next_card_uuid());
         apply_master_reality_to_generated_card(&mut card, state, 1);
@@ -3383,6 +3389,27 @@ mod tests {
         assert_eq!(
             state.zones.draw_pile[0].upgrades, 2,
             "Java MakeTempCardInDrawPileAction amount<6 and the draw-pile effect both call Master Reality"
+        );
+    }
+
+    #[test]
+    fn make_temp_card_in_discard_large_amount_matches_java_no_effect() {
+        let mut temp_state = blank_test_combat();
+        handle_make_temp_card_in_discard(CardId::Burn, 6, false, &mut temp_state);
+        assert!(
+            temp_state.zones.discard_pile.is_empty(),
+            "Java MakeTempCardInDiscardAction only adds effects when numCards < 6"
+        );
+
+        let mut copy_state = blank_test_combat();
+        handle_make_copy_in_discard(
+            Box::new(CombatCard::new(CardId::Anger, 20)),
+            6,
+            &mut copy_state,
+        );
+        assert!(
+            copy_state.zones.discard_pile.is_empty(),
+            "MakeCopyInDiscard mirrors Java MakeTempCardInDiscardAction(card, amount)"
         );
     }
 
