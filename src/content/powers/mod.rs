@@ -1252,10 +1252,8 @@ pub fn resolve_power_at_end_of_turn(
         PowerId::Malleable => core::malleable::on_monster_turn_ended(_state, owner, amount),
         PowerId::PlatedArmor => core::plated_armor::on_monster_turn_ended(_state, owner, amount),
         PowerId::Thievery => core::thievery::on_monster_turn_ended(_state, owner, amount),
-        PowerId::Explosive => core::explosive::at_end_of_turn(owner, amount),
         PowerId::Regrow => core::regrow::at_end_of_turn(owner, amount),
         PowerId::Constricted => core::constricted::at_end_of_turn(owner, amount),
-        PowerId::Fading => core::fading::at_end_of_turn(owner, amount),
         PowerId::LoseStrength => core::lose_strength::at_end_of_turn(owner, amount),
         PowerId::Rage => smallvec::smallvec![crate::runtime::action::Action::RemovePower {
             target: owner,
@@ -1374,6 +1372,17 @@ pub fn resolve_power_at_end_of_turn(
             });
             acts
         }
+        _ => smallvec::smallvec![],
+    }
+}
+
+pub fn resolve_power_during_turn(
+    power: &crate::runtime::combat::Power,
+    owner: crate::core::EntityId,
+) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
+    match power.power_type {
+        PowerId::Explosive => core::explosive::during_turn(owner, power.amount),
+        PowerId::Fading => core::fading::during_turn(owner, power.amount),
         _ => smallvec::smallvec![],
     }
 }
@@ -2054,11 +2063,12 @@ mod java_decay_tests {
     }
 
     #[test]
-    fn explosive_and_fading_countdowns_match_java_action_order() {
+    fn explosive_and_fading_countdowns_match_java_during_turn_action_order() {
         let state = crate::test_support::blank_test_combat();
 
         let explosive_two = power(PowerId::Explosive, 2, false);
-        let actions = resolve_power_at_end_of_turn(&explosive_two, &state, 1);
+        assert!(resolve_power_at_end_of_turn(&explosive_two, &state, 1).is_empty());
+        let actions = resolve_power_during_turn(&explosive_two, 1);
         assert_eq!(
             actions.as_slice(),
             &[Action::ReducePower {
@@ -2069,7 +2079,7 @@ mod java_decay_tests {
         );
 
         let explosive_one = power(PowerId::Explosive, 1, false);
-        let actions = resolve_power_at_end_of_turn(&explosive_one, &state, 1);
+        let actions = resolve_power_during_turn(&explosive_one, 1);
         assert_eq!(
             actions.as_slice(),
             &[
@@ -2090,7 +2100,8 @@ mod java_decay_tests {
         );
 
         let fading_two = power(PowerId::Fading, 2, false);
-        let actions = resolve_power_at_end_of_turn(&fading_two, &state, 1);
+        assert!(resolve_power_at_end_of_turn(&fading_two, &state, 1).is_empty());
+        let actions = resolve_power_during_turn(&fading_two, 1);
         assert_eq!(
             actions.as_slice(),
             &[Action::ReducePower {

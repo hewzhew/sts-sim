@@ -896,6 +896,18 @@ pub fn tick_engine(
                             for action in actions {
                                 combat_state.queue_action_back(action);
                             }
+                            for power in &crate::content::powers::store::powers_snapshot_for(
+                                combat_state,
+                                monster.id,
+                            ) {
+                                let during_turn_actions =
+                                    crate::content::powers::resolve_power_during_turn(
+                                        power, monster.id,
+                                    );
+                                for action in during_turn_actions {
+                                    combat_state.queue_action_back(action);
+                                }
+                            }
                             // Drain this monster's turn actions
                             while let Some(action) = combat_state.pop_next_action() {
                                 super::action_handlers::execute_action(action, combat_state);
@@ -2638,6 +2650,57 @@ mod tests {
         assert!(
             !combat_state.turn.counters.skip_monster_turn_pending,
             "Java clears room.skipMonsterTurn once the new player turn begins"
+        );
+    }
+
+    #[test]
+    fn monster_during_turn_powers_fire_before_next_monster_turn_like_java_apply_turn_powers() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.player.current_hp = 35;
+
+        let mut exploding = planned_monster(EnemyId::Exploder, 1);
+        exploding.id = 11;
+        let mut next_monster = planned_monster(EnemyId::Cultist, 1);
+        next_monster.id = 12;
+        combat_state.entities.monsters = vec![exploding, next_monster];
+        crate::content::powers::store::set_powers_for(
+            &mut combat_state,
+            11,
+            vec![Power {
+                power_type: PowerId::Explosive,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat_state.turn.begin_turn_transition();
+        let mut engine_state = EngineState::CombatProcessing;
+
+        for _ in 0..64 {
+            if matches!(engine_state, EngineState::GameOver(_)) {
+                break;
+            }
+            let keep_running = super::tick_engine(&mut engine_state, &mut combat_state, None);
+            if !keep_running {
+                break;
+            }
+        }
+
+        assert_eq!(
+            engine_state,
+            EngineState::GameOver(crate::state::core::RunResult::Defeat)
+        );
+        let next_monster = combat_state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == 12)
+            .expect("second monster should still exist");
+        assert!(
+            next_monster.move_history().is_empty(),
+            "Java GameActionManager calls m.applyTurnPowers() immediately after each monster takeTurn(); Explosive damage can kill the player before the next monster is dequeued"
         );
     }
 }

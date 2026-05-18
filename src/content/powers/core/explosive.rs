@@ -2,7 +2,7 @@ use crate::content::powers::PowerId;
 use crate::core::EntityId;
 use crate::runtime::action::{Action, DamageInfo, DamageType};
 
-pub fn at_end_of_turn(owner: EntityId, power_amount: i32) -> smallvec::SmallVec<[Action; 2]> {
+pub fn during_turn(owner: EntityId, power_amount: i32) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
 
     if power_amount == 1 {
