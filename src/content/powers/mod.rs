@@ -2050,7 +2050,10 @@ mod java_decay_tests {
         assert_eq!(
             actions.as_slice(),
             &[
-                Action::Suicide { target: 1 },
+                Action::Suicide {
+                    target: 1,
+                    trigger_relics: true,
+                },
                 Action::Damage(DamageInfo {
                     source: 1,
                     target: 0,

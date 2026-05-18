@@ -67,7 +67,7 @@ mod tests {
         assert!(
             !actions
                 .iter()
-                .any(|action| matches!(action, Action::Suicide { target: 1 })),
+                .any(|action| matches!(action, Action::Suicide { target: 1, .. })),
             "SuicideAction bypasses the Java monster damage/death pipeline"
         );
     }

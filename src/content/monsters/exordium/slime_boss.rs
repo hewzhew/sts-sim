@@ -238,7 +238,10 @@ impl MonsterBehavior for SlimeBoss {
                 let mut actions = Vec::new();
                 for step in steps {
                     match step {
-                        MoveStep::Suicide => actions.push(Action::Suicide { target: entity.id }),
+                        MoveStep::Suicide => actions.push(Action::Suicide {
+                            target: entity.id,
+                            trigger_relics: false,
+                        }),
                         MoveStep::SpawnMonster(step) => actions.push(spawn_action(entity, step)),
                         other => panic!("slime boss split step unsupported: {:?}", other),
                     }

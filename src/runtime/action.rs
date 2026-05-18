@@ -931,6 +931,7 @@ pub enum Action {
     },
     Suicide {
         target: EntityId,
+        trigger_relics: bool,
     },
     IncreaseMaxOrb(u8),
     DecreaseMaxOrb(u8),

@@ -828,7 +828,10 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             protocol_draw_x,
             state,
         ),
-        Action::Suicide { target } => spawning::handle_suicide(target, state),
+        Action::Suicide {
+            target,
+            trigger_relics,
+        } => spawning::handle_suicide(target, trigger_relics, state),
         Action::Escape { target } => spawning::handle_escape(target, state),
         Action::AddCombatReward { item } => spawning::handle_add_combat_reward(item, state),
         Action::RollMonsterMove { monster_id } => {

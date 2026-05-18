@@ -71,8 +71,42 @@ mod tests {
 
         assert!(matches!(
             actions.as_slice(),
-            [Action::Suicide { target: 2 }]
+            [Action::Suicide {
+                target: 2,
+                trigger_relics: true,
+            }]
         ));
+    }
+
+    #[test]
+    fn death_cleanup_suicides_minions_in_java_add_to_top_order() {
+        let reptomancer = crate::test_support::test_monster(EnemyId::Reptomancer);
+        let mut first_dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        first_dagger.id = 2;
+        let mut second_dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        second_dagger.id = 3;
+        let mut state = crate::test_support::combat_with_monsters(vec![
+            reptomancer.clone(),
+            first_dagger,
+            second_dagger,
+        ]);
+
+        let actions = Reptomancer::on_death(&mut state, &reptomancer);
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::Suicide {
+                    target: 3,
+                    trigger_relics: true,
+                },
+                Action::Suicide {
+                    target: 2,
+                    trigger_relics: true,
+                },
+            ],
+            "Java Reptomancer.die adds cleanup actions with addToTop while iterating forward, so later minions' SuicideAction executes first"
+        );
     }
 
     #[test]
@@ -403,7 +437,11 @@ impl MonsterBehavior for Reptomancer {
             .monsters
             .iter()
             .filter(|monster| monster.id != entity.id && !monster.is_dying)
-            .map(|monster| Action::Suicide { target: monster.id })
+            .rev()
+            .map(|monster| Action::Suicide {
+                target: monster.id,
+                trigger_relics: true,
+            })
             .collect()
     }
 }

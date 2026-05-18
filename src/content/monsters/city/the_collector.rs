@@ -63,8 +63,42 @@ mod tests {
 
         assert!(matches!(
             actions.as_slice(),
-            [Action::Suicide { target: 2 }]
+            [Action::Suicide {
+                target: 2,
+                trigger_relics: true,
+            }]
         ));
+    }
+
+    #[test]
+    fn death_cleanup_suicides_minions_in_java_add_to_top_order() {
+        let collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        let mut first_torch = crate::test_support::test_monster(EnemyId::TorchHead);
+        first_torch.id = 2;
+        let mut second_torch = crate::test_support::test_monster(EnemyId::TorchHead);
+        second_torch.id = 3;
+        let mut state = crate::test_support::combat_with_monsters(vec![
+            collector.clone(),
+            first_torch,
+            second_torch,
+        ]);
+
+        let actions = TheCollector::on_death(&mut state, &collector);
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::Suicide {
+                    target: 3,
+                    trigger_relics: true,
+                },
+                Action::Suicide {
+                    target: 2,
+                    trigger_relics: true,
+                },
+            ],
+            "Java TheCollector.die adds VFX/Suicide/Hide cleanup with addToTop while iterating forward, so later minions' SuicideAction executes first"
+        );
     }
 
     #[test]
@@ -651,7 +685,11 @@ impl MonsterBehavior for TheCollector {
             .monsters
             .iter()
             .filter(|monster| monster.id != entity.id && !monster.is_dying)
-            .map(|monster| Action::Suicide { target: monster.id })
+            .rev()
+            .map(|monster| Action::Suicide {
+                target: monster.id,
+                trigger_relics: true,
+            })
             .collect()
     }
 }

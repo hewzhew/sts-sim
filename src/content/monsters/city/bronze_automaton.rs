@@ -65,8 +65,42 @@ mod tests {
 
         assert!(matches!(
             actions.as_slice(),
-            [Action::Suicide { target: 2 }]
+            [Action::Suicide {
+                target: 2,
+                trigger_relics: true,
+            }]
         ));
+    }
+
+    #[test]
+    fn death_cleanup_suicides_minions_in_java_add_to_top_order() {
+        let automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        let mut first_orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+        first_orb.id = 2;
+        let mut second_orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+        second_orb.id = 3;
+        let mut state = crate::test_support::combat_with_monsters(vec![
+            automaton.clone(),
+            first_orb,
+            second_orb,
+        ]);
+
+        let actions = BronzeAutomaton::on_death(&mut state, &automaton);
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::Suicide {
+                    target: 3,
+                    trigger_relics: true,
+                },
+                Action::Suicide {
+                    target: 2,
+                    trigger_relics: true,
+                },
+            ],
+            "Java BronzeAutomaton.die adds VFX/Suicide/Hide cleanup with addToTop while iterating forward, so later minions' SuicideAction executes first"
+        );
     }
 
     #[test]
@@ -456,7 +490,11 @@ impl MonsterBehavior for BronzeAutomaton {
             .monsters
             .iter()
             .filter(|monster| monster.id != entity.id && !monster.is_dying)
-            .map(|monster| Action::Suicide { target: monster.id })
+            .rev()
+            .map(|monster| Action::Suicide {
+                target: monster.id,
+                trigger_relics: true,
+            })
             .collect()
     }
 }

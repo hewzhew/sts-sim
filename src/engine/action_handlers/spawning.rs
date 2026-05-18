@@ -571,10 +571,16 @@ pub fn handle_spawn_reptomancer_dagger(
     }
 }
 
-pub fn handle_suicide(target: usize, state: &mut CombatState) {
+pub fn handle_suicide(target: usize, trigger_relics: bool, state: &mut CombatState) {
     if let Some(m) = state.entities.monsters.iter_mut().find(|m| m.id == target) {
         m.current_hp = 0;
-        m.is_dying = true;
+        if !trigger_relics {
+            m.is_dying = true;
+        }
+    }
+
+    if trigger_relics {
+        crate::engine::action_handlers::check_and_trigger_monster_death(state, target);
     }
 }
 
@@ -1944,10 +1950,23 @@ pub fn handle_update_relic_used_up(
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_escape, handle_roll_monster_move, handle_spawn_monster};
+    use super::{handle_escape, handle_roll_monster_move, handle_spawn_monster, handle_suicide};
     use crate::content::monsters::EnemyId;
-    use crate::content::powers::PowerId;
+    use crate::content::powers::{store, PowerId};
+    use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::action::Action;
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    fn power(power_type: PowerId, amount: i32) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
 
     #[test]
     fn roll_monster_move_still_executes_for_dying_monster_like_java_action() {
@@ -2037,6 +2056,68 @@ mod tests {
                 amount: -1,
             }),
             "Java SpawnMonsterAction/SummonGremlinAction apply new MinionPower, whose amount remains AbstractPower's sentinel -1"
+        );
+    }
+
+    #[test]
+    fn suicide_with_relics_runs_java_death_hooks() {
+        let mut target = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        target.id = 7;
+        target.current_hp = 12;
+        let mut alive = crate::test_support::test_monster(EnemyId::Cultist);
+        alive.id = 8;
+        let mut state = crate::test_support::combat_with_monsters(vec![target, alive]);
+        state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::TheSpecimen));
+        store::set_powers_for(&mut state, 7, vec![power(PowerId::Poison, 5)]);
+
+        handle_suicide(7, true, &mut state);
+
+        assert!(state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == 7)
+            .is_some_and(|monster| monster.current_hp == 0 && monster.is_dying));
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::ApplyPower {
+                source: 0,
+                target: 8,
+                power_id: PowerId::Poison,
+                amount: 5,
+            }),
+            "Java SuicideAction(target) defaults triggerRelics=true and calls m.die(true)"
+        );
+    }
+
+    #[test]
+    fn suicide_without_relics_matches_split_slime_false_path() {
+        let mut target = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        target.id = 7;
+        target.current_hp = 12;
+        let mut alive = crate::test_support::test_monster(EnemyId::Cultist);
+        alive.id = 8;
+        let mut state = crate::test_support::combat_with_monsters(vec![target, alive]);
+        state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::TheSpecimen));
+        store::set_powers_for(&mut state, 7, vec![power(PowerId::Poison, 5)]);
+
+        handle_suicide(7, false, &mut state);
+
+        assert!(state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == 7)
+            .is_some_and(|monster| monster.current_hp == 0 && monster.is_dying));
+        assert!(
+            state.pop_next_action().is_none(),
+            "Java split slimes use SuicideAction(this, false), which skips relic onMonsterDeath hooks"
         );
     }
 }

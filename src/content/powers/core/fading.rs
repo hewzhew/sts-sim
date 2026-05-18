@@ -6,7 +6,10 @@ pub fn at_end_of_turn(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Actio
     let mut actions = smallvec::smallvec![];
 
     if amount <= 1 {
-        actions.push(Action::Suicide { target: owner });
+        actions.push(Action::Suicide {
+            target: owner,
+            trigger_relics: true,
+        });
     } else {
         actions.push(Action::ReducePower {
             target: owner,

@@ -244,7 +244,10 @@ fn execute_steps(entity: &MonsterEntity, plan: &MonsterTurnPlan) -> Vec<Action> 
                 actions.push(apply_power_action(entity, apply_power))
             }
             MoveStep::AddCard(add_card) => actions.push(add_card_action(add_card)),
-            MoveStep::Suicide => actions.push(Action::Suicide { target: entity.id }),
+            MoveStep::Suicide => actions.push(Action::Suicide {
+                target: entity.id,
+                trigger_relics: false,
+            }),
             MoveStep::SpawnMonster(step) => actions.push(spawn_action(entity, step)),
             other => panic!("spike slime step unsupported in execution: {:?}", other),
         }
