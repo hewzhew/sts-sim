@@ -53,15 +53,15 @@ Forbidden:
 
 Latest code commit:
 
-- `00d2ecb Match Cauldron reward screen card burn`
+- `78aa564 Match Orrery reward screen composition`
 
 Recent commits:
 
+- `78aa564 Match Orrery reward screen composition`
+- `a13622e Update handoff after Cauldron audit`
 - `00d2ecb Match Cauldron reward screen card burn`
 - `a9a2b9e Update handoff after Tiny House audit`
 - `72e808e Match Tiny House upgrade candidates`
-- `a1e216c Update handoff after Pandora's Box audit`
-- `0a795a8 Match Pandora's Box confirmation obtain order`
 - `4895ac6 Lock Cursed Key chest obtain hooks`
 - `b2cc6ce Lock shop card fast obtain ordering`
 - `dcec769 Lock reward card obtain hooks`
@@ -107,6 +107,41 @@ Recent commits:
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
 
+`78aa564` summary:
+
+- Audited `Orrery` against Java's direct card-reward addition and combat reward
+  screen append behavior.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\Orrery.java`
+  - `D:\rust\cardcrawl\rooms\AbstractRoom.java`
+  - `D:\rust\cardcrawl\screens\CombatRewardScreen.java`
+  - `D:\rust\cardcrawl\rewards\RewardItem.java`
+- Java result:
+  - `Orrery.onEquip` calls `addCardToRewards()` four times, so four card
+    rewards are inserted into current-room rewards before opening the screen.
+  - `CombatRewardScreen.open(label)` then copies current-room rewards and, in
+    ordinary reward contexts, appends the standard card reward through
+    `setupItemReward`.
+  - In contexts where Java `setupItemReward` suppresses standard card rewards,
+    such as TreasureRoom, the extra appended reward is absent.
+- Rust result:
+  - `orrery::on_equip` now preserves existing reward-screen items instead of
+    replacing them with a fresh screen.
+  - It now models the Java 4 direct rewards plus context-sensitive extra
+    reward-screen card reward.
+  - Added regressions for Question Card sizing, preserving existing rewards,
+    and TreasureRoom producing only the four direct card rewards.
+
+Verification for `78aa564`:
+
+- `cargo test orrery --all-targets` -> `3 passed`
+- `cargo test --all-targets` -> `1408 passed`
+
+Next source-backed lane:
+
+- Continue with selection-screen shop relics (`DollysMirror`, `EmptyCage`,
+  `BottledFlame`, `BottledLightning`, `BottledTornado`) or chest hook phases.
+
 `00d2ecb` summary:
 
 - Audited `Cauldron` against Java's potion reward and combat reward screen
@@ -137,7 +172,7 @@ Verification for `00d2ecb`:
 
 Next source-backed lane:
 
-- Continue relic obtain/equip audit with `Orrery`.
+- Continue with selection-screen shop relics or chest hook phases.
 
 `72e808e` summary:
 
@@ -171,7 +206,7 @@ Verification for `72e808e`:
 
 Next source-backed lane:
 
-- Continue relic obtain/equip audit with `Orrery`.
+- Continue with selection-screen shop relics or chest hook phases.
 
 `0a795a8` summary:
 
@@ -212,7 +247,7 @@ Verification for `0a795a8`:
 
 Next source-backed lane:
 
-- Continue relic obtain/equip audit with `Cauldron` and `Orrery`.
+- Continue with selection-screen shop relics or chest hook phases.
 
 `586fff0` summary:
 
