@@ -45,15 +45,45 @@ Forbidden:
 
 Branch tip:
 
-- `4fd646b Use Java basically-dead flags for victory settlement`
+- `10997a8 Fix monster start-turn invincible poison timing`
 
 Recent commits:
 
+- `10997a8 Fix monster start-turn invincible poison timing`
+- `a22f6d8 Update handoff after victory predicate audit`
 - `4fd646b Use Java basically-dead flags for victory settlement`
 - `556788e Fix monster during-turn power timing`
 - `5ed419b Update handoff after pre-battle RNG audit`
-- `894274a Fix monster pre-battle RNG stream`
-- `347e96c Update handoff after monster factory RNG audit`
+
+`10997a8` summary:
+
+- Java `MonsterGroup.applyPreTurnLogic()`, Java
+  `AbstractCreature.applyStartOfTurnPowers()`, Java `InvinciblePower`, Java
+  `PoisonPower`, Java `PoisonLoseHpAction`, Rust power start hooks, and Rust
+  poison damage handling were checked.
+- Fixed monster start-of-turn `Invincible` timing:
+  - Java `InvinciblePower.atStartOfTurn()` immediately resets `amount` to
+    `maxAmt` during the monster group's pre-turn power pass.
+  - Rust was resetting `Invincible` later, just before the monster's
+    `takeTurn()`.
+  - Rust now resets `Invincible` in the normal `resolve_power_instance_at_turn_start`
+    hook and no longer performs a second pre-`takeTurn` reset.
+- Fixed monster `PoisonLoseHp` to use the normal HP_LOSS damage pipeline:
+  - Java `PoisonLoseHpAction` calls `target.damage(new DamageInfo(...,
+    HP_LOSS))`, so `InvinciblePower.onAttackedToChangeDamage` caps it.
+  - Rust was manually subtracting monster HP and bypassing `Invincible`.
+  - Rust now routes monster poison HP loss through `apply_damage_to_monster_via_pipeline`
+    before decrementing/removing Poison and running post-combat cleanup.
+- Added a regression test proving start-of-turn `Invincible` resets before
+  Poison HP loss and is not reset again before the monster acts.
+
+Verification for `10997a8`:
+
+- `cargo test monster_pre_turn_invincible_resets_before_poison_like_java_at_start_of_turn --all-targets`
+  -> `1 passed`
+- `cargo test invincible --all-targets` -> `5 passed`
+- `cargo test poison --all-targets` -> `7 passed`
+- `cargo test --all-targets` -> `1329 passed`
 
 `4fd646b` summary:
 
@@ -1015,7 +1045,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `4fd646b` before this handoff
+No uncommitted code changes were present after `10997a8` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -1177,6 +1207,10 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   `settle_victory_if_ready` now uses Java `MonsterGroup.areMonstersBasicallyDead()`
   semantics (`isDying || isEscaping`) instead of inferring victory from
   `current_hp <= 0`.
+- Monster pre-turn `Invincible` / Poison timing: fixed in `10997a8`. Rust now
+  resets `Invincible` in the Java start-of-turn power pass and routes monster
+  `PoisonLoseHp` through the HP_LOSS damage pipeline so `Invincible` caps it
+  before Poison decrements.
 
 Source suspicion remaining after `5fe09ea`:
 
@@ -1296,6 +1330,8 @@ Recommended next packets:
      fixed/locked in `556788e`.
    - Java `MonsterGroup.areMonstersBasicallyDead()` victory readiness was
      fixed/locked in `4fd646b`.
+   - Java monster start-of-turn `Invincible` and `PoisonLoseHpAction`
+     interaction was fixed/locked in `10997a8`.
    - Next narrow packet: finish the remaining Java `MonsterGroup` lifecycle
      filter/order details vs Rust combat lifecycle
      (`D:\rust\cardcrawl\monsters\MonsterGroup.java`,
