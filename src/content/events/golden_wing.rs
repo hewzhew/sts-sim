@@ -19,7 +19,10 @@ fn has_high_damage_card(run_state: &RunState) -> bool {
 }
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
-    if event_state.current_screen >= 1 {
+    if event_state.current_screen == 1 {
+        return vec![EventChoiceMeta::new("[Proceed]")];
+    }
+    if event_state.current_screen >= 2 {
         return vec![EventChoiceMeta::new("[Leave]")];
     }
 
@@ -55,7 +58,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
         0 => {
             match choice_idx {
                 0 => {
-                    // Remove card: take damage, then purge
+                    // Java first applies damage and moves to the PURGE screen.
+                    // A second button press opens the grid select.
                     super::apply_player_default_damage(
                         run_state,
                         DAMAGE,
@@ -63,14 +67,6 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         DomainEventSource::Event(EventId::GoldenWing),
                     );
                     event_state.current_screen = 1;
-                    run_state.event_state = Some(event_state);
-                    *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
-                        reason: RunPendingChoiceReason::PurgeNonBottled,
-                        min_choices: 1,
-                        max_choices: 1,
-                        return_state: Box::new(EngineState::EventRoom),
-                    });
-                    return;
                 }
                 1 => {
                     // Attack: gain gold
@@ -80,14 +76,25 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             gold,
                             DomainEventSource::Event(EventId::GoldenWing),
                         );
-                        event_state.current_screen = 1;
+                        event_state.current_screen = 2;
                     }
                 }
                 _ => {
                     // Leave
-                    event_state.current_screen = 1;
+                    event_state.current_screen = 2;
                 }
             }
+        }
+        1 => {
+            event_state.current_screen = 2;
+            run_state.event_state = Some(event_state);
+            *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+                reason: RunPendingChoiceReason::PurgeNonBottled,
+                min_choices: 1,
+                max_choices: 1,
+                return_state: Box::new(EngineState::EventRoom),
+            });
+            return;
         }
         _ => {
             event_state.completed = true;
@@ -142,11 +149,12 @@ mod tests {
                 source: DomainEventSource::Event(EventId::GoldenWing),
             }
         )));
-        assert!(matches!(
-            engine_state,
-            EngineState::RunPendingChoice(ref pending)
-                if pending.reason == RunPendingChoiceReason::PurgeNonBottled
-        ));
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(
+            run_state.event_state.as_ref().unwrap().current_screen,
+            1,
+            "Java GoldenWing enters PURGE first; the next button press opens the deck picker"
+        );
     }
 
     #[test]
@@ -183,6 +191,7 @@ mod tests {
         let mut engine_state = EngineState::EventRoom;
 
         handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
 
         let EngineState::RunPendingChoice(choice) = engine_state else {
             panic!("Golden Wing remove path should open deck purge selection");
@@ -204,6 +213,7 @@ mod tests {
         let mut engine_state = EngineState::EventRoom;
 
         handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
 
         let mut combat_state = None;
         assert!(tick_run(
@@ -217,7 +227,7 @@ mod tests {
         ));
 
         assert!(matches!(engine_state, EngineState::EventRoom));
-        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 2);
         assert!(run_state.master_deck.is_empty());
         assert!(run_state.take_emitted_events().iter().any(|event| matches!(
             event,
