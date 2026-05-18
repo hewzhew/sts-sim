@@ -60,6 +60,22 @@ Forbidden:
 
 Latest code checkpoint:
 
+- Added focused Fat Gremlin A17 action-order coverage after Java/Rust source
+  comparison.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\GremlinFat.java`
+- Rust changed:
+  - `src\content\monsters\exordium\gremlin_fat.rs`
+- Result:
+  - Fat Gremlin requires no hidden runtime truth from protocol.
+  - Tests now cover Blunt damage, Weak, A17 Frail, final RollMove, and the
+    explicit Escape turn SetMove chain.
+  - Java speech bubbles and voice/death sound rolls remain UI/audio-only.
+- Verification:
+  - `cargo test gremlin_fat --all-targets` -> `3 passed`
+
+Latest code checkpoint:
+
 - Fixed Spore Cloud battle-ending semantics and added focused Fungi Beast tests.
 - Java checked:
   - `D:\rust\cardcrawl\monsters\exordium\FungiBeast.java`

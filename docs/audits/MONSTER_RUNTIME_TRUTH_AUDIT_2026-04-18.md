@@ -40,6 +40,7 @@ Scope:
 | Blue Slaver | None | N/A | N/A | N/A | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Red Slaver | `first_turn`, `used_entangle` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Gremlin Nob | `used_bellow` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
+| Fat Gremlin | None | N/A | N/A | N/A | Fixed Blunt plus optional escape intent | Good |
 | Gremlin Leader | `gremlin_slots` | Yes | Yes | Yes | Rally/Encourage/Stab sequencing only | Good |
 | Gremlin Wizard | `current_charge` | Yes | Yes | Yes | None for charge cadence | Good |
 | Cultist | `first_move` | Yes | Yes | Yes | None | Good |
@@ -271,6 +272,19 @@ Scope:
 - Verification:
   - `cargo test fungi_beast --all-targets` -> `2 passed`
   - `cargo test spore_cloud --all-targets` -> `3 passed`
+
+### Fat Gremlin
+
+- `Fat Gremlin` does not require hidden runtime truth from protocol.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\GremlinFat.java`
+- Rust checked/changed:
+  - `src\content\monsters\exordium\gremlin_fat.rs`
+- Java `GremlinFat.getMove(int)` always sets Blunt. Java `takeTurn()` queues damage, Weak, Ascension 17 Frail, then `RollMoveAction(this)` unless `escapeNext` is already set.
+- Rust preserves the special escape turn as `Escape` followed by `SetMonsterMove(ESCAPE)`. Vanilla Gremlin `deathReact()` / `escapeNext()` are already recorded as non-imported unless a real planned escape is observed, because the active base-game calls are dialogue/VFX or ordinary planned move truth.
+- Java voice/death sound rolls and speech bubbles are UI/audio-only and are not imported as gameplay RNG.
+- Verification:
+  - `cargo test gremlin_fat --all-targets` -> `3 passed`
 
 ### Gremlin Nob
 

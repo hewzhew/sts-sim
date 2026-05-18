@@ -181,6 +181,7 @@ impl MonsterBehavior for GremlinFat {
 mod tests {
     use super::{blunt_plan, GremlinFat};
     use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::content::powers::PowerId;
     use crate::runtime::action::Action;
 
     #[test]
@@ -212,6 +213,58 @@ mod tests {
                     next_move_byte: super::ESCAPE,
                     ..
                 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn blunt_action_order_and_a17_frail_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinFat);
+
+        let a16 = GremlinFat::take_turn_plan(&mut state, &entity, &blunt_plan(16));
+        assert!(matches!(
+            a16.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 5,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        let a17 = GremlinFat::take_turn_plan(&mut state, &entity, &blunt_plan(17));
+        assert!(matches!(
+            a17.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 5,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Frail,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
             ]
         ));
     }
