@@ -45,15 +45,32 @@ Forbidden:
 
 Branch tip:
 
-- `5ad39bc Add torch head queue parity test`
+- `a4d74f4 Fix byrd headbutt setmove timing`
 
 Recent commits:
 
+- `a4d74f4 Fix byrd headbutt setmove timing`
+- `5967a3c Update handoff after torch head audit`
 - `5ad39bc Add torch head queue parity test`
 - `5260b59 Update handoff after bandit pointy audit`
 - `0b0eec3 Add bandit pointy queue parity test`
-- `c8d7133 Update handoff after gremlin parity`
-- `1ac61f2 Fix gremlin setmove timing parity`
+
+`a4d74f4` summary:
+
+- `ShelledParasite` Java/Rust timing was checked; no code change was needed.
+  Existing tests already cover `firstMove`, STUN writing a FELL move before the
+  roll, live truth import, and Plated Armor break triggering STUN.
+- `Byrd` Java/Rust timing exposed a real issue: Java Headbutt queues damage but
+  synchronously calls `setMove(GO_AIRBORNE)` before queued damage can execute.
+- Rust Byrd Headbutt now records the next move before the queued attack, matching
+  Java's synchronous `setMove(...)` timing.
+- Added a focused Byrd Headbutt timing test.
+
+Verification for `a4d74f4`:
+
+- `cargo test shelled_parasite --all-targets` -> `4 passed`
+- `cargo test byrd --all-targets` -> `3 passed`
+- `cargo test --all-targets` -> `1215 passed`
 
 `5ad39bc` summary:
 
@@ -158,14 +175,14 @@ The current monster architecture is still usable if these rules are followed:
 - UI/VFX classes are ignored only after checking that they do not mutate combat
   state, RNG, room state, map state, or visible choices.
 
-Current text scans after `5ad39bc`:
+Current text scans after `a4d74f4`:
 
 - `src/content/monsters` has no remaining direct `move_history().is_empty`
   private-state pattern from the recent search.
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `5ad39bc`.
+No uncommitted changes were present after `a4d74f4`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -189,6 +206,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   for the two-hit damage queue before queued `SetMoveAction`.
 - `TorchHead`: checked in `5ad39bc`. No logic change needed; added a test for
   damage before queued `SetMoveAction`; Java fire effect update is VFX-only.
+- `ShelledParasite`: checked before `a4d74f4`; no code change needed. Existing
+  tests cover first-move runtime state, STUN + roll timing, state import, and
+  Plated Armor break.
+- `Byrd`: fixed in `a4d74f4`. Headbutt now applies synchronous Java
+  `setMove(GO_AIRBORNE)` timing before queued damage.
 
 Split / victory timing:
 
@@ -243,11 +265,14 @@ Recommended next packets:
    - Exordium Gremlins were fixed in `1ac61f2`.
    - `BanditPointy` was checked in `0b0eec3`.
    - `TorchHead` was checked in `5ad39bc`.
-   - Next narrow packet: `ShelledParasite`
-     (`D:\rust\cardcrawl\monsters\city\ShelledParasite.java` and
-     `src/content/monsters/city/shelled_parasite.rs`). It has both ordinary
-     post-turn rolling and a stunned/interrupt-style next-move path, so it is a
-     good next escalation after the two simple City minions.
+   - `ShelledParasite` was checked; no code change needed.
+   - `Byrd` was fixed in `a4d74f4`.
+   - Next narrow packet: `Centurion` + `Healer`
+     (`D:\rust\cardcrawl\monsters\city\Centurion.java`,
+     `D:\rust\cardcrawl\monsters\city\Healer.java`,
+     `src/content/monsters/city/centurion.rs`, and
+     `src/content/monsters/city/healer.rs`). Audit them as a pair because their
+     behavior depends on ally state and random/support targeting.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
