@@ -45,15 +45,35 @@ Forbidden:
 
 Branch tip:
 
-- `98ee287 Add nemesis action parity tests`
+- `9e6e73f Add giant head count parity tests`
 
 Recent commits:
 
+- `9e6e73f Add giant head count parity tests`
 - `98ee287 Add nemesis action parity tests`
 - `fcf0f0b Fix suicide action relic parity`
 - `c7a3546 Fix darkling half-death parity`
 - `e3fd301 Update handoff after awakened one audit`
-- `30c73bb Fix awakened one rebirth parity`
+
+`9e6e73f` summary:
+
+- `GiantHead` Java/Rust behavior was checked.
+- No business logic change was needed.
+- Added tests proving:
+  - Java `lastTwoMoves(GLARE)` forces `COUNT` and decrements private `count`;
+  - Java `lastTwoMoves(COUNT)` forces `GLARE` and decrements private `count`;
+  - `IT_IS_TIME` stops decrementing private `count` at Java floor `-6` and
+    caps the real damage table at starting damage + 30.
+- Existing GiantHead tests already covered A18 pre-battle count decrement,
+  SlowPower amount 0, count-driven `IT_IS_TIME`, and imported count not being
+  reconstructed from move history.
+- Java `ShoutAction`, SFX/death voice, animation, and MathUtils dialogue rolls
+  were treated as presentation-only.
+
+Verification for `9e6e73f`:
+
+- `cargo test giant_head --all-targets` -> `7 passed`
+- `cargo test --all-targets` -> `1274 passed`
 
 `98ee287` summary:
 
@@ -562,6 +582,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `Nemesis`: checked in `98ee287`. No business logic change was needed; tests
   lock Tri Attack, Tri Burn, post-turn Intangible application/skip, and
   existing private `firstMove` / `scytheCooldown` behavior.
+- `GiantHead`: checked in `9e6e73f`. No business logic change was needed; tests
+  lock A18 pre-battle count decrement, SlowPower amount 0, lastTwoMove gates,
+  private count floor, and `IT_IS_TIME` damage.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -641,10 +664,12 @@ Recommended next packets:
    - `Reptomancer` + `SnakeDagger` shared death/suicide interactions were fixed
      in `fcf0f0b`.
    - `Nemesis` was checked in `98ee287`.
-   - Next narrow packet: `GiantHead`
-     (`D:\rust\cardcrawl\monsters\beyond\GiantHead.java`,
-     `src/content/monsters/beyond/giant_head.rs`, and relevant Slow/Strength
-     action/power files if its turn source requires them).
+   - `GiantHead` was checked in `9e6e73f`.
+   - Next narrow packet: `TimeEater`
+     (`D:\rust\cardcrawl\monsters\beyond\TimeEater.java`,
+     `src/content/monsters/beyond/time_eater.rs`, and relevant Time Warp /
+     Haste / heal / cleanse action/power files if its turn source requires
+     them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
