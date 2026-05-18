@@ -5524,6 +5524,91 @@ fn necronomicon_on_equip_adds_necronomicurse_to_master_deck() {
 }
 
 #[test]
+fn necronomicon_on_equip_runs_obtain_hooks_before_necronomicurse_is_added() {
+    let mut run = crate::state::run::RunState::new(4, 0, false, "Ironclad");
+    run.relics.push(RelicState::new(RelicId::CeramicFish));
+    run.master_deck.clear();
+
+    assert!(run
+        .obtain_relic_with_source(
+            RelicId::Necronomicon,
+            crate::state::core::EngineState::MapNavigation,
+            DomainEventSource::RewardScreen,
+        )
+        .is_none());
+
+    let events = run.take_emitted_events();
+    let fish_gold_pos = events
+        .iter()
+        .position(|event| {
+            matches!(
+                event,
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Relic(RelicId::Necronomicon),
+                    ..
+                }
+            )
+        })
+        .expect("Necronomicon curse should run Ceramic Fish onObtainCard hook");
+    let curse_pos = events
+        .iter()
+        .position(|event| {
+            matches!(
+                event,
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Relic(RelicId::Necronomicon),
+                } if card.id == CardId::Necronomicurse
+            )
+        })
+        .expect("Necronomicon should obtain Necronomicurse through ShowCardAndObtainEffect");
+
+    assert!(
+        fish_gold_pos < curse_pos,
+        "Java Necronomicon.onEquip queues ShowCardAndObtainEffect; that effect runs relic onObtainCard before Soul.obtain"
+    );
+}
+
+#[test]
+fn necronomicon_on_equip_necronomicurse_can_be_blocked_by_omamori() {
+    let mut run = crate::state::run::RunState::new(4, 0, false, "Ironclad");
+    run.relics.push(RelicState::new(RelicId::Omamori));
+    run.master_deck.clear();
+
+    assert!(run
+        .obtain_relic_with_source(
+            RelicId::Necronomicon,
+            crate::state::core::EngineState::MapNavigation,
+            DomainEventSource::RewardScreen,
+        )
+        .is_none());
+
+    assert!(run
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::Necronomicon));
+    assert!(!run
+        .master_deck
+        .iter()
+        .any(|card| card.id == CardId::Necronomicurse));
+    let omamori = run
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::Omamori)
+        .expect("Omamori should be present");
+    assert_eq!(omamori.counter, 1);
+    assert!(!omamori.used_up);
+    assert!(!run.emitted_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::CardObtained {
+            card,
+            source: DomainEventSource::Relic(RelicId::Necronomicon),
+        } if card.id == CardId::Necronomicurse
+    )));
+}
+
+#[test]
 fn necronomicon_replay_uses_same_instance_copy_like_java() {
     let mut card = CombatCard::new(CardId::Bludgeon, 6201);
     card.base_damage_mut = 99;
