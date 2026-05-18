@@ -152,4 +152,43 @@ mod tests {
             .expect("Omamori should remain after blocking the curse");
         assert_eq!(omamori.counter, 1);
     }
+
+    #[test]
+    fn confirm_gold_resolves_before_delayed_doubt_obtain_like_java_effect_list() {
+        let mut run_state = serpent_run(0);
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.gold, 184);
+        let labels = run_state
+            .take_emitted_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                DomainEvent::GoldChanged {
+                    delta: 175,
+                    source: DomainEventSource::Event(EventId::Ssssserpent),
+                    ..
+                } => Some("event_gold"),
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::Ssssserpent),
+                    ..
+                } => Some("ceramic_fish_gold"),
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Event(EventId::Ssssserpent),
+                } if card.id == CardId::Doubt => Some("doubt_obtained"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec!["event_gold", "ceramic_fish_gold", "doubt_obtained"],
+            "Java queues ShowCardAndObtainEffect before RainingGoldEffect but gains gold immediately; actual card obtain resolves later"
+        );
+    }
 }

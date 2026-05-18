@@ -318,4 +318,50 @@ mod tests {
             }
         )));
     }
+
+    #[test]
+    fn embrace_damage_resolves_before_delayed_madness_obtains_like_java_effect_list() {
+        let mut run_state = winding_run(20, 80, 0);
+        run_state.gold = 0;
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 10);
+        assert_eq!(run_state.gold, 18);
+        let labels = run_state
+            .take_emitted_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                DomainEvent::HpChanged {
+                    delta: -10,
+                    source: DomainEventSource::Event(EventId::WindingHalls),
+                    ..
+                } => Some("hp_loss"),
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::WindingHalls),
+                    ..
+                } => Some("ceramic_fish_gold"),
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Event(EventId::WindingHalls),
+                } if card.id == CardId::Madness => Some("madness_obtained"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec![
+                "hp_loss",
+                "ceramic_fish_gold",
+                "madness_obtained",
+                "ceramic_fish_gold",
+                "madness_obtained",
+            ],
+            "Java damages immediately, then each queued ShowCardAndObtainEffect later runs onObtainCard before Soul.obtain"
+        );
+    }
 }
