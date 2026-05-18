@@ -3,7 +3,7 @@ use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
 pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
-    use crate::content::cards::{get_card_definition, CardId, CardType};
+    use crate::content::cards::can_upgrade_card_once;
     use crate::content::relics::RelicId;
     use crate::rewards::state::{RewardItem, RewardState};
 
@@ -11,10 +11,7 @@ pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
         .master_deck
         .iter()
         .enumerate()
-        .filter(|(_, c)| {
-            let def = get_card_definition(c.id);
-            def.card_type != CardType::Curse && (c.id == CardId::SearingBlow || c.upgrades == 0)
-        })
+        .filter(|(_, c)| can_upgrade_card_once(c))
         .map(|(i, _)| i)
         .collect();
     if !upgradable.is_empty() {

@@ -3517,6 +3517,28 @@ fn tiny_house_uses_reward_screen_for_gold_potion_and_card_reward() {
 }
 
 #[test]
+fn tiny_house_upgrade_candidates_use_java_can_upgrade_filter() {
+    let mut run = crate::state::run::RunState::new(18, 0, false, "Ironclad");
+    run.master_deck = vec![
+        CombatCard::new(CardId::Wound, 9101),
+        CombatCard::new(CardId::Injury, 9102),
+    ];
+    run.emitted_events.clear();
+
+    let Some(crate::state::core::EngineState::RewardScreen(_)) = tiny_house::on_equip(&mut run)
+    else {
+        panic!("expected Tiny House to open a reward screen");
+    };
+
+    assert!(run
+        .emitted_events
+        .iter()
+        .all(|event| !matches!(event, DomainEvent::CardUpgraded { .. })));
+    assert_eq!(run.master_deck[0].upgrades, 0);
+    assert_eq!(run.master_deck[1].upgrades, 0);
+}
+
+#[test]
 fn wrist_blade_adds_four_damage_to_java_zero_cost_attacks_only() {
     let mut state = crate::test_support::blank_test_combat();
     state
