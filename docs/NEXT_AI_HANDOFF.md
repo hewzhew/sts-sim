@@ -60,10 +60,14 @@ Forbidden:
 
 Latest code commit:
 
-- `03779ed Lock boss chest hook exclusion`
+- `07645cb Match Fruit Juice increaseMaxHp timing`
 
 Recent commits:
 
+- `07645cb Match Fruit Juice increaseMaxHp timing`
+- `bb558bc Add mechanics acceptance standard`
+- `157e50d Close Empty Cage audit loop`
+- `a0f28af Update handoff after boss chest audit`
 - `03779ed Lock boss chest hook exclusion`
 - `5fb9dbd Update handoff after potion discard audit`
 - `98208ad Guard queued potion discard affordance`
@@ -120,7 +124,42 @@ Recent commits:
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
 
-Current source-checked note after `03779ed`:
+Current source-checked note after `07645cb`:
+
+- Audited Fruit Juice combat use timing against Java `increaseMaxHp`.
+- Java checked:
+  - `D:\rust\cardcrawl\potions\FruitJuice.java`
+  - `D:\rust\cardcrawl\core\AbstractCreature.java`
+  - `D:\rust\cardcrawl\ui\panels\PotionPopUp.java`
+  - `D:\rust\cardcrawl\relics\MagicFlower.java`
+  - `D:\rust\cardcrawl\relics\ToyOrnithopter.java`
+  - `D:\rust\cardcrawl\actions\unique\FeedAction.java`
+- Rust changed:
+  - `src\engine\action_handlers\cards.rs`
+  - `src\engine\action_handlers\damage.rs`
+  - `src\engine\action_handlers\powers.rs`
+- Result:
+  - Combat Fruit Juice now applies Java `increaseMaxHp` immediately during
+    potion use, before `PotionPopUp`-style relic `onUsePotion` hooks.
+  - The max-HP increase now heals through combat `onPlayerHeal` hooks, so Magic
+    Flower/Mark of the Bloom semantics are preserved.
+  - Feed and generic combat `GainMaxHp` use the same Java-style helper instead
+    of directly adding to current HP.
+- Verification:
+  - `cargo test combat_fruit_juice_increases_max_hp_immediately_before_toy_heal_queue --all-targets`
+    -> `1 passed`
+  - `cargo test feed_max_hp_reward_uses_java_increase_max_hp_heal_hooks --all-targets`
+    -> `1 passed`
+  - `cargo test potion --all-targets` -> `69 passed`
+  - `cargo test feed --all-targets` -> `3 passed`
+  - `cargo test --all-targets` -> `1414 passed`
+
+Next source-backed lane:
+
+- Continue remaining potion target/use timing only for concrete uncovered
+  potions, or move to monster private intent fields.
+
+Previous source-checked note after `157e50d`:
 
 - Rechecked `EmptyCage` against Java without code changes.
 - Java checked:
