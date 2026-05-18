@@ -384,4 +384,70 @@ mod tests {
         assert_eq!(rs.event_state.as_ref().unwrap().current_screen, 0);
         assert!(rs.take_emitted_events().is_empty());
     }
+
+    #[test]
+    fn accept_max_hp_loss_and_strike_removals_precede_delayed_bite_obtains() {
+        let mut rs = RunState::new(1, 0, false, "Ironclad");
+        rs.current_hp = 70;
+        rs.max_hp = 80;
+        rs.gold = 0;
+        rs.relics.push(RelicState::new(RelicId::CeramicFish));
+        rs.event_state = Some(EventState::new(EventId::Vampires));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        assert_eq!(rs.max_hp, 56);
+        assert_eq!(rs.current_hp, 56);
+        assert_eq!(rs.gold, 45);
+        let labels = rs
+            .take_emitted_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                DomainEvent::MaxHpChanged {
+                    delta: -24,
+                    source: DomainEventSource::Event(EventId::Vampires),
+                    ..
+                } => Some("max_hp_loss"),
+                DomainEvent::CardRemoved {
+                    source: DomainEventSource::Event(EventId::Vampires),
+                    ..
+                } => Some("strike_removed"),
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::Vampires),
+                    ..
+                } => Some("ceramic_fish_gold"),
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Event(EventId::Vampires),
+                } if card.id == CardId::Bite => Some("bite_obtained"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec![
+                "max_hp_loss",
+                "strike_removed",
+                "strike_removed",
+                "strike_removed",
+                "strike_removed",
+                "strike_removed",
+                "ceramic_fish_gold",
+                "bite_obtained",
+                "ceramic_fish_gold",
+                "bite_obtained",
+                "ceramic_fish_gold",
+                "bite_obtained",
+                "ceramic_fish_gold",
+                "bite_obtained",
+                "ceramic_fish_gold",
+                "bite_obtained",
+            ],
+            "Java Vampires decreases max HP, removes all starter Strikes, then delayed Bite effects resolve obtain hooks before Soul.obtain"
+        );
+    }
 }
