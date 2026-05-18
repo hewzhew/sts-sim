@@ -39,13 +39,30 @@ fn queue_player_hp_loss_hooks(
             damage_type,
             triggers_rupture,
         );
-        for action in hook_actions.into_iter().rev() {
-            state.queue_action_front(action);
-        }
+        queue_hp_lost_power_actions(state, power.power_type, hook_actions);
     }
 
     let relic_actions = crate::content::relics::hooks::on_lose_hp(state, amount);
     state.queue_actions(relic_actions);
+}
+
+fn queue_hp_lost_power_actions(
+    state: &mut CombatState,
+    power_id: PowerId,
+    actions: smallvec::SmallVec<[Action; 2]>,
+) {
+    match power_id {
+        PowerId::PlatedArmor => {
+            for action in actions {
+                state.queue_action_back(action);
+            }
+        }
+        _ => {
+            for action in actions.into_iter().rev() {
+                state.queue_action_front(action);
+            }
+        }
+    }
 }
 
 fn queue_red_skull_threshold_actions(state: &mut CombatState, previous_hp: i32, current_hp: i32) {
@@ -297,9 +314,7 @@ fn apply_damage_to_monster_via_pipeline(
                         }
                     }
                 } else {
-                    for a in hook_actions.into_iter().rev() {
-                        state.queue_action_front(a);
-                    }
+                    queue_hp_lost_power_actions(state, power.power_type, hook_actions);
                 }
             }
 
@@ -1783,6 +1798,45 @@ mod tests {
         assert_eq!(
             state.pop_next_action(),
             Some(Action::RollMonsterMove { monster_id: 91 })
+        );
+    }
+
+    #[test]
+    fn plated_armor_hp_loss_reduction_is_added_to_bottom_like_java() {
+        let mut state = blank_test_combat();
+        let mut parasite = test_monster(EnemyId::ShelledParasite);
+        parasite.id = 92;
+        parasite.current_hp = 20;
+        state.entities.monsters = vec![parasite];
+        store::set_powers_for(
+            &mut state,
+            92,
+            vec![Power {
+                power_type: PowerId::PlatedArmor,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        state.queue_action_back(Action::DrawCards(1));
+
+        handle_damage(normal_player_damage(92, 3), &mut state);
+
+        assert_eq!(state.entities.monsters[0].current_hp, 17);
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::DrawCards(1)),
+            "Java PlatedArmorPower.wasHPLost uses addToBot, so existing queued actions stay ahead of ReducePowerAction"
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::ReducePower {
+                target: 92,
+                power_id: PowerId::PlatedArmor,
+                amount: 1,
+            })
         );
     }
 
