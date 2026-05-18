@@ -100,7 +100,11 @@ pub fn build_encounter(
 
     let spawn_monster = |enemy_id: EnemyId, hp_rng: &mut StsRng, slot: u8| -> MonsterEntity {
         let (min, max) = crate::content::monsters::get_hp_range(enemy_id, ascension_level);
-        let current_hp = hp_rng.random_range(min as i32, max as i32) as i32;
+        let current_hp = if min == max {
+            min
+        } else {
+            hp_rng.random_range(min as i32, max as i32) as i32
+        };
         let id = (slot + 1) as usize; // Naive unique engine IDs for this batch
         let louse_bite_damage = match enemy_id {
             EnemyId::LouseNormal | EnemyId::LouseDefensive => Some(if ascension_level >= 2 {
@@ -1106,5 +1110,37 @@ mod tests {
             java_spawn_shapes_sequence(seed, 4),
             "4 Shapes uses the same Java draw-without-replacement pool"
         );
+    }
+
+    #[test]
+    fn fixed_hp_act4_encounters_do_not_consume_monster_hp_rng_like_java_set_hp_int() {
+        let mut misc_rng = StsRng::new(1);
+        let mut hp_rng = StsRng::new(2);
+
+        let shield_spear =
+            build_encounter(EncounterId::ShieldAndSpear, &mut misc_rng, &mut hp_rng, 20);
+
+        assert_eq!(hp_rng.counter, 0);
+        assert_eq!(shield_spear.len(), 2);
+        assert_eq!(shield_spear[0].current_hp, 125);
+        assert_eq!(shield_spear[1].current_hp, 180);
+
+        let mut heart_hp_rng = StsRng::new(3);
+        let heart = build_encounter(EncounterId::TheHeart, &mut misc_rng, &mut heart_hp_rng, 20);
+
+        assert_eq!(heart_hp_rng.counter, 0);
+        assert_eq!(heart.len(), 1);
+        assert_eq!(heart[0].current_hp, 800);
+    }
+
+    #[test]
+    fn random_hp_monsters_still_consume_monster_hp_rng() {
+        let mut misc_rng = StsRng::new(1);
+        let mut hp_rng = StsRng::new(2);
+
+        let monsters = build_encounter(EncounterId::JawWorm, &mut misc_rng, &mut hp_rng, 0);
+
+        assert_eq!(monsters.len(), 1);
+        assert_eq!(hp_rng.counter, 1);
     }
 }
