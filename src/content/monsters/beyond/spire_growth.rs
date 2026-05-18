@@ -153,3 +153,120 @@ impl MonsterBehavior for SpireGrowth {
         actions
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::{EnemyId, MonsterRollContext};
+    use crate::runtime::combat::{Power, PowerPayload};
+    use crate::runtime::rng::StsRng;
+
+    fn player_power(power_type: PowerId, amount: i32) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
+
+    fn ctx_with_powers(player_powers: &[Power]) -> MonsterRollContext<'_> {
+        MonsterRollContext {
+            monsters: &[],
+            player_powers,
+        }
+    }
+
+    #[test]
+    fn asc17_without_constricted_forces_constrict_before_rng_branch() {
+        let mut growth = crate::test_support::test_monster(EnemyId::SpireGrowth);
+        growth.move_history_mut().push_back(SMASH);
+        let ctx = ctx_with_powers(&[]);
+
+        let plan =
+            SpireGrowth::roll_move_plan_with_context(&mut StsRng::new(0), &growth, 17, 0, ctx);
+
+        assert_eq!(plan.move_id, CONSTRICT);
+        assert!(matches!(
+            plan.steps.as_slice(),
+            [MoveStep::ApplyPower(
+                crate::semantics::combat::ApplyPowerStep {
+                    power_id: PowerId::Constricted,
+                    amount: 12,
+                    ..
+                }
+            )]
+        ));
+    }
+
+    #[test]
+    fn below_asc17_low_roll_tackle_precedes_constrict_branch() {
+        let growth = crate::test_support::test_monster(EnemyId::SpireGrowth);
+        let ctx = ctx_with_powers(&[]);
+
+        let plan =
+            SpireGrowth::roll_move_plan_with_context(&mut StsRng::new(0), &growth, 16, 49, ctx);
+
+        assert_eq!(plan.move_id, QUICK_TACKLE);
+        assert_eq!(plan.attack().map(|attack| attack.base_damage), Some(18));
+    }
+
+    #[test]
+    fn player_constricted_and_last_two_smash_falls_back_to_tackle() {
+        let mut growth = crate::test_support::test_monster(EnemyId::SpireGrowth);
+        growth.move_history_mut().extend([SMASH, SMASH]);
+        let player_powers = vec![player_power(PowerId::Constricted, 10)];
+        let ctx = ctx_with_powers(&player_powers);
+
+        let plan =
+            SpireGrowth::roll_move_plan_with_context(&mut StsRng::new(0), &growth, 2, 99, ctx);
+
+        assert_eq!(plan.move_id, QUICK_TACKLE);
+        assert_eq!(plan.attack().map(|attack| attack.base_damage), Some(18));
+    }
+
+    #[test]
+    fn constrict_turn_queues_constricted_before_roll_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 17;
+        let growth = crate::test_support::test_monster(EnemyId::SpireGrowth);
+
+        let actions = SpireGrowth::take_turn_plan(&mut state, &growth, &constrict_plan(17));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Constricted,
+                    amount: 12
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn smash_turn_uses_asc2_damage_before_roll_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        let growth = crate::test_support::test_monster(EnemyId::SpireGrowth);
+
+        let actions = SpireGrowth::take_turn_plan(&mut state, &growth, &smash_plan(2));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 25,
+                    damage_kind: DamageKind::Normal
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+}
