@@ -6,6 +6,9 @@ This is the run-level mechanics ledger for the Rust simulator. It complements
 Goal: every mechanism that can change a real run must eventually have a Java
 source owner, Rust owner, status, and acceptance check.
 
+Use `docs/MECHANICS_ACCEPTANCE_STANDARD.md` as the stopping rule. A locked row
+must not be reopened unless the reopen reason matches that standard.
+
 ## Status
 
 ```text
@@ -23,16 +26,25 @@ suspect:
 
 unreviewed:
   no current source-backed claim
+
+unsupported_recorded:
+  source-backed Java behavior is intentionally outside the current simulator
+  scope, with a non-trainable reason recorded
 ```
 
 ## Gates
 
 - A row cannot be `locked` without at least one test or commit.
+- A row cannot be `locked` if a named gameplay branch, RNG consumer,
+  visibility rule, or executor/mask divergence remains unreviewed.
 - "Looks right" is not a status.
 - If Java behavior is UI/VFX-hosted, record the UI/VFX file and the extracted
   non-UI mechanic.
 - If a mechanism is intentionally not implemented, record the exact unsupported
   Java behavior and why it is non-trainable or out of scope.
+- Locked rows are skipped by default in future passes. Reopen only for a failed
+  test, a new Java owner/call path, a touched Rust owner/shared helper, a live
+  truth contradiction, or an explicit remaining-risk item.
 
 ## Current Audit Table
 
@@ -70,11 +82,14 @@ Potion top-panel use timing and remaining concrete potion affordances
 Monster private intent state
 ```
 
-For each relic:
+For each packet:
 
-1. Open the concrete Java relic file and any VFX/screen helper it calls.
-2. Identify whether it uses ordinary obtain, manual deck mutation, reward screen,
-   or selection screen.
+1. Check whether the ledger row is already locked. If so, require a reopen
+   reason before reading broad source trees.
+2. Open the concrete Java owner file and any VFX/screen/helper file it calls.
+3. Identify whether it uses ordinary obtain, manual mutation, reward screen,
+   selection screen, RNG, visibility, or execution-time state.
 3. Compare with the Rust owner.
 4. Add one narrow regression per ordering or interception point.
-5. Update this ledger and `docs/NEXT_AI_HANDOFF.md`.
+5. Update this ledger, `docs/JAVA_SOURCE_MAP.md`, and
+   `docs/NEXT_AI_HANDOFF.md`.

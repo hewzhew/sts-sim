@@ -13,18 +13,23 @@ any resumed turn, read only:
 
 1. `git status --short`
 2. `git log --oneline -5`
-3. this file
+3. `docs/MECHANICS_ACCEPTANCE_STANDARD.md`
+4. this file
 
 Do not re-read broad source trees just to rediscover recent state. Use this file
 to choose the next narrow Java/Rust evidence packet.
 
 When selecting that packet, prefer the durable indexes:
 
+- `docs/MECHANICS_ACCEPTANCE_STANDARD.md`
 - `docs/JAVA_SOURCE_MAP.md`
 - `docs/MECHANICS_AUDIT_LEDGER.md`
 
 Update those files whenever a Java source owner, Rust owner, audit status, or
 next-lane recommendation changes.
+
+Before rechecking any already locked mechanism, require a reopen reason from
+the acceptance standard. The default action for locked work is to move on.
 
 ## Current Rule
 
@@ -39,6 +44,7 @@ Allowed:
 - Keep UI-tied Java behavior only when it mutates gameplay state, consumes
   gameplay RNG, gates choices, changes visibility, or affects replay.
 - Encode resolved source comparisons as tests, audit notes, and commits.
+- Treat the acceptance standard as the stopping rule for mechanics cleanup.
 
 Forbidden:
 
@@ -48,6 +54,7 @@ Forbidden:
 - Treating Java private mechanical fields as inferable from `move_history`
   unless Java itself only uses history.
 - Re-reading large trees after compaction without first checking this file.
+- Re-auditing locked mechanisms without an explicit reopen reason.
 
 ## Latest Mechanics Checkpoint
 
