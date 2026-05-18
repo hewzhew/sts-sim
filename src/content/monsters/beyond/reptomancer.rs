@@ -126,12 +126,156 @@ mod tests {
         assert!(actions.iter().any(|action| matches!(
             action,
             Action::ApplyPower {
-                source,
+                source: 2,
                 target: 2,
                 power_id: PowerId::Minion,
                 amount: -1,
-            } if *source == reptomancer.id
+            }
         )));
+    }
+
+    #[test]
+    fn pre_battle_maps_initial_dagger_slots_by_java_group_index() {
+        let mut left_dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        left_dagger.id = 2;
+        let mut reptomancer = crate::test_support::test_monster(EnemyId::Reptomancer);
+        reptomancer.id = 10;
+        let mut right_dagger = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        right_dagger.id = 3;
+        let mut state = crate::test_support::combat_with_monsters(vec![
+            left_dagger,
+            reptomancer.clone(),
+            right_dagger,
+        ]);
+
+        let _ = Reptomancer::use_pre_battle_actions(
+            &mut state,
+            &reptomancer,
+            PreBattleLegacyRng::MonsterHp,
+        );
+
+        let stored = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == reptomancer.id)
+            .unwrap();
+        assert_eq!(
+            stored.reptomancer.dagger_slots,
+            [Some(3), Some(2), None, None],
+            "Java usePreBattleAction stores daggers after Reptomancer in daggers[0] and before it in daggers[1]"
+        );
+    }
+
+    #[test]
+    fn a18_spawn_fills_first_available_java_dagger_slots_before_roll() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 18;
+        let mut reptomancer = crate::test_support::test_monster(EnemyId::Reptomancer);
+        reptomancer.id = 10;
+        reptomancer.reptomancer.protocol_seeded = true;
+        reptomancer.reptomancer.first_move = false;
+        reptomancer.reptomancer.dagger_slots = [None, None, None, None];
+        state.entities.monsters = vec![reptomancer.clone()];
+
+        let actions = Reptomancer::take_turn_plan(&mut state, &reptomancer, &spawn_dagger_plan());
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::SpawnReptomancerDagger {
+                    reptomancer_id: 10,
+                    slot: 0,
+                    hp: SpawnHpSpec {
+                        current: SpawnHpValue::Rolled,
+                        max: SpawnHpValue::Rolled,
+                    },
+                    logical_position: Reptomancer::DAGGER_DRAW_X[0],
+                    protocol_draw_x: Some(Reptomancer::DAGGER_DRAW_X[0]),
+                },
+                Action::SpawnReptomancerDagger {
+                    reptomancer_id: 10,
+                    slot: 1,
+                    hp: SpawnHpSpec {
+                        current: SpawnHpValue::Rolled,
+                        max: SpawnHpValue::Rolled,
+                    },
+                    logical_position: Reptomancer::DAGGER_DRAW_X[1],
+                    protocol_draw_x: Some(Reptomancer::DAGGER_DRAW_X[1]),
+                },
+                Action::RollMonsterMove { monster_id: 10 },
+            ],
+            "Java loops daggers[0..] and at A18 spawns two daggers before the queued RollMoveAction"
+        );
+    }
+
+    #[test]
+    fn can_spawn_counts_zero_hp_and_escaped_non_dying_monsters_like_java() {
+        let mut reptomancer = crate::test_support::test_monster(EnemyId::Reptomancer);
+        reptomancer.id = 10;
+        reptomancer.reptomancer.protocol_seeded = true;
+        reptomancer.reptomancer.first_move = false;
+
+        let mut zero_hp = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        zero_hp.id = 2;
+        zero_hp.current_hp = 0;
+        zero_hp.is_dying = false;
+        let mut escaped = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        escaped.id = 3;
+        escaped.is_escaped = true;
+        escaped.is_dying = false;
+        let mut ordinary = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        ordinary.id = 4;
+        let mut fourth = crate::test_support::test_monster(EnemyId::SnakeDagger);
+        fourth.id = 5;
+        let state = crate::test_support::combat_with_monsters(vec![
+            reptomancer.clone(),
+            zero_hp,
+            escaped,
+            ordinary,
+            fourth,
+        ]);
+
+        let plan = roll_move_custom_plan(
+            &mut StsRng::new(0),
+            &reptomancer,
+            0,
+            50,
+            &state.entities.monsters,
+        );
+
+        assert_eq!(
+            plan.move_id, SNAKE_STRIKE,
+            "Java canSpawn skips only self and isDying, so zero-HP or escaped non-dying monsters still count toward the aliveCount cap"
+        );
+    }
+
+    #[test]
+    fn snake_strike_queues_two_damage_hits_then_weak_then_roll() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 3;
+        let mut reptomancer = crate::test_support::test_monster(EnemyId::Reptomancer);
+        reptomancer.id = 10;
+
+        let actions = Reptomancer::take_turn_plan(&mut state, &reptomancer, &snake_strike_plan(3));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack { base_damage, .. },
+                Action::MonsterAttack {
+                    base_damage: base_damage2,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 10,
+                    target: PLAYER,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 10 },
+            ] if *base_damage == 16 && *base_damage2 == 16
+        ));
     }
 }
 
@@ -352,7 +496,7 @@ impl MonsterBehavior for Reptomancer {
             .iter()
             .filter(|monster| monster.id != entity.id)
             .map(|monster| Action::ApplyPower {
-                source: entity.id,
+                source: monster.id,
                 target: monster.id,
                 power_id: PowerId::Minion,
                 amount: -1,

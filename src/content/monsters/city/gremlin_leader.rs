@@ -148,19 +148,19 @@ mod tests {
             actions,
             vec![
                 Action::ApplyPower {
-                    source: leader.id,
+                    source: 2,
                     target: 2,
                     power_id: PowerId::Minion,
                     amount: -1,
                 },
                 Action::ApplyPower {
-                    source: leader.id,
+                    source: 3,
                     target: 3,
                     power_id: PowerId::Minion,
                     amount: -1,
                 },
             ],
-            "Java MinionPower constructor never sets amount, so AbstractPower.amount remains the sentinel -1"
+            "Java ApplyPowerAction uses the minion as source and target, while MinionPower amount remains the sentinel -1"
         );
     }
 
@@ -497,7 +497,7 @@ impl MonsterBehavior for GremlinLeader {
         Self::living_ally_ids(state, entity.id)
             .into_iter()
             .map(|ally_id| Action::ApplyPower {
-                source: entity.id,
+                source: ally_id,
                 target: ally_id,
                 power_id: PowerId::Minion,
                 amount: -1,
