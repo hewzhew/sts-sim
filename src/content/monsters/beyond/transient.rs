@@ -91,7 +91,7 @@ impl MonsterBehavior for Transient {
                 source: entity.id,
                 target: entity.id,
                 power_id: PowerId::Shifting,
-                amount: 1,
+                amount: -1,
             },
         ]
     }
@@ -112,13 +112,13 @@ impl MonsterBehavior for Transient {
     ) -> Vec<Action> {
         match (plan.move_id, plan.steps.as_slice()) {
             (ATTACK, [MoveStep::Attack(attack)]) => {
-                let mut actions = attack_actions(entity.id, PLAYER, &attack.attack);
                 let next_count = runtime(entity).count + 1;
-                actions.push(transient_runtime_update(entity, next_count));
+                let mut actions = vec![transient_runtime_update(entity, next_count)];
                 actions.push(set_next_move_action(
                     entity,
                     attack_plan_for_count(state.meta.ascension_level, next_count.max(0) as usize),
                 ));
+                actions.extend(attack_actions(entity.id, PLAYER, &attack.attack));
                 actions
             }
             (move_id, steps) => panic!("transient plan/steps mismatch: {} {:?}", move_id, steps),
@@ -131,6 +131,57 @@ mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
     use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn pre_battle_fading_and_shifting_match_java_amounts() {
+        let mut state = crate::test_support::blank_test_combat();
+        let transient = crate::test_support::test_monster(EnemyId::Transient);
+
+        let normal = Transient::use_pre_battle_actions(
+            &mut state,
+            &transient,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+        state.meta.ascension_level = 17;
+        let asc17 = Transient::use_pre_battle_actions(
+            &mut state,
+            &transient,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+
+        assert!(matches!(
+            normal.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Fading,
+                    amount: 5
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Shifting,
+                    amount: -1
+                }
+            ]
+        ));
+        assert!(matches!(
+            asc17.as_slice(),
+            [
+                Action::ApplyPower {
+                    power_id: PowerId::Fading,
+                    amount: 6,
+                    ..
+                },
+                Action::ApplyPower {
+                    power_id: PowerId::Shifting,
+                    amount: -1,
+                    ..
+                }
+            ]
+        ));
+    }
 
     #[test]
     fn imported_count_not_history_length_drives_attack_damage() {
@@ -165,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn take_turn_increments_runtime_count_and_sets_next_damage() {
+    fn take_turn_updates_count_and_next_move_before_queued_damage_like_java() {
         let mut state = crate::test_support::blank_test_combat();
         state.meta.ascension_level = 0;
         state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::Transient)];
@@ -178,10 +229,6 @@ mod tests {
         assert!(matches!(
             actions.as_slice(),
             [
-                Action::MonsterAttack {
-                    base_damage: 40,
-                    ..
-                },
                 Action::UpdateMonsterRuntime {
                     patch: MonsterRuntimePatch::Transient {
                         count: Some(2),
@@ -193,9 +240,13 @@ mod tests {
                     next_move_byte: ATTACK,
                     ..
                 },
+                Action::MonsterAttack {
+                    base_damage: 40,
+                    ..
+                },
             ]
         ));
-        match &actions[2] {
+        match &actions[1] {
             Action::SetMonsterMove {
                 planned_visible_spec,
                 ..

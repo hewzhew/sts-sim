@@ -1076,6 +1076,15 @@ mod tests {
             -2,
             "Java MasterRealityPower has AbstractPower.amount == -1 and duplicate ApplyPowerAction uses default stackPower(-1)"
         );
+
+        let mut shifting_state = blank_test_combat();
+        handle_apply_power(0, 0, PowerId::Shifting, -1, &mut shifting_state);
+        handle_apply_power(0, 0, PowerId::Shifting, -1, &mut shifting_state);
+        assert_eq!(
+            store::power_amount(&shifting_state, 0, PowerId::Shifting),
+            -2,
+            "Java ShiftingPower inherits AbstractPower.amount == -1 and duplicate ApplyPowerAction uses default stackPower(-1)"
+        );
     }
 
     #[test]
