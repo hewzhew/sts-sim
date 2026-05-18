@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `3f90fe6 Match Java discard temp card amount gate`
+- `773cc7a Lock stasis and discard deck generated card semantics`
 
 Recent commits:
 
+- `773cc7a Lock stasis and discard deck generated card semantics`
 - `3f90fe6 Match Java discard temp card amount gate`
 - `59ce922 Lock draw pile large temp card semantics`
 - `5531d87 Update handoff after potion hand card audit`
@@ -58,6 +59,52 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`773cc7a` summary:
+
+- Finished the immediate Stasis / discard+deck follow-up from the discard
+  generated-card audit without changing business code.
+- Java checked again:
+  - `D:\rust\cardcrawl\powers\StasisPower.java`
+  - `D:\rust\cardcrawl\actions\common\MakeTempCardInHandAction.java`
+  - `D:\rust\cardcrawl\actions\common\MakeTempCardInDiscardAction.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndAddToHandEffect.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndAddToDiscardEffect.java`
+  - `D:\rust\cardcrawl\actions\common\MakeTempCardInDiscardAndDeckAction.java`
+- Java result:
+  - `StasisPower.onDeath()` chooses hand vs discard based on hand size at
+    death time.
+  - If Stasis queues the hand action, `MakeTempCardInHandAction` can still
+    overflow to discard at execution time if the hand is full by then.
+  - In that overflow case, the same-UUID source card keeps the constructor-time
+    Master Reality upgrade, while the discard visual copy upgrade does not
+    affect the inserted source card.
+  - Direct full-hand Stasis discard uses `MakeTempCardInDiscardAction(card,
+    true)`, whose same-UUID constructor deliberately skips Master Reality.
+  - `MakeTempCardInDiscardAndDeckAction` creates separate stat-equivalent draw
+    and discard copies. Each destination effect applies one Master Reality
+    upgrade to its inserted non-status/non-curse card.
+- Rust result:
+  - Existing implementation already matched these paths.
+  - Added regressions for Stasis queued-hand overflow and discard+deck one
+    Master Reality upgrade per destination.
+
+Verification for `773cc7a`:
+
+- `cargo test master_reality --all-targets` -> `8 passed`
+- `cargo fmt` was run; the two known unrelated rustfmt noise files were
+  restored afterwards.
+- `cargo test --all-targets` -> `1354 passed`
+
+Next narrow packet:
+
+- Continue generated-card cleanup into source-copy / UUID / misc propagation:
+  - Recheck `makeStatEquivalentCopy`, `makeSameInstanceOf`, and `triggerWhenCopied`
+    assumptions against Java for remaining hand/draw/discard/exhaust generation.
+  - Watch delayed powers that store card snapshots, especially Nightmare,
+    Stasis, and generation powers that queue later copies.
+  - Keep the Exordium monster helper on the watch list as a separate monster
+    status-card path, not a player Master Reality path.
 
 `3f90fe6` summary:
 
