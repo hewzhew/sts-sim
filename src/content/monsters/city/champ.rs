@@ -20,6 +20,197 @@ const GLOAT: u8 = 5;
 const TAUNT: u8 = 6;
 const ANGER: u8 = 7;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    fn champ() -> MonsterEntity {
+        crate::test_support::test_monster(EnemyId::Champ)
+    }
+
+    #[test]
+    fn roll_move_crossing_half_hp_sets_anger_and_runtime_like_java() {
+        let mut champ = champ();
+        champ.current_hp = champ.max_hp / 2 - 1;
+        champ.champ.num_turns = 2;
+
+        let plan = Champ::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &champ, 4, 99);
+        let actions = Champ::on_roll_move(4, &champ, 99, &plan);
+
+        assert_eq!(plan.move_id, ANGER);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                monster_id,
+                patch: MonsterRuntimePatch::Champ {
+                    first_turn: None,
+                    num_turns: Some(3),
+                    forge_times: Some(0),
+                    threshold_reached: Some(true),
+                    protocol_seeded: Some(true),
+                },
+            }] if *monster_id == champ.id
+        ));
+    }
+
+    #[test]
+    fn threshold_reached_forces_execute_unless_last_or_last_before_execute() {
+        let mut champ = champ();
+        champ.champ.threshold_reached = true;
+        champ.move_history_mut().push_back(HEAVY_SLASH);
+
+        let execute =
+            Champ::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &champ, 4, 99);
+        assert_eq!(execute.move_id, EXECUTE);
+
+        champ.move_history_mut().clear();
+        champ.move_history_mut().push_back(EXECUTE);
+        champ.move_history_mut().push_back(HEAVY_SLASH);
+        let blocked =
+            Champ::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &champ, 4, 99);
+        assert_eq!(
+            blocked.move_id, FACE_SLAP,
+            "Java blocks Execute when lastMoveBefore(EXECUTE), then falls through to the Heavy Slash fallback, which becomes Face Slap if Heavy Slash was last"
+        );
+    }
+
+    #[test]
+    fn fourth_pre_threshold_roll_forces_taunt_and_resets_counter_like_java() {
+        let mut champ = champ();
+        champ.champ.num_turns = 3;
+
+        let plan = Champ::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &champ, 4, 99);
+        let actions = Champ::on_roll_move(4, &champ, 99, &plan);
+
+        assert_eq!(plan.move_id, TAUNT);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::Champ {
+                    num_turns: Some(0),
+                    threshold_reached: Some(false),
+                    ..
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn defensive_stance_roll_cap_and_forge_counter_match_java_ascension_rules() {
+        let mut champ = champ();
+        champ.champ.num_turns = 1;
+
+        let below_a19 =
+            Champ::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &champ, 18, 30);
+        assert_eq!(
+            below_a19.move_id, GLOAT,
+            "Below A19 Java only permits Defensive Stance on num <= 15, so num 30 falls through to Gloat"
+        );
+
+        let a19 = Champ::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &champ, 19, 30);
+        let actions = Champ::on_roll_move(19, &champ, 30, &a19);
+
+        assert_eq!(a19.move_id, DEFENSIVE_STANCE);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::Champ {
+                    num_turns: Some(2),
+                    forge_times: Some(1),
+                    ..
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn anger_take_turn_clears_debuffs_shackled_then_gains_strength_before_roll() {
+        let mut champ = champ();
+        champ.id = 17;
+        let mut state = crate::test_support::combat_with_monsters(vec![champ.clone()]);
+        state.meta.ascension_level = 19;
+
+        let actions = Champ::take_turn_plan(&mut state, &champ, &anger_plan(19));
+
+        assert_eq!(
+            actions,
+            vec![
+                champ_runtime_update(&champ, Some(false), None, None, None),
+                Action::RemoveAllDebuffs { target: 17 },
+                Action::RemovePower {
+                    target: 17,
+                    power_id: PowerId::Shackled,
+                },
+                Action::ApplyPower {
+                    source: 17,
+                    target: 17,
+                    power_id: PowerId::Strength,
+                    amount: 12,
+                },
+                Action::RollMonsterMove { monster_id: 17 },
+            ]
+        );
+    }
+
+    #[test]
+    fn face_slap_and_taunt_queue_debuffs_in_java_order() {
+        let mut champ = champ();
+        champ.id = 23;
+        champ.champ.first_turn = false;
+        let mut state = crate::test_support::combat_with_monsters(vec![champ.clone()]);
+        state.meta.ascension_level = 4;
+
+        let slap_actions = Champ::take_turn_plan(&mut state, &champ, &face_slap_plan(4));
+        assert!(matches!(
+            slap_actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 23,
+                    target: PLAYER,
+                    base_damage: 14,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 23,
+                    target: PLAYER,
+                    power_id: PowerId::Frail,
+                    amount: 2
+                },
+                Action::ApplyPower {
+                    source: 23,
+                    target: PLAYER,
+                    power_id: PowerId::Vulnerable,
+                    amount: 2
+                },
+                Action::RollMonsterMove { monster_id: 23 },
+            ]
+        ));
+
+        let taunt_actions = Champ::take_turn_plan(&mut state, &champ, &taunt_plan());
+        assert!(matches!(
+            taunt_actions.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 23,
+                    target: PLAYER,
+                    power_id: PowerId::Weak,
+                    amount: 2
+                },
+                Action::ApplyPower {
+                    source: 23,
+                    target: PLAYER,
+                    power_id: PowerId::Vulnerable,
+                    amount: 2
+                },
+                Action::RollMonsterMove { monster_id: 23 },
+            ]
+        ));
+    }
+}
+
 fn slash_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 4 {
         18
