@@ -45,15 +45,37 @@ Forbidden:
 
 Branch tip:
 
-- `556788e Fix monster during-turn power timing`
+- `4fd646b Use Java basically-dead flags for victory settlement`
 
 Recent commits:
 
+- `4fd646b Use Java basically-dead flags for victory settlement`
 - `556788e Fix monster during-turn power timing`
 - `5ed419b Update handoff after pre-battle RNG audit`
 - `894274a Fix monster pre-battle RNG stream`
 - `347e96c Update handoff after monster factory RNG audit`
-- `3d4805e Fix monster factory constructor RNG parity`
+
+`4fd646b` summary:
+
+- Java `MonsterGroup.areMonstersBasicallyDead()` and Rust
+  `settle_victory_if_ready` were checked after the `MonsterGroup` lifecycle
+  packet exposed the filter mismatch.
+- Fixed Rust victory settlement to use the same Java predicate:
+  - Java `areMonstersBasicallyDead()` only treats monsters as absent when they
+    are `isDying` or `isEscaping`.
+  - Java does not treat `currentHealth <= 0` as basically dead by itself.
+  - Rust previously inferred victory from `current_hp <= 0` unless rebirth
+    powers were present.
+  - Rust now delegates victory readiness to
+    `CombatState::are_monsters_basically_dead_java()`.
+- Added a regression test proving a zero-HP monster that is not dying/escaping
+  does not settle combat victory.
+
+Verification for `4fd646b`:
+
+- `cargo test victory_settlement_uses_java_basically_dead_flags_not_zero_hp --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1328 passed`
 
 `556788e` summary:
 
@@ -993,7 +1015,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `556788e` before this handoff
+No uncommitted code changes were present after `4fd646b` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -1151,6 +1173,10 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   `FadingPower` and `ExplosivePower` override `duringTurn()`, so Rust now
   handles those in a dedicated per-monster hook instead of the group-level
   `applyEndOfTurnPowers()` pass.
+- Victory settlement basically-dead predicate: fixed in `4fd646b`. Rust
+  `settle_victory_if_ready` now uses Java `MonsterGroup.areMonstersBasicallyDead()`
+  semantics (`isDying || isEscaping`) instead of inferring victory from
+  `current_hp <= 0`.
 
 Source suspicion remaining after `5fe09ea`:
 
@@ -1268,6 +1294,8 @@ Recommended next packets:
      `894274a`.
    - Java `GameActionManager` per-monster `applyTurnPowers()` timing was
      fixed/locked in `556788e`.
+   - Java `MonsterGroup.areMonstersBasicallyDead()` victory readiness was
+     fixed/locked in `4fd646b`.
    - Next narrow packet: finish the remaining Java `MonsterGroup` lifecycle
      filter/order details vs Rust combat lifecycle
      (`D:\rust\cardcrawl\monsters\MonsterGroup.java`,
