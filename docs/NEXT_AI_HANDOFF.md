@@ -45,15 +45,39 @@ Forbidden:
 
 Branch tip:
 
-- `52fb5c8 Make relic counter hooks mutate immediately`
+- `c52b087 Make Necronomicon activation mutate immediately`
 
 Recent commits:
 
+- `c52b087 Make Necronomicon activation mutate immediately`
 - `52fb5c8 Make relic counter hooks mutate immediately`
 - `227a871 Route Orange Pellets turn reset through relic hook`
 - `c0fbef0 Sync Velvet Choker public counter hooks`
 - `11f3e13 Update handoff after initial combat hook audit`
-- `3fda120 Match Java initial combat hook queue order`
+
+`c52b087` summary:
+
+- Java checked:
+  - `Necronomicon`, `Lantern`, and `UnceasingTop`.
+- Fixed Necronomicon activation timing:
+  - Java `Necronomicon.onUseCard()` sets private `activated = false`
+    synchronously before enqueuing the replayed attack.
+  - Rust modeled availability as `RelicState.used_up`, but was changing it via
+    queued `Action::UpdateRelicUsedUp`.
+  - Rust now mutates `used_up` immediately in `on_use_card`, and
+    `at_turn_start` immediately restores it to `false`.
+- Confirmed by source/test review:
+  - Lantern first-turn state is already synchronous via `used_up`.
+  - Unceasing Top already stores `canDraw` in `amount` and
+    `disabledUntilEndOfTurn` in `used_up`, with mechanical UI/screen gates
+    intentionally represented only where they affect headless legality.
+
+Verification for `c52b087`:
+
+- `cargo test necronomicon --all-targets` -> `3 passed`
+- `cargo test unceasing_top --all-targets` -> `1 passed`
+- `cargo test lantern --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1337 passed`
 
 `52fb5c8` summary:
 
