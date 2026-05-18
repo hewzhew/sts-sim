@@ -905,13 +905,15 @@ pub fn tick_run(
                                 use crate::state::events::EventId;
                                 event_state.internal_state = match event_id {
                                     EventId::Nloth => crate::content::events::nloth::init_nloth_state(run_state),
-                                    EventId::WeMeetAgain => crate::content::events::we_meet_again::init_we_meet_again_state(run_state),
                                     EventId::DeadAdventurer => crate::content::events::dead_adventurer::init_dead_adventurer_state(run_state),
                                     EventId::Designer => crate::content::events::designer::init_designer_state(run_state),
                                     EventId::WorldOfGoop => crate::content::events::goop_puddle::init_goop_puddle_state(run_state),
                                     EventId::Falling => crate::content::events::falling::init_falling_state(run_state),
                                     _ => 0,
                                 };
+                                if event_id == EventId::WeMeetAgain {
+                                    crate::content::events::we_meet_again::init_we_meet_again_event_state(run_state, &mut event_state);
+                                }
                                 // Events with extra_data init (complex state)
                                 if event_id == EventId::MatchAndKeep {
                                     crate::content::events::match_and_keep::init_match_game_board(

@@ -626,14 +626,25 @@ pub fn try_build_event_state_from_screen_state(
     current_screen: usize,
     screen_state: &Value,
 ) -> Option<EventState> {
+    if event_id == EventId::WeMeetAgain && current_screen == 0 {
+        let (internal_state, extra_data) = decode_we_meet_again_state_fields(
+            run_state,
+            screen_state.get("event_semantics_state")?,
+        )?;
+        return Some(EventState {
+            id: event_id,
+            current_screen,
+            internal_state,
+            completed: false,
+            combat_pending: false,
+            extra_data,
+        });
+    }
+
     let internal_state = match event_id {
         EventId::Designer if current_screen == 1 => {
             decode_designer_internal_state(screen_state.get("event_semantics_state")?)?
         }
-        EventId::WeMeetAgain if current_screen == 0 => decode_we_meet_again_internal_state(
-            run_state,
-            screen_state.get("event_semantics_state")?,
-        )?,
         EventId::Falling if current_screen == 1 => {
             decode_falling_internal_state(run_state, screen_state.get("event_semantics_state")?)?
         }
@@ -656,17 +667,12 @@ pub fn event_semantics_state(run_state: &RunState, event_state: &EventState) -> 
             "clean_up_removes_cards": event_state.internal_state & 2 != 0,
         })),
         EventId::WeMeetAgain if event_state.current_screen == 0 => {
-            let potion_slot = ((event_state.internal_state >> 16) & 0xFF) as usize;
+            let potion_slot = ((event_state.internal_state >> 8) & 0xFF) as usize;
             let gold_amount = event_state.internal_state & 0xFF;
-            let card_idx = ((event_state.internal_state >> 8) & 0xFF) as usize;
             Some(json!({
                 "potion_slot": if potion_slot == 0xFF { None } else { Some(potion_slot) },
                 "gold_amount": gold_amount,
-                "card_uuid": if card_idx == 0xFF {
-                    None
-                } else {
-                    run_state.master_deck.get(card_idx).map(|card| card.uuid)
-                },
+                "card_uuid": event_state.extra_data.first().copied().filter(|&uuid| uuid >= 0).map(|uuid| uuid as u32),
             }))
         }
         EventId::Falling if event_state.current_screen == 1 => {
@@ -712,10 +718,10 @@ fn decode_designer_internal_state(event_semantics_state: &Value) -> Option<i32> 
     Some(adjust_upgrades_one | (clean_up_removes_cards << 1))
 }
 
-fn decode_we_meet_again_internal_state(
+fn decode_we_meet_again_state_fields(
     run_state: &RunState,
     event_semantics_state: &Value,
-) -> Option<i32> {
+) -> Option<(i32, Vec<i32>)> {
     let potion_slot = event_semantics_state
         .get("potion_slot")
         .and_then(|value| {
@@ -741,16 +747,11 @@ fn decode_we_meet_again_internal_state(
             }
         })
         .map(|uuid| uuid as u32);
-    let card_idx = card_uuid
-        .and_then(|uuid| {
-            run_state
-                .master_deck
-                .iter()
-                .position(|card| card.uuid == uuid)
-                .map(|idx| idx as i32)
-        })
-        .unwrap_or(0xFF);
-    Some(gold_amount | (card_idx << 8) | ((potion_slot as i32) << 16))
+    let card_uuid = card_uuid
+        .filter(|uuid| run_state.master_deck.iter().any(|card| card.uuid == *uuid))
+        .map(|uuid| uuid as i32)
+        .unwrap_or(-1);
+    Some((gold_amount | ((potion_slot as i32) << 8), vec![card_uuid]))
 }
 
 fn decode_falling_internal_state(
@@ -1055,14 +1056,13 @@ mod tests {
             CardId::PommelStrike,
             90_101,
         ));
-        let card_idx = rs.master_deck.len() - 1;
         let event_state = EventState {
             id: EventId::WeMeetAgain,
             current_screen: 0,
-            internal_state: 75 | ((card_idx as i32) << 8),
+            internal_state: 75,
             completed: false,
             combat_pending: false,
-            extra_data: Vec::new(),
+            extra_data: vec![90_101],
         };
 
         let semantics = event_semantics_state(&rs, &event_state).unwrap();
@@ -1076,6 +1076,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(rebuilt.internal_state, event_state.internal_state);
+        assert_eq!(rebuilt.extra_data, event_state.extra_data);
     }
 
     #[test]
