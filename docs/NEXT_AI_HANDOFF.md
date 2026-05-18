@@ -45,15 +45,29 @@ Forbidden:
 
 Branch tip:
 
-- `aa55e3d Use Java sentinel amounts for guardian powers`
+- `dc4622d Fix book of stabbing sentinel parity`
 
 Recent commits:
 
+- `dc4622d Fix book of stabbing sentinel parity`
+- `250caf9 Update handoff after guardian sentinel audit`
 - `aa55e3d Use Java sentinel amounts for guardian powers`
 - `632492c Fix snecko confusion amount parity`
 - `61e1b00 Update handoff after snecko audit`
-- `4316cb0 Update handoff after snake plant audit`
-- `1ad40f2 Add snake plant move parity tests`
+
+`dc4622d` summary:
+
+- `BookOfStabbing` Java/Rust behavior was checked.
+- Fixed pre-battle `PainfulStabsPower` to use Java sentinel amount `-1`.
+- Added tests for Painful Stabs pre-battle application, `stabCount` growth
+  before visible hit count, A18 Big Stab incrementing future `stabCount`, and
+  STAB take-turn multi-hit execution before `RollMonsterMove`.
+
+Verification for `dc4622d`:
+
+- `cargo test book_of_stabbing --all-targets` -> `5 passed`
+- `cargo test painful_stabs --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1227 passed`
 
 `aa55e3d` summary:
 
@@ -241,7 +255,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `aa55e3d`.
+No uncommitted changes were present after `dc4622d`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -279,6 +293,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   ordering, and the `lastTwoMoves(BITE)` Tail rule.
 - `SphericGuardian`: fixed in `aa55e3d`. Pre-battle Barricade now uses Java
   sentinel amount `-1`; tests lock Barricade, Artifact, and opening block order.
+- `BookOfStabbing`: fixed in `dc4622d`. Pre-battle Painful Stabs now uses Java
+  sentinel amount `-1`; tests lock `stabCount` roll-time growth and STAB
+  multi-hit execution.
 
 Split / victory timing:
 
@@ -339,10 +356,11 @@ Recommended next packets:
    - `SnakePlant` was checked in `1ad40f2`.
    - `Snecko` was fixed across `632492c` and `aa55e3d`.
    - `SphericGuardian` was fixed in `aa55e3d`.
-   - Next narrow packet: `BookOfStabbing`
-     (`D:\rust\cardcrawl\monsters\city\BookOfStabbing.java` and
-     `src/content/monsters/city/book_of_stabbing.rs`). It exercises private
-     stab count growth, multi-hit damage, and post-turn `RollMoveAction`.
+   - `BookOfStabbing` was fixed in `dc4622d`.
+   - Next narrow packet: `Chosen`
+     (`D:\rust\cardcrawl\monsters\city\Chosen.java` and
+     `src/content/monsters/city/chosen.rs`). It exercises first-turn private
+     state, Hex / debuff ordering, and A17+ move rules.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
