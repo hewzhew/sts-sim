@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `a75011b Match obtain hook order with Java`
+- `8e4b627 Match Golden Wing purge screen flow`
 
 Recent commits:
 
+- `8e4b627 Match Golden Wing purge screen flow`
 - `a75011b Match obtain hook order with Java`
 - `5e0aff5 Match Vampires strike removal order`
 - `c5a3cd5 Update handoff after Drug Dealer audit`
@@ -75,6 +76,33 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`8e4b627` summary:
+
+- Continued the event/master-deck mutation audit into Golden Wing.
+- Java checked:
+  - `D:\rust\cardcrawl\events\exordium\GoldenWing.java`
+  - `D:\rust\cardcrawl\helpers\CardHelper.java`
+- Java result:
+  - The remove-card path first damages the player and changes the event to
+    the `PURGE` screen.
+  - Only the next button press opens
+    `CardGroup.getGroupWithoutBottledCards(player.masterDeck.getPurgeableCards())`.
+  - The selected card is then removed through ordinary
+    `player.masterDeck.removeCard(c)`.
+  - The attack option's availability uses `CardHelper.hasCardWithXDamage(10)`,
+    which scans all master-deck attack cards and checks their `baseDamage`.
+- Rust result:
+  - Golden Wing no longer collapses damage and deck selection into one action.
+  - `current_screen = 1` now represents Java's `PURGE` screen and exposes a
+    proceed action; that second action opens the non-bottled purge selection.
+  - Existing removal still uses ordinary hook-preserving
+    `remove_card_from_deck_with_source`.
+
+Verification for `8e4b627`:
+
+- `cargo test golden_wing --all-targets` -> `7 passed`
+- `cargo test --all-targets` -> `1367 passed`
 
 `a75011b` summary:
 
