@@ -421,4 +421,62 @@ mod tests {
             } if card.id == CardId::Doubt
         )));
     }
+
+    #[test]
+    fn low_floor_desire_gold_resolves_before_normality_obtain_hooks() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.floor_num = 40;
+        rs.relics.push(RelicState::new(RelicId::CeramicFish));
+        rs.event_state = Some(EventState::new(EventId::MindBloom));
+        rs.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 2);
+
+        let events = rs.take_emitted_events();
+        let desire_gold_pos = events
+            .iter()
+            .position(|event| matches!(
+                event,
+                DomainEvent::GoldChanged {
+                    delta: 999,
+                    source: DomainEventSource::Event(EventId::MindBloom),
+                    ..
+                }
+            ))
+            .expect("Mind Bloom low-floor Desire should gain 999 gold before queued Normalities resolve");
+        let fish_gold_positions = events
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, event)| match event {
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::MindBloom),
+                    ..
+                } => Some(idx),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let normality_positions = events
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, event)| match event {
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Event(EventId::MindBloom),
+                } if card.id == CardId::Normality => Some(idx),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(fish_gold_positions.len(), 2);
+        assert_eq!(normality_positions.len(), 2);
+        assert!(
+            desire_gold_pos < fish_gold_positions[0]
+                && fish_gold_positions[0] < normality_positions[0]
+                && normality_positions[0] < fish_gold_positions[1]
+                && fish_gold_positions[1] < normality_positions[1],
+            "Java MindBloom gains 999 gold immediately, then each queued Normality ShowCardAndObtainEffect runs onObtainCard before Soul.obtain"
+        );
+    }
 }

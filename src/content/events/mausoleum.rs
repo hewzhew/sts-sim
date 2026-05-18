@@ -187,4 +187,59 @@ mod tests {
             .iter()
             .any(|card| card.id == CardId::Writhe));
     }
+
+    #[test]
+    fn newly_obtained_ceramic_fish_triggers_before_writhe_obtained_event() {
+        let mut run_state = mausoleum_run();
+        run_state.common_relic_pool = vec![RelicId::CeramicFish];
+        run_state.uncommon_relic_pool = vec![RelicId::CeramicFish];
+        run_state.rare_relic_pool = vec![RelicId::CeramicFish];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let events = run_state.take_emitted_events();
+        let relic_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::RelicObtained {
+                        relic_id: RelicId::CeramicFish,
+                        source: DomainEventSource::Event(EventId::Mausoleum),
+                    }
+                )
+            })
+            .expect("Mausoleum should obtain the forced relic before the delayed curse resolves");
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(EventId::Mausoleum),
+                        ..
+                    }
+                )
+            })
+            .expect("New Ceramic Fish should see the delayed Writhe obtain hook");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::Mausoleum),
+                    } if card.id == CardId::Writhe
+                )
+            })
+            .expect("Mausoleum should obtain Writhe through the delayed ShowCardAndObtainEffect");
+
+        assert!(
+            relic_pos < fish_gold_pos && fish_gold_pos < obtained_pos,
+            "Java Mausoleum constructs the Writhe effect before spawnRelicAndObtain, but the effect resolves after the new relic is owned and runs onObtainCard before Soul.obtain"
+        );
+    }
 }
