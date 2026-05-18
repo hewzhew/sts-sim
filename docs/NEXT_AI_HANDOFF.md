@@ -45,15 +45,54 @@ Forbidden:
 
 Branch tip:
 
-- `3fda120 Match Java initial combat hook queue order`
+- `c0fbef0 Sync Velvet Choker public counter hooks`
 
 Recent commits:
 
+- `c0fbef0 Sync Velvet Choker public counter hooks`
+- `11f3e13 Update handoff after initial combat hook audit`
 - `3fda120 Match Java initial combat hook queue order`
 - `f59c6da Update handoff after post-draw queue audit`
 - `012e056 Match Java post-draw hook queue order`
-- `133883b Update handoff after end-of-round timing audit`
-- `ea1570c Match Java end-of-round queue timing`
+
+`c0fbef0` summary:
+
+- Java `GainEnergyAndEnableControlsAction`, Java `AbstractPlayer.gainEnergy`,
+  Java `triggerOnGainEnergy`, Java relic/power `onEnergyRecharge`, Java
+  `AbstractPlayer.preBattlePrep()`, Rust first-turn energy initialization, and
+  Rust energy-related powers were checked.
+- No Rust opening-energy action was added:
+  - Java opening `GainEnergyAndEnableControlsAction` calls card
+    `triggerOnGainEnergy`, relic `onEnergyRecharge`, and power
+    `onEnergyRecharge`.
+  - Java active cards and relics do not override those gain-energy hooks.
+  - Java powers that override `onEnergyRecharge` are `CollectPower`,
+    `EnergizedPower`, `EnergizedBluePower`, and `DevaPower`.
+  - Java `preBattlePrep()` clears player powers before combat, and the modeled
+    normal opening combat path does not create those powers before the opening
+    energy refill.
+  - Therefore Rust's existing first-turn energy initialization is mechanically
+    equivalent for currently modeled normal combat.
+- While auditing Java relic start hooks, fixed `VelvetChoker` public counter
+  parity:
+  - Java `onEquip` / `onUnequip` still own the energy-master delta.
+  - Java `atBattleStart` and `atTurnStart` reset `counter = 0`.
+  - Java `onPlayCard` increments public `counter` up to `6`.
+  - Java `canPlay` gates playability from `counter >= 6`, while Rust continues
+    using the already-correct engine turn counter for the hard gameplay gate.
+  - Java `onVictory` sets `counter = -1`.
+  - Rust now subscribes Velvet Choker to battle-start, turn-start, use-card,
+    and victory hooks so public observation/replay sees the Java counter.
+
+Verification for `c0fbef0`:
+
+- `cargo test velvet_choker_public_counter_matches_java_turn_and_victory_hooks --all-targets`
+  -> `1 passed`
+- `cargo test shared_boss_relic_third_batch_metadata_matches_java_sources --all-targets`
+  -> `1 passed`
+- `cargo test velvet_choker --all-targets` -> `2 passed`
+- `cargo test initial_battle_start --all-targets` -> `3 passed`
+- `cargo test --all-targets` -> `1335 passed`
 
 `3fda120` summary:
 
@@ -1395,7 +1434,9 @@ Keep these on the short list and revisit with narrow source packets:
 
 ## Next Work Queue
 
-Continue monster audit before jumping back to machine learning.
+Continue Java-source-backed mechanics audit before jumping back to machine
+learning. The current narrow lane is relic hook parity, especially public
+counter/state hooks that affect AI observation and replay.
 
 Recommended next packets:
 
@@ -1462,12 +1503,13 @@ Recommended next packets:
      `VoidCard.triggerWhenDrawn()` insertion were fixed/locked in `012e056`.
    - Java initial combat hook queue construction around
      `AbstractRoom.update()` was fixed/locked in `3fda120`.
-   - Next narrow packet: audit Java initial `GainEnergyAndEnableControlsAction`
-     vs Rust first-turn energy initialization. Rust currently sets first-turn
-     energy during combat construction/reset rather than modeling a queued
-     opening energy action. Check whether any Java `onEnergyRecharge`,
-     `triggerOnGainEnergy`, or first-turn queued action can make this
-     mechanically observable before introducing a new action.
+   - Java initial `GainEnergyAndEnableControlsAction` vs Rust first-turn energy
+     initialization was checked in `c0fbef0`; no code change was needed.
+   - Velvet Choker public counter hooks were fixed in `c0fbef0`.
+   - Next narrow packet: continue Java relic `atTurnStart` / public counter
+     hook coverage. Start with `Orichalcum` trigger semantics and
+     `OrangePellets` turn-reset semantics, then continue the remaining relic
+     overrides one Java relic file at a time.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
