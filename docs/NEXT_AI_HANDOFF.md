@@ -45,15 +45,40 @@ Forbidden:
 
 Branch tip:
 
-- `c52b087 Make Necronomicon activation mutate immediately`
+- `369d112 Make Neows Lament mutate battle start state immediately`
 
 Recent commits:
 
+- `369d112 Make Neows Lament mutate battle start state immediately`
+- `e94c895 Update handoff after Necronomicon activation audit`
 - `c52b087 Make Necronomicon activation mutate immediately`
 - `52fb5c8 Make relic counter hooks mutate immediately`
 - `227a871 Route Orange Pellets turn reset through relic hook`
-- `c0fbef0 Sync Velvet Choker public counter hooks`
-- `11f3e13 Update handoff after initial combat hook audit`
+
+`369d112` summary:
+
+- Java checked:
+  - `NeowsLament`.
+- Fixed Neow's Lament battle-start timing:
+  - Java decrements `counter`, calls `setCounter(-2)` / `usedUp()` on the
+    third use, and mutates each monster's `currentHealth = 1` synchronously
+    inside `atBattleStart()`.
+  - Rust previously returned queued `SetCurrentHp`, `UpdateRelicCounter`, and
+    `UpdateRelicUsedUp` actions.
+  - Rust now mutates `RelicState.counter`, `RelicState.used_up`, and monster
+    `current_hp` before the hook returns, and produces no gameplay actions for
+    this relic.
+- Follow-up search:
+  - `rg "Action::UpdateRelicCounter|Action::UpdateRelicUsedUp|IncrementRelicCounter|UpdateRelicCounter|UpdateRelicUsedUp" src\content\relics src\engine`
+    now finds only engine handlers/comments, not content relic producers.
+
+Verification for `369d112`:
+
+- `cargo test neows_lament --all-targets` -> `2 passed`
+- `cargo test shared_event_special_relic_followup_metadata_matches_java_sources --all-targets`
+  -> `1 passed`
+- `cargo test initial_battle_start --all-targets` -> `4 passed`
+- `cargo test --all-targets` -> `1338 passed`
 
 `c52b087` summary:
 
