@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `1022eb3 Lock delayed obtain hooks in Mausoleum and Mind Bloom`
+- `b84fd78 Lock grid event obtain hooks`
 
 Recent commits:
 
+- `b84fd78 Lock grid event obtain hooks`
 - `1022eb3 Lock delayed obtain hooks in Mausoleum and Mind Bloom`
 - `a3b9be9 Lock relic-before-curse obtain hooks`
 - `298b8b1 Lock remaining match event obtain hooks`
@@ -87,6 +88,41 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`b84fd78` summary:
+
+- Continued the Java `ShowCardAndObtainEffect` sweep into grid-selection event
+  obtains.
+- Java checked:
+  - `D:\rust\cardcrawl\events\shrines\Duplicator.java`
+  - `D:\rust\cardcrawl\events\city\TheLibrary.java`
+  - `D:\rust\cardcrawl\cards\AbstractCard.java`
+  - `D:\rust\cardcrawl\relics\MoltenEgg2.java`
+  - `D:\rust\cardcrawl\relics\ToxicEgg2.java`
+  - `D:\rust\cardcrawl\relics\FrozenEgg2.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+- Java result:
+  - `AbstractCard.makeStatEquivalentCopy()` copies combat cost flags,
+    `freeToPlayOnce`, base stats, bottle flags, seen/locked, and `misc`.
+  - `Duplicator` clears bottle flags on the copied card, then queues
+    `ShowCardAndObtainEffect`.
+  - Egg relics implement `onPreviewObtainCard` by calling `onObtainCard`, and
+    `ShowCardAndObtainEffect.update()` runs `onObtainCard` before
+    `souls.obtain`, so duplicated/selected event cards can still be upgraded by
+    Egg at obtain time.
+- Rust result:
+  - No business logic change was needed.
+  - Added regressions proving:
+    - Duplicator's copied unupgraded Strike is upgraded by `MoltenEgg` during
+      obtain, while the original selected master-deck Strike remains unupgraded.
+    - `CeramicFish` gold is emitted before the Duplicator/TheLibrary
+      `CardObtained` records.
+
+Verification for `b84fd78`:
+
+- `cargo test duplicator --all-targets` -> `3 passed`
+- `cargo test the_library --all-targets` -> `4 passed`
+- `cargo test --all-targets` -> `1389 passed`
 
 `1022eb3` summary:
 
