@@ -362,4 +362,45 @@ mod tests {
             .expect("Omamori should remain after blocking Decay");
         assert_eq!(omamori.counter, 1);
     }
+
+    #[test]
+    fn desecrate_runs_obtain_hooks_before_decay_obtained_event() {
+        let mut run_state = forgotten_altar_run();
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        let events = run_state.take_emitted_events();
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(EventId::ForgottenAltar),
+                        ..
+                    }
+                )
+            })
+            .expect("Ceramic Fish should run when Forgotten Altar's Decay is obtained");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::ForgottenAltar),
+                    } if card.id == CardId::Decay
+                )
+            })
+            .expect("Forgotten Altar should obtain Decay through ShowCardAndObtainEffect");
+
+        assert!(
+            fish_gold_pos < obtained_pos,
+            "Java ForgottenAltar queues ShowCardAndObtainEffect for Decay; that effect runs onObtainCard before Soul.obtain"
+        );
+    }
 }
