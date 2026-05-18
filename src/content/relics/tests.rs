@@ -2792,6 +2792,101 @@ fn calling_bell_uses_screenless_relic_rewards_after_curse_obtain() {
 }
 
 #[test]
+fn calling_bell_curse_uses_fast_obtain_hooks_before_relic_rewards() {
+    let mut run = crate::state::run::RunState::new(9, 0, false, "Ironclad");
+    run.relics.push(RelicState::new(RelicId::CeramicFish));
+    run.common_relic_pool = vec![RelicId::Anchor];
+    run.uncommon_relic_pool = vec![RelicId::Pear];
+    run.rare_relic_pool = vec![RelicId::Mango];
+
+    let Some(crate::state::core::EngineState::RewardScreen(_)) =
+        calling_bell::on_equip(&mut run, crate::state::core::EngineState::MapNavigation)
+    else {
+        panic!("expected Calling Bell reward screen");
+    };
+
+    let events = run.take_emitted_events();
+    let fish_gold_pos = events
+        .iter()
+        .position(|event| {
+            matches!(
+                event,
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Relic(RelicId::CallingBell),
+                    ..
+                }
+            )
+        })
+        .expect("Calling Bell curse should run Ceramic Fish onObtainCard hook");
+    let curse_pos = events
+        .iter()
+        .position(|event| {
+            matches!(
+                event,
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Relic(RelicId::CallingBell),
+                } if card.id == CardId::CurseOfTheBell
+            )
+        })
+        .expect("Calling Bell should obtain Curse of the Bell through FastCardObtainEffect");
+
+    assert!(
+        fish_gold_pos < curse_pos,
+        "Java openConfirmationGrid queues FastCardObtainEffect, whose update calls relic onObtainCard before Soul.obtain"
+    );
+}
+
+#[test]
+fn calling_bell_curse_can_be_blocked_by_omamori_but_rewards_still_open() {
+    let mut run = crate::state::run::RunState::new(9, 0, false, "Ironclad");
+    run.relics.push(RelicState::new(RelicId::Omamori));
+    run.common_relic_pool = vec![RelicId::Anchor];
+    run.uncommon_relic_pool = vec![RelicId::Pear];
+    run.rare_relic_pool = vec![RelicId::Mango];
+
+    let Some(crate::state::core::EngineState::RewardScreen(rewards)) =
+        calling_bell::on_equip(&mut run, crate::state::core::EngineState::MapNavigation)
+    else {
+        panic!("expected Calling Bell reward screen");
+    };
+
+    assert!(!run
+        .master_deck
+        .iter()
+        .any(|card| card.id == CardId::CurseOfTheBell));
+    let omamori = run
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::Omamori)
+        .expect("Omamori should be present");
+    assert_eq!(omamori.counter, 1);
+    assert!(!omamori.used_up);
+
+    let relic_rewards = rewards
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            crate::rewards::state::RewardItem::Relic { relic_id } => Some(*relic_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        relic_rewards,
+        vec![RelicId::Anchor, RelicId::Pear, RelicId::Mango],
+        "Java CallingBell.update opens the three relic rewards after the confirmation screen closes, even if Omamori blocked the curse effect"
+    );
+    assert!(!run.emitted_events.iter().any(|event| matches!(
+        event,
+        DomainEvent::CardObtained {
+            card,
+            source: DomainEventSource::Relic(RelicId::CallingBell),
+        } if card.id == CardId::CurseOfTheBell
+    )));
+}
+
+#[test]
 fn boss_relic_passives_affect_rewards_campfires_and_curse_pool() {
     let mut elite = crate::state::run::RunState::new(11, 0, false, "Ironclad");
     elite.relics.push(RelicState::new(RelicId::BlackStar));
