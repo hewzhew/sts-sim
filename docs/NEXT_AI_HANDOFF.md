@@ -60,6 +60,31 @@ Forbidden:
 
 Latest code checkpoint:
 
+- Added focused Angry/Sneaky/Shield Gremlin tests after Java/Rust source
+  comparison.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\GremlinWarrior.java`
+  - `D:\rust\cardcrawl\monsters\exordium\GremlinThief.java`
+  - `D:\rust\cardcrawl\monsters\exordium\GremlinTsundere.java`
+- Rust changed:
+  - `src\content\monsters\exordium\gremlin_warrior.rs`
+  - `src\content\monsters\exordium\gremlin_thief.rs`
+  - `src\content\monsters\exordium\gremlin_tsundere.rs`
+- Result:
+  - These three Gremlins require no hidden runtime truth from protocol.
+  - Angry Gremlin tests cover pre-battle `AngryPower` A17 threshold and
+    Scratch follow-up `SetMoveAction`.
+  - Sneaky Gremlin tests cover Puncture damage and follow-up `SetMoveAction`.
+  - Shield Gremlin tests cover Java's Protect alive-count edge, A17 block,
+    solo Bash follow-up, Bash damage, and Escape chaining.
+  - Java speech bubbles and voice/death sound rolls remain UI/audio-only.
+- Verification:
+  - `cargo test gremlin_warrior --all-targets` -> `3 passed`
+  - `cargo test gremlin_thief --all-targets` -> `3 passed`
+  - `cargo test gremlin_tsundere --all-targets` -> `4 passed`
+
+Latest code checkpoint:
+
 - Added focused Fat Gremlin A17 action-order coverage after Java/Rust source
   comparison.
 - Java checked:

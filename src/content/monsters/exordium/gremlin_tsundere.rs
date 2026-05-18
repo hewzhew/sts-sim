@@ -158,7 +158,7 @@ impl MonsterBehavior for GremlinTsundere {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_plan, protect_plan, GremlinTsundere};
+    use super::{bash_plan, escape_plan, protect_plan, GremlinTsundere};
     use crate::content::monsters::{EnemyId, MonsterBehavior};
     use crate::runtime::action::Action;
 
@@ -200,6 +200,58 @@ mod tests {
                     next_move_byte: super::ESCAPE,
                     ..
                 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn protect_block_amount_and_solo_followup_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 17;
+        let mut tsundere = crate::test_support::test_monster(EnemyId::GremlinTsundere);
+        tsundere.id = 10;
+        state.entities.monsters = vec![tsundere.clone()];
+
+        let actions = GremlinTsundere::take_turn_plan(&mut state, &tsundere, &protect_plan(17));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::SetMonsterMove {
+                    monster_id: 10,
+                    next_move_byte: super::BASH,
+                    ..
+                },
+                Action::GainBlockRandomMonster {
+                    source: 10,
+                    amount: 11,
+                },
+            ]
+        ));
+    }
+
+    #[test]
+    fn bash_damage_and_followup_setmove_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 2;
+        let entity = crate::test_support::test_monster(EnemyId::GremlinTsundere);
+
+        let actions = GremlinTsundere::take_turn_plan(&mut state, &entity, &bash_plan(2));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 8,
+                    ..
+                },
+                Action::SetMonsterMove {
+                    monster_id: 1,
+                    next_move_byte: super::BASH,
+                    ..
+                },
             ]
         ));
     }

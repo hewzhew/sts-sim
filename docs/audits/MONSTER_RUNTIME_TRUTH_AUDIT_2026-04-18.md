@@ -40,7 +40,10 @@ Scope:
 | Blue Slaver | None | N/A | N/A | N/A | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Red Slaver | `first_turn`, `used_entangle` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Gremlin Nob | `used_bellow` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
+| Angry Gremlin | None | N/A | N/A | N/A | Fixed Scratch plus optional escape intent | Good |
+| Sneaky Gremlin | None | N/A | N/A | N/A | Fixed Puncture plus optional escape intent | Good |
 | Fat Gremlin | None | N/A | N/A | N/A | Fixed Blunt plus optional escape intent | Good |
+| Shield Gremlin | None | N/A | N/A | N/A | Protect follow-up uses Java alive-count scan | Good |
 | Gremlin Leader | `gremlin_slots` | Yes | Yes | Yes | Rally/Encourage/Stab sequencing only | Good |
 | Gremlin Wizard | `current_charge` | Yes | Yes | Yes | None for charge cadence | Good |
 | Cultist | `first_move` | Yes | Yes | Yes | None | Good |
@@ -285,6 +288,26 @@ Scope:
 - Java voice/death sound rolls and speech bubbles are UI/audio-only and are not imported as gameplay RNG.
 - Verification:
   - `cargo test gremlin_fat --all-targets` -> `3 passed`
+
+### Angry Gremlin / Sneaky Gremlin / Shield Gremlin
+
+- `Angry Gremlin`, `Sneaky Gremlin`, and `Shield Gremlin` do not require hidden runtime truth from protocol.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\GremlinWarrior.java`
+  - `D:\rust\cardcrawl\monsters\exordium\GremlinThief.java`
+  - `D:\rust\cardcrawl\monsters\exordium\GremlinTsundere.java`
+- Rust checked/changed:
+  - `src\content\monsters\exordium\gremlin_warrior.rs`
+  - `src\content\monsters\exordium\gremlin_thief.rs`
+  - `src\content\monsters\exordium\gremlin_tsundere.rs`
+- Java `GremlinWarrior.getMove(int)` always sets Scratch. Java `usePreBattleAction()` applies `AngryPower(this, 2)` at Ascension 17+, otherwise amount 1. Rust now has focused tests for both thresholds and Scratch follow-up `SetMoveAction`.
+- Java `GremlinThief.getMove(int)` always sets Puncture, and `takeTurn()` chains either another Puncture or Escape through `SetMoveAction`. Rust now has focused tests for Puncture damage and follow-up `SetMoveAction`.
+- Java `GremlinTsundere.getMove(int)` always opens with Protect. During Protect, Java scans monsters that are not `isDying` and not `isEscaping`; it does not check current HP. Rust preserves that alive-count edge and now also tests Ascension 17 block amount, solo follow-up Bash, Bash damage, and Escape chaining.
+- Java speech bubbles and voice/death sound rolls are UI/audio-only and are not imported as gameplay RNG. If a live bridge observes a real planned Escape move, that remains ordinary planned move truth.
+- Verification:
+  - `cargo test gremlin_warrior --all-targets` -> `3 passed`
+  - `cargo test gremlin_thief --all-targets` -> `3 passed`
+  - `cargo test gremlin_tsundere --all-targets` -> `4 passed`
 
 ### Gremlin Nob
 

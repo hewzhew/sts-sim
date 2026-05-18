@@ -103,9 +103,35 @@ impl MonsterBehavior for GremlinThief {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_plan, GremlinThief};
+    use super::{escape_plan, puncture_plan, GremlinThief};
     use crate::content::monsters::{EnemyId, MonsterBehavior};
     use crate::runtime::action::Action;
+
+    #[test]
+    fn puncture_damage_and_followup_setmove_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 2;
+        let entity = crate::test_support::test_monster(EnemyId::GremlinThief);
+
+        let actions = GremlinThief::take_turn_plan(&mut state, &entity, &puncture_plan(2));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 10,
+                    ..
+                },
+                Action::SetMonsterMove {
+                    monster_id: 1,
+                    next_move_byte: super::PUNCTURE,
+                    ..
+                },
+            ]
+        ));
+    }
 
     #[test]
     fn escape_turn_queues_escape_intent_like_java() {
