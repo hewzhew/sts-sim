@@ -323,6 +323,45 @@ mod tests {
     }
 
     #[test]
+    fn curse_result_runs_obtain_hooks_before_decay_add_like_show_card_effect() {
+        let mut run_state = wheel_run(20, 80, 0);
+        run_state.gold = 0;
+        run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(3));
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.gold, 9);
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Decay));
+        let labels = run_state
+            .take_emitted_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::GremlinWheelGame),
+                    ..
+                } => Some("ceramic_fish_gold"),
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Event(EventId::GremlinWheelGame),
+                } if card.id == CardId::Decay => Some("decay_obtained"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec!["ceramic_fish_gold", "decay_obtained"],
+            "Java ShowCardAndObtainEffect later runs onObtainCard before Soul.obtain for the wheel curse result"
+        );
+    }
+
+    #[test]
     fn purge_result_opens_non_bottled_purge_selection_when_possible() {
         let mut run_state = wheel_run(20, 80, 0);
         run_state.rng_pool.misc_rng = StsRng::new(seed_for_wheel_result(4));

@@ -251,4 +251,48 @@ mod tests {
             .expect("Omamori should remain after blocking the curse");
         assert_eq!(omamori.counter, 1);
     }
+
+    #[test]
+    fn eat_heal_resolves_before_delayed_parasite_obtain_like_java_effect_list() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 20;
+        run_state.max_hp = 80;
+        run_state.gold = 0;
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        run_state.event_state = Some(EventState::new(EventId::Mushrooms));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.current_hp, 40);
+        assert_eq!(run_state.gold, 9);
+        let labels = run_state
+            .take_emitted_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                DomainEvent::HpChanged {
+                    delta: 20,
+                    source: DomainEventSource::Event(EventId::Mushrooms),
+                    ..
+                } => Some("heal"),
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::Mushrooms),
+                    ..
+                } => Some("ceramic_fish_gold"),
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Event(EventId::Mushrooms),
+                } if card.id == CardId::Parasite => Some("parasite_obtained"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec!["heal", "ceramic_fish_gold", "parasite_obtained"],
+            "Java heals immediately, then delayed ShowCardAndObtainEffect runs onObtainCard before Soul.obtain"
+        );
+    }
 }
