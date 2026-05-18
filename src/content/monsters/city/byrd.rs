@@ -45,6 +45,25 @@ mod tests {
             "Java Byrd.getMove clears firstMove while rolling the opening move, before takeTurn executes"
         );
     }
+
+    #[test]
+    fn headbutt_sets_airborne_before_queued_damage_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let byrd = crate::test_support::test_monster(EnemyId::Byrd);
+
+        let actions = Byrd::take_turn_plan(&mut state, &byrd, &headbutt_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::SetMonsterMove {
+                    next_move_byte: GO_AIRBORNE,
+                    ..
+                },
+                Action::MonsterAttack { base_damage: 3, .. }
+            ]
+        ));
+    }
 }
 
 enum ByrdTurn<'a> {
@@ -346,11 +365,11 @@ impl MonsterBehavior for Byrd {
                 monster_id: entity.id,
             }],
             ByrdTurn::Headbutt(attack) => {
-                let mut actions = attack_actions(entity.id, PLAYER, attack);
-                actions.push(set_next_move_action(
+                let mut actions = vec![set_next_move_action(
                     entity,
                     go_airborne_plan(state.meta.ascension_level),
-                ));
+                )];
+                actions.extend(attack_actions(entity.id, PLAYER, attack));
                 actions
             }
         }
