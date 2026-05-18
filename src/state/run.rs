@@ -1005,8 +1005,8 @@ impl RunState {
 
         if let Some(card_id) = removed_id {
             let result = crate::deck::manager::DeckManager::remove_card(card_id);
-            self.dispatch_on_master_deck_change();
             self.resolve_deck_actions(result.actions, source);
+            self.dispatch_on_master_deck_change();
         }
     }
 
@@ -1072,12 +1072,24 @@ impl RunState {
                         }
                     }
                 }
-                DeckAction::TriggerObtainCard(card_id) => {
-                    // Re-enters add_card_to_deck (e.g. for Necronomicurse)
-                    self.add_card_to_deck_with_upgrades_from(card_id, 0, source);
+                DeckAction::ReaddCardToMasterDeck(card_id) => {
+                    self.readd_card_to_master_deck_without_obtain_hooks(card_id, source);
                 }
             }
         }
+    }
+
+    fn readd_card_to_master_deck_without_obtain_hooks(
+        &mut self,
+        card_id: crate::content::cards::CardId,
+        source: DomainEventSource,
+    ) {
+        let card = crate::runtime::combat::CombatCard::new(card_id, self.next_card_uuid());
+        self.emit_event(DomainEvent::CardObtained {
+            card: Self::snapshot_card(&card),
+            source,
+        });
+        self.master_deck.push(card);
     }
 
     /// Triggers AbstractRelic.onMasterDeckChange for all relics
@@ -1088,9 +1100,17 @@ impl RunState {
         );
     }
 
-    /// Returns a simple auto-incrementing UUID for new cards.
+    /// Returns a deterministic fresh-ish UUID for new master-deck cards.
+    ///
+    /// Starter cards use small UUIDs. Obtained cards use the 10000+ range, and
+    /// this must stay above existing obtained-card UUIDs after removals so a
+    /// remove-then-obtain path does not collide with an existing card instance.
     pub fn next_card_uuid(&self) -> u32 {
-        self.master_deck.len() as u32 + 10000
+        self.master_deck
+            .iter()
+            .map(|card| card.uuid)
+            .max()
+            .map_or(10000, |uuid| (uuid + 1).max(10000))
     }
 
     /// Initialize relic pools. Called at dungeon start.
@@ -1987,6 +2007,107 @@ mod tests {
             ]
         );
         assert_eq!(watcher.relics[0].id, RelicId::PureWater);
+    }
+
+    #[test]
+    fn removing_parasite_runs_master_deck_removal_hook_before_deck_change_refresh() {
+        let mut run = RunState::new(3, 0, false, "Ironclad");
+        run.current_hp = 80;
+        run.max_hp = 80;
+        let parasite_uuid = 7001;
+        run.master_deck
+            .push(CombatCard::new(CardId::Parasite, parasite_uuid));
+        run.emitted_events.clear();
+
+        run.remove_card_from_deck_with_source(parasite_uuid, DomainEventSource::DeckMutation);
+
+        assert!(!run
+            .master_deck
+            .iter()
+            .any(|card| card.uuid == parasite_uuid));
+        assert_eq!(run.max_hp, 77);
+        assert_eq!(run.current_hp, 77);
+        let events = run.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::DeckMutation,
+            } if card.id == CardId::Parasite && card.uuid == parasite_uuid
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::MaxHpChanged {
+                delta: -3,
+                current_hp: 77,
+                max_hp: 77,
+                source: DomainEventSource::DeckMutation,
+            }
+        )));
+    }
+
+    #[test]
+    fn removing_necronomicurse_readds_directly_without_ordinary_obtain_hooks() {
+        let mut run = RunState::new(5, 0, false, "Ironclad");
+        run.current_hp = 80;
+        run.max_hp = 80;
+        run.gold = 100;
+        run.relics
+            .push(crate::content::relics::RelicState::new(RelicId::Omamori));
+        run.relics.push(crate::content::relics::RelicState::new(
+            RelicId::DarkstonePeriapt,
+        ));
+        run.relics.push(crate::content::relics::RelicState::new(
+            RelicId::CeramicFish,
+        ));
+        let old_uuid = 7002;
+        run.master_deck
+            .push(CombatCard::new(CardId::Necronomicurse, old_uuid));
+        run.emitted_events.clear();
+
+        run.remove_card_from_deck_with_source(old_uuid, DomainEventSource::DeckMutation);
+
+        let necronomicurses: Vec<_> = run
+            .master_deck
+            .iter()
+            .filter(|card| card.id == CardId::Necronomicurse)
+            .collect();
+        assert_eq!(
+            necronomicurses.len(),
+            1,
+            "Java NecronomicurseEffect directly re-adds one fresh Necronomicurse"
+        );
+        assert_ne!(necronomicurses[0].uuid, old_uuid);
+        assert_eq!(run.max_hp, 80, "Darkstone must not fire on this re-add");
+        assert_eq!(run.current_hp, 80);
+        assert_eq!(run.gold, 100, "Ceramic Fish must not fire on this re-add");
+        let omamori = run
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Omamori should be present");
+        assert_eq!(omamori.counter, 2);
+        assert!(!omamori.used_up);
+
+        let events = run.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::DeckMutation,
+            } if card.id == CardId::Necronomicurse && card.uuid == old_uuid
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                card,
+                source: DomainEventSource::DeckMutation,
+            } if card.id == CardId::Necronomicurse && card.uuid != old_uuid
+        )));
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            DomainEvent::GoldChanged { .. } | DomainEvent::MaxHpChanged { .. }
+        )));
     }
 
     #[test]

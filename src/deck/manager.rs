@@ -9,7 +9,7 @@ pub enum DeckAction {
     GainMaxHp(i32),
     LoseMaxHp(i32),
     UpdateRelicCounter(RelicId, i32),
-    TriggerObtainCard(CardId),
+    ReaddCardToMasterDeck(CardId),
 }
 
 pub struct ObtainResult {
@@ -131,9 +131,12 @@ impl DeckManager {
 
         // 2. Necronomicurse replicates itself
         if target_id == CardId::Necronomicurse {
-            // Note: in Java it also flashes the relic here
-            // But since it literally just returns an effect that spawns the card...
-            actions.push(DeckAction::TriggerObtainCard(CardId::Necronomicurse));
+            // Java Necronomicurse.onRemoveFromMasterDeck starts a
+            // NecronomicurseEffect, which directly inserts a fresh curse into
+            // masterDeck. It is not an ordinary Soul/ShowCardAndObtainEffect
+            // obtain and must not run Omamori, Darkstone, Ceramic Fish, or Egg
+            // obtain hooks.
+            actions.push(DeckAction::ReaddCardToMasterDeck(CardId::Necronomicurse));
         }
 
         RemoveResult { actions }
