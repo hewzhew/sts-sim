@@ -53,15 +53,15 @@ Forbidden:
 
 Latest code commit:
 
-- `78aa564 Match Orrery reward screen composition`
+- `c87f213 Preserve copied base block state`
 
 Recent commits:
 
+- `c87f213 Preserve copied base block state`
+- `f3179ac Update handoff after Orrery audit`
 - `78aa564 Match Orrery reward screen composition`
 - `a13622e Update handoff after Cauldron audit`
 - `00d2ecb Match Cauldron reward screen card burn`
-- `a9a2b9e Update handoff after Tiny House audit`
-- `72e808e Match Tiny House upgrade candidates`
 - `4895ac6 Lock Cursed Key chest obtain hooks`
 - `b2cc6ce Lock shop card fast obtain ordering`
 - `dcec769 Lock reward card obtain hooks`
@@ -106,6 +106,40 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`c87f213` summary:
+
+- Audited `DollysMirror` copy semantics against Java
+  `AbstractCard.makeStatEquivalentCopy()`.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\DollysMirror.java`
+  - `D:\rust\cardcrawl\cards\AbstractCard.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+- Java result:
+  - Dolly's Mirror selects one master-deck card, calls
+    `makeStatEquivalentCopy()`, clears bottle flags, then queues
+    `ShowCardAndObtainEffect`.
+  - `makeStatEquivalentCopy()` preserves persistent base damage, base block,
+    base magic, cost-for-combat/turn, misc, upgrades, and `freeToPlayOnce`.
+  - Transient rendered damage/block/magic and multi-damage should not be copied.
+- Rust result:
+  - `RunState::add_card_instance_copy_to_deck_from` now preserves
+    `base_block_override` in addition to the already-preserved damage/cost/misc
+    fields.
+  - Existing duplicate-selection regression now checks copied base block state.
+  - Remaining representation risk: Rust has no persistent base-magic override
+    field yet, so any Java path that permanently mutates base magic needs a
+    separate architecture check.
+
+Verification for `c87f213`:
+
+- `cargo test duplicate_selection_preserves_stat_equivalent_card_state_without_copying_bottle_attachment --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1408 passed`
+
+Next source-backed lane:
+
+- Continue with `EmptyCage` and bottled relic selection-screen semantics, or
+  audit the remaining stat-equivalent copy/base magic representation gap.
 
 `78aa564` summary:
 

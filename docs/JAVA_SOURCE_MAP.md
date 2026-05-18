@@ -62,3 +62,4 @@ reward UI classes.
 | Tiny House upgrade and reward screen | `relics/TinyHouse.java`, `screens/CombatRewardScreen.java`, `rooms/AbstractRoom.java`, `rewards/RewardItem.java`, `cards/AbstractCard.java` | `72e808e` |
 | Cauldron potion rewards and card-reward removal | `relics/Cauldron.java`, `helpers/PotionHelper.java`, `screens/CombatRewardScreen.java`, `rewards/RewardItem.java` | `00d2ecb` |
 | Orrery card rewards and reward screen append | `relics/Orrery.java`, `rooms/AbstractRoom.java`, `screens/CombatRewardScreen.java`, `rewards/RewardItem.java` | `78aa564` |
+| Dolly's Mirror stat-equivalent copy | `relics/DollysMirror.java`, `cards/AbstractCard.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `c87f213` |
