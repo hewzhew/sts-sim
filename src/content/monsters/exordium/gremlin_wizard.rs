@@ -137,16 +137,22 @@ impl MonsterBehavior for GremlinWizard {
             }
             GremlinWizardTurn::DopeMagic(attack) => {
                 let mut actions = vec![gremlin_wizard_runtime_update(entity, 0)];
-                actions.extend(attack_actions(entity.id, PLAYER, attack));
                 let next_plan = if state.meta.ascension_level >= 17 {
                     dope_magic_plan(state.meta.ascension_level)
                 } else {
                     charge_plan()
                 };
+                // Java resets currentCharge, queues DamageAction, then calls
+                // setMove(...) synchronously. Model that move update before the
+                // queued damage can be interrupted.
                 actions.push(set_next_move_action(entity, next_plan));
+                actions.extend(attack_actions(entity.id, PLAYER, attack));
                 actions
             }
-            GremlinWizardTurn::Escape => vec![Action::Escape { target: entity.id }],
+            GremlinWizardTurn::Escape => vec![
+                Action::Escape { target: entity.id },
+                set_next_move_action(entity, escape_plan()),
+            ],
         }
     }
 }
@@ -209,6 +215,33 @@ mod tests {
                     protocol_seeded: Some(true),
                 },
             })
+        ));
+        assert!(matches!(
+            actions.get(1),
+            Some(Action::SetMonsterMove {
+                monster_id: 7,
+                next_move_byte: CHARGE,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn gremlin_wizard_escape_still_queues_escape_intent_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let monster = crate::test_support::test_monster(EnemyId::GremlinWizard);
+
+        let actions = GremlinWizard::take_turn_plan(&mut state, &monster, &super::escape_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::Escape { .. },
+                Action::SetMonsterMove {
+                    next_move_byte: super::ESCAPE,
+                    ..
+                }
+            ]
         ));
     }
 }

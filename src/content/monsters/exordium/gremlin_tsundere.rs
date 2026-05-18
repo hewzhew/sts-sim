@@ -128,13 +128,16 @@ impl MonsterBehavior for GremlinTsundere {
     ) -> Vec<Action> {
         match decode_turn(plan) {
             GremlinTsundereTurn::Protect(block) => {
-                let mut actions = vec![gain_block_random_monster_action(entity, block)];
                 let next_plan = if alive_monster_count(state) > 1 {
                     protect_plan(state.meta.ascension_level)
                 } else {
                     bash_plan(state.meta.ascension_level)
                 };
-                actions.push(set_next_move_action(entity, next_plan));
+                // Java calls setMove(...) synchronously after queueing
+                // GainBlockRandomMonsterAction, so the next intent is updated
+                // before that queued action can execute.
+                let mut actions = vec![set_next_move_action(entity, next_plan)];
+                actions.push(gain_block_random_monster_action(entity, block));
                 actions
             }
             GremlinTsundereTurn::Bash(attack) => {
@@ -145,14 +148,17 @@ impl MonsterBehavior for GremlinTsundere {
                 ));
                 actions
             }
-            GremlinTsundereTurn::Escape => vec![Action::Escape { target: entity.id }],
+            GremlinTsundereTurn::Escape => vec![
+                Action::Escape { target: entity.id },
+                set_next_move_action(entity, escape_plan()),
+            ],
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{protect_plan, GremlinTsundere};
+    use super::{escape_plan, protect_plan, GremlinTsundere};
     use crate::content::monsters::{EnemyId, MonsterBehavior};
     use crate::runtime::action::Action;
 
@@ -170,12 +176,31 @@ mod tests {
         let actions = GremlinTsundere::take_turn_plan(&mut state, &tsundere, &protect_plan(0));
 
         assert!(matches!(
-            actions.last(),
+            actions.first(),
             Some(Action::SetMonsterMove {
                 monster_id: 10,
                 next_move_byte: 1,
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn escape_turn_queues_escape_intent_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinTsundere);
+
+        let actions = GremlinTsundere::take_turn_plan(&mut state, &entity, &escape_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::Escape { .. },
+                Action::SetMonsterMove {
+                    next_move_byte: super::ESCAPE,
+                    ..
+                }
+            ]
         ));
     }
 }

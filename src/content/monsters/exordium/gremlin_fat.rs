@@ -169,7 +169,10 @@ impl MonsterBehavior for GremlinFat {
                 });
                 actions
             }
-            GremlinFatTurn::Escape => vec![Action::Escape { target: entity.id }],
+            GremlinFatTurn::Escape => vec![
+                Action::Escape { target: entity.id },
+                super::set_next_move_action(entity, escape_plan()),
+            ],
         }
     }
 }
@@ -192,6 +195,24 @@ mod tests {
         assert!(matches!(
             actions.last(),
             Some(Action::RollMonsterMove { monster_id: 1 })
+        ));
+    }
+
+    #[test]
+    fn escape_turn_queues_escape_intent_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinFat);
+        let actions = GremlinFat::take_turn_plan(&mut state, &entity, &super::escape_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::Escape { .. },
+                Action::SetMonsterMove {
+                    next_move_byte: super::ESCAPE,
+                    ..
+                }
+            ]
         ));
     }
 }

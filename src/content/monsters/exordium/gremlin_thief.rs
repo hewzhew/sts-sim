@@ -93,7 +93,36 @@ impl MonsterBehavior for GremlinThief {
                 ));
                 actions
             }
-            GremlinThiefTurn::Escape => vec![Action::Escape { target: entity.id }],
+            GremlinThiefTurn::Escape => vec![
+                Action::Escape { target: entity.id },
+                set_next_move_action(entity, escape_plan()),
+            ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{escape_plan, GremlinThief};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn escape_turn_queues_escape_intent_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinThief);
+
+        let actions = GremlinThief::take_turn_plan(&mut state, &entity, &escape_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::Escape { .. },
+                Action::SetMonsterMove {
+                    next_move_byte: super::ESCAPE,
+                    ..
+                }
+            ]
+        ));
     }
 }
