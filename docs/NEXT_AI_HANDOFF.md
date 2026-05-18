@@ -45,15 +45,37 @@ Forbidden:
 
 Branch tip:
 
-- `5232ea9 Add collector move parity tests`
+- `8385df0 Fix stasis selection parity`
 
 Recent commits:
 
+- `8385df0 Fix stasis selection parity`
 - `5232ea9 Add collector move parity tests`
 - `bb10e7d Update handoff after gremlin leader audit`
 - `6e9a4d6 Fix minion sentinel parity`
 - `3d8ce24 Update handoff after taskmaster audit`
-- `f511731 Add taskmaster move parity tests`
+
+`8385df0` summary:
+
+- `BronzeAutomaton`, `BronzeOrb`, and Java `ApplyStasisAction` behavior were
+  checked.
+- Fixed `handle_apply_stasis` candidate selection: Java
+  `CardGroup.getRandomCard(rng, rarity)` sorts matching cards by `cardID`
+  before applying the RNG index. Rust now sorts rarity candidates by
+  `cards::java_id(...)` before removal.
+- Added tests for:
+  - Stasis rarity-candidate ordering before `cardRandomRng` selection;
+  - BronzeAutomaton first turn, Hyper Beam counter reset, post-Hyper no-counter
+    increment, and normal Flail/Boost counter increments;
+  - BronzeOrb usedStasis update, Support/Beam `lastTwoMoves` gates, and Stasis
+    take-turn queue order.
+
+Verification for `8385df0`:
+
+- `cargo test bronze_automaton --all-targets` -> `6 passed`
+- `cargo test bronze_orb --all-targets` -> `5 passed`
+- `cargo test apply_stasis --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1251 passed`
 
 `5232ea9` summary:
 
@@ -323,7 +345,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `5232ea9`.
+No uncommitted changes were present after `8385df0`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -379,6 +401,10 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `TheCollector` + `TorchHead`: checked in `5232ea9`. No business logic change
   was needed; tests lock initial spawn, Mega Debuff forcing, Fireball
   lastTwoMoves gate, debuff queue order, and existing enemy-slot revive truth.
+- `BronzeAutomaton` + `BronzeOrb`: fixed in `8385df0`. `ApplyStasisAction`
+  rarity candidate selection now sorts by Java `cardID` before RNG; tests lock
+  Automaton runtime counters, Hyper Beam timing, BronzeOrb usedStasis, and
+  Support/Beam history gates.
 
 Split / victory timing:
 
@@ -444,12 +470,12 @@ Recommended next packets:
    - `Taskmaster` was checked in `f511731`.
    - `GremlinLeader` was fixed in `6e9a4d6`.
    - `TheCollector` was checked in `5232ea9`.
-   - Next narrow packet: `BronzeAutomaton` + `BronzeOrb`
-     (`D:\rust\cardcrawl\monsters\city\BronzeAutomaton.java`,
-     `D:\rust\cardcrawl\monsters\city\BronzeOrb.java`,
-     `src/content/monsters/city/bronze_automaton.rs`, and
-     `src/content/monsters/city/bronze_orb.rs`). It exercises orb slots,
-     Stasis/runtime ownership, Hyper Beam timing, and move counters.
+   - `BronzeAutomaton` + `BronzeOrb` were fixed in `8385df0`.
+   - Next narrow packet: `Champ`
+     (`D:\rust\cardcrawl\monsters\city\Champ.java` and
+     `src/content/monsters/city/champ.rs`). It exercises threshold-triggered
+     state, forge count, execute-phase move gating, and multiple debuff/buff
+     branches.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
