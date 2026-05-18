@@ -18,6 +18,14 @@ any resumed turn, read only:
 Do not re-read broad source trees just to rediscover recent state. Use this file
 to choose the next narrow Java/Rust evidence packet.
 
+When selecting that packet, prefer the durable indexes:
+
+- `docs/JAVA_SOURCE_MAP.md`
+- `docs/MECHANICS_AUDIT_LEDGER.md`
+
+Update those files whenever a Java source owner, Rust owner, audit status, or
+next-lane recommendation changes.
+
 ## Current Rule
 
 Continue Java-source-backed mechanics cleanup for a Rust simulator intended for
