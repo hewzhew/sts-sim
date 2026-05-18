@@ -2628,9 +2628,10 @@ mod tests {
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
-        handle_queue_early_end_turn, handle_randomize_hand_costs, handle_return_stasis_card,
-        handle_upgrade_all_burns, handle_upgrade_all_cards_in_combat, handle_upgrade_all_in_hand,
-        handle_use_card_done, handle_use_potion, obtain_specific_potion_if_allowed,
+        handle_pre_battle_trigger, handle_queue_early_end_turn, handle_randomize_hand_costs,
+        handle_return_stasis_card, handle_upgrade_all_burns, handle_upgrade_all_cards_in_combat,
+        handle_upgrade_all_in_hand, handle_use_card_done, handle_use_potion,
+        obtain_specific_potion_if_allowed,
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
@@ -2639,6 +2640,7 @@ mod tests {
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::action::Action;
     use crate::runtime::combat::{CombatCard, Power, QueuedCardPlay, QueuedCardSource};
+    use crate::runtime::rng::StsRng;
     use crate::test_support::{blank_test_combat, test_monster};
 
     #[test]
@@ -2664,6 +2666,38 @@ mod tests {
             state.pop_next_action(),
             Some(Action::GainEnergy { amount: 1 }),
             "split draw actions are addToTop-style and must run before previously queued actions"
+        );
+    }
+
+    #[test]
+    fn monster_group_pre_battle_uses_monster_hp_rng_for_louse_curl_up_like_java() {
+        let mut state = blank_test_combat();
+        state.rng.monster_hp_rng = StsRng::new(41);
+        state.rng.misc_rng = StsRng::new(41);
+        state.entities.monsters = vec![test_monster(EnemyId::LouseNormal)];
+
+        let mut expected_hp_rng = state.rng.monster_hp_rng.clone();
+        let expected_curl_up = expected_hp_rng.random_range(3, 7);
+
+        handle_pre_battle_trigger(&mut state);
+
+        assert_eq!(state.rng.monster_hp_rng, expected_hp_rng);
+        assert_eq!(
+            state.rng.misc_rng.counter, 0,
+            "Java Louse.usePreBattleAction consumes AbstractDungeon.monsterHpRng, not miscRng"
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::CurlUp,
+                amount: expected_curl_up,
+            })
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::BattleStartPreDrawTrigger)
         );
     }
 
@@ -4114,7 +4148,7 @@ pub fn handle_pre_battle_trigger(state: &mut CombatState) {
                 state,
                 *enemy_id,
                 &entity_clone,
-                crate::content::monsters::PreBattleLegacyRng::Misc,
+                crate::content::monsters::PreBattleLegacyRng::MonsterHp,
             );
             for action in pre_actions {
                 state.queue_action_back(action);
