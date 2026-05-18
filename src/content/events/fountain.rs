@@ -37,6 +37,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     let curses_to_remove: Vec<u32> = run_state
                         .master_deck
                         .iter()
+                        .rev()
                         .filter(|card| is_fountain_removable_curse(card, run_state))
                         .map(|card| card.uuid)
                         .collect();
@@ -76,15 +77,19 @@ mod tests {
         let mut run_state = RunState::new(1, 0, true, "Ironclad");
         run_state.master_deck = vec![
             CombatCard::new(CardId::Injury, 11),
-            CombatCard::new(CardId::Pain, 12),
-            CombatCard::new(CardId::AscendersBane, 13),
-            CombatCard::new(CardId::CurseOfTheBell, 14),
-            CombatCard::new(CardId::Necronomicurse, 15),
-            CombatCard::new(CardId::Strike, 16),
+            CombatCard::new(CardId::Parasite, 12),
+            CombatCard::new(CardId::Doubt, 13),
+            CombatCard::new(CardId::Pain, 14),
+            CombatCard::new(CardId::AscendersBane, 15),
+            CombatCard::new(CardId::CurseOfTheBell, 16),
+            CombatCard::new(CardId::Necronomicurse, 17),
+            CombatCard::new(CardId::Strike, 18),
         ];
         let mut bottle = RelicState::new(RelicId::BottledFlame);
-        bottle.amount = 12;
+        bottle.amount = 14;
         run_state.relics.push(bottle);
+        run_state.current_hp = 80;
+        run_state.max_hp = 80;
         run_state.event_state = Some(EventState::new(EventId::FountainOfCurseCleansing));
         run_state.emitted_events.clear();
         let mut engine_state = EngineState::EventRoom;
@@ -98,19 +103,47 @@ mod tests {
                 .map(|card| (card.id, card.uuid))
                 .collect::<Vec<_>>(),
             vec![
-                (CardId::Pain, 12),
-                (CardId::AscendersBane, 13),
-                (CardId::CurseOfTheBell, 14),
-                (CardId::Necronomicurse, 15),
-                (CardId::Strike, 16),
+                (CardId::Pain, 14),
+                (CardId::AscendersBane, 15),
+                (CardId::CurseOfTheBell, 16),
+                (CardId::Necronomicurse, 17),
+                (CardId::Strike, 18),
             ]
         );
-        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+        assert_eq!(
+            run_state.max_hp, 77,
+            "Java CardGroup.removeCard runs Parasite.onRemoveFromMasterDeck"
+        );
+        assert_eq!(run_state.current_hp, 77);
+
+        let events = run_state.take_emitted_events();
+        let removed: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                DomainEvent::CardRemoved {
+                    card,
+                    source: DomainEventSource::Event(EventId::FountainOfCurseCleansing),
+                } => Some((card.id, card.uuid)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            removed,
+            vec![
+                (CardId::Doubt, 13),
+                (CardId::Parasite, 12),
+                (CardId::Injury, 11),
+            ],
+            "Java Fountain loops masterDeck from the end toward the front"
+        );
+        assert!(events.iter().any(|event| matches!(
             event,
-            DomainEvent::CardRemoved {
-                card,
+            DomainEvent::MaxHpChanged {
+                delta: -3,
+                current_hp: 77,
+                max_hp: 77,
                 source: DomainEventSource::Event(EventId::FountainOfCurseCleansing),
-            } if card.id == CardId::Injury && card.uuid == 11
+            }
         )));
     }
 
