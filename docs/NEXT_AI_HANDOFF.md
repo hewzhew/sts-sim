@@ -45,15 +45,46 @@ Forbidden:
 
 Branch tip:
 
-- `bf619c7 Fix minion prebattle source parity`
+- `24e4618 Fix spawn monster relic hook timing`
 
 Recent commits:
 
+- `24e4618 Fix spawn monster relic hook timing`
+- `14130c9 Update handoff after reptomancer audit`
 - `bf619c7 Fix minion prebattle source parity`
 - `b36e04b Update handoff after exploder audit`
 - `5aa6309 Fix exploder turn count timing`
-- `7c621ab Update handoff after repulsor audit`
-- `a8e2118 Add repulsor parity tests`
+
+`24e4618` summary:
+
+- Java `SpawnMonsterAction.update()`, Java `PhilosopherStone.onSpawnMonster`,
+  and Rust spawn/relic hooks were checked.
+- Fixed spawned-monster relic hook timing:
+  - Java calls `r.onSpawnMonster(m)` before `m.init()`, `m.applyPowers()`, and
+    `addMonster(...)`.
+  - `PhilosopherStone.onSpawnMonster` directly calls `monster.addPower(...)`;
+    it does not queue an `ApplyPowerAction`.
+  - Rust now applies on-spawn relic effects as immediate `AbstractCreature`
+    `addPower`-style state mutation before inserting the spawned monster and
+    before rolling its first move.
+- Fixed the same direct hook semantics for `Darkling` reincarnate:
+  - Java queues Heal / ChangeState / ApplyPower(Regrow), then synchronously
+    calls relic `onSpawnMonster(this)` during `takeTurn()` construction.
+  - Rust now mutates the Darkling immediately instead of appending a queued
+    Strength action.
+- Added/updated tests proving:
+  - Philosopher Stone spawn Strength is present immediately and only Minion
+    remains queued to the front for spawned minions;
+  - Philosopher Stone battle-start and spawn hooks both apply Strength;
+  - existing Darkling reincarnate ordering tests still pass with direct hook
+    mutation.
+
+Verification for `24e4618`:
+
+- `cargo test spawn_monster --all-targets` -> `1 passed`
+- `cargo test darkling --all-targets` -> `8 passed`
+- `cargo test philosopher --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1309 passed`
 
 `bf619c7` summary:
 
@@ -776,7 +807,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `bf619c7` before this handoff
+No uncommitted code changes were present after `24e4618` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -900,14 +931,21 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   before `RollMoveAction`; Rust now emits the runtime update first in both
   attack and block turns. Tests also lock pre-battle Explosive amount 3 and the
   existing Explosive countdown suicide/damage ordering.
+- `SpawnMonsterAction` / `PhilosopherStone`: fixed in `24e4618`. Java
+  `SpawnMonsterAction.update()` calls relic `onSpawnMonster(m)` before
+  `m.init()`, `m.applyPowers()`, and `addMonster(...)`, and
+  `PhilosopherStone.onSpawnMonster` directly mutates `monster.addPower(...)`
+  instead of queuing `ApplyPowerAction`. Rust now applies the spawn relic hook
+  as immediate state mutation before insertion and before the spawned monster's
+  first roll. `Darkling` reincarnate now uses the same direct hook semantics.
 
-Source suspicion carried forward from the Reptomancer packet:
+Source suspicion resolved in `24e4618`:
 
 - Java `SpawnMonsterAction.update()` calls relic `onSpawnMonster(m)` before the
-  monster is inserted into `AbstractDungeon.getMonsters().monsters`; Rust
-  `handle_spawn_monster` currently inserts the monster before calling spawn
-  relic hooks. This may matter for a relic hook that inspects the group. No
-  immediate failing test was added; keep it as a narrow future source packet.
+  monster is inserted into `AbstractDungeon.getMonsters().monsters`. Rust now
+  runs the modeled on-spawn relic hook before insertion. The only currently
+  modeled on-spawn relic is Philosopher's Stone, and its hook is direct
+  `addPower`-style mutation.
 
 Split / victory timing:
 
@@ -992,11 +1030,12 @@ Recommended next packets:
    - `Exploder` was fixed in `5aa6309`.
    - Dedicated `Reptomancer` move/slot behavior was fixed/locked in
      `bf619c7`.
-   - Next narrow packet: Java `SpawnMonsterAction.update()` hook ordering
-     (`D:\rust\cardcrawl\actions\common\SpawnMonsterAction.java`,
-     `src/engine/action_handlers/spawning.rs`,
-     `src/content/relics/hooks.rs`, and a focused PhilosopherStone-style test
-     if needed).
+   - Java `SpawnMonsterAction.update()` hook ordering was fixed in `24e4618`.
+   - Next narrow packet: Act 4 `SpireShield` + `SpireSpear` coordinated
+     runtime/move audit (`D:\rust\cardcrawl\monsters\ending\SpireShield.java`,
+     `D:\rust\cardcrawl\monsters\ending\SpireSpear.java`,
+     `src/content/monsters/ending/spire_shield.rs`,
+     `src/content/monsters/ending/spire_spear.rs`).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
