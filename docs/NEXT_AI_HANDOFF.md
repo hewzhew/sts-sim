@@ -45,15 +45,65 @@ Forbidden:
 
 Latest code commit:
 
-- `d245435 Model Surrounded facing back attack`
+- `2007560 Align relic delayed checks and null sources`
 
 Recent commits:
 
+- `2007560 Align relic delayed checks and null sources`
+- `35c414b Update handoff after stateful relic audit`
+- `09e6128 Update handoff after Surrounded audit`
 - `d245435 Model Surrounded facing back attack`
 - `63487e7 Document Mutagenic Strength addToTop order`
-- `1704499 Update handoff after Brimstone queue audit`
-- `22db4c7 Preserve Brimstone addToTop queue order`
-- `cb07b21 Update handoff after Red Skull audit`
+
+`2007560` summary:
+
+- Java checked:
+  - `deprecated/DEPRECATEDDodecahedron`
+  - `MercuryHourglass`
+  - `LetterOpener`
+  - counter/timing packet around `HappyFlower`, `IncenseBurner`,
+    `HornCleat`, `CaptainsWheel`, and `StoneCalendar`
+- Fixed Dodecahedron timing:
+  - Java deprecated Dodecahedron queues an anonymous bottom action from
+    `atTurnStart()`.
+  - That anonymous action checks whether the player is full HP when it
+    executes, then queues `GainEnergyAction(1)`.
+  - Rust previously checked full HP immediately in the relic hook.
+  - Rust now queues `Action::DodecahedronTurnStartCheck`; the check action
+    reads current HP at execution time and queues energy behind current
+    pending actions.
+- Fixed null source all-enemy relic damage:
+  - Java `MercuryHourglass` and `LetterOpener` use
+    `DamageAllEnemiesAction(null, ...)`.
+  - Rust now emits `source: NO_SOURCE` for both, matching existing
+    `StoneCalendar` and `Charon's Ashes` handling.
+  - Tests now assert the null-source semantics so source-sensitive effects
+    such as owner checks do not silently regress.
+- Confirmed without code changes:
+  - `HappyFlower`, `IncenseBurner`, `HornCleat`, `CaptainsWheel`, and
+    `StoneCalendar` already mutate their counters synchronously like Java.
+
+Verification for `2007560`:
+
+- `cargo test dodecahedron --all-targets` -> `1 passed`
+- `cargo test mercury_hourglass --all-targets` -> `1 passed`
+- `cargo test letter_opener --all-targets` -> `1 passed`
+- `cargo test happy_flower --all-targets` -> `1 passed`
+- `cargo test incense_burner --all-targets` -> `1 passed`
+- `cargo test horn_cleat --all-targets` -> `1 passed`
+- `cargo test captains_wheel --all-targets` -> `1 passed`
+- `cargo test stone_calendar --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1346 passed`
+
+Next narrow packet:
+
+- Continue relic source audit from Java, prioritizing relics whose Java code
+  queues custom/anonymous actions, uses `DamageAllEnemiesAction(null, ...)`, or
+  stores private counters/booleans that Rust may have represented indirectly.
+- Good candidates:
+  - `LetterOpener` follow-up with related on-use counter relics if needed.
+  - `Nunchaku`, `PenNib`, `InkBottle`, `Sundial`, `UnceasingTop`.
+  - Source-sensitive relic/power interactions around `NO_SOURCE`.
 
 `d245435` summary:
 
