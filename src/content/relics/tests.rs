@@ -3001,10 +3001,57 @@ fn shared_boss_relic_third_batch_metadata_matches_java_sources() {
     assert_eq!(energy_master_delta(RelicId::SneckoEye), 0);
     assert_eq!(energy_master_delta(RelicId::SlaversCollar), 0);
 
+    let velvet = get_relic_subscriptions(RelicId::VelvetChoker);
+    assert!(velvet.at_battle_start);
+    assert!(velvet.at_turn_start);
+    assert!(velvet.on_use_card);
+    assert!(velvet.on_victory);
     assert!(get_relic_subscriptions(RelicId::SneckoEye).at_pre_battle);
     assert!(get_relic_subscriptions(RelicId::SlaversCollar).at_battle_start);
     assert!(get_relic_subscriptions(RelicId::SlaversCollar).on_victory);
     assert!(!get_relic_subscriptions(RelicId::WristBlade).on_use_card);
+}
+
+#[test]
+fn velvet_choker_public_counter_matches_java_turn_and_victory_hooks() {
+    let mut state = crate::test_support::blank_test_combat();
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::VelvetChoker));
+    state.entities.player.relics[0].counter = -1;
+
+    assert!(hooks::at_battle_start(&mut state).is_empty());
+    assert_eq!(state.entities.player.relics[0].counter, 0);
+
+    for _ in 0..6 {
+        let card = CombatCard::new(CardId::Strike, 990);
+        assert!(hooks::on_use_card(&mut state, &card, Some(1)).is_empty());
+    }
+    assert_eq!(
+        state.entities.player.relics[0].counter, 6,
+        "Java VelvetChoker.onPlayCard increments the public relic counter up to the play limit"
+    );
+
+    assert!(
+        hooks::on_use_card(&mut state, &CombatCard::new(CardId::Strike, 991), Some(1)).is_empty()
+    );
+    assert_eq!(
+        state.entities.player.relics[0].counter, 6,
+        "Java keeps the counter capped once the play limit is reached"
+    );
+
+    assert!(hooks::at_turn_start(&mut state).is_empty());
+    assert_eq!(
+        state.entities.player.relics[0].counter, 0,
+        "Java VelvetChoker.atTurnStart resets the public relic counter"
+    );
+
+    assert!(hooks::on_victory(&mut state).is_empty());
+    assert_eq!(
+        state.entities.player.relics[0].counter, -1,
+        "Java VelvetChoker.onVictory hides the public counter with -1"
+    );
 }
 
 #[test]

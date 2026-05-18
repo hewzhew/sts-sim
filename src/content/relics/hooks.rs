@@ -247,6 +247,11 @@ pub fn at_battle_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
+            RelicId::VelvetChoker => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::velvet_choker::at_battle_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
             RelicId::TeardropLocket => {
                 actions.extend(crate::content::relics::teardrop_locket::at_battle_start())
             }
@@ -452,6 +457,11 @@ pub fn on_victory(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]
                 ));
                 state.entities.player.relics[relic_index] = rs;
             }
+            RelicId::VelvetChoker => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::velvet_choker::on_victory(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
             _ => {
                 unreachable!("Relic present in on_victory bus but unhandled in hooks.rs match arm")
             }
@@ -577,6 +587,11 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
             RelicId::UnceasingTop => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
                 crate::content::relics::unceasing_top::at_turn_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
+            }
+            RelicId::VelvetChoker => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::velvet_choker::at_turn_start(&mut rs);
                 state.entities.player.relics[relic_index] = rs;
             }
             _ => unreachable!(
@@ -759,6 +774,11 @@ pub fn on_use_card(
                 actions.extend(crate::content::relics::orange_pellets::on_use_card(
                     card_id, counter,
                 ));
+            }
+            RelicId::VelvetChoker => {
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::velvet_choker::on_use_card(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::MedicalKit => {
                 // Exhaust-on-Status is handled in core.rs should_exhaust check.

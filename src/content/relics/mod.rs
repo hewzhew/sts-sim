@@ -1019,7 +1019,12 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.on_use_card = true;
             sub.at_turn_start = true;
         }
-        RelicId::VelvetChoker => {} // Passive — engine checks can_play_card
+        RelicId::VelvetChoker => {
+            sub.at_battle_start = true;
+            sub.at_turn_start = true;
+            sub.on_use_card = true;
+            sub.on_victory = true;
+        }
         RelicId::OrangePellets => sub.on_use_card = true,
         RelicId::Sling => sub.at_battle_start = true,
         RelicId::WristBlade => {} // Passive — damage calc checks
