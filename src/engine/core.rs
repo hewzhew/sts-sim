@@ -233,28 +233,7 @@ fn settle_victory_if_ready(
     engine_state: &mut EngineState,
     combat_state: &mut CombatState,
 ) -> Option<bool> {
-    if !combat_state.entities.monsters.iter().all(|m| {
-        if m.is_escaped {
-            return true;
-        }
-        if m.half_dead {
-            return false;
-        }
-        if m.current_hp > 0 {
-            return false;
-        }
-        let is_pending_rebirth = crate::content::powers::store::powers_for(combat_state, m.id)
-            .is_some_and(|powers| {
-                powers.iter().any(|p| {
-                    matches!(
-                        p.power_type,
-                        crate::content::powers::PowerId::Regrow
-                            | crate::content::powers::PowerId::Unawakened
-                    )
-                })
-            });
-        !is_pending_rebirth
-    }) {
+    if !combat_state.are_monsters_basically_dead_java() {
         return None;
     }
 
@@ -2702,5 +2681,24 @@ mod tests {
             next_monster.move_history().is_empty(),
             "Java GameActionManager calls m.applyTurnPowers() immediately after each monster takeTurn(); Explosive damage can kill the player before the next monster is dequeued"
         );
+    }
+
+    #[test]
+    fn victory_settlement_uses_java_basically_dead_flags_not_zero_hp() {
+        let mut combat_state = blank_test_combat();
+        let mut zero_hp_not_dying = planned_monster(EnemyId::JawWorm, 1);
+        zero_hp_not_dying.current_hp = 0;
+        zero_hp_not_dying.is_dying = false;
+        zero_hp_not_dying.is_escaped = false;
+        zero_hp_not_dying.half_dead = false;
+        combat_state.entities.monsters = vec![zero_hp_not_dying];
+        let mut engine_state = EngineState::CombatProcessing;
+
+        assert_eq!(
+            super::settle_victory_if_ready(&mut engine_state, &mut combat_state),
+            None,
+            "Java MonsterGroup.areMonstersBasicallyDead ignores currentHealth; only isDying/isEscaping count"
+        );
+        assert_eq!(engine_state, EngineState::CombatProcessing);
     }
 }
