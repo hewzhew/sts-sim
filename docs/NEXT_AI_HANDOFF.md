@@ -60,6 +60,22 @@ Forbidden:
 
 Latest monster-runtime documentation reconciliation:
 
+- Rechecked Taskmaster against Java/Rust owners without code changes.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\city\Taskmaster.java`
+- Rust checked:
+  - `src\content\monsters\city\taskmaster.rs`
+- Result:
+  - Taskmaster requires no hidden runtime truth from protocol.
+  - Java `getMove(int)` always sets Scouring Whip and ignores roll/history.
+  - Rust preserves Java action order: damage, Wound-to-discard, Ascension 18
+    self Strength, then `RollMonsterMove`.
+  - Java voice/death sound rolls are UI/audio-only and are not gameplay RNG.
+- Verification:
+  - `cargo test taskmaster --all-targets` -> `4 passed`
+
+Latest monster-runtime documentation reconciliation:
+
 - Rechecked Repulsor against Java/Rust owners without code changes.
 - Java checked:
   - `D:\rust\cardcrawl\monsters\beyond\Repulsor.java`

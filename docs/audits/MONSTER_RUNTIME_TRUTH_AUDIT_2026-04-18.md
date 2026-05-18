@@ -33,6 +33,7 @@ Scope:
 | Bandit Bear | None | N/A | N/A | N/A | SetMoveAction chain only | Good |
 | Bandit Leader | None | N/A | N/A | N/A | SetMoveAction chain plus Cross Slash `lastTwoMoves` guard only | Good |
 | Bandit Pointy | None | N/A | N/A | N/A | Repeated attack SetMoveAction only | Good |
+| Taskmaster | None | N/A | N/A | N/A | None; always Scouring Whip | Good |
 | Snake Plant | None | N/A | N/A | N/A | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
 | Louse | `bite_damage` | Yes | N/A | Yes | None | Good |
 | Snecko | `first_turn` | Yes | Yes | Yes | `lastTwoMoves(BITE)` sequencing | Good |
@@ -160,6 +161,19 @@ Scope:
 - `BanditBear.die()` calls surviving bandits' `deathReact()`, but the vanilla survivors queue only `TalkAction`; this remains UI/dialogue-only and is not imported as runtime truth.
 - Verification:
   - `cargo test bandit --all-targets` -> `7 passed`
+
+### Taskmaster
+
+- `Taskmaster` does not require hidden runtime truth from protocol.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\city\Taskmaster.java`
+- Rust checked:
+  - `src\content\monsters\city\taskmaster.rs`
+- Java `Taskmaster.getMove(int)` always sets Scouring Whip with `ATTACK_DEBUFF` intent and 7 base damage; it does not use the roll or move history.
+- Java `takeTurn()` queues damage, Wound-to-discard, optional Ascension 18 self Strength, then `RollMoveAction(this)`. Rust mirrors the same action order and wound thresholds.
+- Java voice/death sound rolls are UI/audio-only and are not imported as gameplay RNG.
+- Verification:
+  - `cargo test taskmaster --all-targets` -> `4 passed`
 
 ### Generic Action-Family Checks
 
