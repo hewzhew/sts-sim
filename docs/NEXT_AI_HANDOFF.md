@@ -45,15 +45,34 @@ Forbidden:
 
 Branch tip:
 
-- `6e9a4d6 Fix minion sentinel parity`
+- `5232ea9 Add collector move parity tests`
 
 Recent commits:
 
+- `5232ea9 Add collector move parity tests`
+- `bb10e7d Update handoff after gremlin leader audit`
 - `6e9a4d6 Fix minion sentinel parity`
 - `3d8ce24 Update handoff after taskmaster audit`
 - `f511731 Add taskmaster move parity tests`
-- `f0d3107 Update handoff after chosen audit`
-- `0b984ca Add chosen move parity tests`
+
+`5232ea9` summary:
+
+- `TheCollector` and `TorchHead` Java/Rust behavior were checked.
+- No business logic change was needed.
+- Added tests proving:
+  - initial spawn queues two TorchHead spawns, then runtime update, then
+    `RollMonsterMove`;
+  - initial spawn is forced regardless of random roll;
+  - turn-three `MEGA_DEBUFF` is forced until `ult_used` becomes true;
+  - Fireball is blocked only by Java `lastTwoMoves(FIREBALL)`;
+  - Mega Debuff queues Weak, Vulnerable, Frail, runtime update, then roll.
+- Existing tests already covered Collector buff targeting, death cleanup, and
+  enemy-slot-based revive behavior.
+
+Verification for `5232ea9`:
+
+- `cargo test collector --all-targets` -> `10 passed`
+- `cargo test --all-targets` -> `1244 passed`
 
 `6e9a4d6` summary:
 
@@ -304,7 +323,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `6e9a4d6`.
+No uncommitted changes were present after `5232ea9`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -357,6 +376,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `Reptomancer`: touched in `6e9a4d6` only for shared Minion sentinel parity.
   Its broader move/slot behavior still deserves a later dedicated packet if
   needed.
+- `TheCollector` + `TorchHead`: checked in `5232ea9`. No business logic change
+  was needed; tests lock initial spawn, Mega Debuff forcing, Fireball
+  lastTwoMoves gate, debuff queue order, and existing enemy-slot revive truth.
 
 Split / victory timing:
 
@@ -421,12 +443,13 @@ Recommended next packets:
    - `Chosen` was checked in `0b984ca`.
    - `Taskmaster` was checked in `f511731`.
    - `GremlinLeader` was fixed in `6e9a4d6`.
-   - Next narrow packet: `TheCollector`
-     (`D:\rust\cardcrawl\monsters\city\TheCollector.java`,
-     `D:\rust\cardcrawl\monsters\city\TorchHead.java`, and
-     `src/content/monsters/city/the_collector.rs`). It exercises minion slots,
-     spawned TorchHead lifecycle, buffs over current monster group, and
-     `RollMoveAction` / spawn scheduling.
+   - `TheCollector` was checked in `5232ea9`.
+   - Next narrow packet: `BronzeAutomaton` + `BronzeOrb`
+     (`D:\rust\cardcrawl\monsters\city\BronzeAutomaton.java`,
+     `D:\rust\cardcrawl\monsters\city\BronzeOrb.java`,
+     `src/content/monsters/city/bronze_automaton.rs`, and
+     `src/content/monsters/city/bronze_orb.rs`). It exercises orb slots,
+     Stasis/runtime ownership, Hyper Beam timing, and move counters.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
