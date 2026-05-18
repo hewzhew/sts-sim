@@ -45,15 +45,61 @@ Forbidden:
 
 Branch tip:
 
-- `c0fbef0 Sync Velvet Choker public counter hooks`
+- `52fb5c8 Make relic counter hooks mutate immediately`
 
 Recent commits:
 
+- `52fb5c8 Make relic counter hooks mutate immediately`
+- `227a871 Route Orange Pellets turn reset through relic hook`
 - `c0fbef0 Sync Velvet Choker public counter hooks`
 - `11f3e13 Update handoff after initial combat hook audit`
 - `3fda120 Match Java initial combat hook queue order`
-- `f59c6da Update handoff after post-draw queue audit`
-- `012e056 Match Java post-draw hook queue order`
+
+`52fb5c8` summary:
+
+- Java checked:
+  - `Kunai`, `Shuriken`, `LetterOpener`, `OrnamentalFan`, `OrangePellets`,
+    and `Inserter`.
+- Fixed Rust relic counter mutation timing:
+  - Java updates these relic counters synchronously inside `atTurnStart()` or
+    `onUseCard()`, then queues gameplay actions such as Strength, Dexterity,
+    all-enemy damage, block, RemoveDebuffs, or IncreaseMaxOrb.
+  - Rust still had several older helpers that returned
+    `Action::UpdateRelicCounter`, delaying the visible/internal counter update
+    until the action queue drained.
+  - Rust now mutates `RelicState` immediately in the relic hook helpers and
+    only returns the real queued gameplay actions.
+  - `OrangePellets` now treats negative/default counter values as empty flags,
+    matching Java's false/false/false static booleans.
+
+Verification for `52fb5c8`:
+
+- `cargo test letter_opener --all-targets` -> `1 passed`
+- `cargo test attack_counter_relics --all-targets` -> `1 passed`
+- `cargo test orange_pellets --all-targets` -> `3 passed`
+- `cargo test inserter --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1337 passed`
+
+`227a871` summary:
+
+- Java `OrangePellets.atTurnStart()` was checked against Rust's existing
+  special-case reset in `engine/core.rs`.
+- Fixed Rust Orange Pellets turn reset:
+  - Java resets the Attack/Skill/Power flags through the relic `atTurnStart`
+    hook.
+  - Rust previously reset the counter only in the regular new-player-turn path,
+    so a stale combo state absorbed from the previous combat could survive into
+    the first turn of a new combat.
+  - Rust now subscribes Orange Pellets to the `at_turn_start` relic hook and
+    removes the core special case.
+
+Verification for `227a871`:
+
+- `cargo test orange_pellets --all-targets` -> `3 passed`
+- `cargo test shared_shop_relic_gap_batch_two_metadata_matches_java_sources --all-targets`
+  -> `1 passed`
+- `cargo test initial_battle_start --all-targets` -> `4 passed`
+- `cargo test --all-targets` -> `1337 passed`
 
 `c0fbef0` summary:
 
@@ -1506,10 +1552,16 @@ Recommended next packets:
    - Java initial `GainEnergyAndEnableControlsAction` vs Rust first-turn energy
      initialization was checked in `c0fbef0`; no code change was needed.
    - Velvet Choker public counter hooks were fixed in `c0fbef0`.
+   - Orange Pellets turn reset was fixed in `227a871`.
+   - Java synchronous counter mutation for Kunai, Shuriken, Letter Opener,
+     Ornamental Fan, Orange Pellets, and Inserter was fixed in `52fb5c8`.
+   - Orichalcum `trigger` was source-checked: Java source only clears it and no
+     normal source path sets it true, so no Rust state was added in this packet.
    - Next narrow packet: continue Java relic `atTurnStart` / public counter
-     hook coverage. Start with `Orichalcum` trigger semantics and
-     `OrangePellets` turn-reset semantics, then continue the remaining relic
-     overrides one Java relic file at a time.
+     hook coverage with the remaining stateful relics one Java relic file at a
+     time. Good candidates are `Damaru`, `EmotionChip`, `HoveringKite`,
+     `RunicCapacitor`, `AncientTeaSet`, and `ArtOfWar`, checking for immediate
+     state mutation vs queued-action leftovers.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
