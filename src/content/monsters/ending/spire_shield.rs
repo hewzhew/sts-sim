@@ -18,8 +18,37 @@ const SMASH: u8 = 3;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::monsters::EnemyId;
-    use crate::runtime::combat::{Power, PowerPayload};
+    use crate::content::monsters::{EnemyId, PreBattleLegacyRng};
+    use crate::runtime::combat::{OrbEntity, OrbId, Power, PowerPayload};
+
+    #[test]
+    fn pre_battle_applies_surrounded_sentinel_then_artifact_like_java() {
+        let mut shield = crate::test_support::test_monster(EnemyId::SpireShield);
+        shield.id = 1;
+        let mut state = crate::test_support::combat_with_monsters(vec![shield.clone()]);
+        state.meta.ascension_level = 18;
+
+        let actions =
+            SpireShield::use_pre_battle_actions(&mut state, &shield, PreBattleLegacyRng::Misc);
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Surrounded,
+                    amount: -1,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Artifact,
+                    amount: 2,
+                },
+            ]
+        );
+    }
 
     #[test]
     fn non_asc18_smash_block_uses_current_damage_output_like_java() {
@@ -49,6 +78,77 @@ mod tests {
                 amount: 43,
             }
         )));
+    }
+
+    #[test]
+    fn bash_without_orbs_applies_strength_without_consuming_focus_rng() {
+        let mut shield = crate::test_support::test_monster(EnemyId::SpireShield);
+        shield.id = 1;
+        let mut state = crate::test_support::combat_with_monsters(vec![shield.clone()]);
+        state.rng.ai_rng = crate::runtime::rng::StsRng::new(0);
+
+        let actions = SpireShield::take_turn_plan(&mut state, &shield, &bash_plan(3));
+
+        assert_eq!(state.rng.ai_rng.counter, 0);
+        assert!(actions.contains(&Action::ApplyPower {
+            source: 1,
+            target: PLAYER,
+            power_id: PowerId::Strength,
+            amount: -1,
+        }));
+        assert!(!actions.iter().any(|action| matches!(
+            action,
+            Action::ApplyPower {
+                power_id: PowerId::Focus,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn bash_with_orbs_uses_take_turn_rng_for_focus_or_strength_choice() {
+        let mut shield = crate::test_support::test_monster(EnemyId::SpireShield);
+        shield.id = 1;
+        let mut state = crate::test_support::combat_with_monsters(vec![shield.clone()]);
+        state
+            .entities
+            .player
+            .orbs
+            .push(OrbEntity::new(OrbId::Lightning));
+        state.rng.ai_rng = crate::runtime::rng::StsRng::new(0);
+
+        let actions = SpireShield::take_turn_plan(&mut state, &shield, &bash_plan(3));
+
+        assert_eq!(state.rng.ai_rng.counter, 1);
+        assert!(actions.contains(&Action::ApplyPower {
+            source: 1,
+            target: PLAYER,
+            power_id: PowerId::Focus,
+            amount: -1,
+        }));
+    }
+
+    #[test]
+    fn fortify_blocks_all_monsters_in_group_without_hp_filter_like_java() {
+        let mut shield = crate::test_support::test_monster(EnemyId::SpireShield);
+        shield.id = 1;
+        let mut defeated_ally = crate::test_support::test_monster(EnemyId::SpireSpear);
+        defeated_ally.id = 2;
+        defeated_ally.current_hp = 0;
+        defeated_ally.is_dying = false;
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![shield.clone(), defeated_ally]);
+
+        let actions = SpireShield::take_turn_plan(&mut state, &shield, &fortify_plan());
+
+        assert!(actions.contains(&Action::GainBlock {
+            target: 1,
+            amount: 30,
+        }));
+        assert!(actions.contains(&Action::GainBlock {
+            target: 2,
+            amount: 30,
+        }));
     }
 
     #[test]
@@ -213,7 +313,7 @@ impl MonsterBehavior for SpireShield {
                 source: entity.id,
                 target: PLAYER,
                 power_id: PowerId::Surrounded,
-                amount: 1,
+                amount: -1,
             },
             Action::ApplyPower {
                 source: entity.id,

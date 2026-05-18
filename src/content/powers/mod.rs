@@ -1827,7 +1827,13 @@ pub fn calculate_monster_damage(
         }
     }
 
-    // 4. Target powers atDamageFinalReceive (Intangible)
+    // 4. Java BackAttackPower multiplier is applied after player receive
+    // modifiers, before final receive powers such as Intangible.
+    if crate::content::powers::store::has_power(state, source_id, PowerId::BackAttack) {
+        tmp *= 1.5;
+    }
+
+    // 5. Target powers atDamageFinalReceive (Intangible)
     if let Some(target_powers) = crate::content::powers::store::powers_for(state, target_id) {
         for p in target_powers {
             tmp = match p.power_type {
@@ -2030,6 +2036,21 @@ mod java_decay_tests {
                 amount: 1,
             }]
         );
+    }
+
+    #[test]
+    fn monster_back_attack_power_multiplies_existing_attack_damage_like_java() {
+        let mut monster =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::SpireShield);
+        monster.id = 1;
+        let mut state = crate::test_support::combat_with_monsters(vec![monster]);
+        crate::content::powers::store::set_powers_for(
+            &mut state,
+            1,
+            vec![power(PowerId::BackAttack, -1, false)],
+        );
+
+        assert_eq!(calculate_monster_damage(10, 1, 0, &state), 15);
     }
 
     #[test]

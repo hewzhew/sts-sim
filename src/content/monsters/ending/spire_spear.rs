@@ -19,7 +19,44 @@ const SKEWER: u8 = 3;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::monsters::EnemyId;
+    use crate::content::monsters::{EnemyId, PreBattleLegacyRng};
+
+    #[test]
+    fn pre_battle_artifact_uses_java_asc18_gate() {
+        let mut spear = crate::test_support::test_monster(EnemyId::SpireSpear);
+        spear.id = 1;
+        let mut low = crate::test_support::combat_with_monsters(vec![spear.clone()]);
+        low.meta.ascension_level = 17;
+
+        let low_actions =
+            SpireSpear::use_pre_battle_actions(&mut low, &spear, PreBattleLegacyRng::Misc);
+
+        assert_eq!(
+            low_actions,
+            vec![Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Artifact,
+                amount: 1,
+            }]
+        );
+
+        let mut high = crate::test_support::combat_with_monsters(vec![spear.clone()]);
+        high.meta.ascension_level = 18;
+
+        let high_actions =
+            SpireSpear::use_pre_battle_actions(&mut high, &spear, PreBattleLegacyRng::Misc);
+
+        assert_eq!(
+            high_actions,
+            vec![Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Artifact,
+                amount: 2,
+            }]
+        );
+    }
 
     #[test]
     fn asc18_burn_strike_adds_burns_to_draw_pile_top_like_java() {
@@ -40,6 +77,97 @@ mod tests {
                 upgraded: false,
             }
         )));
+    }
+
+    #[test]
+    fn burn_strike_queues_two_hits_then_burns_then_roll_like_java() {
+        let mut spear = crate::test_support::test_monster(EnemyId::SpireSpear);
+        spear.id = 1;
+        let plan = burn_strike_plan(18);
+        let mut state = crate::test_support::combat_with_monsters(vec![spear.clone()]);
+
+        let actions = SpireSpear::take_turn_plan(&mut state, &spear, &plan);
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 6,
+                    damage_kind: DamageKind::Normal,
+                },
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 6,
+                    damage_kind: DamageKind::Normal,
+                },
+                Action::MakeTempCardInDrawPile {
+                    card_id: CardId::Burn,
+                    amount: 2,
+                    random_spot: false,
+                    to_bottom: false,
+                    upgraded: false,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        );
+    }
+
+    #[test]
+    fn piercer_buffs_all_monsters_in_group_without_hp_filter_like_java() {
+        let mut spear = crate::test_support::test_monster(EnemyId::SpireSpear);
+        spear.id = 1;
+        let mut defeated_ally = crate::test_support::test_monster(EnemyId::SpireShield);
+        defeated_ally.id = 2;
+        defeated_ally.current_hp = 0;
+        defeated_ally.is_dying = false;
+        let mut state =
+            crate::test_support::combat_with_monsters(vec![spear.clone(), defeated_ally]);
+
+        let actions = SpireSpear::take_turn_plan(&mut state, &spear, &piercer_plan());
+
+        assert!(actions.contains(&Action::ApplyPower {
+            source: 1,
+            target: 1,
+            power_id: PowerId::Strength,
+            amount: 2,
+        }));
+        assert!(actions.contains(&Action::ApplyPower {
+            source: 1,
+            target: 2,
+            power_id: PowerId::Strength,
+            amount: 2,
+        }));
+    }
+
+    #[test]
+    fn skewer_uses_imported_runtime_hit_count() {
+        let mut spear = crate::test_support::test_monster(EnemyId::SpireSpear);
+        spear.id = 1;
+        spear.spire_spear.skewer_count = 5;
+        spear.set_planned_move_id(SKEWER);
+        let mut state = crate::test_support::combat_with_monsters(vec![spear.clone()]);
+
+        let plan = SpireSpear::turn_plan(&state, &spear);
+        let actions = SpireSpear::take_turn_plan(&mut state, &spear, &plan);
+
+        let hits = actions
+            .iter()
+            .filter(|action| {
+                matches!(
+                    action,
+                    Action::MonsterAttack {
+                        source: 1,
+                        target: PLAYER,
+                        base_damage: 10,
+                        damage_kind: DamageKind::Normal,
+                    }
+                )
+            })
+            .count();
+        assert_eq!(hits, 5);
     }
 
     #[test]
