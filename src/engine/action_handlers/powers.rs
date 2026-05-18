@@ -1085,6 +1085,15 @@ mod tests {
             -2,
             "Java ShiftingPower inherits AbstractPower.amount == -1 and duplicate ApplyPowerAction uses default stackPower(-1)"
         );
+
+        let mut reactive_state = blank_test_combat();
+        handle_apply_power(0, 0, PowerId::Reactive, -1, &mut reactive_state);
+        handle_apply_power(0, 0, PowerId::Reactive, -1, &mut reactive_state);
+        assert_eq!(
+            store::power_amount(&reactive_state, 0, PowerId::Reactive),
+            -2,
+            "Java ReactivePower inherits AbstractPower.amount == -1 and duplicate ApplyPowerAction uses default stackPower(-1)"
+        );
     }
 
     #[test]

@@ -212,6 +212,7 @@ pub fn uses_sentinel_amount(id: PowerId) -> bool {
             | PowerId::Regrow
             | PowerId::Surrounded
             | PowerId::Unawakened
+            | PowerId::Reactive
             | PowerId::Confusion
             | PowerId::Shifting
             | PowerId::WrathNextTurn

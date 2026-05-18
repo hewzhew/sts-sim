@@ -356,7 +356,7 @@ fn apply_damage_to_monster_via_pipeline(
             );
             if matches!(
                 power.power_type,
-                PowerId::Malleable | PowerId::CurlUp | PowerId::Flight
+                PowerId::Malleable | PowerId::CurlUp | PowerId::Flight | PowerId::Reactive
             ) {
                 for a in hook_actions {
                     state.queue_action_back(a);
@@ -1764,6 +1764,40 @@ mod tests {
             "Java split interrupt is guarded by !isDying after super.damage(info)"
         );
         assert_eq!(state.pop_next_action(), None);
+    }
+
+    #[test]
+    fn reactive_power_reroll_is_added_to_bottom_like_java() {
+        let mut state = blank_test_combat();
+        let mut mass = test_monster(EnemyId::WrithingMass);
+        mass.id = 91;
+        mass.current_hp = 20;
+        state.entities.monsters = vec![mass];
+        store::set_powers_for(
+            &mut state,
+            91,
+            vec![Power {
+                power_type: PowerId::Reactive,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        state.queue_action_back(Action::DrawCards(1));
+
+        handle_damage(normal_player_damage(91, 3), &mut state);
+
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::DrawCards(1)),
+            "Java ReactivePower.addToBot leaves existing queued actions ahead of the reroll"
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::RollMonsterMove { monster_id: 91 })
+        );
     }
 
     #[test]

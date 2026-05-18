@@ -280,7 +280,7 @@ impl MonsterBehavior for WrithingMass {
                 source: entity.id,
                 target: entity.id,
                 power_id: PowerId::Reactive,
-                amount: 1,
+                amount: -1,
             },
             Action::ApplyPower {
                 source: entity.id,
@@ -425,5 +425,37 @@ mod tests {
                 ..
             }]
         ));
+    }
+
+    #[test]
+    fn pre_battle_powers_use_java_amounts() {
+        let mut state = crate::test_support::combat_with_monsters(vec![]);
+        let mut mass = crate::test_support::test_monster(EnemyId::WrithingMass);
+        mass.id = 42;
+
+        let actions = <WrithingMass as MonsterBehavior>::use_pre_battle_actions(
+            &mut state,
+            &mass,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::ApplyPower {
+                    source: 42,
+                    target: 42,
+                    power_id: PowerId::Reactive,
+                    amount: -1,
+                },
+                Action::ApplyPower {
+                    source: 42,
+                    target: 42,
+                    power_id: PowerId::Malleable,
+                    amount: 3,
+                },
+            ],
+            "Java ReactivePower inherits AbstractPower.amount == -1; MalleablePower(this) starts at 3"
+        );
     }
 }
