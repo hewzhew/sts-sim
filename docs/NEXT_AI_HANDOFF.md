@@ -45,15 +45,49 @@ Forbidden:
 
 Latest code commit:
 
-- `63487e7 Document Mutagenic Strength addToTop order`
+- `d245435 Model Surrounded facing back attack`
 
 Recent commits:
 
+- `d245435 Model Surrounded facing back attack`
 - `63487e7 Document Mutagenic Strength addToTop order`
 - `1704499 Update handoff after Brimstone queue audit`
 - `22db4c7 Preserve Brimstone addToTop queue order`
 - `cb07b21 Update handoff after Red Skull audit`
-- `d86fe7e Defer Red Skull battle start bloodied check`
+
+`d245435` summary:
+
+- Java checked:
+  - `AbstractPlayer.playCard()`
+  - `AbstractMonster.applyPowers()`, `calculateDamage()`,
+    `applyBackAttack()`, and `removeSurroundedPower()`
+  - `CardGroup.refreshHandLayout()`
+  - `SpireShield` / `SpireSpear` constructors, `usePreBattleAction()`, and
+    `die()`
+- Fixed Surrounded / BackAttack state modeling:
+  - Added `PlayerEntity.facing_left`, the mechanical Rust equivalent of Java
+    `AbstractPlayer.flipHorizontal` for Shield/Spear.
+  - Added `content::powers::core::surrounded` to synchronize BackAttack markers
+    from Surrounded + facing + monster side.
+  - From-hand targeted card play now flips the player toward the selected
+    target while Surrounded is active, matching Java `playCard()`.
+  - Applying/removing Surrounded now synchronizes BackAttack markers.
+  - Shield/Spear factory and spawn paths set mechanical left/right positions;
+    protocol imports with absolute drawX are handled by type for this pair.
+  - Stable combat state keys include `facing_left` so searches do not merge
+    opposite Shield/Spear facing states.
+- Confirmed:
+  - Existing Shield/Spear death cleanup was already attached to `on_death`,
+    not `take_turn_plan`.
+  - Central death dispatch marks the dying monster before monster `on_death`,
+    matching Java `super.die()` before Shield/Spear cleanup loops.
+
+Verification for `d245435`:
+
+- `cargo test surrounded --all-targets` -> `7 passed`
+- `cargo test spire_shield --all-targets` -> `9 passed`
+- `cargo test spire_spear --all-targets` -> `8 passed`
+- `cargo test --all-targets` -> `1346 passed`
 
 `63487e7` summary:
 
@@ -1690,6 +1724,8 @@ Recommended next packets:
      `AbstractRoom.update()` was fixed/locked in `3fda120`.
    - Java initial `GainEnergyAndEnableControlsAction` vs Rust first-turn energy
      initialization was checked in `c0fbef0`; no code change was needed.
+   - Act 4 `Surrounded` / `BackAttack` facing semantics were fixed/locked in
+     `d245435`.
    - Velvet Choker public counter hooks were fixed in `c0fbef0`.
    - Orange Pellets turn reset was fixed in `227a871`.
    - Java synchronous counter mutation for Kunai, Shuriken, Letter Opener,
