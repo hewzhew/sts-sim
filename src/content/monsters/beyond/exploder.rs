@@ -104,15 +104,17 @@ impl MonsterBehavior for Exploder {
         entity: &MonsterEntity,
         plan: &MonsterTurnPlan,
     ) -> Vec<Action> {
-        let mut actions = match (plan.move_id, plan.attack()) {
-            (ATTACK, Some(attack)) => attack_actions(entity.id, PLAYER, attack),
-            (BLOCK, None) => Vec::new(),
-            (move_id, _) => panic!("exploder plan/steps mismatch: {} {:?}", move_id, plan.steps),
-        };
-        actions.push(exploder_runtime_update(
+        let mut actions = vec![exploder_runtime_update(
             entity,
             runtime(entity).turn_count + 1,
-        ));
+        )];
+        match (plan.move_id, plan.attack()) {
+            (ATTACK, Some(attack)) => {
+                actions.extend(attack_actions(entity.id, PLAYER, attack));
+            }
+            (BLOCK, None) => {}
+            (move_id, _) => panic!("exploder plan/steps mismatch: {} {:?}", move_id, plan.steps),
+        }
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });
@@ -139,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn take_turn_increments_java_turn_count_before_roll_move() {
+    fn take_turn_increments_java_turn_count_before_queued_damage() {
         let mut state = crate::test_support::blank_test_combat();
         state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::Exploder)];
         let mut exploder = state.entities.monsters[0].clone();
@@ -151,7 +153,6 @@ mod tests {
         assert!(matches!(
             actions.as_slice(),
             [
-                Action::MonsterAttack { .. },
                 Action::UpdateMonsterRuntime {
                     patch: MonsterRuntimePatch::Exploder {
                         turn_count: Some(2),
@@ -159,8 +160,57 @@ mod tests {
                     },
                     ..
                 },
+                Action::MonsterAttack { .. },
                 Action::RollMonsterMove { .. },
             ]
         ));
+    }
+
+    #[test]
+    fn pre_battle_applies_explosive_three_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut exploder = crate::test_support::test_monster(EnemyId::Exploder);
+        exploder.id = 55;
+
+        let actions = Exploder::use_pre_battle_actions(
+            &mut state,
+            &exploder,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+
+        assert_eq!(
+            actions,
+            vec![Action::ApplyPower {
+                source: 55,
+                target: 55,
+                power_id: PowerId::Explosive,
+                amount: 3,
+            }]
+        );
+    }
+
+    #[test]
+    fn block_turn_still_increments_turn_count_before_roll() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut exploder = crate::test_support::test_monster(EnemyId::Exploder);
+        exploder.id = 55;
+        exploder.exploder.turn_count = 2;
+
+        let actions = Exploder::take_turn_plan(&mut state, &exploder, &block_plan());
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::UpdateMonsterRuntime {
+                    monster_id: 55,
+                    patch: MonsterRuntimePatch::Exploder {
+                        turn_count: Some(3),
+                        protocol_seeded: Some(true),
+                    },
+                },
+                Action::RollMonsterMove { monster_id: 55 },
+            ],
+            "Java increments turnCount before the switch even when the UNKNOWN move has no queued body action"
+        );
     }
 }
