@@ -45,15 +45,37 @@ Forbidden:
 
 Branch tip:
 
-- `fcf0f0b Fix suicide action relic parity`
+- `98ee287 Add nemesis action parity tests`
 
 Recent commits:
 
+- `98ee287 Add nemesis action parity tests`
 - `fcf0f0b Fix suicide action relic parity`
 - `c7a3546 Fix darkling half-death parity`
 - `e3fd301 Update handoff after awakened one audit`
 - `30c73bb Fix awakened one rebirth parity`
-- `1cd6d69 Update handoff after champ audit`
+
+`98ee287` summary:
+
+- `Nemesis` Java/Rust behavior was checked.
+- No business logic change was needed.
+- Added tests proving:
+  - Tri Attack queues three separate hits before self-Intangible and
+    `RollMonsterMove`;
+  - A18+ Tri Burn queues 5 Burns before self-Intangible and roll;
+  - existing Intangible blocks the post-turn self-application, matching Java
+    `hasPower("Intangible")`.
+- Existing Nemesis tests already covered private `firstMove`,
+  `scytheCooldown` pre-decrement, imported runtime truth, and Scythe cooldown
+  reset.
+- Java `ChangeStateAction`, `WaitAction`, `SFXAction`, `VFXAction`, fire
+  particles, and `MathUtils` voice selection were treated as presentation-only
+  because they do not mutate modeled gameplay state or gameplay RNG.
+
+Verification for `98ee287`:
+
+- `cargo test nemesis --all-targets` -> `8 passed`
+- `cargo test --all-targets` -> `1271 passed`
 
 `fcf0f0b` summary:
 
@@ -537,6 +559,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   death hooks; split slimes use `false`; Fading/Explosive and minion cleanup
   use `true`; Reptomancer/Collector/Bronze cleanup follows Java `addToTop`
   reverse mechanical order.
+- `Nemesis`: checked in `98ee287`. No business logic change was needed; tests
+  lock Tri Attack, Tri Burn, post-turn Intangible application/skip, and
+  existing private `firstMove` / `scytheCooldown` behavior.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -615,9 +640,10 @@ Recommended next packets:
    - `Darkling` was fixed in `c7a3546`.
    - `Reptomancer` + `SnakeDagger` shared death/suicide interactions were fixed
      in `fcf0f0b`.
-   - Next narrow packet: `Nemesis`
-     (`D:\rust\cardcrawl\monsters\beyond\Nemesis.java`,
-     `src/content/monsters/beyond/nemesis.rs`, and relevant Intangible/Burn
+   - `Nemesis` was checked in `98ee287`.
+   - Next narrow packet: `GiantHead`
+     (`D:\rust\cardcrawl\monsters\beyond\GiantHead.java`,
+     `src/content/monsters/beyond/giant_head.rs`, and relevant Slow/Strength
      action/power files if its turn source requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
