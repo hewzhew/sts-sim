@@ -1152,13 +1152,16 @@ pub fn tick_run(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_combat_meta_change, remove_one_relic_from_rewards_after_chest_open, tick_run,
+        apply_combat_meta_change, open_treasure_chest,
+        remove_one_relic_from_rewards_after_chest_open, tick_run,
     };
     use crate::content::cards::CardId;
-    use crate::content::relics::{RelicId, RelicState};
+    use crate::content::relics::{RelicId, RelicState, RelicTier};
     use crate::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::map::state::MapState;
-    use crate::rewards::state::{RewardItem, RewardScreenContext, RewardState};
+    use crate::rewards::state::{
+        RewardItem, RewardScreenContext, RewardState, TreasureChestSize, TreasureChestState,
+    };
     use crate::runtime::combat::CombatCard;
     use crate::runtime::rng::StsRng;
     use crate::state::core::{ClientInput, EngineState, EventCombatState, PostCombatReturn};
@@ -2322,6 +2325,93 @@ mod tests {
             Some(103),
             "the card selected by Bottled Tornado must be handled by the same start-hand path as innate cards"
         );
+    }
+
+    #[test]
+    fn matryoshka_on_chest_open_adds_extra_relic_before_base_chest_relic() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Matryoshka));
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+        run_state.uncommon_relic_pool = vec![RelicId::Anchor];
+        run_state.rare_relic_pool = vec![RelicId::Mango];
+        let relic_rng_before = run_state.rng_pool.relic_rng.counter;
+
+        let rewards = open_treasure_chest(
+            &mut run_state,
+            TreasureChestState {
+                size: TreasureChestSize::Small,
+                base_relic_tier: RelicTier::Rare,
+                gold_reward_base_amount: None,
+            },
+        );
+
+        let relic_rewards = rewards
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                RewardItem::Relic { relic_id } => Some(*relic_id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            relic_rewards,
+            vec![RelicId::Anchor, RelicId::Mango],
+            "Java Matryoshka.onChestOpen inserts its extra relic before AbstractChest adds the base chest relic"
+        );
+        let matryoshka = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Matryoshka)
+            .expect("Matryoshka should remain owned");
+        assert_eq!(matryoshka.counter, 1);
+        assert!(!matryoshka.used_up);
+        assert_eq!(
+            run_state.rng_pool.relic_rng.counter,
+            relic_rng_before + 1,
+            "Java Matryoshka consumes relicRng only for randomBoolean(0.75)"
+        );
+    }
+
+    #[test]
+    fn nloths_mask_on_chest_open_after_removes_first_relic_after_matryoshka_and_base_rewards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Matryoshka));
+        run_state.relics.push(RelicState::new(RelicId::NlothsMask));
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+        run_state.uncommon_relic_pool = vec![RelicId::Anchor];
+        run_state.rare_relic_pool = vec![RelicId::Mango];
+
+        let rewards = open_treasure_chest(
+            &mut run_state,
+            TreasureChestState {
+                size: TreasureChestSize::Small,
+                base_relic_tier: RelicTier::Rare,
+                gold_reward_base_amount: None,
+            },
+        );
+
+        let relic_rewards = rewards
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                RewardItem::Relic { relic_id } => Some(*relic_id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            relic_rewards,
+            vec![RelicId::Mango],
+            "Java N'loth's Mask runs after AbstractChest adds the base relic, so it removes Matryoshka's earlier extra relic first"
+        );
+        let mask = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::NlothsMask)
+            .expect("N'loth's Mask should remain owned");
+        assert_eq!(mask.counter, -2);
+        assert!(mask.used_up);
     }
 
     #[test]
