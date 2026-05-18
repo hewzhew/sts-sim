@@ -89,6 +89,76 @@ mod tests {
             "Java uses private count, not reconstructed move-history length"
         );
     }
+
+    #[test]
+    fn roll_move_last_two_glare_forces_count_and_decrements_private_count() {
+        let mut giant = crate::test_support::test_monster(EnemyId::GiantHead);
+        giant.giant_head.count = 5;
+        giant.move_history_mut().extend([GLARE, GLARE]);
+
+        let plan = GiantHead::roll_move_plan(&mut StsRng::new(0), &giant, 0, 0);
+        let actions = GiantHead::on_roll_move(0, &giant, 0, &plan);
+
+        assert_eq!(plan.move_id, COUNT);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::GiantHead {
+                    count: Some(4),
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn roll_move_last_two_count_forces_glare_and_decrements_private_count() {
+        let mut giant = crate::test_support::test_monster(EnemyId::GiantHead);
+        giant.giant_head.count = 5;
+        giant.move_history_mut().extend([COUNT, COUNT]);
+
+        let plan = GiantHead::roll_move_plan(&mut StsRng::new(0), &giant, 0, 99);
+        let actions = GiantHead::on_roll_move(0, &giant, 99, &plan);
+
+        assert_eq!(plan.move_id, GLARE);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::GiantHead {
+                    count: Some(4),
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn it_is_time_count_stops_decrementing_at_java_floor() {
+        let mut giant = crate::test_support::test_monster(EnemyId::GiantHead);
+        giant.giant_head.count = -6;
+
+        let plan = GiantHead::roll_move_plan(&mut StsRng::new(0), &giant, 3, 99);
+        let actions = GiantHead::on_roll_move(3, &giant, 99, &plan);
+
+        assert_eq!(plan.move_id, IT_IS_TIME);
+        assert_eq!(
+            plan.attack().map(|attack| attack.base_damage),
+            Some(70),
+            "Java stops decrementing count below -6, capping Giant Head's real damage table at starting damage + 30"
+        );
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::GiantHead {
+                    count: Some(-6),
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
+    }
 }
 
 fn starting_death_damage(ascension_level: u8) -> i32 {
