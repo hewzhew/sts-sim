@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `3426913 Lock event card obtain after deck costs`
+- `298b8b1 Lock remaining match event obtain hooks`
 
 Recent commits:
 
+- `298b8b1 Lock remaining match event obtain hooks`
 - `3426913 Lock event card obtain after deck costs`
 - `525fe0b Lock event card cost before obtain hooks`
 - `56bec7f Lock remaining delayed event obtain hooks`
@@ -84,6 +85,39 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`298b8b1` summary:
+
+- Continued the Java event `ShowCardAndObtainEffect` sweep into the remaining
+  match/transform event paths that already had business logic but lacked focused
+  obtain-hook ordering locks.
+- Java checked:
+  - `D:\rust\cardcrawl\events\exordium\LivingWall.java`
+  - `D:\rust\cardcrawl\events\shrines\GremlinMatchGame.java`
+  - Previously in the same lane:
+    `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+    and `D:\rust\cardcrawl\relics\CeramicFish.java`
+- Java result:
+  - `LivingWall` Change removes the selected card, calls
+    `AbstractDungeon.transformCard`, then queues `ShowCardAndObtainEffect` for
+    the transformed replacement; the queued effect later runs relic
+    `onObtainCard` before the replacement is fully obtained.
+  - `GremlinMatchGame` creates board pairs after preview-obtain hooks, matches by
+    `cardID`, and queues `ShowCardAndObtainEffect(chosenCard.makeCopy())`; that
+    delayed effect later runs `onObtainCard` before `souls.obtain`.
+- Rust result:
+  - No business logic change was needed.
+  - Added `CeramicFish` ordering regressions:
+    - `LivingWall` Change emits the obtain-hook gold before the Rust
+      `CardTransformed` record for the replacement.
+    - `Match and Keep` emits the obtain-hook gold before the `CardObtained`
+      record for the matched copy.
+
+Verification for `298b8b1`:
+
+- `cargo test living_wall --all-targets` -> `6 passed`
+- `cargo test match_and_keep --all-targets` -> `6 passed`
+- `cargo test --all-targets` -> `1383 passed`
 
 `3426913` summary:
 
