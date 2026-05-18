@@ -45,15 +45,46 @@ Forbidden:
 
 Branch tip:
 
-- `2aae03b Add donu deca parity tests`
+- `d6a62f4 Fix transient move timing and shifting amount`
 
 Recent commits:
 
+- `d6a62f4 Fix transient move timing and shifting amount`
 - `2aae03b Add donu deca parity tests`
 - `6c142a3 Add time eater move parity tests`
 - `9e6e73f Add giant head count parity tests`
 - `98ee287 Add nemesis action parity tests`
-- `fcf0f0b Fix suicide action relic parity`
+
+`d6a62f4` summary:
+
+- `Transient`, Java `ShiftingPower`, and sentinel-power application were
+  checked.
+- Fixed `Transient.takeTurn()` timing:
+  - Java queues the damage action, then synchronously increments private
+    `count` and calls `setMove(...)` before queued damage can execute.
+  - Rust now emits private `count` update and `SetMonsterMove` before the
+    queued `MonsterAttack`, preserving Java synchronous move mutation timing.
+- Fixed `ShiftingPower` amount truth:
+  - Java `ShiftingPower` inherits `AbstractPower.amount == -1`.
+  - Rust Transient pre-battle now applies Shifting with amount `-1`.
+  - `PowerId::Shifting` is now a sentinel amount power so application/reapply
+    keeps Java `-1` / stackPower(-1) behavior.
+- Added tests proving:
+  - Transient pre-battle applies Fading 5 below A17, Fading 6 at A17+, and
+    Shifting `-1`;
+  - Transient runtime count and next visible attack update happen before queued
+    damage;
+  - duplicate Shifting application follows Java default stackPower(-1)
+    behavior.
+- Java animation, `ChangeStateAction`, `WaitAction`, and achievement unlock were
+  treated as presentation/meta-only.
+
+Verification for `d6a62f4`:
+
+- `cargo test transient --all-targets` -> `6 passed`
+- `cargo test sentinel_power_reapplication_matches_java_apply_power_special_cases --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1283 passed`
 
 `2aae03b` summary:
 
@@ -644,6 +675,8 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `Donu` + `Deca`: checked in `2aae03b`. No business logic change was needed;
   tests lock Artifact amount gates, private `isAttacking`, Beam damage/add-card
   ordering, and all-monster buff/protect loop ordering.
+- `Transient`: fixed in `d6a62f4`. Runtime count / next-move mutation now
+  happens before queued damage, and Shifting uses Java sentinel amount `-1`.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -726,10 +759,11 @@ Recommended next packets:
    - `GiantHead` was checked in `9e6e73f`.
    - `TimeEater` was checked in `6c142a3`.
    - `Donu` + `Deca` were checked in `2aae03b`.
-   - Next narrow packet: `Transient`
-     (`D:\rust\cardcrawl\monsters\beyond\Transient.java`,
-     `src/content/monsters/beyond/transient.rs`, and relevant strength/shackle
-     or death/escape action files if source comparison requires them).
+   - `Transient` was fixed in `d6a62f4`.
+   - Next narrow packet: `Maw`
+     (`D:\rust\cardcrawl\monsters\beyond\Maw.java`,
+     `src/content/monsters/beyond/maw.rs`, and relevant weak/frail/strength
+     action or power files if source comparison requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
