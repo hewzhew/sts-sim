@@ -2955,17 +2955,12 @@ fn philosopher_stone_strength_matches_java_battle_and_spawn_hooks() {
         .entities
         .monsters
         .push(crate::test_support::test_monster(EnemyId::JawWorm));
-    let spawn_actions = hooks::on_spawn_monster(&spawn_state, 0);
-    assert_eq!(spawn_actions.len(), 1);
-    assert!(matches!(
-        spawn_actions[0],
-        Action::ApplyPower {
-            target: 1,
-            power_id: PowerId::Strength,
-            amount: 1,
-            ..
-        }
-    ));
+    hooks::on_spawn_monster(&mut spawn_state, 1);
+    assert_eq!(
+        crate::content::powers::store::power_amount(&spawn_state, 1, PowerId::Strength),
+        1,
+        "Java PhilosopherStone.onSpawnMonster calls monster.addPower directly instead of queuing ApplyPowerAction"
+    );
 }
 
 #[test]

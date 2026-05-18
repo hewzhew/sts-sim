@@ -352,12 +352,10 @@ pub fn handle_spawn_monster(
         );
     }
 
+    crate::content::relics::hooks::on_spawn_monster(state, new_entity_id);
+
     state.entities.monsters.insert(slot as usize, new_monster);
     normalize_monster_slots(state);
-
-    for action in crate::content::relics::hooks::on_spawn_monster(state, slot as usize) {
-        state.queue_action_back(action);
-    }
 
     let entity_snapshot = state.entities.monsters[slot as usize].clone();
     let pre_battle_actions = crate::content::monsters::resolve_pre_battle_actions(
@@ -2056,6 +2054,34 @@ mod tests {
                 amount: -1,
             }),
             "Java SpawnMonsterAction/SummonGremlinAction apply new MinionPower, whose amount remains AbstractPower's sentinel -1"
+        );
+    }
+
+    #[test]
+    fn spawn_monster_applies_philosopher_stone_immediately_before_minion_queue() {
+        let mut state = crate::test_support::blank_test_combat();
+        state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::PhilosopherStone));
+
+        let new_entity_id =
+            handle_spawn_monster(EnemyId::SnakeDagger, 0, 20, 20, 0, None, true, &mut state);
+
+        assert_eq!(
+            store::power_amount(&state, new_entity_id, PowerId::Strength),
+            1,
+            "Java SpawnMonsterAction calls relic onSpawnMonster(m) before m.init(), addMonster(), and the queued Minion ApplyPowerAction"
+        );
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::ApplyPower {
+                source: new_entity_id,
+                target: new_entity_id,
+                power_id: PowerId::Minion,
+                amount: -1,
+            }),
+            "PhilosopherStone.onSpawnMonster mutates the monster directly; only Minion remains queued to the top"
         );
     }
 

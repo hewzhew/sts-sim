@@ -1,6 +1,6 @@
 use crate::content::relics::RelicId;
-use crate::runtime::action::{Action, ActionInfo};
-use crate::runtime::combat::{CombatCard, CombatState};
+use crate::runtime::action::ActionInfo;
+use crate::runtime::combat::{CombatCard, CombatState, Power, PowerId, PowerPayload};
 use smallvec::SmallVec;
 
 /// Triggers relics before the battle formally begins (Phase 1).
@@ -281,26 +281,41 @@ pub fn on_shuffle(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
     actions
 }
 
-pub fn on_spawn_monster(state: &CombatState, target_idx: usize) -> SmallVec<[Action; 4]> {
-    let mut actions = SmallVec::new();
+pub fn on_spawn_monster(state: &mut CombatState, target_id: usize) {
     let bus = state.entities.player.relic_buses.on_spawn_monster.clone();
-    let target_id = state.entities.monsters[target_idx].id;
     for &relic_index in &bus {
         let relic_id = state.entities.player.relics[relic_index].id;
         match relic_id {
-            RelicId::PhilosopherStone => actions.push(Action::ApplyPower {
-                source: target_id,
-                target: target_id,
-                power_id: crate::content::powers::PowerId::Strength,
-                amount: 1,
-            }),
+            RelicId::PhilosopherStone => {
+                add_power_like_java_creature_add_power(state, target_id, PowerId::Strength, 1);
+            }
             _ => unreachable!(
                 "Relic {} present in on_spawn_monster bus but unhandled in hooks.rs match arm",
                 relic_id as usize
             ),
         }
     }
-    actions
+}
+
+fn add_power_like_java_creature_add_power(
+    state: &mut CombatState,
+    target_id: usize,
+    power_id: PowerId,
+    amount: i32,
+) {
+    let powers = crate::content::powers::store::ensure_powers_for_mut(state, target_id);
+    if let Some(existing) = powers.iter_mut().find(|power| power.power_type == power_id) {
+        existing.amount += amount;
+    } else if crate::content::powers::should_keep_power_instance(power_id, amount) {
+        powers.push(Power {
+            power_type: power_id,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: true,
+        });
+    }
 }
 
 pub fn on_exhaust(state: &mut CombatState) -> smallvec::SmallVec<[ActionInfo; 4]> {

@@ -294,7 +294,7 @@ impl MonsterBehavior for Darkling {
             ],
             (COUNT, []) => Vec::new(),
             (REINCARNATE, [MoveStep::Heal(heal), MoveStep::ApplyPower(power)]) => {
-                let mut actions = vec![
+                let actions = vec![
                     Action::Heal {
                         target: entity.id,
                         amount: heal.amount,
@@ -302,16 +302,7 @@ impl MonsterBehavior for Darkling {
                     Action::ReviveMonster { target: entity.id },
                     apply_power_action(entity, power),
                 ];
-                if let Some(target_idx) = state
-                    .entities
-                    .monsters
-                    .iter()
-                    .position(|m| m.id == entity.id)
-                {
-                    actions.extend(crate::content::relics::hooks::on_spawn_monster(
-                        state, target_idx,
-                    ));
-                }
+                crate::content::relics::hooks::on_spawn_monster(state, entity.id);
                 actions
             }
             (move_id, steps) => panic!("darkling plan/steps mismatch: {} {:?}", move_id, steps),
