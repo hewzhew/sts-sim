@@ -45,16 +45,67 @@ Forbidden:
 
 Latest code commit:
 
-- `24d3c00 Separate constructed hand card effects`
+- `7d9e17a Prepare concrete hand cards at construction`
 
 Recent commits:
 
+- `7d9e17a Prepare concrete hand cards at construction`
+- `be1bb3c Update handoff after constructed hand card audit`
 - `24d3c00 Separate constructed hand card effects`
 - `0e0b90c Use Java colorless combat pool for rewards`
 - `a304973 Update handoff after attack relic audit`
 - `29e0699 Match Java counter increments for attack relics`
 - `2007560 Align relic delayed checks and null sources`
 - `35c414b Update handoff after stateful relic audit`
+
+`7d9e17a` summary:
+
+- Continued the Java `MakeTempCardInHandAction` constructor/effect audit.
+- Added `prepare_make_temp_card_in_hand_constructor()` as the explicit Rust
+  boundary for concrete generated cards that have reached Java
+  `MakeTempCardInHandAction` construction.
+- Converted remaining content-level concrete hand-card producers from
+  `MakeCopyInHand` to `MakeConstructedCopyInHand`:
+  - Infernal Blade / Distraction / Jack of All Trades / Transmutation
+    materialized random hand-card actions.
+  - Magnetism / Creative AI / Hello World turn-start powers.
+  - Nightmare delayed copies.
+  - Endless Agony draw trigger.
+  - Dual Wield sole-candidate and hand-select copy paths.
+- Added regression coverage showing a Magnetism-generated card receives
+  constructor-time Master Reality before the queued action executes, and keeps
+  that upgrade after Master Reality is removed before execution.
+- After this commit, `rg -n "MakeCopyInHand" src\content src\engine -g "*.rs"`
+  only reports the central execution arm in `engine/action_handlers/mod.rs`;
+  content producers no longer use it directly for Java
+  `MakeTempCardInHandAction` semantics.
+
+Verification for `7d9e17a`:
+
+- `cargo test magnetism_make_temp_constructor_master_reality_persists_until_execution --all-targets`
+  -> `1 passed`
+- Targeted generated-card/card-copy tests passed:
+  - `transmutation_x_cost_action_matches_java_energy_and_chemical_x_timing`
+  - `magnetism_power_locks_random_colorless_cards_at_turn_start`
+  - `jack_of_all_trades_locks_random_colorless_cards_when_used`
+  - `creative_ai_and_hello_world_powers_sample_defect_random_pools`
+  - `nightmare_selection_returns_original_and_start_turn_copies_payload`
+  - `ironclad_attack_condition_and_dot_power_runtime_actions_match_java_use_methods`
+  - `distraction_matches_java_random_skill_free_for_turn`
+  - `hand_select_copy` tests
+- `cargo test --all-targets` -> `1350 passed`
+
+Next narrow packet:
+
+- Continue the generated-card audit with static `MakeTempCardInHand { card_id,
+  amount, upgraded }` producers such as Shiv/Miracle/Smite/Safety paths. Those
+  still encode the Java constructor boundary less explicitly than concrete
+  `MakeConstructedCopyInHand` producers.
+- Then inspect `MakeTempCardInDrawPileAction` /
+  `ShowCardAndAddToDrawPileEffect` constructor/effect Master Reality and
+  random/bottom/top insertion behavior.
+- After hand/draw/discard generated-card actions are clean, resume relic audit
+  around custom actions, execution-time state, and source-sensitive effects.
 
 `24d3c00` summary:
 
