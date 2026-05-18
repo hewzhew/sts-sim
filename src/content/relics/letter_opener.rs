@@ -1,4 +1,4 @@
-use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{Action, ActionInfo, AddTo, NO_SOURCE};
 use smallvec::SmallVec;
 
 /// LetterOpener: Every time you play 3 Skills in a single turn, deal 5 damage to ALL enemies.
@@ -26,7 +26,7 @@ pub fn on_use_card(
                 state.entities.monsters.iter().map(|_| 5i32).collect();
             actions.push(ActionInfo {
                 action: Action::DamageAllEnemies {
-                    source: 0,
+                    source: NO_SOURCE,
                     damages,
                     damage_type: crate::runtime::action::DamageType::Thorns,
                     is_modified: false,

@@ -751,6 +751,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::RedSkullBattleStartCheck => {
             crate::content::relics::red_skull::battle_start_check(state);
         }
+        Action::DodecahedronTurnStartCheck => {
+            crate::content::relics::dodecahedron::Dodecahedron::turn_start_check(state);
+        }
 
         // === Spawning / Monster lifecycle domain ===
         Action::SpawnMonster {

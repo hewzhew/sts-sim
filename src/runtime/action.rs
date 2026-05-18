@@ -1008,6 +1008,10 @@ pub enum Action {
     /// bloodied state when it executes, after earlier top-inserted battle-start
     /// effects such as Blood Vial have resolved.
     RedSkullBattleStartCheck,
+    /// Java deprecated `Dodecahedron.atTurnStart()` queues an anonymous action
+    /// that checks full HP when that action executes, then queues the energy
+    /// gain behind any currently pending actions.
+    DodecahedronTurnStartCheck,
     ClearCardQueue,
     AddCardToMasterDeck {
         card_id: crate::content::cards::CardId,

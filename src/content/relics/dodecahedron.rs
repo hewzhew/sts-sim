@@ -5,14 +5,16 @@ use smallvec::SmallVec;
 pub struct Dodecahedron;
 
 impl Dodecahedron {
-    pub fn at_turn_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
-        let mut actions = SmallVec::new();
+    pub fn at_turn_start(_state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
+        smallvec::smallvec![ActionInfo {
+            action: Action::DodecahedronTurnStartCheck,
+            insertion_mode: AddTo::Bottom,
+        }]
+    }
+
+    pub fn turn_start_check(state: &mut CombatState) {
         if state.entities.player.current_hp >= state.entities.player.max_hp {
-            actions.push(ActionInfo {
-                action: Action::GainEnergy { amount: 1 },
-                insertion_mode: AddTo::Bottom,
-            });
+            state.queue_action_back(Action::GainEnergy { amount: 1 });
         }
-        actions
     }
 }

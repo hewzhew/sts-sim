@@ -1487,10 +1487,15 @@ fn letter_opener_resets_each_turn_and_fires_on_third_skill() {
     assert_eq!(third_skill.len(), 1);
     match &third_skill[0].action {
         Action::DamageAllEnemies {
+            source,
             damages,
             damage_type,
             ..
         } => {
+            assert_eq!(
+                *source, NO_SOURCE,
+                "Java Letter Opener uses DamageAllEnemiesAction(null, ...)"
+            );
             assert_eq!(damages.as_slice(), &[5, 5]);
             assert_eq!(*damage_type, crate::runtime::action::DamageType::Thorns);
         }
@@ -1566,10 +1571,15 @@ fn mercury_hourglass_queues_thorns_damage_to_all_monster_slots() {
     assert_eq!(actions.len(), 1);
     match &actions[0].action {
         Action::DamageAllEnemies {
+            source,
             damages,
             damage_type,
             ..
         } => {
+            assert_eq!(
+                *source, NO_SOURCE,
+                "Java Mercury Hourglass uses DamageAllEnemiesAction(null, ...)"
+            );
             assert_eq!(damages.as_slice(), &[3, 3]);
             assert_eq!(*damage_type, crate::runtime::action::DamageType::Thorns);
         }
@@ -3362,31 +3372,40 @@ fn deprecated_dodecahedron_triggers_energy_at_turn_start_only_like_java_source()
     );
     assert!(sub.at_turn_start);
 
-    let mut full_hp = crate::test_support::blank_test_combat();
-    full_hp.entities.player.max_hp = 80;
-    full_hp.entities.player.current_hp = 80;
-    full_hp
+    let mut full_hp_then_damaged = crate::test_support::blank_test_combat();
+    full_hp_then_damaged.entities.player.max_hp = 80;
+    full_hp_then_damaged.entities.player.current_hp = 80;
+    full_hp_then_damaged
         .entities
         .player
         .add_relic(RelicState::new(RelicId::Dodecahedron));
 
-    assert!(hooks::at_battle_start(&mut full_hp).is_empty());
-    let actions = hooks::at_turn_start(&mut full_hp);
+    assert!(hooks::at_battle_start(&mut full_hp_then_damaged).is_empty());
+    let actions = hooks::at_turn_start(&mut full_hp_then_damaged);
     assert_eq!(actions.len(), 1);
     assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
-    assert!(matches!(
-        actions[0].action,
-        Action::GainEnergy { amount: 1 }
-    ));
+    assert_eq!(actions[0].action, Action::DodecahedronTurnStartCheck);
+    full_hp_then_damaged.queue_actions(actions);
+    full_hp_then_damaged.entities.player.current_hp = 79;
+    drain_test_actions(&mut full_hp_then_damaged);
+    assert_eq!(
+        full_hp_then_damaged.turn.energy, 3,
+        "Java Dodecahedron checks full HP when its queued anonymous action executes, not when atTurnStart queues it"
+    );
 
-    let mut damaged = crate::test_support::blank_test_combat();
-    damaged.entities.player.max_hp = 80;
-    damaged.entities.player.current_hp = 79;
-    damaged
+    let mut damaged_then_healed = crate::test_support::blank_test_combat();
+    damaged_then_healed.entities.player.max_hp = 80;
+    damaged_then_healed.entities.player.current_hp = 79;
+    damaged_then_healed
         .entities
         .player
         .add_relic(RelicState::new(RelicId::Dodecahedron));
-    assert!(hooks::at_turn_start(&mut damaged).is_empty());
+    let actions = hooks::at_turn_start(&mut damaged_then_healed);
+    assert_eq!(actions.len(), 1);
+    damaged_then_healed.queue_actions(actions);
+    damaged_then_healed.entities.player.current_hp = 80;
+    drain_test_actions(&mut damaged_then_healed);
+    assert_eq!(damaged_then_healed.turn.energy, 4);
 }
 
 #[test]
