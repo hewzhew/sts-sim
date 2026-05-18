@@ -3387,6 +3387,31 @@ mod tests {
     }
 
     #[test]
+    fn make_temp_card_in_draw_pile_large_amount_uses_java_src_card_path() {
+        let mut state = blank_test_combat();
+        state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        handle_make_temp_card_in_draw_pile(CardId::SearingBlow, 6, true, false, false, &mut state);
+
+        assert_eq!(state.zones.draw_pile.len(), 6);
+        assert!(state
+            .zones
+            .draw_pile
+            .iter()
+            .all(|card| card.id == CardId::SearingBlow && card.upgrades == 1));
+    }
+
+    #[test]
     fn make_temp_card_in_hand_overflow_uses_java_discard_effect_upgrade_count() {
         let mut state = blank_test_combat();
         state.entities.power_db.insert(
