@@ -891,6 +891,8 @@ impl RunState {
         );
         let mut was_added = false;
 
+        self.resolve_deck_actions(result.actions, source);
+
         if !result.final_cards.is_empty() {
             was_added = true;
             for card in result.final_cards {
@@ -903,7 +905,6 @@ impl RunState {
             self.dispatch_on_master_deck_change();
         }
 
-        self.resolve_deck_actions(result.actions, source);
         was_added
     }
 
@@ -924,6 +925,8 @@ impl RunState {
         );
         let mut was_added = false;
 
+        self.resolve_deck_actions(result.actions, source);
+
         if !result.final_cards.is_empty() {
             was_added = true;
             for card in result.final_cards {
@@ -936,7 +939,6 @@ impl RunState {
             self.dispatch_on_master_deck_change();
         }
 
-        self.resolve_deck_actions(result.actions, source);
         was_added
     }
 
@@ -965,6 +967,8 @@ impl RunState {
         );
         let mut was_added = false;
 
+        self.resolve_deck_actions(result.actions, source);
+
         if !result.final_cards.is_empty() {
             was_added = true;
             for mut card in result.final_cards {
@@ -982,7 +986,6 @@ impl RunState {
             self.dispatch_on_master_deck_change();
         }
 
-        self.resolve_deck_actions(result.actions, source);
         was_added
     }
 
@@ -1884,6 +1887,8 @@ impl RunState {
             if auto_upgrade { 1 } else { 0 },
         );
 
+        self.resolve_deck_actions(result.actions, source);
+
         // 3. Obtain
         let mut obtained_any = false;
         for card in result.final_cards {
@@ -1895,8 +1900,6 @@ impl RunState {
             self.master_deck.push(card);
             obtained_any = true;
         }
-        // 4. Resolve obtain-triggered deck actions
-        self.resolve_deck_actions(result.actions, source);
         if obtained_any {
             self.dispatch_on_master_deck_change();
         }
@@ -2156,6 +2159,56 @@ mod tests {
             event,
             DomainEvent::GoldChanged { .. } | DomainEvent::MaxHpChanged { .. }
         )));
+    }
+
+    #[test]
+    fn ordinary_obtain_runs_relic_obtain_hooks_before_master_deck_add_like_java() {
+        let mut run = RunState::new(7, 0, false, "Ironclad");
+        run.relics.clear();
+        run.relics.push(crate::content::relics::RelicState::new(
+            RelicId::DarkstonePeriapt,
+        ));
+        run.current_hp = 50;
+        run.max_hp = 80;
+        run.emitted_events.clear();
+
+        assert!(run.add_card_to_deck_with_upgrades_from(
+            CardId::Regret,
+            0,
+            DomainEventSource::RewardScreen,
+        ));
+
+        let events = run.take_emitted_events();
+        let max_hp_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::MaxHpChanged {
+                        delta: 6,
+                        source: DomainEventSource::RewardScreen,
+                        ..
+                    }
+                )
+            })
+            .expect("Darkstone Periapt should fire while obtaining a curse");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::RewardScreen,
+                    } if card.id == CardId::Regret
+                )
+            })
+            .expect("the curse should still be added after obtain hooks");
+
+        assert!(
+            max_hp_pos < obtained_pos,
+            "Java ShowCardAndObtainEffect calls relic onObtainCard before Soul.obtain adds the card"
+        );
     }
 
     #[test]
