@@ -45,15 +45,29 @@ Forbidden:
 
 Branch tip:
 
-- `8d16e69 Add healer ally loop parity tests`
+- `1ad40f2 Add snake plant move parity tests`
 
 Recent commits:
 
+- `1ad40f2 Add snake plant move parity tests`
+- `09b6d51 Update handoff after healer audit`
 - `8d16e69 Add healer ally loop parity tests`
 - `12f34b3 Update handoff after byrd audit`
 - `a4d74f4 Fix byrd headbutt setmove timing`
-- `5967a3c Update handoff after torch head audit`
-- `5ad39bc Add torch head queue parity test`
+
+`1ad40f2` summary:
+
+- `SnakePlant` Java/Rust behavior was checked.
+- No business logic change was needed.
+- Added tests for the A17+ `lastMoveBefore(SPORES)` rule versus the lower
+  ascension `lastMove(SPORES)` rule.
+- Added a queue-order test for three Chompy Chomps damage actions before
+  `RollMonsterMove`.
+
+Verification for `1ad40f2`:
+
+- `cargo test snake_plant --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1219 passed`
 
 `8d16e69` summary:
 
@@ -191,14 +205,14 @@ The current monster architecture is still usable if these rules are followed:
 - UI/VFX classes are ignored only after checking that they do not mutate combat
   state, RNG, room state, map state, or visible choices.
 
-Current text scans after `8d16e69`:
+Current text scans after `1ad40f2`:
 
 - `src/content/monsters` has no remaining direct `move_history().is_empty`
   private-state pattern from the recent search.
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `8d16e69`.
+No uncommitted changes were present after `1ad40f2`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -229,6 +243,8 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   `setMove(GO_AIRBORNE)` timing before queued damage.
 - `Centurion` + `Healer`: checked in `8d16e69`. No business logic change
   needed; added Healer tests for zero-HP non-dying ally inclusion.
+- `SnakePlant`: checked in `1ad40f2`. No business logic change needed; added
+  A17 `lastMoveBefore` and triple-hit queue tests.
 
 Split / victory timing:
 
@@ -286,10 +302,11 @@ Recommended next packets:
    - `ShelledParasite` was checked; no code change needed.
    - `Byrd` was fixed in `a4d74f4`.
    - `Centurion` + `Healer` were checked in `8d16e69`.
-   - Next narrow packet: `SnakePlant`
-     (`D:\rust\cardcrawl\monsters\city\SnakePlant.java` and
-     `src/content/monsters/city/snake_plant.rs`). It is a compact City monster
-     with debuff/attack sequencing and post-turn `RollMoveAction`.
+   - `SnakePlant` was checked in `1ad40f2`.
+   - Next narrow packet: `Snecko`
+     (`D:\rust\cardcrawl\monsters\city\Snecko.java` and
+     `src/content/monsters/city/snecko.rs`). It is compact but exercises
+     Confusion debuff sequencing and post-turn `RollMoveAction`.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
