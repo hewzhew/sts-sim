@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `b2cc6ce Lock shop card fast obtain ordering`
+- `4895ac6 Lock Cursed Key chest obtain hooks`
 
 Recent commits:
 
+- `4895ac6 Lock Cursed Key chest obtain hooks`
 - `b2cc6ce Lock shop card fast obtain ordering`
 - `dcec769 Lock reward card obtain hooks`
 - `4d3d455 Lock Note For Yourself manual obtain hooks`
@@ -92,6 +93,32 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`4895ac6` summary:
+
+- Audited the non-event chest curse obtain path for `CursedKey`.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\CursedKey.java`
+  - `D:\rust\cardcrawl\rewards\chests\AbstractChest.java`
+  - `D:\rust\cardcrawl\helpers\CardLibrary.java`
+- Java result:
+  - `CursedKey.onChestOpen(false)` adds a
+    `ShowCardAndObtainEffect(AbstractDungeon.returnRandomCurse())` to
+    `topLevelEffects`.
+  - The ordinary chest then adds gold/relic/key rewards and opens the reward
+    screen.
+  - The queued curse obtain still uses the standard
+    `ShowCardAndObtainEffect` ordering: relic `onObtainCard` before
+    `souls.obtain`.
+- Rust result:
+  - No business logic change was needed.
+  - Added a treasure-room regression proving `CursedKey` curse obtain emits
+    `CeramicFish` gold before the curse `CardObtained` event.
+
+Verification for `4895ac6`:
+
+- `cargo test cursed_key_chest --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1398 passed`
 
 `b2cc6ce` summary:
 
