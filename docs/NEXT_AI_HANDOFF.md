@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `298b8b1 Lock remaining match event obtain hooks`
+- `a3b9be9 Lock relic-before-curse obtain hooks`
 
 Recent commits:
 
+- `a3b9be9 Lock relic-before-curse obtain hooks`
 - `298b8b1 Lock remaining match event obtain hooks`
 - `3426913 Lock event card obtain after deck costs`
 - `525fe0b Lock event card cost before obtain hooks`
@@ -85,6 +86,36 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`a3b9be9` summary:
+
+- Continued the Java `ShowCardAndObtainEffect` event sweep into choices that
+  construct a curse obtain effect before immediately obtaining a relic.
+- Java checked:
+  - `D:\rust\cardcrawl\events\exordium\BigFish.java`
+  - `D:\rust\cardcrawl\events\city\Addict.java`
+  - Previously in the same lane:
+    `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+    and `D:\rust\cardcrawl\relics\CeramicFish.java`
+- Java result:
+  - `BigFish` Box constructs the Regret `ShowCardAndObtainEffect`, then calls
+    `spawnRelicAndObtain`.
+  - `Addict` Rob constructs the Shame `ShowCardAndObtainEffect`, then calls
+    `spawnRelicAndObtain`.
+  - Omamori interception is based on the pre-relic snapshot because it happens
+    in the effect constructor, but other obtain hooks such as newly obtained
+    `CeramicFish` see the curse later when the delayed effect resolves.
+- Rust result:
+  - No business logic change was needed.
+  - Added `CeramicFish` ordering regressions proving `RelicObtained` happens
+    before the delayed curse obtain hook, and that hook emits its gold before
+    the curse `CardObtained` record.
+
+Verification for `a3b9be9`:
+
+- `cargo test big_fish --all-targets` -> `7 passed`
+- `cargo test addict --all-targets` -> `5 passed`
+- `cargo test --all-targets` -> `1385 passed`
 
 `298b8b1` summary:
 
