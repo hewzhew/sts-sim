@@ -56,6 +56,30 @@ Forbidden:
 - Re-reading large trees after compaction without first checking this file.
 - Re-auditing locked mechanisms without an explicit reopen reason.
 
+## Latest Documentation Checkpoint
+
+Latest documentation reconciliation:
+
+- Event-started combats were rechecked against Java/Rust owners without code
+  changes.
+- Source-checked event-combat boundaries now include Dead Adventurer,
+  Mushrooms, Masked Bandits, Mysterious Sphere, Mind Bloom boss, and
+  Colosseum.
+- Covered semantics: Java encounter keys, preloaded event rewards,
+  Daily/ordinary event gold rolls, `rewardAllowed`, `noCardsInRewards`,
+  return-to-event, EventRoom reward generation, and `eliteTrigger`.
+- Remaining risk for that ledger row is narrowed to ordinary reward generation
+  as a shared row plus any still-unreviewed per-event handlers that start or
+  resume combat/reward screens.
+- Verification:
+  - `cargo test colosseum --all-targets` -> `2 passed`
+  - `cargo test dead_adventurer --all-targets` -> `5 passed`
+  - `cargo test mushrooms --all-targets` -> `7 passed`
+  - `cargo test masked_bandits --all-targets` -> `4 passed`
+  - `cargo test mysterious_sphere --all-targets` -> `4 passed`
+  - `cargo test mind_bloom --all-targets` -> `8 passed`
+  - `cargo test event_combat --all-targets` -> `3 passed`
+
 ## Latest Mechanics Checkpoint
 
 Latest code commit:
@@ -277,6 +301,55 @@ Current documentation note after map visibility reconciliation:
     -> `1 passed`
   - `cargo test run_observation_exposes_all_top_panel_keys --all-targets`
     -> `1 passed`
+
+Current documentation note after event-started combat reconciliation:
+
+- Rechecked already-audited event-started combat boundaries against Java/Rust
+  owners without changing code.
+- Java checked:
+  - `D:\rust\cardcrawl\events\AbstractEvent.java`
+  - `D:\rust\cardcrawl\events\AbstractImageEvent.java`
+  - `D:\rust\cardcrawl\rooms\AbstractRoom.java`
+  - `D:\rust\cardcrawl\screens\CombatRewardScreen.java`
+  - `D:\rust\cardcrawl\events\exordium\DeadAdventurer.java`
+  - `D:\rust\cardcrawl\events\exordium\Mushrooms.java`
+  - `D:\rust\cardcrawl\events\city\MaskedBandits.java`
+  - `D:\rust\cardcrawl\events\city\Colosseum.java`
+  - `D:\rust\cardcrawl\events\beyond\MysteriousSphere.java`
+  - `D:\rust\cardcrawl\events\beyond\MindBloom.java`
+- Rust checked:
+  - `src\state\core.rs`
+  - `src\engine\run_loop.rs`
+  - `src\content\events\dead_adventurer.rs`
+  - `src\content\events\mushrooms.rs`
+  - `src\content\events\masked_bandits.rs`
+  - `src\content\events\colosseum.rs`
+  - `src\content\events\mysterious_sphere.rs`
+  - `src\content\events\mind_bloom.rs`
+- Result:
+  - `EventCombatState` matches the Java split between event-preloaded rewards,
+    `rewardAllowed`, `noCardsInRewards`, `eliteTrigger`, encounter key, and
+    post-combat return.
+  - Dead Adventurer, Mushrooms, Masked Bandits, Mysterious Sphere, Mind Bloom
+    boss, and Colosseum are already source-checked for Java encounter keys,
+    Daily/ordinary event gold rolls, preloaded relic/gold rewards, fight
+    confirmation screens, Colosseum first-fight return-to-event, and Colosseum
+    second-fight `eliteTrigger`.
+  - `AbstractRoom` / `CombatRewardScreen` confirm that EventRoom combats do not
+    receive ordinary MonsterRoom or MonsterRoomElite gold/relic rewards, but do
+    still use EventRoom potion chance and reward-screen card generation when
+    not suppressed.
+  - `docs\MECHANICS_AUDIT_LEDGER.md` now narrows the row's remaining risk to
+    ordinary reward generation as a shared path and any still-unreviewed
+    per-event handlers that start/resume combats or reward screens.
+- Verification:
+  - `cargo test colosseum --all-targets` -> `2 passed`
+  - `cargo test dead_adventurer --all-targets` -> `5 passed`
+  - `cargo test mushrooms --all-targets` -> `7 passed`
+  - `cargo test masked_bandits --all-targets` -> `4 passed`
+  - `cargo test mysterious_sphere --all-targets` -> `4 passed`
+  - `cargo test mind_bloom --all-targets` -> `8 passed`
+  - `cargo test event_combat --all-targets` -> `3 passed`
 
 Previous source-checked note after `157e50d`:
 
