@@ -45,15 +45,43 @@ Forbidden:
 
 Branch tip:
 
-- `1879996 Fix corrupt heart buff timing parity`
+- `06e5f9f Avoid HP RNG for fixed HP monsters`
 
 Recent commits:
 
+- `06e5f9f Avoid HP RNG for fixed HP monsters`
+- `3a6c58f Update handoff after corrupt heart audit`
 - `1879996 Fix corrupt heart buff timing parity`
 - `8e548a0 Update handoff after shield spear audit`
 - `5fe09ea Fix shield spear back attack parity`
-- `6d1201d Update handoff after spawn hook audit`
-- `24e4618 Fix spawn monster relic hook timing`
+
+`06e5f9f` summary:
+
+- Java `TheEnding`, Java `MonsterRoomBoss`, Rust `RunState` final-act setup,
+  and Rust monster factory final-act encounter creation were checked.
+- Fixed generic monster factory HP RNG parity:
+  - Java fixed-HP constructors call `setHp(int)`, which does not consume
+    `monsterHpRng`.
+  - Rust `spawn_monster` previously called `monster_hp_rng.random_range(min,
+    max)` even when `min == max`, consuming RNG for fixed-HP monsters.
+  - Rust now bypasses HP RNG when the range is fixed, while random HP monsters
+    still consume exactly one HP roll.
+- Added tests proving:
+  - Act 4 Shield/Spear and Heart encounters do not consume monster HP RNG;
+  - Shield/Spear A20 HP is `125 / 180`, Heart A20 HP is `800`;
+  - random-HP Jaw Worm still consumes one monster HP RNG roll.
+- Existing final-act run test still locks Java `TheEnding` map/context:
+  rest -> shop -> elite Shield/Spear -> boss Heart -> true victory, encounter
+  lists with three Shield/Spear and three Heart entries, boss key visibility,
+  transition heal, potion drop reset, and card RNG band alignment.
+
+Verification for `06e5f9f`:
+
+- `cargo test monster_hp_rng --all-targets` -> `2 passed`
+- `cargo test final_act_initializes_shield_spear_and_heart_context --all-targets`
+  -> `1 passed`
+- `cargo test factory --all-targets` -> `3 passed`
+- `cargo test --all-targets` -> `1323 passed`
 
 `1879996` summary:
 
@@ -885,7 +913,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `1879996` before this handoff
+No uncommitted code changes were present after `06e5f9f` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -1028,6 +1056,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   Strength/follow-up `ApplyPower` actions; tests lock negative-Strength cleanse
   and the `buffCount == 1` Beat of Death follow-up. Existing Invincible tests
   already cover Java `maxAmt` reset storage and ordinary/HP_LOSS damage caps.
+- Monster factory fixed-HP RNG: fixed in `06e5f9f`. Java `setHp(int)` fixed-HP
+  constructors do not consume monster HP RNG; Rust `spawn_monster` now skips
+  `monster_hp_rng.random_range(...)` when `min == max`. Tests lock Act 4
+  Shield/Spear/Heart fixed HP without RNG consumption and Jaw Worm random HP
+  still consuming one roll.
 
 Source suspicion remaining after `5fe09ea`:
 
@@ -1135,11 +1168,12 @@ Recommended next packets:
    - Act 4 `SpireShield` + `SpireSpear` coordinated runtime/move audit was
      fixed/locked in `5fe09ea`.
    - `CorruptHeart` runtime/power audit was fixed/locked in `1879996`.
-   - Next narrow packet: final-act encounter/factory initialization audit
-     (`D:\rust\cardcrawl\dungeons\TheEnding.java`,
-     `D:\rust\cardcrawl\rooms\MonsterRoomBoss.java`,
-     `src/state/run.rs`, `src/content/monsters/factory.rs`,
-     `src/content/monsters/ending/*.rs`).
+   - Final-act encounter/factory initialization audit found and fixed the
+     fixed-HP RNG issue in `06e5f9f`.
+   - Next narrow packet: Java `MonsterHelper` encounter composition and factory
+     RNG audit (`D:\rust\cardcrawl\helpers\MonsterHelper.java`,
+     `D:\rust\cardcrawl\monsters\MonsterGroup.java`,
+     `src/content/monsters/factory.rs`, `src/content/monsters/mod.rs`).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
