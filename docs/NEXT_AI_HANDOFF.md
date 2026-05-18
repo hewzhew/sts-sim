@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `d3c080e Align master deck copy state with Java`
+- `efbf00f Match master deck removal hooks with Java`
 
 Recent commits:
 
+- `efbf00f Match master deck removal hooks with Java`
 - `d3c080e Align master deck copy state with Java`
 - `af79d1b Queue Anger discard copies as stat snapshots`
 - `8d48e33 Match generated reward discard upgrade counts`
@@ -64,6 +65,68 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`efbf00f` summary:
+
+- Continued permanent master-deck removal audit into Java
+  `onRemoveFromMasterDeck()` hooks.
+- Java checked:
+  - `D:\rust\cardcrawl\cards\curses\Parasite.java`
+  - `D:\rust\cardcrawl\cards\curses\Necronomicurse.java`
+  - `D:\rust\cardcrawl\cards\CardGroup.java`
+  - `D:\rust\cardcrawl\vfx\NecronomicurseEffect.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+  - `D:\rust\cardcrawl\cards\Soul.java`
+- Java result:
+  - Only Parasite and Necronomicurse override
+    `AbstractCard.onRemoveFromMasterDeck()` under normal card sources.
+  - `CardGroup.removeCard(c)` removes the card, calls
+    `c.onRemoveFromMasterDeck()`, then calls relic
+    `onMasterDeckChange()`.
+  - Parasite directly decreases max HP by 3.
+  - Necronomicurse starts `NecronomicurseEffect`, which directly inserts a
+    fresh Necronomicurse into `player.masterDeck`; it does not use ordinary
+    `ShowCardAndObtainEffect` / Soul obtain interception.
+  - Therefore Omamori, Darkstone Periapt, Ceramic Fish, and Egg obtain hooks
+    must not affect the Necronomicurse self re-add.
+- Rust result:
+  - `DeckAction::TriggerObtainCard` was renamed to
+    `ReaddCardToMasterDeck` to make the non-obtain semantics explicit.
+  - `RunState::remove_card_from_deck_with_source()` now resolves card removal
+    hooks before refreshing master-deck-change relic state, matching Java's
+    remove-card order.
+  - Necronomicurse removal now directly re-adds one fresh master-deck card
+    without ordinary obtain hooks or Omamori interception.
+  - `RunState::next_card_uuid()` now uses the current maximum master-deck UUID
+    instead of deck length, preventing remove-then-obtain paths from colliding
+    with existing obtained card instances.
+  - Added focused regressions for Parasite max HP loss and Necronomicurse
+    direct self re-add in the presence of Omamori, Darkstone Periapt, and
+    Ceramic Fish.
+
+Verification for `efbf00f`:
+
+- `cargo test removing_parasite_runs_master_deck_removal_hook_before_deck_change_refresh --all-targets`
+  -> `1 passed`
+- `cargo test removing_necronomicurse_readds_directly_without_ordinary_obtain_hooks --all-targets`
+  -> `1 passed`
+- `cargo test necronomicurse --all-targets` -> `3 passed`
+- `cargo test parasite --all-targets` -> `7 passed`
+- `cargo test --all-targets` -> `1358 passed`
+
+Next narrow packet:
+
+- Continue Java-source audit around permanent master-deck mutation/removal
+  paths:
+  - Transform and mass-removal flows that may intentionally bypass
+    `onRemoveFromMasterDeck()` (`PandorasBox`, `Astrolabe`, event transforms,
+    direct relic unequip removal) versus purge/remove flows that should call
+    the hook.
+  - Events that display stat-equivalent previews but mutate selected master
+    cards directly (`Designer`, `UpgradeShrine`, `ShiningLight`,
+    `BackToBasics`, `MindBloom`) should be checked for whether Rust mutates
+    the real card and not a preview artifact.
+  - Keep an eye on UUID/ref stability for every remove-then-add path.
 
 `d3c080e` summary:
 
