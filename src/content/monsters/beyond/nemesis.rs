@@ -27,7 +27,20 @@ pub fn initialize_runtime_state(entity: &mut MonsterEntity) {
 mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
+    use crate::content::powers::store;
+    use crate::runtime::combat::{Power, PowerPayload};
     use crate::runtime::rng::StsRng;
+
+    fn power(power_type: PowerId, amount: i32) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
 
     #[test]
     fn first_roll_clears_private_first_move_and_pre_decrements_cooldown() {
@@ -105,6 +118,93 @@ mod tests {
                 },
                 ..
             }]
+        ));
+    }
+
+    #[test]
+    fn tri_attack_queues_three_hits_intangible_then_roll_like_java() {
+        let nemesis = crate::testing::support::test_monster(EnemyId::Nemesis);
+        let mut state = crate::testing::support::combat_with_monsters(vec![nemesis.clone()]);
+
+        let actions = Nemesis::take_turn_plan(&mut state, &nemesis, &tri_attack_plan(3));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 7,
+                    ..
+                },
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 7,
+                    ..
+                },
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 7,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Intangible,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+
+    #[test]
+    fn tri_burn_uses_a18_burn_count_before_intangible_and_roll() {
+        let nemesis = crate::testing::support::test_monster(EnemyId::Nemesis);
+        let mut state = crate::testing::support::combat_with_monsters(vec![nemesis.clone()]);
+
+        let actions = Nemesis::take_turn_plan(&mut state, &nemesis, &tri_burn_plan(18));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MakeTempCardInDiscard {
+                    card_id: CardId::Burn,
+                    amount: 5,
+                    upgraded: false,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Intangible,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+
+    #[test]
+    fn take_turn_skips_new_intangible_when_already_present_like_java_has_power_guard() {
+        let nemesis = crate::testing::support::test_monster(EnemyId::Nemesis);
+        let mut state = crate::testing::support::combat_with_monsters(vec![nemesis.clone()]);
+        store::set_powers_for(&mut state, nemesis.id, vec![power(PowerId::Intangible, 1)]);
+
+        let actions = Nemesis::take_turn_plan(&mut state, &nemesis, &scythe_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 45,
+                    ..
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
         ));
     }
 }
