@@ -53,10 +53,11 @@ Forbidden:
 
 Latest code commit:
 
-- `72da496 Lock Calling Bell obtain hooks`
+- `71c92b1 Lock Necronomicon obtain hooks`
 
 Recent commits:
 
+- `71c92b1 Lock Necronomicon obtain hooks`
 - `72da496 Lock Calling Bell obtain hooks`
 - `e141a91 Add mechanics audit source indexes`
 - `4895ac6 Lock Cursed Key chest obtain hooks`
@@ -103,6 +104,37 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`71c92b1` summary:
+
+- Audited `Necronomicon` against Java's `ShowCardAndObtainEffect` obtain path.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\Necronomicon.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+- Java result:
+  - `Necronomicon.onEquip` queues
+    `ShowCardAndObtainEffect(new Necronomicurse())`.
+  - That means the Necronomicurse uses ordinary delayed obtain semantics:
+    Omamori can intercept it, and normal obtain hooks such as Ceramic Fish run
+    before `souls.obtain`.
+  - `Necronomicon.onUnequip` is different: it directly removes the first
+    Necronomicurse from `masterDeck.group`, so it must not trigger the curse's
+    removal self-regeneration hook.
+- Rust result:
+  - No business logic change was needed.
+  - Added regressions proving:
+    - `CeramicFish` gold is emitted before `Necronomicurse` `CardObtained`.
+    - Omamori can block the Necronomicurse from `Necronomicon.onEquip`.
+
+Verification for `71c92b1`:
+
+- `cargo test necronomicon --all-targets` -> `5 passed`
+- `cargo test --all-targets` -> `1402 passed`
+
+Next source-backed lane:
+
+- Continue relic obtain/equip audit with `Astrolabe`, `PandorasBox`,
+  `TinyHouse`, `Cauldron`, and `Orrery`.
 
 `72da496` summary:
 
