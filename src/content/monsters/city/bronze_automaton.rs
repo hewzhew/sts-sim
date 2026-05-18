@@ -68,6 +68,105 @@ mod tests {
             [Action::Suicide { target: 2 }]
         ));
     }
+
+    #[test]
+    fn roll_move_first_turn_and_hyper_beam_counter_match_java_get_move() {
+        let mut automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+
+        let first_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            0,
+            99,
+        );
+        assert_eq!(first_plan.move_id, SPAWN_ORBS);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(0, &automaton, 99, &first_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(0))],
+            "Java firstTurn branch clears firstTurn but does not increment numTurns"
+        );
+
+        automaton.bronze_automaton.first_turn = false;
+        automaton.bronze_automaton.num_turns = 4;
+        let beam_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            4,
+            0,
+        );
+        assert_eq!(beam_plan.move_id, HYPER_BEAM);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(4, &automaton, 0, &beam_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(0))],
+            "Java numTurns == 4 branch sets Hyper Beam and immediately resets numTurns to 0"
+        );
+    }
+
+    #[test]
+    fn post_hyper_beam_branch_does_not_increment_counter_like_java() {
+        let mut automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        automaton.bronze_automaton.first_turn = false;
+        automaton.bronze_automaton.num_turns = 2;
+        automaton.move_history_mut().push_back(HYPER_BEAM);
+
+        let low_ascension_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            18,
+            0,
+        );
+        assert_eq!(low_ascension_plan.move_id, STUNNED);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(18, &automaton, 0, &low_ascension_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(2))]
+        );
+
+        let a19_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            19,
+            0,
+        );
+        assert_eq!(a19_plan.move_id, BOOST);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(19, &automaton, 0, &a19_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(2))],
+            "Java lastMove(HYPER_BEAM) returns before ++numTurns on both STUN and A19 Boost branches"
+        );
+    }
+
+    #[test]
+    fn flail_and_normal_boost_increment_hyper_counter_like_java() {
+        let mut automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        automaton.bronze_automaton.first_turn = false;
+        automaton.bronze_automaton.num_turns = 1;
+        automaton.move_history_mut().push_back(SPAWN_ORBS);
+
+        let flail_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            0,
+            0,
+        );
+        assert_eq!(flail_plan.move_id, FLAIL);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(0, &automaton, 0, &flail_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(2))]
+        );
+
+        automaton.move_history_mut().clear();
+        let boost_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            0,
+            0,
+        );
+        assert_eq!(boost_plan.move_id, BOOST);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(0, &automaton, 0, &boost_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(2))]
+        );
+    }
 }
 
 fn flail_damage(ascension_level: u8) -> i32 {

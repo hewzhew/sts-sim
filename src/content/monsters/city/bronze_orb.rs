@@ -39,6 +39,74 @@ mod tests {
             ]
         ));
     }
+
+    #[test]
+    fn roll_move_sets_used_stasis_only_when_stasis_is_selected_like_java() {
+        let mut orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+
+        let stasis =
+            BronzeOrb::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &orb, 0, 25);
+        assert_eq!(stasis.move_id, STASIS);
+        assert_eq!(
+            BronzeOrb::on_roll_move(0, &orb, 25, &stasis),
+            vec![orb_runtime_update(&orb, Some(true))],
+            "Java BronzeOrb sets usedStasis inside getMove only when it chooses STASIS"
+        );
+
+        orb.bronze_orb.used_stasis = true;
+        let later =
+            BronzeOrb::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &orb, 0, 25);
+        assert_eq!(
+            later.move_id, BEAM,
+            "After usedStasis is true, Java falls through to Support/Beam selector"
+        );
+        assert!(BronzeOrb::on_roll_move(0, &orb, 25, &later).is_empty());
+    }
+
+    #[test]
+    fn support_and_beam_last_two_gates_match_java() {
+        let mut orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+        orb.bronze_orb.used_stasis = true;
+
+        let support =
+            BronzeOrb::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &orb, 0, 70);
+        assert_eq!(support.move_id, SUPPORT_BEAM);
+
+        orb.move_history_mut().push_back(SUPPORT_BEAM);
+        orb.move_history_mut().push_back(SUPPORT_BEAM);
+        let beam_after_two_supports =
+            BronzeOrb::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &orb, 0, 70);
+        assert_eq!(
+            beam_after_two_supports.move_id, BEAM,
+            "Java num>=70 Support branch is blocked only by lastTwoMoves(SUPPORT_BEAM)"
+        );
+
+        orb.move_history_mut().clear();
+        orb.move_history_mut().push_back(BEAM);
+        orb.move_history_mut().push_back(BEAM);
+        let support_after_two_beams =
+            BronzeOrb::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &orb, 0, 10);
+        assert_eq!(
+            support_after_two_beams.move_id, SUPPORT_BEAM,
+            "Java falls back to Support when the Beam branch is blocked by lastTwoMoves(BEAM)"
+        );
+    }
+
+    #[test]
+    fn stasis_take_turn_queues_apply_stasis_before_roll_like_java() {
+        let orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+        let mut state = crate::test_support::combat_with_monsters(vec![orb.clone()]);
+
+        let actions = BronzeOrb::take_turn_plan(&mut state, &orb, &stasis_plan());
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::ApplyStasis { target_id: orb.id },
+                Action::RollMonsterMove { monster_id: orb.id },
+            ]
+        );
+    }
 }
 
 fn current_used_stasis(entity: &MonsterEntity) -> bool {

@@ -729,6 +729,10 @@ pub fn handle_apply_stasis(target_id: usize, state: &mut CombatState) {
             }
         }
         if !candidates.is_empty() {
+            candidates.sort_by(|left, right| {
+                crate::content::cards::java_id(source_pile[*left].id)
+                    .cmp(crate::content::cards::java_id(source_pile[*right].id))
+            });
             break;
         }
     }
@@ -1020,6 +1024,33 @@ mod tests {
         assert_eq!(
             state.pop_next_action(),
             Some(Action::EnterStance("Divinity".to_string()))
+        );
+    }
+
+    #[test]
+    fn apply_stasis_sorts_rarity_candidates_by_java_card_id_before_rng_pick() {
+        let mut state = blank_test_combat();
+        state.zones.draw_pile = vec![
+            CombatCard::new(crate::content::cards::CardId::Catalyst, 101),
+            CombatCard::new(crate::content::cards::CardId::Alchemize, 102),
+        ];
+        let mut expected_rng = state.rng.card_random_rng.clone();
+        let mut expected_order = state
+            .zones
+            .draw_pile
+            .iter()
+            .map(|card| (crate::content::cards::java_id(card.id), card.uuid))
+            .collect::<Vec<_>>();
+        expected_order.sort_by(|left, right| left.0.cmp(right.0));
+        let expected_uuid =
+            expected_order[expected_rng.random(expected_order.len() as i32 - 1) as usize].1;
+
+        handle_apply_stasis(7, &mut state);
+
+        assert_eq!(
+            state.zones.limbo.iter().map(|card| card.uuid).collect::<Vec<_>>(),
+            vec![expected_uuid],
+            "Java CardGroup.getRandomCard(rng, rarity) sorts matching cards by cardID before consuming the random index"
         );
     }
 
