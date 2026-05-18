@@ -45,15 +45,50 @@ Forbidden:
 
 Branch tip:
 
-- `c7a3546 Fix darkling half-death parity`
+- `fcf0f0b Fix suicide action relic parity`
 
 Recent commits:
 
+- `fcf0f0b Fix suicide action relic parity`
 - `c7a3546 Fix darkling half-death parity`
 - `e3fd301 Update handoff after awakened one audit`
 - `30c73bb Fix awakened one rebirth parity`
 - `1cd6d69 Update handoff after champ audit`
-- `a8e467e Add champ move parity tests`
+
+`fcf0f0b` summary:
+
+- `Reptomancer`, `SnakeDagger`, Java `SuicideAction`, Java
+  `SpawnMonsterAction`, Java `LoseHPAction`, Java `FadingPower`, Java
+  `ExplosivePower`, `TheCollector`, and `BronzeAutomaton` death cleanup were
+  checked as one narrow packet.
+- `Action::Suicide` now carries Java's `triggerRelics` flag.
+- `handle_suicide(..., trigger_relics=true)` now sets HP to 0 and enters the
+  central monster-death handler so power/relic death hooks run, matching
+  Java `new SuicideAction(monster)`.
+- Split slimes now emit `Suicide { trigger_relics: false }`, matching Java
+  `new SuicideAction(this, false)`.
+- Fading/Explosive and minion cleanup paths now emit
+  `Suicide { trigger_relics: true }`.
+- `Reptomancer`, `TheCollector`, and `BronzeAutomaton` death cleanup now emits
+  minion suicides in Java `addToTop` mechanical order: while Java iterates the
+  monster group forward, later minions' `SuicideAction` executes first.
+- Added tests for:
+  - default SuicideAction triggering The Specimen/Poison death hooks;
+  - split-slime SuicideAction(false) skipping relic death hooks;
+  - Reptomancer/Collector/Bronze cleanup reverse execution order;
+  - updated split slime, Fading, Explosive, and SnakeDagger expectations.
+
+Verification for `fcf0f0b`:
+
+- `cargo test reptomancer --all-targets` -> `6 passed`
+- `cargo test collector --all-targets` -> `11 passed`
+- `cargo test bronze_automaton --all-targets` -> `7 passed`
+- `cargo test snake_dagger --all-targets` -> `4 passed`
+- `cargo test suicide --all-targets` -> `9 passed`
+- `cargo test slime --all-targets` -> `10 passed`
+- `cargo test fading --all-targets` -> `1 passed`
+- `cargo test explosive --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1268 passed`
 
 `c7a3546` summary:
 
@@ -497,6 +532,19 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   `nextMove != COUNT`, queued `SetMoveAction(COUNT)` duplicate history, and
   `REINCARNATE` queues heal, revive, Regrow stackAmount `1`, spawn relic hooks,
   then roll.
+- `Reptomancer` + `SnakeDagger`: fixed in `fcf0f0b` as part of the shared Java
+  `SuicideAction` packet. `SuicideAction(true)` now reaches monster
+  death hooks; split slimes use `false`; Fading/Explosive and minion cleanup
+  use `true`; Reptomancer/Collector/Bronze cleanup follows Java `addToTop`
+  reverse mechanical order.
+
+Source suspicion carried forward from the Reptomancer packet:
+
+- Java `SpawnMonsterAction.update()` calls relic `onSpawnMonster(m)` before the
+  monster is inserted into `AbstractDungeon.getMonsters().monsters`; Rust
+  `handle_spawn_monster` currently inserts the monster before calling spawn
+  relic hooks. This may matter for a relic hook that inspects the group. No
+  immediate failing test was added; keep it as a narrow future source packet.
 
 Split / victory timing:
 
@@ -565,14 +613,12 @@ Recommended next packets:
    - `Champ` was checked in `a8e467e`.
    - `AwakenedOne` was fixed in `30c73bb`.
    - `Darkling` was fixed in `c7a3546`.
-   - Next narrow packet: `Reptomancer`
-     (`D:\rust\cardcrawl\monsters\beyond\Reptomancer.java`,
-     `D:\rust\cardcrawl\monsters\beyond\SnakeDagger.java`,
-     `src/content/monsters/beyond/reptomancer.rs`, and
-     `src/content/monsters/beyond/snake_dagger.rs`). It was touched only for
-     shared Minion sentinel parity in `6e9a4d6`; broader move selection,
-     dagger spawn/slot timing, and summon/death interactions still need a
-     dedicated Java-source packet.
+   - `Reptomancer` + `SnakeDagger` shared death/suicide interactions were fixed
+     in `fcf0f0b`.
+   - Next narrow packet: `Nemesis`
+     (`D:\rust\cardcrawl\monsters\beyond\Nemesis.java`,
+     `src/content/monsters/beyond/nemesis.rs`, and relevant Intangible/Burn
+     action/power files if its turn source requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
