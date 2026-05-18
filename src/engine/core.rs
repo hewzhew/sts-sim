@@ -915,18 +915,10 @@ pub fn tick_engine(
                                 }
                             }
                         }
-                        // Drain atEndOfTurn collective actions
-                        while let Some(action) = combat_state.pop_next_action() {
-                            super::action_handlers::execute_action(action, combat_state);
-                            if combat_state.entities.player.current_hp <= 0 {
-                                combat_state.clear_pending_actions();
-                                *engine_state = EngineState::GameOver(RunResult::Defeat);
-                                return false;
-                            }
-                        }
-
                         // 2.5 === FULL ROUND END ===
                         // Java: applyEndOfTurnPowers() calls p.atEndOfRound() on player and all monsters.
+                        // These hooks enqueue actions but Java does not drain the action queue until
+                        // after the following player start-of-turn hooks and DrawCardAction are queued.
                         // Vault sets room.skipMonsterTurn, and GameActionManager skips this whole call.
                         for power in
                             &crate::content::powers::store::powers_snapshot_for(combat_state, 0)
@@ -969,11 +961,6 @@ pub fn tick_engine(
                                 }
                             }
                         }
-                        // Drain at_end_of_round actions
-                        while let Some(action) = combat_state.pop_next_action() {
-                            super::action_handlers::execute_action(action, combat_state);
-                        }
-
                         // Clear all just_applied flags globally at the end of the round!
                         store::clear_just_applied_flags(combat_state);
                     }
@@ -2566,6 +2553,54 @@ mod tests {
         assert!(
             !crate::content::powers::store::has_power(&combat_state, 0, PowerId::Blur),
             "Java BlurPower ticks down while still preserving that turn's block"
+        );
+    }
+
+    #[test]
+    fn draw_reduction_decay_is_queued_before_next_turn_draw_count_like_java_game_hand_size() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.monsters = vec![crate::test_support::planned_monster(
+            crate::content::monsters::EnemyId::Cultist,
+            3,
+        )];
+        combat_state.zones.draw_pile = (0..5)
+            .map(|uuid| crate::runtime::combat::CombatCard::new(CardId::Strike, uuid))
+            .collect();
+        combat_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::DrawReduction,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat_state.recompute_turn_start_draw_modifier();
+        combat_state.turn.begin_turn_transition();
+        let mut engine_state = EngineState::CombatProcessing;
+
+        for _ in 0..96 {
+            if engine_state == EngineState::CombatPlayerTurn {
+                break;
+            }
+            assert!(super::tick_engine(
+                &mut engine_state,
+                &mut combat_state,
+                None
+            ));
+        }
+
+        assert_eq!(engine_state, EngineState::CombatPlayerTurn);
+        assert_eq!(
+            combat_state.zones.hand.len(),
+            4,
+            "Java queues ReducePowerAction, then constructs next-turn DrawCardAction from the still-reduced gameHandSize"
+        );
+        assert!(
+            !crate::content::powers::store::has_power(&combat_state, 0, PowerId::DrawReduction),
+            "The queued ReducePowerAction still removes DrawReduction before player control returns"
         );
     }
 
