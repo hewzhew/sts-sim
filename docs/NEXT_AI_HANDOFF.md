@@ -45,15 +45,47 @@ Forbidden:
 
 Branch tip:
 
-- `894274a Fix monster pre-battle RNG stream`
+- `556788e Fix monster during-turn power timing`
 
 Recent commits:
 
+- `556788e Fix monster during-turn power timing`
+- `5ed419b Update handoff after pre-battle RNG audit`
 - `894274a Fix monster pre-battle RNG stream`
 - `347e96c Update handoff after monster factory RNG audit`
 - `3d4805e Fix monster factory constructor RNG parity`
-- `06e5f9f Avoid HP RNG for fixed HP monsters`
-- `3a6c58f Update handoff after corrupt heart audit`
+
+`556788e` summary:
+
+- Java `MonsterGroup.applyPreTurnLogic()`, `MonsterGroup.queueMonsters()`,
+  `MonsterGroup.applyEndOfTurnPowers()`, Java `GameActionManager` monster
+  queue handling, Java `AbstractCreature.applyTurnPowers()`, Java
+  `FadingPower`, Java `ExplosivePower`, and Rust `engine/core.rs` were checked.
+- Fixed Rust monster `duringTurn()` lifecycle timing:
+  - Java calls `m.takeTurn(); m.applyTurnPowers();` for one monster, then
+    drains the queued actions before dequeuing the next monster.
+  - Only Java `FadingPower` and `ExplosivePower` override `duringTurn()`.
+  - Rust was resolving `Fading` / `Explosive` inside the group-level
+    end-of-turn power pass, after all monsters had acted.
+  - Rust now has a separate `resolve_power_during_turn` hook and queues those
+    actions immediately after each monster's `takeTurn` actions, before the
+    current monster's queue is drained and before the next monster acts.
+- Added tests proving:
+  - `Fading` and `Explosive` no longer fire from
+    `resolve_power_at_end_of_turn`;
+  - their Java action order is preserved through the new `duringTurn` hook;
+  - `Explosive` damage can kill the player before the next monster is dequeued,
+    matching Java `GameActionManager`.
+
+Verification for `556788e`:
+
+- `cargo test monster_during_turn_powers_fire_before_next_monster_turn_like_java_apply_turn_powers --all-targets`
+  -> `1 passed`
+- `cargo test explosive_and_fading_countdowns_match_java_during_turn_action_order --all-targets`
+  -> `1 passed`
+- `cargo test explosive --all-targets` -> `2 passed`
+- `cargo test fading --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1327 passed`
 
 `894274a` summary:
 
@@ -961,7 +993,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `894274a` before this handoff
+No uncommitted code changes were present after `556788e` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -1113,6 +1145,12 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   pre-battle now passes `MonsterHp` so Louse Curl Up consumes the same
   `AbstractDungeon.monsterHpRng` stream as Java. Java universal pre-battle
   Daily/Endless/blight hooks remain intentionally unmodeled.
+- Monster `duringTurn()` lifecycle: fixed in `556788e`. Java
+  `GameActionManager` calls `m.applyTurnPowers()` immediately after each
+  monster `takeTurn()`, before the next monster is dequeued. Only Java
+  `FadingPower` and `ExplosivePower` override `duringTurn()`, so Rust now
+  handles those in a dedicated per-monster hook instead of the group-level
+  `applyEndOfTurnPowers()` pass.
 
 Source suspicion remaining after `5fe09ea`:
 
@@ -1228,11 +1266,15 @@ Recommended next packets:
      construction for Exordium Thugs / Wildlife.
    - Java `MonsterGroup.usePreBattleAction()` RNG stream was fixed/locked in
      `894274a`.
-   - Next narrow packet: remaining Java `MonsterGroup` lifecycle semantics vs
-     Rust combat lifecycle (`D:\rust\cardcrawl\monsters\MonsterGroup.java`,
+   - Java `GameActionManager` per-monster `applyTurnPowers()` timing was
+     fixed/locked in `556788e`.
+   - Next narrow packet: finish the remaining Java `MonsterGroup` lifecycle
+     filter/order details vs Rust combat lifecycle
+     (`D:\rust\cardcrawl\monsters\MonsterGroup.java`,
      `D:\rust\cardcrawl\actions\GameActionManager.java`,
-     `src/engine/core.rs`, and any narrow power/action files needed for
-     `applyPreTurnLogic`, `queueMonsters`, and `applyEndOfTurnPowers`).
+     `D:\rust\cardcrawl\core\AbstractCreature.java`, `src/engine/core.rs`,
+     and any narrow power/action files needed for `applyPreTurnLogic`,
+     `queueMonsters`, `applyEndOfTurnPowers`, and `areMonstersBasicallyDead`).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
