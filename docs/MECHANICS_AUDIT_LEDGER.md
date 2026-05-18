@@ -45,7 +45,7 @@ unreviewed:
 | Cursed Key chest curse | `relics/CursedKey.java`, `rewards/chests/AbstractChest.java`, `helpers/CardLibrary.java` | `src/engine/run_loop.rs` | locked | commit `4895ac6` | Chest `onChestOpenAfter` ordering should continue to be audited with Matryoshka/N'loth/Sapphire interactions. |
 | Ordinary reward generation | `rooms/AbstractRoom.java`, `screens/CombatRewardScreen.java`, `rewards/RewardItem.java` | `src/rewards/generator.rs`, `src/engine/run_loop.rs` | partial | existing reward generator tests | Continue checking boss/elite/normal/event combat reward ordering and RNG streams. |
 | Treasure room chest rewards | `rooms/TreasureRoom.java`, `rewards/chests/AbstractChest.java`, chest subclasses | `src/engine/run_loop.rs`, `src/rewards/state.rs` | partial | existing treasure tests plus `4895ac6` | Audit all chest hook phases: `onChestOpen`, gold, relic/key link, `onChestOpenAfter`, reward screen. |
-| Relic `onEquip` / `instantObtain` with direct run mutations | `relics/AbstractRelic.java`, concrete relics | `src/content/relics/*`, `src/state/run.rs`, reward handlers | partial | scattered relic tests; `CallingBell` locked in `72da496`; `Necronomicon` locked in `71c92b1`; `Astrolabe` fixed in `586fff0`; `PandorasBox` fixed in `0a795a8` | Next high-value lane: `TinyHouse`, `Cauldron`, `Orrery`. |
+| Relic `onEquip` / `instantObtain` with direct run mutations | `relics/AbstractRelic.java`, concrete relics | `src/content/relics/*`, `src/state/run.rs`, reward handlers | partial | scattered relic tests; `CallingBell` locked in `72da496`; `Necronomicon` locked in `71c92b1`; `Astrolabe` fixed in `586fff0`; `PandorasBox` fixed in `0a795a8`; `TinyHouse` fixed in `72e808e` | Next high-value lane: `Cauldron`, `Orrery`. |
 | Master deck removal hooks | `cards/CardGroup.java`, curse/card `onRemoveFromMasterDeck` sources | `src/state/run.rs`, `src/deck/manager.rs` | partial | commits around `efbf00f`, `d8c5796`, `7529c30` | Recheck Necronomicurse, Parasite, event purge, shop purge, campfire toke, transform remove-all. |
 | Master deck card copy / stat-equivalent copy | `cards/AbstractCard.java`, producers such as Nightmare/Duplicator/Anger | `src/state/run.rs`, `src/runtime/combat.rs`, card modules | partial | commits around `ab78536`, `23d034d`, `d3c080e`, `b84fd78` | Continue checking generated copies that preserve misc/cost/base-stat state. |
 | Card zone ordering and draw-pile API | `cards/CardGroup.java`, actions that add/remove/shuffle | `src/runtime/combat.rs`, action handlers | partial | runtime card zone tests | Keep revisiting whenever a Java call uses `addToTop`, `addToBottom`, `addToRandomSpot`, or `getTopCard`. |
@@ -64,7 +64,6 @@ unreviewed:
 Continue with relic obtain/equip paths that create cards or reward screens:
 
 ```text
-TinyHouse
 Cauldron
 Orrery
 ```

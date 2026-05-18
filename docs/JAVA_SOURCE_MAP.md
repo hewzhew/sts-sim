@@ -59,3 +59,4 @@ reward UI classes.
 | Necronomicon curse obtain | `relics/Necronomicon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `71c92b1` |
 | Astrolabe transform-upgrade | `relics/Astrolabe.java`, `cards/CardGroup.java`, `dungeons/AbstractDungeon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `586fff0` |
 | Pandora's Box starter replacement | `relics/PandorasBox.java`, `cards/CardGroup.java`, `screens/select/GridCardSelectScreen.java`, `vfx/FastCardObtainEffect.java`, `cards/Soul.java` | `0a795a8` |
+| Tiny House upgrade and reward screen | `relics/TinyHouse.java`, `screens/CombatRewardScreen.java`, `rooms/AbstractRoom.java`, `rewards/RewardItem.java`, `cards/AbstractCard.java` | `72e808e` |

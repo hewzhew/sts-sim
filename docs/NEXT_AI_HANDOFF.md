@@ -53,15 +53,15 @@ Forbidden:
 
 Latest code commit:
 
-- `0a795a8 Match Pandora's Box confirmation obtain order`
+- `72e808e Match Tiny House upgrade candidates`
 
 Recent commits:
 
+- `72e808e Match Tiny House upgrade candidates`
+- `a1e216c Update handoff after Pandora's Box audit`
 - `0a795a8 Match Pandora's Box confirmation obtain order`
+- `83793f4 Update handoff after Astrolabe audit`
 - `586fff0 Match Astrolabe transform upgrade semantics`
-- `71c92b1 Lock Necronomicon obtain hooks`
-- `72da496 Lock Calling Bell obtain hooks`
-- `e141a91 Add mechanics audit source indexes`
 - `4895ac6 Lock Cursed Key chest obtain hooks`
 - `b2cc6ce Lock shop card fast obtain ordering`
 - `dcec769 Lock reward card obtain hooks`
@@ -107,6 +107,40 @@ Recent commits:
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
 
+`72e808e` summary:
+
+- Audited `TinyHouse` against Java's upgrade, max HP, room reward, potion, and
+  combat reward screen flow.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\TinyHouse.java`
+  - `D:\rust\cardcrawl\screens\CombatRewardScreen.java`
+  - `D:\rust\cardcrawl\rooms\AbstractRoom.java`
+  - `D:\rust\cardcrawl\rewards\RewardItem.java`
+  - `D:\rust\cardcrawl\cards\AbstractCard.java`
+- Java result:
+  - `TinyHouse.onEquip` builds upgrade candidates strictly with
+    `AbstractCard.canUpgrade()`, so status and curse cards are excluded and
+    `SearingBlow` remains always eligible.
+  - It shuffles candidates with `new Random(miscRng.randomLong())`, upgrades
+    at most one card, and runs bottled-card description checks.
+  - It immediately increases max HP/current HP by 5.
+  - It adds 50 gold and a `miscRng` potion to current-room rewards, then
+    `CombatRewardScreen.open(label)` copies those rewards and appends the
+    ordinary card reward through `setupItemReward`.
+- Rust result:
+  - `tiny_house::on_equip` now uses the shared Java upgrade helper
+    `can_upgrade_card_once` for candidate collection.
+  - Added a regression proving Tiny House does not upgrade status/curse cards.
+
+Verification for `72e808e`:
+
+- `cargo test tiny_house --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1405 passed`
+
+Next source-backed lane:
+
+- Continue relic obtain/equip audit with `Cauldron` and `Orrery`.
+
 `0a795a8` summary:
 
 - Audited `PandorasBox` against Java's direct deck removal, random card
@@ -146,7 +180,7 @@ Verification for `0a795a8`:
 
 Next source-backed lane:
 
-- Continue relic obtain/equip audit with `TinyHouse`, `Cauldron`, and `Orrery`.
+- Continue relic obtain/equip audit with `Cauldron` and `Orrery`.
 
 `586fff0` summary:
 
