@@ -53,10 +53,11 @@ Forbidden:
 
 Latest code commit:
 
-- `71c92b1 Lock Necronomicon obtain hooks`
+- `586fff0 Match Astrolabe transform upgrade semantics`
 
 Recent commits:
 
+- `586fff0 Match Astrolabe transform upgrade semantics`
 - `71c92b1 Lock Necronomicon obtain hooks`
 - `72da496 Lock Calling Bell obtain hooks`
 - `e141a91 Add mechanics audit source indexes`
@@ -104,6 +105,43 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`586fff0` summary:
+
+- Audited `Astrolabe` against Java's selection, transform, and obtain path.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\Astrolabe.java`
+  - `D:\rust\cardcrawl\cards\CardGroup.java`
+  - `D:\rust\cardcrawl\dungeons\AbstractDungeon.java`
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+- Java result:
+  - `Astrolabe.onEquip` uses `masterDeck.getPurgeableCards()`, excluding
+    `AscendersBane`, `CurseOfTheBell`, and `Necronomicurse`.
+  - If there are three or fewer candidates, Java calls `giveCards` immediately;
+    otherwise it opens a non-cancelable grid selection for exactly three cards.
+  - `giveCards` removes selected cards from the master deck, transforms each
+    with `AbstractDungeon.transformCard(card, true, miscRng)`, then queues
+    `ShowCardAndObtainEffect` for transformed cards.
+  - Java's `autoUpgrade=true` still calls `transformedCard.canUpgrade()`, so a
+    transformed curse/status must not become upgraded.
+- Rust result:
+  - `Astrolabe` now uses deferred transform obtain for the auto-transform path.
+  - `RunPendingChoiceReason::TransformUpgraded` now uses the same deferred
+    transform obtain path.
+  - Transformed cards are only pre-upgraded when
+    `can_upgrade_card_once(transformed_card)` is true.
+  - Added a regression proving a purgeable curse transformed by Astrolabe
+    remains an unupgraded curse.
+
+Verification for `586fff0`:
+
+- `cargo test astrolabe --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1403 passed`
+
+Next source-backed lane:
+
+- Continue relic obtain/equip audit with `PandorasBox`, `TinyHouse`,
+  `Cauldron`, and `Orrery`.
 
 `71c92b1` summary:
 

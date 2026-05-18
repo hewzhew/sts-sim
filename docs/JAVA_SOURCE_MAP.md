@@ -57,3 +57,4 @@ reward UI classes.
 | Cursed Key chest curse | `relics/CursedKey.java`, `rewards/chests/AbstractChest.java`, `helpers/CardLibrary.java` | `4895ac6` |
 | Calling Bell curse and relic rewards | `relics/CallingBell.java`, `screens/select/GridCardSelectScreen.java`, `vfx/FastCardObtainEffect.java` | `72da496` |
 | Necronomicon curse obtain | `relics/Necronomicon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `71c92b1` |
+| Astrolabe transform-upgrade | `relics/Astrolabe.java`, `cards/CardGroup.java`, `dungeons/AbstractDungeon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `586fff0` |
