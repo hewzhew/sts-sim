@@ -735,8 +735,13 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         }
         Action::UsePotion { slot, target } => cards::handle_use_potion(slot, target, state),
         Action::DiscardPotion { slot } => {
-            if slot < state.entities.potions.len() {
-                state.entities.potions[slot] = None;
+            if let Some(potion_slot) = state.entities.potions.get_mut(slot) {
+                if potion_slot
+                    .as_ref()
+                    .is_some_and(|potion| potion.can_discard)
+                {
+                    *potion_slot = None;
+                }
             }
         }
         Action::ObtainPotion => cards::handle_obtain_potion(state),
@@ -1240,6 +1245,7 @@ fn handle_enter_stance(stance: &str, state: &mut CombatState) {
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::potions::{Potion, PotionId};
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::{Power, PowerPayload, StanceId};
@@ -1269,6 +1275,36 @@ mod tests {
             state.turn.energy, 0,
             "Java ChangeStanceAction returns before oldStance.onExitStance when CannotChangeStancePower is present"
         );
+    }
+
+    #[test]
+    fn queued_discard_potion_action_respects_java_can_discard_affordance() {
+        let mut state = blank_test_combat();
+        state.entities.potions = vec![
+            Some(Potion::with_affordance_truth(
+                PotionId::FirePotion,
+                101,
+                false,
+                false,
+                false,
+            )),
+            Some(Potion::with_affordance_truth(
+                PotionId::BlockPotion,
+                102,
+                false,
+                true,
+                false,
+            )),
+        ];
+
+        execute_action(Action::DiscardPotion { slot: 0 }, &mut state);
+        assert!(
+            state.entities.potions[0].is_some(),
+            "Java PotionPopUp checks potion.canDiscard before destroying the slot"
+        );
+
+        execute_action(Action::DiscardPotion { slot: 1 }, &mut state);
+        assert!(state.entities.potions[1].is_none());
     }
 
     #[test]
