@@ -187,6 +187,37 @@ Documentation note after `154df37`:
   - `cargo test bronze_orb --all-targets` -> `5 passed`
   - `cargo test book_of_stabbing --all-targets` -> `5 passed`
 
+Current documentation note after encounter-pool reconciliation:
+
+- Rechecked the existing monster encounter scheduling audit against Java/Rust
+  owners without changing code.
+- Java checked:
+  - `D:\rust\cardcrawl\dungeons\AbstractDungeon.java`
+  - `D:\rust\cardcrawl\dungeons\Exordium.java`
+  - `D:\rust\cardcrawl\dungeons\TheCity.java`
+  - `D:\rust\cardcrawl\dungeons\TheBeyond.java`
+  - `D:\rust\cardcrawl\dungeons\TheEnding.java`
+- Rust checked:
+  - `src\content\monsters\encounter_pool.rs`
+  - `src\state\run.rs`
+  - CLI/full-run combat entrypoints that consume scheduled encounters
+- Result:
+  - Encounter list generation is already source-checked for weights, repeat
+    rules, first-strong exclusions, Act 4 Shield/Spear lists, boss-list
+    generation, and no fake JawWorm/Hexaghost fallback.
+  - `docs\MECHANICS_AUDIT_LEDGER.md` now names the actual remaining risk:
+    Java room creation reads the front encounter and removes/regenerates when
+    leaving the room, while Rust currently consumes at combat creation. Concrete
+    `MonsterHelper` encounter instantiation coverage also remains separate
+    from private monster AI fields.
+  - `docs\JAVA_SOURCE_MAP.md` now has a monster encounter scheduling owner row.
+- Verification:
+  - `cargo test encounter_lists_preserve_java_generation_invariants --all-targets`
+    -> `1 passed`
+  - `cargo test unknown_act_does_not_fall_back_to_exordium_encounter_lists --all-targets`
+    -> `1 passed`
+  - `cargo test boss_lists --all-targets` -> `2 passed`
+
 Previous source-checked note after `157e50d`:
 
 - Rechecked `EmptyCage` against Java without code changes.
