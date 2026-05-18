@@ -45,15 +45,40 @@ Forbidden:
 
 Branch tip:
 
-- `a8e467e Add champ move parity tests`
+- `30c73bb Fix awakened one rebirth parity`
 
 Recent commits:
 
+- `30c73bb Fix awakened one rebirth parity`
+- `1cd6d69 Update handoff after champ audit`
 - `a8e467e Add champ move parity tests`
 - `ad7747d Update handoff after bronze audit`
 - `8385df0 Fix stasis selection parity`
-- `35b4dc4 Update handoff after collector audit`
-- `5232ea9 Add collector move parity tests`
+
+`30c73bb` summary:
+
+- `AwakenedOne`, Java `AwakenedOne.damage()`, Java `UnawakenedPower`, and the
+  Rust death pipeline were checked.
+- Fixed pre-battle `Unawakened` amount to Java sentinel `-1`.
+- Moved first-phase rebirth truth out of the Rust `Unawakened` power hook and
+  into the central monster-death interrupt, matching Java ownership:
+  `UnawakenedPower` has no `onDeath`; `AwakenedOne.damage()` mutates monster
+  state immediately.
+- First-phase lethal damage now immediately:
+  - marks the monster half-dead and not dying;
+  - removes debuffs, `Curiosity`, `Unawakened`, and `Shackled`;
+  - sets runtime `form1=false`, `first_turn=true`;
+  - sets planned move `REBIRTH` and writes one immediate move-history entry;
+  - queues `ClearCardQueue` to the front and a later `SetMonsterMove(REBIRTH)`
+    to the bottom, preserving Java's duplicate move-history behavior.
+- Removed the now-dead `AwakenedRebirthClear` action variant/handler.
+- Added tests for pre-battle power order/amounts, first-phase rebirth immediate
+  state and queued `SetMoveAction`, and existing final-death Cultist escape.
+
+Verification for `30c73bb`:
+
+- `cargo test awakened_one --all-targets` -> `4 passed`
+- `cargo test --all-targets` -> `1259 passed`
 
 `a8e467e` summary:
 
@@ -368,7 +393,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `a8e467e`.
+No uncommitted changes were present after `30c73bb`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -432,6 +457,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   lock half-HP Anger, Execute gating, fourth-turn Taunt reset, A19 Defensive
   Stance cap/forge counter, Anger cleanup queue order, and Face Slap/Taunt
   debuff order.
+- `AwakenedOne`: fixed in `30c73bb`. First-phase death now follows Java
+  `AwakenedOne.damage()` ownership instead of pretending `UnawakenedPower`
+  owns the transition; tests lock sentinel amount, immediate half-dead/runtime
+  mutation, power clearing, top-queued card queue clear, and duplicate
+  `REBIRTH` move-history from immediate `setMove` plus queued `SetMoveAction`.
 
 Split / victory timing:
 
@@ -479,9 +509,10 @@ Continue monster audit before jumping back to machine learning.
 Recommended next packets:
 
 1. Finish the mixed `SetMoveAction` / `RollMoveAction` monster sweep:
-   - `AwakenedOne` and `Darkling` were read; no immediate code change was made.
-     Keep Java duplicate move-history behavior from immediate `setMove(...)`
-     plus later `SetMoveAction(...)` on the watch list.
+   - `AwakenedOne` was fixed in `30c73bb`.
+   - `Darkling` was read earlier but still deserves a dedicated packet. Keep
+     Java duplicate move-history behavior from immediate `setMove(...)` plus
+     later `SetMoveAction(...)` on the watch list for this packet.
    - `Looter` and `Mugger` were fixed in `874605d`.
    - Exordium Gremlins were fixed in `1ac61f2`.
    - `BanditPointy` was checked in `0b0eec3`.
@@ -499,12 +530,12 @@ Recommended next packets:
    - `TheCollector` was checked in `5232ea9`.
    - `BronzeAutomaton` + `BronzeOrb` were fixed in `8385df0`.
    - `Champ` was checked in `a8e467e`.
-   - Next narrow packet: `AwakenedOne`
-     (`D:\rust\cardcrawl\monsters\beyond\AwakenedOne.java` and
-     `src/content/monsters/beyond/awakened_one.rs`). It exercises phase
-     transition state, death/revive semantics, Cultist spawning, Curiosity,
-     and the previously noted immediate `setMove(...)` plus queued
-     `SetMoveAction(...)` move-history duplication risk.
+   - `AwakenedOne` was fixed in `30c73bb`.
+   - Next narrow packet: `Darkling`
+     (`D:\rust\cardcrawl\monsters\beyond\Darkling.java` and
+     `src/content/monsters/beyond/darkling.rs`). It exercises half-dead
+     revival, group-death timing, reincarnation move setting, and
+     `setMove(...)` / `SetMoveAction(...)` history behavior.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
