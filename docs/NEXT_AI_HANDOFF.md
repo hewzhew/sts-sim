@@ -45,15 +45,40 @@ Forbidden:
 
 Branch tip:
 
-- `d6a62f4 Fix transient move timing and shifting amount`
+- `bcbd851 Fix maw roar timing parity`
 
 Recent commits:
 
+- `bcbd851 Fix maw roar timing parity`
 - `d6a62f4 Fix transient move timing and shifting amount`
 - `2aae03b Add donu deca parity tests`
 - `6c142a3 Add time eater move parity tests`
 - `9e6e73f Add giant head count parity tests`
-- `98ee287 Add nemesis action parity tests`
+
+`bcbd851` summary:
+
+- `Maw` Java/Rust behavior was checked.
+- Fixed `ROAR` timing:
+  - Java queues Weak and Frail actions, then synchronously sets private
+    `roared=true` before those queued debuffs execute, then queues
+    `RollMoveAction`.
+  - Rust now emits the private `roared` runtime update before queued Weak/Frail
+    actions, preserving Java synchronous state mutation timing.
+- Added tests proving:
+  - imported private `roared=false` forces Roar even if history contains Roar;
+  - imported private `turn_count` drives Nom hit count;
+  - Java `lastMove(SLAM)` and `lastMove(NOMNOMNOM)` force Drool;
+  - high roll after a non-attack move selects Slam and A2+ Slam damage 30;
+  - RollMove increments Java private `turnCount`;
+  - A17 Roar applies Weak/Frail 5 after the immediate `roared=true` update.
+- Java `SFXAction`, `ShoutAction`, `AnimateSlowAttackAction`,
+  `VFXAction(BiteEffect)`, animation, and death sound were treated as
+  presentation-only. The Bite VFX `MathUtils` rolls are not gameplay RNG.
+
+Verification for `bcbd851`:
+
+- `cargo test maw --all-targets` -> `10 passed`
+- `cargo test --all-targets` -> `1285 passed`
 
 `d6a62f4` summary:
 
@@ -677,6 +702,8 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   ordering, and all-monster buff/protect loop ordering.
 - `Transient`: fixed in `d6a62f4`. Runtime count / next-move mutation now
   happens before queued damage, and Shifting uses Java sentinel amount `-1`.
+- `Maw`: fixed in `bcbd851`. Roar private `roared` update now happens before
+  queued Weak/Frail actions, and tests lock turn-count and move-history gates.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -760,10 +787,11 @@ Recommended next packets:
    - `TimeEater` was checked in `6c142a3`.
    - `Donu` + `Deca` were checked in `2aae03b`.
    - `Transient` was fixed in `d6a62f4`.
-   - Next narrow packet: `Maw`
-     (`D:\rust\cardcrawl\monsters\beyond\Maw.java`,
-     `src/content/monsters/beyond/maw.rs`, and relevant weak/frail/strength
-     action or power files if source comparison requires them).
+   - `Maw` was fixed in `bcbd851`.
+   - Next narrow packet: `Spiker`
+     (`D:\rust\cardcrawl\monsters\beyond\Spiker.java`,
+     `src/content/monsters/beyond/spiker.rs`, and relevant thorns/damage action
+     or power files if source comparison requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
