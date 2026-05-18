@@ -309,4 +309,60 @@ mod tests {
             } if before.id == CardId::Defend && before.uuid == 102
         )));
     }
+
+    #[test]
+    fn test_subject_transforms_each_selected_card_sequentially_like_java() {
+        let mut run_state = drug_dealer_run();
+        run_state.master_deck = vec![
+            deck_card(CardId::Parasite, 101),
+            deck_card(CardId::Parasite, 102),
+            deck_card(CardId::Strike, 103),
+        ];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![
+                    SelectionTargetRef::CardUuid(101),
+                    SelectionTargetRef::CardUuid(102),
+                ],
+            })),
+        ));
+
+        let events = run_state.take_emitted_events();
+        let relevant = events
+            .iter()
+            .filter_map(|event| match event {
+                DomainEvent::MaxHpChanged {
+                    delta: -3,
+                    source: DomainEventSource::Event(EventId::DrugDealer),
+                    ..
+                } => Some("remove_parasite"),
+                DomainEvent::CardTransformed {
+                    before,
+                    source: DomainEventSource::Event(EventId::DrugDealer),
+                    ..
+                } if before.id == CardId::Parasite => Some("obtain_replacement"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            relevant,
+            vec![
+                "remove_parasite",
+                "obtain_replacement",
+                "remove_parasite",
+                "obtain_replacement"
+            ],
+            "Java DrugDealer removes, transforms, and queues obtain for each selected card before moving to the next selected card"
+        );
+    }
 }
