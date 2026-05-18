@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `56bec7f Lock remaining delayed event obtain hooks`
+- `525fe0b Lock event card cost before obtain hooks`
 
 Recent commits:
 
+- `525fe0b Lock event card cost before obtain hooks`
 - `56bec7f Lock remaining delayed event obtain hooks`
 - `81789e4 Lock delayed event card obtain ordering`
 - `aadd74e Defer multi-transform obtains like Java effects`
@@ -82,6 +83,34 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`525fe0b` summary:
+
+- Continued the remaining Java event `ShowCardAndObtainEffect` sweep into
+  event branches that pay HP/max HP costs before delayed card obtains.
+- Java checked:
+  - `D:\rust\cardcrawl\events\city\Ghosts.java`
+  - `D:\rust\cardcrawl\events\city\KnowingSkull.java`
+  - Previously in the same lane:
+    `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+    and `D:\rust\cardcrawl\relics\CeramicFish.java`
+- Java result:
+  - `Ghosts` decreases max HP immediately, then queues 5 Apparition
+    `ShowCardAndObtainEffect`s at A0 or 3 at A15+. Each delayed effect later
+    runs `onObtainCard` before `souls.obtain`.
+  - `KnowingSkull` card reward applies HP_LOSS damage and increments the card
+    cost immediately, then queues a colorless card `ShowCardAndObtainEffect`
+    whose obtain hooks resolve later.
+- Rust result:
+  - No business logic change was needed in these event paths.
+  - Added `CeramicFish` ordering regressions proving the HP/max HP cost events
+    happen before delayed card obtain hooks and `CardObtained` events.
+
+Verification for `525fe0b`:
+
+- `cargo test ghosts --all-targets` -> `3 passed`
+- `cargo test knowing_skull --all-targets` -> `6 passed`
+- `cargo test --all-targets` -> `1379 passed`
 
 `56bec7f` summary:
 
@@ -3030,6 +3059,13 @@ Recommended next packets:
        regressions in `81789e4`.
      - `Mushrooms` and `GremlinWheelGame`: no business change needed; delayed
        obtain hook ordering is locked by CeramicFish regressions in `56bec7f`.
+     - `Ghosts` and `KnowingSkull`: no business change needed; HP/max HP cost
+       before delayed obtain hooks is locked by CeramicFish regressions in
+       `525fe0b`.
+   - Remaining obvious Java event `ShowCardAndObtainEffect` sites not yet
+     summarized in this handoff lane include at least `Duplicator`, `TheLibrary`,
+     `Nest`, `Vampires`, `LivingWall`, and `GremlinMatchGame`. Some already
+     have strong local tests; source-check before adding more.
    - Use the established pattern from `BigFish`, `Addict`, `Mausoleum`, and
      `AccursedBlacksmith`: if Java constructs the card obtain effect before a
      later immediate mutation, take an Omamori snapshot at construction time
