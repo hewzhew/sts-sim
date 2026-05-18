@@ -53,10 +53,11 @@ Forbidden:
 
 Latest code commit:
 
-- `586fff0 Match Astrolabe transform upgrade semantics`
+- `0a795a8 Match Pandora's Box confirmation obtain order`
 
 Recent commits:
 
+- `0a795a8 Match Pandora's Box confirmation obtain order`
 - `586fff0 Match Astrolabe transform upgrade semantics`
 - `71c92b1 Lock Necronomicon obtain hooks`
 - `72da496 Lock Calling Bell obtain hooks`
@@ -105,6 +106,47 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`0a795a8` summary:
+
+- Audited `PandorasBox` against Java's direct deck removal, random card
+  generation, preview hooks, confirmation grid, and fast obtain path.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\PandorasBox.java`
+  - `D:\rust\cardcrawl\cards\CardGroup.java`
+  - `D:\rust\cardcrawl\screens\select\GridCardSelectScreen.java`
+  - `D:\rust\cardcrawl\vfx\FastCardObtainEffect.java`
+  - `D:\rust\cardcrawl\cards\Soul.java`
+  - Egg relic sources for `onPreviewObtainCard`
+- Java result:
+  - `PandorasBox.onEquip` removes all cards tagged `STARTER_STRIKE` or
+    `STARTER_DEFEND` directly from `masterDeck.group`, bypassing normal removal
+    hooks.
+  - It generates the same number of cards with
+    `AbstractDungeon.returnTrulyRandomCard()` using `cardRandomRng`.
+  - Only Egg relics override `onPreviewObtainCard`, so generated cards preview
+    upgrade before being placed into the confirmation grid.
+  - The confirmation grid stores cards with `CardGroup.addToBottom`, which
+    inserts at Java index 0; confirming the grid queues `FastCardObtainEffect`
+    in that reversed group order.
+  - `FastCardObtainEffect` then runs ordinary obtain hooks such as Ceramic Fish
+    before `Soul.obtain`.
+- Rust result:
+  - Generated Pandora cards are now collected first, then obtained in the
+    reverse order matching Java's confirmation-grid order.
+  - Added regressions proving:
+    - generated-vs-obtained card order is reversed like Java;
+    - Egg preview upgrades happen;
+    - Ceramic Fish fires once per generated card.
+
+Verification for `0a795a8`:
+
+- `cargo test pandoras_box --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1404 passed`
+
+Next source-backed lane:
+
+- Continue relic obtain/equip audit with `TinyHouse`, `Cauldron`, and `Orrery`.
 
 `586fff0` summary:
 

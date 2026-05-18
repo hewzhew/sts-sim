@@ -58,3 +58,4 @@ reward UI classes.
 | Calling Bell curse and relic rewards | `relics/CallingBell.java`, `screens/select/GridCardSelectScreen.java`, `vfx/FastCardObtainEffect.java` | `72da496` |
 | Necronomicon curse obtain | `relics/Necronomicon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `71c92b1` |
 | Astrolabe transform-upgrade | `relics/Astrolabe.java`, `cards/CardGroup.java`, `dungeons/AbstractDungeon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `586fff0` |
+| Pandora's Box starter replacement | `relics/PandorasBox.java`, `cards/CardGroup.java`, `screens/select/GridCardSelectScreen.java`, `vfx/FastCardObtainEffect.java`, `cards/Soul.java` | `0a795a8` |
