@@ -45,15 +45,37 @@ Forbidden:
 
 Branch tip:
 
-- `bcbd851 Fix maw roar timing parity`
+- `17d05fd Add spiker parity tests`
 
 Recent commits:
 
+- `17d05fd Add spiker parity tests`
 - `bcbd851 Fix maw roar timing parity`
 - `d6a62f4 Fix transient move timing and shifting amount`
 - `2aae03b Add donu deca parity tests`
 - `6c142a3 Add time eater move parity tests`
-- `9e6e73f Add giant head count parity tests`
+
+`17d05fd` summary:
+
+- `Spiker` Java/Rust behavior was checked.
+- No business logic change was needed.
+- Added tests proving:
+  - pre-battle Thorns follows Java ascension gates: 3 below A2, 4 at A2+, 7
+    at A17+;
+  - executed private `thornsCount > 5` forces Attack even when the RNG roll
+    would otherwise allow Buff;
+  - planned-but-unexecuted Buff history does not count as executed
+    `thornsCount`;
+  - low roll attacks only when the previous move was not Attack;
+  - Attack queues one Java A2+ 9-damage attack before `RollMoveAction`;
+  - Buff increments private `thornsCount` before queued Thorns
+    `ApplyPowerAction`.
+- Java animation and startup animation RNG remain presentation-only.
+
+Verification for `17d05fd`:
+
+- `cargo test spiker --all-targets` -> `7 passed`
+- `cargo test --all-targets` -> `1289 passed`
 
 `bcbd851` summary:
 
@@ -704,6 +726,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   happens before queued damage, and Shifting uses Java sentinel amount `-1`.
 - `Maw`: fixed in `bcbd851`. Roar private `roared` update now happens before
   queued Weak/Frail actions, and tests lock turn-count and move-history gates.
+- `Spiker`: checked in `17d05fd`. No business logic change was needed; tests
+  lock pre-battle Thorns gates, private `thornsCount`, low-roll/lastMove gates,
+  attack damage, and Buff ordering.
 
 Source suspicion carried forward from the Reptomancer packet:
 
@@ -788,10 +813,11 @@ Recommended next packets:
    - `Donu` + `Deca` were checked in `2aae03b`.
    - `Transient` was fixed in `d6a62f4`.
    - `Maw` was fixed in `bcbd851`.
-   - Next narrow packet: `Spiker`
-     (`D:\rust\cardcrawl\monsters\beyond\Spiker.java`,
-     `src/content/monsters/beyond/spiker.rs`, and relevant thorns/damage action
-     or power files if source comparison requires them).
+   - `Spiker` was checked in `17d05fd`.
+   - Next narrow packet: `SpireGrowth`
+     (`D:\rust\cardcrawl\monsters\beyond\SpireGrowth.java`,
+     `src/content/monsters/beyond/spire_growth.rs`, and relevant constricted
+     or strength action/power files if source comparison requires them).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
