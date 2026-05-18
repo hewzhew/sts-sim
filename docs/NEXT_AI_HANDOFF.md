@@ -45,10 +45,12 @@ Forbidden:
 
 Latest code commit:
 
-- `f775832 Lock Drug Dealer transform order`
+- `5e0aff5 Match Vampires strike removal order`
 
 Recent commits:
 
+- `5e0aff5 Match Vampires strike removal order`
+- `c5a3cd5 Update handoff after Drug Dealer audit`
 - `f775832 Lock Drug Dealer transform order`
 - `f6abf75 Match Neow transform-two removal order`
 - `7dd8cf4 Match campfire toke selection with Java`
@@ -72,6 +74,29 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`5e0aff5` summary:
+
+- Continued the permanent master-deck mutation audit into the Vampires event.
+- Java checked:
+  - `D:\rust\cardcrawl\events\city\Vampires.java`
+- Java result:
+  - `replaceAttacks()` iterates `player.masterDeck.group` from
+    `size() - 1` down to `0`.
+  - Every card tagged `STARTER_STRIKE` is removed through ordinary
+    `masterDeck.removeCard(card)`.
+  - Only after all starter strikes are removed does Java queue five
+    `ShowCardAndObtainEffect(new Bite())` effects.
+- Rust result:
+  - `replace_attacks()` now collects starter-strike UUIDs in reverse
+    master-deck order before calling the ordinary removal path.
+  - Added a regression with mixed starter strikes and non-strikes; expected
+    `CardRemoved` UUID order is `104, 103, 101`.
+
+Verification for `5e0aff5`:
+
+- `cargo test vampires --all-targets` -> `5 passed`
+- `cargo test --all-targets` -> `1366 passed`
 
 `f775832` summary:
 
