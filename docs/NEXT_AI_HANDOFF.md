@@ -53,10 +53,12 @@ Forbidden:
 
 Latest code commit:
 
-- `98208ad Guard queued potion discard affordance`
+- `03779ed Lock boss chest hook exclusion`
 
 Recent commits:
 
+- `03779ed Lock boss chest hook exclusion`
+- `5fb9dbd Update handoff after potion discard audit`
 - `98208ad Guard queued potion discard affordance`
 - `72d5620 Lock chest relic hook ordering`
 - `7faf842 Update handoff after bottled relic audit`
@@ -111,6 +113,43 @@ Recent commits:
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
 
+`03779ed` summary:
+
+- Audited boss chest hook exclusion against Java.
+- Java checked:
+  - `D:\rust\cardcrawl\rewards\chests\BossChest.java`
+  - `D:\rust\cardcrawl\screens\select\BossRelicSelectScreen.java`
+  - `D:\rust\cardcrawl\relics\AbstractRelic.java`
+  - `D:\rust\cardcrawl\rooms\TreasureRoomBoss.java`
+  - `D:\rust\cardcrawl\relics\CursedKey.java`
+  - `D:\rust\cardcrawl\relics\Matryoshka.java`
+  - `D:\rust\cardcrawl\relics\NlothsMask.java`
+- Java result:
+  - `BossChest.open(true)` opens the boss relic screen with the three
+    constructor-generated boss relics.
+  - It calls `onChestOpen(true)` for owned relics except Matryoshka; Cursed Key
+    has no effect for `bossChest=true`.
+  - Boss chests do not run `onChestOpenAfter`, so N'loth's Mask cannot remove a
+    boss relic offer.
+- Rust result:
+  - Added a boss reward regression proving Cursed Key does not add a curse,
+    Matryoshka does not insert an extra boss offer, and N'loth's Mask does not
+    remove one of the three boss relic choices.
+
+Verification for `03779ed`:
+
+- `cargo test boss_chest_relic_choice_does_not_apply_non_boss_chest_hooks --all-targets`
+  -> `1 passed`
+- `cargo test boss_relic --all-targets` -> `8 passed`
+- `cargo test --all-targets` -> `1412 passed`
+
+Next source-backed lane:
+
+- `EmptyCage` appears implementation-aligned from prior reading; document/lock
+  it if we want to close that loop.
+- Otherwise continue potion top-panel/use timing or move to monster private
+  intent fields.
+
 `98208ad` summary:
 
 - Audited potion top-panel discard affordance against Java.
@@ -145,8 +184,8 @@ Verification for `98208ad`:
 Next source-backed lane:
 
 - Continue potion top-panel/use timing if staying in potion affordances.
-- Otherwise finish `EmptyCage` documentation/locking or inspect boss chest /
-  boss relic choice edge cases.
+- Otherwise finish `EmptyCage` documentation/locking or move to monster private
+  intent fields.
 - Monster private intent fields remain a high-priority broader lane before
   serious full-run training.
 
@@ -184,8 +223,7 @@ Verification for `72d5620`:
 
 Next source-backed lane:
 
-- Boss chest / boss reward handling is already partly covered; if continuing
-  chest work, inspect `BossChest.java` and boss relic choice edge cases.
+- Boss chest / boss reward handling is now separately locked in `03779ed`.
 - Otherwise move to another high-value run subsystem: potion top-panel
   use/discard, event gates/pools, or monster private intent fields.
 

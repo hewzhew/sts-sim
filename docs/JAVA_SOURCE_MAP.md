@@ -56,6 +56,7 @@ reward UI classes.
 | Shop card purchase | `shop/ShopScreen.java`, `vfx/FastCardObtainEffect.java` | `b2cc6ce` |
 | Cursed Key chest curse | `relics/CursedKey.java`, `rewards/chests/AbstractChest.java`, `helpers/CardLibrary.java` | `4895ac6` |
 | Non-boss chest hook ordering | `rewards/chests/AbstractChest.java`, `rewards/chests/SmallChest.java`, `rewards/chests/MediumChest.java`, `rewards/chests/LargeChest.java`, `rooms/TreasureRoom.java`, `relics/Matryoshka.java`, `relics/NlothsMask.java`, `relics/CursedKey.java` | `72d5620` |
+| Boss chest relic choice and hook exclusion | `rewards/chests/BossChest.java`, `screens/select/BossRelicSelectScreen.java`, `relics/AbstractRelic.java`, `rooms/TreasureRoomBoss.java`, `relics/CursedKey.java`, `relics/Matryoshka.java`, `relics/NlothsMask.java` | `03779ed` |
 | Calling Bell curse and relic rewards | `relics/CallingBell.java`, `screens/select/GridCardSelectScreen.java`, `vfx/FastCardObtainEffect.java` | `72da496` |
 | Necronomicon curse obtain | `relics/Necronomicon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `71c92b1` |
 | Astrolabe transform-upgrade | `relics/Astrolabe.java`, `cards/CardGroup.java`, `dungeons/AbstractDungeon.java`, `vfx/cardManip/ShowCardAndObtainEffect.java` | `586fff0` |
