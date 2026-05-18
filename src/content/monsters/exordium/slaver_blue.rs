@@ -188,3 +188,98 @@ impl MonsterBehavior for SlaverBlue {
         actions
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{SlaverBlue, RAKE, STAB};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
+
+    fn blue_slaver_with_history(history: &[u8]) -> crate::runtime::combat::MonsterEntity {
+        let mut monster = crate::testing::support::test_monster(EnemyId::SlaverBlue);
+        monster.move_history_mut().extend(history.iter().copied());
+        monster
+    }
+
+    #[test]
+    fn blue_slaver_roll_logic_matches_java_history_branches() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+
+        let no_history = blue_slaver_with_history(&[]);
+        assert_eq!(
+            SlaverBlue::roll_move_plan(&mut rng, &no_history, 0, 40).move_id,
+            STAB,
+            "Java picks Stab on num >= 40 unless lastTwoMoves(Stab) blocks it"
+        );
+
+        let two_stabs = blue_slaver_with_history(&[STAB, STAB]);
+        assert_eq!(
+            SlaverBlue::roll_move_plan(&mut rng, &two_stabs, 0, 99).move_id,
+            RAKE,
+            "Java falls through to Rake when high-roll Stab is blocked by lastTwoMoves(Stab)"
+        );
+
+        let two_rakes = blue_slaver_with_history(&[RAKE, RAKE]);
+        assert_eq!(
+            SlaverBlue::roll_move_plan(&mut rng, &two_rakes, 16, 0).move_id,
+            STAB,
+            "Below A17 Java blocks Rake only after lastTwoMoves(Rake)"
+        );
+
+        let one_rake_a17 = blue_slaver_with_history(&[RAKE]);
+        assert_eq!(
+            SlaverBlue::roll_move_plan(&mut rng, &one_rake_a17, 17, 0).move_id,
+            STAB,
+            "At A17+ Java blocks Rake after lastMove(Rake), not lastTwoMoves(Rake)"
+        );
+    }
+
+    #[test]
+    fn blue_slaver_take_turn_actions_preserve_java_order_and_weak_amounts() {
+        let mut state = crate::testing::support::blank_test_combat();
+        let monster = crate::testing::support::test_monster(EnemyId::SlaverBlue);
+
+        let rake_a16 = super::rake_plan(16);
+        let actions = SlaverBlue::take_turn_plan(&mut state, &monster, &rake_a16);
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 8,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        let rake_a17 = super::rake_plan(17);
+        let actions = SlaverBlue::take_turn_plan(&mut state, &monster, &rake_a17);
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 8,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Weak,
+                    amount: 2,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+}

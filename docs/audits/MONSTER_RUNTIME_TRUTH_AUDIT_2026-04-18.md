@@ -37,6 +37,7 @@ Scope:
 | Snake Plant | None | N/A | N/A | N/A | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
 | Louse | `bite_damage` | Yes | N/A | Yes | None | Good |
 | Snecko | `first_turn` | Yes | Yes | Yes | `lastTwoMoves(BITE)` sequencing | Good |
+| Blue Slaver | None | N/A | N/A | N/A | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Red Slaver | `first_turn`, `used_entangle` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Gremlin Nob | `used_bellow` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
 | Gremlin Leader | `gremlin_slots` | Yes | Yes | Yes | Rally/Encourage/Stab sequencing only | Good |
@@ -226,6 +227,22 @@ Scope:
 - `runtime_state.first_turn` is now exported by `CommunicationMod`.
 - Rust semantic roll logic requires `first_turn` to be protocol-seeded or factory-seeded.
 - Remaining history usage is limited to Java's explicit `lastTwoMoves(BITE)` rule.
+
+### Blue Slaver
+
+- `Blue Slaver` does not require hidden runtime truth from protocol.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\SlaverBlue.java`
+- Rust checked:
+  - `src\content\monsters\exordium\slaver_blue.rs`
+- Java `SlaverBlue.getMove(int)` uses only the roll plus public sequence history:
+  - `num >= 40 && !lastTwoMoves(STAB)` picks Stab.
+  - Ascension 17+ blocks Rake with `lastMove(RAKE)`.
+  - Below Ascension 17 blocks Rake with `lastTwoMoves(RAKE)`.
+- Java `takeTurn()` queues damage, optional Weak from Rake, and then `RollMoveAction(this)`. Rust preserves action order and the Ascension 17 Weak amount increase.
+- Java voice/death sound rolls are UI/audio-only and are not imported as gameplay RNG.
+- Verification:
+  - `cargo test blue_slaver --all-targets` -> `2 passed`
 
 ### Red Slaver
 

@@ -58,6 +58,22 @@ Forbidden:
 
 ## Latest Documentation Checkpoint
 
+Latest code checkpoint:
+
+- Added focused Blue Slaver tests after Java/Rust source comparison.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\SlaverBlue.java`
+- Rust changed:
+  - `src\content\monsters\exordium\slaver_blue.rs`
+- Result:
+  - Blue Slaver requires no hidden runtime truth from protocol.
+  - Tests now cover Java's `num >= 40 && !lastTwoMoves(STAB)` Stab branch,
+    A17+ `lastMove(RAKE)` Rake block, pre-A17 `lastTwoMoves(RAKE)` Rake block,
+    Rake Weak amount, action order, and final `RollMonsterMove`.
+  - Java voice/death sound rolls remain UI/audio-only and are not gameplay RNG.
+- Verification:
+  - `cargo test blue_slaver --all-targets` -> `2 passed`
+
 Latest monster-runtime documentation reconciliation:
 
 - Rechecked Taskmaster against Java/Rust owners without code changes.
