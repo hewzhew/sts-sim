@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `525fe0b Lock event card cost before obtain hooks`
+- `3426913 Lock event card obtain after deck costs`
 
 Recent commits:
 
+- `3426913 Lock event card obtain after deck costs`
 - `525fe0b Lock event card cost before obtain hooks`
 - `56bec7f Lock remaining delayed event obtain hooks`
 - `81789e4 Lock delayed event card obtain ordering`
@@ -83,6 +84,31 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`3426913` summary:
+
+- Continued the Java event `ShowCardAndObtainEffect` sweep into branches that
+  pay damage or mutate the master deck before delayed permanent card obtains.
+- Java checked:
+  - `D:\rust\cardcrawl\events\city\Nest.java`
+  - `D:\rust\cardcrawl\events\city\Vampires.java`
+- Java result:
+  - `Nest` Join Cult applies `DamageInfo(null, 6)` immediately, then queues a
+    delayed Ritual Dagger `ShowCardAndObtainEffect`.
+  - `Vampires` Accept decreases max HP, removes all starter Strikes by scanning
+    the master deck from the end toward the front, then queues five delayed
+    Bite `ShowCardAndObtainEffect`s.
+- Rust result:
+  - No business logic change was needed in these event paths.
+  - Added `CeramicFish` ordering regressions proving the immediate damage/max
+    HP/deck removal effects happen before delayed card obtain hooks and
+    `CardObtained` events.
+
+Verification for `3426913`:
+
+- `cargo test nest --all-targets` -> `4 passed`
+- `cargo test vampires --all-targets` -> `6 passed`
+- `cargo test --all-targets` -> `1381 passed`
 
 `525fe0b` summary:
 
@@ -3062,10 +3088,13 @@ Recommended next packets:
      - `Ghosts` and `KnowingSkull`: no business change needed; HP/max HP cost
        before delayed obtain hooks is locked by CeramicFish regressions in
        `525fe0b`.
+     - `Nest` and `Vampires`: no business change needed; damage/max HP/deck
+       removal before delayed obtain hooks is locked by CeramicFish regressions
+       in `3426913`.
    - Remaining obvious Java event `ShowCardAndObtainEffect` sites not yet
      summarized in this handoff lane include at least `Duplicator`, `TheLibrary`,
-     `Nest`, `Vampires`, `LivingWall`, and `GremlinMatchGame`. Some already
-     have strong local tests; source-check before adding more.
+     `LivingWall`, and `GremlinMatchGame`. Some already have strong local
+     tests; source-check before adding more.
    - Use the established pattern from `BigFish`, `Addict`, `Mausoleum`, and
      `AccursedBlacksmith`: if Java constructs the card obtain effect before a
      later immediate mutation, take an Omamori snapshot at construction time
