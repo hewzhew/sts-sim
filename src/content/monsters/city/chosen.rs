@@ -68,6 +68,117 @@ mod tests {
             "Java Chosen.getMove never touches firstTurn in the A17 branch"
         );
     }
+
+    #[test]
+    fn below_a17_second_roll_uses_hex_and_marks_used_hex_like_java() {
+        let state = crate::test_support::blank_test_combat();
+        let mut chosen = crate::test_support::test_monster(EnemyId::Chosen);
+        chosen.chosen.first_turn = false;
+        chosen.chosen.used_hex = false;
+        chosen.move_history_mut().push_back(POKE);
+
+        let plan = Chosen::roll_move_plan(
+            &mut state.rng.ai_rng.clone(),
+            &chosen,
+            state.meta.ascension_level,
+            99,
+        );
+        let setup = Chosen::on_roll_move(state.meta.ascension_level, &chosen, 99, &plan);
+
+        assert_eq!(plan.move_id, HEX);
+        assert!(matches!(
+            setup.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::Chosen {
+                    first_turn: None,
+                    used_hex: Some(true),
+                    protocol_seeded: Some(true)
+                }
+            }]
+        ));
+    }
+
+    #[test]
+    fn drain_applies_weak_then_strength_then_roll_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let chosen = crate::test_support::test_monster(EnemyId::Chosen);
+
+        let actions = Chosen::take_turn_plan(&mut state, &chosen, &drain_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Weak,
+                    amount: 3
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Strength,
+                    amount: 3
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn debilitate_attacks_before_vulnerable_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let chosen = crate::test_support::test_monster(EnemyId::Chosen);
+
+        let actions = Chosen::take_turn_plan(&mut state, &chosen, &debilitate_plan(2));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 12,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Vulnerable,
+                    amount: 2
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn poke_queues_two_damage_actions_before_roll_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let chosen = crate::test_support::test_monster(EnemyId::Chosen);
+
+        let actions = Chosen::take_turn_plan(&mut state, &chosen, &poke_plan(2));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 6,
+                    ..
+                },
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 6,
+                    ..
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
 }
 
 enum ChosenTurn<'a> {
