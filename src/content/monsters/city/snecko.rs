@@ -40,7 +40,7 @@ mod tests {
     }
 
     #[test]
-    fn glare_applies_confusion_without_numeric_amount_like_java() {
+    fn glare_applies_confusion_sentinel_amount_like_java() {
         let mut state = crate::test_support::blank_test_combat();
         let snecko = crate::test_support::test_monster(EnemyId::Snecko);
 
@@ -53,7 +53,7 @@ mod tests {
                     source: 1,
                     target: PLAYER,
                     power_id: PowerId::Confusion,
-                    amount: 0
+                    amount: -1
                 },
                 Action::RollMonsterMove { monster_id: 1 }
             ]
@@ -137,7 +137,7 @@ fn glare_plan() -> MonsterTurnPlan {
         GLARE,
         MonsterMoveSpec::StrongDebuff(DebuffSpec {
             power_id: PowerId::Confusion,
-            amount: 0,
+            amount: -1,
             strength: EffectStrength::Strong,
         }),
     )

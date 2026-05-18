@@ -173,7 +173,7 @@ impl MonsterBehavior for SphericGuardian {
                 source: entity.id,
                 target: entity.id,
                 power_id: PowerId::Barricade,
-                amount: 1,
+                amount: -1,
             },
             Action::ApplyPower {
                 source: entity.id,
@@ -284,7 +284,42 @@ fn spheric_guardian_runtime_update(
 mod tests {
     use super::{bash_and_block_plan, SphericGuardian, BASH_AND_FRAIL, HARDEN, SLAM};
     use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::content::powers::PowerId;
     use crate::runtime::action::{Action, MonsterRuntimePatch};
+
+    #[test]
+    fn pre_battle_applies_barricade_artifact_and_block_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let guardian = crate::test_support::test_monster(EnemyId::SphericGuardian);
+
+        let actions = SphericGuardian::use_pre_battle_actions(
+            &mut state,
+            &guardian,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Barricade,
+                    amount: -1
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Artifact,
+                    amount: 3
+                },
+                Action::GainBlock {
+                    target: 1,
+                    amount: 40
+                }
+            ]
+        ));
+    }
 
     #[test]
     fn bash_and_block_gains_block_before_attack_like_java() {
