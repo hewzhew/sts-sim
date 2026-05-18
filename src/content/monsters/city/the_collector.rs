@@ -128,6 +128,139 @@ mod tests {
             "Java Collector.isMinionDead only checks current enemySlots values, not stale dead TorchHead instances left in the monster group"
         );
     }
+
+    #[test]
+    fn initial_spawn_queues_two_torches_runtime_update_then_roll_like_java() {
+        let collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        let mut state = crate::test_support::combat_with_monsters(vec![collector.clone()]);
+
+        let actions = TheCollector::take_turn_plan(&mut state, &collector, &spawn_plan());
+
+        assert_eq!(
+            actions,
+            vec![
+                spawn_torch_action(collector.id, 1, TORCH_DRAW_X[0]),
+                spawn_torch_action(collector.id, 2, TORCH_DRAW_X[1]),
+                collector_runtime_update(&collector, Some(false), None, Some(1)),
+                Action::RollMonsterMove {
+                    monster_id: collector.id,
+                },
+            ],
+            "Java Collector queues two SpawnMonsterAction calls, synchronously clears initialSpawn/increments turnsTaken, then queues RollMoveAction"
+        );
+    }
+
+    #[test]
+    fn roll_move_forces_initial_spawn_then_mega_debuff_until_used() {
+        let mut collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        let monsters = vec![collector.clone()];
+
+        let initial_plan = TheCollector::roll_move_custom_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &collector,
+            19,
+            99,
+            &monsters,
+        );
+        assert_eq!(initial_plan.move_id, SPAWN);
+
+        collector.collector.initial_spawn = false;
+        collector.collector.turns_taken = 3;
+        collector.collector.ult_used = false;
+        let forced_ult_plan = TheCollector::roll_move_custom_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &collector,
+            19,
+            99,
+            &monsters,
+        );
+        assert_eq!(forced_ult_plan.move_id, MEGA_DEBUFF);
+
+        collector.collector.ult_used = true;
+        let post_ult_plan = TheCollector::roll_move_custom_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &collector,
+            19,
+            99,
+            &monsters,
+        );
+        assert_eq!(
+            post_ult_plan.move_id, BUFF,
+            "After ultUsed is true, Java falls through to the normal Fireball/Buff selector"
+        );
+    }
+
+    #[test]
+    fn roll_move_fireball_history_gate_matches_java_last_two_moves() {
+        let mut collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        collector.collector.initial_spawn = false;
+        collector.collector.ult_used = true;
+        collector.collector.turns_taken = 1;
+        collector.move_history_mut().push_back(FIREBALL);
+        collector.move_history_mut().push_back(FIREBALL);
+        let monsters = vec![collector.clone()];
+
+        let plan = TheCollector::roll_move_custom_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &collector,
+            4,
+            70,
+            &monsters,
+        );
+
+        assert_eq!(
+            plan.move_id, BUFF,
+            "Java Collector blocks Fireball only with lastTwoMoves(FIREBALL), then picks Buff if the last move is not already Buff"
+        );
+    }
+
+    #[test]
+    fn mega_debuff_queues_weak_vulnerable_frail_runtime_update_then_roll_like_java() {
+        let mut collector = crate::test_support::test_monster(EnemyId::TheCollector);
+        collector.id = 9;
+        collector.collector.initial_spawn = false;
+        collector.collector.turns_taken = 3;
+        collector.collector.ult_used = false;
+        let mut state = crate::test_support::combat_with_monsters(vec![collector.clone()]);
+        state.meta.ascension_level = 19;
+
+        let actions = TheCollector::take_turn_plan(&mut state, &collector, &mega_debuff_plan(19));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::ApplyPower {
+                    target: PLAYER,
+                    power_id: PowerId::Weak,
+                    amount: 5,
+                    ..
+                },
+                Action::ApplyPower {
+                    target: PLAYER,
+                    power_id: PowerId::Vulnerable,
+                    amount: 5,
+                    ..
+                },
+                Action::ApplyPower {
+                    target: PLAYER,
+                    power_id: PowerId::Frail,
+                    amount: 5,
+                    ..
+                },
+                Action::UpdateMonsterRuntime {
+                    monster_id: 9,
+                    patch: MonsterRuntimePatch::Collector {
+                        initial_spawn: Some(false),
+                        ult_used: Some(true),
+                        turns_taken: Some(4),
+                        enemy_slots: None,
+                        protocol_seeded: Some(true),
+                    },
+                },
+                Action::RollMonsterMove { monster_id: 9 },
+            ]
+        ));
+    }
 }
 
 fn fireball_damage(ascension_level: u8) -> i32 {
