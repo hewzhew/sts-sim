@@ -547,7 +547,9 @@ pub fn at_turn_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 crate::content::relics::mercury_hourglass::at_turn_start(&*state),
             ),
             RelicId::Necronomicon => {
-                actions.extend(crate::content::relics::necronomicon::at_turn_start())
+                let mut rs = state.entities.player.relics[relic_index].clone();
+                crate::content::relics::necronomicon::at_turn_start(&mut rs);
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::LetterOpener => {
                 let mut rs = state.entities.player.relics[relic_index].clone();
@@ -786,10 +788,11 @@ pub fn on_use_card(
             }
             RelicId::Necronomicon => {
                 let cost = card.get_cost() as i32;
-                let used_up = state.entities.player.relics[relic_index].used_up;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::necronomicon::on_use_card(
-                    card_id, cost, used_up, card, target,
+                    card_id, cost, &mut rs, card, target,
                 ));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::OrangePellets => {
                 let mut rs = state.entities.player.relics[relic_index].clone();

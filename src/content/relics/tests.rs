@@ -5203,10 +5203,16 @@ fn necronomicon_replay_uses_same_instance_copy_like_java() {
     let mut card = CombatCard::new(CardId::Bludgeon, 6201);
     card.base_damage_mut = 99;
     card.energy_on_use = 2;
+    let mut relic = RelicState::new(RelicId::Necronomicon);
+    relic.used_up = false;
 
-    let actions = necronomicon::on_use_card(CardId::Bludgeon, 3, false, &card, Some(70));
-    assert_eq!(actions.len(), 2);
-    match &actions[1].action {
+    let actions = necronomicon::on_use_card(CardId::Bludgeon, 3, &mut relic, &card, Some(70));
+    assert!(
+        relic.used_up,
+        "Java Necronomicon.activated is cleared synchronously in onUseCard"
+    );
+    assert_eq!(actions.len(), 1);
+    match &actions[0].action {
         Action::EnqueueCardPlay { item, in_front } => {
             assert!(*in_front);
             assert_eq!(item.card.uuid, 6201);
@@ -5223,6 +5229,13 @@ fn necronomicon_replay_uses_same_instance_copy_like_java() {
         }
         other => panic!("Necronomicon should enqueue a same-instance card play, got {other:?}"),
     }
+
+    assert!(necronomicon::on_use_card(CardId::Bludgeon, 3, &mut relic, &card, Some(70)).is_empty());
+    necronomicon::at_turn_start(&mut relic);
+    assert!(
+        !relic.used_up,
+        "Java Necronomicon.atTurnStart reactivates the relic"
+    );
 }
 
 #[test]
