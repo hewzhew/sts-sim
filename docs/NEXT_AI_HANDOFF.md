@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `8d48e33 Match generated reward discard upgrade counts`
+- `af79d1b Queue Anger discard copies as stat snapshots`
 
 Recent commits:
 
+- `af79d1b Queue Anger discard copies as stat snapshots`
 - `8d48e33 Match generated reward discard upgrade counts`
 - `ab78536 Lock stat equivalent copy state for queued copies`
 - `23d034d Lock Nightmare stat equivalent payload state`
@@ -62,6 +63,58 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`af79d1b` summary:
+
+- Continued the Java-source generated/source-copy audit into Watcher preview
+  card producers and Anger.
+- Java checked:
+  - `D:\rust\cardcrawl\cards\purple\Alpha.java`
+  - `D:\rust\cardcrawl\cards\tempCards\Beta.java`
+  - `D:\rust\cardcrawl\cards\purple\Pray.java`
+  - `D:\rust\cardcrawl\cards\purple\CarveReality.java`
+  - `D:\rust\cardcrawl\cards\purple\DeceiveReality.java`
+  - `D:\rust\cardcrawl\cards\purple\ReachHeaven.java`
+  - `D:\rust\cardcrawl\cards\purple\Evaluate.java`
+  - `D:\rust\cardcrawl\powers\watcher\StudyPower.java`
+  - `D:\rust\cardcrawl\cards\red\Anger.java`
+- Java result:
+  - Alpha / Beta / Pray / Reach Heaven / Evaluate / Study generate fresh
+    preview cards into the draw pile; the current Rust by-id draw action is
+    mechanically equivalent for these audited cards because the source objects
+    carry no extra `misc`, transient cost, UUID, or rendered-stat state.
+  - Carve Reality and Deceive Reality already use the constructed hand-card
+    boundary for Smite / Safety.
+  - Anger is different: Java queues `this.makeStatEquivalentCopy()` into
+    `MakeTempCardInDiscardAction`, so the queued source snapshot must preserve
+    permanent card state but must not carry rendered `damage/block/magic` or
+    multi-damage values.
+- Rust result:
+  - `Anger` now queues a stat-equivalent source snapshot for its discard copy,
+    instead of queueing the evaluated/rendered card clone.
+  - Strengthened the Anger runtime test to lock permanent state preservation
+    and transient rendered-state reset at queue time.
+
+Verification for `af79d1b`:
+
+- `cargo test ironclad_common_utility_runtime_actions_match_java_use_methods --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1356 passed`
+
+Next narrow packet:
+
+- Continue Java `makeStatEquivalentCopy()` audit with remaining gameplay
+  sources:
+  - `DivinePunishmentAction` is referenced only by deprecated
+    `DEPRECATEDCleanseEvil`; keep out of normal-scope implementation unless
+    deprecated cards become in scope.
+  - Event/relic/card obtain or upgrade previews that only call
+    `ShowCardBrieflyEffect` are UI-only unless they mutate master deck,
+    consume gameplay RNG, or affect replay-visible state.
+  - Good next non-preview gameplay packet: master-deck duplication/removal
+    paths (`Duplicator`, `DollysMirror`, event card options) or relic hook
+    stateful counters, depending on whether the next lane stays with card-copy
+    state or returns to relic audit.
 
 `8d48e33` summary:
 
