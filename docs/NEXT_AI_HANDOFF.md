@@ -53,15 +53,15 @@ Forbidden:
 
 Latest code commit:
 
-- `72e808e Match Tiny House upgrade candidates`
+- `00d2ecb Match Cauldron reward screen card burn`
 
 Recent commits:
 
+- `00d2ecb Match Cauldron reward screen card burn`
+- `a9a2b9e Update handoff after Tiny House audit`
 - `72e808e Match Tiny House upgrade candidates`
 - `a1e216c Update handoff after Pandora's Box audit`
 - `0a795a8 Match Pandora's Box confirmation obtain order`
-- `83793f4 Update handoff after Astrolabe audit`
-- `586fff0 Match Astrolabe transform upgrade semantics`
 - `4895ac6 Lock Cursed Key chest obtain hooks`
 - `b2cc6ce Lock shop card fast obtain ordering`
 - `dcec769 Lock reward card obtain hooks`
@@ -107,6 +107,38 @@ Recent commits:
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
 
+`00d2ecb` summary:
+
+- Audited `Cauldron` against Java's potion reward and combat reward screen
+  behavior.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\Cauldron.java`
+  - `D:\rust\cardcrawl\helpers\PotionHelper.java`
+  - `D:\rust\cardcrawl\screens\CombatRewardScreen.java`
+  - `D:\rust\cardcrawl\rewards\RewardItem.java`
+- Java result:
+  - `Cauldron.onEquip` adds five flat random potions through
+    `PotionHelper.getRandomPotion()`, consuming `potionRng` without rarity
+    weighting.
+  - It then calls `CombatRewardScreen.open(label)`, whose `setupItemReward`
+    creates the ordinary card reward and consumes card reward RNG.
+  - Cauldron immediately removes the first visible `RewardType.CARD` item from
+    the newly opened reward screen.
+- Rust result:
+  - `cauldron::on_equip` now creates the ordinary card reward before removing
+    the first card reward, preserving Java's hidden card RNG burn while keeping
+    the final Cauldron screen cardless in the ordinary path.
+  - Added regressions for potion reward count/card removal and card RNG burn.
+
+Verification for `00d2ecb`:
+
+- `cargo test cauldron --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1406 passed`
+
+Next source-backed lane:
+
+- Continue relic obtain/equip audit with `Orrery`.
+
 `72e808e` summary:
 
 - Audited `TinyHouse` against Java's upgrade, max HP, room reward, potion, and
@@ -139,7 +171,7 @@ Verification for `72e808e`:
 
 Next source-backed lane:
 
-- Continue relic obtain/equip audit with `Cauldron` and `Orrery`.
+- Continue relic obtain/equip audit with `Orrery`.
 
 `0a795a8` summary:
 
