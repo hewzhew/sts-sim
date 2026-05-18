@@ -60,6 +60,25 @@ Forbidden:
 
 Latest code checkpoint:
 
+- Added focused Small Slime tests after Java/Rust source comparison.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\AcidSlime_S.java`
+  - `D:\rust\cardcrawl\monsters\exordium\SpikeSlime_S.java`
+- Rust changed:
+  - `src\content\monsters\exordium\acid_slime.rs`
+  - `src\content\monsters\exordium\spike_slime.rs`
+- Result:
+  - Small Slimes require no hidden runtime truth beyond constructor/spawn
+    poison input.
+  - Tests now cover Small Acid Slime A17 branching, below-A17
+    `aiRng.randomBoolean()`, synchronous Tackle/Debuff follow-up `setMove`
+    without RollMove, and Small Spike Slime fixed Tackle plus RollMove.
+- Verification:
+  - `cargo test acid_slime --all-targets` -> `4 passed`
+  - `cargo test spike_slime --all-targets` -> `2 passed`
+
+Latest code checkpoint:
+
 - Added focused Angry/Sneaky/Shield Gremlin tests after Java/Rust source
   comparison.
 - Java checked:

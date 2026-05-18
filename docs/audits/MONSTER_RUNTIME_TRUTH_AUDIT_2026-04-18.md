@@ -51,6 +51,7 @@ Scope:
 | Fungi Beast | None | N/A | N/A | N/A | `lastMove`/`lastTwoMoves` sequencing only; Spore Cloud battle-ending guard | Good |
 | Slime Boss | `first_turn` | Yes | Yes | Yes | None for post-opening cycle | Good |
 | Large Slimes | `split_triggered` | Yes | Yes | Yes | Attack/debuff sequencing only | Good |
+| Small Slimes | Optional constructor poison only | Factory/spawn input | N/A | N/A | Small Acid alternates by Java rules; Small Spike fixed attack | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
 | Spheric Guardian | `first_move`, `second_move` | Yes | Yes | Yes | Post-opening `lastMove(BIG_ATTACK)` branch only | Good |
 | Bronze Automaton | `first_turn`, `num_turns` | Yes | Yes | Yes | `lastMove(HYPER_BEAM/STUNNED/BOOST/SPAWN_ORBS)` sequencing only | Good |
@@ -226,6 +227,23 @@ Scope:
 - `runtime_state.split_triggered` is exported for `AcidSlime_L` and `SpikeSlime_L`.
 - Rust uses the private Java latch in addition to `nextMove != SPLIT`; this covers states where a later roll temporarily changes the planned move while Java still remembers that the split interrupt already fired.
 - The latch is updated immediately when the split interrupt fires. It is not queued as a Java action; only the Java `SetMoveAction` equivalent remains queued behind existing actions.
+
+### Small Slimes
+
+- Small Slimes do not require hidden runtime truth from protocol beyond the constructor/spawn-provided poison amount.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\AcidSlime_S.java`
+  - `D:\rust\cardcrawl\monsters\exordium\SpikeSlime_S.java`
+- Rust checked/changed:
+  - `src\content\monsters\exordium\acid_slime.rs`
+  - `src\content\monsters\exordium\spike_slime.rs`
+- Java `AcidSlime_S.getMove(int)` uses `aiRng.randomBoolean()` below Ascension 17. At Ascension 17+, it chooses Debuff unless `lastTwoMoves(TACKLE)`, in which case it attacks.
+- Java `AcidSlime_S.takeTurn()` does not queue `RollMoveAction`; Tackle synchronously sets next move to Debuff, and Debuff synchronously sets next move to Tackle. Rust now has tests for both transitions.
+- Java `SpikeSlime_S.getMove(int)` always sets Tackle. Its `takeTurn()` queues damage and then `RollMoveAction(this)`. Rust now has focused tests for fixed roll behavior and action order.
+- Java `PoisonPower` in small Slime constructors is represented as constructor/factory/spawn input, not reconstructed from move history.
+- Verification:
+  - `cargo test acid_slime --all-targets` -> `4 passed`
+  - `cargo test spike_slime --all-targets` -> `2 passed`
 
 ### Snecko
 

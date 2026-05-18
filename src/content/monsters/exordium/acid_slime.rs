@@ -523,7 +523,7 @@ impl MonsterBehavior for AcidSlimeS {
 
 #[cfg(test)]
 mod tests {
-    use super::{roll_chance, AcidSlimeL};
+    use super::{roll_chance, AcidSlimeL, AcidSlimeS, NORMAL_TACKLE, WOUND_TACKLE};
     use crate::content::monsters::{EnemyId, MonsterBehavior, PreBattleLegacyRng};
     use crate::content::powers::PowerId;
     use crate::runtime::action::Action;
@@ -590,5 +590,83 @@ mod tests {
             }] => *amount,
             other => panic!("expected one Split ApplyPower action, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn small_acid_slime_roll_logic_matches_java_a17_and_random_boolean() {
+        let mut slime = crate::test_support::test_monster(EnemyId::AcidSlimeS);
+        let mut rng = StsRng::new(12);
+
+        assert_eq!(
+            AcidSlimeS::roll_move_plan(&mut rng, &slime, 17, 99).move_id,
+            NORMAL_TACKLE,
+            "Java A17+ Small Acid Slime opens with Debuff unless lastTwoMoves(Tackle)"
+        );
+
+        slime
+            .move_history_mut()
+            .extend([WOUND_TACKLE, WOUND_TACKLE]);
+        assert_eq!(
+            AcidSlimeS::roll_move_plan(&mut rng, &slime, 17, 99).move_id,
+            WOUND_TACKLE
+        );
+
+        let mut random_actual = StsRng::new(44);
+        let mut random_expected = random_actual.clone();
+        slime.move_history_mut().clear();
+        let expected = if random_expected.random_boolean() {
+            WOUND_TACKLE
+        } else {
+            NORMAL_TACKLE
+        };
+        assert_eq!(
+            AcidSlimeS::roll_move_plan(&mut random_actual, &slime, 16, 0).move_id,
+            expected,
+            "Below A17 Java uses aiRng.randomBoolean() between Tackle and Debuff"
+        );
+        assert_eq!(random_actual, random_expected);
+    }
+
+    #[test]
+    fn small_acid_slime_take_turn_switches_move_without_rollmove_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 2;
+        let entity = crate::test_support::test_monster(EnemyId::AcidSlimeS);
+
+        let tackle = AcidSlimeS::take_turn_plan(&mut state, &entity, &super::small_tackle_plan(2));
+        assert!(matches!(
+            tackle.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 4,
+                    ..
+                },
+                Action::SetMonsterMove {
+                    monster_id: 1,
+                    next_move_byte: NORMAL_TACKLE,
+                    ..
+                },
+            ]
+        ));
+
+        let debuff = AcidSlimeS::take_turn_plan(&mut state, &entity, &super::small_debuff_plan());
+        assert!(matches!(
+            debuff.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::SetMonsterMove {
+                    monster_id: 1,
+                    next_move_byte: WOUND_TACKLE,
+                    ..
+                },
+            ]
+        ));
     }
 }

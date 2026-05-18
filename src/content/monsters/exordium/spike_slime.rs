@@ -359,3 +359,48 @@ impl MonsterBehavior for SpikeSlimeS {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{SpikeSlimeS, FLAME_TACKLE};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::Action;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn small_spike_slime_roll_is_always_tackle_like_java_get_move() {
+        let mut slime = crate::test_support::test_monster(EnemyId::SpikeSlimeS);
+        slime
+            .move_history_mut()
+            .extend([FLAME_TACKLE, FLAME_TACKLE]);
+
+        assert_eq!(
+            SpikeSlimeS::roll_move_plan(&mut StsRng::new(1), &slime, 17, 99).move_id,
+            FLAME_TACKLE,
+            "Java SpikeSlime_S.getMove(int) ignores roll and history"
+        );
+    }
+
+    #[test]
+    fn small_spike_slime_damage_then_rollmove_matches_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 2;
+        let entity = crate::test_support::test_monster(EnemyId::SpikeSlimeS);
+
+        let plan = SpikeSlimeS::roll_move_plan(&mut StsRng::new(1), &entity, 2, 0);
+        let actions = SpikeSlimeS::take_turn_plan(&mut state, &entity, &plan);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 6,
+                    ..
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+}
