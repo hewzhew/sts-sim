@@ -307,4 +307,53 @@ mod tests {
             .iter()
             .any(|event| matches!(event, DomainEvent::HpChanged { .. })));
     }
+
+    #[test]
+    fn selected_book_card_runs_obtain_hooks_before_card_obtained_event() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.relics.push(RelicState::new(RelicId::CeramicFish));
+        rs.event_state = Some(EventState::new(EventId::TheLibrary));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut rs, 0);
+        let selected_id = {
+            let event_state = rs.event_state.as_ref().unwrap();
+            library_card_entry_at(&rs, &event_state.extra_data, 0)
+                .unwrap()
+                .0
+        };
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        let events = rs.take_emitted_events();
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(EventId::TheLibrary),
+                        ..
+                    }
+                )
+            })
+            .expect("Ceramic Fish should run when the selected Library card is obtained");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::TheLibrary),
+                    } if card.id == selected_id
+                )
+            })
+            .expect("Library should obtain the selected card through ShowCardAndObtainEffect");
+
+        assert!(
+            fish_gold_pos < obtained_pos,
+            "Java TheLibrary copies the selected preview card into ShowCardAndObtainEffect; that effect runs onObtainCard before Soul.obtain"
+        );
+    }
 }

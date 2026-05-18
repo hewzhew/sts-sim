@@ -156,4 +156,78 @@ mod tests {
             } if card.id == CardId::RitualDagger && card.upgrades == 2
         )));
     }
+
+    #[test]
+    fn duplicate_copy_runs_obtain_hooks_before_card_obtained_event() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck = vec![deck_card(CardId::Strike, 101, 0)];
+        rs.relics.push(RelicState::new(RelicId::MoltenEgg));
+        rs.relics.push(RelicState::new(RelicId::CeramicFish));
+        rs.event_state = Some(EventState::new(EventId::Duplicator));
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut rs, 0);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut rs,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        let copied = rs
+            .master_deck
+            .iter()
+            .find(|card| card.uuid != 101)
+            .expect("Duplicator should add a copied Strike");
+        assert_eq!(
+            copied.upgrades, 1,
+            "Java ShowCardAndObtainEffect calls Molten Egg onObtainCard on the copied unupgraded Attack"
+        );
+        assert_eq!(
+            rs.master_deck
+                .iter()
+                .find(|card| card.uuid == 101)
+                .unwrap()
+                .upgrades,
+            0,
+            "Duplicator must not upgrade the original selected master-deck card"
+        );
+
+        let events = rs.take_emitted_events();
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(EventId::Duplicator),
+                        ..
+                    }
+                )
+            })
+            .expect("Ceramic Fish should run while the copied card is being obtained");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::Duplicator),
+                    } if card.id == CardId::Strike && card.upgrades == 1
+                )
+            })
+            .expect("Duplicator should record the egg-upgraded copied Strike");
+
+        assert!(
+            fish_gold_pos < obtained_pos,
+            "Java Duplicator queues ShowCardAndObtainEffect for makeStatEquivalentCopy; that effect runs relic onObtainCard before Soul.obtain"
+        );
+    }
 }
