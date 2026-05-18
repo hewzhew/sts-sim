@@ -45,15 +45,38 @@ Forbidden:
 
 Branch tip:
 
-- `8385df0 Fix stasis selection parity`
+- `a8e467e Add champ move parity tests`
 
 Recent commits:
 
+- `a8e467e Add champ move parity tests`
+- `ad7747d Update handoff after bronze audit`
 - `8385df0 Fix stasis selection parity`
+- `35b4dc4 Update handoff after collector audit`
 - `5232ea9 Add collector move parity tests`
-- `bb10e7d Update handoff after gremlin leader audit`
-- `6e9a4d6 Fix minion sentinel parity`
-- `3d8ce24 Update handoff after taskmaster audit`
+
+`a8e467e` summary:
+
+- `Champ` Java/Rust behavior was checked.
+- No business logic change was needed.
+- Added tests proving:
+  - crossing below half HP selects `ANGER` and mutates `threshold_reached`
+    inside the Java `getMove()` equivalent;
+  - threshold mode forces `EXECUTE` unless `lastMove(EXECUTE)` or
+    `lastMoveBefore(EXECUTE)` blocks it;
+  - the fourth pre-threshold roll forces `TAUNT` and resets `num_turns`;
+  - A19 expands the Defensive Stance roll cap to `num <= 30` and increments
+    `forge_times`;
+  - `ANGER` queues first-turn runtime update, debuff cleanup, Shackled removal,
+    Strength gain, then `RollMonsterMove`;
+  - `FACE_SLAP` and `TAUNT` queue their debuffs in Java order.
+- Java `TalkAction`, `ShoutAction`, VFX/SFX, and `MathUtils` dialogue/death
+  quote rolls remain presentation-only for the Rust simulator.
+
+Verification for `a8e467e`:
+
+- `cargo test champ --all-targets` -> `8 passed`
+- `cargo test --all-targets` -> `1257 passed`
 
 `8385df0` summary:
 
@@ -345,7 +368,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `8385df0`.
+No uncommitted changes were present after `a8e467e`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -405,6 +428,10 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   rarity candidate selection now sorts by Java `cardID` before RNG; tests lock
   Automaton runtime counters, Hyper Beam timing, BronzeOrb usedStasis, and
   Support/Beam history gates.
+- `Champ`: checked in `a8e467e`. No business logic change was needed; tests
+  lock half-HP Anger, Execute gating, fourth-turn Taunt reset, A19 Defensive
+  Stance cap/forge counter, Anger cleanup queue order, and Face Slap/Taunt
+  debuff order.
 
 Split / victory timing:
 
@@ -471,11 +498,13 @@ Recommended next packets:
    - `GremlinLeader` was fixed in `6e9a4d6`.
    - `TheCollector` was checked in `5232ea9`.
    - `BronzeAutomaton` + `BronzeOrb` were fixed in `8385df0`.
-   - Next narrow packet: `Champ`
-     (`D:\rust\cardcrawl\monsters\city\Champ.java` and
-     `src/content/monsters/city/champ.rs`). It exercises threshold-triggered
-     state, forge count, execute-phase move gating, and multiple debuff/buff
-     branches.
+   - `Champ` was checked in `a8e467e`.
+   - Next narrow packet: `AwakenedOne`
+     (`D:\rust\cardcrawl\monsters\beyond\AwakenedOne.java` and
+     `src/content/monsters/beyond/awakened_one.rs`). It exercises phase
+     transition state, death/revive semantics, Cultist spawning, Curiosity,
+     and the previously noted immediate `setMove(...)` plus queued
+     `SetMoveAction(...)` move-history duplication risk.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
