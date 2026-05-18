@@ -2759,6 +2759,42 @@ fn astrolabe_uses_java_purgeable_cards_and_auto_transforms_three_or_fewer() {
 }
 
 #[test]
+fn astrolabe_auto_upgrade_respects_java_can_upgrade_on_transformed_card() {
+    let mut run = crate::state::run::RunState::new(7, 0, false, "Ironclad");
+    run.master_deck.clear();
+    run.master_deck.push(CombatCard::new(CardId::Injury, 91));
+
+    let next = astrolabe::on_equip(&mut run, crate::state::core::EngineState::MapNavigation);
+    assert!(next.is_none());
+
+    let transformed = run
+        .emitted_events
+        .iter()
+        .find_map(|event| match event {
+            DomainEvent::CardTransformed {
+                before,
+                after,
+                source: DomainEventSource::Relic(RelicId::Astrolabe),
+            } if before.id == CardId::Injury => Some(*after),
+            _ => None,
+        })
+        .expect("Astrolabe should transform the purgeable curse");
+
+    assert_eq!(
+        crate::content::cards::get_card_definition(transformed.id).card_type,
+        crate::content::cards::CardType::Curse
+    );
+    assert_eq!(
+        transformed.upgrades, 0,
+        "Java AbstractDungeon.transformCard(autoUpgrade=true) only upgrades when transformedCard.canUpgrade(); curses cannot upgrade"
+    );
+    assert!(run
+        .master_deck
+        .iter()
+        .any(|card| card.id == transformed.id && card.upgrades == 0));
+}
+
+#[test]
 fn calling_bell_uses_screenless_relic_rewards_after_curse_obtain() {
     let mut run = crate::state::run::RunState::new(9, 0, false, "Ironclad");
     run.master_deck

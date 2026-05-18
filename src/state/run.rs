@@ -1901,11 +1901,20 @@ impl RunState {
         let ctx = self.build_deck_context();
         let mut target_uuid = self.next_card_uuid(); // This is just the base UUID, DeckManager will increment for actual insertions
 
+        let pre_upgrades = if auto_upgrade {
+            let transformed_card = crate::runtime::combat::CombatCard::new(new_id, target_uuid);
+            u8::from(crate::content::cards::can_upgrade_card_once(
+                &transformed_card,
+            ))
+        } else {
+            0
+        };
+
         let result = crate::deck::manager::DeckManager::obtain_card(
             &ctx,
             new_id,
             &mut target_uuid,
-            if auto_upgrade { 1 } else { 0 },
+            pre_upgrades,
         );
 
         self.resolve_deck_actions(result.actions, source);

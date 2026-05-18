@@ -12,19 +12,11 @@ pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<E
     }
 
     if purgeable_count <= 3 {
-        for uuid in purgeable_uuids {
-            if let Some(index) = run_state
-                .master_deck
-                .iter()
-                .position(|card| card.uuid == uuid)
-            {
-                run_state.transform_card_with_source(
-                    index,
-                    true,
-                    DomainEventSource::Relic(RelicId::Astrolabe),
-                );
-            }
-        }
+        run_state.transform_card_uuids_deferred_obtain_with_source(
+            &purgeable_uuids,
+            true,
+            DomainEventSource::Relic(RelicId::Astrolabe),
+        );
         return None;
     }
 

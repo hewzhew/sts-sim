@@ -720,7 +720,7 @@ pub fn tick_run(
                         }
                     }
                     crate::state::core::RunPendingChoiceReason::TransformUpgraded => {
-                        run_state.transform_card_uuids_with_source(
+                        run_state.transform_card_uuids_deferred_obtain_with_source(
                             &selected_uuids_in_order,
                             true,
                             source,
