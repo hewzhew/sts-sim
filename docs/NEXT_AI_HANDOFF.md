@@ -45,16 +45,36 @@ Forbidden:
 
 Latest code commit:
 
-- `d86fe7e Defer Red Skull battle start bloodied check`
+- `22db4c7 Preserve Brimstone addToTop queue order`
 
 Recent commits:
 
+- `22db4c7 Preserve Brimstone addToTop queue order`
+- `cb07b21 Update handoff after Red Skull audit`
 - `d86fe7e Defer Red Skull battle start bloodied check`
 - `675fa58 Update handoff after Plated Armor queue audit`
 - `4c05934 Queue Plated Armor hp loss reduction at bottom`
-- `9b53052 Update handoff after Neows Lament audit`
-- `369d112 Make Neows Lament mutate battle start state immediately`
-- `e94c895 Update handoff after Necronomicon activation audit`
+
+`22db4c7` summary:
+
+- Java checked:
+  - `Brimstone.atTurnStart()`.
+- Fixed Brimstone action ordering:
+  - Java calls `addToTop` for player Strength first, then `addToTop` for each
+    monster in monster-list order.
+  - Because later `addToTop` actions execute before earlier ones, the actual
+    queued execution order is last monster, earlier monsters, then player.
+  - Rust previously emitted the apparent execution order into `ActionInfo`
+    records, but the shared `queue_actions()` helper reversed top insertions
+    again, causing player Strength to execute first.
+  - Rust now emits the Java call order and tests the actual queued order after
+    `queue_actions()`.
+
+Verification for `22db4c7`:
+
+- `cargo test brimstone --all-targets` -> `2 passed`
+- `cargo test red_skull --all-targets` -> `3 passed`
+- `cargo test --all-targets` -> `1341 passed`
 
 `d86fe7e` summary:
 
