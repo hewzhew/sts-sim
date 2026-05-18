@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `8e4b627 Match Golden Wing purge screen flow`
+- `6352ba4 Store We Meet Again card option by uuid`
 
 Recent commits:
 
+- `6352ba4 Store We Meet Again card option by uuid`
 - `8e4b627 Match Golden Wing purge screen flow`
 - `a75011b Match obtain hook order with Java`
 - `5e0aff5 Match Vampires strike removal order`
@@ -76,6 +77,34 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`6352ba4` summary:
+
+- Continued the shrine event audit into We Meet Again.
+- Java checked:
+  - `D:\rust\cardcrawl\events\shrines\WeMeetAgain.java`
+  - `D:\rust\cardcrawl\characters\AbstractPlayer.java`
+- Java result:
+  - Constructor order is random potion, gold amount, random non-basic card.
+  - `getRandomPotion()` shuffles actual potion objects with
+    `miscRng.randomLong()` and keeps an object reference.
+  - `getRandomNonBasicCard()` shuffles eligible master-deck cards with
+    `miscRng.randomLong()` and keeps an `AbstractCard` object reference.
+  - Giving a card removes that stored card through ordinary
+    `player.masterDeck.removeCard(cardOption)`, then obtains a random
+    screenless relic.
+- Rust result:
+  - `WeMeetAgain` no longer stores `cardOption` as an 8-bit deck index in
+    `internal_state`.
+  - The event now stores the selected card uuid in `EventState.extra_data`,
+    leaving `internal_state` for gold amount and potion slot.
+  - Live event semantics round-trip now preserves that uuid, and a regression
+    covers a card past deck index 255 so this cannot silently truncate again.
+
+Verification for `6352ba4`:
+
+- `cargo test we_meet_again --all-targets` -> `11 passed`
+- `cargo test --all-targets` -> `1368 passed`
 
 `8e4b627` summary:
 
