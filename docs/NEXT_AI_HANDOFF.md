@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `f6abf75 Match Neow transform-two removal order`
+- `f775832 Lock Drug Dealer transform order`
 
 Recent commits:
 
+- `f775832 Lock Drug Dealer transform order`
 - `f6abf75 Match Neow transform-two removal order`
 - `7dd8cf4 Match campfire toke selection with Java`
 - `08bcd42 Match fountain curse removal order with Java`
@@ -71,6 +72,28 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`f775832` summary:
+
+- Added a source-specific regression for Drug Dealer transform order.
+- Java checked:
+  - `D:\rust\cardcrawl\events\city\DrugDealer.java`
+- Java result:
+  - Drug Dealer's Test Subject path iterates `gridSelectScreen.selectedCards`
+    and for each card performs `masterDeck.removeCard(card)`,
+    `AbstractDungeon.transformCard(card, false, miscRng)`, then queues the
+    replacement `ShowCardAndObtainEffect` before moving to the next selected
+    card.
+  - This is deliberately different from Neow `TRANSFORM_TWO_CARDS`, which
+    removes both selected old cards before creating replacements.
+- Rust result:
+  - No business logic change; added a two-Parasite event-order regression so
+    future refactors cannot accidentally route Drug Dealer through Neow's
+    batch-removal transform path.
+
+Verification for `f775832`:
+
+- `cargo test drug_dealer --all-targets` -> `7 passed`
 
 `f6abf75` summary:
 
