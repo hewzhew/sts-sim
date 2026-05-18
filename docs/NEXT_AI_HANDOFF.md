@@ -53,10 +53,11 @@ Forbidden:
 
 Latest code commit:
 
-- `72d5620 Lock chest relic hook ordering`
+- `98208ad Guard queued potion discard affordance`
 
 Recent commits:
 
+- `98208ad Guard queued potion discard affordance`
 - `72d5620 Lock chest relic hook ordering`
 - `7faf842 Update handoff after bottled relic audit`
 - `ff3b846 Share bottled relic candidate filtering`
@@ -109,6 +110,45 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`98208ad` summary:
+
+- Audited potion top-panel discard affordance against Java.
+- Java checked:
+  - `D:\rust\cardcrawl\ui\panels\PotionPopUp.java`
+  - `D:\rust\cardcrawl\potions\AbstractPotion.java`
+  - `D:\rust\cardcrawl\potions\BloodPotion.java`
+  - `D:\rust\cardcrawl\potions\FruitJuice.java`
+  - `D:\rust\cardcrawl\potions\EntropicBrew.java`
+  - `D:\rust\cardcrawl\potions\FairyPotion.java`
+  - `D:\rust\cardcrawl\potions\SmokeBomb.java`
+- Java result:
+  - The top-panel discard path checks `potion.canDiscard()` before destroying
+    a potion slot.
+  - `AbstractPotion.canDiscard()` returns false only during We Meet Again and
+    true otherwise.
+  - The use path separately checks `canUse()`, calls relic `onUsePotion`, then
+    destroys the slot; passive Fairy-style behavior is not a top-panel use.
+- Rust result:
+  - `Action::DiscardPotion` now rechecks `Potion.can_discard` at queued action
+    execution time, not only in run-level input/action-mask generation.
+  - Added a regression proving a non-discardable imported potion remains in its
+    slot while a discardable potion is removed.
+
+Verification for `98208ad`:
+
+- `cargo test queued_discard_potion_action_respects_java_can_discard_affordance --all-targets`
+  -> `1 passed`
+- `cargo test potion --all-targets` -> `69 passed`
+- `cargo test --all-targets` -> `1411 passed`
+
+Next source-backed lane:
+
+- Continue potion top-panel/use timing if staying in potion affordances.
+- Otherwise finish `EmptyCage` documentation/locking or inspect boss chest /
+  boss relic choice edge cases.
+- Monster private intent fields remain a high-priority broader lane before
+  serious full-run training.
 
 `72d5620` summary:
 

@@ -49,7 +49,7 @@ unreviewed:
 | Master deck removal hooks | `cards/CardGroup.java`, curse/card `onRemoveFromMasterDeck` sources | `src/state/run.rs`, `src/deck/manager.rs` | partial | commits around `efbf00f`, `d8c5796`, `7529c30` | Recheck Necronomicurse, Parasite, event purge, shop purge, campfire toke, transform remove-all. |
 | Master deck card copy / stat-equivalent copy | `cards/AbstractCard.java`, producers such as Nightmare/Duplicator/Anger/DollysMirror | `src/state/run.rs`, `src/runtime/combat.rs`, card modules | partial | commits around `ab78536`, `23d034d`, `d3c080e`, `b84fd78`; `DollysMirror` base block fixed in `c87f213` | Continue checking generated copies that preserve misc/cost/base-stat state, especially base magic representation gaps. |
 | Card zone ordering and draw-pile API | `cards/CardGroup.java`, actions that add/remove/shuffle | `src/runtime/combat.rs`, action handlers | partial | runtime card zone tests | Keep revisiting whenever a Java call uses `addToTop`, `addToBottom`, `addToRandomSpot`, or `getTopCard`. |
-| Potion run-level use/discard | `potions/*.java`, top panel/input code, `rewards/RewardItem.java` | `src/content/potions/*`, `src/engine/run_loop.rs`, observation/action code | partial | run-level potion tests exist | Need systematic audit of outside-combat usable potions, discard affordance, full slots, Sozu, Sacred Bark, Toy Ornithopter. |
+| Potion run-level use/discard | `potions/*.java`, `ui/panels/PotionPopUp.java`, top panel/input code, `rewards/RewardItem.java` | `src/content/potions/*`, `src/engine/run_loop.rs`, observation/action code, `src/engine/action_handlers/mod.rs` | partial | run-level potion tests plus queued discard guard in `98208ad` | Top-panel `canDiscard` is now locked at both input/action-mask and queued action execution. Continue systematic audit of outside-combat usable potions, full slots, Sozu, Sacred Bark, Toy Ornithopter, and target/use timing. |
 | Event pools and event gates | `dungeons/AbstractDungeon.java`, `events/**/*.java`, event helper classes | `src/events/generator.rs`, `src/engine/event_handler.rs` | partial | event generator tests exist | Continue source-backed gates for act, floor, gold, HP, relic/card ownership, one-time pools. |
 | Map visibility and boss/key context | `map/*`, `dungeons/AbstractDungeon.java`, top panel/boss key fields | `src/map/*`, `src/state/run.rs`, observation code | partial | map visibility tests exist | Need keep boss visibility/public run state separate from hidden future nodes. |
 | Monster pools and encounter selection | `dungeons/AbstractDungeon.java`, `monsters/*`, room classes | `src/content/monsters/*`, `src/engine/run_loop.rs` | partial | some monster/encounter tests | Needs systematic monster source sweep; avoid old move-history approximation where Java has private move fields. |
@@ -65,9 +65,10 @@ Continue with relic obtain/equip paths that open run-level selection screens or
 interrupt existing reward screens:
 
 ```text
-DollysMirror
 EmptyCage
-BottledFlame / BottledLightning / BottledTornado
+BossChest / boss relic reward choice
+Potion top-panel use timing and remaining concrete potion affordances
+Monster private intent state
 ```
 
 For each relic:
