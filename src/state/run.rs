@@ -1701,13 +1701,14 @@ impl RunState {
     pub fn upgrade_card_with_source(&mut self, uuid: u32, source: DomainEventSource) {
         if let Some(card) = self.master_deck.iter_mut().find(|c| c.uuid == uuid) {
             let before = Self::snapshot_card(card);
-            card.upgrades += 1;
-            let after = Self::snapshot_card(card);
-            self.emit_event(DomainEvent::CardUpgraded {
-                before,
-                after,
-                source,
-            });
+            if crate::content::cards::upgrade_card_once_java(card) {
+                let after = Self::snapshot_card(card);
+                self.emit_event(DomainEvent::CardUpgraded {
+                    before,
+                    after,
+                    source,
+                });
+            }
         }
     }
 
@@ -2209,6 +2210,32 @@ mod tests {
             max_hp_pos < obtained_pos,
             "Java ShowCardAndObtainEffect calls relic onObtainCard before Soul.obtain adds the card"
         );
+    }
+
+    #[test]
+    fn master_deck_upgrade_uses_java_card_upgrade_helper() {
+        let mut run = RunState::new(9, 0, false, "Ironclad");
+        let mut strike = CombatCard::new(CardId::Strike, 9101);
+        strike.base_damage_override = Some(20);
+        run.master_deck = vec![strike];
+        run.emitted_events.clear();
+
+        run.upgrade_card_with_source(9101, DomainEventSource::DeckMutation);
+
+        assert_eq!(run.master_deck[0].upgrades, 1);
+        assert_eq!(
+            run.master_deck[0].base_damage_override,
+            Some(23),
+            "Java upgradeDamage adds the upgrade amount to the concrete card's current baseDamage"
+        );
+        assert!(run.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                before,
+                after,
+                source: DomainEventSource::DeckMutation,
+            } if before.uuid == 9101 && before.upgrades == 0 && after.upgrades == 1
+        )));
     }
 
     #[test]

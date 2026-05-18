@@ -63,16 +63,26 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     }
                 }
                 1 => {
-                    // Rummage: obtain Pain curse + WarpedTongs relic
-                    super::obtain_event_card(
-                        run_state,
-                        EventId::AccursedBlacksmith,
-                        crate::content::cards::CardId::Pain,
-                    );
+                    // Rummage: Java constructs ShowCardAndObtainEffect(Pain)
+                    // before spawnRelicAndObtain(WarpedTongs). Omamori checks
+                    // happen at effect construction time, while card obtain
+                    // resolves after the relic has been obtained.
+                    let omamori_snapshot = run_state
+                        .relics
+                        .iter()
+                        .find(|relic| relic.id == crate::content::relics::RelicId::Omamori)
+                        .map(|relic| relic.counter);
                     let _ = run_state.obtain_relic_with_source(
                         crate::content::relics::RelicId::WarpedTongs,
                         EngineState::EventRoom,
                         DomainEventSource::Event(EventId::AccursedBlacksmith),
+                    );
+                    run_state.add_card_to_deck_with_omamori_snapshot_from(
+                        crate::content::cards::CardId::Pain,
+                        0,
+                        DomainEventSource::Event(EventId::AccursedBlacksmith),
+                        omamori_snapshot.is_some(),
+                        omamori_snapshot.unwrap_or(0),
                     );
                     event_state.current_screen = 1;
                 }
@@ -244,6 +254,34 @@ mod tests {
                 source: DomainEventSource::Event(EventId::AccursedBlacksmith),
             }
         )));
+        let relic_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::RelicObtained {
+                        relic_id: RelicId::WarpedTongs,
+                        source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+                    }
+                )
+            })
+            .expect("Warped Tongs should be obtained");
+        let pain_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+                    } if card.id == CardId::Pain
+                )
+            })
+            .expect("Pain should be obtained");
+        assert!(
+            relic_pos < pain_pos,
+            "Java spawnRelicAndObtain resolves before the queued ShowCardAndObtainEffect obtains Pain"
+        );
     }
 
     #[test]
