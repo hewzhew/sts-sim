@@ -186,8 +186,12 @@ pub fn legal_campfire_actions(run_state: &RunState) -> Vec<ClientInput> {
                 }
             }
             CampfireChoice::Toke(_) => {
-                for idx in 0..run_state.master_deck.len() {
-                    actions.push(ClientInput::CampfireOption(CampfireChoice::Toke(idx)));
+                for (idx, card) in run_state.master_deck.iter().enumerate() {
+                    if crate::state::core::master_deck_card_is_purgeable(card)
+                        && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
+                    {
+                        actions.push(ClientInput::CampfireOption(CampfireChoice::Toke(idx)));
+                    }
                 }
             }
             other => actions.push(ClientInput::CampfireOption(other)),
@@ -470,6 +474,33 @@ mod tests {
         assert!(
             !actions.contains(&ClientInput::PurgeCard(2)),
             "Java shop purge wraps getPurgeableCards in getGroupWithoutBottledCards"
+        );
+    }
+
+    #[test]
+    fn legal_campfire_toke_actions_use_java_non_bottled_purgeable_cards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::PeacePipe));
+        run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::AscendersBane, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ];
+        let mut bottle = RelicState::new(RelicId::BottledLightning);
+        bottle.amount = 12;
+        run_state.relics.push(bottle);
+
+        let actions = legal_campfire_actions(&run_state);
+
+        assert!(actions.contains(&ClientInput::CampfireOption(CampfireChoice::Toke(0))));
+        assert!(
+            !actions.contains(&ClientInput::CampfireOption(CampfireChoice::Toke(1))),
+            "Java CampfireTokeEffect opens masterDeck.getPurgeableCards(), so Ascender's Bane is excluded"
+        );
+        assert!(
+            !actions.contains(&ClientInput::CampfireOption(CampfireChoice::Toke(2))),
+            "Java CampfireTokeEffect wraps getPurgeableCards in getGroupWithoutBottledCards"
         );
     }
 }
