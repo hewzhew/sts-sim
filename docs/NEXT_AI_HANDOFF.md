@@ -60,6 +60,22 @@ Forbidden:
 
 Latest monster-runtime documentation reconciliation:
 
+- Rechecked Repulsor against Java/Rust owners without code changes.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\beyond\Repulsor.java`
+- Rust checked:
+  - `src\content\monsters\beyond\repulsor.rs`
+- Result:
+  - Repulsor requires no hidden runtime truth from protocol.
+  - Its only history use is Java `lastMove(ATTACK)` sequence logic.
+  - Rust preserves Java's `MakeTempCardInDrawPileAction(new Dazed(), 2,
+    true, true)` as random draw-pile Dazed insertion, then queues
+    `RollMonsterMove`.
+- Verification:
+  - `cargo test repulsor --all-targets` -> `3 passed`
+
+Latest monster-runtime documentation reconciliation:
+
 - Rechecked Bandit Bear, Bandit Leader, and Bandit Pointy against Java/Rust
   owners without code changes.
 - Java checked:

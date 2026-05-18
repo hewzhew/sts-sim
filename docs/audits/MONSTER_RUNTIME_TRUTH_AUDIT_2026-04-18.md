@@ -53,6 +53,7 @@ Scope:
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Exploder | `turn_count` | Yes | Yes | Yes | None | Good |
 | Spiker | `thorns_count` | Yes | Yes | Yes | `lastMove(ATTACK)` repeat guard only | Good |
+| Repulsor | None | N/A | N/A | N/A | `lastMove(ATTACK)` repeat guard only | Good |
 | Orb Walker | None | N/A | N/A | N/A | Claw/Laser `lastTwoMoves` repeat rules only | Good |
 | Spire Growth | None | N/A | N/A | N/A | Constrict and attack repeat rules only | Good |
 | Maw | `roared`, `turn_count` | Yes | Yes | Yes | `lastMove(SLAM/NOM)` sequencing only | Good |
@@ -166,6 +167,19 @@ Scope:
   - `handle_heal` now ignores `is_dying` monster targets, matching `AbstractCreature.heal(...)`.
   - `handle_apply_power` now ignores escaped monster targets, matching `ApplyPowerAction.update()`.
 - `RollMonsterMove` was reviewed but left unchanged in this pass; Java itself does not add an extra dead/escaped guard there, and changing it now risks interfering with half-dead/revival style monsters.
+
+### Repulsor
+
+- `Repulsor` does not require hidden runtime truth from protocol.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\beyond\Repulsor.java`
+- Rust checked:
+  - `src\content\monsters\beyond\repulsor.rs`
+- Java `Repulsor.getMove(int)` uses only the roll and `lastMove(ATTACK)`: rolls below 20 attack unless the previous planned move was Attack; all other branches add Dazed.
+- Rust mirrors the same `lastMove(ATTACK)` gate through `move_history().back()` as ordinary Java sequence logic.
+- Java `takeTurn()` queues either one damage action or `MakeTempCardInDrawPileAction(new Dazed(), 2, true, true)`, then queues `RollMoveAction(this)`. Rust preserves the random draw-pile Dazed insertion and the explicit roll action.
+- Verification:
+  - `cargo test repulsor --all-targets` -> `3 passed`
 
 ### Centurion
 
