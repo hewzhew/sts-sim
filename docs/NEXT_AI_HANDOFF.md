@@ -45,15 +45,44 @@ Forbidden:
 
 Branch tip:
 
-- `5aa6309 Fix exploder turn count timing`
+- `bf619c7 Fix minion prebattle source parity`
 
 Recent commits:
 
+- `bf619c7 Fix minion prebattle source parity`
+- `b36e04b Update handoff after exploder audit`
 - `5aa6309 Fix exploder turn count timing`
 - `7c621ab Update handoff after repulsor audit`
 - `a8e2118 Add repulsor parity tests`
-- `d4d7b57 Update handoff after orb walker audit`
-- `945681d Add orb walker parity tests`
+
+`bf619c7` summary:
+
+- Dedicated `Reptomancer` / `SnakeDagger` packet was checked against Java
+  source.
+- Fixed the remaining Minion pre-battle source parity for both `Reptomancer`
+  and `GremlinLeader`:
+  - Java uses `new ApplyPowerAction(m, m, new MinionPower(this))`.
+  - Rust now emits `ApplyPower { source: minion, target: minion,
+    power_id: Minion, amount: -1 }` instead of using the summoner as source.
+- Added Reptomancer tests proving:
+  - initial dagger slots are mapped by Java monster-group index:
+    daggers after Reptomancer go to `daggers[0]`, daggers before it go to
+    `daggers[1]`;
+  - A18 spawn turns fill the first available Java `daggers[]` slots and queue
+    both spawns before `RollMonsterMove`;
+  - Java `canSpawn()` counts zero-HP or escaped non-dying monsters because it
+    skips only `this` and `isDying`;
+  - Snake Strike queues two 16-damage hits at A3+, then Weak, then roll.
+- Existing SnakeDagger tests still lock Java firstMove runtime truth and
+  explode using `LoseHPAction`, not `SuicideAction`.
+- Java VFX/animation/WaitAction effects remain presentation-only.
+
+Verification for `bf619c7`:
+
+- `cargo test reptomancer --all-targets` -> `10 passed`
+- `cargo test snake_dagger --all-targets` -> `4 passed`
+- `cargo test gremlin_leader --all-targets` -> `8 passed`
+- `cargo test --all-targets` -> `1308 passed`
 
 `5aa6309` summary:
 
@@ -747,7 +776,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `5aa6309` before this handoff
+No uncommitted code changes were present after `bf619c7` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -795,12 +824,17 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `Taskmaster`: checked in `f511731`. No business logic change was needed;
   tests lock constant Scouring Whip roll, wound thresholds, A18 Strength
   ordering, and below-A18 no-Strength behavior.
-- `GremlinLeader`: fixed in `6e9a4d6`. Pre-battle Minion and spawned Minion
-  applications now use Java sentinel `-1`; tests lock Encourage queue order,
-  STAB three-hit scheduling, and slot-truth behavior.
-- `Reptomancer`: touched in `6e9a4d6` only for shared Minion sentinel parity.
-  Its broader move/slot behavior still deserves a later dedicated packet if
-  needed.
+- `GremlinLeader`: fixed in `6e9a4d6` and corrected in `bf619c7`.
+  Pre-battle Minion and spawned Minion applications now use Java sentinel
+  `-1`; the pre-battle source is now the minion itself, matching Java
+  `ApplyPowerAction(m, m, new MinionPower(this))`. Tests lock Encourage queue
+  order, STAB three-hit scheduling, and slot-truth behavior.
+- `Reptomancer`: shared Minion sentinel parity was touched in `6e9a4d6`, shared
+  death/suicide interactions were fixed in `fcf0f0b`, and dedicated move/slot
+  behavior was checked in `bf619c7`. The pre-battle Minion source now matches
+  Java, dagger slot initialization is locked, A18 double-spawn order is locked,
+  Java `canSpawn()` non-dying counting is locked, and Snake Strike
+  damage/damage/Weak/roll order is locked.
 - `TheCollector` + `TorchHead`: checked in `5232ea9`. No business logic change
   was needed; tests lock initial spawn, Mega Debuff forcing, Fireball
   lastTwoMoves gate, debuff queue order, and existing enemy-slot revive truth.
@@ -956,10 +990,13 @@ Recommended next packets:
    - `OrbWalker` was checked in `945681d`.
    - `Repulsor` was checked in `a8e2118`.
    - `Exploder` was fixed in `5aa6309`.
-   - Next narrow packet: dedicated `Reptomancer` move/slot behavior
-     (`D:\rust\cardcrawl\monsters\beyond\Reptomancer.java`,
-     `src/content/monsters/beyond/reptomancer.rs`, and `SnakeDagger` files if
-     summon/minion source comparison requires them).
+   - Dedicated `Reptomancer` move/slot behavior was fixed/locked in
+     `bf619c7`.
+   - Next narrow packet: Java `SpawnMonsterAction.update()` hook ordering
+     (`D:\rust\cardcrawl\actions\common\SpawnMonsterAction.java`,
+     `src/engine/action_handlers/spawning.rs`,
+     `src/content/relics/hooks.rs`, and a focused PhilosopherStone-style test
+     if needed).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
