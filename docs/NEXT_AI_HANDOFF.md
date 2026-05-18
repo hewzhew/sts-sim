@@ -45,15 +45,44 @@ Forbidden:
 
 Branch tip:
 
-- `30c73bb Fix awakened one rebirth parity`
+- `c7a3546 Fix darkling half-death parity`
 
 Recent commits:
 
+- `c7a3546 Fix darkling half-death parity`
+- `e3fd301 Update handoff after awakened one audit`
 - `30c73bb Fix awakened one rebirth parity`
 - `1cd6d69 Update handoff after champ audit`
 - `a8e467e Add champ move parity tests`
-- `ad7747d Update handoff after bronze audit`
-- `8385df0 Fix stasis selection parity`
+
+`c7a3546` summary:
+
+- `Darkling`, Java `Darkling.damage()`, Java `RegrowPower`, Java
+  `ApplyPowerAction`, Java `HealAction`, and the Rust death pipeline were
+  checked.
+- Fixed `REINCARNATE` action parity:
+  - visible/spec power amount remains `Regrow 1`;
+  - queued `Action::ApplyPower` now uses Java `ApplyPowerAction(..., 1)`;
+  - the power handler still stores sentinel `Regrow.amount == -1`, matching the
+    Java `RegrowPower` instance.
+- Fixed `REINCARNATE` queue order to Java:
+  `HealAction`, `ChangeStateAction("REVIVE")`, `ApplyPowerAction(Regrow, 1)`,
+  relic `onSpawnMonster`, then `RollMoveAction`.
+- Fixed first half-death timing:
+  - Darkling is marked half-dead and not dying before power/relic death hooks;
+  - powers remain visible to relic `onMonsterDeath` hooks, then are cleared;
+  - `setMove(COUNT)` records an immediate move-history entry only when
+    `nextMove != COUNT`;
+  - queued `SetMoveAction(COUNT)` records the second Java move-history entry.
+- Added tests for reincarnate queue order, duplicate COUNT move-history, the
+  `nextMove != COUNT` guard, and The Specimen seeing Poison before Darkling
+  powers are cleared.
+
+Verification for `c7a3546`:
+
+- `cargo test darkling --all-targets` -> `8 passed`
+- `cargo test awakened_one --all-targets` -> `4 passed`
+- `cargo test --all-targets` -> `1263 passed`
 
 `30c73bb` summary:
 
@@ -462,6 +491,12 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   owns the transition; tests lock sentinel amount, immediate half-dead/runtime
   mutation, power clearing, top-queued card queue clear, and duplicate
   `REBIRTH` move-history from immediate `setMove` plus queued `SetMoveAction`.
+- `Darkling`: fixed in `c7a3546`. Half-death now follows Java
+  `Darkling.damage()` ordering: half-dead before power/relic death hooks,
+  powers clear after relic hooks, COUNT immediate `setMove` only when
+  `nextMove != COUNT`, queued `SetMoveAction(COUNT)` duplicate history, and
+  `REINCARNATE` queues heal, revive, Regrow stackAmount `1`, spawn relic hooks,
+  then roll.
 
 Split / victory timing:
 
@@ -510,9 +545,7 @@ Recommended next packets:
 
 1. Finish the mixed `SetMoveAction` / `RollMoveAction` monster sweep:
    - `AwakenedOne` was fixed in `30c73bb`.
-   - `Darkling` was read earlier but still deserves a dedicated packet. Keep
-     Java duplicate move-history behavior from immediate `setMove(...)` plus
-     later `SetMoveAction(...)` on the watch list for this packet.
+   - `Darkling` was fixed in `c7a3546`.
    - `Looter` and `Mugger` were fixed in `874605d`.
    - Exordium Gremlins were fixed in `1ac61f2`.
    - `BanditPointy` was checked in `0b0eec3`.
@@ -531,11 +564,15 @@ Recommended next packets:
    - `BronzeAutomaton` + `BronzeOrb` were fixed in `8385df0`.
    - `Champ` was checked in `a8e467e`.
    - `AwakenedOne` was fixed in `30c73bb`.
-   - Next narrow packet: `Darkling`
-     (`D:\rust\cardcrawl\monsters\beyond\Darkling.java` and
-     `src/content/monsters/beyond/darkling.rs`). It exercises half-dead
-     revival, group-death timing, reincarnation move setting, and
-     `setMove(...)` / `SetMoveAction(...)` history behavior.
+   - `Darkling` was fixed in `c7a3546`.
+   - Next narrow packet: `Reptomancer`
+     (`D:\rust\cardcrawl\monsters\beyond\Reptomancer.java`,
+     `D:\rust\cardcrawl\monsters\beyond\SnakeDagger.java`,
+     `src/content/monsters/beyond/reptomancer.rs`, and
+     `src/content/monsters/beyond/snake_dagger.rs`). It was touched only for
+     shared Minion sentinel parity in `6e9a4d6`; broader move selection,
+     dagger spawn/slot timing, and summon/death interactions still need a
+     dedicated Java-source packet.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
