@@ -58,6 +58,29 @@ Forbidden:
 
 ## Latest Documentation Checkpoint
 
+Latest monster-runtime documentation reconciliation:
+
+- Rechecked Centurion, Orb Walker, and Spire Growth against Java/Rust owners
+  without code changes.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\city\Centurion.java`
+  - `D:\rust\cardcrawl\monsters\beyond\OrbWalker.java`
+  - `D:\rust\cardcrawl\monsters\beyond\SpireGrowth.java`
+- Rust checked:
+  - `src\content\monsters\city\centurion.rs`
+  - `src\content\monsters\beyond\orb_walker.rs`
+  - `src\content\monsters\beyond\spire_growth.rs`
+- Result:
+  - These three monsters require no hidden runtime truth from protocol.
+  - Their `move_history` use is limited to Java `lastMove` / `lastTwoMoves`
+    sequence rules, not hidden-state reconstruction.
+  - `docs\audits\MONSTER_RUNTIME_TRUTH_AUDIT_2026-04-18.md` now records all
+    three as `Good`.
+- Verification:
+  - `cargo test orb_walker --all-targets` -> `4 passed`
+  - `cargo test spire_growth --all-targets` -> `5 passed`
+  - `cargo test centurion --all-targets` -> `2 passed`
+
 Latest code checkpoint:
 
 - Fixed Daily Run combat gold generation in `src\rewards\generator.rs`.

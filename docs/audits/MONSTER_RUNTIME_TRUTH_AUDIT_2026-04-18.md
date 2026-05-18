@@ -29,6 +29,7 @@ Scope:
 | Mugger | `slash_count`, `stolen_gold` | Yes | Yes | Yes | None | Good |
 | Shelled Parasite | `first_move` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
 | Healer | None | N/A | N/A | N/A | Heal/attack/buff sequencing only | Good |
+| Centurion | None | N/A | N/A | N/A | Slash/Protect/Fury repeat rules only | Good |
 | Snake Plant | None | N/A | N/A | N/A | `lastMove`/`lastMoveBefore`/`lastTwoMoves` sequencing only | Good |
 | Louse | `bite_damage` | Yes | N/A | Yes | None | Good |
 | Snecko | `first_turn` | Yes | Yes | Yes | `lastTwoMoves(BITE)` sequencing | Good |
@@ -49,6 +50,8 @@ Scope:
 | Champ | `first_turn`, `num_turns`, `forge_times`, `threshold_reached` | Yes | Yes | Yes | `lastMove`/`lastMoveBefore` sequencing only | Good |
 | Exploder | `turn_count` | Yes | Yes | Yes | None | Good |
 | Spiker | `thorns_count` | Yes | Yes | Yes | `lastMove(ATTACK)` repeat guard only | Good |
+| Orb Walker | None | N/A | N/A | N/A | Claw/Laser `lastTwoMoves` repeat rules only | Good |
+| Spire Growth | None | N/A | N/A | N/A | Constrict and attack repeat rules only | Good |
 | Maw | `roared`, `turn_count` | Yes | Yes | Yes | `lastMove(SLAM/NOM)` sequencing only | Good |
 | Darkling | `first_move`, `nip_dmg` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
 | Reptomancer | `first_move`, `dagger_slots` | Yes | Yes | Yes | `lastMove` / `lastTwoMoves` sequencing only | Good |
@@ -140,6 +143,16 @@ Scope:
   - `handle_apply_power` now ignores escaped monster targets, matching `ApplyPowerAction.update()`.
 - `RollMonsterMove` was reviewed but left unchanged in this pass; Java itself does not add an extra dead/escaped guard there, and changing it now risks interfering with half-dead/revival style monsters.
 
+### Centurion
+
+- `Centurion` does not require hidden runtime truth from protocol.
+- Java `Centurion.getMove(int)` uses only the roll, `lastTwoMoves(PROTECT/FURY/SLASH)`, and an
+  alive-count scan that skips `isDying` and `isEscaping`.
+- Rust `roll_move_plan_with_context` mirrors that scan over the current monster group and keeps
+  `move_history` use limited to the same Java repeat rules.
+- `GainBlockRandomMonsterAction` remains represented by a random-monster block action, and tests
+  cover Java's zero-HP-but-not-dying ally edge.
+
 ### Snake Plant
 
 - `Snake Plant` does not require hidden runtime truth from protocol.
@@ -206,6 +219,23 @@ Scope:
 - Java increments `thornsCount` only when the BUFF_THORNS turn executes, before queuing the Thorns
   `ApplyPowerAction`; Rust mirrors that ordering with `Action::UpdateMonsterRuntime`.
 - Remaining history usage is limited to Java's explicit `lastMove(ATTACK)` repeat guard.
+
+### Orb Walker
+
+- `Orb Walker` does not require hidden runtime truth from protocol.
+- Java `OrbWalker.getMove(int)` uses only `lastTwoMoves(CLAW/LASER)` repeat rules.
+- Rust mirrors `usePreBattleAction()` as an ascension-gated `GenericStrengthUp` application and
+  keeps `move_history` use limited to Java's Claw/Laser repeat gates.
+- Laser uses Java `MakeTempCardInDiscardAndDeckAction(new Burn())`, represented by one burn in
+  discard and one burn added to the draw pile through the shared card-zone action.
+
+### Spire Growth
+
+- `Spire Growth` does not require hidden runtime truth from protocol.
+- Java `SpireGrowth.getMove(int)` uses current public player state
+  (`player.hasPower("Constricted")`), ascension level, and `lastMove/lastTwoMoves` repeat rules.
+- Rust passes player powers through `MonsterRollContext` instead of caching private monster state.
+- Constrict amount and the A17 forced-Constrict branch are covered by focused tests.
 
 ### Maw
 
