@@ -55,3 +55,4 @@ reward UI classes.
 | Reward card selection | `rewards/RewardItem.java`, `screens/CardRewardScreen.java`, `vfx/FastCardObtainEffect.java`, `cards/Soul.java` | `dcec769` |
 | Shop card purchase | `shop/ShopScreen.java`, `vfx/FastCardObtainEffect.java` | `b2cc6ce` |
 | Cursed Key chest curse | `relics/CursedKey.java`, `rewards/chests/AbstractChest.java`, `helpers/CardLibrary.java` | `4895ac6` |
+| Calling Bell curse and relic rewards | `relics/CallingBell.java`, `screens/select/GridCardSelectScreen.java`, `vfx/FastCardObtainEffect.java` | `72da496` |

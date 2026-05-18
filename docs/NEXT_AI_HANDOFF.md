@@ -53,10 +53,12 @@ Forbidden:
 
 Latest code commit:
 
-- `4895ac6 Lock Cursed Key chest obtain hooks`
+- `72da496 Lock Calling Bell obtain hooks`
 
 Recent commits:
 
+- `72da496 Lock Calling Bell obtain hooks`
+- `e141a91 Add mechanics audit source indexes`
 - `4895ac6 Lock Cursed Key chest obtain hooks`
 - `b2cc6ce Lock shop card fast obtain ordering`
 - `dcec769 Lock reward card obtain hooks`
@@ -101,6 +103,38 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`72da496` summary:
+
+- Audited `CallingBell` against Java's confirmation-grid and fast obtain path.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\CallingBell.java`
+  - `D:\rust\cardcrawl\screens\select\GridCardSelectScreen.java`
+  - `D:\rust\cardcrawl\vfx\FastCardObtainEffect.java`
+- Java result:
+  - `CallingBell.onEquip` opens a confirmation grid containing
+    `CurseOfTheBell`; it does not directly add the card at that line.
+  - Confirming that grid queues `FastCardObtainEffect` for the curse.
+  - `FastCardObtainEffect` means Omamori can intercept the curse, and normal
+    obtain hooks such as Ceramic Fish run before `souls.obtain`.
+  - `CallingBell.update` then opens three screenless relic rewards once the
+    confirmation screen is down.
+- Rust result:
+  - No business logic change was needed.
+  - Added regressions proving:
+    - `CeramicFish` gold is emitted before `CurseOfTheBell` `CardObtained`.
+    - Omamori can block `CurseOfTheBell`, while the three relic rewards still
+      open.
+
+Verification for `72da496`:
+
+- `cargo test calling_bell --all-targets` -> `3 passed`
+- `cargo test --all-targets` -> `1400 passed`
+
+Next source-backed lane:
+
+- Continue relic obtain/equip audit with `Necronomicon`, `Astrolabe`,
+  `PandorasBox`, `TinyHouse`, `Cauldron`, and `Orrery`.
 
 `4895ac6` summary:
 
