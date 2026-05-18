@@ -42,7 +42,7 @@ pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
         return Vec::new();
     }
 
-    // Phase 2: Generate `count` truly random cards using cardRandomRng
+    // Phase 2: Generate `count` truly random cards using cardRandomRng.
     // Java: returnTrulyRandomCard() → srcCommonCardPool + srcUncommonCardPool + srcRareCardPool
     //       → cardRandomRng.random(list.size() - 1)
     let pool: Vec<CardId> = crate::engine::campfire_handler::card_pool_for_class(
@@ -67,30 +67,34 @@ pub fn on_equip(run_state: &mut RunState) -> Vec<(String, String)> {
     .copied()
     .collect();
 
-    let mut results = Vec::new();
+    if pool.is_empty() {
+        return Vec::new();
+    }
 
-    for idx in 0..count {
-        let old_name = removed_names[idx].clone();
-
-        if pool.is_empty() {
-            continue;
-        }
-
-        // Java uses cardRandomRng (NOT miscRng)
+    let mut generated = Vec::new();
+    for _ in 0..count {
         let pick = run_state
             .rng_pool
             .card_rng
             .random_range(0, pool.len() as i32 - 1) as usize;
-        let new_card_id = pool[pick];
+        generated.push(pool[pick]);
+    }
 
-        // Java calls onPreviewObtainCard for each relic (egg auto-upgrade etc.)
-        // Our add_card_to_deck already handles egg logic, CeramicFish, Omamori, etc.
+    let mut results = Vec::new();
+
+    // Java puts generated cards into the confirmation grid with CardGroup.addToBottom,
+    // which inserts at Java index 0. Confirming the grid then iterates that group
+    // in index order, so the actual FastCardObtainEffect order is the reverse of
+    // generation order.
+    for new_card_id in generated.iter().rev().copied() {
         run_state.add_card_to_deck_with_upgrades_from(
             new_card_id,
             0,
             DomainEventSource::Relic(RelicId::PandorasBox),
         );
+    }
 
+    for (old_name, new_card_id) in removed_names.iter().cloned().zip(generated.iter().copied()) {
         let new_def = get_card_definition(new_card_id);
         results.push((old_name, new_def.name.to_string()));
     }

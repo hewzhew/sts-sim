@@ -3189,6 +3189,76 @@ fn pandoras_box_replaces_only_starter_strike_defend_with_relic_source() {
             .count(),
         9
     );
+
+    let obtained_names = run
+        .emitted_events
+        .iter()
+        .filter_map(|event| match event {
+            DomainEvent::CardObtained {
+                card,
+                source: DomainEventSource::Relic(RelicId::PandorasBox),
+            } => Some(
+                crate::content::cards::get_card_definition(card.id)
+                    .name
+                    .to_string(),
+            ),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let generated_names = results
+        .iter()
+        .map(|(_, new_name)| new_name.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        obtained_names,
+        generated_names.into_iter().rev().collect::<Vec<_>>(),
+        "Java PandorasBox puts generated cards into the confirmation grid with CardGroup.addToBottom, so FastCardObtainEffect obtains them in reverse generation order"
+    );
+}
+
+#[test]
+fn pandoras_box_generated_cards_use_preview_upgrades_then_fast_obtain_hooks() {
+    let mut run = crate::state::run::RunState::new(15, 0, false, "Ironclad");
+    run.relics.push(RelicState::new(RelicId::MoltenEgg));
+    run.relics.push(RelicState::new(RelicId::ToxicEgg));
+    run.relics.push(RelicState::new(RelicId::FrozenEgg));
+    run.relics.push(RelicState::new(RelicId::CeramicFish));
+    run.emitted_events.clear();
+
+    let results = pandoras_box::on_equip(&mut run);
+    assert_eq!(results.len(), 9);
+
+    let obtained = run
+        .emitted_events
+        .iter()
+        .filter_map(|event| match event {
+            DomainEvent::CardObtained {
+                card,
+                source: DomainEventSource::Relic(RelicId::PandorasBox),
+            } => Some(*card),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(obtained.len(), 9);
+    assert!(
+        obtained.iter().all(|card| card.upgrades == 1),
+        "Java PandorasBox previews each generated card through Egg relics before the confirmation grid queues FastCardObtainEffect"
+    );
+    assert_eq!(
+        run.emitted_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Relic(RelicId::PandorasBox),
+                    ..
+                }
+            ))
+            .count(),
+        9,
+        "Java confirmation grid obtains each generated card through FastCardObtainEffect, so Ceramic Fish still fires once per obtained card"
+    );
 }
 
 #[test]
