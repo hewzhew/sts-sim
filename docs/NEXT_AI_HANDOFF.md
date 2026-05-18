@@ -45,15 +45,36 @@ Forbidden:
 
 Branch tip:
 
-- `f511731 Add taskmaster move parity tests`
+- `6e9a4d6 Fix minion sentinel parity`
 
 Recent commits:
 
+- `6e9a4d6 Fix minion sentinel parity`
+- `3d8ce24 Update handoff after taskmaster audit`
 - `f511731 Add taskmaster move parity tests`
 - `f0d3107 Update handoff after chosen audit`
 - `0b984ca Add chosen move parity tests`
-- `bfc7aca Update handoff after book audit`
-- `dc4622d Fix book of stabbing sentinel parity`
+
+`6e9a4d6` summary:
+
+- `GremlinLeader` Java/Rust behavior was checked.
+- Fixed `GremlinLeader` and `Reptomancer` pre-battle Minion applications to use
+  Java `AbstractPower.amount` sentinel `-1`.
+- Fixed generic spawned-minion handling in `SpawnMonsterAction` /
+  `SummonGremlinAction` equivalent code to queue Minion with `amount: -1`.
+- Added GremlinLeader tests for Minion sentinel, Encourage queue order, STAB
+  three-hit queue before `RollMonsterMove`, and existing slot-truth behavior.
+- Added Reptomancer and generic spawned-minion sentinel tests.
+- Confirmed GremlinLeader slot truth is already factory-seeded for authored
+  encounters and state-sync-seeded for live truth import; Rally should continue
+  to use `gremlin_slots`, not draw-position inference.
+
+Verification for `6e9a4d6`:
+
+- `cargo test gremlin_leader --all-targets` -> `8 passed`
+- `cargo test reptomancer --all-targets` -> `5 passed`
+- `cargo test spawned_minion_power_uses_java_sentinel_amount --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1240 passed`
 
 `f511731` summary:
 
@@ -283,7 +304,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `f511731`.
+No uncommitted changes were present after `6e9a4d6`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -330,6 +351,12 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `Taskmaster`: checked in `f511731`. No business logic change was needed;
   tests lock constant Scouring Whip roll, wound thresholds, A18 Strength
   ordering, and below-A18 no-Strength behavior.
+- `GremlinLeader`: fixed in `6e9a4d6`. Pre-battle Minion and spawned Minion
+  applications now use Java sentinel `-1`; tests lock Encourage queue order,
+  STAB three-hit scheduling, and slot-truth behavior.
+- `Reptomancer`: touched in `6e9a4d6` only for shared Minion sentinel parity.
+  Its broader move/slot behavior still deserves a later dedicated packet if
+  needed.
 
 Split / victory timing:
 
@@ -393,11 +420,13 @@ Recommended next packets:
    - `BookOfStabbing` was fixed in `dc4622d`.
    - `Chosen` was checked in `0b984ca`.
    - `Taskmaster` was checked in `f511731`.
-   - Next narrow packet: `GremlinLeader`
-     (`D:\rust\cardcrawl\monsters\city\GremlinLeader.java` and
-     `src/content/monsters/city/gremlin_leader.rs`). It exercises ally spawn
-     slots, multi-ally buff targeting, attack scheduling, and post-turn
-     `RollMoveAction`.
+   - `GremlinLeader` was fixed in `6e9a4d6`.
+   - Next narrow packet: `TheCollector`
+     (`D:\rust\cardcrawl\monsters\city\TheCollector.java`,
+     `D:\rust\cardcrawl\monsters\city\TorchHead.java`, and
+     `src/content/monsters/city/the_collector.rs`). It exercises minion slots,
+     spawned TorchHead lifecycle, buffs over current monster group, and
+     `RollMoveAction` / spawn scheduling.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
