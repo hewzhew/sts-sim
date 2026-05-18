@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `84ad08f Use Java upgrade helper for master deck upgrades`
+- `aadd74e Defer multi-transform obtains like Java effects`
 
 Recent commits:
 
+- `aadd74e Defer multi-transform obtains like Java effects`
 - `84ad08f Use Java upgrade helper for master deck upgrades`
 - `7529c30 Match Bonfire reward before card removal`
 - `6352ba4 Store We Meet Again card option by uuid`
@@ -79,6 +80,51 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`aadd74e` summary:
+
+- Continued the Java-source-backed event obtain/transform order audit through
+  `ForgottenAltar`, `GoldenIdolEvent`, `Transmogrifier`, `Designer`, and
+  `DrugDealer`.
+- Java checked:
+  - `D:\rust\cardcrawl\events\city\ForgottenAltar.java`
+  - `D:\rust\cardcrawl\events\exordium\GoldenIdolEvent.java`
+  - `D:\rust\cardcrawl\events\shrines\Transmogrifier.java`
+  - `D:\rust\cardcrawl\events\shrines\Designer.java`
+  - `D:\rust\cardcrawl\events\city\DrugDealer.java`
+  - `D:\rust\cardcrawl\dungeons\AbstractDungeon.java`
+- Java result:
+  - `ForgottenAltar` needed no Rust change: `increaseMaxHp(5, false)` still
+    heals, the hp loss amount is computed before max HP gain, and Decay has no
+    same-branch immediate relic mutation. Ownerless event damage still skips
+    Torii and can be reduced by Tungsten Rod, matching current helper behavior.
+  - `GoldenIdolEvent` needed no Rust change: trap damage / max HP loss are
+    based on constructor-time event values, and Injury has no same-branch
+    immediate relic mutation.
+  - `AbstractDungeon.update()` moves `effectsQueue` into `effectList` only
+    after the current update pass, so `effectsQueue.add(new
+    ShowCardAndObtainEffect(...))` does not immediately obtain the card.
+  - For multi-card transforms in `Designer` and `DrugDealer`, Java removes and
+    transforms each selected card first, queuing `ShowCardAndObtainEffect`;
+    the actual replacement obtains resolve later after all selected cards have
+    already been removed.
+- Rust result:
+  - Added `RunState::transform_card_uuids_deferred_obtain_with_source`, which
+    preserves Java's per-card remove/transform RNG order while deferring the
+    actual replacement obtain hooks until after all selected cards are removed.
+  - The generic run pending `Transform` / `TransformNonBottled` path now uses
+    the deferred-obtain helper for multi-card non-Neow transforms.
+  - The existing Neow transform-two special case remains separate, because
+    Java Neow transform-two removes both cards before creating the effects.
+  - Corrected the `DrugDealer` regression expectation from
+    remove/obtain/remove/obtain to remove/remove/obtain/obtain.
+
+Verification for `aadd74e`:
+
+- `cargo test drug_dealer --all-targets` -> `7 passed`
+- `cargo test designer --all-targets` -> `18 passed`
+- `cargo test transmogrifier --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1370 passed`
 
 `84ad08f` summary:
 
@@ -2897,13 +2943,18 @@ Recommended next packets:
      `ShowCardAndObtainEffect` or `effectsQueue/topLevelEffectsQueue` while
      also mutating relics/gold/deck state in the same event branch.
    - Good candidates:
-     - `ForgottenAltar` (`Decay` effect branch plus `Circlet` branch; confirm
-       no cross-branch ordering issue).
-     - `GoldenIdolEvent`, `Mushrooms`, `Sssserpent`, `GoldShrine`,
-       `GremlinWheelGame`, and `WindingHalls` for card-only delayed obtain
-       order and Omamori/relic hook implications.
-     - `Designer`, `Transmogrifier`, `DrugDealer` transform effects for
-       remove-before-transform-before-delayed-obtain ordering.
+     - `Mushrooms`, `Sssserpent`, `GoldShrine`, `GremlinWheelGame`, and
+       `WindingHalls` for card-only delayed obtain order and Omamori/relic hook
+       implications.
+     - Other event branches that construct `ShowCardAndObtainEffect` before or
+       after immediate gameplay mutation. Do not assume constructor order and
+       actual obtain order are the same.
+   - Already checked in the current lane:
+     - `ForgottenAltar`: no Rust change needed.
+     - `GoldenIdolEvent`: no Rust change needed.
+     - `Designer`, `Transmogrifier`, `DrugDealer`: generic multi-card
+       transform now removes/transforms all selected cards before deferred
+       replacement obtains, except the existing Java-backed Neow special case.
    - Use the established pattern from `BigFish`, `Addict`, `Mausoleum`, and
      `AccursedBlacksmith`: if Java constructs the card obtain effect before a
      later immediate mutation, take an Omamori snapshot at construction time
