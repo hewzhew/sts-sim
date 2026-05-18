@@ -456,6 +456,61 @@ mod tests {
     }
 
     #[test]
+    fn matching_cards_run_obtain_hooks_before_card_obtained_event() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut event_state = EventState::new(EventId::MatchAndKeep);
+        event_state.current_screen = 1;
+        event_state.extra_data = board_with_entries(&[
+            (CardId::Bash, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Clumsy, 0),
+            (CardId::IronWave, 0),
+            (CardId::Cleave, 0),
+        ]);
+        run_state.event_state = Some(event_state);
+
+        let mut engine_state = EngineState::EventRoom;
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let events = run_state.take_emitted_events();
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(EventId::MatchAndKeep),
+                        ..
+                    }
+                )
+            })
+            .expect(
+                "Ceramic Fish should run from the matched card ShowCardAndObtainEffect obtain hook",
+            );
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::MatchAndKeep),
+                    } if card.id == CardId::Bash
+                )
+            })
+            .expect("Match and Keep should obtain a copy of the matched card");
+
+        assert!(
+            fish_gold_pos < obtained_pos,
+            "Java GremlinMatchGame queues ShowCardAndObtainEffect for the matched card; that effect runs onObtainCard before Soul.obtain adds the card"
+        );
+    }
+
+    #[test]
     fn matching_uses_card_id_not_board_type_index_like_java() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         let mut event_state = EventState::new(EventId::MatchAndKeep);

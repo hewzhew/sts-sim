@@ -245,4 +245,58 @@ mod tests {
             } if before.id == CardId::Strike && before.uuid == 101
         )));
     }
+
+    #[test]
+    fn change_runs_obtain_hooks_before_transformed_card_is_recorded() {
+        let mut run_state = living_wall_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101, 0)];
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        let events = run_state.take_emitted_events();
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(crate::state::events::EventId::LivingWall),
+                        ..
+                    }
+                )
+            })
+            .expect("Ceramic Fish should run from the delayed ShowCardAndObtainEffect obtain hook");
+        let transformed_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardTransformed {
+                        before,
+                        source: DomainEventSource::Event(crate::state::events::EventId::LivingWall),
+                        ..
+                    } if before.id == CardId::Strike && before.uuid == 101
+                )
+            })
+            .expect("Living Wall Change should record the transformed replacement");
+
+        assert!(
+            fish_gold_pos < transformed_pos,
+            "Java LivingWall removes/transforms the selected card, then queued ShowCardAndObtainEffect runs onObtainCard before Soul.obtain completes the replacement"
+        );
+    }
 }
