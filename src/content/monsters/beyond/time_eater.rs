@@ -112,6 +112,159 @@ mod tests {
             "Java gates Haste on private usedHaste, not move history"
         );
     }
+
+    #[test]
+    fn reverberate_blocked_by_last_two_moves_consumes_java_range_reroll() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.time_eater.used_haste = true;
+        time_eater
+            .move_history_mut()
+            .extend([REVERBERATE, REVERBERATE]);
+        let mut rng = StsRng::new(0);
+
+        let plan = TimeEater::roll_move_plan(&mut rng, &time_eater, 0, 0);
+
+        assert_ne!(plan.move_id, REVERBERATE);
+        assert_eq!(
+            rng.counter, 1,
+            "Java TimeEater.getMove rerolls with aiRng.random(50, 99) when Reverberate is blocked by lastTwoMoves"
+        );
+    }
+
+    #[test]
+    fn head_slam_repeat_branch_consumes_java_boolean_chance() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.time_eater.used_haste = true;
+        time_eater.move_history_mut().push_back(HEAD_SLAM);
+        let mut rng = StsRng::new(0);
+
+        let plan = TimeEater::roll_move_plan(&mut rng, &time_eater, 0, 50);
+
+        assert_ne!(plan.move_id, HEAD_SLAM);
+        assert_eq!(
+            rng.counter, 1,
+            "Java TimeEater.getMove consumes aiRng.randomBoolean(0.66f) when Head Slam is blocked by lastMove"
+        );
+    }
+
+    #[test]
+    fn ripple_repeat_branch_consumes_java_random_74_reroll() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.time_eater.used_haste = true;
+        time_eater.move_history_mut().push_back(RIPPLE);
+        let mut rng = StsRng::new(0);
+
+        let plan = TimeEater::roll_move_plan(&mut rng, &time_eater, 0, 99);
+
+        assert_eq!(
+            rng.counter, 1,
+            "Java TimeEater.getMove rerolls with aiRng.random(74) when Ripple is blocked by lastMove"
+        );
+        assert!(matches!(
+            plan.move_id,
+            REVERBERATE | RIPPLE | HEAD_SLAM | HASTE
+        ));
+    }
+
+    #[test]
+    fn ripple_a19_queues_block_vulnerable_weak_frail_then_roll_like_java() {
+        let time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        let mut state = crate::test_support::combat_with_monsters(vec![time_eater.clone()]);
+
+        let actions = TimeEater::take_turn_plan(&mut state, &time_eater, &ripple_plan(19));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::GainBlock {
+                    target: 1,
+                    amount: 20,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Vulnerable,
+                    amount: 1,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Frail,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+
+    #[test]
+    fn head_slam_a19_queues_damage_draw_reduction_slimed_then_roll_like_java() {
+        let time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        let mut state = crate::test_support::combat_with_monsters(vec![time_eater.clone()]);
+
+        let actions = TimeEater::take_turn_plan(&mut state, &time_eater, &head_slam_plan(19));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 32,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::DrawReduction,
+                    amount: 1,
+                },
+                Action::MakeTempCardInDiscard {
+                    card_id: CardId::Slimed,
+                    amount: 2,
+                    upgraded: false,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+
+    #[test]
+    fn haste_a19_queues_cleanse_shackled_heal_block_then_roll_like_java() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.max_hp = 480;
+        time_eater.current_hp = 100;
+        let mut state = crate::test_support::combat_with_monsters(vec![time_eater.clone()]);
+
+        let actions =
+            TimeEater::take_turn_plan(&mut state, &time_eater, &haste_plan(&time_eater, 19));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::RemoveAllDebuffs { target: 1 },
+                Action::RemovePower {
+                    target: 1,
+                    power_id: PowerId::Shackled,
+                },
+                Action::Heal {
+                    target: 1,
+                    amount: 140,
+                },
+                Action::GainBlock {
+                    target: 1,
+                    amount: 32,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
 }
 
 fn reverberate_damage(ascension_level: u8) -> i32 {
