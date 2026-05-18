@@ -45,15 +45,60 @@ Forbidden:
 
 Latest code commit:
 
-- `29e0699 Match Java counter increments for attack relics`
+- `0e0b90c Use Java colorless combat pool for rewards`
 
 Recent commits:
 
+- `0e0b90c Use Java colorless combat pool for rewards`
+- `a304973 Update handoff after attack relic audit`
 - `29e0699 Match Java counter increments for attack relics`
 - `2007560 Align relic delayed checks and null sources`
 - `35c414b Update handoff after stateful relic audit`
-- `09e6128 Update handoff after Surrounded audit`
-- `d245435 Model Surrounded facing back attack`
+
+`0e0b90c` summary:
+
+- Java checked:
+  - `Toolbox`
+  - `ChooseOneColorless`
+  - `AbstractDungeon.returnTrulyRandomColorlessCardInCombat()`
+  - Existing generated-card relic paths for `NilrysCodex`, `DeadBranch`, and
+    `Enchiridion`
+- Fixed Toolbox / colorless reward pool:
+  - Java `ChooseOneColorless.generateCardChoices()` samples
+    `returnTrulyRandomColorlessCardInCombat()`.
+  - That method iterates `srcColorlessCardPool` order and filters HEALING
+    cards; it does not concatenate uncommon then rare pools.
+  - Rust `SuspendForCardReward { pool: Colorless }` now uses the existing
+    `random_colorless_in_combat_pool()` helper instead of rebuilding a
+    rarity-grouped pool locally.
+  - Added an engine-level regression that executes the
+    `SuspendForCardReward` action and verifies the three generated choices and
+    `cardRandomRng` counter against Java-order colorless combat pool sampling.
+- Confirmed existing tests for:
+  - `NilrysCodex` execution-time basically-dead guard.
+  - `DeadBranch` immediate random card sampling before queuing hand copy.
+  - `Enchiridion` immediate random Power sampling and zero-for-turn handling.
+
+Verification for `0e0b90c`:
+
+- `cargo test colorless_card_reward_uses_java_random_colorless_combat_pool_order --all-targets`
+  -> `1 passed`
+- `cargo test nilrys_codex --all-targets` -> `1 passed`
+- `cargo test dead_branch --all-targets` -> `1 passed`
+- `cargo test enchiridion --all-targets` -> `1 passed`
+- `cargo test toolbox --all-targets` -> no named tests matched, but the new
+  engine-level colorless reward test covers Toolbox's shared action path.
+- `cargo test --all-targets` -> `1347 passed`
+
+Next narrow packet:
+
+- Continue generated-card/source audit:
+  - `DeadBranch` and `Enchiridion` may still deserve a focused check against
+    `MakeTempCardInHandAction` hand-full behavior and Master Reality, depending
+    on whether the shared `MakeCopyInHand` handler already covers it.
+  - Check broad relic/card uses of `returnTrulyRandomColorlessCardInCombat`,
+    `returnTrulyRandomCardInCombat`, and `DamageAllEnemiesAction(null, ...)`
+    for local pool/source rewrites.
 
 `29e0699` summary:
 
