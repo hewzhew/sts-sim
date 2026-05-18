@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `af79d1b Queue Anger discard copies as stat snapshots`
+- `d3c080e Align master deck copy state with Java`
 
 Recent commits:
 
+- `d3c080e Align master deck copy state with Java`
 - `af79d1b Queue Anger discard copies as stat snapshots`
 - `8d48e33 Match generated reward discard upgrade counts`
 - `ab78536 Lock stat equivalent copy state for queued copies`
@@ -63,6 +64,53 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`d3c080e` summary:
+
+- Continued card instance copy audit into permanent master-deck duplication
+  paths.
+- Java checked:
+  - `D:\rust\cardcrawl\events\shrines\Duplicator.java`
+  - `D:\rust\cardcrawl\relics\DollysMirror.java`
+  - `D:\rust\cardcrawl\cards\AbstractCard.java`
+- Java result:
+  - Both Duplicator and Dolly's Mirror use selected-card
+    `makeStatEquivalentCopy()`, then clear bottle flags before
+    `ShowCardAndObtainEffect`.
+  - `makeStatEquivalentCopy()` copies permanent card state such as upgrades,
+    base stat mutations, `misc`, cost / cost-for-turn flags, and
+    `freeToPlayOnce`.
+  - It does not copy transient rendered damage/block/magic or multi-damage
+    arrays.
+- Rust result:
+  - `RunState::add_card_instance_copy_to_deck_from()` no longer copies
+    transient rendered `base_*_mut` fields into master-deck duplicates.
+  - It now preserves `cost_for_turn` and `free_to_play_once`, matching the
+    Java stat-equivalent copy payload represented by current Rust card state.
+  - Strengthened both Dolly's Mirror and Duplicator tests with permanent vs
+    transient field assertions. Bottle attachment remains intentionally tracked
+    by relic UUID, so the copied card naturally lacks the original bottle link.
+
+Verification for `d3c080e`:
+
+- `cargo test duplicate_selection_preserves_stat_equivalent_card_state_without_copying_bottle_attachment --all-targets`
+  -> `1 passed`
+- `cargo test duplicate_selection_obtains_stat_equivalent_copy_with_event_source --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1356 passed`
+
+Next narrow packet:
+
+- Continue Java-source audit around permanent card mutation/removal paths:
+  - Events that display stat-equivalent previews but mutate selected master
+    cards directly (`Designer`, `UpgradeShrine`, `ShiningLight`,
+    `BackToBasics`, `MindBloom`) should be checked for whether Rust copies
+    only preview state or accidentally mutates preview artifacts.
+  - Removal paths should keep watching `onRemoveFromMasterDeck()` hooks,
+    especially `Parasite` max HP loss and `Necronomicurse` re-obtain behavior.
+  - If staying with relic audit instead, resume Java stateful relic counters:
+    `Dodecahedron`, `HappyFlower`, `IncenseBurner`, `HornCleat`,
+    `CaptainsWheel`, `StoneCalendar`, `MercuryHourglass`.
 
 `af79d1b` summary:
 
