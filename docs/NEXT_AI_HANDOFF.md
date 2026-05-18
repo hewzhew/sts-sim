@@ -45,15 +45,47 @@ Forbidden:
 
 Branch tip:
 
-- `5fe09ea Fix shield spear back attack parity`
+- `1879996 Fix corrupt heart buff timing parity`
 
 Recent commits:
 
+- `1879996 Fix corrupt heart buff timing parity`
+- `8e548a0 Update handoff after shield spear audit`
 - `5fe09ea Fix shield spear back attack parity`
 - `6d1201d Update handoff after spawn hook audit`
 - `24e4618 Fix spawn monster relic hook timing`
-- `14130c9 Update handoff after reptomancer audit`
-- `bf619c7 Fix minion prebattle source parity`
+
+`1879996` summary:
+
+- `CorruptHeart`, Java `BeatOfDeathPower`, Java `InvinciblePower`, and Java
+  `PainfulStabsPower` were checked.
+- Fixed Heart buff-turn private runtime timing:
+  - Java queues the Strength and follow-up buff actions, then synchronously
+    increments private `buffCount` before queued actions can execute and before
+    `RollMoveAction`.
+  - Rust now emits the `CorruptHeart` runtime update before the queued
+    `ApplyPower` actions, matching the same synchronous-state principle used
+    for Maw/Exploder/Transient-style fixes.
+- Added tests proving:
+  - pre-battle `Invincible` and `BeatOfDeath` use Java's A19 gate
+    (`Invincible 300 / Beat 1` below A19, `Invincible 200 / Beat 2` at A19+);
+  - first `getMove()` selects Debilitate and only clears private `firstMove`,
+    without incrementing `moveCount`;
+  - Painful Stabs follow-up uses Java sentinel amount `-1`;
+  - buff turn cleanses negative Strength by adding `-Strength + 2`, picks the
+    Java `buffCount == 1` Beat of Death follow-up, and updates private
+    `buffCount` before queued powers execute.
+- Confirmed existing tests already cover:
+  - `InvinciblePower` storing its Java `maxAmt` reset amount in `extra_data`;
+  - `InvinciblePower.onAttackedToChangeDamage` capping both ordinary damage and
+    HP_LOSS.
+
+Verification for `1879996`:
+
+- `cargo test corrupt_heart --all-targets` -> `5 passed`
+- `cargo test beat_of_death --all-targets` -> `1 passed`
+- `cargo test invincible --all-targets` -> `4 passed`
+- `cargo test --all-targets` -> `1321 passed`
 
 `5fe09ea` summary:
 
@@ -853,7 +885,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `5fe09ea` before this handoff
+No uncommitted code changes were present after `1879996` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -990,6 +1022,12 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   pipeline; tests lock Shield Bash Focus/Strength RNG timing, Fortify/Piercer
   all-monster loops without HP filtering, Spear Burn Strike queue order, Spear
   Artifact A18 gate, and runtime Skewer hit count.
+- `CorruptHeart`: fixed/locked in `1879996`. Pre-battle Invincible /
+  Beat of Death A19 gates are covered; first roll clears only `firstMove`;
+  buff turns now emit the private `buffCount` runtime update before queued
+  Strength/follow-up `ApplyPower` actions; tests lock negative-Strength cleanse
+  and the `buffCount == 1` Beat of Death follow-up. Existing Invincible tests
+  already cover Java `maxAmt` reset storage and ordinary/HP_LOSS damage caps.
 
 Source suspicion remaining after `5fe09ea`:
 
@@ -1096,12 +1134,12 @@ Recommended next packets:
    - Java `SpawnMonsterAction.update()` hook ordering was fixed in `24e4618`.
    - Act 4 `SpireShield` + `SpireSpear` coordinated runtime/move audit was
      fixed/locked in `5fe09ea`.
-   - Next narrow packet: `CorruptHeart` runtime/power audit
-     (`D:\rust\cardcrawl\monsters\ending\CorruptHeart.java`,
-     `D:\rust\cardcrawl\powers\BeatOfDeathPower.java`,
-     `D:\rust\cardcrawl\powers\InvinciblePower.java`,
-     `src/content/monsters/ending/corrupt_heart.rs`,
-     `src/content/powers/mod.rs`).
+   - `CorruptHeart` runtime/power audit was fixed/locked in `1879996`.
+   - Next narrow packet: final-act encounter/factory initialization audit
+     (`D:\rust\cardcrawl\dungeons\TheEnding.java`,
+     `D:\rust\cardcrawl\rooms\MonsterRoomBoss.java`,
+     `src/state/run.rs`, `src/content/monsters/factory.rs`,
+     `src/content/monsters/ending/*.rs`).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
