@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `7529c30 Match Bonfire reward before card removal`
+- `84ad08f Use Java upgrade helper for master deck upgrades`
 
 Recent commits:
 
+- `84ad08f Use Java upgrade helper for master deck upgrades`
 - `7529c30 Match Bonfire reward before card removal`
 - `6352ba4 Store We Meet Again card option by uuid`
 - `8e4b627 Match Golden Wing purge screen flow`
@@ -78,6 +79,46 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`84ad08f` summary:
+
+- Continued the Java-source-backed permanent deck mutation audit through
+  `MindBloom`, `ShiningLight`, and `AccursedBlacksmith`.
+- Java checked:
+  - `D:\rust\cardcrawl\events\beyond\MindBloom.java`
+  - `D:\rust\cardcrawl\events\exordium\ShiningLight.java`
+  - `D:\rust\cardcrawl\events\shrines\AccursedBlacksmith.java`
+  - `D:\rust\cardcrawl\cards\AbstractCard.java`
+  - `D:\rust\cardcrawl\rooms\AbstractRoom.java`
+- Java result:
+  - Permanent/event card upgrades call each card's `upgrade()` method, which
+    mutates the concrete card instance. For ordinary damage/block upgrades,
+    Java `upgradeDamage` / `upgradeBlock` add to the current concrete
+    `baseDamage` / `baseBlock`, not just to a separate upgrade counter.
+  - `AccursedBlacksmith` Rummage constructs
+    `ShowCardAndObtainEffect(Pain)` before calling
+    `spawnRelicAndObtain(WarpedTongs)`. Omamori interception is based on the
+    pre-relic snapshot at effect construction time, while the actual card
+    obtain resolves after the relic has already been obtained.
+- Rust result:
+  - `RunState::upgrade_card_with_source` now calls
+    `content::cards::upgrade_card_once_java` instead of directly incrementing
+    `upgrades`, so master-deck upgrades preserve Java concrete-card mutation
+    semantics.
+  - `AccursedBlacksmith` Rummage now obtains Warped Tongs before resolving
+    Pain obtain, while still using the pre-relic Omamori snapshot for the Pain
+    constructor-time block check.
+  - Added regressions for concrete `base_damage_override` upgrade behavior and
+    AccursedBlacksmith relic-before-card event ordering.
+
+Verification for `84ad08f`:
+
+- `cargo test master_deck_upgrade_uses_java_card_upgrade_helper --all-targets`
+  -> `1 passed`
+- `cargo test accursed_blacksmith --all-targets` -> `6 passed`
+- `cargo test shining_light --all-targets` -> `4 passed`
+- `cargo test mind_bloom --all-targets` -> `7 passed`
+- `cargo test --all-targets` -> `1370 passed`
 
 `7529c30` summary:
 
@@ -2845,10 +2886,29 @@ Keep these on the short list and revisit with narrow source packets:
 ## Next Work Queue
 
 Continue Java-source-backed mechanics audit before jumping back to machine
-learning. The current narrow lane is relic hook parity, especially public
-counter/state hooks that affect AI observation and replay.
+learning. The current narrow lane is permanent run-state mutation parity:
+master-deck upgrade/remove/obtain order, delayed `ShowCardAndObtainEffect`
+semantics, and relic/card hook ordering.
 
 Recommended next packets:
+
+0. Immediate next packet:
+   - Continue the event obtain-order sweep for Java paths that queue
+     `ShowCardAndObtainEffect` or `effectsQueue/topLevelEffectsQueue` while
+     also mutating relics/gold/deck state in the same event branch.
+   - Good candidates:
+     - `ForgottenAltar` (`Decay` effect branch plus `Circlet` branch; confirm
+       no cross-branch ordering issue).
+     - `GoldenIdolEvent`, `Mushrooms`, `Sssserpent`, `GoldShrine`,
+       `GremlinWheelGame`, and `WindingHalls` for card-only delayed obtain
+       order and Omamori/relic hook implications.
+     - `Designer`, `Transmogrifier`, `DrugDealer` transform effects for
+       remove-before-transform-before-delayed-obtain ordering.
+   - Use the established pattern from `BigFish`, `Addict`, `Mausoleum`, and
+     `AccursedBlacksmith`: if Java constructs the card obtain effect before a
+     later immediate mutation, take an Omamori snapshot at construction time
+     but resolve card obtain after the immediate mutation when gameplay hooks
+     would see it.
 
 1. Finish the mixed `SetMoveAction` / `RollMoveAction` monster sweep:
    - `AwakenedOne` was fixed in `30c73bb`.
@@ -2926,11 +2986,8 @@ Recommended next packets:
    - `Damaru`, `EmotionChip`, `HoveringKite`, `RunicCapacitor`,
      `AncientTeaSet`, and `ArtOfWar` were source-checked after `d245435`; no
      code change was needed.
-   - Next narrow packet: continue Java relic `atTurnStart` / public counter
-     hook coverage with the remaining stateful relics one Java relic file at a
-     time. Good candidates are `Dodecahedron`, `HappyFlower`, `IncenseBurner`,
-     `HornCleat`, `CaptainsWheel`, `StoneCalendar`, and `MercuryHourglass`,
-     checking for immediate state mutation vs queued-action leftovers.
+   - This monster/relic hook list remains important, but it is not the current
+     immediate packet while the event/master-deck mutation sweep is active.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
