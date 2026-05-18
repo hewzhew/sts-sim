@@ -1,41 +1,27 @@
-use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::content::relics::RelicState;
+use crate::runtime::action::ActionInfo;
 use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 /// NeowsLament: Enemies in your first 3 combats have 1 HP.
 /// Uses relic counter: starts at 3, decremented each combat until 0.
-pub fn at_battle_start(state: &CombatState, counter: i32) -> SmallVec<[ActionInfo; 4]> {
-    let mut actions = SmallVec::new();
-    if counter > 0 {
-        // Java mutates monster currentHealth directly to 1; this is not HP-loss damage.
-        for monster in &state.entities.monsters {
-            if !monster.is_escaped && !monster.is_dying && monster.current_hp > 1 {
-                actions.push(ActionInfo {
-                    action: Action::SetCurrentHp {
-                        target: monster.id,
-                        hp: 1,
-                    },
-                    insertion_mode: AddTo::Top,
-                });
-            }
+pub fn at_battle_start(
+    state: &mut CombatState,
+    relic: &mut RelicState,
+) -> SmallVec<[ActionInfo; 4]> {
+    if relic.counter > 0 {
+        relic.counter -= 1;
+        if relic.counter == 0 {
+            relic.counter = -2;
+            relic.used_up = true;
         }
-        let next_counter = counter - 1;
-        actions.push(ActionInfo {
-            action: Action::UpdateRelicCounter {
-                relic_id: crate::content::relics::RelicId::NeowsLament,
-                counter: if next_counter == 0 { -2 } else { next_counter },
-            },
-            insertion_mode: AddTo::Top,
-        });
-        if next_counter == 0 {
-            actions.push(ActionInfo {
-                action: Action::UpdateRelicUsedUp {
-                    relic_id: crate::content::relics::RelicId::NeowsLament,
-                    used_up: true,
-                },
-                insertion_mode: AddTo::Top,
-            });
+
+        // Java mutates monster currentHealth directly in the relic hook; this is
+        // not HP-loss damage and must not wait for the action queue to drain.
+        for monster in &mut state.entities.monsters {
+            monster.current_hp = 1;
         }
     }
-    actions
+
+    SmallVec::new()
 }

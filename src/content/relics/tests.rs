@@ -5133,7 +5133,7 @@ fn neows_lament_sets_live_enemy_hp_to_one_and_expires_on_third_combat() {
     first.current_hp = 20;
     let mut second = crate::test_support::test_monster(EnemyId::Cultist);
     second.id = 22;
-    second.current_hp = 1;
+    second.current_hp = 7;
     state.entities.monsters = vec![first, second];
     state
         .entities
@@ -5142,26 +5142,33 @@ fn neows_lament_sets_live_enemy_hp_to_one_and_expires_on_third_combat() {
     state.entities.player.relics[0].counter = 1;
 
     let actions = hooks::at_battle_start(&mut state);
-    assert!(actions
-        .iter()
-        .any(|action| matches!(action.action, Action::SetCurrentHp { target: 21, hp: 1 })));
-    assert!(!actions
-        .iter()
-        .any(|action| matches!(action.action, Action::SetCurrentHp { target: 22, .. })));
-    assert!(actions.iter().any(|action| matches!(
-        action.action,
-        Action::UpdateRelicCounter {
-            relic_id: RelicId::NeowsLament,
-            counter: -2,
-        }
-    )));
-    assert!(actions.iter().any(|action| matches!(
-        action.action,
-        Action::UpdateRelicUsedUp {
-            relic_id: RelicId::NeowsLament,
-            used_up: true,
-        }
-    )));
+    assert!(actions.is_empty());
+    assert_eq!(state.entities.monsters[0].current_hp, 1);
+    assert_eq!(state.entities.monsters[1].current_hp, 1);
+    assert_eq!(state.entities.player.relics[0].counter, -2);
+    assert!(
+        state.entities.player.relics[0].used_up,
+        "Java NeowsLament.setCounter(-2) calls usedUp synchronously"
+    );
+}
+
+#[test]
+fn neows_lament_decrements_counter_synchronously_before_expiring() {
+    let mut state = crate::test_support::blank_test_combat();
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    monster.current_hp = 18;
+    state.entities.monsters = vec![monster];
+    state
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::NeowsLament));
+    state.entities.player.relics[0].counter = 3;
+
+    let actions = hooks::at_battle_start(&mut state);
+    assert!(actions.is_empty());
+    assert_eq!(state.entities.monsters[0].current_hp, 1);
+    assert_eq!(state.entities.player.relics[0].counter, 2);
+    assert!(!state.entities.player.relics[0].used_up);
 }
 
 #[test]

@@ -220,10 +220,11 @@ pub fn at_battle_start(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
                 actions.extend(crate::content::relics::mutagenic_strength::at_battle_start())
             }
             RelicId::NeowsLament => {
-                let counter = state.entities.player.relics[relic_index].counter;
+                let mut rs = state.entities.player.relics[relic_index].clone();
                 actions.extend(crate::content::relics::neows_lament::at_battle_start(
-                    &*state, counter,
+                    state, &mut rs,
                 ));
+                state.entities.player.relics[relic_index] = rs;
             }
             RelicId::TwistedFunnel => actions.extend(
                 crate::content::relics::twisted_funnel::at_battle_start(&*state),
