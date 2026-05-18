@@ -45,15 +45,29 @@ Forbidden:
 
 Branch tip:
 
-- `0b0eec3 Add bandit pointy queue parity test`
+- `5ad39bc Add torch head queue parity test`
 
 Recent commits:
 
+- `5ad39bc Add torch head queue parity test`
+- `5260b59 Update handoff after bandit pointy audit`
 - `0b0eec3 Add bandit pointy queue parity test`
 - `c8d7133 Update handoff after gremlin parity`
 - `1ac61f2 Fix gremlin setmove timing parity`
-- `e0c2ded Update handoff after thief parity`
-- `874605d Fix thief move chaining parity`
+
+`5ad39bc` summary:
+
+- `TorchHead` Java source was checked against Rust.
+- No business logic change was needed: Rust already emits one `MonsterAttack`
+  followed by queued `SetMonsterMove`, matching Java's `DamageAction` followed
+  by `SetMoveAction`.
+- Java `update()` only emits `TorchHeadFireEffect` VFX and was not modeled.
+- Added a focused parity test to lock that queue order.
+
+Verification for `5ad39bc`:
+
+- `cargo test torch_head --all-targets` -> `1 passed`
+- `cargo test --all-targets` -> `1214 passed`
 
 `0b0eec3` summary:
 
@@ -144,14 +158,14 @@ The current monster architecture is still usable if these rules are followed:
 - UI/VFX classes are ignored only after checking that they do not mutate combat
   state, RNG, room state, map state, or visible choices.
 
-Current text scans after `0b0eec3`:
+Current text scans after `5ad39bc`:
 
 - `src/content/monsters` has no remaining direct `move_history().is_empty`
   private-state pattern from the recent search.
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `0b0eec3`.
+No uncommitted changes were present after `5ad39bc`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -173,6 +187,8 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   actions.
 - `BanditPointy`: checked in `0b0eec3`. No logic change needed; added a test
   for the two-hit damage queue before queued `SetMoveAction`.
+- `TorchHead`: checked in `5ad39bc`. No logic change needed; added a test for
+  damage before queued `SetMoveAction`; Java fire effect update is VFX-only.
 
 Split / victory timing:
 
@@ -226,10 +242,12 @@ Recommended next packets:
    - `Looter` and `Mugger` were fixed in `874605d`.
    - Exordium Gremlins were fixed in `1ac61f2`.
    - `BanditPointy` was checked in `0b0eec3`.
-   - Next narrow packet: `TorchHead`
-     (`D:\rust\cardcrawl\monsters\city\TorchHead.java` and
-     `src/content/monsters/city/torch_head.rs`). It is another small City
-     monster with a queued `SetMoveAction` chain.
+   - `TorchHead` was checked in `5ad39bc`.
+   - Next narrow packet: `ShelledParasite`
+     (`D:\rust\cardcrawl\monsters\city\ShelledParasite.java` and
+     `src/content/monsters/city/shelled_parasite.rs`). It has both ordinary
+     post-turn rolling and a stunned/interrupt-style next-move path, so it is a
+     good next escalation after the two simple City minions.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
