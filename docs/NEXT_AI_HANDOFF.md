@@ -45,15 +45,48 @@ Forbidden:
 
 Branch tip:
 
-- `10997a8 Fix monster start-turn invincible poison timing`
+- `ea1570c Match Java end-of-round queue timing`
 
 Recent commits:
 
+- `ea1570c Match Java end-of-round queue timing`
+- `5a568a7 Update handoff after invincible poison audit`
 - `10997a8 Fix monster start-turn invincible poison timing`
 - `a22f6d8 Update handoff after victory predicate audit`
 - `4fd646b Use Java basically-dead flags for victory settlement`
-- `556788e Fix monster during-turn power timing`
-- `5ed419b Update handoff after pre-battle RNG audit`
+
+`ea1570c` summary:
+
+- Java `GameActionManager.getNextAction()`, Java
+  `MonsterGroup.applyEndOfTurnPowers()`, Java `DrawReductionPower`, and Rust
+  `tick_engine()` combat turn-transition logic were checked.
+- Fixed Rust's round-end queue timing:
+  - Java calls monster `atEndOfTurn`, player `atEndOfRound`, and monster
+    `atEndOfRound` hooks as synchronous hook methods that enqueue actions.
+  - Java does not drain those queued actions before it runs the following
+    player start-of-turn hook methods and constructs the next-turn
+    `DrawCardAction`.
+  - Rust was draining monster end-of-turn actions before `atEndOfRound`, and
+    draining round cleanup before the player start-of-turn setup.
+  - Rust now queues the collective end-of-turn and end-of-round actions and
+    leaves them in order ahead of the queued player start-of-turn actions.
+- Added a regression test for `DrawReductionPower`:
+  - Java queues `ReducePowerAction`, then constructs the next-turn
+    `DrawCardAction` from the still-reduced `player.gameHandSize`.
+  - Rust now draws 4 cards on the expiration turn, then removes
+    `DrawReduction` before player control returns.
+
+Verification for `ea1570c`:
+
+- `cargo test draw_reduction_decay_is_queued_before_next_turn_draw_count_like_java_game_hand_size --all-targets`
+  -> `1 passed`
+- `cargo test blur_retains_player_block_through_next_turn_while_power_ticks_down --all-targets`
+  -> `1 passed`
+- `cargo test draw_reduction --all-targets` -> `2 passed`
+- `cargo test end_of_round --all-targets` -> `1 passed`
+- `cargo test monster_pre_turn_invincible_resets_before_poison_like_java_at_start_of_turn --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1330 passed`
 
 `10997a8` summary:
 
@@ -1045,7 +1078,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted code changes were present after `10997a8` before this handoff
+No uncommitted code changes were present after `ea1570c` before this handoff
 update.
 
 ## Recent Source Findings Not Yet Needing Edits
@@ -1211,6 +1244,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   resets `Invincible` in the Java start-of-turn power pass and routes monster
   `PoisonLoseHp` through the HP_LOSS damage pipeline so `Invincible` caps it
   before Poison decrements.
+- Monster group end-of-turn / end-of-round queue timing: fixed in `ea1570c`.
+  Java queues collective end-of-turn and round-end actions, then runs the
+  following player start-of-turn hook methods and constructs `DrawCardAction`
+  before the queued cleanup actions execute. Rust now preserves that queue
+  order; `DrawReduction` expiration is the locked regression case.
 
 Source suspicion remaining after `5fe09ea`:
 
@@ -1332,13 +1370,14 @@ Recommended next packets:
      fixed/locked in `4fd646b`.
    - Java monster start-of-turn `Invincible` and `PoisonLoseHpAction`
      interaction was fixed/locked in `10997a8`.
-   - Next narrow packet: finish the remaining Java `MonsterGroup` lifecycle
-     filter/order details vs Rust combat lifecycle
-     (`D:\rust\cardcrawl\monsters\MonsterGroup.java`,
-     `D:\rust\cardcrawl\actions\GameActionManager.java`,
-     `D:\rust\cardcrawl\core\AbstractCreature.java`, `src/engine/core.rs`,
-     and any narrow power/action files needed for `applyPreTurnLogic`,
-     `queueMonsters`, `applyEndOfTurnPowers`, and `areMonstersBasicallyDead`).
+   - Java collective end-of-turn / atEndOfRound action queue timing was
+     fixed/locked in `ea1570c`, with `DrawReductionPower` as the regression
+     case.
+   - Next narrow packet: audit player start-of-turn post-draw hook timing
+     (`D:\rust\cardcrawl\actions\GameActionManager.java`,
+     `D:\rust\cardcrawl\core\AbstractCreature.java`,
+     Java powers overriding `atStartOfTurnPostDraw`, `src/engine/core.rs`,
+     `src/engine/action_handlers/cards.rs`, and Rust `PostDrawTrigger`).
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
