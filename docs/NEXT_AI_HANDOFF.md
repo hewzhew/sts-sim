@@ -205,18 +205,22 @@ Current documentation note after encounter-pool reconciliation:
   - Encounter list generation is already source-checked for weights, repeat
     rules, first-strong exclusions, Act 4 Shield/Spear lists, boss-list
     generation, and no fake JawWorm/Hexaghost fallback.
+  - Existing `3d4805e` evidence and `cargo test factory --all-targets` cover
+    the high-risk `MonsterHelper` factory RNG/constructor side effects.
   - `docs\MECHANICS_AUDIT_LEDGER.md` now names the actual remaining risk:
     Java room creation reads the front encounter and removes/regenerates when
-    leaving the room, while Rust currently consumes at combat creation. Concrete
-    `MonsterHelper` encounter instantiation coverage also remains separate
-    from private monster AI fields.
-  - `docs\JAVA_SOURCE_MAP.md` now has a monster encounter scheduling owner row.
+    leaving the room, while Rust currently consumes at combat creation.
+    Per-monster private AI/runtime fields remain tracked in the separate monster
+    AI/intent ledger row.
+  - `docs\JAVA_SOURCE_MAP.md` now has a monster encounter scheduling/factory
+    owner row.
 - Verification:
   - `cargo test encounter_lists_preserve_java_generation_invariants --all-targets`
     -> `1 passed`
   - `cargo test unknown_act_does_not_fall_back_to_exordium_encounter_lists --all-targets`
     -> `1 passed`
   - `cargo test boss_lists --all-targets` -> `2 passed`
+  - `cargo test factory --all-targets` -> `5 passed`
 
 Previous source-checked note after `157e50d`:
 
