@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `5e0aff5 Match Vampires strike removal order`
+- `a75011b Match obtain hook order with Java`
 
 Recent commits:
 
+- `a75011b Match obtain hook order with Java`
 - `5e0aff5 Match Vampires strike removal order`
 - `c5a3cd5 Update handoff after Drug Dealer audit`
 - `f775832 Lock Drug Dealer transform order`
@@ -74,6 +75,39 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`a75011b` summary:
+
+- Continued the permanent master-deck mutation audit into ordinary obtain
+  ordering.
+- Java checked:
+  - `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+  - `D:\rust\cardcrawl\relics\DarkstonePeriapt.java`
+  - `D:\rust\cardcrawl\relics\CeramicFish.java`
+- Java result:
+  - `ShowCardAndObtainEffect.update()` iterates player relics and calls
+    `r.onObtainCard(card)`.
+  - Only after those obtain hooks does Java call
+    `AbstractDungeon.getCurrRoom().souls.obtain(card, true)`.
+  - Java then iterates relics again for `r.onMasterDeckChange()`.
+- Rust result:
+  - `RunState` now resolves `DeckManager` obtain actions before emitting
+    `CardObtained` / `CardTransformed` and pushing obtained cards into
+    `master_deck`.
+  - This applies to ordinary obtain, manual no-interception obtain,
+    stat-equivalent copy obtain, and transformed-card obtain.
+  - Added a `RunState` regression proving Darkstone's `MaxHpChanged` event
+    precedes the `CardObtained` event for an obtained curse.
+
+Verification for `a75011b`:
+
+- `cargo test ordinary_obtain_runs_relic_obtain_hooks_before_master_deck_add_like_java --all-targets`
+  -> `1 passed`
+- `cargo test darkstone_periapt --all-targets` -> `1 passed`
+- `cargo test ceramic_fish --all-targets` -> `1 passed`
+- `cargo test note_for_yourself --all-targets` -> `7 passed`
+- `cargo test transform_two --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1367 passed`
 
 `5e0aff5` summary:
 
