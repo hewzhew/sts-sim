@@ -336,6 +336,60 @@ mod tests {
     }
 
     #[test]
+    fn boss_chest_relic_choice_does_not_apply_non_boss_chest_hooks() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.push(RelicState::new(RelicId::CursedKey));
+        run_state.relics.push(RelicState::new(RelicId::Matryoshka));
+        run_state.relics.push(RelicState::new(RelicId::NlothsMask));
+        run_state.pending_boss_reward = true;
+        run_state.boss_relic_pool = vec![
+            RelicId::CoffeeDripper,
+            RelicId::BlackStar,
+            RelicId::Astrolabe,
+        ];
+
+        let deck_len_before = run_state.master_deck.len();
+
+        let next = super::post_reward_state(&mut run_state);
+
+        let EngineState::BossRelicSelect(state) = next else {
+            panic!("boss reward should open boss relic select");
+        };
+        assert_eq!(
+            state.relics,
+            vec![
+                RelicId::CoffeeDripper,
+                RelicId::BlackStar,
+                RelicId::Astrolabe
+            ],
+            "Java BossChest.open(true) opens the three prebuilt boss relics without Matryoshka insertion or N'loth removal"
+        );
+        assert_eq!(
+            run_state.master_deck.len(),
+            deck_len_before,
+            "Java CursedKey.onChestOpen(true) does not add a curse"
+        );
+        assert_eq!(
+            run_state
+                .relics
+                .iter()
+                .find(|relic| relic.id == RelicId::Matryoshka)
+                .map(|relic| relic.counter),
+            Some(2),
+            "Java BossChest.open(true) explicitly skips Matryoshka"
+        );
+        assert_eq!(
+            run_state
+                .relics
+                .iter()
+                .find(|relic| relic.id == RelicId::NlothsMask)
+                .map(|relic| relic.counter),
+            Some(1),
+            "Java boss chests do not run onChestOpenAfter"
+        );
+    }
+
+    #[test]
     fn emerald_key_reward_claim_updates_owned_key_visibility_state() {
         let mut run_state = RunState::new(1, 0, true, "Ironclad");
         run_state.keys[2] = false;
