@@ -45,15 +45,34 @@ Forbidden:
 
 Latest code commit:
 
-- `22db4c7 Preserve Brimstone addToTop queue order`
+- `63487e7 Document Mutagenic Strength addToTop order`
 
 Recent commits:
 
+- `63487e7 Document Mutagenic Strength addToTop order`
+- `1704499 Update handoff after Brimstone queue audit`
 - `22db4c7 Preserve Brimstone addToTop queue order`
 - `cb07b21 Update handoff after Red Skull audit`
 - `d86fe7e Defer Red Skull battle start bloodied check`
-- `675fa58 Update handoff after Plated Armor queue audit`
-- `4c05934 Queue Plated Armor hp loss reduction at bottom`
+
+`63487e7` summary:
+
+- Java checked:
+  - `MutagenicStrength.atBattleStart()`.
+- Clarified and locked Mutagenic Strength queue order:
+  - Java calls `addToTop(Strength)` and then `addToTop(LoseStrength)`.
+  - Rust already emitted the correct Java call order, so actual queue execution
+    after `queue_actions()` is `LoseStrength` then `Strength`.
+  - The Rust comment incorrectly said `addToBot`; it now states the Java
+    `addToTop` ordering.
+  - Added a regression that checks both the returned call order and the actual
+    queued execution order.
+
+Verification for `63487e7`:
+
+- `cargo test mutagenic_strength --all-targets` -> `1 passed`
+- `cargo test brimstone --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1342 passed`
 
 `22db4c7` summary:
 
