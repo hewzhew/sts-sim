@@ -60,6 +60,27 @@ Forbidden:
 
 Latest code checkpoint:
 
+- Added focused Medium Slime tests after Java/Rust source comparison.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\AcidSlime_M.java`
+  - `D:\rust\cardcrawl\monsters\exordium\SpikeSlime_M.java`
+- Rust changed:
+  - `src\content\monsters\exordium\acid_slime.rs`
+  - `src\content\monsters\exordium\spike_slime.rs`
+- Result:
+  - Medium Slimes require no hidden runtime truth beyond constructor/spawn
+    poison input.
+  - Tests now cover Medium Acid Slime A17 and pre-A17 branch thresholds,
+    Java `aiRng.randomBoolean()` / `randomBoolean(float)` consumption, and all
+    three take-turn chains.
+  - Tests now cover Medium Spike Slime A17 versus pre-A17 Frail repeat guards
+    and both take-turn chains.
+- Verification:
+  - `cargo test acid_slime --all-targets` -> `7 passed`
+  - `cargo test spike_slime --all-targets` -> `4 passed`
+
+Latest code checkpoint:
+
 - Added focused Small Slime tests after Java/Rust source comparison.
 - Java checked:
   - `D:\rust\cardcrawl\monsters\exordium\AcidSlime_S.java`

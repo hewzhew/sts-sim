@@ -51,6 +51,7 @@ Scope:
 | Fungi Beast | None | N/A | N/A | N/A | `lastMove`/`lastTwoMoves` sequencing only; Spore Cloud battle-ending guard | Good |
 | Slime Boss | `first_turn` | Yes | Yes | Yes | None for post-opening cycle | Good |
 | Large Slimes | `split_triggered` | Yes | Yes | Yes | Attack/debuff sequencing only | Good |
+| Medium Slimes | Optional constructor poison only | Factory/spawn input | N/A | N/A | Acid/Spike branch only on roll, ascension, and Java sequence history | Good |
 | Small Slimes | Optional constructor poison only | Factory/spawn input | N/A | N/A | Small Acid alternates by Java rules; Small Spike fixed attack | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
 | Spheric Guardian | `first_move`, `second_move` | Yes | Yes | Yes | Post-opening `lastMove(BIG_ATTACK)` branch only | Good |
@@ -227,6 +228,24 @@ Scope:
 - `runtime_state.split_triggered` is exported for `AcidSlime_L` and `SpikeSlime_L`.
 - Rust uses the private Java latch in addition to `nextMove != SPLIT`; this covers states where a later roll temporarily changes the planned move while Java still remembers that the split interrupt already fired.
 - The latch is updated immediately when the split interrupt fires. It is not queued as a Java action; only the Java `SetMoveAction` equivalent remains queued behind existing actions.
+
+### Medium Slimes
+
+- Medium Slimes do not require hidden runtime truth from protocol beyond the constructor/spawn-provided poison amount.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\AcidSlime_M.java`
+  - `D:\rust\cardcrawl\monsters\exordium\SpikeSlime_M.java`
+- Rust checked/changed:
+  - `src\content\monsters\exordium\acid_slime.rs`
+  - `src\content\monsters\exordium\spike_slime.rs`
+- Java `AcidSlime_M.getMove(int)` uses only `num`, ascension threshold, `lastMove`/`lastTwoMoves`, and `aiRng.randomBoolean()` / `randomBoolean(float)` fallback branches. Rust now has focused tests for A17 and pre-A17 branches plus RNG consumption parity.
+- Java `AcidSlime_M.takeTurn()` queues Weak, Wound Tackle damage + Slimed, or Normal Tackle damage, then `RollMoveAction(this)`. Rust now has focused tests for all three action chains.
+- Java `SpikeSlime_M.getMove(int)` uses only `num`, ascension threshold, and sequence history. A17 uses `lastMove(FRAIL)` for the high-roll repeat guard while pre-A17 uses `lastTwoMoves(FRAIL)`. Rust now has focused tests for that distinction.
+- Java `SpikeSlime_M.takeTurn()` queues Frail or Tackle damage + Slimed, then `RollMoveAction(this)`. Rust now has focused tests for both chains.
+- Java `PoisonPower` in medium Slime constructors is represented as constructor/factory/spawn input, not reconstructed from move history.
+- Verification:
+  - `cargo test acid_slime --all-targets` -> `7 passed`
+  - `cargo test spike_slime --all-targets` -> `4 passed`
 
 ### Small Slimes
 

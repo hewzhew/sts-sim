@@ -362,10 +362,109 @@ impl MonsterBehavior for SpikeSlimeS {
 
 #[cfg(test)]
 mod tests {
-    use super::{SpikeSlimeS, FLAME_TACKLE};
+    use super::{SpikeSlimeM, SpikeSlimeS, FLAME_TACKLE, FRAIL_LICK};
+    use crate::content::cards::CardId;
     use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::content::powers::PowerId;
     use crate::runtime::action::Action;
     use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn medium_spike_slime_roll_logic_matches_java_a17_and_pre_a17() {
+        let mut slime = crate::test_support::test_monster(EnemyId::SpikeSlimeM);
+
+        assert_eq!(
+            SpikeSlimeM::roll_move_plan(&mut StsRng::new(1), &slime, 17, 29).move_id,
+            FLAME_TACKLE,
+            "Java A17+ num < 30 opens Tackle unless lastTwoMoves(TACKLE)"
+        );
+        assert_eq!(
+            SpikeSlimeM::roll_move_plan(&mut StsRng::new(1), &slime, 17, 30).move_id,
+            FRAIL_LICK,
+            "Java A17+ non-low rolls Frail unless lastMove(FRAIL)"
+        );
+
+        slime
+            .move_history_mut()
+            .extend([FLAME_TACKLE, FLAME_TACKLE]);
+        assert_eq!(
+            SpikeSlimeM::roll_move_plan(&mut StsRng::new(1), &slime, 17, 29).move_id,
+            FRAIL_LICK
+        );
+
+        slime.move_history_mut().clear();
+        slime.move_history_mut().push_back(FRAIL_LICK);
+        assert_eq!(
+            SpikeSlimeM::roll_move_plan(&mut StsRng::new(1), &slime, 17, 30).move_id,
+            FLAME_TACKLE,
+            "Java A17+ uses lastMove(FRAIL), not lastTwoMoves(FRAIL)"
+        );
+
+        slime.move_history_mut().clear();
+        assert_eq!(
+            SpikeSlimeM::roll_move_plan(&mut StsRng::new(1), &slime, 16, 29).move_id,
+            FLAME_TACKLE
+        );
+        assert_eq!(
+            SpikeSlimeM::roll_move_plan(&mut StsRng::new(1), &slime, 16, 30).move_id,
+            FRAIL_LICK
+        );
+
+        slime.move_history_mut().extend([FRAIL_LICK, FRAIL_LICK]);
+        assert_eq!(
+            SpikeSlimeM::roll_move_plan(&mut StsRng::new(1), &slime, 16, 30).move_id,
+            FLAME_TACKLE,
+            "Below A17 Java uses lastTwoMoves(FRAIL)"
+        );
+    }
+
+    #[test]
+    fn medium_spike_slime_take_turn_actions_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 2;
+        let entity = crate::test_support::test_monster(EnemyId::SpikeSlimeM);
+
+        let tackle = SpikeSlimeM::take_turn_plan(
+            &mut state,
+            &entity,
+            &super::medium_plan_for(FLAME_TACKLE, 2),
+        );
+        assert!(matches!(
+            tackle.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 10,
+                    ..
+                },
+                Action::MakeTempCardInDiscard {
+                    card_id: CardId::Slimed,
+                    amount: 1,
+                    upgraded: false,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        let frail = SpikeSlimeM::take_turn_plan(
+            &mut state,
+            &entity,
+            &super::medium_plan_for(FRAIL_LICK, 2),
+        );
+        assert!(matches!(
+            frail.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Frail,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
 
     #[test]
     fn small_spike_slime_roll_is_always_tackle_like_java_get_move() {
