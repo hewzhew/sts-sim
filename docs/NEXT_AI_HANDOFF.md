@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `b84fd78 Lock grid event obtain hooks`
+- `a69430d Lock basic curse obtain hooks`
 
 Recent commits:
 
+- `a69430d Lock basic curse obtain hooks`
 - `b84fd78 Lock grid event obtain hooks`
 - `1022eb3 Lock delayed obtain hooks in Mausoleum and Mind Bloom`
 - `a3b9be9 Lock relic-before-curse obtain hooks`
@@ -88,6 +89,31 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`a69430d` summary:
+
+- Continued the Java `ShowCardAndObtainEffect` sweep into the remaining simple
+  curse obtain event paths.
+- Java checked:
+  - `D:\rust\cardcrawl\events\city\ForgottenAltar.java`
+  - `D:\rust\cardcrawl\events\exordium\GoldenIdolEvent.java`
+  - Previously in the same lane:
+    `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+    and `D:\rust\cardcrawl\relics\CeramicFish.java`
+- Java result:
+  - `ForgottenAltar` Desecrate queues `ShowCardAndObtainEffect(new Decay())`.
+  - `GoldenIdol` Run trap queues `ShowCardAndObtainEffect(new Injury())`.
+  - The queued effect later calls relic `onObtainCard` before `souls.obtain`.
+- Rust result:
+  - No business logic change was needed.
+  - Added `CeramicFish` ordering regressions proving the obtain hook gold is
+    emitted before the Decay/Injury `CardObtained` records.
+
+Verification for `a69430d`:
+
+- `cargo test forgotten_altar --all-targets` -> `7 passed`
+- `cargo test golden_idol --all-targets` -> `10 passed`
+- `cargo test --all-targets` -> `1391 passed`
 
 `b84fd78` summary:
 
