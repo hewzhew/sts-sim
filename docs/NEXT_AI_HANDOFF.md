@@ -45,15 +45,28 @@ Forbidden:
 
 Branch tip:
 
-- `dc4622d Fix book of stabbing sentinel parity`
+- `0b984ca Add chosen move parity tests`
 
 Recent commits:
 
+- `0b984ca Add chosen move parity tests`
+- `bfc7aca Update handoff after book audit`
 - `dc4622d Fix book of stabbing sentinel parity`
 - `250caf9 Update handoff after guardian sentinel audit`
 - `aa55e3d Use Java sentinel amounts for guardian powers`
-- `632492c Fix snecko confusion amount parity`
-- `61e1b00 Update handoff after snecko audit`
+
+`0b984ca` summary:
+
+- `Chosen` Java/Rust behavior was checked.
+- No business logic change was needed.
+- Added tests for the below-A17 second-roll Hex transition, Drain order
+  (Weak then Strength), Debilitate order (attack then Vulnerable), and Poke
+  two-hit execution before `RollMonsterMove`.
+
+Verification for `0b984ca`:
+
+- `cargo test chosen --all-targets` -> `6 passed`
+- `cargo test --all-targets` -> `1231 passed`
 
 `dc4622d` summary:
 
@@ -255,7 +268,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `dc4622d`.
+No uncommitted changes were present after `0b984ca`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -296,6 +309,9 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
 - `BookOfStabbing`: fixed in `dc4622d`. Pre-battle Painful Stabs now uses Java
   sentinel amount `-1`; tests lock `stabCount` roll-time growth and STAB
   multi-hit execution.
+- `Chosen`: checked in `0b984ca`. No business logic change was needed; tests
+  lock below-A17 Hex transition, Drain/Debilitate ordering, and Poke two-hit
+  execution.
 
 Split / victory timing:
 
@@ -357,10 +373,11 @@ Recommended next packets:
    - `Snecko` was fixed across `632492c` and `aa55e3d`.
    - `SphericGuardian` was fixed in `aa55e3d`.
    - `BookOfStabbing` was fixed in `dc4622d`.
-   - Next narrow packet: `Chosen`
-     (`D:\rust\cardcrawl\monsters\city\Chosen.java` and
-     `src/content/monsters/city/chosen.rs`). It exercises first-turn private
-     state, Hex / debuff ordering, and A17+ move rules.
+   - `Chosen` was checked in `0b984ca`.
+   - Next narrow packet: `Taskmaster`
+     (`D:\rust\cardcrawl\monsters\city\Taskmaster.java` and
+     `src/content/monsters/city/taskmaster.rs`). It is compact and exercises
+     wound/debuff turn sequencing and post-turn `RollMoveAction`.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
