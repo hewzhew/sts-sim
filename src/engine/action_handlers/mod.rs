@@ -78,6 +78,46 @@ pub fn try_revive(state: &mut CombatState) {
     }
 }
 
+fn apply_awakened_one_rebirth_interrupt(state: &mut CombatState, target_id: usize) {
+    // Java `AwakenedOne.damage()` performs these mutations immediately after
+    // relic onMonsterDeath hooks, while also queuing a later SetMoveAction.
+    store::retain_entity_powers(state, target_id, |power| {
+        power.power_type != crate::content::powers::PowerId::Curiosity
+            && power.power_type != crate::content::powers::PowerId::Unawakened
+            && power.power_type != crate::content::powers::PowerId::Shackled
+            && !crate::content::powers::is_debuff(power.power_type, power.amount)
+    });
+
+    if let Some(monster) = state
+        .entities
+        .monsters
+        .iter_mut()
+        .find(|monster| monster.id == target_id)
+    {
+        monster.set_planned_move_id(3);
+        monster.set_planned_steps(
+            crate::runtime::combat::Intent::Unknown
+                .to_legacy_move_spec()
+                .to_steps(),
+        );
+        monster.set_planned_visible_spec(None);
+        monster.move_history_mut().push_back(3);
+        monster.awakened_one.form1 = false;
+        monster.awakened_one.first_turn = true;
+        monster.awakened_one.protocol_seeded = true;
+    }
+
+    state.queue_action_front(Action::ClearCardQueue);
+    state.queue_action_back(Action::SetMonsterMove {
+        monster_id: target_id,
+        next_move_byte: 3,
+        planned_steps: crate::runtime::combat::Intent::Unknown
+            .to_legacy_move_spec()
+            .to_steps(),
+        planned_visible_spec: None,
+    });
+}
+
 /// Centralized monster death handler.
 /// Fires power on_death hooks, monster on_death, relic hooks, and Darkling specials.
 pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize) {
@@ -85,14 +125,8 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
     let mut triggered_death = false;
     let mut dying_monster_type: Option<crate::content::monsters::EnemyId> = None;
 
-    if let Some(m) = state
-        .entities
-        .monsters
-        .iter_mut()
-        .find(|m| m.id == target_id)
-    {
-        if m.current_hp <= 0 && !m.is_dying {
-            m.is_dying = true;
+    if let Some(m) = state.entities.monsters.iter().find(|m| m.id == target_id) {
+        if m.current_hp <= 0 && !m.is_dying && !m.half_dead {
             let m_id = crate::content::monsters::EnemyId::from_id(m.monster_type);
             dying_monster_type = m_id;
             let has_rebirth_power = store::powers_for(state, target_id).is_some_and(|powers| {
@@ -107,6 +141,22 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
             is_awakened_rebirth =
                 has_rebirth_power && m_id == Some(crate::content::monsters::EnemyId::AwakenedOne);
             triggered_death = true;
+        }
+    }
+
+    if triggered_death {
+        if let Some(m) = state
+            .entities
+            .monsters
+            .iter_mut()
+            .find(|m| m.id == target_id)
+        {
+            if is_awakened_rebirth {
+                m.half_dead = true;
+                m.is_dying = false;
+            } else {
+                m.is_dying = true;
+            }
         }
     }
 
@@ -145,6 +195,7 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
         let death_actions = crate::content::relics::hooks::on_monster_death(state, target_id);
         state.queue_actions(death_actions);
         if is_awakened_rebirth {
+            apply_awakened_one_rebirth_interrupt(state, target_id);
             let mut cleared_protocol_monster_id = None;
             if let Some(m) = state
                 .entities
@@ -154,10 +205,8 @@ pub fn check_and_trigger_monster_death(state: &mut CombatState, target_id: usize
             {
                 m.current_hp = 0;
                 m.is_dying = false;
+                m.half_dead = true;
                 cleared_protocol_monster_id = Some(m.id);
-                if dying_monster_type == Some(crate::content::monsters::EnemyId::AwakenedOne) {
-                    m.half_dead = true;
-                }
             }
             if let Some(monster_id) = cleared_protocol_monster_id {
                 state.clear_monster_protocol_observation(monster_id);
@@ -414,9 +463,6 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
             value,
             state,
         ),
-        Action::AwakenedRebirthClear { target } => {
-            powers::handle_awakened_rebirth_clear(target, state)
-        }
         Action::TriggerTimeWarpEndTurn { owner } => {
             powers::handle_trigger_time_warp_end_turn(owner, state)
         }

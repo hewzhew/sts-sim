@@ -740,9 +740,6 @@ pub enum Action {
     RemoveAllDebuffs {
         target: EntityId,
     },
-    AwakenedRebirthClear {
-        target: EntityId,
-    },
     UpdatePowerExtraData {
         target: EntityId,
         power_id: crate::runtime::combat::PowerId,

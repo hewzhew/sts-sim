@@ -1,7 +1,7 @@
 // action_handlers/powers.rs — Power management domain
 //
 // Handles: ApplyPower, RemovePower, RemoveAllDebuffs, ApplyStasis,
-//          UpdatePowerExtraData, AwakenedRebirthClear, GainEnergy,
+//          UpdatePowerExtraData, GainEnergy,
 //          player-turn energy recharge hooks
 
 use crate::content::powers::store;
@@ -795,15 +795,6 @@ pub fn handle_update_power_extra_data_instance(
 ) {
     let _ = store::with_power_instance_mut(state, target, power_id, instance_id, |power| {
         power.extra_data = value;
-    });
-}
-
-pub fn handle_awakened_rebirth_clear(target: usize, state: &mut CombatState) {
-    store::retain_entity_powers(state, target, |p| {
-        p.power_type != PowerId::Curiosity
-            && p.power_type != PowerId::Unawakened
-            && p.power_type != PowerId::Shackled
-            && !crate::content::powers::is_debuff(p.power_type, p.amount)
     });
 }
 
