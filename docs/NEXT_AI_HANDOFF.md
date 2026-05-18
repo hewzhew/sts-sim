@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `6352ba4 Store We Meet Again card option by uuid`
+- `7529c30 Match Bonfire reward before card removal`
 
 Recent commits:
 
+- `7529c30 Match Bonfire reward before card removal`
 - `6352ba4 Store We Meet Again card option by uuid`
 - `8e4b627 Match Golden Wing purge screen flow`
 - `a75011b Match obtain hook order with Java`
@@ -77,6 +78,33 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`7529c30` summary:
+
+- Continued the shrine event audit into Bonfire / Bonfire Elementals.
+- Java checked:
+  - `D:\rust\cardcrawl\events\shrines\Bonfire.java`
+- Java result:
+  - When a selected card returns from the grid, Java stores it in
+    `offeredCard`.
+  - Java then calls `setReward(offeredCard.rarity)` before calling
+    `player.masterDeck.removeCard(offeredCard)`.
+  - Therefore rarity rewards such as Spirit Poop, healing, or max HP gain
+    happen before ordinary master-deck removal hooks such as Parasite's max HP
+    loss.
+- Rust result:
+  - The shared pending deck-purge path now special-cases
+    `BonfireElementals` and `BonfireSpirits` to apply the rarity reward before
+    calling ordinary hook-preserving `remove_card_from_deck_with_source`.
+  - Both Bonfire event modules expose an `apply_offer_reward` helper used by
+    direct screen-2 tests and by pending-choice resolution.
+  - Added a Parasite regression proving Spirit Poop obtain precedes the
+    offered curse's `CardRemoved` and `MaxHpChanged(-3)` events.
+
+Verification for `7529c30`:
+
+- `cargo test bonfire --all-targets` -> `14 passed`
+- `cargo test --all-targets` -> `1369 passed`
 
 `6352ba4` summary:
 
