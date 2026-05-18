@@ -45,24 +45,39 @@ Forbidden:
 
 Branch tip:
 
-- `632492c Fix snecko confusion amount parity`
+- `aa55e3d Use Java sentinel amounts for guardian powers`
 
 Recent commits:
 
+- `aa55e3d Use Java sentinel amounts for guardian powers`
 - `632492c Fix snecko confusion amount parity`
+- `61e1b00 Update handoff after snecko audit`
 - `4316cb0 Update handoff after snake plant audit`
 - `1ad40f2 Add snake plant move parity tests`
-- `09b6d51 Update handoff after healer audit`
-- `8d16e69 Add healer ally loop parity tests`
+
+`aa55e3d` summary:
+
+- Corrected sentinel-power action amounts to follow Java `AbstractPower.amount`
+  truth: `ConfusionPower` and `BarricadePower` use `-1`, not synthetic `0` or
+  `1`.
+- `Snecko` Glare and `SneckoEye` now emit Confusion with `amount: -1`.
+- `SphericGuardian` pre-battle Barricade now emits `amount: -1`, followed by
+  Artifact `3` and block `40`.
+- Added a focused SphericGuardian pre-battle queue-order test.
+
+Verification for `aa55e3d`:
+
+- `cargo test snecko --all-targets` -> `7 passed`
+- `cargo test spheric_guardian --all-targets` -> `6 passed`
+- `cargo test barricade --all-targets` -> `2 passed`
+- `cargo test --all-targets` -> `1223 passed`
 
 `632492c` summary:
 
 - `Snecko` Java/Rust behavior was checked.
-- Fixed Glare's `Confusion` action to carry no numeric amount (`0`) like Java
-  `new ConfusionPower(player)` and Rust `SneckoEye`; runtime application still
-  canonicalizes sentinel powers internally.
-- Added tests for Glare's no-stack Confusion action, A17 Tail queuing Weak
-  before Vulnerable, and Java `lastTwoMoves(BITE)` forcing Tail.
+- Added tests for Glare, A17 Tail queuing Weak before Vulnerable, and Java
+  `lastTwoMoves(BITE)` forcing Tail. The initial Confusion amount from this
+  commit was corrected to Java sentinel `-1` in `aa55e3d`.
 
 Verification for `632492c`:
 
@@ -226,7 +241,7 @@ Current text scans after `1ad40f2`:
 - The obvious "private flags from history" smell was cleaned in the audited
   Red Slaver/Lagavulin/Bandit cases.
 
-No uncommitted changes were present after `632492c`.
+No uncommitted changes were present after `aa55e3d`.
 
 ## Recent Source Findings Not Yet Needing Edits
 
@@ -259,9 +274,11 @@ Mixed `SetMoveAction` / `RollMoveAction` audit:
   needed; added Healer tests for zero-HP non-dying ally inclusion.
 - `SnakePlant`: checked in `1ad40f2`. No business logic change needed; added
   A17 `lastMoveBefore` and triple-hit queue tests.
-- `Snecko`: fixed in `632492c`. Glare now emits Confusion with no numeric
-  amount (`0`) like Java `new ConfusionPower(player)`, and tests lock Glare,
-  A17 Tail debuff ordering, and the `lastTwoMoves(BITE)` Tail rule.
+- `Snecko`: fixed across `632492c` and `aa55e3d`. Glare now emits Confusion
+  with Java sentinel amount `-1`, and tests lock Glare, A17 Tail debuff
+  ordering, and the `lastTwoMoves(BITE)` Tail rule.
+- `SphericGuardian`: fixed in `aa55e3d`. Pre-battle Barricade now uses Java
+  sentinel amount `-1`; tests lock Barricade, Artifact, and opening block order.
 
 Split / victory timing:
 
@@ -320,11 +337,12 @@ Recommended next packets:
    - `Byrd` was fixed in `a4d74f4`.
    - `Centurion` + `Healer` were checked in `8d16e69`.
    - `SnakePlant` was checked in `1ad40f2`.
-   - `Snecko` was fixed in `632492c`.
-   - Next narrow packet: `SphericGuardian`
-     (`D:\rust\cardcrawl\monsters\city\SphericGuardian.java` and
-     `src/content/monsters/city/spheric_guardian.rs`). It exercises Artifact,
-     block, attack/debuff ordering, and post-turn `RollMoveAction`.
+   - `Snecko` was fixed across `632492c` and `aa55e3d`.
+   - `SphericGuardian` was fixed in `aa55e3d`.
+   - Next narrow packet: `BookOfStabbing`
+     (`D:\rust\cardcrawl\monsters\city\BookOfStabbing.java` and
+     `src/content/monsters/city/book_of_stabbing.rs`). It exercises private
+     stab count growth, multi-hit damage, and post-turn `RollMoveAction`.
 2. For each monster packet, inspect only:
    - Java monster file.
    - Rust monster file.
