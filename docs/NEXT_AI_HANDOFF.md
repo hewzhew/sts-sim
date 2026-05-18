@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `81789e4 Lock delayed event card obtain ordering`
+- `56bec7f Lock remaining delayed event obtain hooks`
 
 Recent commits:
 
+- `56bec7f Lock remaining delayed event obtain hooks`
 - `81789e4 Lock delayed event card obtain ordering`
 - `aadd74e Defer multi-transform obtains like Java effects`
 - `84ad08f Use Java upgrade helper for master deck upgrades`
@@ -81,6 +82,35 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`56bec7f` summary:
+
+- Finished the current named `ShowCardAndObtainEffect` event-order candidates
+  from the handoff queue by locking the remaining `Mushrooms` and
+  `GremlinWheelGame` delayed obtain hook behavior.
+- Java checked:
+  - `D:\rust\cardcrawl\events\exordium\Mushrooms.java`
+  - `D:\rust\cardcrawl\events\shrines\GremlinWheelGame.java`
+  - Previously in the same lane:
+    `D:\rust\cardcrawl\vfx\cardManip\ShowCardAndObtainEffect.java`
+    and `D:\rust\cardcrawl\relics\CeramicFish.java`
+- Java result:
+  - `Mushrooms` Eat heals immediately, then the delayed Parasite
+    `ShowCardAndObtainEffect` later runs obtain hooks and adds the card.
+  - `GremlinWheelGame` curse result obtains Decay through
+    `ShowCardAndObtainEffect`; that effect runs `onObtainCard` before
+    `souls.obtain` when it resolves.
+- Rust result:
+  - No business logic change was needed in either event path.
+  - Added `CeramicFish` ordering regressions proving the delayed card effects
+    run obtain hooks before `CardObtained`, and that immediate heal remains
+    before the delayed Parasite obtain in `Mushrooms`.
+
+Verification for `56bec7f`:
+
+- `cargo test mushrooms --all-targets` -> `7 passed`
+- `cargo test gremlin_wheel --all-targets` -> `12 passed`
+- `cargo test --all-targets` -> `1377 passed`
 
 `81789e4` summary:
 
@@ -2980,15 +3010,15 @@ semantics, and relic/card hook ordering.
 Recommended next packets:
 
 0. Immediate next packet:
-   - Continue the event obtain-order sweep for Java paths that queue
-     `ShowCardAndObtainEffect` or `effectsQueue/topLevelEffectsQueue` while
-     also mutating relics/gold/deck state in the same event branch.
-   - Good candidates:
-     - `Mushrooms` and `GremlinWheelGame` for card-only delayed obtain order
-       and Omamori/relic hook implications.
-     - Other event branches that construct `ShowCardAndObtainEffect` before or
-       after immediate gameplay mutation. Do not assume constructor order and
-       actual obtain order are the same.
+   - The named `ShowCardAndObtainEffect` event-order candidates in this lane
+     are now checked. Next, either run a narrow source search for remaining
+     Java event `ShowCardAndObtainEffect` / `effectsQueue` / `topLevelEffectsQueue`
+     sites not already documented here, or move to the next highest-risk
+     mechanics surface from the watch list below.
+   - If continuing this lane, do not assume constructor order and actual obtain
+     order are the same. Check whether a branch constructs a card obtain effect
+     before or after immediate gameplay mutation such as relic obtain, gold
+     gain, HP/max HP mutation, deck removal, or transform.
    - Already checked in the current lane:
      - `ForgottenAltar`: no Rust change needed.
      - `GoldenIdolEvent`: no Rust change needed.
@@ -2998,6 +3028,8 @@ Recommended next packets:
      - `GoldShrine`, `Sssserpent`, and `WindingHalls`: no business change
        needed; delayed obtain ordering is now locked by CeramicFish event-order
        regressions in `81789e4`.
+     - `Mushrooms` and `GremlinWheelGame`: no business change needed; delayed
+       obtain hook ordering is locked by CeramicFish regressions in `56bec7f`.
    - Use the established pattern from `BigFish`, `Addict`, `Mausoleum`, and
      `AccursedBlacksmith`: if Java constructs the card obtain effect before a
      later immediate mutation, take an Omamori snapshot at construction time
