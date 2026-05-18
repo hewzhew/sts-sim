@@ -36,11 +36,12 @@ pub fn cloak_and_dagger_play(_state: &CombatState, card: &CombatCard) -> SmallVe
             insertion_mode: AddTo::Bottom,
         },
         ActionInfo {
-            action: Action::MakeTempCardInHand {
-                card_id: CardId::Shiv,
-                amount: evaluated.base_magic_num_mut.max(0) as u8,
-                upgraded: false,
-            },
+            action: crate::content::cards::make_constructed_temp_card_in_hand_action(
+                CardId::Shiv,
+                evaluated.base_magic_num_mut.max(0) as u8,
+                false,
+                _state,
+            ),
             insertion_mode: AddTo::Bottom,
         },
     ]

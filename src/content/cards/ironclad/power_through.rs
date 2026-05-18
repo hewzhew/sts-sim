@@ -29,11 +29,12 @@ pub fn power_through_play(state: &CombatState, card: &CombatCard) -> SmallVec<[A
     let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
     smallvec::smallvec![
         ActionInfo {
-            action: Action::MakeTempCardInHand {
-                card_id: crate::content::cards::CardId::Wound,
-                amount: 2,
-                upgraded: false
-            },
+            action: crate::content::cards::make_constructed_temp_card_in_hand_action(
+                crate::content::cards::CardId::Wound,
+                2,
+                false,
+                state,
+            ),
             insertion_mode: AddTo::Bottom,
         },
         ActionInfo {

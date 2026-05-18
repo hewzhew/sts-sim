@@ -91,8 +91,8 @@ pub fn at_battle_start_pre_draw(state: &mut CombatState) -> SmallVec<[ActionInfo
         let relic_id = state.entities.player.relics[relic_index].id;
         match relic_id {
             RelicId::HolyWater => actions.extend(crate::content::relics::holy_water::at_battle_start(&*state)),
-            RelicId::NinjaScroll => actions.extend(crate::content::relics::ninja_scroll::at_battle_start()),
-            RelicId::PureWater => actions.extend(crate::content::relics::pure_water::at_battle_start()),
+            RelicId::NinjaScroll => actions.extend(crate::content::relics::ninja_scroll::at_battle_start(&*state)),
+            RelicId::PureWater => actions.extend(crate::content::relics::pure_water::at_battle_start(&*state)),
             RelicId::Toolbox => actions.extend(crate::content::relics::toolbox::at_battle_start()),
             RelicId::GamblingChip => {
                 crate::content::relics::gambling_chip::at_battle_start_pre_draw(

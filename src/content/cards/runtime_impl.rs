@@ -869,6 +869,23 @@ pub fn prepare_make_temp_card_in_hand_constructor(
     card
 }
 
+pub fn make_constructed_temp_card_in_hand_action(
+    card_id: CardId,
+    amount: u8,
+    upgraded: bool,
+    state: &CombatState,
+) -> crate::runtime::action::Action {
+    let mut card = make_fresh_card_copy_for_combat(card_id, 0, state);
+    if upgraded {
+        upgrade_card_once_java(&mut card);
+    }
+    let card = prepare_make_temp_card_in_hand_constructor(card, state);
+    crate::runtime::action::Action::MakeConstructedCopyInHand {
+        original: Box::new(card),
+        amount,
+    }
+}
+
 /// Returns the card's intrinsic exhaust-on-play behavior after applying
 /// upgrade-sensitive card rules.
 pub fn exhausts_when_played(card: &CombatCard) -> bool {

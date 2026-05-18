@@ -4139,30 +4139,28 @@ fn watcher_relic_gap_batch_metadata_matches_java_sources() {
 
 #[test]
 fn pure_and_holy_water_add_correct_miracle_counts_pre_draw() {
-    let pure_actions = pure_water::at_battle_start();
+    let state = crate::test_support::blank_test_combat();
+    let pure_actions = pure_water::at_battle_start(&state);
     assert_eq!(pure_actions.len(), 1);
     assert_eq!(pure_actions[0].insertion_mode, AddTo::Bottom);
-    assert!(matches!(
-        pure_actions[0].action,
-        Action::MakeTempCardInHand {
-            card_id: CardId::Miracle,
-            amount: 1,
-            upgraded: false
+    match &pure_actions[0].action {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Miracle);
+            assert_eq!(*amount, 1);
         }
-    ));
+        other => panic!("Pure Water should queue constructed Miracle copies, got {other:?}"),
+    }
 
-    let state = crate::test_support::blank_test_combat();
     let holy_actions = holy_water::at_battle_start(&state);
     assert_eq!(holy_actions.len(), 1);
     assert_eq!(holy_actions[0].insertion_mode, AddTo::Bottom);
-    assert!(matches!(
-        holy_actions[0].action,
-        Action::MakeTempCardInHand {
-            card_id: CardId::Miracle,
-            amount: 3,
-            upgraded: false
+    match &holy_actions[0].action {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Miracle);
+            assert_eq!(*amount, 3);
         }
-    ));
+        other => panic!("Holy Water should queue constructed Miracle copies, got {other:?}"),
+    }
 }
 
 #[test]
@@ -4309,17 +4307,17 @@ fn snake_ring_and_ninja_scroll_start_actions_match_java_counts() {
     assert_eq!(snake_actions[0].insertion_mode, AddTo::Bottom);
     assert!(matches!(snake_actions[0].action, Action::DrawCards(2)));
 
-    let ninja_actions = ninja_scroll::at_battle_start();
+    let state = crate::test_support::blank_test_combat();
+    let ninja_actions = ninja_scroll::at_battle_start(&state);
     assert_eq!(ninja_actions.len(), 1);
     assert_eq!(ninja_actions[0].insertion_mode, AddTo::Bottom);
-    assert!(matches!(
-        ninja_actions[0].action,
-        Action::MakeTempCardInHand {
-            card_id: CardId::Shiv,
-            amount: 3,
-            upgraded: false
+    match &ninja_actions[0].action {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Shiv);
+            assert_eq!(*amount, 3);
         }
-    ));
+        other => panic!("Ninja Scroll should queue constructed Shiv copies, got {other:?}"),
+    }
 }
 
 #[test]

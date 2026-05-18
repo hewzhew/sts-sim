@@ -46,11 +46,12 @@ pub fn carve_reality_play(
             insertion_mode: AddTo::Bottom,
         },
         ActionInfo {
-            action: Action::MakeTempCardInHand {
-                card_id: CardId::Smite,
-                amount: 1,
-                upgraded: false,
-            },
+            action: crate::content::cards::make_constructed_temp_card_in_hand_action(
+                CardId::Smite,
+                1,
+                false,
+                state,
+            ),
             insertion_mode: AddTo::Bottom,
         },
     ]

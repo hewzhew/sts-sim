@@ -36,11 +36,12 @@ pub fn deceive_reality_play(state: &CombatState, card: &CombatCard) -> SmallVec<
             insertion_mode: AddTo::Bottom,
         },
         ActionInfo {
-            action: Action::MakeTempCardInHand {
-                card_id: CardId::Safety,
-                amount: 1,
-                upgraded: false,
-            },
+            action: crate::content::cards::make_constructed_temp_card_in_hand_action(
+                CardId::Safety,
+                1,
+                false,
+                state,
+            ),
             insertion_mode: AddTo::Bottom,
         },
     ]

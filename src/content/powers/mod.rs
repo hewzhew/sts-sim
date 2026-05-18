@@ -1040,11 +1040,14 @@ pub fn resolve_power_instance_at_turn_start(
             if state.are_monsters_basically_dead_java() {
                 smallvec::smallvec![]
             } else {
-                smallvec::smallvec![crate::runtime::action::Action::MakeTempCardInHand {
-                    card_id: crate::content::cards::CardId::Shiv,
-                    amount: amount.max(0) as u8,
-                    upgraded: false,
-                }]
+                smallvec::smallvec![
+                    crate::content::cards::make_constructed_temp_card_in_hand_action(
+                        crate::content::cards::CardId::Shiv,
+                        amount.max(0) as u8,
+                        false,
+                        state,
+                    )
+                ]
             }
         }
         PowerId::BattleHymnPower => watcher::battle_hymn_at_turn_start(state, amount),

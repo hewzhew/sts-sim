@@ -1723,32 +1723,32 @@ fn watcher_retain_stance_and_generated_temp_cards_match_java_sources() {
         }
         other => panic!("Carve Reality+ should emit upgraded DamageAction, got {other:?}"),
     }
-    assert_eq!(
-        carve[1].action,
-        Action::MakeTempCardInHand {
-            card_id: CardId::Smite,
-            amount: 1,
-            upgraded: false,
+    match &carve[1].action {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Smite);
+            assert_eq!(*amount, 1);
         }
-    );
+        other => panic!("Carve Reality should generate constructed Smite, got {other:?}"),
+    }
 
     let mut deceive_plus = CombatCard::new(CardId::DeceiveReality, 914);
     deceive_plus.upgrades = 1;
     let deceive = resolve_card_play(CardId::DeceiveReality, &state, &deceive_plus, None);
+    assert_eq!(deceive.len(), 2);
     assert_eq!(
-        deceive.iter().map(|info| &info.action).collect::<Vec<_>>(),
-        vec![
-            &Action::GainBlock {
-                target: 0,
-                amount: 7,
-            },
-            &Action::MakeTempCardInHand {
-                card_id: CardId::Safety,
-                amount: 1,
-                upgraded: false,
-            },
-        ]
+        deceive[0].action,
+        Action::GainBlock {
+            target: 0,
+            amount: 7,
+        }
     );
+    match &deceive[1].action {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Safety);
+            assert_eq!(*amount, 1);
+        }
+        other => panic!("Deceive Reality should generate constructed Safety, got {other:?}"),
+    }
 }
 
 #[test]
@@ -2229,20 +2229,20 @@ fn watcher_power_hook_batch_matches_java_sources() {
         .entities
         .monsters
         .push(crate::test_support::test_monster(EnemyId::JawWorm));
-    assert_eq!(
-        crate::content::powers::resolve_power_at_turn_start(
-            PowerId::BattleHymnPower,
-            &mut hymn_state,
-            0,
-            2
-        )
-        .as_slice(),
-        &[Action::MakeTempCardInHand {
-            card_id: CardId::Smite,
-            amount: 2,
-            upgraded: false,
-        }]
+    let hymn_actions = crate::content::powers::resolve_power_at_turn_start(
+        PowerId::BattleHymnPower,
+        &mut hymn_state,
+        0,
+        2,
     );
+    assert_eq!(hymn_actions.len(), 1);
+    match &hymn_actions[0] {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Smite);
+            assert_eq!(*amount, 2);
+        }
+        other => panic!("Battle Hymn should generate constructed Smites, got {other:?}"),
+    }
 
     let mut devotion_plus = CombatCard::new(CardId::Devotion, 971);
     devotion_plus.upgrades = 1;
@@ -3057,15 +3057,16 @@ fn watcher_delayed_energy_batch_matches_java_sources() {
     crate::engine::action_handlers::powers::apply_player_turn_energy_recharge_hooks(
         &mut collect_state,
     );
-    assert_eq!(
-        collect_state.pop_next_action(),
-        Some(Action::MakeTempCardInHand {
-            card_id: CardId::Miracle,
-            amount: 1,
-            upgraded: true,
-        }),
-        "Java CollectPower.onEnergyRecharge creates an upgraded Miracle"
-    );
+    match collect_state.pop_next_action() {
+        Some(Action::MakeConstructedCopyInHand { original, amount }) => {
+            assert_eq!(original.id, CardId::Miracle);
+            assert_eq!(original.upgrades, 1);
+            assert_eq!(amount, 1);
+        }
+        other => {
+            panic!("Java CollectPower.onEnergyRecharge creates an upgraded Miracle, got {other:?}")
+        }
+    }
     assert_eq!(
         collect_state.pop_next_action(),
         Some(Action::ReducePower {
@@ -3091,14 +3092,16 @@ fn watcher_delayed_energy_batch_matches_java_sources() {
     crate::engine::action_handlers::powers::apply_player_turn_energy_recharge_hooks(
         &mut collect_remove_state,
     );
-    assert_eq!(
-        collect_remove_state.pop_next_action(),
-        Some(Action::MakeTempCardInHand {
-            card_id: CardId::Miracle,
-            amount: 1,
-            upgraded: true,
-        })
-    );
+    match collect_remove_state.pop_next_action() {
+        Some(Action::MakeConstructedCopyInHand { original, amount }) => {
+            assert_eq!(original.id, CardId::Miracle);
+            assert_eq!(original.upgrades, 1);
+            assert_eq!(amount, 1);
+        }
+        other => {
+            panic!("Java CollectPower.onEnergyRecharge creates an upgraded Miracle, got {other:?}")
+        }
+    }
     assert_eq!(
         collect_remove_state.pop_next_action(),
         Some(Action::RemovePower {
@@ -3148,14 +3151,14 @@ fn watcher_delayed_energy_batch_matches_java_sources() {
     let make_miracles = draw_state
         .pop_next_action()
         .expect("Deus Ex Machina should queue MakeTempCardInHandAction after exhaust");
-    assert_eq!(
-        make_miracles,
-        Action::MakeTempCardInHand {
-            card_id: CardId::Miracle,
-            amount: 3,
-            upgraded: false,
+    match &make_miracles {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Miracle);
+            assert_eq!(original.upgrades, 0);
+            assert_eq!(*amount, 3);
         }
-    );
+        other => panic!("Deus Ex Machina should generate constructed Miracles, got {other:?}"),
+    }
     crate::engine::action_handlers::execute_action(exhaust, &mut draw_state);
     crate::engine::action_handlers::execute_action(make_miracles, &mut draw_state);
     assert_eq!(draw_state.zones.exhaust_pile.len(), 1);
@@ -13091,14 +13094,13 @@ fn ironclad_multi_hit_and_rage_runtime_actions_match_java_use_methods() {
     let power_through_actions =
         resolve_card_play(CardId::PowerThrough, &state, &power_through_plus, None);
     assert_eq!(power_through_actions.len(), 2);
-    assert!(matches!(
-        power_through_actions[0].action,
-        Action::MakeTempCardInHand {
-            card_id: CardId::Wound,
-            amount: 2,
-            upgraded: false
+    match &power_through_actions[0].action {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Wound);
+            assert_eq!(*amount, 2);
         }
-    ));
+        other => panic!("Power Through should generate constructed Wounds, got {other:?}"),
+    }
     assert!(matches!(
         power_through_actions[1].action,
         Action::GainBlock {
@@ -15235,14 +15237,13 @@ fn silent_upgrade_sensitive_play_paths_evaluate_from_card_definition() {
         &upgraded(CardId::BladeDance, 902),
         None,
     );
-    assert_eq!(
-        blade_dance[0].action,
-        Action::MakeTempCardInHand {
-            card_id: CardId::Shiv,
-            amount: 4,
-            upgraded: false,
+    match &blade_dance[0].action {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Shiv);
+            assert_eq!(*amount, 4);
         }
-    );
+        other => panic!("Blade Dance should generate constructed Shivs, got {other:?}"),
+    }
 
     let bouncing_flask = resolve_card_play(
         CardId::BouncingFlask,
@@ -15311,14 +15312,14 @@ fn silent_upgrade_sensitive_play_paths_evaluate_from_card_definition() {
             amount: 6,
         }
     );
-    assert_eq!(
-        cloak[1].action,
-        Action::MakeTempCardInHand {
-            card_id: CardId::Shiv,
-            amount: 2,
-            upgraded: false,
+    match &cloak[1].action {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Shiv);
+            assert_eq!(original.upgrades, 0);
+            assert_eq!(*amount, 2);
         }
-    );
+        other => panic!("Cloak and Dagger should generate constructed Shivs, got {other:?}"),
+    }
 
     let dagger_throw = resolve_card_play(
         CardId::DaggerThrow,
@@ -16065,14 +16066,14 @@ fn silent_hand_conversion_cards_queue_java_execution_actions() {
             end_turn: false,
         })
     );
-    assert_eq!(
-        blade_state_base.pop_next_action(),
-        Some(Action::MakeTempCardInHand {
-            card_id: CardId::Shiv,
-            amount: 1,
-            upgraded: false,
-        })
-    );
+    match blade_state_base.pop_next_action() {
+        Some(Action::MakeConstructedCopyInHand { original, amount }) => {
+            assert_eq!(original.id, CardId::Shiv);
+            assert_eq!(original.upgrades, 0);
+            assert_eq!(amount, 1);
+        }
+        other => panic!("Blade Fury should queue constructed Shiv copies, got {other:?}"),
+    }
 
     let mut blade_state = crate::test_support::blank_test_combat();
     blade_state.zones.hand = vec![
@@ -16092,14 +16093,14 @@ fn silent_hand_conversion_cards_queue_java_execution_actions() {
         }),
         "Java BladeFuryAction addToTop's DiscardAction after MakeTempCardInHandAction, so discard executes first"
     );
-    assert_eq!(
-        blade_state.pop_next_action(),
-        Some(Action::MakeTempCardInHand {
-            card_id: CardId::Shiv,
-            amount: 2,
-            upgraded: true,
-        })
-    );
+    match blade_state.pop_next_action() {
+        Some(Action::MakeConstructedCopyInHand { original, amount }) => {
+            assert_eq!(original.id, CardId::Shiv);
+            assert_eq!(original.upgrades, 1);
+            assert_eq!(amount, 2);
+        }
+        other => panic!("Blade Fury+ should queue upgraded constructed Shiv copies, got {other:?}"),
+    }
 
     let unload = resolve_card_play(
         CardId::Unload,
@@ -17073,14 +17074,14 @@ fn silent_power_cards_match_java_power_hooks() {
         0,
         1,
     );
-    assert_eq!(
-        start_actions.as_slice(),
-        &[Action::MakeTempCardInHand {
-            card_id: CardId::Shiv,
-            amount: 1,
-            upgraded: false,
-        }]
-    );
+    assert_eq!(start_actions.len(), 1);
+    match &start_actions[0] {
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            assert_eq!(original.id, CardId::Shiv);
+            assert_eq!(*amount, 1);
+        }
+        other => panic!("Infinite Blades should generate constructed Shiv, got {other:?}"),
+    }
 }
 
 #[test]

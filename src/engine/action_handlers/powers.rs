@@ -29,11 +29,14 @@ pub fn apply_player_turn_energy_recharge_hooks(state: &mut CombatState) {
                 });
             }
             PowerId::CollectPower => {
-                state.queue_action_back(Action::MakeTempCardInHand {
-                    card_id: crate::content::cards::CardId::Miracle,
-                    amount: 1,
-                    upgraded: true,
-                });
+                state.queue_action_back(
+                    crate::content::cards::make_constructed_temp_card_in_hand_action(
+                        crate::content::cards::CardId::Miracle,
+                        1,
+                        true,
+                        state,
+                    ),
+                );
                 if power.amount <= 1 {
                     state.queue_action_back(Action::RemovePower {
                         target: 0,

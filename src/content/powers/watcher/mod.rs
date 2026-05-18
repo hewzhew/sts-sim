@@ -6,11 +6,14 @@ pub fn battle_hymn_at_turn_start(state: &CombatState, amount: i32) -> SmallVec<[
     if state.are_monsters_basically_dead_java() {
         smallvec::smallvec![]
     } else {
-        smallvec::smallvec![Action::MakeTempCardInHand {
-            card_id: crate::content::cards::CardId::Smite,
-            amount: amount.max(0).min(u8::MAX as i32) as u8,
-            upgraded: false,
-        }]
+        smallvec::smallvec![
+            crate::content::cards::make_constructed_temp_card_in_hand_action(
+                crate::content::cards::CardId::Smite,
+                amount.max(0).min(u8::MAX as i32) as u8,
+                false,
+                state,
+            )
+        ]
     }
 }
 

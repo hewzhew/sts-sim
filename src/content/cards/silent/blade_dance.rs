@@ -1,5 +1,5 @@
 use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
-use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::action::{ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
@@ -28,11 +28,12 @@ pub fn definition() -> CardDefinition {
 pub fn blade_dance_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
     let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
     smallvec::smallvec![ActionInfo {
-        action: Action::MakeTempCardInHand {
-            card_id: CardId::Shiv,
-            amount: evaluated.base_magic_num_mut.max(0) as u8,
-            upgraded: false,
-        },
+        action: crate::content::cards::make_constructed_temp_card_in_hand_action(
+            CardId::Shiv,
+            evaluated.base_magic_num_mut.max(0) as u8,
+            false,
+            state,
+        ),
         insertion_mode: AddTo::Bottom,
     }]
 }

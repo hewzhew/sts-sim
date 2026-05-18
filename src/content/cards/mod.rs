@@ -495,15 +495,16 @@ fn build_curse(id: CardId, name: &'static str, cost: i8) -> CardDefinition {
 /// 2. Necronomicurse (Clone itself back to hand)
 pub fn resolve_card_on_exhaust(
     card: &crate::runtime::combat::CombatCard,
-    _state: &crate::runtime::combat::CombatState,
+    state: &crate::runtime::combat::CombatState,
 ) -> Vec<crate::runtime::action::ActionInfo> {
     match card.id {
         CardId::Necronomicurse => vec![crate::runtime::action::ActionInfo {
-            action: crate::runtime::action::Action::MakeTempCardInHand {
-                card_id: CardId::Necronomicurse,
-                amount: 1,
-                upgraded: false,
-            },
+            action: make_constructed_temp_card_in_hand_action(
+                CardId::Necronomicurse,
+                1,
+                false,
+                state,
+            ),
             insertion_mode: crate::runtime::action::AddTo::Bottom,
         }],
         CardId::Sentinel => vec![crate::runtime::action::ActionInfo {

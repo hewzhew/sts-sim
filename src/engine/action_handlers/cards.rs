@@ -145,11 +145,14 @@ fn apply_card_trigger_when_drawn(
     } else if card.id == CardId::DeusExMachina {
         let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
         let amount = evaluated.base_magic_num_mut.max(0).min(u8::MAX as i32) as u8;
-        state.queue_action_front(Action::MakeTempCardInHand {
-            card_id: CardId::Miracle,
-            amount,
-            upgraded: false,
-        });
+        state.queue_action_front(
+            crate::content::cards::make_constructed_temp_card_in_hand_action(
+                CardId::Miracle,
+                amount,
+                false,
+                state,
+            ),
+        );
         state.queue_action_front(Action::ExhaustCard {
             card_uuid: card.uuid,
             source_pile: crate::state::PileType::Hand,
@@ -360,11 +363,14 @@ pub fn handle_calculated_gamble(draw_extra: bool, state: &mut CombatState) {
 
 pub fn handle_blade_fury(upgraded: bool, state: &mut CombatState) {
     let count = state.zones.hand.len() as u8;
-    state.queue_action_front(Action::MakeTempCardInHand {
-        card_id: CardId::Shiv,
-        amount: count,
-        upgraded,
-    });
+    state.queue_action_front(
+        crate::content::cards::make_constructed_temp_card_in_hand_action(
+            CardId::Shiv,
+            count,
+            upgraded,
+            state,
+        ),
+    );
     state.queue_action_front(Action::DiscardFromHand {
         amount: count as i32,
         random: false,
