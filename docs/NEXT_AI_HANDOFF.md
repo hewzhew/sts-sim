@@ -45,10 +45,11 @@ Forbidden:
 
 Latest code commit:
 
-- `efbf00f Match master deck removal hooks with Java`
+- `d8c5796 Separate direct master deck removal paths`
 
 Recent commits:
 
+- `d8c5796 Separate direct master deck removal paths`
 - `efbf00f Match master deck removal hooks with Java`
 - `d3c080e Align master deck copy state with Java`
 - `af79d1b Queue Anger discard copies as stat snapshots`
@@ -65,6 +66,63 @@ Recent commits:
 - `c4bdd90 Update handoff after hand card construction audit`
 - `7d9e17a Prepare concrete hand cards at construction`
 - `be1bb3c Update handoff after constructed hand card audit`
+
+`d8c5796` summary:
+
+- Continued the master-deck removal audit into Java paths that bypass
+  `CardGroup.removeCard()`.
+- Java checked:
+  - `D:\rust\cardcrawl\relics\PandorasBox.java`
+  - `D:\rust\cardcrawl\screens\select\GridCardSelectScreen.java`
+  - `D:\rust\cardcrawl\vfx\FastCardObtainEffect.java`
+  - `D:\rust\cardcrawl\relics\Necronomicon.java`
+- Java result:
+  - Pandora's Box removes starter Strike/Defend cards by directly iterating
+    `player.masterDeck.group` and calling iterator `remove()`, so removal
+    does not call `AbstractCard.onRemoveFromMasterDeck()` or relic
+    `onMasterDeckChange()`.
+  - Pandora's replacement cards later enter through
+    `FastCardObtainEffect`, which does run Omamori interception and ordinary
+    obtain hooks; Rust should keep using the ordinary obtain path for the
+    generated replacements.
+  - Necronomicon `onUnequip()` directly calls
+    `player.masterDeck.group.remove(cardToRemove)`, so it removes one
+    Necronomicurse without triggering Necronomicurse regeneration and without
+    firing master-deck-change relic hooks.
+- Rust result:
+  - Added `RunState::remove_card_from_deck_without_removal_hooks_with_source`
+    for Java direct `masterDeck.group` removals.
+  - Normal `remove_card_from_deck_with_source` still emits CardRemoved, then
+    runs `onRemoveFromMasterDeck` hooks and deck-change refresh.
+  - Pandora's Box now uses the direct-removal helper for removed starters.
+  - Necronomicon `on_unequip` now uses the direct-removal helper and no longer
+    refreshes Du-Vu Doll after removing its curse.
+  - Strengthened Necronomicon unequip regression with a stale Du-Vu Doll
+    counter assertion to lock the direct `group.remove` behavior.
+
+Verification for `d8c5796`:
+
+- `cargo test necronomicon_on_unequip_removes_one_necronomicurse_without_regenerating_it --all-targets`
+  -> `1 passed`
+- `cargo test pandoras_box_replaces_only_starter_strike_defend_with_relic_source --all-targets`
+  -> `1 passed`
+- `cargo test --all-targets` -> `1358 passed`
+
+Next narrow packet:
+
+- Continue permanent master-deck mutation audit by checking transform and
+  remove callers against Java's two explicit families:
+  - `CardGroup.removeCard(...)`: should run card removal hooks, then
+    master-deck-change relic hooks.
+  - Direct `masterDeck.group.remove(...)` / iterator remove: should bypass
+    those hooks.
+- Good next Java/Rust comparison targets:
+  - `FountainOfCurseRemoval`, `Cleric`, `ShopScreen`, `CampfireTokeEffect`,
+    `EmptyCage`, `Falling`, `WeMeetAgain`, `Bonfire`, `GoldenWing`.
+  - Transform paths in `LivingWall`, `DrugDealer`, `Designer`,
+    `Transmogrifier`, `Astrolabe`, and Neow transform rewards.
+  - For each, verify Rust uses the hook-preserving or direct-removal helper
+    that matches the Java source, not a generic "remove card" assumption.
 
 `efbf00f` summary:
 
