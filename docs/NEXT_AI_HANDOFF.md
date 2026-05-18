@@ -41,19 +41,46 @@ Forbidden:
   unless Java itself only uses history.
 - Re-reading large trees after compaction without first checking this file.
 
-## Latest Pushed Checkpoint
+## Latest Mechanics Checkpoint
 
-Branch tip:
+Latest code commit:
 
-- `4c05934 Queue Plated Armor hp loss reduction at bottom`
+- `d86fe7e Defer Red Skull battle start bloodied check`
 
 Recent commits:
 
+- `d86fe7e Defer Red Skull battle start bloodied check`
+- `675fa58 Update handoff after Plated Armor queue audit`
 - `4c05934 Queue Plated Armor hp loss reduction at bottom`
 - `9b53052 Update handoff after Neows Lament audit`
 - `369d112 Make Neows Lament mutate battle start state immediately`
 - `e94c895 Update handoff after Necronomicon activation audit`
-- `c52b087 Make Necronomicon activation mutate immediately`
+
+`d86fe7e` summary:
+
+- Java checked:
+  - `RedSkull`, `BloodVial`, player `damage()` bloodied transition, and
+    `AbstractCreature.heal()`.
+- Fixed Red Skull timing/state:
+  - Java `RedSkull.atBattleStart()` queues a custom bottom action and checks
+    `player.isBloodied` only when that action resolves.
+  - Rust previously generated Strength during the relic hook from the initial
+    HP value, which could incorrectly apply Red Skull after an earlier
+    top-inserted battle-start heal such as Blood Vial.
+  - Rust now queues `Action::RedSkullBattleStartCheck`, executes the bloodied
+    check at action resolution time, and stores Java's private `isActive` flag
+    in `RelicState.used_up`.
+  - HP threshold hooks now consult that active flag, so healing from bloodied
+    to non-bloodied no longer queues `-3 Strength` unless Red Skull was
+    actually active.
+  - Red Skull now subscribes to victory cleanup to reset the active flag.
+
+Verification for `d86fe7e`:
+
+- `cargo test red_skull --all-targets` -> `3 passed`
+- `cargo test blood_vial --all-targets` -> `2 passed`
+- `cargo test hp_loss --all-targets` -> `27 passed`
+- `cargo test --all-targets` -> `1341 passed`
 
 `4c05934` summary:
 
