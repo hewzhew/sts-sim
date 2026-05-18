@@ -44,6 +44,7 @@ Scope:
 | Gremlin Wizard | `current_charge` | Yes | Yes | Yes | None for charge cadence | Good |
 | Cultist | `first_move` | Yes | Yes | Yes | None | Good |
 | Jaw Worm | `first_move`, `hard_mode` | Yes | Yes | Yes | `lastMove`/`lastTwoMoves` sequencing only | Good |
+| Fungi Beast | None | N/A | N/A | N/A | `lastMove`/`lastTwoMoves` sequencing only; Spore Cloud battle-ending guard | Good |
 | Slime Boss | `first_turn` | Yes | Yes | Yes | None for post-opening cycle | Good |
 | Large Slimes | `split_triggered` | Yes | Yes | Yes | Attack/debuff sequencing only | Good |
 | Sentry | `first_move` | Yes | Yes | Yes | Later Bolt/Beam alternation only | Good |
@@ -249,6 +250,27 @@ Scope:
 - `runtime_state.first_turn` and `runtime_state.used_entangle` are now exported by `CommunicationMod`.
 - Rust semantic roll logic requires both fields to be protocol-seeded or factory-seeded.
 - Remaining history usage is limited to Java's explicit repeat rules around `STAB` and `SCRAPE`.
+
+### Fungi Beast / Spore Cloud
+
+- `Fungi Beast` does not require hidden runtime truth from protocol.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\FungiBeast.java`
+  - `D:\rust\cardcrawl\powers\SporeCloudPower.java`
+  - `D:\rust\cardcrawl\rooms\AbstractRoom.java`
+  - `D:\rust\cardcrawl\monsters\MonsterGroup.java`
+- Rust checked/changed:
+  - `src\content\monsters\exordium\fungi_beast.rs`
+  - `src\content\powers\core\spore_cloud.rs`
+  - `src\runtime\combat.rs`
+- Java `FungiBeast.getMove(int)` uses only roll plus public sequence history:
+  - Low rolls bite unless `lastTwoMoves(BITE)`.
+  - High rolls grow unless `lastMove(GROW)`.
+- Java `usePreBattleAction()` applies `SporeCloudPower(this, 2)`. Rust preserves this as a pre-battle `ApplyPower` action.
+- Java `SporeCloudPower.onDeath()` returns immediately when `AbstractDungeon.getCurrRoom().isBattleEnding()` is true. `AbstractRoom.isBattleEnding()` checks `isBattleOver` or `MonsterGroup.areMonstersBasicallyDead()`, and `areMonstersBasicallyDead()` skips only `isDying` / `isEscaping` monsters. Rust now uses `are_monsters_basically_dead_java()` before queuing Vulnerable so the final dying Fungi does not poison a battle that Java considers ending.
+- Verification:
+  - `cargo test fungi_beast --all-targets` -> `2 passed`
+  - `cargo test spore_cloud --all-targets` -> `3 passed`
 
 ### Gremlin Nob
 

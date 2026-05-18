@@ -60,6 +60,28 @@ Forbidden:
 
 Latest code checkpoint:
 
+- Fixed Spore Cloud battle-ending semantics and added focused Fungi Beast tests.
+- Java checked:
+  - `D:\rust\cardcrawl\monsters\exordium\FungiBeast.java`
+  - `D:\rust\cardcrawl\powers\SporeCloudPower.java`
+  - `D:\rust\cardcrawl\rooms\AbstractRoom.java`
+  - `D:\rust\cardcrawl\monsters\MonsterGroup.java`
+- Rust changed:
+  - `src\content\monsters\exordium\fungi_beast.rs`
+  - `src\content\powers\core\spore_cloud.rs`
+- Result:
+  - Fungi Beast requires no hidden runtime truth from protocol.
+  - Tests now cover Fungi Beast's Java low/high-roll sequence branches,
+    pre-battle Spore Cloud, and Grow Strength thresholds.
+  - `SporeCloudPower.onDeath()` now returns no action when
+    `are_monsters_basically_dead_java()` is true, matching Java
+    `AbstractRoom.isBattleEnding()`.
+- Verification:
+  - `cargo test fungi_beast --all-targets` -> `2 passed`
+  - `cargo test spore_cloud --all-targets` -> `3 passed`
+
+Latest code checkpoint:
+
 - Added focused Blue Slaver tests after Java/Rust source comparison.
 - Java checked:
   - `D:\rust\cardcrawl\monsters\exordium\SlaverBlue.java`
