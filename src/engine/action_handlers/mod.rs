@@ -619,6 +619,9 @@ pub fn execute_action(action: Action, state: &mut CombatState) {
         Action::MakeCopyInHand { original, amount } => {
             cards::handle_make_copy_in_hand(original, amount, state)
         }
+        Action::MakeConstructedCopyInHand { original, amount } => {
+            cards::handle_make_constructed_copy_in_hand(original, amount, state)
+        }
         Action::MakeCopyInDrawPile {
             original,
             amount,

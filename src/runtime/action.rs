@@ -765,6 +765,14 @@ pub enum Action {
         original: Box<crate::runtime::combat::CombatCard>,
         amount: u8,
     },
+    /// Java `MakeTempCardInHandAction` applies its constructor-time mechanics
+    /// before the action is queued. The card stored here has already passed
+    /// that constructor boundary; execution still applies the hand/discard
+    /// effect boundary.
+    MakeConstructedCopyInHand {
+        original: Box<crate::runtime::combat::CombatCard>,
+        amount: u8,
+    },
     MakeCopyInDrawPile {
         original: Box<crate::runtime::combat::CombatCard>,
         amount: u8,

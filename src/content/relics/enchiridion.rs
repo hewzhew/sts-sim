@@ -20,8 +20,9 @@ pub fn at_battle_start(
         if card.combat_cost_without_turn_override_java() != -1 {
             card.set_cost_for_turn_java(0);
         }
+        crate::content::cards::apply_master_reality_to_generated_card(&mut card, state, 1);
         actions.push(ActionInfo {
-            action: Action::MakeCopyInHand {
+            action: Action::MakeConstructedCopyInHand {
                 original: Box::new(card),
                 amount: 1,
             },

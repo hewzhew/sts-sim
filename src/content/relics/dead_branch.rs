@@ -14,8 +14,10 @@ pub fn on_exhaust(
     }
 
     if let Some(card) = crate::content::cards::make_random_class_card_copy_for_combat(state, None) {
+        let mut card = card;
+        crate::content::cards::apply_master_reality_to_generated_card(&mut card, state, 1);
         actions.push(ActionInfo {
-            action: Action::MakeCopyInHand {
+            action: Action::MakeConstructedCopyInHand {
                 original: Box::new(card),
                 amount: 1,
             },

@@ -1127,6 +1127,30 @@ pub fn handle_make_copy_in_hand(
     }
 }
 
+fn add_constructed_card_to_hand_or_discard(
+    mut card: crate::runtime::combat::CombatCard,
+    state: &mut CombatState,
+) {
+    if state.zones.hand.len() < 10 {
+        apply_master_reality_to_generated_card(&mut card, state, 1);
+        apply_generated_card_entering_hand_mechanics(&mut card, state);
+        state.zones.hand.push(card);
+    } else {
+        state.add_card_to_discard_pile_top(card);
+    }
+}
+
+pub fn handle_make_constructed_copy_in_hand(
+    original: Box<crate::runtime::combat::CombatCard>,
+    amount: u8,
+    state: &mut CombatState,
+) {
+    for _ in 0..amount {
+        let card = original.make_stat_equivalent_copy_with_uuid(state.next_card_uuid());
+        add_constructed_card_to_hand_or_discard(card, state);
+    }
+}
+
 pub fn handle_make_copy_in_draw_pile(
     original: Box<crate::runtime::combat::CombatCard>,
     amount: u8,
@@ -2626,7 +2650,8 @@ pub fn handle_end_turn_trigger(state: &mut CombatState) {
 mod tests {
     use super::{
         class_card_pool_for_type, handle_discard_pile_to_top_of_deck, handle_draw_cards,
-        handle_draw_pile_to_hand_by_type, handle_end_turn_trigger, handle_make_copy_in_discard,
+        handle_draw_pile_to_hand_by_type, handle_end_turn_trigger,
+        handle_make_constructed_copy_in_hand, handle_make_copy_in_discard,
         handle_make_random_card_in_draw_pile, handle_make_random_card_in_hand,
         handle_make_temp_card_in_discard, handle_make_temp_card_in_discard_and_deck,
         handle_make_temp_card_in_draw_pile, handle_make_temp_card_in_hand, handle_play_card_direct,
@@ -2637,6 +2662,7 @@ mod tests {
     };
     use crate::content::cards::{CardId, CardType};
     use crate::content::monsters::EnemyId;
+    use crate::content::powers::store;
     use crate::content::potions::PotionId;
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
@@ -3374,6 +3400,92 @@ mod tests {
         assert_eq!(
             state.zones.discard_pile[0].upgrades, 1,
             "Java MakeTempCardInHandAction overflow adds srcCard to discard, so only the action constructor Master Reality call affects the actual card"
+        );
+    }
+
+    #[test]
+    fn constructed_make_copy_in_hand_separates_constructor_and_effect_reality_calls() {
+        let mut hand_state = blank_test_combat();
+        hand_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        let mut constructed = CombatCard::new(CardId::SearingBlow, 200);
+        crate::content::cards::apply_master_reality_to_generated_card(
+            &mut constructed,
+            &hand_state,
+            1,
+        );
+        handle_make_constructed_copy_in_hand(Box::new(constructed.clone()), 1, &mut hand_state);
+        assert_eq!(
+            hand_state.zones.hand[0].upgrades, 2,
+            "hand path gets Java constructor and ShowCardAndAddToHandEffect Master Reality calls"
+        );
+
+        let mut delayed_state = blank_test_combat();
+        delayed_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        let mut delayed_constructed = CombatCard::new(CardId::SearingBlow, 201);
+        crate::content::cards::apply_master_reality_to_generated_card(
+            &mut delayed_constructed,
+            &delayed_state,
+            1,
+        );
+        store::set_powers_for(&mut delayed_state, 0, vec![]);
+        handle_make_constructed_copy_in_hand(Box::new(delayed_constructed), 1, &mut delayed_state);
+        assert_eq!(
+            delayed_state.zones.hand[0].upgrades, 1,
+            "constructor-time Master Reality persists even if the power is gone when the queued action executes"
+        );
+
+        let mut overflow_state = blank_test_combat();
+        overflow_state.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        for uuid in 1..=10 {
+            overflow_state
+                .zones
+                .hand
+                .push(CombatCard::new(CardId::Strike, uuid));
+        }
+        let mut overflow_constructed = CombatCard::new(CardId::SearingBlow, 202);
+        crate::content::cards::apply_master_reality_to_generated_card(
+            &mut overflow_constructed,
+            &overflow_state,
+            1,
+        );
+        handle_make_constructed_copy_in_hand(
+            Box::new(overflow_constructed),
+            1,
+            &mut overflow_state,
+        );
+        assert_eq!(
+            overflow_state.zones.discard_pile[0].upgrades, 1,
+            "Java overflow discard receives the constructor-upgraded srcCard, not the visually upgraded discard-effect copy"
         );
     }
 

@@ -2442,7 +2442,7 @@ fn dead_branch_skips_when_monsters_are_basically_dead() {
     );
     assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
     match &actions[0].action {
-        Action::MakeCopyInHand { original, amount } => {
+        Action::MakeConstructedCopyInHand { original, amount } => {
             assert_eq!(*amount, 1);
             assert!(!crate::content::cards::get_card_definition(original.id)
                 .tags
@@ -3669,7 +3669,7 @@ fn enchiridion_adds_random_zero_cost_power_at_pre_battle() {
     );
     assert_eq!(actions[0].insertion_mode, AddTo::Bottom);
     match &actions[0].action {
-        Action::MakeCopyInHand { original, amount } => {
+        Action::MakeConstructedCopyInHand { original, amount } => {
             assert_eq!(*amount, 1);
             let def = crate::content::cards::get_card_definition(original.id);
             assert_eq!(def.card_type, crate::content::cards::CardType::Power);
@@ -3682,6 +3682,40 @@ fn enchiridion_adds_random_zero_cost_power_at_pre_battle() {
 
     state.entities.player.add_relic(relic);
     assert!(get_relic_subscriptions(RelicId::Enchiridion).at_pre_battle);
+}
+
+#[test]
+fn enchiridion_applies_make_temp_card_constructor_reality_before_queue_execution() {
+    let mut state = crate::test_support::blank_test_combat();
+    store::set_powers_for(
+        &mut state,
+        0,
+        vec![Power {
+            power_type: PowerId::MasterRealityPower,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let mut relic = RelicState::new(RelicId::Enchiridion);
+    let actions = enchiridion::at_battle_start(&mut state, &mut relic);
+    let Action::MakeConstructedCopyInHand { original, .. } = &actions[0].action else {
+        panic!("Enchiridion should queue constructed MakeTempCardInHandAction payload");
+    };
+    assert_eq!(
+        original.upgrades, 1,
+        "Java MakeTempCardInHandAction constructor applies Master Reality before the action later executes"
+    );
+
+    store::set_powers_for(&mut state, 0, vec![]);
+    state.queue_action_back(actions[0].action.clone());
+    drain_test_actions(&mut state);
+    assert_eq!(
+        state.zones.hand[0].upgrades, 1,
+        "Removing Master Reality before the queued action executes must not erase the constructor-time upgrade"
+    );
 }
 
 #[test]
