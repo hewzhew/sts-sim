@@ -10062,6 +10062,7 @@ fn ironclad_common_utility_runtime_actions_match_java_use_methods() {
     match &anger_actions[1].action {
         Action::MakeCopyInDiscard { original, amount } => {
             assert_eq!(original.id, CardId::Anger);
+            assert_eq!(original.uuid, 0);
             assert_eq!(original.upgrades, 0);
             assert_eq!(*amount, 1);
         }
@@ -10069,6 +10070,45 @@ fn ironclad_common_utility_runtime_actions_match_java_use_methods() {
             "Anger second action should be MakeTempCardInDiscardAction equivalent, got {other:?}"
         ),
     }
+
+    let mut mutated_anger = CombatCard::new(CardId::Anger, 77);
+    mutated_anger.upgrades = 1;
+    mutated_anger.misc_value = 9;
+    mutated_anger.base_damage_override = Some(21);
+    mutated_anger.cost_modifier = -1;
+    mutated_anger.cost_for_turn = Some(0);
+    mutated_anger.free_to_play_once = true;
+    mutated_anger.base_damage_mut = 99;
+    mutated_anger.base_block_mut = 88;
+    mutated_anger.base_magic_num_mut = 77;
+    mutated_anger.multi_damage = smallvec::smallvec![1, 2, 3];
+    mutated_anger.exhaust_override = Some(true);
+    mutated_anger.retain_override = Some(true);
+    mutated_anger.energy_on_use = 5;
+
+    let mutated_anger_actions = resolve_card_play(CardId::Anger, &state, &mutated_anger, Some(7));
+    let Action::MakeCopyInDiscard { original, amount } = &mutated_anger_actions[1].action else {
+        panic!("Anger should queue a stat-equivalent source copy for MakeTempCardInDiscardAction");
+    };
+    assert_eq!(*amount, 1);
+    assert_eq!(original.uuid, 0);
+    assert_eq!(original.id, CardId::Anger);
+    assert_eq!(original.upgrades, 1);
+    assert_eq!(original.misc_value, 9);
+    assert_eq!(original.base_damage_override, Some(21));
+    assert_eq!(original.cost_modifier, -1);
+    assert_eq!(original.cost_for_turn, Some(0));
+    assert!(original.free_to_play_once);
+    assert_eq!(
+        original.base_damage_mut, 0,
+        "Java Anger queues this.makeStatEquivalentCopy(), not the rendered damage snapshot"
+    );
+    assert_eq!(original.base_block_mut, 0);
+    assert_eq!(original.base_magic_num_mut, 0);
+    assert!(original.multi_damage.is_empty());
+    assert_eq!(original.exhaust_override, None);
+    assert_eq!(original.retain_override, None);
+    assert_eq!(original.energy_on_use, 0);
 
     state.zones.hand = vec![
         CombatCard::new(CardId::Strike, 11),

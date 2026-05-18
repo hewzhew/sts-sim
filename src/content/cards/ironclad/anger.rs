@@ -49,7 +49,7 @@ pub fn anger_play(
 
     actions.push(ActionInfo {
         action: Action::MakeCopyInDiscard {
-            original: Box::new(evaluated),
+            original: Box::new(evaluated.make_stat_equivalent_copy_with_uuid(0)),
             amount: 1,
         },
         insertion_mode: AddTo::Bottom,
