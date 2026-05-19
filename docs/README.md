@@ -9,6 +9,7 @@ This directory is split between current entrypoints and historical notes.
 - [REPOSITORY_MAP.md](REPOSITORY_MAP.md)
 - [LAYER_BOUNDARIES.md](LAYER_BOUNDARIES.md)
 - [TEST_ORACLE_STRATEGY.md](TEST_ORACLE_STRATEGY.md)
+- [CODEX_CLI_RESUME.md](CODEX_CLI_RESUME.md)
 
 Then branch by task:
 

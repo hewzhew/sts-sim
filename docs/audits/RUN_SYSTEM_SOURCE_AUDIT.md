@@ -467,13 +467,22 @@ Source-backed result:
   act ids as empty encounter lists instead of silently falling back to Act 1.
 - Java room creation reads the front of `monsterList` / `eliteMonsterList`;
   `nextRoomTransition()` removes that front entry only when leaving the current
-  MonsterRoom or MonsterRoomElite. Rust still consumes the queue at combat
-  creation through `RunState::next_encounter()` / `next_elite()`, so mid-room
-  save/replay semantics remain open. The CLI/full-run smoke entrypoints no
-  longer hide an exhausted queue by substituting `JawWorm`; an unexpected empty
-  queue is now a hard failure until the room lifecycle is modeled directly.
+  MonsterRoom or MonsterRoomElite. Rust now preserves this boundary in the
+  CLI/full-run smoke entrypoints: combat creation uses
+  `RunState::peek_next_encounter()` / `peek_next_elite()`, while successful
+  map transition away from the current MonsterRoom/MonsterRoomElite calls
+  `RunState::complete_current_room_encounter(...)`.
+- The CLI/full-run smoke entrypoints no longer hide an exhausted queue by
+  substituting `JawWorm`; an unexpected empty queue is a hard failure.
 - The same rule now applies to boss room creation: a missing `bossKey` /
   `boss_list` front is not replaced with `Hexaghost`.
+- Verification:
+  - `cargo test combat_entry_peeks_monster_queue_like_java_room_creation --all-targets`
+  - `cargo test combat_entry_peeks_elite_queue_like_java_room_creation --all-targets`
+  - `cargo test map_transition_consumes_monster_queue_when_leaving_current_room --all-targets`
+  - `cargo test complete_current_room_encounter_consumes_elite_queue_only_for_elite_rooms --all-targets`
+  - `cargo test full_run_smoke --all-targets`
+  - `cargo test --all-targets`
 
 ## Boss Chest Relic Flow Pass
 

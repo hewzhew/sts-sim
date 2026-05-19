@@ -1146,13 +1146,13 @@ fn init_combat(run_state: &mut RunState, current_display: DisplayMode) -> Combat
     let encounter_id = if let Some(room_type) = run_state.map.get_current_room_type() {
         match room_type {
             RoomType::MonsterRoomElite => run_state
-                .next_elite()
+                .peek_next_elite()
                 .expect("elite encounter list unexpectedly empty; do not fake JawWorm"),
             RoomType::MonsterRoomBoss => run_state
                 .next_boss()
                 .expect("boss encounter key unexpectedly missing; do not fake Hexaghost"),
             _ => run_state
-                .next_encounter()
+                .peek_next_encounter()
                 .expect("monster encounter list unexpectedly empty; do not fake JawWorm"),
         }
     } else {

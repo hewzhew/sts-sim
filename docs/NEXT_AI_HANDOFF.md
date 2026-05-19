@@ -19,6 +19,9 @@ any resumed turn, read only:
 Do not re-read broad source trees just to rediscover recent state. Use this file
 to choose the next narrow Java/Rust evidence packet.
 
+For stateless or relay-style CLI sessions, `docs/CODEX_CLI_RESUME.md` contains
+a copy-paste startup prompt that enforces this same narrow resume protocol.
+
 When selecting that packet, prefer the durable indexes:
 
 - `docs/MECHANICS_ACCEPTANCE_STANDARD.md`
@@ -57,6 +60,33 @@ Forbidden:
 - Re-auditing locked mechanisms without an explicit reopen reason.
 
 ## Latest Documentation Checkpoint
+
+Latest code checkpoint:
+
+- Aligned ordinary/elite encounter queue consumption with Java room lifecycle.
+- Java checked:
+  - `D:\rust\cardcrawl\dungeons\AbstractDungeon.java`
+  - `D:\rust\cardcrawl\rooms\MonsterRoom.java`
+  - `D:\rust\cardcrawl\rooms\MonsterRoomElite.java`
+- Rust changed:
+  - `src\state\run.rs`
+  - `src\engine\run_loop.rs`
+  - `src\cli\full_run_smoke\mod.rs`
+  - `src\bin\play\main.rs`
+- Result:
+  - Normal/elite combat creation now peeks the front encounter queue like Java
+    room creation.
+  - Successful map transition away from the current MonsterRoom or
+    MonsterRoomElite now consumes the queued encounter like
+    `AbstractDungeon.nextRoomTransition()`.
+  - Boss room handling remains on the existing boss-key path.
+- Verification:
+  - `cargo test combat_entry_peeks_monster_queue_like_java_room_creation --all-targets` -> `1 passed`
+  - `cargo test combat_entry_peeks_elite_queue_like_java_room_creation --all-targets` -> `1 passed`
+  - `cargo test map_transition_consumes_monster_queue_when_leaving_current_room --all-targets` -> `1 passed`
+  - `cargo test complete_current_room_encounter_consumes_elite_queue_only_for_elite_rooms --all-targets` -> `1 passed`
+  - `cargo test full_run_smoke --all-targets` -> `31 passed`
+  - `cargo test --all-targets` -> `1442 passed`
 
 Latest code checkpoint:
 

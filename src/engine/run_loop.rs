@@ -804,6 +804,7 @@ pub fn tick_run(
                     .travel_to(target_x, target_y, has_flight)
                     .is_ok()
                 {
+                    run_state.complete_current_room_encounter(previous_room_type);
                     run_state.room_mugged = false;
                     run_state.room_smoked = false;
                     run_state.event_state = None;

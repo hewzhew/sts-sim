@@ -573,13 +573,13 @@ fn init_combat(run_state: &mut RunState) -> CombatState {
     let encounter_id = if let Some(room_type) = run_state.map.get_current_room_type() {
         match room_type {
             RoomType::MonsterRoomElite => run_state
-                .next_elite()
+                .peek_next_elite()
                 .expect("elite encounter list unexpectedly empty; do not fake JawWorm"),
             RoomType::MonsterRoomBoss => run_state
                 .next_boss()
                 .expect("boss encounter key unexpectedly missing; do not fake Hexaghost"),
             _ => run_state
-                .next_encounter()
+                .peek_next_encounter()
                 .expect("monster encounter list unexpectedly empty; do not fake JawWorm"),
         }
     } else {
@@ -998,6 +998,88 @@ mod tests {
         assert!(matches!(ctx.engine_state, EngineState::RewardScreen(_)));
         assert!(ctx.combat_state.is_none());
         assert_eq!(ctx.combat_win_count, 1);
+    }
+
+    fn two_room_map(current_room: RoomType, next_room: RoomType) -> crate::map::state::MapState {
+        let mut first = crate::map::node::MapRoomNode::new(0, 0);
+        first.class = Some(current_room);
+        first
+            .edges
+            .insert(crate::map::node::MapEdge::new(0, 0, 0, 1));
+
+        let mut second = crate::map::node::MapRoomNode::new(0, 1);
+        second.class = Some(next_room);
+
+        let mut map = crate::map::state::MapState::new(vec![vec![first], vec![second]]);
+        map.current_x = 0;
+        map.current_y = 0;
+        map
+    }
+
+    #[test]
+    fn combat_entry_peeks_monster_queue_like_java_room_creation() {
+        let mut run_state = RunState::new(42, 0, false, "Ironclad");
+        run_state.map = two_room_map(RoomType::MonsterRoom, RoomType::RestRoom);
+        run_state.monster_list = vec![EncounterId::Cultist, EncounterId::JawWorm];
+
+        let _combat = init_combat(&mut run_state);
+
+        assert_eq!(
+            run_state.monster_list,
+            vec![EncounterId::Cultist, EncounterId::JawWorm],
+            "Java MonsterRoom.onPlayerEntry reads monsterList[0] but does not remove it"
+        );
+    }
+
+    #[test]
+    fn combat_entry_peeks_elite_queue_like_java_room_creation() {
+        let mut run_state = RunState::new(42, 0, false, "Ironclad");
+        run_state.map = two_room_map(RoomType::MonsterRoomElite, RoomType::RestRoom);
+        run_state.elite_monster_list = vec![EncounterId::GremlinNob, EncounterId::Lagavulin];
+
+        let combat = init_combat(&mut run_state);
+
+        assert!(combat.meta.is_elite_fight);
+        assert_eq!(
+            run_state.elite_monster_list,
+            vec![EncounterId::GremlinNob, EncounterId::Lagavulin],
+            "Java MonsterRoomElite.onPlayerEntry reads eliteMonsterList[0] but does not remove it"
+        );
+    }
+
+    #[test]
+    fn map_transition_consumes_monster_queue_when_leaving_current_room() {
+        let mut run_state = RunState::new(42, 0, false, "Ironclad");
+        run_state.map = two_room_map(RoomType::MonsterRoom, RoomType::RestRoom);
+        run_state.monster_list = vec![EncounterId::Cultist, EncounterId::JawWorm];
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        let keep_running = tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        );
+
+        assert!(keep_running);
+        assert!(matches!(engine_state, EngineState::Campfire));
+        assert_eq!(
+            run_state.monster_list,
+            vec![EncounterId::JawWorm],
+            "Java AbstractDungeon.nextRoomTransition removes monsterList[0] when leaving MonsterRoom"
+        );
+    }
+
+    #[test]
+    fn complete_current_room_encounter_consumes_elite_queue_only_for_elite_rooms() {
+        let mut run_state = RunState::new(42, 0, false, "Ironclad");
+        run_state.elite_monster_list = vec![EncounterId::GremlinNob, EncounterId::Lagavulin];
+
+        let removed = run_state.complete_current_room_encounter(Some(RoomType::MonsterRoomElite));
+
+        assert_eq!(removed, Some(EncounterId::GremlinNob));
+        assert_eq!(run_state.elite_monster_list, vec![EncounterId::Lagavulin]);
     }
 
     #[test]

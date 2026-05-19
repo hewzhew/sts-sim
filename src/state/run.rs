@@ -1182,8 +1182,30 @@ impl RunState {
         self.elite_monster_list = el;
     }
 
+    /// Read the next normal encounter from the pre-scheduled list without
+    /// consuming it.
+    ///
+    /// Java `MonsterRoom.onPlayerEntry()` calls
+    /// `getMonsterForRoomCreation()`, which reads `monsterList.get(0)` and
+    /// constructs the encounter. The list entry is removed later by
+    /// `AbstractDungeon.nextRoomTransition()` when leaving the current
+    /// `MonsterRoom`.
+    pub fn peek_next_encounter(&self) -> Option<crate::content::monsters::factory::EncounterId> {
+        self.monster_list.first().copied()
+    }
+
+    /// Read the next elite encounter without consuming it.
+    ///
+    /// Java mirrors normal encounter timing for elites:
+    /// `MonsterRoomElite.onPlayerEntry()` reads the front entry, and
+    /// `nextRoomTransition()` removes it when leaving the elite room.
+    pub fn peek_next_elite(&self) -> Option<crate::content::monsters::factory::EncounterId> {
+        self.elite_monster_list.first().copied()
+    }
+
     /// Pop the next normal encounter from the pre-scheduled list.
-    /// Java: monsterList.remove(0) — consumes from front.
+    /// Java: `monsterList.remove(0)` in `nextRoomTransition()` when leaving a
+    /// `MonsterRoom`.
     pub fn next_encounter(&mut self) -> Option<crate::content::monsters::factory::EncounterId> {
         if self.monster_list.is_empty() {
             None
@@ -1193,11 +1215,29 @@ impl RunState {
     }
 
     /// Pop the next elite encounter from the pre-scheduled list.
+    /// Java: `eliteMonsterList.remove(0)` in `nextRoomTransition()` when
+    /// leaving a `MonsterRoomElite`.
     pub fn next_elite(&mut self) -> Option<crate::content::monsters::factory::EncounterId> {
         if self.elite_monster_list.is_empty() {
             None
         } else {
             Some(self.elite_monster_list.remove(0))
+        }
+    }
+
+    /// Consume the encounter queue for the room being left.
+    ///
+    /// This is intentionally not part of combat creation. Java keeps the queue
+    /// front visible to the room for the whole combat/reward lifecycle and
+    /// removes it only during the next room transition.
+    pub fn complete_current_room_encounter(
+        &mut self,
+        room_type: Option<crate::map::node::RoomType>,
+    ) -> Option<crate::content::monsters::factory::EncounterId> {
+        match room_type {
+            Some(crate::map::node::RoomType::MonsterRoom) => self.next_encounter(),
+            Some(crate::map::node::RoomType::MonsterRoomElite) => self.next_elite(),
+            _ => None,
         }
     }
 
