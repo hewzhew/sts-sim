@@ -10,9 +10,18 @@ This directory is split between current entrypoints and historical notes.
 - [LAYER_BOUNDARIES.md](LAYER_BOUNDARIES.md)
 - [TEST_ORACLE_STRATEGY.md](TEST_ORACLE_STRATEGY.md)
 - [CODEX_CLI_RESUME.md](CODEX_CLI_RESUME.md)
+- [NEXT_AI_HANDOFF.md](NEXT_AI_HANDOFF.md)
 
 Then branch by task:
 
+- LLM controller / demo route:
+  - [LLM_INTEGRATION_HANDOFF.md](LLM_INTEGRATION_HANDOFF.md)
+  - [../tools/llm/README.md](../tools/llm/README.md)
+- Java-source-backed mechanics parity:
+  - [MECHANICS_ACCEPTANCE_STANDARD.md](MECHANICS_ACCEPTANCE_STANDARD.md)
+  - [MECHANICS_AUDIT_LEDGER.md](MECHANICS_AUDIT_LEDGER.md)
+  - [JAVA_SOURCE_MAP.md](JAVA_SOURCE_MAP.md)
+  - [JAVA_MECHANICS_DEBUG_HANDOFF.md](JAVA_MECHANICS_DEBUG_HANDOFF.md)
 - `live_comm` / parity / run archives:
   - [live_comm/README.md](live_comm/README.md)
   - [live_comm/LIVE_COMM_RUNBOOK.md](live_comm/LIVE_COMM_RUNBOOK.md)

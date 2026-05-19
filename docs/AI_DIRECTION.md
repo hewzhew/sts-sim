@@ -3,7 +3,9 @@
 Current answer: this repo is not ready to build an A20H Slay the Spire agent by
 adding smarter bot rules.
 
-The active AI work is frozen to simulator and evaluation infrastructure.
+The active AI work is simulator and evaluation infrastructure, plus
+experimental LLM controller adapters that consume only public observations and
+legal actions.
 
 ## What Can Count As Evidence
 
@@ -39,7 +41,10 @@ comparison point, but it cannot label better long-run decisions.
 4. outcome evaluation from externally supplied policies or random-masked smoke
    runs
 5. scenario fixtures only when their oracle source is clear
-6. after the truth/eval layer is stable, decide whether a small explicit search
+6. LLM controller demos over the public driver contract, with every model action
+   validated by the simulator and recorded as controller behavior, not teacher
+   truth
+7. after the truth/eval layer is stable, decide whether a small explicit search
    module or a full-run learner is worth building
 
 No current module has authority to say a macro decision is good unless the claim
