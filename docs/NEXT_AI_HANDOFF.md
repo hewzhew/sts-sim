@@ -63,6 +63,31 @@ Forbidden:
 
 Latest code checkpoint:
 
+- Added the first LLM controller harness over `full_run_env_driver`.
+- Rust changed:
+  - none
+- Tooling changed:
+  - `tools\llm\llm_full_run_controller.py`
+  - `tools\llm\README.md`
+  - `tools\README.md`
+- Result:
+  - External LLMs can be connected through an OpenAI-compatible
+    `/chat/completions` endpoint using `LLM_API_KEY`, `LLM_BASE_URL`, and
+    `LLM_MODEL`.
+  - The harness reads only public `decision_env_observation` payloads and legal
+    candidates, prompts for strict JSON containing `action_id`, validates the
+    id against the current candidate set, then steps the driver.
+  - `dry_run` emits the prompt without calling a model; `mock` smoke-tests the
+    adapter loop locally.
+  - This is a controller adapter for demos and analysis, not a teacher-label
+    or policy-truth pipeline.
+- Verification:
+  - `python -m py_compile tools\llm\llm_full_run_controller.py`
+  - `python tools\llm\llm_full_run_controller.py --provider dry_run --steps 1 --out tools\artifacts\llm_demo\dry_run.json`
+  - `python tools\llm\llm_full_run_controller.py --provider mock --steps 5 --out tools\artifacts\llm_demo\mock_run.json`
+
+Latest code checkpoint:
+
 - Aligned ordinary/elite encounter queue consumption with Java room lifecycle.
 - Java checked:
   - `D:\rust\cardcrawl\dungeons\AbstractDungeon.java`

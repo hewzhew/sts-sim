@@ -14,6 +14,8 @@
   - coverage dashboard and parsers
 - `learning/`
   - DecisionRecord collection, contract audit, and replay verification only
+- `llm/`
+  - experimental LLM controller adapters over public simulator observations and legal actions
 - `live_comm/`
   - launch scripts, profiles, and operational helpers
 - `manual/`
