@@ -1,6 +1,7 @@
 # Rust (all nested target dirs too)
 /target/
 **/target/
+/target_codex*/
 
 # Python
 **/__pycache__/
