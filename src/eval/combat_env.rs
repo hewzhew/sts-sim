@@ -1,11 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::bot::combat::legal_moves_for_audit;
-use crate::bot::combat::monster_belief::{
+use crate::ai::combat_belief::{
     build_combat_belief_state, CombatBeliefState, MonsterBeliefCertainty,
 };
-use crate::bot::combat::pressure::StatePressureFeatures;
+use crate::ai::combat_pressure::StatePressureFeatures;
 use crate::content::cards::{
     can_play_card, effective_target, exhausts_when_played, get_card_definition, is_ethereal,
     CardTarget, CardType,
@@ -16,6 +15,7 @@ use crate::engine::core::tick_until_stable_turn;
 use crate::engine::targeting;
 use crate::runtime::combat::{CombatCard, CombatPhase, CombatState};
 use crate::runtime::rng::{shuffle_with_random_long, StsRng};
+use crate::sim::combat_legal_actions::legal_moves_for_audit;
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
 
 use crate::testing::fixtures::combat_case::{lower_case, CombatCase};

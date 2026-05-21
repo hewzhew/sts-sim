@@ -1,17 +1,17 @@
 use super::StableFrontierScope;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) struct TurnStateKey(pub(in crate::bot::combat) String);
+pub(crate) struct TurnStateKey(pub(crate) String);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) struct StableOutcomeKey {
+pub(crate) struct StableOutcomeKey {
     scope: StableFrontierScope,
     engine: StableEngineKey,
     payload: StableOutcomePayload,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) enum StableEngineKey {
+pub(crate) enum StableEngineKey {
     CombatReady,
     CombatProcessing,
     PendingChoice(StablePendingChoiceKey),
@@ -28,7 +28,7 @@ pub(in crate::bot::combat) enum StableEngineKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) enum StableOutcomePayload {
+pub(crate) enum StableOutcomePayload {
     Combat {
         turn: StableTurnKey,
         player: StableCombatPlayerKey,
@@ -47,7 +47,7 @@ pub(in crate::bot::combat) enum StableOutcomePayload {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) struct StableTurnKey {
+pub(crate) struct StableTurnKey {
     pub turn_count: u32,
     pub current_phase: String,
     pub energy: u8,
@@ -63,7 +63,7 @@ pub(in crate::bot::combat) struct StableTurnKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) struct StableCombatPlayerKey {
+pub(crate) struct StableCombatPlayerKey {
     pub max_hp: i32,
     pub facing_left: bool,
     pub orbs: String,
@@ -75,7 +75,7 @@ pub(in crate::bot::combat) struct StableCombatPlayerKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) struct StableZonesKey {
+pub(crate) struct StableZonesKey {
     pub draw: Vec<String>,
     pub hand: Vec<String>,
     pub discard: Vec<String>,
@@ -84,7 +84,7 @@ pub(in crate::bot::combat) struct StableZonesKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) struct StablePostcombatPlayerKey {
+pub(crate) struct StablePostcombatPlayerKey {
     pub current_hp: i32,
     pub max_hp: i32,
     pub gold: i32,
@@ -93,7 +93,7 @@ pub(in crate::bot::combat) struct StablePostcombatPlayerKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) struct StableMetaKey {
+pub(crate) struct StableMetaKey {
     pub player_class: String,
     pub ascension_level: u8,
     pub is_boss_fight: bool,
@@ -102,21 +102,21 @@ pub(in crate::bot::combat) struct StableMetaKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) enum StableMetaChangeKey {
+pub(crate) enum StableMetaChangeKey {
     AddCardToMasterDeck(String),
     ModifyCardMisc { card_uuid: u32, amount: i32 },
     UpgradeMasterDeckCard { card_uuid: u32 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) struct StablePostcombatRuntimeKey {
+pub(crate) struct StablePostcombatRuntimeKey {
     pub pending_rewards: Vec<StableRewardItemKey>,
     pub combat_mugged: bool,
     pub combat_smoked: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) struct StableRewardKey {
+pub(crate) struct StableRewardKey {
     pub screen_context: String,
     pub skippable: bool,
     pub items: Vec<StableRewardItemKey>,
@@ -124,7 +124,7 @@ pub(in crate::bot::combat) struct StableRewardKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) enum StableRewardItemKey {
+pub(crate) enum StableRewardItemKey {
     Gold(i32),
     StolenGold(i32),
     Card(Vec<StableRewardCardKey>),
@@ -135,13 +135,13 @@ pub(in crate::bot::combat) enum StableRewardItemKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) struct StableRewardCardKey {
+pub(crate) struct StableRewardCardKey {
     pub id: String,
     pub upgrades: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) struct StableShopKey {
+pub(crate) struct StableShopKey {
     pub purge_cost: i32,
     pub purge_available: bool,
     pub cards: Vec<StableShopRowKey>,
@@ -150,7 +150,7 @@ pub(in crate::bot::combat) struct StableShopKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) struct StableShopRowKey {
+pub(crate) struct StableShopRowKey {
     pub id: String,
     pub price: i32,
     pub can_buy: bool,
@@ -158,7 +158,7 @@ pub(in crate::bot::combat) struct StableShopRowKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) struct StableRunPendingChoiceKey {
+pub(crate) struct StableRunPendingChoiceKey {
     pub min_choices: usize,
     pub max_choices: usize,
     pub reason: String,
@@ -166,7 +166,7 @@ pub(in crate::bot::combat) struct StableRunPendingChoiceKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) enum StableRunPendingReturnKey {
+pub(crate) enum StableRunPendingReturnKey {
     Reward(StableRewardKey),
     TreasureRoom(StableTreasureChestKey),
     Campfire,
@@ -180,7 +180,7 @@ pub(in crate::bot::combat) enum StableRunPendingReturnKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) struct StableEventCombatKey {
+pub(crate) struct StableEventCombatKey {
     pub encounter_key: String,
     pub reward_allowed: bool,
     pub no_cards_in_rewards: bool,
@@ -190,25 +190,25 @@ pub(in crate::bot::combat) struct StableEventCombatKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) struct StableTreasureChestKey {
+pub(crate) struct StableTreasureChestKey {
     pub size: String,
     pub base_relic_tier: String,
     pub gold_reward: Option<i32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) enum StablePostCombatReturnKey {
+pub(crate) enum StablePostCombatReturnKey {
     EventRoom,
     MapNavigation,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) struct StableBossRelicKey {
+pub(crate) struct StableBossRelicKey {
     pub relics: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(in crate::bot::combat) enum StablePendingChoiceKey {
+pub(crate) enum StablePendingChoiceKey {
     GridSelect {
         source_pile: &'static str,
         min_cards: u8,
@@ -240,13 +240,13 @@ pub(in crate::bot::combat) enum StablePendingChoiceKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::bot::combat) enum StableChoiceCandidateKey {
+pub(crate) enum StableChoiceCandidateKey {
     Card(String),
     Ref { prefix: &'static str, uuid: u32 },
 }
 
 impl StableOutcomeKey {
-    pub(in crate::bot::combat::turn_state_key) fn new(
+    pub(super) fn new(
         scope: StableFrontierScope,
         engine: StableEngineKey,
         payload: StableOutcomePayload,
@@ -259,7 +259,7 @@ impl StableOutcomeKey {
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(in crate::bot::combat::turn_state_key) fn diagnostic_string(&self) -> String {
+    pub(super) fn diagnostic_string(&self) -> String {
         match &self.payload {
             StableOutcomePayload::Combat {
                 turn,

@@ -13,14 +13,14 @@ use crate::state::EngineState;
 
 use memo::render_state_key;
 use stable::build_stable_outcome_key;
-pub(super) use types::{StableOutcomeKey, TurnStateKey};
+pub(crate) use types::{StableOutcomeKey, TurnStateKey};
 
-pub(super) fn turn_state_key(engine: &EngineState, combat: &CombatState) -> TurnStateKey {
+pub(crate) fn turn_state_key(engine: &EngineState, combat: &CombatState) -> TurnStateKey {
     TurnStateKey(render_state_key(engine, combat, true, true, true, true))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn stable_outcome_key(engine: &EngineState, combat: &CombatState) -> StableOutcomeKey {
+pub(crate) fn stable_outcome_key(engine: &EngineState, combat: &CombatState) -> StableOutcomeKey {
     debug_assert_ne!(
         stable_frontier_scope(engine, combat),
         StableFrontierScope::Unstable,
@@ -29,7 +29,7 @@ pub(super) fn stable_outcome_key(engine: &EngineState, combat: &CombatState) -> 
     diagnostic_outcome_key(engine, combat)
 }
 
-pub(super) fn stable_dominance_bucket_key(
+pub(crate) fn stable_dominance_bucket_key(
     engine: &EngineState,
     combat: &CombatState,
 ) -> Option<StableOutcomeKey> {

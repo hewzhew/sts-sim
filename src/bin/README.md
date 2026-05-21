@@ -18,7 +18,7 @@ Supporting module ownership for these binaries now lives in:
 
 - `sts_simulator::fixtures`
   - scenario and author/start-spec inputs
-- `sts_simulator::bot::harness`
+- `sts_simulator::eval::combat_env`
   - combat env surfaces for explicit external action selection
 - `crate::testing::harness`
   - integration-side analysis helpers consumed internally by app-layer harnesses

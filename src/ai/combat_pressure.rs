@@ -1,6 +1,6 @@
 use crate::runtime::combat::CombatState;
 
-use super::monster_belief::build_combat_belief_state;
+use super::combat_belief::build_combat_belief_state;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct StatePressureFeatures {

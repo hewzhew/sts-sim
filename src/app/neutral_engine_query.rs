@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::bot::combat::legal_moves_for_audit;
 use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
 use crate::runtime::combat::CombatState;
+use crate::sim::combat_legal_actions::legal_moves_for_audit;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 
