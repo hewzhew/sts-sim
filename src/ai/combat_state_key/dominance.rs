@@ -1,7 +1,17 @@
-use super::*;
+use crate::runtime::combat::{CombatCard, CombatState, MonsterEntity, Power};
+use crate::state::core::{EngineState, PendingChoice};
 
-pub(super) fn dominance_bucket_key(engine: &EngineState, combat: &CombatState) -> String {
-    format!(
+use super::types::CombatDominanceKey;
+
+/// Exact in-combat bucket used by Combat Search V2 for transposition and
+/// resource dominance pruning. This is stricter than `stable_outcome_key`:
+/// current HP/block are intentionally left out for dominance comparison, but
+/// card instances, queue, monster runtime, powers, potions, and RNG remain in.
+pub(crate) fn combat_dominance_bucket_key(
+    engine: &EngineState,
+    combat: &CombatState,
+) -> CombatDominanceKey {
+    CombatDominanceKey(format!(
         "engine:{}|turn:{}|phase:{:?}|energy:{}|player:{}|zones:{}|monsters:{}|powers:{}|potions:{}|queue:{}|rng:{:?}",
         engine_key(engine),
         combat.turn.turn_count,
@@ -14,7 +24,7 @@ pub(super) fn dominance_bucket_key(engine: &EngineState, combat: &CombatState) -
         potions_key(combat),
         queue_key(combat),
         combat.rng.pool,
-    )
+    ))
 }
 
 fn engine_key(engine: &EngineState) -> String {
@@ -33,7 +43,8 @@ fn pending_choice_key(choice: &PendingChoice) -> String {
 fn player_non_hp_key(combat: &CombatState) -> String {
     let player = &combat.entities.player;
     format!(
-        "stance:{:?}|orbs:{:?}|relics:{}|energy_master:{}|gold:{}",
+        "max_hp:{}|stance:{:?}|orbs:{:?}|relics:{}|energy_master:{}|gold:{}",
+        player.max_hp,
         player.stance,
         player.orbs,
         player
@@ -88,6 +99,19 @@ fn card_key(card: &CombatCard) -> String {
         card.cost_for_turn,
         card.free_to_play_once
     )
+}
+
+fn target_label(combat: &CombatState, target: Option<usize>) -> String {
+    match target {
+        None => "none".to_string(),
+        Some(entity_id) => combat
+            .entities
+            .monsters
+            .iter()
+            .position(|monster| monster.id == entity_id)
+            .map(|slot| format!("monster_slot:{slot}"))
+            .unwrap_or_else(|| format!("entity:{entity_id}")),
+    }
 }
 
 fn monsters_key(combat: &CombatState) -> String {

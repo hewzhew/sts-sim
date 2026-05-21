@@ -164,8 +164,8 @@ fn compare_node_terminal(left: &SearchNode, right: &SearchNode) -> Ordering {
 }
 
 pub(super) fn is_dominated(
-    dominance: &mut HashMap<String, Vec<ResourceVector>>,
-    key: String,
+    dominance: &mut HashMap<CombatDominanceKey, Vec<ResourceVector>>,
+    key: CombatDominanceKey,
     candidate: ResourceVector,
 ) -> bool {
     let bucket = dominance.entry(key).or_default();

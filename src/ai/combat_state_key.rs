@@ -1,3 +1,4 @@
+mod dominance;
 mod memo;
 mod monster;
 mod pending_choice;
@@ -11,9 +12,17 @@ use crate::engine::core::is_smoke_escape_stable_boundary;
 use crate::runtime::combat::CombatState;
 use crate::state::EngineState;
 
+use dominance::combat_dominance_bucket_key;
 use memo::render_state_key;
 use stable::build_stable_outcome_key;
-pub(crate) use types::{StableOutcomeKey, TurnStateKey};
+pub(crate) use types::{CombatDominanceKey, StableOutcomeKey, TurnStateKey};
+
+pub(crate) fn combat_dominance_key(
+    engine: &EngineState,
+    combat: &CombatState,
+) -> CombatDominanceKey {
+    combat_dominance_bucket_key(engine, combat)
+}
 
 pub(crate) fn turn_state_key(engine: &EngineState, combat: &CombatState) -> TurnStateKey {
     TurnStateKey(render_state_key(engine, combat, true, true, true, true))

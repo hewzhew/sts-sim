@@ -18,7 +18,7 @@ pub fn run_combat_search_v2_with_stepper(
     let deadline = config.wall_time.map(|duration| started + duration);
     let mut stats = CombatSearchV2Stats::default();
     let initial_hp = combat.entities.player.current_hp;
-    let mut dominance: HashMap<String, Vec<ResourceVector>> = HashMap::new();
+    let mut dominance: HashMap<CombatDominanceKey, Vec<ResourceVector>> = HashMap::new();
     let mut frontier = BinaryHeap::new();
     let mut next_sequence_id = 0u64;
     let root = SearchNode {
@@ -81,7 +81,7 @@ pub fn run_combat_search_v2_with_stepper(
             continue;
         }
 
-        let dominance_key = dominance_bucket_key(&node.engine, &node.combat);
+        let dominance_key = combat_dominance_key(&node.engine, &node.combat);
         let resource = node.resource_vector();
         if is_dominated(&mut dominance, dominance_key, resource) {
             stats.dominance_prunes = stats.dominance_prunes.saturating_add(1);
