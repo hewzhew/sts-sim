@@ -171,9 +171,8 @@ src/runtime
 src/engine
 src/content
 src/state
-src/protocol
-src/projection
-src/semantics
+src/sim
+src/runtime/monster_move.rs
 src/testing
 src/ai
 ```

@@ -1,5 +1,5 @@
 use crate::runtime::combat::{CombatState, MonsterEntity};
-use crate::semantics::combat::{EffectStrength, MonsterMoveSpec, MonsterTurnPlan};
+use crate::runtime::monster_move::{EffectStrength, MonsterMoveSpec, MonsterTurnPlan};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VisibleIntentKind {

@@ -1,7 +1,7 @@
 use crate::content::monsters::{resolve_monster_turn_plan, EnemyId};
 use crate::content::relics::RelicId;
 use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
-use crate::semantics::combat::{EffectStrength, MonsterMoveSpec};
+use crate::runtime::monster_move::{EffectStrength, MonsterMoveSpec};
 use crate::sim::combat_projection::MonsterMovePreview;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,7 +221,7 @@ fn is_public_plan(combat: &CombatState, monster: &MonsterEntity) -> bool {
 fn preview_for_plan(
     combat: &CombatState,
     monster: &MonsterEntity,
-    plan: &crate::semantics::combat::MonsterTurnPlan,
+    plan: &crate::runtime::monster_move::MonsterTurnPlan,
 ) -> MonsterMovePreview {
     let visible_damage = if combat.monster_has_protocol_visible_intent(monster.id) {
         let observed = combat

@@ -260,7 +260,7 @@ pub enum Action {
         source: EntityId,
         target: EntityId,
         base_damage: i32,
-        damage_kind: crate::semantics::combat::DamageKind,
+        damage_kind: crate::runtime::monster_move::DamageKind,
     },
     /// Canonical thief strike side effect.
     ///
@@ -909,8 +909,8 @@ pub enum Action {
     SetMonsterMove {
         monster_id: EntityId,
         next_move_byte: u8,
-        planned_steps: crate::semantics::combat::MonsterTurnSteps,
-        planned_visible_spec: Option<crate::semantics::combat::MonsterMoveSpec>,
+        planned_steps: crate::runtime::monster_move::MonsterTurnSteps,
+        planned_visible_spec: Option<crate::runtime::monster_move::MonsterMoveSpec>,
     },
     UpdateMonsterRuntime {
         monster_id: EntityId,
@@ -955,7 +955,7 @@ pub enum Action {
     SpawnMonsterSmart {
         monster_id: crate::content::monsters::EnemyId,
         logical_position: i32,
-        hp: crate::semantics::combat::SpawnHpSpec,
+        hp: crate::runtime::monster_move::SpawnHpSpec,
         protocol_draw_x: Option<i32>,
         is_minion: bool,
     },
@@ -963,7 +963,7 @@ pub enum Action {
         collector_id: EntityId,
         slot: u8,
         logical_position: i32,
-        hp: crate::semantics::combat::SpawnHpSpec,
+        hp: crate::runtime::monster_move::SpawnHpSpec,
         protocol_draw_x: Option<i32>,
     },
     SpawnGremlinLeaderMinion {
@@ -971,14 +971,14 @@ pub enum Action {
         slot: u8,
         monster_id: crate::content::monsters::EnemyId,
         logical_position: i32,
-        hp: crate::semantics::combat::SpawnHpSpec,
+        hp: crate::runtime::monster_move::SpawnHpSpec,
         protocol_draw_x: Option<i32>,
     },
     SpawnReptomancerDagger {
         reptomancer_id: EntityId,
         slot: u8,
         logical_position: i32,
-        hp: crate::semantics::combat::SpawnHpSpec,
+        hp: crate::runtime::monster_move::SpawnHpSpec,
         protocol_draw_x: Option<i32>,
     },
     SpawnEncounter {

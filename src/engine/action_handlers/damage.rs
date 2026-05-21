@@ -686,12 +686,20 @@ pub fn handle_flechettes(info: crate::runtime::action::DamageInfo, state: &mut C
     }
 }
 
-fn damage_type(kind: crate::semantics::combat::DamageKind) -> crate::runtime::action::DamageType {
+fn damage_type(
+    kind: crate::runtime::monster_move::DamageKind,
+) -> crate::runtime::action::DamageType {
     match kind {
-        crate::semantics::combat::DamageKind::Normal => crate::runtime::action::DamageType::Normal,
-        crate::semantics::combat::DamageKind::Thorns => crate::runtime::action::DamageType::Thorns,
-        crate::semantics::combat::DamageKind::HpLoss => crate::runtime::action::DamageType::HpLoss,
-        crate::semantics::combat::DamageKind::Unknown => panic!("monster attack kind unknown"),
+        crate::runtime::monster_move::DamageKind::Normal => {
+            crate::runtime::action::DamageType::Normal
+        }
+        crate::runtime::monster_move::DamageKind::Thorns => {
+            crate::runtime::action::DamageType::Thorns
+        }
+        crate::runtime::monster_move::DamageKind::HpLoss => {
+            crate::runtime::action::DamageType::HpLoss
+        }
+        crate::runtime::monster_move::DamageKind::Unknown => panic!("monster attack kind unknown"),
     }
 }
 
@@ -704,7 +712,7 @@ pub fn handle_monster_attack(
     source: usize,
     target: usize,
     base_damage: i32,
-    damage_kind: crate::semantics::combat::DamageKind,
+    damage_kind: crate::runtime::monster_move::DamageKind,
     state: &mut CombatState,
 ) {
     handle_damage(
@@ -714,7 +722,10 @@ pub fn handle_monster_attack(
             base: base_damage,
             output: base_damage,
             damage_type: damage_type(damage_kind),
-            is_modified: !matches!(damage_kind, crate::semantics::combat::DamageKind::Normal),
+            is_modified: !matches!(
+                damage_kind,
+                crate::runtime::monster_move::DamageKind::Normal
+            ),
         },
         state,
     );
@@ -1422,7 +1433,7 @@ pub fn handle_gain_block_random_monster(source: usize, amount: i32, state: &mut 
             m.id != source
                 && !matches!(
                     crate::content::monsters::resolve_monster_turn_plan(state, m).summary_spec(),
-                    crate::semantics::combat::MonsterMoveSpec::Escape
+                    crate::runtime::monster_move::MonsterMoveSpec::Escape
                 )
                 && !m.is_dying
         })
@@ -1574,7 +1585,7 @@ mod tests {
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::action::{DamageInfo, DamageType};
     use crate::runtime::combat::{CombatCard, Power, PowerPayload};
-    use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
+    use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
     use crate::test_support::{blank_test_combat, test_monster};
 
     fn split_power() -> Power {

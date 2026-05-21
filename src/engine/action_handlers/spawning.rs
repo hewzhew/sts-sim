@@ -7,7 +7,7 @@
 
 use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::CombatState;
-use crate::semantics::combat::{SpawnHpSpec, SpawnHpValue};
+use crate::runtime::monster_move::{SpawnHpSpec, SpawnHpValue};
 
 fn normalize_monster_slots(state: &mut CombatState) {
     let monster_ids: Vec<_> = state
@@ -643,8 +643,8 @@ pub fn handle_roll_monster_move(monster_id: usize, state: &mut CombatState) {
 pub fn handle_set_monster_move(
     monster_id: usize,
     next_move_byte: u8,
-    planned_steps: crate::semantics::combat::MonsterTurnSteps,
-    planned_visible_spec: Option<crate::semantics::combat::MonsterMoveSpec>,
+    planned_steps: crate::runtime::monster_move::MonsterTurnSteps,
+    planned_visible_spec: Option<crate::runtime::monster_move::MonsterMoveSpec>,
     state: &mut CombatState,
 ) {
     let mut updated_monster_id = None;

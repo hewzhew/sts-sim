@@ -13,7 +13,7 @@ use crate::runtime::combat::{
     SpireShieldRuntimeState, SpireSpearRuntimeState, ThiefRuntimeState, TimeEaterRuntimeState,
     TransientRuntimeState, WrithingMassRuntimeState,
 };
-use crate::semantics::combat::{
+use crate::runtime::monster_move::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DebuffSpec, HealStep,
     MonsterMoveSpec, MonsterTurnSteps, MoveStep, RandomBlockStep, RemovePowerStep, SpawnHpValue,
     SpawnMonsterStep, StealGoldStep, UpgradeCardsStep, UtilityStep,

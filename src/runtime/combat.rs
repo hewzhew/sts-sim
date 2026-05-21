@@ -2,7 +2,7 @@ use crate::content::cards::CardId;
 use crate::content::relics::RelicState;
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
-use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan};
+use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan};
 use crate::state::selection::{DomainEvent, EngineDiagnostic};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
@@ -1008,13 +1008,13 @@ impl MonsterEntity {
         self.move_state.planned_move_id = move_id;
     }
 
-    pub fn set_planned_steps(&mut self, steps: crate::semantics::combat::MonsterTurnSteps) {
+    pub fn set_planned_steps(&mut self, steps: crate::runtime::monster_move::MonsterTurnSteps) {
         self.move_state.planned_steps = Some(steps);
     }
 
     pub fn set_planned_visible_spec(
         &mut self,
-        visible_spec: Option<crate::semantics::combat::MonsterMoveSpec>,
+        visible_spec: Option<crate::runtime::monster_move::MonsterMoveSpec>,
     ) {
         self.move_state.planned_visible_spec = visible_spec;
     }
@@ -1041,8 +1041,8 @@ impl MonsterEntity {
 pub struct MonsterMoveState {
     pub planned_move_id: u8,
     pub history: VecDeque<u8>,
-    pub planned_steps: Option<crate::semantics::combat::MonsterTurnSteps>,
-    pub planned_visible_spec: Option<crate::semantics::combat::MonsterMoveSpec>,
+    pub planned_steps: Option<crate::runtime::monster_move::MonsterTurnSteps>,
+    pub planned_visible_spec: Option<crate::runtime::monster_move::MonsterMoveSpec>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

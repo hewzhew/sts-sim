@@ -31,8 +31,8 @@ This file is the current structure blueprint for the repo.
    - `src/engine/`
 3. content semantics
    - `src/content/`
-4. truth-side semantic and preview layers
-   - `src/semantics/`
+4. truth-side move-plan and preview layers
+   - `src/runtime/monster_move.rs`
    - `src/sim/`
 5. run and reward flow
    - `src/rewards/`
@@ -89,7 +89,7 @@ This path does not contain a trusted policy learner.
 - `src/engine/` - `core`
 - `src/content/` - `core`
 - `src/state/` - `core`
-- `src/semantics/` - `core`
+- `src/runtime/monster_move.rs` - `core`
 - `src/sim/` - `core` and AI-facing simulator views
 - `src/testing/` - `integration`
 - `src/bin/` - `integration` entrypoints and workbenches

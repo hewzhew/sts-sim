@@ -798,37 +798,37 @@ fn build_potion_observations(
 
 fn build_intent_payload(
     monster: &crate::runtime::combat::MonsterEntity,
-    summary_spec: &crate::semantics::combat::MonsterMoveSpec,
+    summary_spec: &crate::runtime::monster_move::MonsterMoveSpec,
 ) -> CombatObservationIntentPayload {
     let attack = summary_spec.attack();
     let damage_per_hit = attack.map(|spec| spec.base_damage).unwrap_or(0);
     let hits = attack.map(|spec| spec.hits as i32).unwrap_or(0);
     CombatObservationIntentPayload {
         kind: match summary_spec {
-            crate::semantics::combat::MonsterMoveSpec::Attack(_) => "attack",
-            crate::semantics::combat::MonsterMoveSpec::AttackAddCard(_, _) => "attack_add_card",
-            crate::semantics::combat::MonsterMoveSpec::AttackUpgradeCards(_, _) => {
+            crate::runtime::monster_move::MonsterMoveSpec::Attack(_) => "attack",
+            crate::runtime::monster_move::MonsterMoveSpec::AttackAddCard(_, _) => "attack_add_card",
+            crate::runtime::monster_move::MonsterMoveSpec::AttackUpgradeCards(_, _) => {
                 "attack_upgrade_cards"
             }
-            crate::semantics::combat::MonsterMoveSpec::AttackBuff(_, _) => "attack_buff",
-            crate::semantics::combat::MonsterMoveSpec::AttackSustain(_) => "attack_sustain",
-            crate::semantics::combat::MonsterMoveSpec::AttackDebuff(_, _) => "attack_debuff",
-            crate::semantics::combat::MonsterMoveSpec::AttackDefend(_, _) => "attack_defend",
-            crate::semantics::combat::MonsterMoveSpec::AddCard(_) => "add_card",
-            crate::semantics::combat::MonsterMoveSpec::Buff(_) => "buff",
-            crate::semantics::combat::MonsterMoveSpec::Debuff(_) => "debuff",
-            crate::semantics::combat::MonsterMoveSpec::StrongDebuff(_) => "strong_debuff",
-            crate::semantics::combat::MonsterMoveSpec::Defend(_) => "defend",
-            crate::semantics::combat::MonsterMoveSpec::DefendDebuff(_, _) => "defend_debuff",
-            crate::semantics::combat::MonsterMoveSpec::DefendBuff(_, _) => "defend_buff",
-            crate::semantics::combat::MonsterMoveSpec::Heal(_) => "heal",
-            crate::semantics::combat::MonsterMoveSpec::Escape => "escape",
-            crate::semantics::combat::MonsterMoveSpec::Magic => "magic",
-            crate::semantics::combat::MonsterMoveSpec::Sleep => "sleep",
-            crate::semantics::combat::MonsterMoveSpec::Stun => "stun",
-            crate::semantics::combat::MonsterMoveSpec::Debug => "debug",
-            crate::semantics::combat::MonsterMoveSpec::None => "none",
-            crate::semantics::combat::MonsterMoveSpec::Unknown => "unknown",
+            crate::runtime::monster_move::MonsterMoveSpec::AttackBuff(_, _) => "attack_buff",
+            crate::runtime::monster_move::MonsterMoveSpec::AttackSustain(_) => "attack_sustain",
+            crate::runtime::monster_move::MonsterMoveSpec::AttackDebuff(_, _) => "attack_debuff",
+            crate::runtime::monster_move::MonsterMoveSpec::AttackDefend(_, _) => "attack_defend",
+            crate::runtime::monster_move::MonsterMoveSpec::AddCard(_) => "add_card",
+            crate::runtime::monster_move::MonsterMoveSpec::Buff(_) => "buff",
+            crate::runtime::monster_move::MonsterMoveSpec::Debuff(_) => "debuff",
+            crate::runtime::monster_move::MonsterMoveSpec::StrongDebuff(_) => "strong_debuff",
+            crate::runtime::monster_move::MonsterMoveSpec::Defend(_) => "defend",
+            crate::runtime::monster_move::MonsterMoveSpec::DefendDebuff(_, _) => "defend_debuff",
+            crate::runtime::monster_move::MonsterMoveSpec::DefendBuff(_, _) => "defend_buff",
+            crate::runtime::monster_move::MonsterMoveSpec::Heal(_) => "heal",
+            crate::runtime::monster_move::MonsterMoveSpec::Escape => "escape",
+            crate::runtime::monster_move::MonsterMoveSpec::Magic => "magic",
+            crate::runtime::monster_move::MonsterMoveSpec::Sleep => "sleep",
+            crate::runtime::monster_move::MonsterMoveSpec::Stun => "stun",
+            crate::runtime::monster_move::MonsterMoveSpec::Debug => "debug",
+            crate::runtime::monster_move::MonsterMoveSpec::None => "none",
+            crate::runtime::monster_move::MonsterMoveSpec::Unknown => "unknown",
         }
         .to_string(),
         move_id: monster.planned_move_id(),

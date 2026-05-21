@@ -6,10 +6,17 @@ pub mod engine;
 mod events;
 pub mod map;
 pub mod runtime;
-mod semantics;
 mod shop;
 pub mod sim;
 pub mod state;
+
+// Backward-compatible crate-private path for existing monster content. The
+// actual move-plan types live with runtime combat state now.
+mod semantics {
+    pub mod combat {
+        pub use crate::runtime::monster_move::*;
+    }
+}
 
 // Integration layers around the runtime path.
 pub mod ai;

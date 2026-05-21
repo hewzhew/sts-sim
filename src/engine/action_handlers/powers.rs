@@ -233,7 +233,7 @@ fn monster_has_java_attack_intent_base_damage(
         .is_some_and(|steps| {
             steps
                 .iter()
-                .any(|step| matches!(step, crate::semantics::combat::MoveStep::Attack(_)))
+                .any(|step| matches!(step, crate::runtime::monster_move::MoveStep::Attack(_)))
         })
 }
 
@@ -838,7 +838,7 @@ mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
     use crate::runtime::combat::{CombatCard, Power, QueuedCardPlay, QueuedCardSource};
-    use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
+    use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
     use crate::test_support::blank_test_combat;
 
     #[test]

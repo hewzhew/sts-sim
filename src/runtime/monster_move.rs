@@ -3,6 +3,11 @@ use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use smallvec::{smallvec, SmallVec};
 
+/// Runtime representation of a monster's selected move.
+///
+/// This is a core combat type, not a separate strategy/semantic layer. Monster
+/// content produces these plans; runtime actions store and execute them; search
+/// and observation code may project them into public intent summaries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DamageKind {
     Normal,

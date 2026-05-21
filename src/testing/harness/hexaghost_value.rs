@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::content::monsters::{EnemyId, MonsterBehavior};
 use crate::content::powers::store;
 use crate::runtime::combat::{CombatState, MonsterEntity, PowerId};
-use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan};
+use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan};
 use crate::state::core::EngineState;
 
 const MAX_PROJECTED_WINDOWS: usize = 9;

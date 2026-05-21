@@ -1194,7 +1194,7 @@ fn monster_has_java_attack_intent_for_fear_no_evil(state: &CombatState, target: 
                     .as_ref()
                     .is_some_and(|steps| {
                         steps.iter().any(|step| {
-                            matches!(step, crate::semantics::combat::MoveStep::Attack(_))
+                            matches!(step, crate::runtime::monster_move::MoveStep::Attack(_))
                         })
                     })
         })

@@ -7,7 +7,6 @@ This file defines the hard dependency direction for `src/`.
 - `core`
   - runtime truth and game semantics
   - `src/runtime/`
-  - `src/semantics/`
   - `src/content/`
   - `src/core/`
   - `src/engine/`
@@ -43,8 +42,9 @@ This file defines the hard dependency direction for `src/`.
   - `runtime::action`
   - `runtime::combat`
   - `runtime::rng`
-- `semantics`
-  - explicit truth-side action and move specs derived from engine/runtime state
+- `runtime::monster_move`
+  - runtime monster move-plan structs used by content, action execution, and
+    AI-facing projections
 - `sim`
   - AI-facing simulator views, legal action helpers, and projection helpers
 - `fixtures`
