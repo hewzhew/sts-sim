@@ -8,7 +8,6 @@ This file defines the hard dependency direction for `src/`.
   - runtime truth and game semantics
   - `src/runtime/`
   - `src/semantics/`
-  - `src/projection/`
   - `src/content/`
   - `src/core/`
   - `src/engine/`
@@ -16,15 +15,12 @@ This file defines the hard dependency direction for `src/`.
   - `src/rewards/`
   - `src/state/`
 - `integration`
-  - protocol mapping, replay, sync, fixtures, and analysis helpers around the runtime
-  - `src/diff/`
-  - `src/protocol/`
+  - fixture import, eval surfaces, and analysis helpers around the runtime
   - `src/testing/`
-  - `src/verification/`
+  - `src/eval/`
 - `app`
   - CLI, coverage, diagnostics, and higher-level workbenches that consume core/integration
-  - `src/bot/`
-  - `src/cli/`
+  - `src/app/`
   - `src/bin/`
 
 ## Allowed Dependency Direction
@@ -49,40 +45,29 @@ This file defines the hard dependency direction for `src/`.
   - `runtime::rng`
 - `semantics`
   - explicit truth-side action and move specs derived from engine/runtime state
-- `projection`
-  - preview/audit views derived from truth-side specs
+- `sim`
+  - AI-facing simulator views, legal action helpers, and projection helpers
 - `fixtures`
   - integration-only fixture/spec assembly
   - exported from `lib.rs` as `sts_simulator::fixtures`
 - `testing::harness`
   - integration-side analysis helpers
   - currently `hexaghost_value`
-- `bot::harness`
-  - app-layer combat env smoke surfaces
-  - `combat_env`
-- `bot::coverage_signatures`
-  - bot-side shared signature extraction for coverage/curiosity and live combat logging
-- `cli::coverage_tools`
-  - offline replay/live-comm coverage record extraction and report output for devtool flows
-- `diff::protocol`
-  - thin protocol-facing facade over mapping, parsing, and snapshot shaping
-- `diff::replay`
-  - thin facade over replay execution, inspection, and comparator surfaces
-- `diff::state_sync`
-  - thin facade over protocol -> runtime state construction and sync
-  - must behave as a strict importer for migrated `runtime_state` slices, not as
-    a shadow-state repair layer
-- `verification`
-  - integration-side facade for replay/reconstruction consumers that should not
-    reach into `diff::*` internals directly
-  - current first slice: `verification::combat`
-- `protocol`
-  - integration-side Java/protocol adapter facade
-  - `protocol::java`
+- `testing::protocol`
+  - private Java/protocol fixture metadata parser
+- `testing::state_sync`
+  - private fixture importer from protocol/live snapshots into runtime combat state
+- `testing::replay_support`
+  - compatibility helpers for old fixture imports only
+- `app::decision_env`
+  - app-facing decision environment contract
+- `live_comm`
+  - legacy external bridge tooling; fixture capture only unless rebuilt under
+    `docs/live_comm/LEGACY_FIXTURE_ONLY.md`
 
 ## Enforcement
 
-- `tests/layer_boundaries.rs`
-  - blocks `core -> integration/app`
-  - blocks `integration -> app`
+- no active boundary test is currently checked in
+- a future boundary test should block `core -> integration/app` and
+  `integration -> app`
 - Any new exception should be treated as a structural regression, not as a casual import choice.

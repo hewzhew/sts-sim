@@ -59,8 +59,8 @@ manually writing exact expected values first.
 
 Examples:
 
-- replay parity
-- live-comm parity checks
+- reduced replay parity from checked-in fixtures
+- historical live-comm parity checks
 
 Use this for:
 
@@ -70,8 +70,10 @@ Use this for:
 
 Primary entrypoints:
 
-- `tests/live_comm_replay_driver.rs`
+- `cargo test --quiet`
+- checked-in fixture samples under `tests/protocol_truth_samples/`
 - [live_comm/LIVE_COMM_PARITY_WORKFLOW.md](live_comm/LIVE_COMM_PARITY_WORKFLOW.md)
+  - historical reference only; live-comm is fixture-only unless rebuilt
 
 ### 4. Invariant Oracle
 

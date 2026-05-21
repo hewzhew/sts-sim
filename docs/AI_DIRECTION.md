@@ -50,6 +50,6 @@ comparison point, but it cannot label better long-run decisions.
 No current module has authority to say a macro decision is good unless the claim
 is backed by replay, scenario oracle, or held-out full-run outcomes.
 
-The remaining `src/bot/` code is combat-oriented diagnostic/search machinery
-plus representation helpers. Noncombat routing in live communication should be
-treated as protocol fallback or human handoff, not strategy.
+The old `src/bot/` tree has been removed from the active architecture.
+Noncombat routing in live communication should be treated as protocol fallback
+or human handoff, not strategy.

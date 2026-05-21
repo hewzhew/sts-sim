@@ -17,7 +17,7 @@
 - `llm/`
   - experimental LLM controller adapters over public simulator observations and legal actions
 - `live_comm/`
-  - launch scripts, profiles, and operational helpers
+  - legacy Java bridge scripts and fixture-capture helpers
 - `manual/`
   - hand-run helper scripts
 - `rust_ast_extractor/`
@@ -89,3 +89,7 @@ These scripts do not create teacher labels or policy preferences.
 `source_extractor/` remains available for broad report rendering and
 compatibility checks, but cache-backed `sts_tool` queries are the preferred first
 stop when they cover the question.
+
+`live_comm/` is also legacy. Use it only for fixture capture or historical
+investigation unless the adapter is rebuilt under the boundary in
+`docs/live_comm/LEGACY_FIXTURE_ONLY.md`.

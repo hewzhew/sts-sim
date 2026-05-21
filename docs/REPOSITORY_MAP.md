@@ -7,7 +7,7 @@ This file is the current structure blueprint for the repo.
 - `core`
   - directly implements simulator/runtime truth
 - `integration`
-  - protocol sync, replay, CLI, and verification around runtime truth
+  - fixtures, importer helpers, eval surfaces, and binaries around runtime truth
 - `tooling`
   - offline analysis, extraction, DecisionRecord capture, and dev utilities
 - `experiment`
@@ -33,46 +33,42 @@ This file is the current structure blueprint for the repo.
    - `src/content/`
 4. truth-side semantic and preview layers
    - `src/semantics/`
-   - `src/projection/`
+   - `src/sim/`
 5. run and reward flow
    - `src/rewards/`
    - `src/events/`
    - `src/shop/`
    - `src/map/`
 
-### Protocol / Verification Path
+### Fixture / Import Path
 
-1. Java/protocol adapter
-   - `src/protocol/`
-2. importer, replay, and sync
-   - `src/diff/`
-3. fixtures and scenario tests
+1. fixtures and scenario tests
    - `src/testing/`
    - `tests/`
-4. verification facades
-   - `src/verification/`
+2. private Java/protocol fixture import helpers
+   - `src/testing/protocol/`
+   - `src/testing/state_sync/`
+   - `src/testing/replay_support.rs`
 
 ### App / Workbench Path
 
 These are consumers, not sources of engine truth:
 
-- `src/bot/`
-- `src/cli/`
 - `src/bin/`
+- `src/app/`
 
 ### AI / Eval Infrastructure Path
 
 The active AI-facing path is infrastructure only:
 
-1. line-protocol full-run driver
-   - `src/bin/full_run_env_driver/`
-2. legal observation, action candidates, transition records
-   - `src/verification/decision_env.rs`
-3. collection and replay checks
-   - `tools/learning/collect_decision_records.py`
-   - `tools/learning/collect_decision_records_batch.py`
-   - `tools/learning/audit_decision_record_contract.py`
-   - `tools/learning/verify_decision_records_replay.py`
+1. decision environment contract
+   - `src/app/decision_env.rs`
+2. combat search and env surfaces
+   - `src/eval/`
+   - `src/bin/combat_env_driver/`
+   - `src/bin/combat_search_v2_driver/`
+3. historical collection and replay checks
+   - `tools/learning/`
 
 This path does not contain a trusted policy learner.
 
@@ -94,22 +90,18 @@ This path does not contain a trusted policy learner.
 - `src/content/` - `core`
 - `src/state/` - `core`
 - `src/semantics/` - `core`
-- `src/projection/` - `core`
-- `src/diff/` - `integration`
-- `src/protocol/` - `integration`
+- `src/sim/` - `core` and AI-facing simulator views
 - `src/testing/` - `integration`
-- `src/verification/` - `integration`
 - `src/bin/` - `integration` entrypoints and workbenches
-- `src/bot/` - combat diagnostics/search experiment only
-- `src/bot/harness/` - combat/eval experiment
-- `src/cli/coverage_tools/` - `experiment`
+- `src/app/` - app contracts and downstream integration surfaces
+- `src/eval/` - AI/eval experiments over simulator state
 
 ## Current Notes
 
-- `bot` and `cli` are downstream of protocol/importer truth.
+- Removed top-level live-comm/protocol modules are not active architecture.
 - Hand-written macro-policy modules have been removed from the active bot tree.
-- Remaining bot code is not a teacher for reward/shop/event/path/campfire/boss
-  relic choices.
+- `live_comm` is fixture-only legacy unless rebuilt under the documented adapter
+  boundary.
 - Older learning docs may describe removed paths. Current entrypoints win.
 
 ## Root Rules

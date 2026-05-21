@@ -22,8 +22,9 @@ Then branch by task:
   - [MECHANICS_AUDIT_LEDGER.md](MECHANICS_AUDIT_LEDGER.md)
   - [JAVA_SOURCE_MAP.md](JAVA_SOURCE_MAP.md)
   - [JAVA_MECHANICS_DEBUG_HANDOFF.md](JAVA_MECHANICS_DEBUG_HANDOFF.md)
-- `live_comm` / parity / run archives:
+- legacy `live_comm` / parity / fixture capture:
   - [live_comm/README.md](live_comm/README.md)
+  - [live_comm/LEGACY_FIXTURE_ONLY.md](live_comm/LEGACY_FIXTURE_ONLY.md)
   - [live_comm/LIVE_COMM_RUNBOOK.md](live_comm/LIVE_COMM_RUNBOOK.md)
   - [live_comm/LIVE_COMM_PARITY_WORKFLOW.md](live_comm/LIVE_COMM_PARITY_WORKFLOW.md)
 - protocol / importer / CommunicationMod:
@@ -44,7 +45,7 @@ Then branch by task:
 - root `docs/`
   - repo-wide rules and default entry docs
 - `docs/live_comm/`
-  - runbooks, mode selection, parity workflow, manual scenario capture
+  - legacy bridge notes, fixture-capture boundary, historical runbooks
 - `docs/protocol/`
   - protocol truth rules, importer status, truth samples, test matrices
 - `docs/testing/`

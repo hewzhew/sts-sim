@@ -18,18 +18,12 @@ tools:
 
 - [../TEST_ORACLE_STRATEGY.md](../TEST_ORACLE_STRATEGY.md)
   - classify oracle strength before writing correctness-sensitive tests
-- `tests/live_comm_replay_driver.rs`
-  - differential parity against structured live-comm replays
-- `tests/protocol_truth_samples.rs`
-  - checked-in protocol truth fixtures
-- `tests/combat_case_driver.rs`
-  - checked-in canonical combat regressions under `tests/combat_cases/`
-- `tests/state_sync_strictness.rs`
-  - importer strictness and missing-field guardrails
-- `tests/stasis_behavior.rs`
-  - example behavior test file for a power-driven hidden-state mechanic
+- `cargo test --quiet`
+  - current checked-in Rust validation suite
+- `tests/protocol_truth_samples/`
+  - checked-in protocol truth fixture data
 - [../live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](../live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
-  - targeted live spot-check and sample capture workflow
+  - historical targeted live spot-check and sample capture workflow
 - `tools/sts_tool`
   - investigation tool for scattered Java/source tracing when exact behavior is
     difficult to infer from one class alone
@@ -49,6 +43,9 @@ Include the slower parity layer explicitly:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1 -IncludeParity
 ```
+
+`-IncludeParity` is currently a compatibility switch only; live-comm parity is
+legacy fixture work until the adapter is rebuilt.
 
 If a correctness-sensitive test cannot name its oracle source, stop and classify
 it first instead of writing a guessed expected value.

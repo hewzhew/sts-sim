@@ -1,7 +1,8 @@
 # Testing Platform Direction
 
-Operational `live_comm` workflow still lives under:
+Legacy `live_comm` workflow lives under:
 
+- `docs/live_comm/LEGACY_FIXTURE_ONLY.md`
 - `docs/live_comm/LIVE_COMM_RUNBOOK.md`
 - `docs/live_comm/LIVE_COMM_MODES.md`
 
@@ -14,8 +15,6 @@ rules.
   - canonical combat-debug schema
   - shared lowering, replay, and assertion engine
   - owns `protocol_snapshot`, `encounter_template`, and transitional `live_window`
-- `tests/combat_case_driver.rs`
-  - default checked-in combat regression runner
 - `src/bin/combat_case`
   - CLI for verifying, reducing, compiling, and converting combat cases
 - `sts_simulator::fixtures::scenario`
@@ -103,7 +102,7 @@ Output:
 Entrypoints:
 
 - `cargo run --bin combat_case -- compile-author-spec --author-spec <spec.json> --out <case.json>`
-- `cargo test --test synthetic_scenario_driver`
+- `cargo test --quiet`
 
 Current implementation still compiles through the legacy author-spec fixture path
 before converting to `CombatCase`, but callers should consume the case output.
@@ -137,22 +136,17 @@ Target output:
 
 ## Default Validation Entrypoints
 
-- `cargo test --test combat_case_driver`
-  - checked-in combat regressions under `tests/combat_cases/`
-- `COMBAT_CASE=<path> cargo test --test combat_case_driver replay_single_combat_case_from_env -- --nocapture`
-  - replay one combat case directly
+- `cargo test --quiet`
+  - current checked-in Rust validation suite
 - `cargo run --bin combat_case -- verify --case <path>`
   - validate a case outside the test harness
 - `cargo run --bin combat_case -- reduce --case <witness.json> --out <case.json>`
   - materialize or reduce a witness case
-- `cargo test --test synthetic_scenario_driver`
-  - run authored semantic cases
 
 Legacy bridge:
 
-- `tests/live_regression_driver.rs`
-  - legacy `ScenarioFixture` replay only
-  - keep for migration compatibility, not for new checked-in regressions
+- old live regression drivers are retired
+- keep raw Java captures only as fixture provenance, not as active strategy code
 
 ## Cutover Rules
 
