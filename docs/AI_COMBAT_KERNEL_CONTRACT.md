@@ -1299,10 +1299,10 @@ and acceptance gate it satisfies.
 
 ## Current Status
 
-- Micro Jaw Worm PPO proves the Rust/Python RL loop can run.
-- Micro two-slimes proves target masks can train.
-- Both are toy environments, not real-combat foundations.
-- CleanRL is now only a disposable reference/smoke tool.
+- The old Micro Jaw Worm and two-slimes PPO surfaces were toy environments, not
+  real-combat foundations, and are now archived outside the active Rust compile
+  surface.
+- CleanRL is only a disposable historical reference.
 - The real foundation is `CombatStateSnapshot + PublicDecisionFrame + PublicActionDescriptor +
   RecordedActionTrace + KernelTransition + ReplayProvenance + ReplayCursor`.
 - Any old audit shell, seed patch, baseline continuation, transparent snapshot,

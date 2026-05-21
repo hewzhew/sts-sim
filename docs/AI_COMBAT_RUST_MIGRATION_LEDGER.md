@@ -51,8 +51,8 @@ code is not allowed into the new kernel without a source-mapping review.
 
 | Rust path | Current role | Status | Java source mapping | Combat schema mapping | Required action |
 | --- | --- | --- | --- | --- | --- |
-| `src/ai/micro_jaw_worm.rs` | toy RL micro-environment | delete | none as real engine; only conceptual combat demo | none | keep only git history; do not depend on it |
-| `src/ai/micro_two_slimes.rs` | toy RL micro-environment | delete | none as real engine; only mask demo | none | keep only git history; do not depend on it |
+| `src/ai/micro_jaw_worm.rs` | removed toy RL micro-environment | delete | none as real engine; only conceptual combat demo | none | removed from active Rust compile surface |
+| `src/ai/micro_two_slimes.rs` | removed toy RL micro-environment | delete | none as real engine; only mask demo | none | removed from active Rust compile surface |
 | `src/runtime/rng.rs` | LibGDX/Java RNG replica | keep/review | `random/Random.java`, `RandomXS128` | `CombatRngState` | verify state words and counter serialization |
 | `src/runtime/combat.rs` | current combat state | rewrite | `AbstractDungeon`, `AbstractPlayer`, `AbstractRoom`, `MonsterGroup` | `CombatStateSnapshot` | compare field-by-field against source coverage ledger |
 | `src/runtime/action.rs` | current action model | rewrite | `AbstractGameAction`, `GameActionManager`, concrete actions | `ActionManagerState`, `ActionState` | replace opaque or simplified actions with typed resumable payloads |

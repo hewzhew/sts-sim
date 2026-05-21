@@ -36,9 +36,7 @@ This file is the current structure blueprint for the repo.
    - `src/sim/`
 5. run and reward flow
    - `src/rewards/`
-   - `src/events/`
    - `src/state/shop/`
-   - `src/map/`
 
 ### Fixture / Import Path
 
@@ -65,7 +63,6 @@ The active AI-facing path is infrastructure only:
    - `src/app/decision_env.rs`
 2. combat search and env surfaces
    - `src/eval/`
-   - `src/bin/combat_env_driver/`
    - `src/bin/combat_search_v2_driver/`
 3. historical collection and replay checks
    - `tools/learning/`
@@ -93,7 +90,7 @@ This path does not contain a trusted policy learner.
 - `src/runtime/monster_move.rs` - `core`
 - `src/sim/` - `core` and AI-facing simulator views
 - `src/testing/` - `integration`
-- `src/bin/` - `integration` entrypoints and workbenches
+- `src/bin/` - active integration entrypoints only
 - `src/app/` - app contracts and downstream integration surfaces
 - `src/eval/` - AI/eval experiments over simulator state
 

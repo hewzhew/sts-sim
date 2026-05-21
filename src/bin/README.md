@@ -1,21 +1,18 @@
 # Binary Entrypoints
 
-Each binary now lives in its own directory under `src/bin/<name>/main.rs`.
+`src/bin` is only for active command entrypoints. Library ownership belongs in
+`src/ai`, `src/eval`, `src/testing`, or `src/state`; one-off experiments should
+not grow new long-lived binaries here.
 
-This keeps the root of `src/bin/` navigable while preserving Cargo's auto-discovered binary names.
+Active binaries:
 
-Rough groups:
+- `combat_case`
+  - fixture conversion, reduction, materialization, and verification
+- `combat_search_v2_driver`
+  - whole-combat search runner over case/start-spec inputs
 
-- combat validation and audits
-  - `combat_case`
-  - `combat_env_driver`
-  - `combat_search_v2_driver`
+Removed from the active binary surface:
 
-Supporting module ownership for these binaries now lives in:
-
-- `sts_simulator::fixtures`
-  - scenario and author/start-spec inputs
-- `sts_simulator::eval::combat_env`
-  - combat env surfaces for explicit external action selection
-- `crate::testing::harness`
-  - integration-side analysis helpers consumed internally by app-layer harnesses
+- JSONL action-env drivers
+- micro/toy RL environment drivers
+- live/workbench/prompt controller entrypoints
