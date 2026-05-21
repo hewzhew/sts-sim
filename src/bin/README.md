@@ -7,13 +7,11 @@ This keeps the root of `src/bin/` navigable while preserving Cargo's auto-discov
 Rough groups:
 
 - user / developer interaction
-  - `play`
-  - `sts_dev_tool`
   - `view_replay`
 - combat validation and audits
   - `combat_case`
   - `combat_env_driver`
-  - `full_run_env_driver`
+  - `combat_search_v2_driver`
   - `verify_live_comm_replay`
 
 Supporting module ownership for these binaries now lives in:

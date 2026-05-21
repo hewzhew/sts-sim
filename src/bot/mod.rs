@@ -1,10 +1,8 @@
 mod agent;
 pub mod combat;
-mod decision_meta;
 pub(crate) mod deck;
 pub mod facts;
 pub mod harness;
-pub(crate) mod infra;
 pub mod snapshots;
 
 pub(crate) use facts::{card_facts, card_structure};
@@ -16,10 +14,5 @@ pub use combat::{
     SearchEquivalenceKind, SearchEquivalenceMode, SearchNodeCounters, SearchPhaseProfile,
     SearchProfileBreakdown, SearchProfilingLevel,
 };
-pub use decision_meta::DecisionMetadata;
 pub use deck_archetype::{archetype_summary, archetype_tags};
 pub use deck_profile::{combat_zone_profile, deck_profile, DeckProfile};
-pub use infra::coverage::{
-    archetype_tags_for_combat, curiosity_bonus, curiosity_target_matches, novelty_bonus,
-    CoverageDb, CoverageMode, CuriosityTarget,
-};

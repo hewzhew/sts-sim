@@ -20,10 +20,6 @@ impl Agent {
         self.bot_depth = depth;
     }
 
-    pub fn set_coverage_mode(&mut self, _mode: crate::bot::CoverageMode) {}
-
-    pub fn set_curiosity_target(&mut self, _target: Option<crate::bot::CuriosityTarget>) {}
-
     pub(crate) const fn bot_depth(&self) -> u32 {
         self.bot_depth
     }

@@ -26,7 +26,6 @@ pub use testing::support as test_support;
 
 // User-facing and experimental surfaces.
 pub mod bot;
-pub mod cli;
 
 pub use core::EntityId;
 mod rewards;
