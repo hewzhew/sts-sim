@@ -47,5 +47,3 @@ pub mod bot {
 
 pub use core::EntityId;
 mod rewards;
-mod utils;
-pub use utils::SimulationWatchdog;
