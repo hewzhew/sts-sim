@@ -4,13 +4,17 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::diff::replay::{
+use crate::state::core::{ClientInput, EngineState, PendingChoice};
+use crate::verification::diff::replay::{
     compare_states_from_snapshots, continue_deferred_pending_choice, tick_until_stable,
     ActionContext, DiffResult,
 };
-use crate::diff::state_sync::{build_combat_state_from_snapshots, sync_state_from_snapshots};
-use crate::protocol::java::{build_live_observation_snapshot, build_live_truth_snapshot};
-use crate::state::core::{ClientInput, EngineState, PendingChoice};
+use crate::verification::diff::state_sync::{
+    build_combat_state_from_snapshots, sync_state_from_snapshots,
+};
+use crate::verification::protocol::java::{
+    build_live_observation_snapshot, build_live_truth_snapshot,
+};
 
 const LIVE_REPLAY_SCHEMA_VERSION: u32 = 1;
 

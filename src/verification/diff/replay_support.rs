@@ -5,12 +5,12 @@ use crate::engine::{
     core::{is_smoke_escape_stable_boundary, tick_engine},
     pending_choices,
 };
-use crate::protocol::java::continuation_state_requests_on_use_potion_hooks;
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
 use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
+use crate::verification::protocol::java::continuation_state_requests_on_use_potion_hooks;
 
-use crate::diff::state_sync::snapshot_uuid;
+use crate::verification::diff::state_sync::snapshot_uuid;
 
 pub fn tick_until_stable(es: &mut EngineState, cs: &mut CombatState, input: ClientInput) -> bool {
     let alive = tick_engine(es, cs, Some(input));
@@ -263,7 +263,7 @@ pub fn continue_deferred_pending_choice_legacy(
 #[cfg(test)]
 mod tests {
     use super::{deferred_post_potion_hook_request, DeferredContinuationMode};
-    use crate::protocol::java::continuation_state_requests_on_use_potion_hooks;
+    use crate::verification::protocol::java::continuation_state_requests_on_use_potion_hooks;
     use serde_json::json;
 
     #[test]

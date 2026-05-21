@@ -2342,18 +2342,18 @@ mod tests {
         };
 
         let plan = monster.turn_plan();
-        let preview = crate::projection::combat::project_monster_move_preview(&monster);
+        let preview = crate::sim::combat_projection::project_monster_move_preview(&monster);
 
         assert_eq!(plan.move_id, 7);
         assert!(matches!(plan.summary_spec(), MonsterMoveSpec::Attack(_)));
         assert_eq!(preview.damage_per_hit, Some(6));
         assert_eq!(preview.hits, 2);
         assert_eq!(preview.total_damage, Some(12));
-        assert!(crate::projection::combat::monster_has_visible_attack(
+        assert!(crate::sim::combat_projection::monster_has_visible_attack(
             &monster
         ));
         assert_eq!(
-            crate::projection::combat::monster_preview_total_damage(&monster),
+            crate::sim::combat_projection::monster_preview_total_damage(&monster),
             12
         );
     }
@@ -2432,7 +2432,7 @@ mod tests {
         assert_eq!(plan.move_id, 3);
         assert_eq!(plan.attack().map(|attack| attack.base_damage), Some(7));
         assert_eq!(
-            crate::projection::combat::project_monster_move_preview(&monster).damage_per_hit,
+            crate::sim::combat_projection::project_monster_move_preview(&monster).damage_per_hit,
             Some(7)
         );
     }
@@ -2511,16 +2511,16 @@ mod tests {
         };
 
         let plan = monster.turn_plan();
-        let preview = crate::projection::combat::project_monster_move_preview(&monster);
+        let preview = crate::sim::combat_projection::project_monster_move_preview(&monster);
 
         assert_eq!(plan.move_id, 4);
         assert!(matches!(plan.summary_spec(), MonsterMoveSpec::Unknown));
         assert_eq!(preview.damage_per_hit, None);
-        assert!(!crate::projection::combat::monster_has_visible_attack(
+        assert!(!crate::sim::combat_projection::monster_has_visible_attack(
             &monster
         ));
         assert_eq!(
-            crate::projection::combat::monster_preview_total_damage(&monster),
+            crate::sim::combat_projection::monster_preview_total_damage(&monster),
             0
         );
     }

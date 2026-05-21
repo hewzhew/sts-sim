@@ -129,7 +129,7 @@ pub fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec<Client
 }
 
 pub fn protocol_root_moves(
-    snapshot: &crate::protocol::java::CombatAffordanceSnapshot,
+    snapshot: &crate::verification::protocol::java::CombatAffordanceSnapshot,
 ) -> Vec<ClientInput> {
     snapshot.protocol_root_inputs()
 }
@@ -313,12 +313,12 @@ fn contains_grid_select(moves: &[ClientInput], selection: &[u32]) -> bool {
 mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
-    use crate::diff::state_sync::build_combat_state_from_snapshots;
-    use crate::protocol::java::{
+    use crate::test_support::test_monster;
+    use crate::verification::diff::state_sync::build_combat_state_from_snapshots;
+    use crate::verification::protocol::java::{
         build_combat_affordance_snapshot, build_live_observation_snapshot,
         build_live_truth_snapshot,
     };
-    use crate::test_support::test_monster;
     use serde_json::{json, Value};
     use std::path::PathBuf;
 

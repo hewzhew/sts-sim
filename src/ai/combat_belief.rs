@@ -1,8 +1,8 @@
 use crate::content::monsters::{resolve_monster_turn_plan, EnemyId};
 use crate::content::relics::RelicId;
-use crate::projection::combat::MonsterMovePreview;
 use crate::runtime::combat::{CombatState, Intent, MonsterEntity};
 use crate::semantics::combat::{EffectStrength, MonsterMoveSpec};
+use crate::sim::combat_projection::MonsterMovePreview;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MonsterBeliefCertainty {

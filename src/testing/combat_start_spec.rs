@@ -6,16 +6,18 @@ use crate::content::cards::{get_card_definition, upgraded_base_cost_override, Ca
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
-use crate::diff::replay::drain_to_stable;
 use crate::engine::core::with_suppressed_engine_warnings;
 use crate::map::node::RoomType;
-use crate::protocol::java::{card_id_from_java, java_potion_id_to_rust, relic_id_from_java};
 use crate::runtime::action::Action;
 use crate::runtime::combat::{CardZones, CombatMeta, TurnRuntime};
 use crate::runtime::combat::{CombatCard, CombatRng, CombatState, EngineRuntime, EntityState};
 use crate::runtime::rng;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
+use crate::verification::diff::replay::drain_to_stable;
+use crate::verification::protocol::java::{
+    card_id_from_java, java_potion_id_to_rust, relic_id_from_java,
+};
 
 use crate::testing::fixtures::author_spec::{AuthorCardEntry, AuthorCardSpec, AuthorRelicSpec};
 

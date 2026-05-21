@@ -1,8 +1,8 @@
-use sts_simulator::diff::replay::{
+use sts_simulator::verification::combat::build_live_split_combat_snapshots_from_root;
+use sts_simulator::verification::diff::replay::{
     derive_combat_replay_view, inspect_combat_replay_step, load_live_session_replay_path,
     CombatReplayStepStatus,
 };
-use sts_simulator::verification::combat::build_live_split_combat_snapshots_from_root;
 
 fn monster_line(root: &serde_json::Value) -> Result<(i64, i64, String, Vec<String>), String> {
     let (truth, observation) = build_live_split_combat_snapshots_from_root(root)?;
@@ -44,7 +44,7 @@ fn monster_line(root: &serde_json::Value) -> Result<(i64, i64, String, Vec<Strin
 
 fn print_step(
     step_index: usize,
-    step: &sts_simulator::diff::replay::CombatReplayStep,
+    step: &sts_simulator::verification::diff::replay::CombatReplayStep,
 ) -> Result<(), String> {
     let label = format!(
         "[{:02}] command_id={} response_id={:?} frame_id={:?}",

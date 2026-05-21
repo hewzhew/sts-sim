@@ -1,10 +1,10 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
-use crate::protocol::java::{
+use crate::runtime::combat::{CombatState, Power};
+use crate::verification::protocol::java::{
     monster_id_from_java, power_id_from_java, power_instance_id_from_java,
 };
-use crate::runtime::combat::{CombatState, Power};
 
 // ============================================================================
 // Diff Classification

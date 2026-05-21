@@ -6,9 +6,6 @@ use serde_json::Value;
 
 use crate::content::cards::{get_card_definition, upgraded_base_cost_override, CardId};
 use crate::content::powers::store::set_powers_for;
-use crate::diff::replay::tick_until_stable;
-use crate::diff::state_sync::build_combat_state_from_snapshots;
-use crate::protocol::java::{card_id_from_java, power_id_from_java, relic_id_from_java};
 use crate::runtime::combat::{CombatCard, CombatState, Power};
 use crate::runtime::rng::StsRng;
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
@@ -23,6 +20,11 @@ use crate::testing::fixtures::scenario::{
     build_live_observation_snapshot, build_live_truth_snapshot, extract_field_value,
     parse_expected, ActualFieldValue, ScenarioAssertion, ScenarioCardSelector, ScenarioFixture,
     ScenarioOracleKind, ScenarioStep, StructuredScenarioStep,
+};
+use crate::verification::diff::replay::tick_until_stable;
+use crate::verification::diff::state_sync::build_combat_state_from_snapshots;
+use crate::verification::protocol::java::{
+    card_id_from_java, power_id_from_java, relic_id_from_java,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -2088,7 +2090,7 @@ fn compile_potions(
             compiled.push(None);
             continue;
         }
-        let potion_id = crate::protocol::java::java_potion_id_to_rust(id)
+        let potion_id = crate::verification::protocol::java::java_potion_id_to_rust(id)
             .ok_or_else(|| format!("unknown Java potion id '{}'", id))?;
         compiled.push(Some(crate::content::potions::Potion::new(
             potion_id,

@@ -10,16 +10,18 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2PotionPolicy,
     CombatSearchV2Report, CombatSearchV2TrajectoryReport, SearchTerminalLabel,
 };
-use crate::diff::replay::tick_until_stable;
 use crate::fixtures::combat_case::{
     describe_case_step, input_for_case_step, load_case_from_path, lower_case, CombatCase,
     CombatCaseBasis, CombatCaseDelta, CombatCaseDomain, CombatCaseOracle, CombatCaseOracleKind,
     CombatCaseProtocolSnapshotBasis, CombatCaseRootMeta,
 };
 use crate::fixtures::combat_start_spec::{compile_combat_start_spec, CombatStartSpec};
-use crate::protocol::java::{build_live_observation_snapshot, build_live_truth_snapshot};
 use crate::sim::combat::CombatPosition;
 use crate::state::core::ClientInput;
+use crate::verification::diff::replay::tick_until_stable;
+use crate::verification::protocol::java::{
+    build_live_observation_snapshot, build_live_truth_snapshot,
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct CombatSearchV2RunOptions {

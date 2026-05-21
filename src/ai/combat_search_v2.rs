@@ -4,12 +4,12 @@ use std::time::Instant;
 
 use crate::content::cards;
 use crate::content::monsters::EnemyId;
-use crate::projection::combat::monster_preview_total_damage_in_combat;
 use crate::runtime::combat::{CombatCard, CombatState, MonsterEntity, Power};
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
     EngineCombatStepper,
 };
+use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
 use crate::state::core::{ClientInput, EngineState, PendingChoice};
 
 mod types;

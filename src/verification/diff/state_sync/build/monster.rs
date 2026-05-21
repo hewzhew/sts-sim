@@ -2,8 +2,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::content::monsters::EnemyId;
-use crate::protocol::java::{intent_from_java, monster_id_from_java};
 use crate::runtime::combat::{MonsterEntity, MonsterProtocolState};
+use crate::verification::protocol::java::{intent_from_java, monster_id_from_java};
 
 fn runtime_state<'a>(monster: &'a Value, monster_type: EnemyId) -> &'a Value {
     monster.get("runtime_state").unwrap_or_else(|| {

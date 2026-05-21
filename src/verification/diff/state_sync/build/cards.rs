@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use crate::content::cards::CardId;
-use crate::protocol::java::card_id_from_java;
 use crate::runtime::combat::{CombatCard, CombatRuntimeHints, QueuedCardHint};
+use crate::verification::protocol::java::card_id_from_java;
 
 use super::snapshot_uuid;
 

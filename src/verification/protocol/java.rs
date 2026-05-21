@@ -797,7 +797,7 @@ pub fn intent_from_java(intent_str: &str, damage: i32, hits: i32) -> Intent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diff::state_sync::build_combat_state_from_snapshots;
+    use crate::verification::diff::state_sync::build_combat_state_from_snapshots;
     use serde_json::json;
     use std::path::PathBuf;
 

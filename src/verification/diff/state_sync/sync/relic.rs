@@ -1,6 +1,8 @@
 use serde_json::Value;
 
-use crate::protocol::java::{java_potion_id_to_rust, relic_id_from_java, snapshot_uuid};
+use crate::verification::protocol::java::{
+    java_potion_id_to_rust, relic_id_from_java, snapshot_uuid,
+};
 
 use super::super::internal_state::{
     snapshot_runtime_amount_for_relic, snapshot_runtime_counter_for_relic,

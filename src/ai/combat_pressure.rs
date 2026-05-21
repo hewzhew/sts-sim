@@ -112,7 +112,7 @@ fn visible_total_incoming_damage(combat: &CombatState) -> i32 {
             !monster.is_dying && !monster.is_escaped && !monster.half_dead && monster.current_hp > 0
         })
         .map(|monster| {
-            crate::projection::combat::monster_preview_total_damage_in_combat(combat, monster)
+            crate::sim::combat_projection::monster_preview_total_damage_in_combat(combat, monster)
         })
         .sum()
 }
@@ -126,7 +126,7 @@ fn visible_attack_probability(combat: &CombatState) -> f32 {
             !monster.is_dying && !monster.is_escaped && !monster.half_dead && monster.current_hp > 0
         })
         .any(|monster| {
-            crate::projection::combat::monster_has_visible_attack_in_combat(combat, monster)
+            crate::sim::combat_projection::monster_has_visible_attack_in_combat(combat, monster)
         });
     if any_attack {
         1.0

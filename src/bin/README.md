@@ -22,7 +22,7 @@ Supporting module ownership for these binaries now lives in:
   - combat env surfaces for explicit external action selection
 - `crate::testing::harness`
   - integration-side analysis helpers consumed internally by app-layer harnesses
-- `sts_simulator::diff::protocol`
+- `sts_simulator::verification::protocol`
   - protocol parsing and live snapshot shaping
-- `sts_simulator::diff::replay`
+- `sts_simulator::verification::diff::replay`
   - replay execution and diff comparison

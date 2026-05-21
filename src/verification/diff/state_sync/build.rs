@@ -18,7 +18,7 @@ use super::internal_state::{
     sync_relic_runtime_state_from_snapshot,
 };
 use super::rng::sync_rng;
-use crate::protocol::java::{
+use crate::verification::protocol::java::{
     java_potion_id_to_rust, power_id_from_java, power_instance_id_from_java, relic_id_from_java,
 };
 pub(crate) use cards::{

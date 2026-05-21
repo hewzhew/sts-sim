@@ -5,8 +5,6 @@ mod core;
 pub mod engine;
 mod events;
 pub mod map;
-pub mod projection;
-pub mod protocol;
 pub mod runtime;
 mod semantics;
 mod shop;
@@ -17,7 +15,6 @@ pub mod verification;
 // Integration layers around the runtime path.
 pub mod ai;
 pub mod app;
-pub mod diff;
 pub mod eval;
 mod testing;
 pub use testing::fixtures;
