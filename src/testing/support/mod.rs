@@ -16,7 +16,7 @@ pub fn continue_deferred_pending_choice_legacy(
     combat: &mut CombatState,
     snapshot_hint: &Value,
 ) -> Result<bool, String> {
-    crate::verification::diff::replay::continue_deferred_pending_choice_legacy(
+    crate::testing::replay_support::continue_deferred_pending_choice_legacy(
         pending,
         combat,
         snapshot_hint,

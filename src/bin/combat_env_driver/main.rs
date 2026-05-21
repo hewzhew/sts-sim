@@ -9,10 +9,6 @@ use sts_simulator::eval::combat_env::{
 };
 use sts_simulator::fixtures::author_spec::{compile_combat_author_spec, CombatAuthorSpec};
 use sts_simulator::fixtures::combat_start_spec::CombatStartSpec;
-use sts_simulator::verification::diff::replay::{
-    derive_combat_replay_view, find_combat_step_index_by_before_frame_id,
-    load_live_session_replay_path, reconstruct_combat_replay_step,
-};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -31,8 +27,6 @@ enum DriverRequest {
     Reset {
         author_spec: Option<PathBuf>,
         start_spec: Option<PathBuf>,
-        replay_raw: Option<PathBuf>,
-        replay_frame: Option<u64>,
         seed_hint: Option<u64>,
         draw_order_variant: Option<CombatEnvDrawOrderVariant>,
     },
@@ -153,16 +147,12 @@ fn handle_request(env: &mut Option<CombatEnv>, request: DriverRequest) -> Driver
         DriverRequest::Reset {
             author_spec,
             start_spec,
-            replay_raw,
-            replay_frame,
             seed_hint,
             draw_order_variant,
         } => match reset_env(
             env,
             author_spec,
             start_spec,
-            replay_raw,
-            replay_frame,
             seed_hint.unwrap_or(0),
             draw_order_variant.unwrap_or(CombatEnvDrawOrderVariant::Exact),
         ) {
@@ -171,18 +161,14 @@ fn handle_request(env: &mut Option<CombatEnv>, request: DriverRequest) -> Driver
         },
         DriverRequest::Observation => match env.as_ref() {
             Some(current_env) => state_response(current_env, None, None, None, None),
-            None => {
-                error_response(
-                    "combat env not initialized; send reset with author_spec, start_spec, or replay_raw/replay_frame"
-                        .into(),
-                )
-            }
+            None => error_response(
+                "combat env not initialized; send reset with author_spec or start_spec".into(),
+            ),
         },
         DriverRequest::Step { action_index } => {
             let Some(current_env) = env.as_mut() else {
                 return error_response(
-                    "combat env not initialized; send reset with author_spec, start_spec, or replay_raw/replay_frame"
-                        .into(),
+                    "combat env not initialized; send reset with author_spec or start_spec".into(),
                 );
             };
             let mask = current_env.action_mask();
@@ -219,15 +205,12 @@ fn reset_env(
     env: &mut Option<CombatEnv>,
     author_spec: Option<PathBuf>,
     start_spec: Option<PathBuf>,
-    replay_raw: Option<PathBuf>,
-    replay_frame: Option<u64>,
     seed_hint: u64,
     draw_order_variant: CombatEnvDrawOrderVariant,
 ) -> Result<DriverResponse, String> {
     let requested_sources = [
         author_spec.as_ref().map(|_| "author_spec"),
         start_spec.as_ref().map(|_| "start_spec"),
-        replay_raw.as_ref().map(|_| "replay"),
     ]
     .into_iter()
     .flatten()
@@ -238,18 +221,11 @@ fn reset_env(
             requested_sources.join(", ")
         ));
     }
-    if replay_raw.is_some() ^ replay_frame.is_some() {
-        return Err(
-            "replay reset requires both replay_raw and replay_frame to be provided".to_string(),
-        );
-    }
 
     let mut requested_spec = if let Some(spec_path) = author_spec {
         Some(load_spec_from_author_spec(spec_path, seed_hint).map_err(|err| err.to_string())?)
     } else if let Some(spec_path) = start_spec {
         Some(load_spec_from_start_spec(spec_path, seed_hint)?)
-    } else if let (Some(raw_path), Some(frame)) = (replay_raw, replay_frame) {
-        Some(load_spec_from_replay_frame(raw_path, frame, seed_hint)?)
     } else {
         None
     };
@@ -294,10 +270,9 @@ fn reset_env(
                 Some("ongoing".to_string()),
             ))
         }
-        (None, None) => Err(
-            "combat env not initialized; send reset with author_spec, start_spec, or replay_raw/replay_frame"
-                .into(),
-        ),
+        (None, None) => {
+            Err("combat env not initialized; send reset with author_spec or start_spec".into())
+        }
     }
 }
 
@@ -383,28 +358,6 @@ fn load_spec_from_start_spec(path: PathBuf, seed_hint: u64) -> Result<CombatEnvS
         .map_err(|err| format!("failed to parse start_spec {}: {err}", path.display()))?;
     let effective_seed = if seed_hint == 0 { spec.seed } else { seed_hint };
     CombatEnvSpec::from_start_spec_with_seed(&spec, effective_seed)
-}
-
-fn load_spec_from_replay_frame(
-    raw_path: PathBuf,
-    frame: u64,
-    seed_hint: u64,
-) -> Result<CombatEnvSpec, String> {
-    let replay = load_live_session_replay_path(&raw_path)?;
-    let view = derive_combat_replay_view(&replay);
-    let step_index = find_combat_step_index_by_before_frame_id(&view, frame)
-        .ok_or_else(|| format!("no executable combat step found for before frame_id={frame}"))?;
-    let reconstructed = reconstruct_combat_replay_step(&view, step_index)?;
-    let replay_name = raw_path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("replay_frame");
-    Ok(CombatEnvSpec::from_combat(
-        format!("{replay_name}::frame_{frame}"),
-        seed_hint,
-        reconstructed.before_engine,
-        reconstructed.before_combat,
-    ))
 }
 
 fn build_action_candidates(

@@ -6,13 +6,13 @@ use crate::content::cards::CardId;
 use crate::runtime::action::CardDestination;
 use crate::runtime::combat::{CombatCard, CombatState, Power};
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
-use crate::verification::diff::replay::tick_until_stable;
-use crate::verification::diff::state_sync::build_combat_state_from_snapshots;
-use crate::verification::protocol::java::{
+use crate::testing::protocol::java::{
     build_live_observation_snapshot as build_protocol_live_observation_snapshot,
     build_live_truth_snapshot as build_protocol_live_truth_snapshot, card_id_from_java,
     power_id_from_java, relic_id_from_java,
 };
+use crate::testing::replay_support::tick_until_stable;
+use crate::testing::state_sync::build_combat_state_from_snapshots;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]

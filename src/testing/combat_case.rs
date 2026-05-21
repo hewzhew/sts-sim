@@ -21,11 +21,9 @@ use crate::testing::fixtures::scenario::{
     parse_expected, ActualFieldValue, ScenarioAssertion, ScenarioCardSelector, ScenarioFixture,
     ScenarioOracleKind, ScenarioStep, StructuredScenarioStep,
 };
-use crate::verification::diff::replay::tick_until_stable;
-use crate::verification::diff::state_sync::build_combat_state_from_snapshots;
-use crate::verification::protocol::java::{
-    card_id_from_java, power_id_from_java, relic_id_from_java,
-};
+use crate::testing::protocol::java::{card_id_from_java, power_id_from_java, relic_id_from_java};
+use crate::testing::replay_support::tick_until_stable;
+use crate::testing::state_sync::build_combat_state_from_snapshots;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -2090,7 +2088,7 @@ fn compile_potions(
             compiled.push(None);
             continue;
         }
-        let potion_id = crate::verification::protocol::java::java_potion_id_to_rust(id)
+        let potion_id = crate::testing::protocol::java::java_potion_id_to_rust(id)
             .ok_or_else(|| format!("unknown Java potion id '{}'", id))?;
         compiled.push(Some(crate::content::potions::Potion::new(
             potion_id,

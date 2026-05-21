@@ -19,7 +19,7 @@
 //!   - diff/state-sync may map external state onto runtime fields, but must not
 //!     become the semantic source of truth
 //! - protocol snapshot fields
-//!   - `verification::diff::state_sync` is responsible for import/export mapping only
+//!   - `testing::state_sync` is responsible for fixture import/export mapping only
 //!   - tooling and test fixtures may observe those fields but should not define
 //!     their meaning for runtime behavior
 //!

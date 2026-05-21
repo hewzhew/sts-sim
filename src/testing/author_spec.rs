@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::content::cards::get_card_definition;
-use crate::verification::protocol::java::{card_id_from_java, relic_id_from_java};
+use crate::testing::protocol::java::{card_id_from_java, relic_id_from_java};
 
 use crate::testing::fixtures::scenario::{
     ScenarioAssertion, ScenarioCardSelector, ScenarioFixture, ScenarioKind, ScenarioOracleKind,

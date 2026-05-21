@@ -128,12 +128,6 @@ pub fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec<Client
     engine_local_moves(engine, combat)
 }
 
-pub fn protocol_root_moves(
-    snapshot: &crate::verification::protocol::java::CombatAffordanceSnapshot,
-) -> Vec<ClientInput> {
-    snapshot.protocol_root_inputs()
-}
-
 pub fn legal_moves_for_audit(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
     get_legal_moves(engine, combat)
 }
@@ -314,11 +308,10 @@ mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
     use crate::test_support::test_monster;
-    use crate::verification::diff::state_sync::build_combat_state_from_snapshots;
-    use crate::verification::protocol::java::{
-        build_combat_affordance_snapshot, build_live_observation_snapshot,
-        build_live_truth_snapshot,
+    use crate::testing::protocol::java::{
+        build_live_observation_snapshot, build_live_truth_snapshot,
     };
+    use crate::testing::state_sync::build_combat_state_from_snapshots;
     use serde_json::{json, Value};
     use std::path::PathBuf;
 
@@ -607,58 +600,6 @@ mod tests {
                 .iter()
                 .any(|input| matches!(input, ClientInput::EndTurn)),
             "EndTurn should remain legal under Velvet Choker"
-        );
-    }
-
-    #[test]
-    fn protocol_root_moves_only_echo_protocol_affordance() {
-        let combat = build_fixture_combat();
-        let action_space = json!({
-            "combat_action_space": {
-                "screen_type": "NONE",
-                "actions": [
-                    {
-                        "action_id": "end_turn",
-                        "kind": "end_turn",
-                        "command": "END",
-                        "target_required": false,
-                        "target_options": []
-                    },
-                    {
-                        "action_id": "play-0",
-                        "kind": "play_card",
-                        "command": "PLAY 0 0",
-                        "target_required": true,
-                        "target_options": [0],
-                        "target_index": 0,
-                        "hand_index": 0,
-                        "card_uuid": "card-uuid-1",
-                        "card_id": "Strike_R"
-                    }
-                ]
-            }
-        });
-        let snapshot = build_combat_affordance_snapshot(&action_space, &combat)
-            .expect("affordance parse")
-            .expect("action space");
-        let inputs = protocol_root_moves(&snapshot);
-        assert_eq!(inputs.len(), 2);
-        assert!(inputs.contains(&ClientInput::EndTurn));
-        assert!(
-            inputs.iter().any(|input| matches!(
-                input,
-                ClientInput::PlayCard {
-                    card_index: 0,
-                    target: Some(_)
-                }
-            )),
-            "protocol-root chooser should consume protocol-exported play actions"
-        );
-        assert!(
-            !inputs
-                .iter()
-                .any(|input| matches!(input, ClientInput::UsePotion { .. })),
-            "protocol-root chooser must not synthesize extra potion actions"
         );
     }
 }

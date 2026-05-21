@@ -7,7 +7,7 @@ use crate::sim::combat_legal_actions::legal_moves_for_audit;
 use crate::state::core::ClientInput;
 use crate::state::EngineState;
 
-use crate::verification::decision_env::{ActionId, DecisionId};
+use crate::app::decision_env::{ActionId, DecisionId};
 
 pub const NEUTRAL_ENGINE_QUERY_VERSION: &str = "neutral_engine_query_v0";
 

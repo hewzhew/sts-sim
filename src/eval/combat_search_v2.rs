@@ -12,16 +12,11 @@ use crate::ai::combat_search_v2::{
 };
 use crate::fixtures::combat_case::{
     describe_case_step, input_for_case_step, load_case_from_path, lower_case, CombatCase,
-    CombatCaseBasis, CombatCaseDelta, CombatCaseDomain, CombatCaseOracle, CombatCaseOracleKind,
-    CombatCaseProtocolSnapshotBasis, CombatCaseRootMeta,
 };
 use crate::fixtures::combat_start_spec::{compile_combat_start_spec, CombatStartSpec};
 use crate::sim::combat::CombatPosition;
 use crate::state::core::ClientInput;
-use crate::verification::diff::replay::tick_until_stable;
-use crate::verification::protocol::java::{
-    build_live_observation_snapshot, build_live_truth_snapshot,
-};
+use crate::testing::replay_support::tick_until_stable;
 
 #[derive(Clone, Debug, Default)]
 pub struct CombatSearchV2RunOptions {
@@ -84,7 +79,6 @@ impl CombatSearchV2RunOptions {
 pub enum CombatSearchV2StartSource {
     Case(PathBuf),
     StartSpec(PathBuf),
-    Frame(PathBuf),
 }
 
 #[derive(Clone)]
@@ -245,7 +239,6 @@ pub fn load_combat_search_v2_start(
     match source {
         CombatSearchV2StartSource::Case(path) => load_case_start(path),
         CombatSearchV2StartSource::StartSpec(path) => load_start_spec(path),
-        CombatSearchV2StartSource::Frame(path) => load_frame_start(path),
     }
 }
 
@@ -387,64 +380,6 @@ fn load_start_spec(path: &Path) -> Result<CombatSearchV2LoadedStart, String> {
     Ok(CombatSearchV2LoadedStart {
         label: format!("start_spec:{}", path.display()),
         position: CombatPosition::new(engine, combat),
-        case_baseline: None,
-    })
-}
-
-fn load_frame_start(path: &Path) -> Result<CombatSearchV2LoadedStart, String> {
-    let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;
-    let root: Value = serde_json::from_str(&payload).map_err(|err| err.to_string())?;
-    let game_state = root.get("game_state").unwrap_or(&root);
-    let protocol_meta = root
-        .get("protocol_meta")
-        .cloned()
-        .or_else(|| game_state.get("protocol_meta").cloned());
-    let case = CombatCase {
-        id: path
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .unwrap_or("frame")
-            .to_string(),
-        domain: CombatCaseDomain::Combat,
-        basis: CombatCaseBasis::ProtocolSnapshot(CombatCaseProtocolSnapshotBasis {
-            combat_truth: build_live_truth_snapshot(game_state),
-            combat_observation: build_live_observation_snapshot(game_state),
-            relics: game_state.get("relics").cloned().unwrap_or(Value::Null),
-            protocol_meta,
-            root_meta: CombatCaseRootMeta {
-                player_class: game_state
-                    .get("class")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned),
-                ascension_level: game_state
-                    .get("ascension_level")
-                    .and_then(Value::as_i64)
-                    .map(|value| value as i32),
-                seed_hint: game_state
-                    .get("seed")
-                    .and_then(|value| value.as_u64().or_else(|| value.as_i64().map(|v| v as u64))),
-                screen_type: game_state
-                    .get("screen_type")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned),
-                screen_state: game_state.get("screen_state").cloned(),
-            },
-        }),
-        delta: CombatCaseDelta::default(),
-        program: Vec::new(),
-        oracle: CombatCaseOracle {
-            primary: CombatCaseOracleKind::LiveRuntime,
-            evidence: Vec::new(),
-            note: Some("synthetic wrapper for combat search v2 frame input".to_string()),
-        },
-        expectations: Vec::new(),
-        provenance: Default::default(),
-        tags: Vec::new(),
-    };
-    let seed = lower_case(&case)?;
-    Ok(CombatSearchV2LoadedStart {
-        label: format!("frame:{}", path.display()),
-        position: CombatPosition::new(seed.engine_state, seed.combat),
         case_baseline: None,
     })
 }

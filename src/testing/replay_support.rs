@@ -8,9 +8,9 @@ use crate::engine::{
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
 use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
-use crate::verification::protocol::java::continuation_state_requests_on_use_potion_hooks;
+use crate::testing::protocol::java::continuation_state_requests_on_use_potion_hooks;
 
-use crate::verification::diff::state_sync::snapshot_uuid;
+use crate::testing::state_sync::snapshot_uuid;
 
 pub fn tick_until_stable(es: &mut EngineState, cs: &mut CombatState, input: ClientInput) -> bool {
     let alive = tick_engine(es, cs, Some(input));
@@ -234,19 +234,6 @@ fn continue_deferred_pending_choice_inner(
     }
 }
 
-pub fn continue_deferred_pending_choice(
-    pending: &PendingChoice,
-    cs: &mut CombatState,
-    snapshot_hint: &Value,
-) -> Result<bool, String> {
-    continue_deferred_pending_choice_inner(
-        pending,
-        cs,
-        snapshot_hint,
-        DeferredContinuationMode::StrictProtocol,
-    )
-}
-
 pub fn continue_deferred_pending_choice_legacy(
     pending: &PendingChoice,
     cs: &mut CombatState,
@@ -263,7 +250,7 @@ pub fn continue_deferred_pending_choice_legacy(
 #[cfg(test)]
 mod tests {
     use super::{deferred_post_potion_hook_request, DeferredContinuationMode};
-    use crate::verification::protocol::java::continuation_state_requests_on_use_potion_hooks;
+    use crate::testing::protocol::java::continuation_state_requests_on_use_potion_hooks;
     use serde_json::json;
 
     #[test]

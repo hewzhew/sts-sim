@@ -6,13 +6,10 @@ This keeps the root of `src/bin/` navigable while preserving Cargo's auto-discov
 
 Rough groups:
 
-- user / developer interaction
-  - `view_replay`
 - combat validation and audits
   - `combat_case`
   - `combat_env_driver`
   - `combat_search_v2_driver`
-  - `verify_live_comm_replay`
 
 Supporting module ownership for these binaries now lives in:
 
@@ -22,7 +19,3 @@ Supporting module ownership for these binaries now lives in:
   - combat env surfaces for explicit external action selection
 - `crate::testing::harness`
   - integration-side analysis helpers consumed internally by app-layer harnesses
-- `sts_simulator::verification::protocol`
-  - protocol parsing and live snapshot shaping
-- `sts_simulator::verification::diff::replay`
-  - replay execution and diff comparison

@@ -10,7 +10,6 @@ mod semantics;
 mod shop;
 pub mod sim;
 pub mod state;
-pub mod verification;
 
 // Integration layers around the runtime path.
 pub mod ai;

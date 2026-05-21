@@ -14,10 +14,10 @@ use crate::runtime::combat::{CombatCard, CombatRng, CombatState, EngineRuntime, 
 use crate::runtime::rng;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
-use crate::verification::diff::replay::drain_to_stable;
-use crate::verification::protocol::java::{
+use crate::testing::protocol::java::{
     card_id_from_java, java_potion_id_to_rust, relic_id_from_java,
 };
+use crate::testing::replay_support::drain_to_stable;
 
 use crate::testing::fixtures::author_spec::{AuthorCardEntry, AuthorCardSpec, AuthorRelicSpec};
 

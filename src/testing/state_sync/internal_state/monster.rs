@@ -8,8 +8,6 @@ use crate::content::powers::PowerId;
 use crate::runtime::combat::Power;
 use serde_json::Value;
 
-use super::power::sync_power_extra_data_from_snapshot;
-
 #[derive(Clone, Copy)]
 struct MissingMonsterPowerPolicy {
     monster_type: EnemyId,
@@ -59,16 +57,6 @@ pub fn seed_monster_internal_state_from_snapshot(
             just_applied: false,
         });
     }
-}
-
-pub fn sync_monster_internal_state_from_snapshot(
-    monster_type: usize,
-    existing_powers: Option<&[Power]>,
-    snapshot_monster: &Value,
-    powers: &mut Vec<Power>,
-) {
-    sync_power_extra_data_from_snapshot(existing_powers, powers);
-    seed_monster_internal_state_from_snapshot(monster_type, snapshot_monster, powers);
 }
 
 fn runtime_state<'a>(snapshot_monster: &'a Value, monster_type: EnemyId) -> &'a Value {

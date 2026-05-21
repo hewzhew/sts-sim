@@ -13,17 +13,14 @@ use sts_simulator::eval::combat_search_v2::{
 #[derive(Parser, Debug)]
 #[command(about = "Combat Search V2 whole-combat runner")]
 struct Args {
-    #[arg(long, conflicts_with_all = ["case", "start_spec", "frame", "baseline_case"])]
+    #[arg(long, conflicts_with_all = ["case", "start_spec", "baseline_case"])]
     manifest: Option<PathBuf>,
 
-    #[arg(long, conflicts_with_all = ["manifest", "start_spec", "frame"])]
+    #[arg(long, conflicts_with_all = ["manifest", "start_spec"])]
     case: Option<PathBuf>,
 
-    #[arg(long, conflicts_with_all = ["manifest", "case", "frame"])]
+    #[arg(long, conflicts_with_all = ["manifest", "case"])]
     start_spec: Option<PathBuf>,
-
-    #[arg(long, conflicts_with_all = ["manifest", "case", "start_spec"])]
-    frame: Option<PathBuf>,
 
     #[arg(long, conflicts_with = "manifest")]
     baseline_case: Option<PathBuf>,
@@ -153,11 +150,10 @@ fn run_manifest_mode(
 }
 
 fn start_source_from_args(args: &Args) -> Result<CombatSearchV2StartSource, String> {
-    match (&args.case, &args.start_spec, &args.frame) {
-        (Some(path), None, None) => Ok(CombatSearchV2StartSource::Case(path.clone())),
-        (None, Some(path), None) => Ok(CombatSearchV2StartSource::StartSpec(path.clone())),
-        (None, None, Some(path)) => Ok(CombatSearchV2StartSource::Frame(path.clone())),
-        _ => Err("provide exactly one of --case, --start-spec, or --frame".to_string()),
+    match (&args.case, &args.start_spec) {
+        (Some(path), None) => Ok(CombatSearchV2StartSource::Case(path.clone())),
+        (None, Some(path)) => Ok(CombatSearchV2StartSource::StartSpec(path.clone())),
+        _ => Err("provide exactly one of --case or --start-spec".to_string()),
     }
 }
 
