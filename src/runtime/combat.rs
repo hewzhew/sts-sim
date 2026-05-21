@@ -227,7 +227,7 @@ pub struct CombatRuntimeHints {
     pub colorless_combat_pool: Vec<CardId>,
     pub emitted_events: Vec<DomainEvent>,
     pub engine_diagnostics: Vec<EngineDiagnostic>,
-    pub pending_rewards: Vec<crate::rewards::state::RewardItem>,
+    pub pending_rewards: Vec<crate::state::rewards::RewardItem>,
     pub power_instance_counter: u32,
     /// Narrow Rust equivalent of Java `DrawCardAction.drawnCards`.
     ///

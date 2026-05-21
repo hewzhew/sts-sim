@@ -597,7 +597,7 @@ pub fn handle_escape(target: usize, state: &mut CombatState) {
     }
 }
 
-pub fn handle_add_combat_reward(item: crate::rewards::state::RewardItem, state: &mut CombatState) {
+pub fn handle_add_combat_reward(item: crate::state::rewards::RewardItem, state: &mut CombatState) {
     state.runtime.pending_rewards.push(item);
 }
 

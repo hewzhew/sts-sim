@@ -35,8 +35,8 @@ This file is the current structure blueprint for the repo.
    - `src/runtime/monster_move.rs`
    - `src/sim/`
 5. run and reward flow
-   - `src/rewards/`
    - `src/state/shop/`
+   - `src/state/rewards/`
 
 ### Fixture / Import Path
 

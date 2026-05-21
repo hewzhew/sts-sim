@@ -597,15 +597,15 @@ fn stable_monster_signature_ignores_irrelevant_runtime_fields_but_keeps_relevant
 #[test]
 fn stable_run_pending_choice_keeps_return_state_payloads_distinct() {
     let baseline = blank_test_combat();
-    let reward_a = crate::rewards::state::RewardState {
-        screen_context: crate::rewards::state::RewardScreenContext::Standard,
-        items: vec![crate::rewards::state::RewardItem::Gold { amount: 10 }],
+    let reward_a = crate::state::rewards::RewardState {
+        screen_context: crate::state::rewards::RewardScreenContext::Standard,
+        items: vec![crate::state::rewards::RewardItem::Gold { amount: 10 }],
         pending_card_choice: None,
         skippable: true,
     };
-    let reward_b = crate::rewards::state::RewardState {
-        screen_context: crate::rewards::state::RewardScreenContext::Standard,
-        items: vec![crate::rewards::state::RewardItem::Gold { amount: 20 }],
+    let reward_b = crate::state::rewards::RewardState {
+        screen_context: crate::state::rewards::RewardScreenContext::Standard,
+        items: vec![crate::state::rewards::RewardItem::Gold { amount: 20 }],
         pending_card_choice: None,
         skippable: true,
     };
@@ -636,27 +636,27 @@ fn stable_run_pending_choice_keeps_return_state_payloads_distinct() {
 fn stable_postcombat_keys_normalize_display_only_order() {
     let baseline = blank_test_combat();
 
-    let reward_a = crate::rewards::state::RewardState {
-        screen_context: crate::rewards::state::RewardScreenContext::Standard,
+    let reward_a = crate::state::rewards::RewardState {
+        screen_context: crate::state::rewards::RewardScreenContext::Standard,
         items: vec![
-            crate::rewards::state::RewardItem::Gold { amount: 10 },
-            crate::rewards::state::RewardItem::EmeraldKey,
+            crate::state::rewards::RewardItem::Gold { amount: 10 },
+            crate::state::rewards::RewardItem::EmeraldKey,
         ],
         pending_card_choice: Some(vec![
-            crate::rewards::state::RewardCard::new(CardId::Strike, 0),
-            crate::rewards::state::RewardCard::new(CardId::Defend, 0),
+            crate::state::rewards::RewardCard::new(CardId::Strike, 0),
+            crate::state::rewards::RewardCard::new(CardId::Defend, 0),
         ]),
         skippable: true,
     };
-    let reward_b = crate::rewards::state::RewardState {
-        screen_context: crate::rewards::state::RewardScreenContext::Standard,
+    let reward_b = crate::state::rewards::RewardState {
+        screen_context: crate::state::rewards::RewardScreenContext::Standard,
         items: vec![
-            crate::rewards::state::RewardItem::EmeraldKey,
-            crate::rewards::state::RewardItem::Gold { amount: 10 },
+            crate::state::rewards::RewardItem::EmeraldKey,
+            crate::state::rewards::RewardItem::Gold { amount: 10 },
         ],
         pending_card_choice: Some(vec![
-            crate::rewards::state::RewardCard::new(CardId::Defend, 0),
-            crate::rewards::state::RewardCard::new(CardId::Strike, 0),
+            crate::state::rewards::RewardCard::new(CardId::Defend, 0),
+            crate::state::rewards::RewardCard::new(CardId::Strike, 0),
         ]),
         skippable: true,
     };
@@ -734,11 +734,11 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         stable_outcome_key(&EngineState::Shop(shop_b), &baseline),
     );
 
-    let boss_a = crate::rewards::state::BossRelicChoiceState::new(vec![
+    let boss_a = crate::state::rewards::BossRelicChoiceState::new(vec![
         crate::content::relics::RelicId::BlackBlood,
         crate::content::relics::RelicId::RunicDome,
     ]);
-    let boss_b = crate::rewards::state::BossRelicChoiceState::new(vec![
+    let boss_b = crate::state::rewards::BossRelicChoiceState::new(vec![
         crate::content::relics::RelicId::RunicDome,
         crate::content::relics::RelicId::BlackBlood,
     ]);
@@ -748,11 +748,11 @@ fn stable_postcombat_keys_normalize_display_only_order() {
     );
 
     let event_a = crate::state::core::EventCombatState {
-        rewards: crate::rewards::state::RewardState {
-            screen_context: crate::rewards::state::RewardScreenContext::Standard,
+        rewards: crate::state::rewards::RewardState {
+            screen_context: crate::state::rewards::RewardScreenContext::Standard,
             items: vec![
-                crate::rewards::state::RewardItem::Gold { amount: 10 },
-                crate::rewards::state::RewardItem::EmeraldKey,
+                crate::state::rewards::RewardItem::Gold { amount: 10 },
+                crate::state::rewards::RewardItem::EmeraldKey,
             ],
             pending_card_choice: None,
             skippable: true,
@@ -764,11 +764,11 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         encounter_key: "test",
     };
     let event_b = crate::state::core::EventCombatState {
-        rewards: crate::rewards::state::RewardState {
-            screen_context: crate::rewards::state::RewardScreenContext::Standard,
+        rewards: crate::state::rewards::RewardState {
+            screen_context: crate::state::rewards::RewardScreenContext::Standard,
             items: vec![
-                crate::rewards::state::RewardItem::EmeraldKey,
-                crate::rewards::state::RewardItem::Gold { amount: 10 },
+                crate::state::rewards::RewardItem::EmeraldKey,
+                crate::state::rewards::RewardItem::Gold { amount: 10 },
             ],
             pending_card_choice: None,
             skippable: true,
@@ -789,15 +789,15 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         max_choices: 1,
         reason: crate::state::core::RunPendingChoiceReason::Purge,
         return_state: Box::new(EngineState::RewardScreen(
-            crate::rewards::state::RewardState {
-                screen_context: crate::rewards::state::RewardScreenContext::Standard,
+            crate::state::rewards::RewardState {
+                screen_context: crate::state::rewards::RewardScreenContext::Standard,
                 items: vec![
-                    crate::rewards::state::RewardItem::Gold { amount: 10 },
-                    crate::rewards::state::RewardItem::EmeraldKey,
+                    crate::state::rewards::RewardItem::Gold { amount: 10 },
+                    crate::state::rewards::RewardItem::EmeraldKey,
                 ],
                 pending_card_choice: Some(vec![
-                    crate::rewards::state::RewardCard::new(CardId::Strike, 0),
-                    crate::rewards::state::RewardCard::new(CardId::Defend, 0),
+                    crate::state::rewards::RewardCard::new(CardId::Strike, 0),
+                    crate::state::rewards::RewardCard::new(CardId::Defend, 0),
                 ]),
                 skippable: true,
             },
@@ -808,15 +808,15 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         max_choices: 1,
         reason: crate::state::core::RunPendingChoiceReason::Purge,
         return_state: Box::new(EngineState::RewardScreen(
-            crate::rewards::state::RewardState {
-                screen_context: crate::rewards::state::RewardScreenContext::Standard,
+            crate::state::rewards::RewardState {
+                screen_context: crate::state::rewards::RewardScreenContext::Standard,
                 items: vec![
-                    crate::rewards::state::RewardItem::EmeraldKey,
-                    crate::rewards::state::RewardItem::Gold { amount: 10 },
+                    crate::state::rewards::RewardItem::EmeraldKey,
+                    crate::state::rewards::RewardItem::Gold { amount: 10 },
                 ],
                 pending_card_choice: Some(vec![
-                    crate::rewards::state::RewardCard::new(CardId::Defend, 0),
-                    crate::rewards::state::RewardCard::new(CardId::Strike, 0),
+                    crate::state::rewards::RewardCard::new(CardId::Defend, 0),
+                    crate::state::rewards::RewardCard::new(CardId::Strike, 0),
                 ]),
                 skippable: true,
             },

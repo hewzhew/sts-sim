@@ -1,6 +1,6 @@
 use crate::content::relics::RelicId;
-use crate::rewards::state::{RewardItem, RewardScreenContext, RewardState};
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::rewards::{RewardItem, RewardScreenContext, RewardState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -22,7 +22,7 @@ fn post_reward_state(run_state: &mut RunState) -> EngineState {
         let relics = (0..3)
             .map(|_| run_state.random_relic_by_tier(crate::content::relics::RelicTier::Boss))
             .collect();
-        return EngineState::BossRelicSelect(crate::rewards::state::BossRelicChoiceState::new(
+        return EngineState::BossRelicSelect(crate::state::rewards::BossRelicChoiceState::new(
             relics,
         ));
     }
@@ -31,7 +31,7 @@ fn post_reward_state(run_state: &mut RunState) -> EngineState {
 
 pub fn handle(
     run_state: &mut crate::state::run::RunState,
-    reward_state: &mut crate::rewards::state::RewardState,
+    reward_state: &mut crate::state::rewards::RewardState,
     input: Option<crate::state::core::ClientInput>,
 ) -> Option<crate::state::core::EngineState> {
     // If we're in card choice mode, handle that first
@@ -181,7 +181,7 @@ fn handle_card_choice(
 }
 
 fn remove_linked_sapphire_key_after_claiming_relic(
-    reward_state: &mut crate::rewards::state::RewardState,
+    reward_state: &mut crate::state::rewards::RewardState,
     removed_relic_index: usize,
 ) {
     if matches!(
@@ -193,7 +193,7 @@ fn remove_linked_sapphire_key_after_claiming_relic(
 }
 
 fn remove_linked_relic_after_claiming_sapphire_key(
-    reward_state: &mut crate::rewards::state::RewardState,
+    reward_state: &mut crate::state::rewards::RewardState,
     removed_key_index: usize,
 ) {
     if removed_key_index == 0 {
@@ -214,9 +214,9 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::potions::PotionId;
     use crate::content::relics::{RelicId, RelicState};
-    use crate::rewards::state::{RewardItem, RewardState};
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState};
+    use crate::state::rewards::{RewardItem, RewardState};
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -479,7 +479,7 @@ mod tests {
         run_state.relics.push(RelicState::new(RelicId::CeramicFish));
         let mut reward_state = RewardState::new();
         reward_state.items = vec![RewardItem::Card {
-            cards: vec![crate::rewards::state::RewardCard::new(
+            cards: vec![crate::state::rewards::RewardCard::new(
                 CardId::PommelStrike,
                 0,
             )],
@@ -538,7 +538,7 @@ mod tests {
         run_state.relics.push(RelicState::new(RelicId::Omamori));
         let mut reward_state = RewardState::new();
         reward_state.items = vec![RewardItem::Card {
-            cards: vec![crate::rewards::state::RewardCard::new(CardId::Regret, 0)],
+            cards: vec![crate::state::rewards::RewardCard::new(CardId::Regret, 0)],
         }];
 
         handle(

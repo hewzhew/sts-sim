@@ -1,7 +1,7 @@
 use crate::map::node::RoomType;
-use crate::rewards::state::{RewardScreenContext, TreasureChestSize, TreasureChestState};
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::rewards::{RewardScreenContext, TreasureChestSize, TreasureChestState};
 use crate::state::run::RunState;
 use crate::state::selection::{
     DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
@@ -50,9 +50,9 @@ fn roll_treasure_chest_spec(run_state: &mut RunState) -> TreasureChestState {
 fn open_treasure_chest(
     run_state: &mut RunState,
     chest: TreasureChestState,
-) -> crate::rewards::state::RewardState {
+) -> crate::state::rewards::RewardState {
     let mut reward =
-        crate::rewards::state::RewardState::with_context(RewardScreenContext::TreasureRoom);
+        crate::state::rewards::RewardState::with_context(RewardScreenContext::TreasureRoom);
 
     // --- onChestOpen() relic hooks (non-boss chest) ---
     // CursedKey: add a random curse to deck
@@ -94,7 +94,7 @@ fn open_treasure_chest(
             crate::content::relics::RelicTier::Uncommon
         };
         let extra_relic = run_state.random_relic_by_tier(extra_tier);
-        reward.items.push(crate::rewards::state::RewardItem::Relic {
+        reward.items.push(crate::state::rewards::RewardItem::Relic {
             relic_id: extra_relic,
         });
     }
@@ -109,7 +109,7 @@ fn open_treasure_chest(
                 .random_f32_min_max(base_amount as f32 * 0.9, base_amount as f32 * 1.1)
                 .round() as i32
         };
-        crate::rewards::generator::add_gold_reward_like_java(&mut reward.items, amount);
+        crate::state::rewards::generator::add_gold_reward_like_java(&mut reward.items, amount);
     }
 
     // Generate chest relic reward after onChestOpen hooks, matching Java
@@ -118,11 +118,11 @@ fn open_treasure_chest(
     let relic_id = run_state.random_relic_by_tier(chest.base_relic_tier);
     reward
         .items
-        .push(crate::rewards::state::RewardItem::Relic { relic_id });
+        .push(crate::state::rewards::RewardItem::Relic { relic_id });
     if run_state.is_final_act_available && !run_state.keys[1] {
         reward
             .items
-            .push(crate::rewards::state::RewardItem::SapphireKey);
+            .push(crate::state::rewards::RewardItem::SapphireKey);
     }
 
     // NlothsMask: remove one relic from rewards (onChestOpenAfter)
@@ -143,16 +143,16 @@ fn open_treasure_chest(
 }
 
 fn remove_one_relic_from_rewards_after_chest_open(
-    items: &mut Vec<crate::rewards::state::RewardItem>,
+    items: &mut Vec<crate::state::rewards::RewardItem>,
 ) {
     if let Some(pos) = items
         .iter()
-        .position(|item| matches!(item, crate::rewards::state::RewardItem::Relic { .. }))
+        .position(|item| matches!(item, crate::state::rewards::RewardItem::Relic { .. }))
     {
         items.remove(pos);
         if matches!(
             items.get(pos),
-            Some(crate::rewards::state::RewardItem::SapphireKey)
+            Some(crate::state::rewards::RewardItem::SapphireKey)
         ) {
             items.remove(pos);
         }
@@ -521,7 +521,7 @@ pub fn tick_run(
                             let normal_monster_rewards_allowed = !cs.have_monsters_escaped_java();
                             if matches!(screen_context, RewardScreenContext::SmokedCombat) {
                                 let _hidden_room_rewards =
-                                    crate::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
+                                    crate::state::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
                                         run_state,
                                         is_elite,
                                         is_boss,
@@ -529,18 +529,18 @@ pub fn tick_run(
                                         false,
                                         normal_monster_rewards_allowed,
                                     );
-                                *rs = crate::rewards::state::RewardState::with_context(
+                                *rs = crate::state::rewards::RewardState::with_context(
                                     RewardScreenContext::SmokedCombat,
                                 );
                             } else {
                                 // Populate the actual dropped rewards for normal/mugged combat.
                                 *rs = if existing_items.is_empty() && normal_monster_rewards_allowed
                                 {
-                                    crate::rewards::generator::generate_combat_rewards(
+                                    crate::state::rewards::generator::generate_combat_rewards(
                                         run_state, is_elite, is_boss,
                                     )
                                 } else {
-                                    crate::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
+                                    crate::state::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
                                         run_state,
                                         is_elite,
                                         is_boss,
@@ -1037,7 +1037,7 @@ pub fn tick_run(
             let mut transition = None;
             if let EngineState::RewardScreen(rs) = engine_state {
                 if let Some(new_state) =
-                    crate::rewards::handler::handle(run_state, rs, input.clone())
+                    crate::engine::reward_handler::handle(run_state, rs, input.clone())
                 {
                     transition = Some(new_state);
                 }
@@ -1054,7 +1054,7 @@ pub fn tick_run(
             let mut transition = None;
             if let EngineState::BossRelicSelect(bs) = engine_state {
                 if let Some(new_state) =
-                    crate::rewards::boss_handler::handle(run_state, bs, input.clone())
+                    crate::engine::boss_reward_handler::handle(run_state, bs, input.clone())
                 {
                     transition = Some(new_state);
                 }
@@ -1105,7 +1105,7 @@ pub fn tick_run(
                         };
                         if !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat) {
                             rewards.items.append(&mut cs.runtime.pending_rewards);
-                            crate::rewards::generator::add_potion_reward_like_java(
+                            crate::state::rewards::generator::add_potion_reward_like_java(
                                 run_state,
                                 &mut rewards.items,
                             );
@@ -1114,14 +1114,14 @@ pub fn tick_run(
                             && !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat)
                         {
                             rewards.items.extend(
-                                crate::rewards::generator::generate_card_reward_items(
+                                crate::state::rewards::generator::generate_card_reward_items(
                                     run_state, false, false, false,
                                 ),
                             );
                         } else {
                             let mut hidden_items = std::mem::take(&mut rewards.items);
                             hidden_items.append(&mut cs.runtime.pending_rewards);
-                            crate::rewards::generator::add_potion_reward_like_java(
+                            crate::state::rewards::generator::add_potion_reward_like_java(
                                 run_state,
                                 &mut hidden_items,
                             );
@@ -1160,12 +1160,12 @@ mod tests {
     use crate::content::relics::{RelicId, RelicState, RelicTier};
     use crate::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::map::state::MapState;
-    use crate::rewards::state::{
-        RewardItem, RewardScreenContext, RewardState, TreasureChestSize, TreasureChestState,
-    };
     use crate::runtime::combat::CombatCard;
     use crate::runtime::rng::StsRng;
     use crate::state::core::{ClientInput, EngineState, EventCombatState, PostCombatReturn};
+    use crate::state::rewards::{
+        RewardItem, RewardScreenContext, RewardState, TreasureChestSize, TreasureChestState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{
         DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
@@ -1604,7 +1604,7 @@ mod tests {
         };
         let gold_before = run_state.gold;
 
-        crate::rewards::handler::handle(
+        crate::engine::reward_handler::handle(
             &mut run_state,
             &mut rewards,
             Some(ClientInput::ClaimReward(0)),
@@ -2040,7 +2040,7 @@ mod tests {
             None,
             None,
         ];
-        let mut engine_state = EngineState::RewardScreen(crate::rewards::state::RewardState::new());
+        let mut engine_state = EngineState::RewardScreen(crate::state::rewards::RewardState::new());
         let mut combat_state = None;
 
         assert!(tick_run(

@@ -1,8 +1,8 @@
 use crate::content::cards::CardId;
 use crate::content::cards::CardRarity;
-use crate::rewards::state::RewardCard;
-use crate::rewards::state::RewardItem;
-use crate::rewards::state::RewardState;
+use crate::state::rewards::RewardCard;
+use crate::state::rewards::RewardItem;
+use crate::state::rewards::RewardState;
 use crate::state::run::RunState;
 
 pub fn adjusted_card_reward_choice_count(run_state: &RunState, base_count: usize) -> usize {
@@ -75,7 +75,7 @@ pub fn generate_combat_rewards_from_existing_with_escape_gate(
     RewardState {
         items,
         skippable: !is_boss,
-        screen_context: crate::rewards::state::RewardScreenContext::Standard,
+        screen_context: crate::state::rewards::RewardScreenContext::Standard,
         pending_card_choice: None,
     }
 }
@@ -261,8 +261,8 @@ mod tests {
     };
     use crate::content::cards::{CardId, CardRarity};
     use crate::content::relics::{RelicId, RelicState, RelicTier};
-    use crate::rewards::state::RewardItem;
     use crate::runtime::rng::StsRng;
+    use crate::state::rewards::RewardItem;
     use crate::state::run::RunState;
 
     #[test]

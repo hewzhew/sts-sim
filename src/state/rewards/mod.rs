@@ -2,6 +2,8 @@ use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::content::relics::RelicTier;
 
+pub(crate) mod generator;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RewardCard {
     pub id: crate::content::cards::CardId,

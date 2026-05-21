@@ -61,7 +61,7 @@ pub struct RunState {
     pub card_upgraded_chance: f32,
 
     // Transient states
-    pub reward_state: Option<crate::rewards::state::RewardState>,
+    pub reward_state: Option<crate::state::rewards::RewardState>,
     pub shop_state: Option<crate::state::shop::ShopState>,
     pub event_state: Option<crate::state::events::EventState>,
     pub note_for_yourself_card: crate::content::cards::CardId,

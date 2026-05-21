@@ -11,7 +11,6 @@ This file defines the hard dependency direction for `src/`.
   - `src/core/`
   - `src/engine/`
   - `src/map/`
-  - `src/rewards/`
   - `src/state/`
 - `integration`
   - fixture import, eval surfaces, and analysis helpers around the runtime

@@ -1,5 +1,5 @@
-use crate::rewards::state::BossRelicChoiceState;
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::rewards::BossRelicChoiceState;
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -46,8 +46,8 @@ pub fn handle(
 mod tests {
     use super::handle;
     use crate::content::relics::RelicId;
-    use crate::rewards::state::BossRelicChoiceState;
     use crate::state::core::{ClientInput, EngineState};
+    use crate::state::rewards::BossRelicChoiceState;
     use crate::state::run::RunState;
     use crate::state::selection::{SelectionResolution, SelectionScope};
 

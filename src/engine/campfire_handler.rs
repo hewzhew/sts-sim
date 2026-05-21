@@ -53,15 +53,17 @@ pub fn handle(
                     .iter()
                     .any(|r| r.id == RelicId::DreamCatcher)
                 {
-                    let cards = crate::rewards::generator::generate_card_reward(
+                    let cards = crate::state::rewards::generator::generate_card_reward(
                         run_state,
-                        crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3),
+                        crate::state::rewards::generator::adjusted_card_reward_choice_count(
+                            run_state, 3,
+                        ),
                         false,
                     );
-                    let mut reward_state = crate::rewards::state::RewardState::new();
+                    let mut reward_state = crate::state::rewards::RewardState::new();
                     reward_state
                         .items
-                        .push(crate::rewards::state::RewardItem::Card { cards });
+                        .push(crate::state::rewards::RewardItem::Card { cards });
                     *engine_state = EngineState::RewardScreen(reward_state);
                     return true;
                 }
@@ -81,10 +83,10 @@ pub fn handle(
             CampfireChoice::Dig => {
                 // Shovel: Java → Dig grants relic via reward screen (AbstractRoom.addRelicToRewards)
                 let id = run_state.random_relic();
-                let mut reward_state = crate::rewards::state::RewardState::new();
+                let mut reward_state = crate::state::rewards::RewardState::new();
                 reward_state
                     .items
-                    .push(crate::rewards::state::RewardItem::Relic { relic_id: id });
+                    .push(crate::state::rewards::RewardItem::Relic { relic_id: id });
                 *engine_state = EngineState::RewardScreen(reward_state);
             }
 
@@ -154,7 +156,7 @@ mod tests {
 
         match engine_state {
             EngineState::RewardScreen(ref reward_state) => match &reward_state.items[0] {
-                crate::rewards::state::RewardItem::Card { cards } => assert_eq!(cards.len(), 4),
+                crate::state::rewards::RewardItem::Card { cards } => assert_eq!(cards.len(), 4),
                 other => panic!("expected card reward, got {other:?}"),
             },
             other => panic!("expected reward screen, got {other:?}"),

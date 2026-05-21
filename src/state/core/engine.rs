@@ -4,8 +4,8 @@ use super::{PendingChoice, RunPendingChoiceState};
 pub enum EngineState {
     CombatPlayerTurn,
     CombatProcessing,
-    RewardScreen(crate::rewards::state::RewardState),
-    TreasureRoom(crate::rewards::state::TreasureChestState),
+    RewardScreen(crate::state::rewards::RewardState),
+    TreasureRoom(crate::state::rewards::TreasureChestState),
     Campfire,
     Shop(crate::state::shop::ShopState),
     MapNavigation,
@@ -16,7 +16,7 @@ pub enum EngineState {
     /// Combat proceeds normally (CombatPlayerTurn), and when it ends, the engine
     /// checks this state to determine how to handle rewards and where to return.
     EventCombat(EventCombatState),
-    BossRelicSelect(crate::rewards::state::BossRelicChoiceState),
+    BossRelicSelect(crate::state::rewards::BossRelicChoiceState),
     GameOver(RunResult),
 }
 
@@ -24,7 +24,7 @@ pub enum EngineState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct EventCombatState {
     /// Pre-populated rewards (gold, relics) added before combat starts.
-    pub rewards: crate::rewards::state::RewardState,
+    pub rewards: crate::state::rewards::RewardState,
     /// If false, skip the reward screen entirely after combat (e.g., Colosseum fight 1).
     pub reward_allowed: bool,
     /// If true, suppress card rewards in the reward screen.

@@ -259,7 +259,7 @@ fn settle_victory_if_ready(
         && combat_state.zones.limbo.is_empty()
         && combat_state.zones.queued_cards.is_empty()
     {
-        *engine_state = EngineState::RewardScreen(crate::rewards::state::RewardState::new());
+        *engine_state = EngineState::RewardScreen(crate::state::rewards::RewardState::new());
         return Some(false);
     }
     *engine_state = EngineState::CombatProcessing;
@@ -761,8 +761,8 @@ pub fn tick_engine(
                         }
                         if combat_state.turn.counters.escape_pending_reward {
                             *engine_state = EngineState::RewardScreen(
-                                crate::rewards::state::RewardState::with_context(
-                                    crate::rewards::state::RewardScreenContext::SmokedCombat,
+                                crate::state::rewards::RewardState::with_context(
+                                    crate::state::rewards::RewardScreenContext::SmokedCombat,
                                 ),
                             );
                             return false;

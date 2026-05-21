@@ -381,7 +381,7 @@ pub enum Action {
         amount: i32,
     },
     AddCombatReward {
-        item: crate::rewards::state::RewardItem,
+        item: crate::state::rewards::RewardItem,
     },
     GainEnergy {
         amount: i32,
