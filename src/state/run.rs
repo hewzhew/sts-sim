@@ -879,11 +879,11 @@ impl RunState {
         card_id: crate::content::cards::CardId,
         pre_upgrades: u8,
         source: DomainEventSource,
-        ctx: crate::deck::context::DeckContext,
+        ctx: crate::state::deck::context::DeckContext,
     ) -> bool {
         let mut target_uuid = self.next_card_uuid();
 
-        let result = crate::deck::manager::DeckManager::obtain_card(
+        let result = crate::state::deck::manager::DeckManager::obtain_card(
             &ctx,
             card_id,
             &mut target_uuid,
@@ -917,7 +917,7 @@ impl RunState {
         let ctx = self.build_deck_context();
         let mut target_uuid = self.next_card_uuid();
 
-        let result = crate::deck::manager::DeckManager::obtain_card_without_interception(
+        let result = crate::state::deck::manager::DeckManager::obtain_card_without_interception(
             &ctx,
             card_id,
             &mut target_uuid,
@@ -959,7 +959,7 @@ impl RunState {
         let ctx = self.build_deck_context();
         let mut target_uuid = self.next_card_uuid();
 
-        let result = crate::deck::manager::DeckManager::obtain_card(
+        let result = crate::state::deck::manager::DeckManager::obtain_card(
             &ctx,
             template.id,
             &mut target_uuid,
@@ -1000,7 +1000,7 @@ impl RunState {
         if let Some(removed) =
             self.remove_card_from_deck_without_removal_hooks_with_source(uuid, source)
         {
-            let result = crate::deck::manager::DeckManager::remove_card(removed.id);
+            let result = crate::state::deck::manager::DeckManager::remove_card(removed.id);
             self.resolve_deck_actions(result.actions, source);
             self.dispatch_on_master_deck_change();
         }
@@ -1021,7 +1021,7 @@ impl RunState {
         Some(snapshot)
     }
 
-    fn build_deck_context(&self) -> crate::deck::context::DeckContext {
+    fn build_deck_context(&self) -> crate::state::deck::context::DeckContext {
         use crate::content::relics::RelicId;
         let mut omamori_charges = 0;
         let mut has_omamori = false;
@@ -1033,7 +1033,7 @@ impl RunState {
             }
         }
 
-        crate::deck::context::DeckContext {
+        crate::state::deck::context::DeckContext {
             has_hoarder_mod: false,
             has_omamori,
             omamori_charges,
@@ -1054,15 +1054,19 @@ impl RunState {
         pre_upgrades: u8,
     ) -> u8 {
         let ctx = self.build_deck_context();
-        crate::deck::manager::DeckManager::preview_obtain_upgrades(&ctx, card_id, pre_upgrades)
+        crate::state::deck::manager::DeckManager::preview_obtain_upgrades(
+            &ctx,
+            card_id,
+            pre_upgrades,
+        )
     }
 
     fn resolve_deck_actions(
         &mut self,
-        actions: Vec<crate::deck::manager::DeckAction>,
+        actions: Vec<crate::state::deck::manager::DeckAction>,
         source: DomainEventSource,
     ) {
-        use crate::deck::manager::DeckAction;
+        use crate::state::deck::manager::DeckAction;
         for action in actions {
             match action {
                 DeckAction::PreventObtain => { /* Handled structurally */ }
@@ -1850,7 +1854,7 @@ impl RunState {
         let pos = self.master_deck.iter().position(|card| card.uuid == uuid)?;
         let removed = self.master_deck.remove(pos);
         let before = Self::snapshot_card(&removed);
-        let remove_result = crate::deck::manager::DeckManager::remove_card(removed.id);
+        let remove_result = crate::state::deck::manager::DeckManager::remove_card(removed.id);
         self.resolve_deck_actions(remove_result.actions, source);
         self.dispatch_on_master_deck_change();
         Some(before)
@@ -1951,7 +1955,7 @@ impl RunState {
             0
         };
 
-        let result = crate::deck::manager::DeckManager::obtain_card(
+        let result = crate::state::deck::manager::DeckManager::obtain_card(
             &ctx,
             new_id,
             &mut target_uuid,

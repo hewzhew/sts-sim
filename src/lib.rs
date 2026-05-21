@@ -2,7 +2,6 @@ extern crate self as sts_simulator;
 
 pub mod content;
 mod core;
-mod deck;
 pub mod engine;
 mod events;
 pub mod map;

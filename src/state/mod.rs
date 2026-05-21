@@ -1,5 +1,6 @@
 pub mod core;
 
+pub(crate) mod deck;
 pub mod events;
 pub(crate) mod relic_pool;
 pub mod run;

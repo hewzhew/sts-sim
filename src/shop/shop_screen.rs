@@ -1,10 +1,10 @@
 use crate::content::cards::get_card_definition;
 use crate::content::potions;
 use crate::content::relics::{RelicId, RelicTier};
-use crate::deck::context::DeckContext;
-use crate::deck::manager::DeckManager;
 use crate::shop::merchant::generate_cards;
 use crate::shop::state::{ShopCard, ShopConfig, ShopPotion, ShopRelic, ShopState};
+use crate::state::deck::context::DeckContext;
+use crate::state::deck::manager::DeckManager;
 
 fn shop_deck_context(config: &ShopConfig) -> DeckContext {
     DeckContext {
