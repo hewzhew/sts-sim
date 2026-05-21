@@ -6,33 +6,24 @@ use crate::state::core::{
 };
 use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
 use smallvec::SmallVec;
-use std::cell::Cell;
 
 use super::pending_choices;
 use super::targeting;
 
-thread_local! {
-    static SUPPRESS_ENGINE_WARNINGS_DEPTH: Cell<usize> = const { Cell::new(0) };
-}
+mod diagnostics;
+mod discovery;
+mod victory;
 
-fn engine_warnings_enabled() -> bool {
-    SUPPRESS_ENGINE_WARNINGS_DEPTH.with(|depth| depth.get() == 0)
-}
+use diagnostics::record_engine_diagnostic;
+pub(crate) use diagnostics::with_suppressed_engine_warnings;
+pub use victory::is_smoke_escape_stable_boundary;
 
-fn record_engine_diagnostic(combat_state: &mut CombatState, diagnostic: EngineDiagnostic) {
-    if engine_warnings_enabled() {
-        combat_state.emit_diagnostic(diagnostic);
-    }
-}
-
-pub(crate) fn with_suppressed_engine_warnings<T>(f: impl FnOnce() -> T) -> T {
-    SUPPRESS_ENGINE_WARNINGS_DEPTH.with(|depth| {
-        depth.set(depth.get() + 1);
-        let result = f();
-        depth.set(depth.get().saturating_sub(1));
-        result
-    })
-}
+#[cfg(test)]
+use discovery::{
+    any_color_attack_pool_sorted, class_combat_card_pool, generate_foreign_influence_choices,
+};
+#[cfg(test)]
+use victory::settle_victory_if_ready;
 
 pub(crate) fn compute_player_turn_start_draw_count(combat_state: &CombatState) -> i32 {
     let mut draw_count: i32 = 5 + combat_state.turn.turn_start_draw_modifier;
@@ -44,241 +35,6 @@ pub(crate) fn compute_player_turn_start_draw_count(combat_state: &CombatState) -
         draw_count += 2;
     }
     draw_count
-}
-
-fn class_combat_card_pool(player_class: &str) -> Vec<crate::content::cards::CardId> {
-    let mut class_pool = Vec::new();
-    for &rarity in &[
-        crate::content::cards::CardRarity::Common,
-        crate::content::cards::CardRarity::Uncommon,
-        crate::content::cards::CardRarity::Rare,
-    ] {
-        class_pool.extend(crate::engine::campfire_handler::card_pool_for_class(
-            player_class,
-            rarity,
-        ));
-    }
-    class_pool
-}
-
-fn discovery_card_pool(
-    combat_state: &CombatState,
-    colorless: bool,
-    card_type: Option<crate::content::cards::CardType>,
-) -> Vec<crate::content::cards::CardId> {
-    let mut pool = if colorless {
-        combat_state.colorless_combat_pool()
-    } else {
-        class_combat_card_pool(combat_state.meta.player_class)
-    };
-    if let Some(ct) = card_type {
-        pool.retain(|&id| crate::content::cards::get_card_definition(id).card_type == ct);
-    }
-    pool
-}
-
-fn generate_discovery_choices(
-    combat_state: &mut CombatState,
-    colorless: bool,
-    card_type: Option<crate::content::cards::CardType>,
-) -> Vec<crate::content::cards::CardId> {
-    let pool = discovery_card_pool(combat_state, colorless, card_type);
-    let mut cards = Vec::new();
-    while cards.len() < 3 && !pool.is_empty() {
-        let idx = combat_state
-            .rng
-            .card_random_rng
-            .random(pool.len() as i32 - 1) as usize;
-        let id = pool[idx];
-        if !cards.contains(&id) {
-            cards.push(id);
-        }
-    }
-    cards
-}
-
-fn any_color_attack_pool_sorted(
-    rarity: crate::content::cards::CardRarity,
-) -> Vec<crate::content::cards::CardId> {
-    use crate::content::cards::{
-        get_card_definition, java_id, CardTag, CardType, COLORLESS_RARE_POOL,
-        COLORLESS_UNCOMMON_POOL, DEFECT_COMMON_POOL, DEFECT_RARE_POOL, DEFECT_UNCOMMON_POOL,
-        IRONCLAD_COMMON_POOL, IRONCLAD_RARE_POOL, IRONCLAD_UNCOMMON_POOL, SILENT_COMMON_POOL,
-        SILENT_RARE_POOL, SILENT_UNCOMMON_POOL, WATCHER_COMMON_POOL, WATCHER_RARE_POOL,
-        WATCHER_UNCOMMON_POOL,
-    };
-
-    let mut pool = [
-        IRONCLAD_COMMON_POOL,
-        IRONCLAD_UNCOMMON_POOL,
-        IRONCLAD_RARE_POOL,
-        SILENT_COMMON_POOL,
-        SILENT_UNCOMMON_POOL,
-        SILENT_RARE_POOL,
-        DEFECT_COMMON_POOL,
-        DEFECT_UNCOMMON_POOL,
-        DEFECT_RARE_POOL,
-        WATCHER_COMMON_POOL,
-        WATCHER_UNCOMMON_POOL,
-        WATCHER_RARE_POOL,
-        COLORLESS_UNCOMMON_POOL,
-        COLORLESS_RARE_POOL,
-    ]
-    .into_iter()
-    .flatten()
-    .copied()
-    .filter(|id| {
-        let def = get_card_definition(*id);
-        def.rarity == rarity
-            && def.card_type == CardType::Attack
-            && !def.tags.contains(&CardTag::Healing)
-    })
-    .collect::<Vec<_>>();
-    pool.sort_by_key(|id| java_id(*id));
-    pool
-}
-
-fn random_foreign_influence_card(
-    combat_state: &mut CombatState,
-) -> Option<crate::content::cards::CardId> {
-    let roll = combat_state.rng.card_random_rng.random(99);
-    let rarity = if roll < 55 {
-        crate::content::cards::CardRarity::Common
-    } else if roll < 85 {
-        crate::content::cards::CardRarity::Uncommon
-    } else {
-        crate::content::cards::CardRarity::Rare
-    };
-    // Java CardLibrary.getAnyColorCard(type, rarity) shuffles the temporary
-    // CardGroup with cardRandomRng.randomLong(), then CardGroup.getRandomCard
-    // sorts by cardID and selects with AbstractDungeon.cardRng.
-    let _shuffle_seed = combat_state.rng.card_random_rng.random_long();
-    let pool = any_color_attack_pool_sorted(rarity);
-    if pool.is_empty() {
-        return None;
-    }
-    let idx = combat_state.rng.card_rng.random(pool.len() as i32 - 1) as usize;
-    Some(pool[idx])
-}
-
-fn generate_foreign_influence_choices(
-    combat_state: &mut CombatState,
-) -> Vec<crate::content::cards::CardId> {
-    let mut cards = Vec::new();
-    while cards.len() < 3 {
-        let Some(id) = random_foreign_influence_card(combat_state) else {
-            break;
-        };
-        if !cards.contains(&id) {
-            cards.push(id);
-        }
-    }
-    cards
-}
-
-fn add_foreign_influence_choice_to_zone(
-    combat_state: &mut CombatState,
-    card_id: crate::content::cards::CardId,
-    upgraded_foreign_influence: bool,
-) {
-    let uuid = combat_state.next_card_uuid();
-    let mut card =
-        crate::content::cards::make_fresh_card_copy_for_combat(card_id, uuid, combat_state);
-    if upgraded_foreign_influence {
-        card.set_cost_for_turn_java(0);
-    }
-
-    if combat_state.zones.hand.len() < 10 {
-        // ShowCardAndAddToHandEffect upgrades the actual generated card under
-        // Master Reality.
-        crate::content::cards::apply_master_reality_to_generated_card(&mut card, combat_state, 1);
-        crate::content::cards::evaluate_card(&mut card, combat_state, None);
-        combat_state.zones.hand.push(card);
-    } else {
-        // ForeignInfluenceAction uses ShowCardAndAddToDiscardEffect(src, x, y).
-        // That Java constructor upgrades only its visual copy under Master
-        // Reality, then adds the original srcCard to the discard pile.
-        combat_state.add_card_to_discard_pile_top(card);
-    }
-}
-
-fn resolve_victory_hooks_immediately(combat_state: &mut CombatState) {
-    let mut actions = crate::content::relics::hooks::on_victory(combat_state);
-    for power in crate::content::powers::store::powers_snapshot_for(combat_state, 0) {
-        let power_actions = crate::content::powers::resolve_power_on_victory(
-            power.power_type,
-            combat_state,
-            0,
-            power.amount,
-        );
-        for action in power_actions {
-            actions.push(ActionInfo {
-                action,
-                insertion_mode: crate::runtime::action::AddTo::Bottom,
-            });
-        }
-    }
-    if actions.is_empty() {
-        return;
-    }
-
-    combat_state.queue_actions(actions);
-    while let Some(action) = combat_state.pop_next_action() {
-        crate::engine::action_handlers::execute_action(action, combat_state);
-        combat_state.ensure_flush_next_queued_card();
-    }
-}
-
-fn settle_victory_if_ready(
-    engine_state: &mut EngineState,
-    combat_state: &mut CombatState,
-) -> Option<bool> {
-    if !combat_state.are_monsters_basically_dead_java() {
-        return None;
-    }
-
-    if !combat_state.turn.counters.victory_triggered {
-        combat_state.turn.mark_victory_triggered();
-        resolve_victory_hooks_immediately(combat_state);
-    }
-
-    if !combat_state.has_pending_actions()
-        && combat_state.zones.queued_cards.is_empty()
-        && !combat_state.zones.limbo.is_empty()
-    {
-        let limbo_cards = std::mem::take(&mut combat_state.zones.limbo);
-        for card in limbo_cards {
-            combat_state.add_card_to_discard_pile_top(card);
-        }
-    }
-
-    // Java does not cut off queued onUseCard / onDeath aftermath when the last monster dies.
-    // Finish draining any already-queued actions (e.g. Rage block, relic hooks, death hooks)
-    // before transitioning to rewards.
-    if !combat_state.has_pending_actions()
-        && combat_state.zones.limbo.is_empty()
-        && combat_state.zones.queued_cards.is_empty()
-    {
-        *engine_state = EngineState::RewardScreen(crate::state::rewards::RewardState::new());
-        return Some(false);
-    }
-    *engine_state = EngineState::CombatProcessing;
-    Some(true)
-}
-
-pub fn is_smoke_escape_stable_boundary(
-    engine_state: &EngineState,
-    combat_state: &CombatState,
-) -> bool {
-    matches!(engine_state, EngineState::CombatProcessing)
-        && matches!(combat_state.turn.current_phase, CombatPhase::TurnTransition)
-        && combat_state.runtime.combat_smoked
-        && combat_state.turn.counters.player_escaping
-        && combat_state.turn.counters.victory_triggered
-        && combat_state.turn.counters.escape_pending_reward
-        && !combat_state.has_pending_actions()
-        && combat_state.zones.queued_cards.is_empty()
-        && combat_state.zones.limbo.is_empty()
 }
 
 fn discard_hand_for_turn_transition(combat_state: &mut CombatState) {
@@ -582,7 +338,8 @@ pub fn tick_engine(
                     // Java DiscoveryAction.generateCardChoices(type) /
                     // generateColorlessCardChoices() samples three unique card
                     // IDs when the screen opens.
-                    let cards = generate_discovery_choices(combat_state, colorless, card_type);
+                    let cards =
+                        discovery::generate_discovery_choices(combat_state, colorless, card_type);
                     combat_state.turn.set_discovery_cost_for_turn(cost_for_turn);
                     update_monster_intents(combat_state);
                     *engine_state = EngineState::PendingChoice(PendingChoice::DiscoverySelect(
@@ -597,7 +354,7 @@ pub fn tick_engine(
                     return true;
                 }
                 Action::SuspendForForeignInfluence { upgraded } => {
-                    let cards = generate_foreign_influence_choices(combat_state);
+                    let cards = discovery::generate_foreign_influence_choices(combat_state);
                     update_monster_intents(combat_state);
                     *engine_state =
                         EngineState::PendingChoice(PendingChoice::ForeignInfluenceSelect {
@@ -624,8 +381,9 @@ pub fn tick_engine(
                         CardRewardPool::ClassAll => {
                             // Java: returnTrulyRandomCardInCombat() -> all cards for
                             // the current player's class, not always Ironclad.
-                            card_pool
-                                .extend(class_combat_card_pool(combat_state.meta.player_class));
+                            card_pool.extend(discovery::class_combat_card_pool(
+                                combat_state.meta.player_class,
+                            ));
                         }
                         CardRewardPool::Colorless => {
                             // Java: returnTrulyRandomColorlessCardInCombat()
@@ -754,7 +512,7 @@ pub fn tick_engine(
                     if combat_state.turn.counters.player_escaping {
                         if !combat_state.turn.counters.victory_triggered {
                             combat_state.turn.mark_victory_triggered();
-                            resolve_victory_hooks_immediately(combat_state);
+                            victory::resolve_victory_hooks_immediately(combat_state);
                             combat_state.turn.mark_escape_pending_reward();
                             *engine_state = EngineState::CombatProcessing;
                             return true;
@@ -1073,14 +831,15 @@ pub fn tick_engine(
                 *engine_state = EngineState::GameOver(RunResult::Defeat);
                 return false;
             }
-            if let Some(keep_running) = settle_victory_if_ready(engine_state, combat_state) {
+            if let Some(keep_running) = victory::settle_victory_if_ready(engine_state, combat_state)
+            {
                 return keep_running;
             }
             return true;
         }
     }
 
-    if let Some(keep_running) = settle_victory_if_ready(engine_state, combat_state) {
+    if let Some(keep_running) = victory::settle_victory_if_ready(engine_state, combat_state) {
         return keep_running;
     }
 
@@ -1217,7 +976,7 @@ fn resolve_pending_choice(
                     // before checking whether the screen returned a selected
                     // discoveryCard, so resuming the action burns one more
                     // unused set of random choices.
-                    let _ = generate_discovery_choices(
+                    let _ = discovery::generate_discovery_choices(
                         combat_state,
                         choice.colorless,
                         choice.card_type,
@@ -1269,7 +1028,7 @@ fn resolve_pending_choice(
                     Ok(())
                 }
                 ClientInput::Cancel if choice.can_skip => {
-                    let _ = generate_discovery_choices(
+                    let _ = discovery::generate_discovery_choices(
                         combat_state,
                         choice.colorless,
                         choice.card_type,
@@ -1363,7 +1122,7 @@ fn resolve_pending_choice(
                 let Some(&card_id) = cards.get(idx) else {
                     return Err("Invalid foreign influence choice index");
                 };
-                add_foreign_influence_choice_to_zone(combat_state, card_id, upgraded);
+                discovery::add_foreign_influence_choice_to_zone(combat_state, card_id, upgraded);
                 *engine_state = EngineState::CombatProcessing;
                 Ok(())
             } else {
@@ -1663,7 +1422,10 @@ pub fn tick_until_stable_turn(
 
 #[cfg(test)]
 mod tests {
-    use super::{class_combat_card_pool, discard_hand_for_turn_transition, resolve_pending_choice};
+    use super::{
+        any_color_attack_pool_sorted, class_combat_card_pool, discard_hand_for_turn_transition,
+        generate_foreign_influence_choices, resolve_pending_choice, settle_victory_if_ready,
+    };
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
     use crate::content::powers::PowerId;
@@ -1725,7 +1487,7 @@ mod tests {
 
     #[test]
     fn foreign_influence_any_color_attack_pool_matches_java_shape() {
-        let common = super::any_color_attack_pool_sorted(crate::content::cards::CardRarity::Common);
+        let common = any_color_attack_pool_sorted(crate::content::cards::CardRarity::Common);
         assert!(common.contains(&CardId::PommelStrike));
         assert!(common.contains(&CardId::QuickSlash));
         assert!(common.contains(&CardId::BeamCell));
@@ -1735,12 +1497,11 @@ mod tests {
             .all(|pair| crate::content::cards::java_id(pair[0])
                 <= crate::content::cards::java_id(pair[1])));
 
-        let uncommon =
-            super::any_color_attack_pool_sorted(crate::content::cards::CardRarity::Uncommon);
+        let uncommon = any_color_attack_pool_sorted(crate::content::cards::CardRarity::Uncommon);
         assert!(uncommon.contains(&CardId::FlashOfSteel));
         assert!(uncommon.contains(&CardId::Tantrum));
 
-        let rare = super::any_color_attack_pool_sorted(crate::content::cards::CardRarity::Rare);
+        let rare = any_color_attack_pool_sorted(crate::content::cards::CardRarity::Rare);
         assert!(rare.contains(&CardId::HandOfGreed));
         assert!(!rare.contains(&CardId::Feed));
     }
@@ -1751,7 +1512,7 @@ mod tests {
         let card_random_before = combat_state.rng.card_random_rng.counter;
         let card_before = combat_state.rng.card_rng.counter;
 
-        let choices = super::generate_foreign_influence_choices(&mut combat_state);
+        let choices = generate_foreign_influence_choices(&mut combat_state);
 
         assert_eq!(choices.len(), 3);
         assert!(choices
@@ -3084,7 +2845,7 @@ mod tests {
         let mut engine_state = EngineState::CombatProcessing;
 
         assert_eq!(
-            super::settle_victory_if_ready(&mut engine_state, &mut combat_state),
+            settle_victory_if_ready(&mut engine_state, &mut combat_state),
             None,
             "Java MonsterGroup.areMonstersBasicallyDead ignores currentHealth; only isDying/isEscaping count"
         );
