@@ -62,7 +62,7 @@ pub struct RunState {
 
     // Transient states
     pub reward_state: Option<crate::rewards::state::RewardState>,
-    pub shop_state: Option<crate::shop::ShopState>,
+    pub shop_state: Option<crate::state::shop::ShopState>,
     pub event_state: Option<crate::state::events::EventState>,
     pub note_for_yourself_card: crate::content::cards::CardId,
     pub note_for_yourself_upgrades: u8,
@@ -677,8 +677,8 @@ impl RunState {
     }
 
     /// Generates ShopState with randomized prices, accounting for merchant Relics
-    pub fn generate_shop(&mut self) -> crate::shop::ShopState {
-        let config = crate::shop::state::ShopConfig {
+    pub fn generate_shop(&mut self) -> crate::state::shop::ShopState {
+        let config = crate::state::shop::state::ShopConfig {
             ascension_level: self.ascension_level as i32,
             player_class: self.player_class,
             has_courier: self
@@ -730,7 +730,7 @@ impl RunState {
             boss: boss_relic_pool,
         };
 
-        crate::shop::shop_screen::generate_shop(rng_pool, &config, |tier| {
+        crate::state::shop::shop_screen::generate_shop(rng_pool, &config, |tier| {
             random_relic_end_by_tier_from_pools(tier, &mut relic_pools, &spawn_context)
         })
     }

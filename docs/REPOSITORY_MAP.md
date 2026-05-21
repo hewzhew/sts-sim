@@ -37,7 +37,7 @@ This file is the current structure blueprint for the repo.
 5. run and reward flow
    - `src/rewards/`
    - `src/events/`
-   - `src/shop/`
+   - `src/state/shop/`
    - `src/map/`
 
 ### Fixture / Import Path
@@ -89,6 +89,7 @@ This path does not contain a trusted policy learner.
 - `src/engine/` - `core`
 - `src/content/` - `core`
 - `src/state/` - `core`
+- `src/state/shop/` - `core`
 - `src/runtime/monster_move.rs` - `core`
 - `src/sim/` - `core` and AI-facing simulator views
 - `src/testing/` - `integration`

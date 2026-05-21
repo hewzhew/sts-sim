@@ -3,13 +3,13 @@ use crate::content::cards::{
 };
 use crate::content::potions::{self, PotionId};
 use crate::content::relics::{RelicId, RelicTier};
-use crate::shop::merchant::{
-    random_shop_colored_card_of_type_for_courier_restock, random_shop_colorless_card,
-};
-use crate::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
+use crate::state::shop::merchant::{
+    random_shop_colored_card_of_type_for_courier_restock, random_shop_colorless_card,
+};
+use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
 fn has_relic(run_state: &RunState, relic_id: RelicId) -> bool {
     run_state.relics.iter().any(|relic| relic.id == relic_id)
@@ -317,10 +317,10 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::potions::PotionId;
     use crate::content::relics::{RelicId, RelicState};
-    use crate::shop::state::{ShopCard, ShopPotion, ShopRelic, ShopState};
     use crate::state::core::{ClientInput, EngineState};
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
+    use crate::state::shop::state::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
     #[test]
     fn courier_membership_restock_relic_potion_discounts_round_sequentially() {

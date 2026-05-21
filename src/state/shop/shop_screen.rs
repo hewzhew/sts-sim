@@ -1,10 +1,10 @@
 use crate::content::cards::get_card_definition;
 use crate::content::potions;
 use crate::content::relics::{RelicId, RelicTier};
-use crate::shop::merchant::generate_cards;
-use crate::shop::state::{ShopCard, ShopConfig, ShopPotion, ShopRelic, ShopState};
 use crate::state::deck::context::DeckContext;
 use crate::state::deck::manager::DeckManager;
+use crate::state::shop::merchant::generate_cards;
+use crate::state::shop::state::{ShopCard, ShopConfig, ShopPotion, ShopRelic, ShopState};
 
 fn shop_deck_context(config: &ShopConfig) -> DeckContext {
     DeckContext {
@@ -181,7 +181,7 @@ mod tests {
     use crate::content::potions::PotionClass;
     use crate::content::relics::{RelicId, RelicTier};
     use crate::runtime::rng::RngPool;
-    use crate::shop::state::ShopConfig;
+    use crate::state::shop::state::ShopConfig;
 
     fn fixed_relic(tier: RelicTier) -> RelicId {
         match tier {

@@ -12,7 +12,7 @@ pub enum EngineState {
     RewardScreen(crate::rewards::state::RewardState),
     TreasureRoom(crate::rewards::state::TreasureChestState),
     Campfire,
-    Shop(crate::shop::ShopState),
+    Shop(crate::state::shop::ShopState),
     MapNavigation,
     EventRoom,
     PendingChoice(PendingChoice),

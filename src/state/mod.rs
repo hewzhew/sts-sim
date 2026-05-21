@@ -6,6 +6,7 @@ pub(crate) mod relic_pool;
 pub mod run;
 pub mod selection;
 pub mod semantics;
+pub mod shop;
 
 pub use crate::rewards::state::{
     BossRelicChoiceState, RewardCard, RewardItem, RewardScreenContext, RewardState,

@@ -6,7 +6,6 @@ pub mod engine;
 mod events;
 pub mod map;
 pub mod runtime;
-mod shop;
 pub mod sim;
 pub mod state;
 

@@ -665,16 +665,16 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         stable_outcome_key(&EngineState::RewardScreen(reward_b), &baseline),
     );
 
-    let shop_a = crate::shop::ShopState {
+    let shop_a = crate::state::shop::ShopState {
         cards: vec![
-            crate::shop::ShopCard {
+            crate::state::shop::ShopCard {
                 card_id: CardId::Strike,
                 upgrades: 0,
                 price: 50,
                 can_buy: true,
                 blocked_reason: None,
             },
-            crate::shop::ShopCard {
+            crate::state::shop::ShopCard {
                 card_id: CardId::Defend,
                 upgrades: 0,
                 price: 60,
@@ -682,13 +682,13 @@ fn stable_postcombat_keys_normalize_display_only_order() {
                 blocked_reason: None,
             },
         ],
-        relics: vec![crate::shop::ShopRelic {
+        relics: vec![crate::state::shop::ShopRelic {
             relic_id: crate::content::relics::RelicId::BurningBlood,
             price: 150,
             can_buy: true,
             blocked_reason: None,
         }],
-        potions: vec![crate::shop::ShopPotion {
+        potions: vec![crate::state::shop::ShopPotion {
             potion_id: PotionId::SteroidPotion,
             price: 55,
             can_buy: true,
@@ -697,16 +697,16 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         purge_cost: 75,
         purge_available: true,
     };
-    let shop_b = crate::shop::ShopState {
+    let shop_b = crate::state::shop::ShopState {
         cards: vec![
-            crate::shop::ShopCard {
+            crate::state::shop::ShopCard {
                 card_id: CardId::Defend,
                 upgrades: 0,
                 price: 60,
                 can_buy: true,
                 blocked_reason: None,
             },
-            crate::shop::ShopCard {
+            crate::state::shop::ShopCard {
                 card_id: CardId::Strike,
                 upgrades: 0,
                 price: 50,
@@ -714,13 +714,13 @@ fn stable_postcombat_keys_normalize_display_only_order() {
                 blocked_reason: None,
             },
         ],
-        relics: vec![crate::shop::ShopRelic {
+        relics: vec![crate::state::shop::ShopRelic {
             relic_id: crate::content::relics::RelicId::BurningBlood,
             price: 150,
             can_buy: true,
             blocked_reason: None,
         }],
-        potions: vec![crate::shop::ShopPotion {
+        potions: vec![crate::state::shop::ShopPotion {
             potion_id: PotionId::SteroidPotion,
             price: 55,
             can_buy: true,
