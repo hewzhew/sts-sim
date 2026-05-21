@@ -1,5 +1,4 @@
 pub mod combat_belief;
-pub(crate) mod combat_pressure;
 pub mod combat_search_v2;
 #[cfg_attr(not(test), allow(dead_code))]
 pub mod combat_state_key;

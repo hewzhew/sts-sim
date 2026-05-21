@@ -538,7 +538,7 @@ Current documentation note after event-pool reconciliation:
   - `D:\rust\cardcrawl\dungeons\TheEnding.java`
   - `D:\rust\cardcrawl\helpers\EventHelper.java`
 - Rust checked:
-  - `src\events\generator.rs`
+  - `src\state\events\generator.rs`
   - `src\state\run.rs`
   - `src\engine\run_loop.rs`
 - Result:
@@ -550,7 +550,7 @@ Current documentation note after event-pool reconciliation:
     per-event handlers and events that start/resume combats or reward screens.
   - `docs\JAVA_SOURCE_MAP.md` now has an event pool / `?` room-roll owner row.
 - Verification:
-  - `cargo test events::generator --all-targets` -> `10 passed`
+  - `cargo test state::events::generator --all-targets` -> `10 passed`
   - `cargo test event_room --all-targets` -> `5 passed`
 
 Current documentation note after map visibility reconciliation:
@@ -564,7 +564,7 @@ Current documentation note after map visibility reconciliation:
   - `D:\rust\cardcrawl\ui\panels\TopPanel.java`
   - `D:\rust\cardcrawl\ui\buttons\ProceedButton.java`
 - Rust checked:
-  - `src\map\state.rs`
+  - `src\state\map\state.rs`
   - `src\state\run.rs`
   - full-run observation and map action code
 - Result:

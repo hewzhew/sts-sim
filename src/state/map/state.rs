@@ -147,7 +147,7 @@ impl MapState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::node::{MapEdge, MapRoomNode, RoomType};
+    use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
 
     fn node(x: i32, y: i32, class: Option<RoomType>) -> MapRoomNode {
         let mut node = MapRoomNode::new(x, y);

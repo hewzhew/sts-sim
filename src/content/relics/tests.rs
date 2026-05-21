@@ -1114,12 +1114,12 @@ fn maw_bank_only_spending_in_shop_uses_it_up_like_java_lose_gold() {
 
 #[test]
 fn juzu_bracelet_converts_monster_event_roll_without_preserving_monster_chance() {
-    let mut generator = crate::events::generator::EventGenerator::new(1);
+    let mut generator = crate::state::events::generator::EventGenerator::new(1);
     generator.monster_chance = 1.0;
     generator.shop_chance = 0.0;
     generator.treasure_chance = 0.0;
     let mut rng = crate::runtime::rng::RngPool::new(1);
-    let ctx = crate::events::context::EventContext {
+    let ctx = crate::state::events::context::EventContext {
         act_num: 1,
         ascension_level: 0,
         is_daily_run: false,
@@ -1141,7 +1141,7 @@ fn juzu_bracelet_converts_monster_event_roll_without_preserving_monster_chance()
 
     assert_eq!(
         generator.roll_room_type(&mut rng, &ctx),
-        crate::events::generator::RoomRoll::Event
+        crate::state::events::generator::RoomRoll::Event
     );
     assert_eq!(
         generator.monster_chance, 0.10,
@@ -1178,12 +1178,12 @@ fn tiny_chest_counter_forces_treasure_roll_every_fourth_unknown_room() {
         .expect("Tiny Chest should be present");
     assert_eq!(tiny_chest.counter, 0);
 
-    let mut generator = crate::events::generator::EventGenerator::new(1);
+    let mut generator = crate::state::events::generator::EventGenerator::new(1);
     generator.monster_chance = 1.0;
     generator.shop_chance = 0.0;
     generator.treasure_chance = 0.0;
     let mut rng = crate::runtime::rng::RngPool::new(1);
-    let ctx = crate::events::context::EventContext {
+    let ctx = crate::state::events::context::EventContext {
         act_num: 1,
         ascension_level: 0,
         is_daily_run: false,
@@ -1205,7 +1205,7 @@ fn tiny_chest_counter_forces_treasure_roll_every_fourth_unknown_room() {
 
     assert_eq!(
         generator.roll_room_type(&mut rng, &ctx),
-        crate::events::generator::RoomRoll::Treasure
+        crate::state::events::generator::RoomRoll::Treasure
     );
 }
 
@@ -5114,15 +5114,15 @@ fn rare_run_relic_can_spawn_gates_match_java_sources() {
         fallback: RelicId,
         floor_num: i32,
         owned_relics: Vec<RelicState>,
-        room_type: crate::map::node::RoomType,
+        room_type: crate::state::map::node::RoomType,
     ) -> RelicId {
         let mut run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
         run.floor_num = floor_num;
         run.relics = owned_relics;
 
-        let mut node = crate::map::node::MapRoomNode::new(0, 0);
+        let mut node = crate::state::map::node::MapRoomNode::new(0, 0);
         node.class = Some(room_type);
-        run.map = crate::map::state::MapState::new(vec![vec![node]]);
+        run.map = crate::state::map::state::MapState::new(vec![vec![node]]);
         run.map.current_x = 0;
         run.map.current_y = 0;
 
@@ -5137,8 +5137,8 @@ fn rare_run_relic_can_spawn_gates_match_java_sources() {
         run.random_relic_by_tier(tier)
     }
 
-    let monster_room = crate::map::node::RoomType::MonsterRoom;
-    let shop_room = crate::map::node::RoomType::ShopRoom;
+    let monster_room = crate::state::map::node::RoomType::MonsterRoom;
+    let shop_room = crate::state::map::node::RoomType::ShopRoom;
 
     let floor_48_gates = [
         (

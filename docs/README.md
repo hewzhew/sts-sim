@@ -27,11 +27,7 @@ Then branch by task:
   - [live_comm/LEGACY_FIXTURE_ONLY.md](live_comm/LEGACY_FIXTURE_ONLY.md)
   - [live_comm/LIVE_COMM_RUNBOOK.md](live_comm/LIVE_COMM_RUNBOOK.md)
   - [live_comm/LIVE_COMM_PARITY_WORKFLOW.md](live_comm/LIVE_COMM_PARITY_WORKFLOW.md)
-- protocol / importer / CommunicationMod:
-  - [protocol/README.md](protocol/README.md)
-  - [protocol/PROTOCOL_TRUTH_RULES.md](protocol/PROTOCOL_TRUTH_RULES.md)
-  - [protocol/STATE_SYNC_STATUS.md](protocol/STATE_SYNC_STATUS.md)
-- testing / fixtures / scenario work:
+- testing / start-spec fixture work:
   - [testing/README.md](testing/README.md)
   - [BUGFIX_WORKFLOW.md](BUGFIX_WORKFLOW.md)
 - local debug binary usage:
@@ -45,11 +41,9 @@ Then branch by task:
 - root `docs/`
   - repo-wide rules and default entry docs
 - `docs/live_comm/`
-  - legacy bridge notes, fixture-capture boundary, historical runbooks
-- `docs/protocol/`
-  - protocol truth rules, importer status, truth samples, test matrices
+  - legacy bridge notes and future adapter boundary
 - `docs/testing/`
-  - testing workflow and fixture/platform notes
+  - active testing workflow and start-spec notes
 - `docs/design/`
   - engine and runtime design notes
 - `docs/decision_records/`
@@ -65,5 +59,5 @@ Then branch by task:
 
 - if a file is linked from an active `README.md`, treat it as current workflow
 - if a file lives under `audits/` or `archive/`, treat it as historical context
-- if a dated note disagrees with the root `README`, `AI_DIRECTION.md`, protocol
-  docs, or live-comm runbook, the current entrypoint wins
+- if a dated note disagrees with the root `README`, `AI_DIRECTION.md`, or
+  live-comm boundary docs, the current entrypoint wins

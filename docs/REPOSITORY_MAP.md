@@ -35,18 +35,17 @@ This file is the current structure blueprint for the repo.
    - `src/runtime/monster_move.rs`
    - `src/sim/`
 5. run and reward flow
+   - `src/state/events/`
+   - `src/state/map/`
    - `src/state/shop/`
    - `src/state/rewards/`
 
-### Fixture / Import Path
+### Start-Spec Test Path
 
-1. fixtures and scenario tests
+1. search fixture assembly
    - `src/testing/`
-   - `tests/`
-2. private Java/protocol fixture import helpers
-   - `src/testing/protocol/`
-   - `src/testing/state_sync/`
-   - `src/testing/replay_support.rs`
+2. active test-only builders
+   - `src/testing/support/`
 
 ### Entrypoint Path
 
@@ -58,7 +57,7 @@ These are thin consumers, not sources of engine truth:
 
 The active AI-facing path is infrastructure only:
 
-1. combat search and env surfaces
+1. combat search surfaces
    - `src/eval/`
    - `src/bin/combat_search_v2_driver/`
 2. historical collection and replay checks
@@ -69,7 +68,7 @@ This path does not contain a trusted policy learner.
 ## Top-Level Layout
 
 - `src/` - `core` plus downstream app/workbench consumers
-- `tests/` - `integration`
+- `tests/` - `integration` when checked-in integration fixtures exist
 - `tools/` - `tooling`
 - `docs/` - `tooling`
 - `logs/` - `artifact`
@@ -79,10 +78,16 @@ This path does not contain a trusted policy learner.
 ## `src/` Ownership
 
 - `src/runtime/` - `core`
+- `src/runtime/combat/` - `core`; combat runtime records split by state,
+  entities, monster private state, cards, powers, and state methods
 - `src/core/` - `core`
 - `src/engine/` - `core`
 - `src/content/` - `core`
 - `src/state/` - `core`
+- `src/state/events/` - `core`; event state, event context, event pools, and
+  event-room roll generation
+- `src/state/map/` - `core`; map graph, room node, map progress, and map
+  generation
 - `src/state/shop/` - `core`
 - `src/runtime/monster_move.rs` - `core`
 - `src/sim/` - `core` and AI-facing simulator views
@@ -96,6 +101,8 @@ This path does not contain a trusted policy learner.
 - Hand-written macro-policy modules have been removed from the active bot tree.
 - `live_comm` is fixture-only legacy unless rebuilt under the documented adapter
   boundary.
+- The old `CombatCase` / `ScenarioFixture` / protocol state-sync testing stack
+  has been removed from active code; current search tests start from start-specs.
 - Older learning docs may describe removed paths. Current entrypoints win.
 
 ## Root Rules

@@ -10,7 +10,6 @@ This file defines the hard dependency direction for `src/`.
   - `src/content/`
   - `src/core/`
   - `src/engine/`
-  - `src/map/`
   - `src/state/`
 - `integration`
   - fixture import, eval surfaces, and analysis helpers around the runtime
@@ -40,25 +39,30 @@ This file defines the hard dependency direction for `src/`.
   - `runtime::action`
   - `runtime::combat`
   - `runtime::rng`
+- `runtime::combat`
+  - `state`: combat container state, turn runtime, queues, zones, counters
+  - `entities`: player/monster entity records and monster intent surface
+  - `monster_runtime`: per-monster private runtime fields
+  - `card`: combat card identity, cost, and transient stat state
+  - `power`: combat-owned power payload/runtime records
+  - `combat_methods`: state methods that coordinate these records
 - `runtime::monster_move`
   - runtime monster move-plan structs used by content, action execution, and
     AI-facing projections
+- `state::events`
+  - event state, event selection context, event pools, and event-room roll
+    generation
+- `state::map`
+  - run map graph, room nodes, map progress, and map generation
 - `sim`
   - AI-facing simulator views, legal action helpers, and projection helpers
 - `fixtures`
-  - integration-only fixture/spec assembly
+  - integration-only start-spec assembly
   - exported from `lib.rs` as `sts_simulator::fixtures`
-- `testing::harness`
-  - integration-side analysis helpers
-  - currently `hexaghost_value`
-- `testing::protocol`
-  - private Java/protocol fixture metadata parser
-- `testing::state_sync`
-  - private fixture importer from protocol/live snapshots into runtime combat state
-- `testing::replay_support`
-  - compatibility helpers for old fixture imports only
+- `testing::support`
+  - test-only local combat builders
 - `live_comm`
-  - legacy external bridge tooling; fixture capture only unless rebuilt under
+  - legacy external bridge tooling; not active unless rebuilt under
     `docs/live_comm/LEGACY_FIXTURE_ONLY.md`
 
 ## Enforcement

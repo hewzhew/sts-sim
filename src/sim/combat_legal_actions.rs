@@ -307,65 +307,29 @@ fn contains_grid_select(moves: &[ClientInput], selection: &[u32]) -> bool {
 mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
-    use crate::test_support::test_monster;
-    use crate::testing::protocol::java::{
-        build_live_observation_snapshot, build_live_truth_snapshot,
-    };
-    use crate::testing::state_sync::build_combat_state_from_snapshots;
-    use serde_json::{json, Value};
-    use std::path::PathBuf;
-
-    fn load_fixture_root() -> Value {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("protocol_truth_samples")
-            .join("sentry_livecomm")
-            .join("frame.json");
-        let text = std::fs::read_to_string(path).expect("fixture");
-        serde_json::from_str(&text).expect("fixture json")
-    }
+    use crate::content::potions::{Potion, PotionId};
+    use crate::test_support::{blank_test_combat, test_monster};
 
     fn build_fixture_combat() -> CombatState {
-        let root = load_fixture_root();
-        let game_state = root.get("game_state").expect("game_state");
-        let truth = build_live_truth_snapshot(game_state);
-        let observation = build_live_observation_snapshot(game_state);
-        let relics = game_state.get("relics").unwrap_or(&Value::Null);
-        build_combat_state_from_snapshots(&truth, &observation, relics)
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        combat
     }
 
     #[test]
     fn engine_local_moves_skip_unusable_potions() {
-        let root = load_fixture_root();
-        let game_state = root.get("game_state").expect("game_state");
-        let mut truth = build_live_truth_snapshot(game_state);
-        truth["potions"] = json!([
-            {
-                "id": "FairyPotion",
-                "name": "Fairy in a Bottle",
-                "uuid": "fairy-1",
-                "can_use": false,
-                "can_discard": true,
-                "requires_target": false
-            },
-            {
-                "id": "Potion Slot",
-                "name": "Potion Slot",
-                "can_use": false,
-                "can_discard": false,
-                "requires_target": false
-            },
-            {
-                "id": "Potion Slot",
-                "name": "Potion Slot",
-                "can_use": false,
-                "can_discard": false,
-                "requires_target": false
-            }
-        ]);
-        let observation = build_live_observation_snapshot(game_state);
-        let relics = game_state.get("relics").unwrap_or(&Value::Null);
-        let combat = build_combat_state_from_snapshots(&truth, &observation, relics);
+        let mut combat = build_fixture_combat();
+        combat.entities.potions = vec![
+            Some(Potion::with_affordance_truth(
+                PotionId::FairyPotion,
+                1,
+                false,
+                true,
+                false,
+            )),
+            None,
+            None,
+        ];
         let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
         assert!(
             !inputs
@@ -391,8 +355,8 @@ mod tests {
     fn engine_local_moves_skip_passive_fairy_potion_even_if_local_affordance_is_stale() {
         let mut combat = build_fixture_combat();
         combat.entities.potions = vec![
-            Some(crate::content::potions::Potion::with_affordance_truth(
-                crate::content::potions::PotionId::FairyPotion,
+            Some(Potion::with_affordance_truth(
+                PotionId::FairyPotion,
                 1,
                 true,
                 true,
@@ -420,8 +384,8 @@ mod tests {
         let mut combat = build_fixture_combat();
         combat.meta.is_boss_fight = true;
         combat.entities.potions = vec![
-            Some(crate::content::potions::Potion::with_affordance_truth(
-                crate::content::potions::PotionId::SmokeBomb,
+            Some(Potion::with_affordance_truth(
+                PotionId::SmokeBomb,
                 1,
                 true,
                 true,
@@ -450,8 +414,8 @@ mod tests {
         combat.meta.is_boss_fight = false;
         combat.entities.monsters = vec![test_monster(EnemyId::SlimeBoss)];
         combat.entities.potions = vec![
-            Some(crate::content::potions::Potion::with_affordance_truth(
-                crate::content::potions::PotionId::SmokeBomb,
+            Some(Potion::with_affordance_truth(
+                PotionId::SmokeBomb,
                 1,
                 true,
                 true,
@@ -479,8 +443,8 @@ mod tests {
         let mut combat = build_fixture_combat();
         combat.zones.discard_pile.clear();
         combat.entities.potions = vec![
-            Some(crate::content::potions::Potion::with_affordance_truth(
-                crate::content::potions::PotionId::LiquidMemories,
+            Some(Potion::with_affordance_truth(
+                PotionId::LiquidMemories,
                 1,
                 true,
                 true,
@@ -508,8 +472,8 @@ mod tests {
         let mut combat = build_fixture_combat();
         combat.zones.discard_pile.clear();
         combat.entities.potions = vec![
-            Some(crate::content::potions::Potion::with_affordance_truth(
-                crate::content::potions::PotionId::LiquidMemories,
+            Some(Potion::with_affordance_truth(
+                PotionId::LiquidMemories,
                 1,
                 true,
                 true,

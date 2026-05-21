@@ -6,20 +6,17 @@ use crate::content::cards::{get_card_definition, upgraded_base_cost_override, Ca
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
-use crate::engine::core::with_suppressed_engine_warnings;
-use crate::map::node::RoomType;
+use crate::engine::core::{
+    is_smoke_escape_stable_boundary, tick_engine, with_suppressed_engine_warnings,
+};
 use crate::runtime::action::Action;
 use crate::runtime::combat::{CardZones, CombatMeta, TurnRuntime};
 use crate::runtime::combat::{CombatCard, CombatRng, CombatState, EngineRuntime, EntityState};
 use crate::runtime::rng;
 use crate::state::core::EngineState;
+use crate::state::map::node::RoomType;
 use crate::state::run::RunState;
-use crate::testing::protocol::java::{
-    card_id_from_java, java_potion_id_to_rust, relic_id_from_java,
-};
-use crate::testing::replay_support::drain_to_stable;
-
-use crate::testing::fixtures::author_spec::{AuthorCardEntry, AuthorCardSpec, AuthorRelicSpec};
+use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,10 +30,44 @@ pub struct CombatStartSpec {
     pub player_current_hp: i32,
     pub player_max_hp: i32,
     #[serde(default)]
-    pub relics: Vec<AuthorRelicSpec>,
+    pub relics: Vec<StartSpecRelicSpec>,
     #[serde(default)]
     pub potions: Vec<String>,
-    pub master_deck: Vec<AuthorCardSpec>,
+    pub master_deck: Vec<StartSpecCardSpec>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum StartSpecCardSpec {
+    Simple(String),
+    Detailed(StartSpecCardEntry),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StartSpecCardEntry {
+    pub id: String,
+    #[serde(default)]
+    pub upgrades: u8,
+    #[serde(default)]
+    pub cost: Option<i32>,
+    #[serde(default)]
+    pub misc: Option<i32>,
+    #[serde(default = "default_count")]
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum StartSpecRelicSpec {
+    Simple(String),
+    Detailed(StartSpecRelicEntry),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StartSpecRelicEntry {
+    pub id: String,
+    #[serde(default = "default_relic_counter")]
+    pub counter: i32,
 }
 
 pub fn compile_combat_start_spec(
@@ -177,6 +208,34 @@ pub fn build_natural_start_state(
     Ok((engine_state, combat))
 }
 
+fn drain_to_stable(es: &mut EngineState, cs: &mut CombatState) -> bool {
+    let mut iterations = 0;
+    loop {
+        match es {
+            EngineState::CombatPlayerTurn => break,
+            EngineState::CombatProcessing if is_smoke_escape_stable_boundary(es, cs) => break,
+            EngineState::CombatProcessing => {}
+            EngineState::PendingChoice(_) => break,
+            EngineState::GameOver(_) => return false,
+            _ => break,
+        }
+        let alive = tick_engine(es, cs, None);
+        if !alive {
+            return false;
+        }
+        iterations += 1;
+        if iterations > 1000 {
+            cs.emit_diagnostic(EngineDiagnostic {
+                severity: EngineDiagnosticSeverity::Warning,
+                class: EngineDiagnosticClass::Suspicious,
+                message: "tick loop exceeded 1000 iterations".to_string(),
+            });
+            break;
+        }
+    }
+    true
+}
+
 pub fn encounter_id_from_spec(raw: &str) -> Result<EncounterId, String> {
     let normalized = normalize_identifier(raw);
     match normalized.as_str() {
@@ -226,8 +285,8 @@ mod tests {
     use super::build_natural_start_state;
     use crate::content::monsters::factory::EncounterId;
     use crate::content::relics::{RelicId, RelicState};
-    use crate::map::node::RoomType;
     use crate::runtime::combat::OrbId;
+    use crate::state::map::node::RoomType;
     use crate::state::run::RunState;
 
     #[test]
@@ -288,22 +347,22 @@ mod tests {
     }
 }
 
-fn compile_master_deck(specs: &[AuthorCardSpec]) -> Result<Vec<CombatCard>, String> {
+fn compile_master_deck(specs: &[StartSpecCardSpec]) -> Result<Vec<CombatCard>, String> {
     let mut deck = Vec::new();
     let mut next_uuid = 10_000u32;
     for spec in specs {
         let entry = match spec {
-            AuthorCardSpec::Simple(id) => AuthorCardEntry {
+            StartSpecCardSpec::Simple(id) => StartSpecCardEntry {
                 id: id.clone(),
                 upgrades: 0,
                 cost: None,
                 misc: None,
                 count: 1,
             },
-            AuthorCardSpec::Detailed(entry) => entry.clone(),
+            StartSpecCardSpec::Detailed(entry) => entry.clone(),
         };
-        let card_id = card_id_from_java(&entry.id)
-            .ok_or_else(|| format!("unknown Java card id '{}'", entry.id))?;
+        let card_id = input_ids::card_id_from_start_spec(&entry.id)
+            .ok_or_else(|| format!("unknown card id '{}'", entry.id))?;
         for _ in 0..entry.count.max(1) {
             let mut card = CombatCard::new(card_id, next_uuid);
             card.upgrades = entry.upgrades;
@@ -327,18 +386,18 @@ fn compile_master_deck(specs: &[AuthorCardSpec]) -> Result<Vec<CombatCard>, Stri
     Ok(deck)
 }
 
-fn compile_relics(specs: &[AuthorRelicSpec]) -> Result<Vec<RelicState>, String> {
+fn compile_relics(specs: &[StartSpecRelicSpec]) -> Result<Vec<RelicState>, String> {
     specs
         .iter()
         .map(|spec| match spec {
-            AuthorRelicSpec::Simple(id) => {
-                let relic_id = relic_id_from_java(id)
-                    .ok_or_else(|| format!("unknown Java relic id '{id}'"))?;
+            StartSpecRelicSpec::Simple(id) => {
+                let relic_id = input_ids::relic_id_from_start_spec(id)
+                    .ok_or_else(|| format!("unknown relic id '{id}'"))?;
                 Ok(RelicState::new(relic_id))
             }
-            AuthorRelicSpec::Detailed(entry) => {
-                let relic_id = relic_id_from_java(&entry.id)
-                    .ok_or_else(|| format!("unknown Java relic id '{}'", entry.id))?;
+            StartSpecRelicSpec::Detailed(entry) => {
+                let relic_id = input_ids::relic_id_from_start_spec(&entry.id)
+                    .ok_or_else(|| format!("unknown relic id '{}'", entry.id))?;
                 let mut relic = RelicState::new(relic_id);
                 relic.counter = entry.counter;
                 Ok(relic)
@@ -361,8 +420,8 @@ fn compile_potions(specs: &[String], ascension_level: u8) -> Result<Vec<Option<P
     }
     let mut potions = vec![None; slot_count];
     for (index, id) in specs.iter().enumerate() {
-        let potion_id =
-            java_potion_id_to_rust(id).ok_or_else(|| format!("unknown Java potion id '{id}'"))?;
+        let potion_id = input_ids::potion_id_from_start_spec(id)
+            .ok_or_else(|| format!("unknown potion id '{id}'"))?;
         potions[index] = Some(Potion::new(potion_id, 20_000 + index as u32));
     }
     Ok(potions)
@@ -379,4 +438,60 @@ fn normalize_identifier(raw: &str) -> String {
         .filter(|c| c.is_ascii_alphanumeric())
         .map(|c| c.to_ascii_lowercase())
         .collect()
+}
+
+fn default_count() -> usize {
+    1
+}
+
+fn default_relic_counter() -> i32 {
+    -1
+}
+
+mod input_ids {
+    #![allow(dead_code)]
+
+    use crate::content::cards::{self, CardId};
+    use crate::content::monsters::EnemyId;
+    use crate::content::potions::PotionId;
+    use crate::content::powers::PowerId;
+    use crate::content::relics::RelicId;
+
+    include!(concat!(env!("OUT_DIR"), "/generated_schema.rs"));
+
+    pub(super) fn card_id_from_start_spec(raw: &str) -> Option<CardId> {
+        let map = cards::build_java_id_map();
+        if let Some(card) = map.get(raw).copied() {
+            return Some(card);
+        }
+        let normalized = normalize_input_alias(raw);
+        if normalized.is_empty() {
+            return None;
+        }
+        map.into_iter()
+            .find_map(|(java, card)| (normalize_input_alias(java) == normalized).then_some(card))
+    }
+
+    pub(super) fn relic_id_from_start_spec(raw: &str) -> Option<RelicId> {
+        let normalized = normalize_input_alias(raw);
+        if normalized.is_empty() {
+            return None;
+        }
+        relic_id_from_java_raw(&normalized)
+    }
+
+    pub(super) fn potion_id_from_start_spec(raw: &str) -> Option<PotionId> {
+        let normalized = normalize_input_alias(raw);
+        if normalized.is_empty() {
+            return None;
+        }
+        java_potion_id_to_rust_raw(&normalized)
+    }
+
+    fn normalize_input_alias(raw: &str) -> String {
+        raw.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .map(|c| c.to_ascii_lowercase())
+            .collect()
+    }
 }

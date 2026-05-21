@@ -7,21 +7,7 @@ use crate::runtime::combat::{
     StanceId, TurnRuntime,
 };
 use crate::runtime::rng::RngPool;
-use crate::state::core::PendingChoice;
-use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
-
-pub fn continue_deferred_pending_choice_legacy(
-    pending: &PendingChoice,
-    combat: &mut CombatState,
-    snapshot_hint: &Value,
-) -> Result<bool, String> {
-    crate::testing::replay_support::continue_deferred_pending_choice_legacy(
-        pending,
-        combat,
-        snapshot_hint,
-    )
-}
 
 pub fn blank_test_combat() -> CombatState {
     CombatState {

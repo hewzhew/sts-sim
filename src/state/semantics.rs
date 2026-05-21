@@ -16,12 +16,12 @@
 //!     or sync glue
 //! - owner-specific lifecycle semantics
 //!   - runtime truth lives in engine scheduling plus content hook dispatch
-//!   - diff/state-sync may map external state onto runtime fields, but must not
-//!     become the semantic source of truth
-//! - protocol snapshot fields
-//!   - `testing::state_sync` is responsible for fixture import/export mapping only
-//!   - tooling and test fixtures may observe those fields but should not define
-//!     their meaning for runtime behavior
+//!   - external adapters may map observed state onto runtime fields, but must
+//!     not become the semantic source of truth
+//! - external snapshot fields
+//!   - import adapters are outside runtime ownership
+//!   - tooling and fixtures may observe those fields but should not define their
+//!     meaning for runtime behavior
 //!
 //! Treat this module as the canonical checklist before adding new hidden state
 //! or reusing an existing field for protocol convenience.

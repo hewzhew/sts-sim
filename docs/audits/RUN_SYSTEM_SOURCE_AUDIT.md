@@ -35,7 +35,7 @@ and reachability gates must be checked separately.
 
 | Area | Java source roots | Rust source roots | Main risks | Status |
 | --- | --- | --- | --- | --- |
-| Event pools and one-time events | `dungeons/AbstractDungeon.java`, `events/**` | `src/events/generator.rs`, `src/content/events`, `src/engine/event_handler.rs` | event availability gates split from event button handlers; one-time removal; act/floor/gold/HP/relic/deck predicates | partial |
+| Event pools and one-time events | `dungeons/AbstractDungeon.java`, `events/**` | `src/state/events/generator.rs`, `src/content/events`, `src/engine/event_handler.rs` | event availability gates split from event button handlers; one-time removal; act/floor/gold/HP/relic/deck predicates | partial |
 | Monster encounter pools | `dungeons/Exordium.java`, `dungeons/TheCity.java`, `dungeons/TheBeyond.java`, `monsters/**`, `helpers/MonsterHelper.java` | `src/monsters`, `src/encounters`, monster audit docs | pool weights, hard/elite/boss encounter selection, monster HP RNG, encounter history rules | open |
 | Boss selection and visibility | `AbstractDungeon`, dungeon subclasses, map/boss key code | `src/state/run.rs`, map/encounter generation code | selected boss is known to player before the act boss; boss list/pool mutations; Act 4 special path | open |
 | Map generation and path visibility | `map/**`, `dungeons/AbstractDungeon.java`, `rooms/**` | map/run state modules | visible route graph, next-node legality, winged movement, room symbols, hidden room contents vs known node types | open |
@@ -377,8 +377,8 @@ Java sources checked:
 
 Rust sources checked:
 
-- `src/events/context.rs`
-- `src/events/generator.rs`
+- `src/state/events/context.rs`
+- `src/state/events/generator.rs`
 - `src/state/run.rs`
 
 Source-backed candidate gates now covered by direct generator tests:
@@ -437,7 +437,7 @@ Important boundary:
 
 Validation:
 
-- `cargo test events::generator --all-targets`
+- `cargo test state::events::generator --all-targets`
 - `cargo test secret_portal --all-targets`
 - `event_room_specific_event_selection_uses_duplicate_event_rng_like_java`
 - Latest full-suite validation after EventHelper room-roll table work:

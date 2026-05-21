@@ -1081,7 +1081,7 @@ Java source:
 
 Rust source:
 - `src/state/run.rs`
-- `src/events/generator.rs`
+- `src/state/events/generator.rs`
 - `src/content/relics/mod.rs`
 
 Java evidence:
@@ -1276,7 +1276,7 @@ Java source:
 
 Rust source:
 - `src/state/run.rs`
-- `src/events/generator.rs`
+- `src/state/events/generator.rs`
 
 Java evidence:
 - Constructor: ID `"Tiny Chest"`, tier `COMMON`, landing sound `SOLID`;
@@ -2988,7 +2988,7 @@ Java source:
 Rust source:
 - `src/content/relics/mod.rs`
 - `src/engine/run_loop.rs`
-- `src/map/state.rs`
+- `src/state/map/state.rs`
 - `src/cli/full_run_smoke/actions.rs`
 - `src/state/run.rs`
 

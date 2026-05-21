@@ -6,10 +6,8 @@ not grow new long-lived binaries here.
 
 Active binaries:
 
-- `combat_case`
-  - fixture conversion, reduction, materialization, and verification
 - `combat_search_v2_driver`
-  - whole-combat search runner over case/start-spec inputs
+  - whole-combat search runner over start-spec inputs
 
 Removed from the active binary surface:
 

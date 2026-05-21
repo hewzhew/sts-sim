@@ -1,6 +1,6 @@
-use crate::map::node::RoomType;
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::map::node::RoomType;
 use crate::state::rewards::{RewardScreenContext, TreasureChestSize, TreasureChestState};
 use crate::state::run::RunState;
 use crate::state::selection::{
@@ -881,15 +881,19 @@ pub fn tick_run(
 
                         let actual_room_type = if room_type == RoomType::EventRoom {
                             match run_state.roll_question_mark_room_type(previous_room_type) {
-                                crate::events::generator::RoomRoll::Monster => {
+                                crate::state::events::generator::RoomRoll::Monster => {
                                     RoomType::MonsterRoom
                                 }
-                                crate::events::generator::RoomRoll::Shop => RoomType::ShopRoom,
-                                crate::events::generator::RoomRoll::Treasure => {
+                                crate::state::events::generator::RoomRoll::Shop => {
+                                    RoomType::ShopRoom
+                                }
+                                crate::state::events::generator::RoomRoll::Treasure => {
                                     RoomType::TreasureRoom
                                 }
-                                crate::events::generator::RoomRoll::Event => RoomType::EventRoom,
-                                crate::events::generator::RoomRoll::Elite => {
+                                crate::state::events::generator::RoomRoll::Event => {
+                                    RoomType::EventRoom
+                                }
+                                crate::state::events::generator::RoomRoll::Elite => {
                                     RoomType::MonsterRoomElite
                                 }
                             }
@@ -1158,11 +1162,11 @@ mod tests {
     };
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState, RelicTier};
-    use crate::map::node::{MapEdge, MapRoomNode, RoomType};
-    use crate::map::state::MapState;
     use crate::runtime::combat::CombatCard;
     use crate::runtime::rng::StsRng;
     use crate::state::core::{ClientInput, EngineState, EventCombatState, PostCombatReturn};
+    use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
+    use crate::state::map::state::MapState;
     use crate::state::rewards::{
         RewardItem, RewardScreenContext, RewardState, TreasureChestSize, TreasureChestState,
     };

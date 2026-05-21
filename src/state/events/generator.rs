@@ -1,5 +1,5 @@
-use crate::events::context::EventContext;
 use crate::runtime::rng::RngPool;
+use crate::state::events::context::EventContext;
 use crate::state::events::EventId;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

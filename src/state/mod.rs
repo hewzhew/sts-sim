@@ -2,6 +2,7 @@ pub mod core;
 
 pub(crate) mod deck;
 pub mod events;
+pub mod map;
 pub(crate) mod relic_pool;
 pub mod rewards;
 pub mod run;

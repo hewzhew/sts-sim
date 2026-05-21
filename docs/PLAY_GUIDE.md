@@ -4,11 +4,9 @@
 
 - quick manual or autoplay smoke tests
 - inspecting local run flow without Java
-- hosting the Rust side of `live_comm`
 
 It is not a stable public interface, and it is not the authoritative description of
-the Java protocol. For Java-connected work, prefer `tools/live_comm/` and the
-`docs/live_comm/` runbooks.
+the Java protocol. Java-connected work is retired until a new adapter is built.
 
 ## Basic Usage
 
@@ -29,7 +27,6 @@ Important current flags:
 - `--fast-act1`
 - `--panic-watch`
 - `--boss-only`
-- `--live-comm`
 
 `play` does not currently expose a proper `--help` surface. If you change flags,
 verify them against [`src/bin/play/main.rs`](../src/bin/play/main.rs).
@@ -84,11 +81,11 @@ Keep these distinctions in mind:
 
 - the manual `play` parser is narrower than the bot's internal noncombat logic
 - campfire input here is still only `rest` and `smith`
-- `live_comm` noncombat handling supports more screens and audit behavior than the local parser
-- checked-in `live_comm` profiles are the preferred way to launch Java-connected runs; do not hand-maintain large flag bundles in shell history
+- old `live_comm` noncombat handling and profile launch paths are not active
+  architecture
 
 ## When To Use Something Else
 
-- use [live_comm/README.md](live_comm/README.md) for parity debugging or Java-connected runs
-- use [../tools/learning/README.md](../tools/learning/README.md) for DecisionRecord capture and replay checks
-- use [BUGFIX_WORKFLOW.md](BUGFIX_WORKFLOW.md) when you are fixing a parity bug from archived run logs rather than doing ad hoc local play
+- use [live_comm/README.md](live_comm/README.md) only for legacy boundary notes
+- use `cargo run --bin combat_search_v2_driver -- --start-spec <spec.json>` for
+  the active combat search entrypoint

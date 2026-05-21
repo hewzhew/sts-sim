@@ -1,7 +1,7 @@
 use crate::content::relics::RelicState;
-use crate::map::state::MapState;
 use crate::runtime::combat::{CombatCard, PlayerEntity};
 use crate::runtime::rng::{RngPool, StsRng};
+use crate::state::map::state::MapState;
 use crate::state::relic_pool::{
     random_relic_by_tier_from_pools, random_relic_end_by_tier_from_pools, RelicPoolsMut,
     RelicSpawnContext,
@@ -67,7 +67,7 @@ pub struct RunState {
     pub note_for_yourself_card: crate::content::cards::CardId,
     pub note_for_yourself_upgrades: u8,
 
-    pub event_generator: crate::events::generator::EventGenerator,
+    pub event_generator: crate::state::events::generator::EventGenerator,
     /// Java `AbstractRoom.mugged` equivalent for the current room.
     ///
     /// Set when a thief escapes after stealing gold. Cleared when entering the
@@ -123,11 +123,11 @@ impl RunState {
         };
         // Generate Act 1 map; returns the consumed mapRng for emerald key placement.
         let (mut first_map, mut map_rng) =
-            crate::map::generator::generate_map_for_act(seed, 1, ascension_level == 0);
+            crate::state::map::generator::generate_map_for_act(seed, 1, ascension_level == 0);
         // Mark a random elite node for Emerald Key if Act 4 is enabled.
         // Java: setEmeraldElite() reuses the consumed mapRng, not a fresh one.
         if final_act {
-            crate::map::generator::set_emerald_elite(&mut first_map, &mut map_rng);
+            crate::state::map::generator::set_emerald_elite(&mut first_map, &mut map_rng);
         }
         let mut rs = RunState {
             seed,
@@ -168,10 +168,11 @@ impl RunState {
             note_for_yourself_upgrades: 0,
 
             // Subsystems
-            event_generator: crate::events::generator::EventGenerator::new_with_note_for_yourself(
-                1,
-                ascension_level == 0,
-            ),
+            event_generator:
+                crate::state::events::generator::EventGenerator::new_with_note_for_yourself(
+                    1,
+                    ascension_level == 0,
+                ),
             room_mugged: false,
             room_smoked: false,
 
@@ -739,7 +740,7 @@ impl RunState {
         &self,
         tiny_chest_counter: i32,
         previous_room_was_shop: bool,
-    ) -> crate::events::context::EventContext {
+    ) -> crate::state::events::context::EventContext {
         use crate::content::relics::RelicId;
 
         let mut has_juzu = false;
@@ -758,7 +759,7 @@ impl RunState {
                 == crate::content::cards::CardType::Curse
         });
 
-        crate::events::context::EventContext {
+        crate::state::events::context::EventContext {
             act_num: self.act_num,
             ascension_level: self.ascension_level,
             is_daily_run: self.is_daily_run,
@@ -784,8 +785,8 @@ impl RunState {
     /// still consumes eventRng before checking the forced-chest flag.
     pub fn roll_question_mark_room_type(
         &mut self,
-        previous_room_type: Option<crate::map::node::RoomType>,
-    ) -> crate::events::generator::RoomRoll {
+        previous_room_type: Option<crate::state::map::node::RoomType>,
+    ) -> crate::state::events::generator::RoomRoll {
         use crate::content::relics::RelicId;
 
         let mut tiny_chest_counter = 0;
@@ -803,7 +804,7 @@ impl RunState {
 
         let ctx = self.build_event_context(
             tiny_chest_counter,
-            previous_room_type == Some(crate::map::node::RoomType::ShopRoom),
+            previous_room_type == Some(crate::state::map::node::RoomType::ShopRoom),
         );
 
         self.event_generator
@@ -1236,11 +1237,11 @@ impl RunState {
     /// removes it only during the next room transition.
     pub fn complete_current_room_encounter(
         &mut self,
-        room_type: Option<crate::map::node::RoomType>,
+        room_type: Option<crate::state::map::node::RoomType>,
     ) -> Option<crate::content::monsters::factory::EncounterId> {
         match room_type {
-            Some(crate::map::node::RoomType::MonsterRoom) => self.next_encounter(),
-            Some(crate::map::node::RoomType::MonsterRoomElite) => self.next_elite(),
+            Some(crate::state::map::node::RoomType::MonsterRoom) => self.next_encounter(),
+            Some(crate::state::map::node::RoomType::MonsterRoomElite) => self.next_elite(),
             _ => None,
         }
     }
@@ -1294,7 +1295,9 @@ impl RunState {
         self.pending_boss_reward = false;
         self.pending_boss_act_transition = false;
         self.apply_dungeon_transition_setup_effects();
-        self.map = crate::map::state::MapState::new(crate::map::generator::generate_ending_map());
+        self.map = crate::state::map::state::MapState::new(
+            crate::state::map::generator::generate_ending_map(),
+        );
         self.map.has_emerald_key = self.keys[2];
         self.init_encounter_lists();
         self.init_boss_list();
@@ -1319,7 +1322,7 @@ impl RunState {
 
         // Generate new map for the next act
         // Generate map for the new act; returns consumed mapRng for emerald placement.
-        let (mut new_map, mut map_rng) = crate::map::generator::generate_map_for_act(
+        let (mut new_map, mut map_rng) = crate::state::map::generator::generate_map_for_act(
             self.seed,
             self.act_num,
             self.ascension_level == 0,
@@ -1328,10 +1331,10 @@ impl RunState {
         // Mark emerald elite on new map if Act 4 is enabled and key not yet obtained.
         // Java: setEmeraldElite() reuses the consumed mapRng, not a fresh one.
         if self.is_final_act_available && !self.keys[2] {
-            crate::map::generator::set_emerald_elite(&mut new_map, &mut map_rng);
+            crate::state::map::generator::set_emerald_elite(&mut new_map, &mut map_rng);
         }
 
-        self.map = crate::map::state::MapState::new(new_map);
+        self.map = crate::state::map::state::MapState::new(new_map);
         self.map.has_emerald_key = self.keys[2];
 
         // Regenerate encounter lists for the new act

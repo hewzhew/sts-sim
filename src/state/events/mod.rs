@@ -1,3 +1,6 @@
+pub mod context;
+pub mod generator;
+
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 

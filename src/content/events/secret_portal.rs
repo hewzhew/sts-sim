@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(run_state.floor_num, 41);
         assert_eq!(
             run_state.map.get_current_room_type(),
-            Some(crate::map::node::RoomType::MonsterRoomBoss)
+            Some(crate::state::map::node::RoomType::MonsterRoomBoss)
         );
         assert!(run_state.event_state.is_none());
     }

@@ -1,6 +1,6 @@
 use crate::content::cards::{CardId, CardRarity, CardType};
 use crate::content::relics::{RelicId, RelicTier};
-use crate::map::node::RoomType;
+use crate::state::map::node::RoomType;
 use crate::state::run::RunState;
 
 #[derive(Clone)]

@@ -20,9 +20,9 @@ Current boundary and revival plan:
 - [LIVE_COMM_MODES.md](LIVE_COMM_MODES.md)
   - historical mode split
 - [LIVE_COMM_PARITY_WORKFLOW.md](LIVE_COMM_PARITY_WORKFLOW.md)
-  - historical strict versus survey parity rules
+  - retired strict versus survey parity rules
 - [LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
-  - manual `scenario` capture workflow for protocol truth samples
+  - retired manual capture workflow
 - [../../tools/live_comm/README.md](../../tools/live_comm/README.md)
   - legacy launcher, profile, and config helper details
 

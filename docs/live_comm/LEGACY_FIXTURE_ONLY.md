@@ -48,16 +48,17 @@ runtime boundary. The main problems were:
 - top-level modules such as `verification`, `diff`, and `protocol` made old
   bridge code look like simulator architecture
 
-For now, live Java observation is an oracle source and fixture source. It is not
-a controller, not a workbench surface, and not a teacher label.
+For now, live Java observation is historical context and a possible future
+oracle source. It is not a controller, not a workbench surface, not a fixture
+importer, and not a teacher label.
 
 ## Current Boundary
 
 Allowed:
 
-- use checked-in protocol truth samples as fixtures
-- use manual Java captures to create focused `CombatCase` or scenario fixtures
-- keep importer helpers private under `src/testing`
+- inspect old captures manually when they help explain a simulator bug
+- use Java source as the primary oracle for exact mechanics
+- design a future adapter only after local simulator/search is useful
 - use Java observations to debug simulator mechanics when source inspection is
   insufficient
 
@@ -70,14 +71,15 @@ Not allowed:
   paths
 - use captured human actions as stepwise teacher labels
 - hide live protocol assumptions inside the simulator runtime
+- restore the old `CombatCase` / `ScenarioFixture` / protocol state-sync stack
+  as active testing architecture
 
 Current code boundary:
 
-- `src/testing/protocol` parses the remaining Java/protocol fixture metadata
-- `src/testing/state_sync` builds Rust combat states from fixture snapshots
-- `src/testing/replay_support` holds compatibility helpers needed by old
-  fixture imports
+- `src/testing` only keeps start-spec fixture assembly and test-only builders
 - `tools/live_comm` is legacy operational scaffolding, not a default workflow
+- no active Rust importer currently builds combat state from live/protocol
+  snapshots
 
 ## If This Is Revived Later
 
@@ -98,7 +100,8 @@ The clean shape should be:
    - no strategy policy, no UI decisions, no search
 
 3. Fixture importer
-   - converts a captured frame/window into `CombatCase`, scenario, or start-spec
+   - converts a captured frame/window into a start-spec or a new explicit oracle
+     fixture format
    - lives under testing/import code
    - rejects missing required truth instead of silently repairing runtime state
 
