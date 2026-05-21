@@ -48,23 +48,20 @@ This file is the current structure blueprint for the repo.
    - `src/testing/state_sync/`
    - `src/testing/replay_support.rs`
 
-### App / Workbench Path
+### Entrypoint Path
 
-These are consumers, not sources of engine truth:
+These are thin consumers, not sources of engine truth:
 
 - `src/bin/`
-- `src/app/`
 
 ### AI / Eval Infrastructure Path
 
 The active AI-facing path is infrastructure only:
 
-1. decision environment contract
-   - `src/app/decision_env.rs`
-2. combat search and env surfaces
+1. combat search and env surfaces
    - `src/eval/`
    - `src/bin/combat_search_v2_driver/`
-3. historical collection and replay checks
+2. historical collection and replay checks
    - `tools/learning/`
 
 This path does not contain a trusted policy learner.
@@ -91,7 +88,6 @@ This path does not contain a trusted policy learner.
 - `src/sim/` - `core` and AI-facing simulator views
 - `src/testing/` - `integration`
 - `src/bin/` - active integration entrypoints only
-- `src/app/` - app contracts and downstream integration surfaces
 - `src/eval/` - AI/eval experiments over simulator state
 
 ## Current Notes

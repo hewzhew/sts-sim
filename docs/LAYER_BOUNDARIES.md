@@ -17,23 +17,22 @@ This file defines the hard dependency direction for `src/`.
   - fixture import, eval surfaces, and analysis helpers around the runtime
   - `src/testing/`
   - `src/eval/`
-- `app`
-  - CLI, coverage, diagnostics, and higher-level workbenches that consume core/integration
-  - `src/app/`
+- `entrypoints`
+  - thin CLI binaries that consume core/integration
   - `src/bin/`
 
 ## Allowed Dependency Direction
 
 - `core`
 - `integration -> core`
-- `app -> core`
-- `app -> integration`
+- `entrypoints -> core`
+- `entrypoints -> integration`
 
 ## Forbidden Dependency Direction
 
 - `core -> integration`
-- `core -> app`
-- `integration -> app`
+- `core -> entrypoints`
+- `integration -> entrypoints`
 
 ## Current Ownership Notes
 
@@ -59,8 +58,6 @@ This file defines the hard dependency direction for `src/`.
   - private fixture importer from protocol/live snapshots into runtime combat state
 - `testing::replay_support`
   - compatibility helpers for old fixture imports only
-- `app::decision_env`
-  - app-facing decision environment contract
 - `live_comm`
   - legacy external bridge tooling; fixture capture only unless rebuilt under
     `docs/live_comm/LEGACY_FIXTURE_ONLY.md`
@@ -68,6 +65,6 @@ This file defines the hard dependency direction for `src/`.
 ## Enforcement
 
 - no active boundary test is currently checked in
-- a future boundary test should block `core -> integration/app` and
-  `integration -> app`
+- a future boundary test should block `core -> integration/entrypoints` and
+  `integration -> entrypoints`
 - Any new exception should be treated as a structural regression, not as a casual import choice.

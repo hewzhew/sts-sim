@@ -19,7 +19,6 @@ mod semantics {
 
 // Integration layers around the runtime path.
 pub mod ai;
-pub mod app;
 pub mod eval;
 mod testing;
 pub use testing::fixtures;
