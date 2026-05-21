@@ -1,7 +1,9 @@
 use super::*;
 
-pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str = "full_run_observation_v8_public_map_context";
-pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str = "full_run_action_candidate_set_v5_run_potion";
+pub const FULL_RUN_OBSERVATION_SCHEMA_VERSION: &str =
+    "full_run_observation_v9_event_action_semantics";
+pub const FULL_RUN_ACTION_SCHEMA_VERSION: &str =
+    "full_run_action_candidate_set_v6_semantic_descriptor";
 pub(crate) const NO_PROGRESS_REPEAT_LIMIT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,10 +191,42 @@ pub struct RunObservationV0 {
     pub potions: Vec<RunPotionSlotObservationV0>,
     pub map: Option<RunMapObservationV0>,
     pub next_nodes: Vec<RunMapNodeObservationV0>,
+    pub map_route_context: Option<RunMapRouteContextV1>,
     pub act_boss: Option<String>,
     pub reward_source: Option<String>,
     pub combat: Option<RunCombatObservationV0>,
     pub screen: RunScreenObservationV0,
+    pub recording_view: RunRecordingViewV1,
+    pub decision_frame: RunDecisionFrameV1,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunRecordingViewV1 {
+    pub schema_name: String,
+    pub schema_version: u8,
+    pub recording_source: String,
+    pub state_lines: Vec<String>,
+    pub context_lines: Vec<String>,
+    pub warning_lines: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RunDecisionFrameV1 {
+    pub schema_name: String,
+    pub schema_version: u8,
+    pub decision_kind: String,
+    pub prompt: String,
+    pub source: Option<RunDecisionSourceV1>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RunDecisionSourceV1 {
+    pub kind: String,
+    pub label: String,
+    pub action_key: Option<String>,
+    pub card_instance_id: Option<u32>,
+    pub card_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
@@ -236,6 +270,67 @@ pub struct RunMapObservationV0 {
     pub nodes: Vec<RunMapNodeObservationV0>,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct RunMapRouteContextV1 {
+    pub schema_name: String,
+    pub schema_version: u8,
+    pub decision_authority: String,
+    pub not_final_action: bool,
+    pub map_scope: String,
+    pub context_level: String,
+    pub current_x: i32,
+    pub current_y: i32,
+    pub act_boss: Option<String>,
+    pub route_choices: Vec<RunMapRouteChoiceV1>,
+    pub truth_warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct RunMapRouteChoiceV1 {
+    pub action_key: String,
+    pub next_x: i32,
+    pub next_y: i32,
+    pub room_type: Option<String>,
+    pub room_label: String,
+    pub burning_elite: bool,
+    pub reachable_paths_to_boss: usize,
+    pub min_elites: i32,
+    pub max_elites: i32,
+    pub expected_elites_milli: i32,
+    pub min_fires: i32,
+    pub max_fires: i32,
+    pub expected_fires_milli: i32,
+    pub min_shops: i32,
+    pub max_shops: i32,
+    pub expected_shops_milli: i32,
+    pub shops_reachable: i32,
+    pub chests_reachable: i32,
+    pub events_reachable: i32,
+    pub forced_fights_next_3: i32,
+    pub earliest_shop_floor: Option<i32>,
+    pub earliest_fire_floor: Option<i32>,
+    pub rest_before_first_elite: bool,
+    pub local_flex: String,
+    pub global_path_flex: String,
+    pub path_flexibility: String,
+    pub branch_count: usize,
+    pub burning_elite_reachable: bool,
+    pub burning_elite_on_path: bool,
+    pub risk_label: String,
+    pub risk_vector: RunRouteRiskVectorV1,
+    pub notes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RunRouteRiskVectorV1 {
+    pub early_pressure: String,
+    pub elite_ceiling: String,
+    pub shop_access: String,
+    pub recovery_access: String,
+    pub path_flexibility: String,
+    pub boss_prep_support: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct RunMapNodeObservationV0 {
     pub x: i32,
@@ -272,6 +367,7 @@ pub struct RunDeckObservationV0 {
 pub struct RunCombatObservationV0 {
     pub player_hp: i32,
     pub player_block: i32,
+    pub player_powers: Vec<RunPowerObservationV0>,
     pub energy: i32,
     pub combat_phase: String,
     pub turn_count: u32,
@@ -292,6 +388,34 @@ pub struct RunCombatObservationV0 {
     pub limbo_count: usize,
     pub pending_choice_kind: Option<String>,
     pub pending_choice: Option<RunPendingChoiceObservationV0>,
+    pub monsters: Vec<RunMonsterObservationV0>,
+    pub encounter_hints: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunMonsterObservationV0 {
+    pub entity_id: usize,
+    pub slot: u8,
+    pub monster_id: String,
+    pub name: String,
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub alive: bool,
+    pub planned_move_id: u8,
+    pub visible_intent: Option<String>,
+    pub visible_intent_kind: String,
+    pub visible_intent_damage_per_hit: Option<i32>,
+    pub visible_intent_hits: u8,
+    pub visible_intent_total_damage: Option<i32>,
+    pub powers: Vec<RunPowerObservationV0>,
+    pub mechanic_hints: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunPowerObservationV0 {
+    pub power_id: String,
+    pub amount: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -313,6 +437,11 @@ pub struct RunPendingChoiceOptionObservationV0 {
     pub card_uuid: Option<u32>,
     pub selection_uuids: Vec<u32>,
     pub source_pile: Option<String>,
+    pub subject_ref: Option<String>,
+    pub before_summary: Option<String>,
+    pub after_summary: Option<String>,
+    pub delta_summary: Option<String>,
+    pub preview_status: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -331,10 +460,12 @@ pub struct RunCombatHandCardObservationV0 {
 #[derive(Clone, Debug, Serialize)]
 pub struct RunScreenObservationV0 {
     pub event_option_count: usize,
+    pub event_options: Vec<RunEventOptionObservationV0>,
     pub reward_item_count: usize,
     pub reward_card_choice_count: usize,
     pub reward_phase: String,
     pub reward_items: Vec<RunRewardItemObservationV0>,
+    pub reward_card_choices: Vec<RunRewardCardChoiceObservationV0>,
     pub reward_claimable_item_count: usize,
     pub reward_unclaimed_card_item_count: usize,
     pub shop_card_count: usize,
@@ -342,6 +473,15 @@ pub struct RunScreenObservationV0 {
     pub shop_potion_count: usize,
     pub boss_relic_choice_count: usize,
     pub selection_target_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RunEventOptionObservationV0 {
+    pub option_index: usize,
+    pub label: String,
+    pub disabled: bool,
+    pub disabled_reason: Option<String>,
+    pub semantic_descriptor: ActionSemanticDescriptorV1,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -357,16 +497,85 @@ pub struct RunRewardItemObservationV0 {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct RunRewardCardChoiceObservationV0 {
+    pub option_index: usize,
+    pub card_id: String,
+    pub card_name: String,
+    pub upgrades: u8,
+    pub card_type: String,
+    pub rarity: String,
+    pub cost: i8,
+    pub base_semantics: Vec<String>,
+    pub deck_copies: usize,
+    pub card: RunCardFeatureV0,
+    pub plan_delta: CandidatePlanDeltaV0,
+    pub semantic_descriptor: ActionSemanticDescriptorV1,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct RunActionCandidate {
     pub action_index: usize,
     pub action_id: u32,
     pub action_key: String,
+    pub recording_label: String,
+    pub recording_detail: Option<String>,
+    pub recording_kind: String,
     pub action: TraceClientInput,
     pub card: Option<RunCardFeatureV0>,
     pub plan_delta: Option<CandidatePlanDeltaV0>,
     pub reward_structure: Option<RewardActionStructureV0>,
+    pub semantic_descriptor: Option<ActionSemanticDescriptorV1>,
+    pub choice_option: RunChoiceOptionV1,
     pub dominated: bool,
     pub dominated_by_index: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RunChoiceOptionV1 {
+    pub schema_name: String,
+    pub schema_version: u8,
+    pub option_id: usize,
+    pub action_id: u32,
+    pub action_key: String,
+    pub label: String,
+    pub subject_ref: Option<String>,
+    pub before_summary: Option<String>,
+    pub after_summary: Option<String>,
+    pub delta_summary: Option<String>,
+    pub preview_status: String,
+    pub unavailable_reason: Option<String>,
+    pub danger_flags: Vec<String>,
+    pub requires_confirmation: bool,
+    pub confirmation_command: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ActionSemanticDescriptorV1 {
+    pub schema_name: String,
+    pub schema_version: u8,
+    pub action_type: String,
+    pub semantic_status: String,
+    pub coverage_level: String,
+    pub event_id: Option<String>,
+    pub event_name: Option<String>,
+    pub option_index: Option<usize>,
+    pub label: String,
+    pub costs: Vec<ActionSemanticEffectV1>,
+    pub effects: Vec<ActionSemanticEffectV1>,
+    pub constraints: Vec<String>,
+    pub transition: String,
+    pub unknown_fields: Vec<String>,
+    pub source_chain: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ActionSemanticEffectV1 {
+    pub effect_type: String,
+    pub amount: Option<i32>,
+    pub count: Option<usize>,
+    pub kind: Option<String>,
+    pub target: Option<String>,
+    pub details: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]

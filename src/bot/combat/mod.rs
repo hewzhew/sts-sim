@@ -13,6 +13,8 @@ pub(crate) mod posture;
 pub(crate) mod pressure;
 mod profile;
 mod search;
+pub mod search_v2;
+pub mod search_v2_eval;
 mod stepping;
 mod terminal;
 pub(crate) mod turn_plan_probe;

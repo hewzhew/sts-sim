@@ -15,7 +15,10 @@ use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceSt
 ///   0 = initial dialog (click to advance to choices)
 ///   1 = choices displayed
 ///   2 = completed
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventRelicKind, EventSelectionKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -281,6 +284,157 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         }
         _ => {
             vec![EventChoiceMeta::new("[Leave]")]
+        }
+    }
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
+    get_choices(run_state, event_state)
+        .into_iter()
+        .enumerate()
+        .map(|(index, ui)| {
+            let semantics = neow_option_semantics(run_state, event_state, index);
+            EventOption::new(ui, semantics)
+        })
+        .collect()
+}
+
+fn neow_option_semantics(
+    run_state: &RunState,
+    event_state: &EventState,
+    choice_idx: usize,
+) -> EventOptionSemantics {
+    match event_state.current_screen {
+        0 => EventOptionSemantics {
+            action: EventActionKind::Continue,
+            transition: EventOptionTransition::AdvanceScreen,
+            ..EventOptionSemantics::default()
+        },
+        1 => {
+            let count = event_state.extra_data.first().copied().unwrap_or(0).max(0) as usize;
+            if choice_idx >= count || event_state.extra_data.len() < 1 + count * 2 {
+                return EventOptionSemantics::default();
+            }
+            let reward = decode_reward(event_state.extra_data[1 + choice_idx]);
+            let drawback = decode_drawback(event_state.extra_data[1 + count + choice_idx]);
+            let mut effects = neow_drawback_effects(run_state, drawback);
+            effects.extend(neow_reward_effects(run_state, reward));
+            EventOptionSemantics {
+                action: neow_action_kind(reward),
+                effects,
+                transition: neow_reward_transition(reward),
+                terminal: true,
+                ..EventOptionSemantics::default()
+            }
+        }
+        _ => EventOptionSemantics {
+            action: EventActionKind::Leave,
+            transition: EventOptionTransition::Complete,
+            terminal: true,
+            ..EventOptionSemantics::default()
+        },
+    }
+}
+
+fn neow_action_kind(reward: NeowRewardType) -> EventActionKind {
+    match reward {
+        NeowRewardType::RemoveCard
+        | NeowRewardType::RemoveTwo
+        | NeowRewardType::UpgradeCard
+        | NeowRewardType::TransformCard
+        | NeowRewardType::TransformTwoCards => EventActionKind::DeckOperation,
+        _ => EventActionKind::Gain,
+    }
+}
+
+fn neow_reward_transition(reward: NeowRewardType) -> EventOptionTransition {
+    match reward {
+        NeowRewardType::RemoveCard | NeowRewardType::RemoveTwo => {
+            EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard)
+        }
+        NeowRewardType::UpgradeCard => {
+            EventOptionTransition::OpenSelection(EventSelectionKind::UpgradeCard)
+        }
+        NeowRewardType::TransformCard | NeowRewardType::TransformTwoCards => {
+            EventOptionTransition::OpenSelection(EventSelectionKind::TransformCard)
+        }
+        NeowRewardType::ThreeSmallPotions
+        | NeowRewardType::ThreeCards
+        | NeowRewardType::ThreeRareCards
+        | NeowRewardType::RandomColorless
+        | NeowRewardType::RandomColorless2 => EventOptionTransition::OpenReward,
+        _ => EventOptionTransition::Complete,
+    }
+}
+
+fn neow_drawback_effects(run_state: &RunState, drawback: NeowDrawback) -> Vec<EventEffect> {
+    let hp_bonus = (run_state.max_hp as f32 * 0.1) as i32;
+    let percent_dmg = run_state.current_hp / 10 * 3;
+    match drawback {
+        NeowDrawback::None => Vec::new(),
+        NeowDrawback::TenPercentHpLoss => vec![EventEffect::LoseMaxHp(hp_bonus)],
+        NeowDrawback::NoGold => vec![EventEffect::LoseGold(run_state.gold)],
+        NeowDrawback::Curse => vec![EventEffect::ObtainCurse {
+            count: 1,
+            kind: EventCardKind::Unknown,
+        }],
+        NeowDrawback::PercentDamage => vec![EventEffect::LoseHp(percent_dmg)],
+    }
+}
+
+fn neow_reward_effects(run_state: &RunState, reward: NeowRewardType) -> Vec<EventEffect> {
+    let hp_bonus = (run_state.max_hp as f32 * 0.1) as i32;
+    match reward {
+        NeowRewardType::ThreeEnemyKill => vec![EventEffect::ObtainRelic {
+            count: 1,
+            kind: EventRelicKind::Specific(crate::content::relics::RelicId::NeowsLament),
+        }],
+        NeowRewardType::TenPercentHpBonus => vec![EventEffect::GainMaxHp(hp_bonus)],
+        NeowRewardType::TwentyPercentHpBonus => vec![EventEffect::GainMaxHp(hp_bonus * 2)],
+        NeowRewardType::HundredGold => vec![EventEffect::GainGold(100)],
+        NeowRewardType::TwoFiftyGold => vec![EventEffect::GainGold(250)],
+        NeowRewardType::RandomCommonRelic | NeowRewardType::OneRareRelic => {
+            vec![EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::RandomRelic,
+            }]
+        }
+        NeowRewardType::BossRelic => vec![
+            EventEffect::LoseStarterRelic { specific: None },
+            EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::RandomRelic,
+            },
+        ],
+        NeowRewardType::OneRandomRareCard => vec![EventEffect::ObtainCard {
+            count: 1,
+            kind: EventCardKind::RandomClassCard,
+        }],
+        NeowRewardType::RemoveCard => vec![EventEffect::RemoveCard {
+            count: 1,
+            target_uuid: None,
+            kind: EventCardKind::Unknown,
+        }],
+        NeowRewardType::RemoveTwo => vec![EventEffect::RemoveCard {
+            count: 2,
+            target_uuid: None,
+            kind: EventCardKind::Unknown,
+        }],
+        NeowRewardType::UpgradeCard => vec![EventEffect::UpgradeCard { count: 1 }],
+        NeowRewardType::TransformCard => vec![EventEffect::TransformCard { count: 1 }],
+        NeowRewardType::TransformTwoCards => vec![EventEffect::TransformCard { count: 2 }],
+        NeowRewardType::ThreeSmallPotions => vec![EventEffect::ObtainPotion { count: 3 }],
+        NeowRewardType::ThreeCards | NeowRewardType::ThreeRareCards => {
+            vec![EventEffect::ObtainCard {
+                count: 1,
+                kind: EventCardKind::RandomClassCard,
+            }]
+        }
+        NeowRewardType::RandomColorless | NeowRewardType::RandomColorless2 => {
+            vec![EventEffect::ObtainColorlessCard {
+                count: 1,
+                kind: EventCardKind::RandomColorless,
+            }]
         }
     }
 }

@@ -1,0 +1,50 @@
+name: act1_combat_search
+purpose: eval
+description: >
+  Single-seed Act1 eval for checking whether compact combat search evidence
+  helps combat decisions while preserving LLM live-controller authority.
+script: tools/llm/llm_full_run_controller.py
+args:
+  provider: openai_compatible
+  run_mode: llm_live_controller
+  agent_mode: planner
+  act1_boss_eval: true
+  context_ablation: mechanics_plus_strategy_hints
+  combat_search_engine: compact
+  trace_level: compact
+  journal_format: events
+  seed: 42
+  ascension: 0
+  class: ironclad
+  steps: 500
+  timeout: 120
+  planner_timeout: 120
+  act1_eval_timeout_seconds: 900
+  out: auto
+  act1_eval_out: auto
+limits:
+  max_llm_calls: 300
+  max_steps: 500
+  max_wall_seconds: 1800
+  allow_long_run: true
+claims:
+  benchmark_claim: false
+  policy_quality_claim: false
+  winrate_claim: false
+  purpose_statement: single_seed_act1_eval
+hypothesis: >
+  Combat search geometry helps identify dominated or dangerous combat actions
+  while preserving LLM live-controller authority.
+acceptance_criteria:
+  - illegal_actions == 0
+  - override_count == 0
+  - stop_reason in [act1_boss_killed, player_death, timeout, step_limit]
+artifacts:
+  run_dir: auto
+  events: events.jsonl
+  summary: summary.json
+  stdout: stdout.log
+  stderr: stderr.log
+  command: command.txt
+  resolved_config: resolved_config.yaml
+  act1_eval_summary: act1_eval_summary.json

@@ -1,5 +1,8 @@
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventOption, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventId, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use serde_json::{json, Value};
 
@@ -566,7 +569,15 @@ pub fn handle_event_post_run_pending_choice(
 pub fn get_event_options(run_state: &RunState) -> Vec<EventOption> {
     if let Some(event_state) = &run_state.event_state {
         if event_state.completed {
-            return vec![EventOption::unknown(EventChoiceMeta::new("Leave."))];
+            return vec![EventOption::new(
+                EventChoiceMeta::new("Leave."),
+                EventOptionSemantics {
+                    action: EventActionKind::Leave,
+                    transition: EventOptionTransition::Complete,
+                    terminal: true,
+                    ..EventOptionSemantics::default()
+                },
+            )];
         }
 
         return try_get_structured_event_options_for_state(run_state, event_state).unwrap_or_else(
@@ -616,6 +627,7 @@ pub fn try_get_structured_event_options_for_state(
             crate::content::events::secret_portal::get_options(run_state, event_state)
         }
         EventId::Cleric => crate::content::events::cleric::get_options(run_state, event_state),
+        EventId::Neow => crate::content::events::neow::get_options(run_state, event_state),
         _ => return None,
     })
 }

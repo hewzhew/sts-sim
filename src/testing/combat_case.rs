@@ -2369,7 +2369,7 @@ fn provenance_from_scenario(
     }
 }
 
-fn input_for_case_step(
+pub fn input_for_case_step(
     step: &CombatCaseStep,
     engine_state: &EngineState,
     combat: &CombatState,
@@ -2428,7 +2428,7 @@ fn scenario_selector_from_case(selector: CombatCaseCardSelector) -> ScenarioCard
     }
 }
 
-fn describe_case_step(step: &CombatCaseProgramStep) -> String {
+pub fn describe_case_step(step: &CombatCaseProgramStep) -> String {
     match step {
         CombatCaseProgramStep::Play { selector, target } => {
             let mut base = match selector {

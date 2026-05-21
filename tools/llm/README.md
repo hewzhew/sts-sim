@@ -39,6 +39,67 @@ python tools\llm\llm_full_run_controller.py `
   --out tools\artifacts\llm_demo\mock_run.json
 ```
 
+By default the controller now writes compact JSONL decision journal events. Use
+`--trace-level full` only when you need the older full debug JSON.
+
+## Planner + Simulator Tools
+
+Run the LLM as a bounded planner that requests simulator evidence before the
+final action. Combat can be committed by search/verifier instead of asking the
+model to do tactical arithmetic:
+
+```powershell
+python tools\llm\llm_full_run_controller.py `
+  --provider mock `
+  --agent-mode planner `
+  --combat-decision-owner search `
+  --trace-level compact `
+  --steps 120 `
+  --out tools\artifacts\runs\planner_mock_seed42.jsonl `
+  --log-decisions
+```
+
+Supported planner tools:
+
+- `combat_turn_probe`
+- `candidate_afterstate_summary`
+- `campfire_rest_smith_eval`
+
+Planner/search journal events are controller behavior, not teacher labels, not
+policy-quality evidence, and not training data.
+
+## Portfolio Demo Wrapper
+
+Run the safe demo sequence and write a markdown report:
+
+```powershell
+python tools\llm\run_llm_demo.py
+```
+
+This writes:
+
+- `tools\artifacts\runs\{run_id}\manifest.json`
+- `tools\artifacts\runs\{run_id}\status.json`
+- `tools\artifacts\runs\{run_id}\inputs\run_config.json`
+- `tools\artifacts\runs\{run_id}\raw\dry_run.json`
+- `tools\artifacts\runs\{run_id}\raw\mock_run.json`
+- `tools\artifacts\runs\{run_id}\reports\demo_report.md`
+
+If `LLM_API_KEY`, `OPENAI_API_KEY`, or `DEEPSEEK_API_KEY` is configured, the
+wrapper also runs `openai_compatible` and writes
+`tools\artifacts\runs\{run_id}\raw\llm_run.json`. To force or disable that
+behavior:
+
+```powershell
+python tools\llm\run_llm_demo.py --openai-compatible always
+python tools\llm\run_llm_demo.py --openai-compatible never
+```
+
+Each run directory is self-contained. `manifest.json` declares that the
+artifacts are descriptive controller behavior, not teacher labels, not policy
+evaluation, and not training data. `reports\demo_report.md` is a generated
+human-readable view over the run artifacts.
+
 ## OpenAI-Compatible API
 
 Set environment variables, then run:

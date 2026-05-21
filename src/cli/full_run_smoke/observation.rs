@@ -1,4 +1,6 @@
 use super::*;
+use crate::rewards::state::RewardCard;
+use std::collections::HashSet;
 
 pub fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
     let combat = ctx.combat_state.as_ref();
@@ -53,10 +55,570 @@ pub fn build_observation(ctx: &EpisodeContext) -> RunObservationV0 {
         ),
         map: build_map_observation_if_relevant(&ctx.engine_state, &ctx.run_state),
         next_nodes: build_next_node_observations(&ctx.run_state),
+        map_route_context: build_map_route_context_if_relevant(&ctx.run_state),
         act_boss: ctx.run_state.boss_key.map(|boss| format!("{boss:?}")),
         reward_source: reward_source_label(&ctx.engine_state, &ctx.run_state),
         combat: combat.map(|combat| build_combat_observation(&ctx.engine_state, combat)),
         screen: build_screen_observation(&ctx.engine_state, &ctx.run_state),
+        recording_view: build_recording_view(ctx, active_hp, active_max_hp),
+        decision_frame: build_decision_frame(ctx),
+    }
+}
+
+fn build_decision_frame(ctx: &EpisodeContext) -> RunDecisionFrameV1 {
+    let decision_kind = decision_type(&ctx.engine_state).to_string();
+    let (prompt, source, warnings) = match &ctx.engine_state {
+        EngineState::CombatPlayerTurn | EngineState::EventCombat(_) => (
+            "Choose a combat action.".to_string(),
+            Some(RunDecisionSourceV1 {
+                kind: "combat_turn".to_string(),
+                label: "Player combat turn".to_string(),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            Vec::new(),
+        ),
+        EngineState::PendingChoice(choice) => pending_choice_decision_prompt(choice),
+        EngineState::MapNavigation => (
+            "Choose a map route.".to_string(),
+            Some(RunDecisionSourceV1 {
+                kind: "map_navigation".to_string(),
+                label: "Map route choice".to_string(),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            Vec::new(),
+        ),
+        EngineState::RewardScreen(reward_state) => {
+            if reward_state.pending_card_choice.is_some() {
+                (
+                    "Choose a reward card or skip.".to_string(),
+                    Some(RunDecisionSourceV1 {
+                        kind: "reward_card_choice".to_string(),
+                        label: "Reward card choice".to_string(),
+                        action_key: None,
+                        card_instance_id: None,
+                        card_name: None,
+                    }),
+                    Vec::new(),
+                )
+            } else {
+                (
+                    "Claim rewards or proceed.".to_string(),
+                    Some(RunDecisionSourceV1 {
+                        kind: "reward_screen".to_string(),
+                        label: "Reward screen".to_string(),
+                        action_key: None,
+                        card_instance_id: None,
+                        card_name: None,
+                    }),
+                    Vec::new(),
+                )
+            }
+        }
+        EngineState::Shop(_) => (
+            "Choose a shop action.".to_string(),
+            Some(RunDecisionSourceV1 {
+                kind: "shop".to_string(),
+                label: "Merchant shop".to_string(),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            Vec::new(),
+        ),
+        EngineState::Campfire => (
+            "Choose a campfire action.".to_string(),
+            Some(RunDecisionSourceV1 {
+                kind: "campfire".to_string(),
+                label: "Campfire".to_string(),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            Vec::new(),
+        ),
+        EngineState::BossRelicSelect(_) => (
+            "Choose a boss relic.".to_string(),
+            Some(RunDecisionSourceV1 {
+                kind: "boss_relic_select".to_string(),
+                label: "Boss relic choice".to_string(),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            Vec::new(),
+        ),
+        EngineState::EventRoom => (
+            "Choose an event option.".to_string(),
+            Some(RunDecisionSourceV1 {
+                kind: "event".to_string(),
+                label: ctx
+                    .run_state
+                    .event_state
+                    .as_ref()
+                    .map(|event| format!("{:?}", event.id))
+                    .unwrap_or_else(|| "Event".to_string()),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            Vec::new(),
+        ),
+        _ => (
+            "Choose a legal action.".to_string(),
+            None,
+            vec!["decision_frame_generic_fallback".to_string()],
+        ),
+    };
+    RunDecisionFrameV1 {
+        schema_name: "DecisionFrameV1".to_string(),
+        schema_version: 1,
+        decision_kind,
+        prompt,
+        source,
+        warnings,
+    }
+}
+
+fn pending_choice_decision_prompt(
+    choice: &PendingChoice,
+) -> (String, Option<RunDecisionSourceV1>, Vec<String>) {
+    match choice {
+        PendingChoice::HandSelect {
+            min_cards,
+            max_cards,
+            reason,
+            ..
+        } => (
+            format!(
+                "{}: choose {} card(s) in hand.",
+                hand_select_reason_label(reason),
+                if min_cards == max_cards {
+                    min_cards.to_string()
+                } else {
+                    format!("{min_cards}-{max_cards}")
+                }
+            ),
+            Some(RunDecisionSourceV1 {
+                kind: "combat_pending_hand_select".to_string(),
+                label: hand_select_reason_label(reason),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            Vec::new(),
+        ),
+        PendingChoice::GridSelect {
+            min_cards,
+            max_cards,
+            reason,
+            source_pile,
+            ..
+        } => (
+            format!(
+                "{reason:?}: choose {} card(s) from {:?}.",
+                if min_cards == max_cards {
+                    min_cards.to_string()
+                } else {
+                    format!("{min_cards}-{max_cards}")
+                },
+                source_pile
+            ),
+            Some(RunDecisionSourceV1 {
+                kind: "combat_pending_grid_select".to_string(),
+                label: format!("{reason:?}"),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            Vec::new(),
+        ),
+        PendingChoice::DiscoverySelect(_) => (
+            "Choose a discovered card.".to_string(),
+            Some(RunDecisionSourceV1 {
+                kind: "combat_discovery_select".to_string(),
+                label: "Discovery".to_string(),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            Vec::new(),
+        ),
+        _ => (
+            "Resolve combat pending choice.".to_string(),
+            Some(RunDecisionSourceV1 {
+                kind: "combat_pending_choice".to_string(),
+                label: format!("{choice:?}"),
+                action_key: None,
+                card_instance_id: None,
+                card_name: None,
+            }),
+            vec!["pending_choice_prompt_is_generic".to_string()],
+        ),
+    }
+}
+
+fn hand_select_reason_label(reason: &crate::state::HandSelectReason) -> String {
+    match reason {
+        crate::state::HandSelectReason::Upgrade => "Upgrade".to_string(),
+        crate::state::HandSelectReason::Exhaust => "Exhaust".to_string(),
+        crate::state::HandSelectReason::Discard => "Discard".to_string(),
+        crate::state::HandSelectReason::PutOnDrawPile => "Put on draw pile".to_string(),
+        crate::state::HandSelectReason::Setup => "Put on draw pile".to_string(),
+        crate::state::HandSelectReason::PutToBottomOfDraw => {
+            "Put on bottom of draw pile".to_string()
+        }
+        crate::state::HandSelectReason::Retain => "Retain".to_string(),
+        crate::state::HandSelectReason::GamblingChip => "Discard for Gambling Chip".to_string(),
+        crate::state::HandSelectReason::Recycle => "Recycle".to_string(),
+        crate::state::HandSelectReason::Copy { amount } => format!("Copy x{amount}"),
+        crate::state::HandSelectReason::Nightmare { amount } => format!("Nightmare x{amount}"),
+    }
+}
+
+fn build_recording_view(
+    ctx: &EpisodeContext,
+    active_hp: i32,
+    active_max_hp: i32,
+) -> RunRecordingViewV1 {
+    let mut state_lines = vec![format!(
+        "Act {} Floor {} | HP {}/{} | Gold {} | Boss {}",
+        ctx.run_state.act_num,
+        ctx.run_state.floor_num,
+        active_hp,
+        active_max_hp,
+        ctx.run_state.gold,
+        ctx.run_state
+            .boss_key
+            .map(|boss| format!("{boss:?}"))
+            .unwrap_or_else(|| "Unknown".to_string())
+    )];
+    if !ctx.run_state.relics.is_empty() {
+        state_lines.push(format!(
+            "Relics: {}",
+            ctx.run_state
+                .relics
+                .iter()
+                .map(|relic| recording_relic_label(relic))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ));
+    }
+    let potion_lines = ctx
+        .run_state
+        .potions
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, potion)| {
+            potion.as_ref().map(|potion| {
+                let def = crate::content::potions::get_potion_definition(potion.id);
+                format!("{slot}:{}", def.name)
+            })
+        })
+        .collect::<Vec<_>>();
+    if !potion_lines.is_empty() {
+        state_lines.push(format!("Potions: {}", potion_lines.join(" | ")));
+    }
+
+    let mut context_lines = Vec::new();
+    let mut warning_lines = Vec::new();
+    match &ctx.engine_state {
+        EngineState::CombatPlayerTurn
+        | EngineState::EventCombat(_)
+        | EngineState::PendingChoice(_) => {
+            if let Some(combat) = ctx.combat_state.as_ref() {
+                context_lines.push(format!(
+                    "Combat: energy={} block={} incoming={} turn={} monster_hp={}",
+                    combat.turn.energy,
+                    combat.entities.player.block,
+                    visible_incoming_damage_for_recording(combat),
+                    combat.turn.turn_count,
+                    combat
+                        .entities
+                        .monsters
+                        .iter()
+                        .filter(|monster| monster.is_alive_for_action() && !monster.half_dead)
+                        .map(|monster| monster.current_hp.max(0))
+                        .sum::<i32>()
+                ));
+                for (slot, monster) in combat.entities.monsters.iter().enumerate() {
+                    if !monster.is_alive_for_action() || monster.half_dead {
+                        continue;
+                    }
+                    let name = crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                        .map(|enemy| enemy.get_name())
+                        .unwrap_or("Unknown Monster");
+                    let move_preview =
+                        crate::projection::combat::project_monster_move_preview_in_combat(
+                            combat, monster,
+                        );
+                    let visible_intent_kind = format!("{:?}", move_preview.visible_intent);
+                    context_lines.push(format!(
+                        "Enemy: slot={} {} hp={}/{} block={} intent={}",
+                        slot,
+                        name,
+                        monster.current_hp,
+                        monster.max_hp,
+                        monster.block,
+                        monster_visible_intent_label(
+                            &visible_intent_kind,
+                            move_preview.damage_per_hit,
+                            move_preview.hits,
+                            move_preview.total_damage,
+                        ),
+                    ));
+                }
+            }
+        }
+        EngineState::MapNavigation => {
+            for line in recording_route_lines(&ctx.run_state) {
+                context_lines.push(line);
+            }
+        }
+        EngineState::RewardScreen(reward_state) => {
+            if let Some(cards) = reward_state.pending_card_choice.as_ref() {
+                context_lines.push(format!(
+                    "Cards: {}",
+                    cards
+                        .iter()
+                        .map(recording_reward_card_label)
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                ));
+            } else if !reward_state.items.is_empty() {
+                context_lines.push(format!(
+                    "Rewards: {}",
+                    reward_state
+                        .items
+                        .iter()
+                        .map(recording_reward_item_label)
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                ));
+            }
+        }
+        EngineState::Shop(shop) => {
+            let mut shop_lines = Vec::new();
+            if !shop.cards.is_empty() {
+                shop_lines.push(format!(
+                    "Cards: {}",
+                    shop.cards
+                        .iter()
+                        .map(|item| {
+                            let def = crate::content::cards::get_card_definition(item.card_id);
+                            format!("{} {}g", def.name, item.price)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                ));
+            }
+            if !shop.relics.is_empty() {
+                shop_lines.push(format!(
+                    "Relics: {}",
+                    shop.relics
+                        .iter()
+                        .map(|item| format!("{:?} {}g", item.relic_id, item.price))
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                ));
+            }
+            if !shop.potions.is_empty() {
+                shop_lines.push(format!(
+                    "Potions: {}",
+                    shop.potions
+                        .iter()
+                        .map(|item| {
+                            let def =
+                                crate::content::potions::get_potion_definition(item.potion_id);
+                            format!("{} {}g", def.name, item.price)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                ));
+            }
+            if shop.purge_available {
+                shop_lines.push(format!("Remove card: {}g", shop.purge_cost));
+            }
+            context_lines.extend(shop_lines);
+        }
+        EngineState::Campfire => {
+            context_lines.push(format!(
+                "Campfire: rest heals {} HP",
+                ctx.run_state.max_hp * 30 / 100
+            ));
+        }
+        EngineState::BossRelicSelect(state) => {
+            context_lines.push(format!(
+                "Boss relics: {}",
+                state
+                    .relics
+                    .iter()
+                    .map(|relic| format!("{relic:?}"))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ));
+        }
+        EngineState::RunPendingChoice(choice) => {
+            let request = choice.selection_request(&ctx.run_state);
+            context_lines.push(format!(
+                "Selection: {:?} {}",
+                request.reason,
+                request.constraint.describe(request.targets.len())
+            ));
+        }
+        EngineState::TreasureRoom(_) => {
+            context_lines.push("Treasure room".to_string());
+        }
+        EngineState::EventRoom => {
+            if let Some(event) = ctx.run_state.event_state.as_ref() {
+                context_lines.push(format!("Event: {:?}", event.id));
+            }
+        }
+        EngineState::CombatProcessing | EngineState::GameOver(_) => {}
+    }
+    if context_lines.is_empty() {
+        warning_lines.push("recording_context_empty".to_string());
+    }
+    RunRecordingViewV1 {
+        schema_name: "RecordingViewV1".to_string(),
+        schema_version: 1,
+        recording_source: "rust_runtime".to_string(),
+        state_lines,
+        context_lines,
+        warning_lines,
+    }
+}
+
+fn recording_relic_label(relic: &crate::content::relics::RelicState) -> String {
+    let mut label = format!("{:?}", relic.id);
+    if relic.counter >= 0 {
+        label.push_str(&format!(" counter={}", relic.counter));
+    }
+    if relic.amount != 0 {
+        label.push_str(&format!(" amount={}", relic.amount));
+    }
+    if relic.used_up {
+        label.push_str(" used");
+    }
+    label
+}
+
+fn recording_reward_card_label(card: &RewardCard) -> String {
+    let def = crate::content::cards::get_card_definition(card.id);
+    format!(
+        "{}{} ({} {:?}) cost={}",
+        def.name,
+        upgrade_suffix(card.upgrades),
+        format!("{:?}", def.card_type),
+        def.rarity,
+        def.cost
+    )
+}
+
+fn recording_reward_item_label(item: &crate::rewards::state::RewardItem) -> String {
+    match item {
+        crate::rewards::state::RewardItem::Gold { amount } => format!("{amount} Gold"),
+        crate::rewards::state::RewardItem::StolenGold { amount } => format!("{amount} Stolen Gold"),
+        crate::rewards::state::RewardItem::Card { cards } => {
+            format!("Card reward: choose 1 of {}", cards.len())
+        }
+        crate::rewards::state::RewardItem::Relic { relic_id } => format!("{relic_id:?}"),
+        crate::rewards::state::RewardItem::Potion { potion_id } => {
+            let def = crate::content::potions::get_potion_definition(*potion_id);
+            def.name.to_string()
+        }
+        crate::rewards::state::RewardItem::EmeraldKey => "Emerald Key".to_string(),
+        crate::rewards::state::RewardItem::SapphireKey => "Sapphire Key".to_string(),
+    }
+}
+
+fn recording_route_lines(run_state: &RunState) -> Vec<String> {
+    let Some(route_context) = build_map_route_context_if_relevant(run_state) else {
+        return Vec::new();
+    };
+    let mut lines = Vec::new();
+    for choice in route_context.route_choices.iter().take(8) {
+        lines.push(format!(
+            "{}: {} shop={} fire={} fights3={}",
+            choice.action_key,
+            choice.room_label,
+            recording_optional_floor(choice.earliest_shop_floor),
+            recording_optional_floor(choice.earliest_fire_floor),
+            choice.forced_fights_next_3
+        ));
+    }
+    lines
+}
+
+fn visible_incoming_damage_for_recording(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_alive_for_action() && !monster.half_dead)
+        .filter_map(|monster| {
+            crate::content::monsters::resolve_monster_turn_plan(combat, monster)
+                .summary_spec()
+                .attack()
+                .map(|attack| attack.total_base_damage())
+        })
+        .sum()
+}
+
+fn recording_optional_floor(floor: Option<i32>) -> String {
+    floor
+        .map(|floor| floor.to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
+
+#[allow(dead_code)]
+fn recording_move_spec_label(spec: &crate::semantics::combat::MonsterMoveSpec) -> String {
+    use crate::semantics::combat::MonsterMoveSpec;
+    let attack_label = |attack: &crate::semantics::combat::AttackSpec| {
+        if attack.hits > 1 {
+            format!("Attack {}x{}", attack.base_damage, attack.hits)
+        } else {
+            format!("Attack {}", attack.base_damage)
+        }
+    };
+    match spec {
+        MonsterMoveSpec::Attack(attack) => attack_label(attack),
+        MonsterMoveSpec::AttackAddCard(attack, _) => format!("{} + Add Card", attack_label(attack)),
+        MonsterMoveSpec::AttackUpgradeCards(attack, _) => {
+            format!("{} + Upgrade Cards", attack_label(attack))
+        }
+        MonsterMoveSpec::AttackBuff(attack, _) => format!("{} + Buff", attack_label(attack)),
+        MonsterMoveSpec::AttackSustain(attack) => format!("{} + Sustain", attack_label(attack)),
+        MonsterMoveSpec::AttackDebuff(attack, _) => format!("{} + Debuff", attack_label(attack)),
+        MonsterMoveSpec::AttackDefend(attack, defend) => {
+            format!("{} + Block {}", attack_label(attack), defend.block)
+        }
+        MonsterMoveSpec::AddCard(_) => "Add Card".to_string(),
+        MonsterMoveSpec::Buff(_) => "Buff".to_string(),
+        MonsterMoveSpec::Debuff(_) => "Debuff".to_string(),
+        MonsterMoveSpec::StrongDebuff(_) => "Strong Debuff".to_string(),
+        MonsterMoveSpec::Defend(defend) => format!("Block {}", defend.block),
+        MonsterMoveSpec::DefendDebuff(defend, _) => format!("Block {} + Debuff", defend.block),
+        MonsterMoveSpec::DefendBuff(defend, _) => format!("Block {} + Buff", defend.block),
+        MonsterMoveSpec::Heal(heal) => format!("Heal {}", heal.amount),
+        MonsterMoveSpec::Escape => "Escape".to_string(),
+        MonsterMoveSpec::Magic => "Magic".to_string(),
+        MonsterMoveSpec::Sleep => "Sleep".to_string(),
+        MonsterMoveSpec::Stun => "Stun".to_string(),
+        MonsterMoveSpec::Debug => "Debug".to_string(),
+        MonsterMoveSpec::None => "None".to_string(),
+        MonsterMoveSpec::Unknown => "Unknown".to_string(),
+    }
+}
+
+fn upgrade_suffix(upgrades: u8) -> String {
+    if upgrades > 0 {
+        format!("+{upgrades}")
+    } else {
+        String::new()
     }
 }
 
@@ -390,6 +952,511 @@ pub fn build_next_node_observations(run_state: &RunState) -> Vec<RunMapNodeObser
         .collect()
 }
 
+pub fn build_map_route_context_if_relevant(run_state: &RunState) -> Option<RunMapRouteContextV1> {
+    let route_choices = legal_map_actions(run_state)
+        .into_iter()
+        .filter_map(|action| match action {
+            ClientInput::SelectMapNode(x) => {
+                let y = if run_state.map.current_y == -1 {
+                    0
+                } else if run_state.map.current_y == 14 {
+                    15
+                } else {
+                    run_state.map.current_y + 1
+                };
+                Some((
+                    action_key_for_input(&ClientInput::SelectMapNode(x), None),
+                    x as i32,
+                    y,
+                ))
+            }
+            ClientInput::FlyToNode(x, y) => Some((
+                action_key_for_input(&ClientInput::FlyToNode(x, y), None),
+                x as i32,
+                y as i32,
+            )),
+            _ => None,
+        })
+        .map(|(action_key, x, y)| map_route_choice(run_state, action_key, x, y))
+        .collect::<Vec<_>>();
+    if route_choices.is_empty() {
+        return None;
+    }
+    Some(RunMapRouteContextV1 {
+        schema_name: "MapRouteContextV1".to_string(),
+        schema_version: 1,
+        decision_authority: "evidence_only".to_string(),
+        not_final_action: true,
+        map_scope: "current_to_act_boss".to_string(),
+        context_level: "route_envelope_to_act_boss".to_string(),
+        current_x: run_state.map.current_x,
+        current_y: run_state.map.current_y,
+        act_boss: run_state.boss_key.map(|boss| format!("{boss:?}")),
+        route_choices,
+        truth_warnings: vec![
+            "route_envelope_counts_graph_paths_equally_not_player_policy_probability".to_string(),
+            "route_summary_excludes_hidden_future_rewards_and_events".to_string(),
+            "paths_are_unweighted_graph_paths_not_outcome_probabilities".to_string(),
+        ],
+    })
+}
+
+#[derive(Clone, Debug, Default)]
+struct RoutePathStats {
+    elites: i32,
+    fires: i32,
+    shops: i32,
+    chests: i32,
+    events: i32,
+    monsters: i32,
+    monsters_next_3: i32,
+    first_elite_floor: Option<i32>,
+    first_fire_floor: Option<i32>,
+    first_shop_floor: Option<i32>,
+    rest_before_first_elite: bool,
+    burning_elite: bool,
+}
+
+const MAX_ROUTE_PATHS: usize = 4096;
+
+fn map_route_choice(
+    run_state: &RunState,
+    action_key: String,
+    x: i32,
+    y: i32,
+) -> RunMapRouteChoiceV1 {
+    let node_obs = map_node_observation(run_state, x, y);
+    let mut paths = Vec::new();
+    let mut budget_exhausted = false;
+    collect_route_paths(
+        run_state,
+        x,
+        y,
+        0,
+        RoutePathStats::default(),
+        &mut paths,
+        &mut budget_exhausted,
+    );
+    let reachable_nodes = reachable_nodes_from(run_state, x, y);
+    let branch_count = reachable_nodes.len();
+    let shops_reachable = count_reachable_room(run_state, &reachable_nodes, RoomType::ShopRoom);
+    let chests_reachable =
+        count_reachable_room(run_state, &reachable_nodes, RoomType::TreasureRoom);
+    let events_reachable = count_reachable_room(run_state, &reachable_nodes, RoomType::EventRoom);
+    let burning_elite_reachable = reachable_nodes.iter().any(|(node_x, node_y)| {
+        map_node_at(run_state, *node_x, *node_y).is_some_and(|node| {
+            node.has_emerald_key && node.class == Some(RoomType::MonsterRoomElite)
+        })
+    });
+    if paths.is_empty() {
+        return RunMapRouteChoiceV1 {
+            action_key,
+            next_x: x,
+            next_y: y,
+            room_type: node_obs.room_type.clone(),
+            room_label: route_room_label(node_obs.room_type.as_deref(), node_obs.has_emerald_key),
+            burning_elite: node_obs.has_emerald_key,
+            reachable_paths_to_boss: 0,
+            min_elites: 0,
+            max_elites: 0,
+            expected_elites_milli: 0,
+            min_fires: 0,
+            max_fires: 0,
+            expected_fires_milli: 0,
+            min_shops: 0,
+            max_shops: 0,
+            expected_shops_milli: 0,
+            shops_reachable,
+            chests_reachable,
+            events_reachable,
+            forced_fights_next_3: 0,
+            earliest_shop_floor: None,
+            earliest_fire_floor: None,
+            rest_before_first_elite: false,
+            local_flex: "none".to_string(),
+            global_path_flex: "none".to_string(),
+            path_flexibility: "none".to_string(),
+            branch_count,
+            burning_elite_reachable,
+            burning_elite_on_path: node_obs.has_emerald_key,
+            risk_label: "unknown_unreachable_boss".to_string(),
+            risk_vector: route_risk_vector(0, 0, 0, 0, 0, 0, 0, 0, "none"),
+            notes: vec!["no route to boss found from this next node".to_string()],
+        };
+    }
+    let path_count = paths.len();
+    let min_elites = paths.iter().map(|path| path.elites).min().unwrap_or(0);
+    let max_elites = paths.iter().map(|path| path.elites).max().unwrap_or(0);
+    let min_fires = paths.iter().map(|path| path.fires).min().unwrap_or(0);
+    let max_fires = paths.iter().map(|path| path.fires).max().unwrap_or(0);
+    let min_shops = paths.iter().map(|path| path.shops).min().unwrap_or(0);
+    let max_shops = paths.iter().map(|path| path.shops).max().unwrap_or(0);
+    let forced_fights_next_3 = paths
+        .iter()
+        .map(|path| path.monsters_next_3)
+        .min()
+        .unwrap_or(0);
+    let earliest_shop_floor = paths.iter().filter_map(|path| path.first_shop_floor).min();
+    let earliest_fire_floor = paths.iter().filter_map(|path| path.first_fire_floor).min();
+    let rest_before_first_elite = paths.iter().any(|path| path.rest_before_first_elite);
+    let local_flex = route_local_flex_label(branch_count);
+    let global_path_flex = route_global_path_flex_label(path_count);
+    let path_flexibility = route_combined_flex_label(&local_flex, &global_path_flex);
+    let risk_vector = route_risk_vector(
+        min_elites,
+        max_elites,
+        forced_fights_next_3,
+        min_fires,
+        max_fires,
+        min_shops,
+        max_shops,
+        path_count,
+        &global_path_flex,
+    );
+    let risk_label = route_risk_label(&risk_vector);
+    let mut notes = route_notes(
+        min_elites,
+        max_elites,
+        forced_fights_next_3,
+        max_shops,
+        max_fires,
+        rest_before_first_elite,
+        burning_elite_reachable,
+    );
+    if budget_exhausted {
+        notes.push("route_path_budget_exhausted_summary_is_truncated".to_string());
+    }
+    RunMapRouteChoiceV1 {
+        action_key,
+        next_x: x,
+        next_y: y,
+        room_type: node_obs.room_type.clone(),
+        room_label: route_room_label(node_obs.room_type.as_deref(), node_obs.has_emerald_key),
+        burning_elite: node_obs.has_emerald_key,
+        reachable_paths_to_boss: path_count,
+        min_elites,
+        max_elites,
+        expected_elites_milli: average_milli(paths.iter().map(|path| path.elites)),
+        min_fires,
+        max_fires,
+        expected_fires_milli: average_milli(paths.iter().map(|path| path.fires)),
+        min_shops,
+        max_shops,
+        expected_shops_milli: average_milli(paths.iter().map(|path| path.shops)),
+        shops_reachable,
+        chests_reachable,
+        events_reachable,
+        forced_fights_next_3,
+        earliest_shop_floor,
+        earliest_fire_floor,
+        rest_before_first_elite,
+        local_flex,
+        global_path_flex,
+        path_flexibility,
+        branch_count,
+        burning_elite_reachable,
+        burning_elite_on_path: node_obs.has_emerald_key,
+        risk_label,
+        risk_vector,
+        notes,
+    }
+}
+
+fn collect_route_paths(
+    run_state: &RunState,
+    x: i32,
+    y: i32,
+    depth: usize,
+    mut stats: RoutePathStats,
+    out: &mut Vec<RoutePathStats>,
+    budget_exhausted: &mut bool,
+) {
+    if out.len() >= MAX_ROUTE_PATHS {
+        *budget_exhausted = true;
+        return;
+    }
+    if y == 15 {
+        out.push(stats);
+        return;
+    }
+    let Some(node) = map_node_at(run_state, x, y) else {
+        return;
+    };
+    let floor = y + 1;
+    if let Some(room_type) = node.class {
+        apply_room_to_route_stats(&mut stats, room_type, floor, depth, node.has_emerald_key);
+    }
+    if y >= 14 {
+        out.push(stats);
+        return;
+    }
+    if node.edges.is_empty() {
+        return;
+    }
+    for edge in &node.edges {
+        collect_route_paths(
+            run_state,
+            edge.dst_x,
+            edge.dst_y,
+            depth + 1,
+            stats.clone(),
+            out,
+            budget_exhausted,
+        );
+        if *budget_exhausted {
+            return;
+        }
+    }
+}
+
+fn apply_room_to_route_stats(
+    stats: &mut RoutePathStats,
+    room_type: RoomType,
+    floor: i32,
+    depth: usize,
+    burning_elite: bool,
+) {
+    match room_type {
+        RoomType::MonsterRoomElite => {
+            stats.elites += 1;
+            stats.first_elite_floor.get_or_insert(floor);
+            if burning_elite {
+                stats.burning_elite = true;
+            }
+        }
+        RoomType::RestRoom => {
+            stats.fires += 1;
+            stats.first_fire_floor.get_or_insert(floor);
+            if stats.first_elite_floor.is_none() {
+                stats.rest_before_first_elite = true;
+            }
+        }
+        RoomType::ShopRoom => {
+            stats.shops += 1;
+            stats.first_shop_floor.get_or_insert(floor);
+        }
+        RoomType::TreasureRoom => stats.chests += 1,
+        RoomType::EventRoom => stats.events += 1,
+        RoomType::MonsterRoom => {
+            stats.monsters += 1;
+            if depth < 3 {
+                stats.monsters_next_3 += 1;
+            }
+        }
+        RoomType::MonsterRoomBoss | RoomType::TrueVictoryRoom => {}
+    }
+}
+
+fn reachable_nodes_from(run_state: &RunState, x: i32, y: i32) -> HashSet<(i32, i32)> {
+    let mut out = HashSet::new();
+    collect_reachable_nodes(run_state, x, y, &mut out);
+    out
+}
+
+fn collect_reachable_nodes(run_state: &RunState, x: i32, y: i32, out: &mut HashSet<(i32, i32)>) {
+    if y == 15 || !out.insert((x, y)) {
+        return;
+    }
+    let Some(node) = map_node_at(run_state, x, y) else {
+        return;
+    };
+    for edge in &node.edges {
+        collect_reachable_nodes(run_state, edge.dst_x, edge.dst_y, out);
+    }
+}
+
+fn count_reachable_room(
+    run_state: &RunState,
+    reachable_nodes: &HashSet<(i32, i32)>,
+    room_type: RoomType,
+) -> i32 {
+    reachable_nodes
+        .iter()
+        .filter(|(x, y)| {
+            map_node_at(run_state, *x, *y).is_some_and(|node| node.class == Some(room_type))
+        })
+        .count() as i32
+}
+
+fn map_node_at(run_state: &RunState, x: i32, y: i32) -> Option<&crate::map::node::MapRoomNode> {
+    run_state
+        .map
+        .graph
+        .get(y.max(0) as usize)
+        .and_then(|row| row.get(x.max(0) as usize))
+}
+
+fn average_milli(values: impl Iterator<Item = i32>) -> i32 {
+    let mut sum = 0i64;
+    let mut count = 0i64;
+    for value in values {
+        sum += value as i64;
+        count += 1;
+    }
+    if count == 0 {
+        0
+    } else {
+        ((sum * 1000) / count) as i32
+    }
+}
+
+fn route_room_label(room_type: Option<&str>, burning_elite: bool) -> String {
+    let label = match room_type.unwrap_or("Unknown") {
+        "MonsterRoom" => "Monster",
+        "MonsterRoomElite" => "Elite",
+        "MonsterRoomBoss" => "Boss",
+        "RestRoom" => "Rest",
+        "ShopRoom" => "Shop",
+        "TreasureRoom" => "Chest",
+        "EventRoom" => "Event",
+        other => other,
+    };
+    if burning_elite {
+        format!("{label} [Burning Elite]")
+    } else {
+        label.to_string()
+    }
+}
+
+fn route_local_flex_label(branch_count: usize) -> String {
+    if branch_count >= 20 {
+        "high".to_string()
+    } else if branch_count >= 10 {
+        "medium".to_string()
+    } else if branch_count >= 4 {
+        "low".to_string()
+    } else {
+        "locked".to_string()
+    }
+}
+
+fn route_global_path_flex_label(path_count: usize) -> String {
+    if path_count >= 48 {
+        "high".to_string()
+    } else if path_count >= 16 {
+        "medium".to_string()
+    } else if path_count >= 4 {
+        "low".to_string()
+    } else if path_count >= 1 {
+        "locked".to_string()
+    } else {
+        "none".to_string()
+    }
+}
+
+fn route_combined_flex_label(local_flex: &str, global_path_flex: &str) -> String {
+    format!("local:{local_flex}/global:{global_path_flex}")
+}
+
+fn route_risk_vector(
+    min_elites: i32,
+    max_elites: i32,
+    forced_fights_next_3: i32,
+    min_fires: i32,
+    max_fires: i32,
+    min_shops: i32,
+    max_shops: i32,
+    path_count: usize,
+    global_path_flex: &str,
+) -> RunRouteRiskVectorV1 {
+    let early_pressure = if forced_fights_next_3 >= 3 {
+        "high"
+    } else if forced_fights_next_3 >= 2 {
+        "medium"
+    } else if forced_fights_next_3 >= 1 {
+        "low"
+    } else {
+        "none"
+    };
+    let elite_ceiling = if min_elites >= 1 {
+        "forced"
+    } else if max_elites >= 3 {
+        "high_optional"
+    } else if max_elites >= 1 {
+        "medium_optional"
+    } else if forced_fights_next_3 >= 3 {
+        "none"
+    } else {
+        "none"
+    };
+    let shop_access = if max_shops <= 0 {
+        "none"
+    } else if min_shops > 0 {
+        "guaranteed"
+    } else {
+        "optional"
+    };
+    let recovery_access = if min_fires > 0 {
+        "guaranteed"
+    } else if max_fires > 0 {
+        "optional"
+    } else {
+        "none"
+    };
+    let boss_prep_support = if max_shops > 0 && max_fires > 0 && path_count >= 16 {
+        "strong"
+    } else if max_shops > 0 || max_fires > 0 {
+        "moderate"
+    } else {
+        "weak"
+    };
+    RunRouteRiskVectorV1 {
+        early_pressure: early_pressure.to_string(),
+        elite_ceiling: elite_ceiling.to_string(),
+        shop_access: shop_access.to_string(),
+        recovery_access: recovery_access.to_string(),
+        path_flexibility: global_path_flex.to_string(),
+        boss_prep_support: boss_prep_support.to_string(),
+    }
+}
+
+fn route_risk_label(risk: &RunRouteRiskVectorV1) -> String {
+    format!(
+        "early:{}/elite:{}/shop:{}/recovery:{}/flex:{}/boss_prep:{}",
+        risk.early_pressure,
+        risk.elite_ceiling,
+        risk.shop_access,
+        risk.recovery_access,
+        risk.path_flexibility,
+        risk.boss_prep_support
+    )
+}
+
+fn route_notes(
+    min_elites: i32,
+    max_elites: i32,
+    forced_fights_next_3: i32,
+    max_shops: i32,
+    max_fires: i32,
+    rest_before_first_elite: bool,
+    burning_elite_reachable: bool,
+) -> Vec<String> {
+    let mut notes = Vec::new();
+    if min_elites > 0 {
+        notes.push("elite_unavoidable_on_all_paths".to_string());
+    } else if max_elites > 0 {
+        notes.push("elite_optional_on_some_paths".to_string());
+    }
+    if forced_fights_next_3 > 0 {
+        notes.push(format!(
+            "at_least_{forced_fights_next_3}_monster_room(s)_in_next_3"
+        ));
+    }
+    if max_shops > 0 {
+        notes.push("shop_reachable_before_boss".to_string());
+    }
+    if max_fires > 0 {
+        notes.push("rest_site_reachable_before_boss".to_string());
+    }
+    if rest_before_first_elite {
+        notes.push("can_rest_before_first_elite_on_some_path".to_string());
+    }
+    if burning_elite_reachable {
+        notes.push("burning_elite_reachable".to_string());
+    }
+    notes
+}
+
 pub fn map_node_observation(run_state: &RunState, x: i32, y: i32) -> RunMapNodeObservationV0 {
     let has_wing_boots = run_state
         .relics
@@ -511,6 +1578,7 @@ pub fn build_combat_observation(
     RunCombatObservationV0 {
         player_hp: combat.entities.player.current_hp,
         player_block: combat.entities.player.block,
+        player_powers: build_power_observations(combat, combat.entities.player.id),
         energy: combat.turn.energy as i32,
         combat_phase: combat_phase_label(combat).to_string(),
         turn_count: combat.turn.turn_count,
@@ -534,6 +1602,118 @@ pub fn build_combat_observation(
         limbo_count: combat.zones.limbo.len(),
         pending_choice_kind: run_pending_choice_kind(engine_state),
         pending_choice: build_run_pending_choice_observation(engine_state, combat),
+        monsters: build_monster_observations(combat),
+        encounter_hints: build_combat_encounter_hints(combat),
+    }
+}
+
+fn build_monster_observations(combat: &CombatState) -> Vec<RunMonsterObservationV0> {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| {
+            let enemy = crate::content::monsters::EnemyId::from_id(monster.monster_type);
+            let move_preview =
+                crate::projection::combat::project_monster_move_preview_in_combat(combat, monster);
+            let visible_intent_kind = format!("{:?}", move_preview.visible_intent);
+            let visible_intent = Some(monster_visible_intent_label(
+                &visible_intent_kind,
+                move_preview.damage_per_hit,
+                move_preview.hits,
+                move_preview.total_damage,
+            ));
+            let monster_id = enemy
+                .map(|enemy| format!("{enemy:?}"))
+                .unwrap_or_else(|| format!("MonsterType{}", monster.monster_type));
+            let name = enemy
+                .map(|enemy| enemy.get_name().to_string())
+                .unwrap_or_else(|| monster_id.clone());
+            RunMonsterObservationV0 {
+                entity_id: monster.id,
+                slot: monster.slot,
+                monster_id: monster_id.clone(),
+                name,
+                current_hp: monster.current_hp,
+                max_hp: monster.max_hp,
+                block: monster.block,
+                alive: monster.is_alive_for_action(),
+                planned_move_id: monster.planned_move_id(),
+                visible_intent,
+                visible_intent_kind,
+                visible_intent_damage_per_hit: move_preview.damage_per_hit,
+                visible_intent_hits: move_preview.hits,
+                visible_intent_total_damage: move_preview.total_damage,
+                powers: build_power_observations(combat, monster.id),
+                mechanic_hints: monster_mechanic_hints(&monster_id),
+            }
+        })
+        .collect()
+}
+
+fn monster_visible_intent_label(
+    kind: &str,
+    damage_per_hit: Option<i32>,
+    hits: u8,
+    total_damage: Option<i32>,
+) -> String {
+    let damage_text = match (damage_per_hit, hits) {
+        (Some(damage), hits) if hits > 1 => Some(format!("{damage}x{hits}")),
+        (Some(damage), _) => Some(damage.to_string()),
+        _ => total_damage.map(|damage| damage.to_string()),
+    };
+    match damage_text {
+        Some(damage) if kind.starts_with("Attack") => format!("{kind} {damage}"),
+        _ => kind.to_string(),
+    }
+}
+
+fn build_power_observations(combat: &CombatState, entity_id: usize) -> Vec<RunPowerObservationV0> {
+    crate::content::powers::store::powers_for(combat, entity_id)
+        .map(|powers| {
+            powers
+                .iter()
+                .map(|power| RunPowerObservationV0 {
+                    power_id: format!("{:?}", power.power_type),
+                    amount: power.amount,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn build_combat_encounter_hints(combat: &CombatState) -> Vec<String> {
+    let mut hints = Vec::new();
+    for monster in &combat.entities.monsters {
+        if let Some(enemy) = crate::content::monsters::EnemyId::from_id(monster.monster_type) {
+            hints.extend(monster_mechanic_hints(&format!("{enemy:?}")));
+        }
+    }
+    hints.sort();
+    hints.dedup();
+    hints
+}
+
+fn monster_mechanic_hints(monster_id: &str) -> Vec<String> {
+    match monster_id {
+        "GremlinNob" => vec![
+            "mechanic:gremlin_nob_enrage: playing Skill cards increases Gremlin Nob strength".to_string(),
+            "strategy:gremlin_nob_plan: prioritize fast damage and only block when it prevents large immediate HP loss".to_string(),
+        ],
+        "Lagavulin" => vec![
+            "mechanic:lagavulin_sleep: starts asleep until damaged or enough turns pass".to_string(),
+            "strategy:lagavulin_plan: use asleep turns to set up or deal burst damage before it wakes".to_string(),
+            "mechanic:lagavulin_debuff: long fights are dangerous because Lagavulin can reduce strength and dexterity".to_string(),
+        ],
+        "SlimeBoss" => vec![
+            "mechanic:slime_boss_split: splits when pushed below threshold".to_string(),
+            "strategy:slime_boss_plan: avoid weak split turns; set up a strong split".to_string(),
+        ],
+        "Hexaghost" => vec![
+            "mechanic:hexaghost_first_attack: first big attack scales with current HP".to_string(),
+            "strategy:hexaghost_plan: deck needs frontloaded damage and status handling".to_string(),
+        ],
+        _ => Vec::new(),
     }
 }
 
@@ -585,6 +1765,11 @@ fn build_run_pending_choice_observation(
                         card_uuid: None,
                         selection_uuids: Vec::new(),
                         source_pile: None,
+                        subject_ref: None,
+                        before_summary: None,
+                        after_summary: None,
+                        delta_summary: None,
+                        preview_status: None,
                     },
                 )
                 .collect(),
@@ -613,6 +1798,11 @@ fn build_run_pending_choice_observation(
                         card_uuid: None,
                         selection_uuids: Vec::new(),
                         source_pile: None,
+                        subject_ref: None,
+                        before_summary: None,
+                        after_summary: None,
+                        delta_summary: None,
+                        preview_status: None,
                     },
                 )
                 .collect(),
@@ -638,6 +1828,11 @@ fn build_run_pending_choice_observation(
                             card_uuid: None,
                             selection_uuids: Vec::new(),
                             source_pile: None,
+                            subject_ref: None,
+                            before_summary: None,
+                            after_summary: None,
+                            delta_summary: None,
+                            preview_status: None,
                         },
                     )
                     .collect(),
@@ -666,6 +1861,11 @@ fn build_run_pending_choice_observation(
                         card_uuid: None,
                         selection_uuids: Vec::new(),
                         source_pile: None,
+                        subject_ref: None,
+                        before_summary: None,
+                        after_summary: None,
+                        delta_summary: None,
+                        preview_status: None,
                     }
                 })
                 .collect(),
@@ -685,6 +1885,11 @@ fn build_run_pending_choice_observation(
                     card_uuid: None,
                     selection_uuids: Vec::new(),
                     source_pile: None,
+                    subject_ref: None,
+                    before_summary: None,
+                    after_summary: None,
+                    delta_summary: None,
+                    preview_status: None,
                 },
                 RunPendingChoiceOptionObservationV0 {
                     option_index: 1,
@@ -693,6 +1898,11 @@ fn build_run_pending_choice_observation(
                     card_uuid: None,
                     selection_uuids: Vec::new(),
                     source_pile: None,
+                    subject_ref: None,
+                    before_summary: None,
+                    after_summary: None,
+                    delta_summary: None,
+                    preview_status: None,
                 },
             ],
         }),
@@ -714,6 +1924,11 @@ fn build_run_pending_choice_observation(
                 .enumerate()
                 .map(|(option_index, uuid)| {
                     let card = find_combat_card_by_uuid(combat, *uuid);
+                    let preview = card
+                        .map(|card| pending_hand_select_option_preview(reason, card))
+                        .unwrap_or_else(|| {
+                            PendingChoiceOptionPreview::unavailable("card not found")
+                        });
                     RunPendingChoiceOptionObservationV0 {
                         option_index,
                         label: card
@@ -723,6 +1938,11 @@ fn build_run_pending_choice_observation(
                         card_uuid: Some(*uuid),
                         selection_uuids: vec![*uuid],
                         source_pile: Some("Hand".to_string()),
+                        subject_ref: Some(format!("hand_card_uuid:{uuid}")),
+                        before_summary: preview.before_summary,
+                        after_summary: preview.after_summary,
+                        delta_summary: preview.delta_summary,
+                        preview_status: Some(preview.status),
                     }
                 })
                 .collect(),
@@ -755,6 +1975,11 @@ fn build_run_pending_choice_observation(
                         card_uuid: Some(*uuid),
                         selection_uuids: vec![*uuid],
                         source_pile: Some(run_pile_type_name(*source_pile)),
+                        subject_ref: Some(format!("card_uuid:{uuid}")),
+                        before_summary: None,
+                        after_summary: None,
+                        delta_summary: None,
+                        preview_status: None,
                     }
                 })
                 .collect(),
@@ -783,6 +2008,13 @@ fn build_run_pending_choice_observation(
                             .into_iter()
                             .collect(),
                         source_pile: Some("Draw".to_string()),
+                        subject_ref: card_uuids
+                            .get(option_index)
+                            .map(|uuid| format!("draw_card_uuid:{uuid}")),
+                        before_summary: None,
+                        after_summary: None,
+                        delta_summary: None,
+                        preview_status: None,
                     },
                 )
                 .collect(),
@@ -820,6 +2052,190 @@ fn format_combat_card_label(card: &crate::runtime::combat::CombatCard) -> String
     } else {
         name.to_string()
     }
+}
+
+struct PendingChoiceOptionPreview {
+    before_summary: Option<String>,
+    after_summary: Option<String>,
+    delta_summary: Option<String>,
+    status: String,
+}
+
+impl PendingChoiceOptionPreview {
+    fn unavailable(reason: &str) -> Self {
+        Self {
+            before_summary: None,
+            after_summary: None,
+            delta_summary: None,
+            status: format!("unavailable:{reason}"),
+        }
+    }
+}
+
+fn pending_hand_select_option_preview(
+    reason: &crate::state::HandSelectReason,
+    card: &crate::runtime::combat::CombatCard,
+) -> PendingChoiceOptionPreview {
+    match reason {
+        crate::state::HandSelectReason::Upgrade => {
+            let before_upgrades = card.upgrades;
+            let after_upgrades = before_upgrades.saturating_add(1);
+            PendingChoiceOptionPreview {
+                before_summary: Some(card_summary_for_upgrades(card.id, before_upgrades)),
+                after_summary: Some(card_summary_for_upgrades(card.id, after_upgrades)),
+                delta_summary: Some(format!(
+                    "upgrade: {}",
+                    card_upgrade_delta_summary(card.id, before_upgrades)
+                )),
+                status: "available".to_string(),
+            }
+        }
+        crate::state::HandSelectReason::Exhaust => PendingChoiceOptionPreview {
+            before_summary: Some(card_summary_for_upgrades(card.id, card.upgrades)),
+            after_summary: None,
+            delta_summary: Some("exhaust selected card".to_string()),
+            status: "available".to_string(),
+        },
+        crate::state::HandSelectReason::Discard | crate::state::HandSelectReason::GamblingChip => {
+            PendingChoiceOptionPreview {
+                before_summary: Some(card_summary_for_upgrades(card.id, card.upgrades)),
+                after_summary: None,
+                delta_summary: Some("discard selected card".to_string()),
+                status: "available".to_string(),
+            }
+        }
+        crate::state::HandSelectReason::PutOnDrawPile | crate::state::HandSelectReason::Setup => {
+            PendingChoiceOptionPreview {
+                before_summary: Some(card_summary_for_upgrades(card.id, card.upgrades)),
+                after_summary: None,
+                delta_summary: Some("put selected card on top of draw pile".to_string()),
+                status: "available".to_string(),
+            }
+        }
+        crate::state::HandSelectReason::PutToBottomOfDraw => PendingChoiceOptionPreview {
+            before_summary: Some(card_summary_for_upgrades(card.id, card.upgrades)),
+            after_summary: None,
+            delta_summary: Some("put selected card on bottom of draw pile".to_string()),
+            status: "available".to_string(),
+        },
+        crate::state::HandSelectReason::Retain => PendingChoiceOptionPreview {
+            before_summary: Some(card_summary_for_upgrades(card.id, card.upgrades)),
+            after_summary: None,
+            delta_summary: Some("retain selected card".to_string()),
+            status: "available".to_string(),
+        },
+        crate::state::HandSelectReason::Recycle => PendingChoiceOptionPreview {
+            before_summary: Some(card_summary_for_upgrades(card.id, card.upgrades)),
+            after_summary: None,
+            delta_summary: Some("exhaust selected card for energy".to_string()),
+            status: "available".to_string(),
+        },
+        crate::state::HandSelectReason::Copy { amount } => PendingChoiceOptionPreview {
+            before_summary: Some(card_summary_for_upgrades(card.id, card.upgrades)),
+            after_summary: None,
+            delta_summary: Some(format!("create {amount} copy/copies of selected card")),
+            status: "available".to_string(),
+        },
+        crate::state::HandSelectReason::Nightmare { amount } => PendingChoiceOptionPreview {
+            before_summary: Some(card_summary_for_upgrades(card.id, card.upgrades)),
+            after_summary: None,
+            delta_summary: Some(format!("create {amount} copy/copies next turn")),
+            status: "available".to_string(),
+        },
+    }
+}
+
+fn card_summary_for_upgrades(card_id: CardId, upgrades: u8) -> String {
+    format!(
+        "{} [{}]",
+        card_name_for_upgrades(card_id, upgrades),
+        card_effect_summary_for_upgrades(card_id, upgrades)
+    )
+}
+
+fn card_name_for_upgrades(card_id: CardId, upgrades: u8) -> String {
+    let def = crate::content::cards::get_card_definition(card_id);
+    if upgrades > 0 {
+        format!("{}+{}", def.name, upgrades)
+    } else {
+        def.name.to_string()
+    }
+}
+
+fn card_effect_summary_for_upgrades(card_id: CardId, upgrades: u8) -> String {
+    let parts = card_numeric_effect_parts(card_id, upgrades)
+        .into_iter()
+        .map(|(label, value)| format!("{label} {value}"))
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        "no direct numeric effect".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+fn card_upgrade_delta_summary(card_id: CardId, upgrades: u8) -> String {
+    let before = card_numeric_effect_parts(card_id, upgrades);
+    let after = card_numeric_effect_parts(card_id, upgrades.saturating_add(1));
+    let mut labels = before.iter().map(|(label, _)| *label).collect::<Vec<_>>();
+    for (label, _) in &after {
+        if !labels.contains(label) {
+            labels.push(*label);
+        }
+    }
+    let mut deltas = Vec::new();
+    for label in labels {
+        let before_value = before
+            .iter()
+            .find(|(candidate, _)| *candidate == label)
+            .map(|(_, value)| *value);
+        let after_value = after
+            .iter()
+            .find(|(candidate, _)| *candidate == label)
+            .map(|(_, value)| *value);
+        if before_value == after_value {
+            continue;
+        }
+        match (before_value, after_value) {
+            (Some(before), Some(after)) => deltas.push(format!("{label} {before} -> {after}")),
+            (None, Some(after)) => deltas.push(format!("{label} {after}")),
+            (Some(before), None) => deltas.push(format!("{label} {before} -> none")),
+            (None, None) => {}
+        }
+    }
+    if deltas.is_empty() {
+        "no numeric card text delta".to_string()
+    } else {
+        deltas.join(", ")
+    }
+}
+
+fn card_numeric_effect_parts(card_id: CardId, upgrades: u8) -> Vec<(&'static str, i32)> {
+    let def = crate::content::cards::get_card_definition(card_id);
+    let damage = def.base_damage + def.upgrade_damage * upgrades as i32;
+    let block = def.base_block + def.upgrade_block * upgrades as i32;
+    let magic = def.base_magic + def.upgrade_magic * upgrades as i32;
+    let mut parts = Vec::new();
+    if damage > 0 {
+        parts.push(("dmg", damage));
+    }
+    if block > 0 || card_is_block_core(card_id) {
+        parts.push(("block", block.max(0)));
+    }
+    if magic > 0 {
+        if card_applies_vulnerable(card_id) {
+            parts.push(("vuln", magic));
+        } else if card_applies_weak(card_id) {
+            parts.push(("weak", magic));
+        } else if card_draws_cards(card_id) {
+            parts.push(("draw", magic));
+        } else if card_gains_energy(card_id) {
+            parts.push(("energy", magic));
+        } else {
+            parts.push(("magic", magic));
+        }
+    }
+    parts
 }
 
 fn run_pile_type_name(pile: crate::state::core::PileType) -> String {
@@ -956,13 +2372,17 @@ pub fn build_screen_observation(
     run_state: &RunState,
 ) -> RunScreenObservationV0 {
     match engine_state {
-        EngineState::EventRoom => RunScreenObservationV0 {
-            event_option_count: crate::engine::event_handler::get_event_options(run_state)
-                .iter()
-                .filter(|option| !option.ui.disabled)
-                .count(),
-            ..empty_screen_observation()
-        },
+        EngineState::EventRoom => {
+            let event_options = event_option_observations(run_state);
+            RunScreenObservationV0 {
+                event_option_count: event_options
+                    .iter()
+                    .filter(|option| !option.disabled)
+                    .count(),
+                event_options,
+                ..empty_screen_observation()
+            }
+        }
         EngineState::RewardScreen(reward_state) => {
             build_reward_screen_observation(run_state, reward_state)
         }
@@ -994,10 +2414,12 @@ pub fn build_screen_observation(
 pub fn empty_screen_observation() -> RunScreenObservationV0 {
     RunScreenObservationV0 {
         event_option_count: 0,
+        event_options: Vec::new(),
         reward_item_count: 0,
         reward_card_choice_count: 0,
         reward_phase: "none".to_string(),
         reward_items: Vec::new(),
+        reward_card_choices: Vec::new(),
         reward_claimable_item_count: 0,
         reward_unclaimed_card_item_count: 0,
         shop_card_count: 0,
@@ -1030,6 +2452,19 @@ pub fn build_reward_screen_observation(
     } else {
         "cleanup"
     };
+    let reward_card_choices = reward_state
+        .pending_card_choice
+        .as_ref()
+        .map(|cards| {
+            cards
+                .iter()
+                .enumerate()
+                .map(|(option_index, card)| {
+                    reward_card_choice_observation(run_state, option_index, card)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     RunScreenObservationV0 {
         reward_item_count: reward_state.items.len(),
@@ -1040,9 +2475,40 @@ pub fn build_reward_screen_observation(
             .unwrap_or(0),
         reward_phase: reward_phase.to_string(),
         reward_items,
+        reward_card_choices,
         reward_claimable_item_count,
         reward_unclaimed_card_item_count,
         ..empty_screen_observation()
+    }
+}
+
+pub fn reward_card_choice_observation(
+    run_state: &RunState,
+    option_index: usize,
+    card: &RewardCard,
+) -> RunRewardCardChoiceObservationV0 {
+    let def = crate::content::cards::get_card_definition(card.id);
+    RunRewardCardChoiceObservationV0 {
+        option_index,
+        card_id: format!("{:?}", card.id),
+        card_name: def.name.to_string(),
+        upgrades: card.upgrades,
+        card_type: format!("{:?}", def.card_type),
+        rarity: format!("{:?}", def.rarity),
+        cost: def.cost,
+        base_semantics: base_semantics_for_card(card.id, card.upgrades),
+        deck_copies: run_state
+            .master_deck
+            .iter()
+            .filter(|deck_card| deck_card.id == card.id)
+            .count(),
+        card: build_card_feature(card.id, card.upgrades, run_state),
+        plan_delta: add_card_plan_delta(card.id, card.upgrades, run_state),
+        semantic_descriptor: action_semantic_descriptor_for_reward_card(
+            option_index,
+            card,
+            run_state,
+        ),
     }
 }
 
@@ -1233,7 +2699,10 @@ mod tests {
             "Java TopPanel allows opening the map during normal combat screen NONE"
         );
         assert_eq!(observation.next_nodes.len(), 1);
-        assert_eq!(observation.next_nodes[0].room_type.as_deref(), Some("ShopRoom"));
+        assert_eq!(
+            observation.next_nodes[0].room_type.as_deref(),
+            Some("ShopRoom")
+        );
     }
 
     #[test]

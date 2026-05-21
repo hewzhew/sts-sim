@@ -2,15 +2,19 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{
-    RunActionCandidate, RunCardFeatureV0, RunCombatHandCardObservationV0, RunCombatObservationV0,
+    ActionSemanticDescriptorV1, CandidatePlanDeltaV0, RunActionCandidate, RunCardFeatureV0,
+    RunChoiceOptionV1, RunCombatHandCardObservationV0, RunCombatObservationV0, RunDecisionFrameV1,
     RunDeckCardObservationV0, RunDeckObservationV0, RunKeyObservationV0, RunMapEdgeObservationV0,
-    RunMapNodeObservationV0, RunMapObservationV0, RunPendingChoiceObservationV0,
-    RunPendingChoiceOptionObservationV0, RunPotionSlotObservationV0, RunRelicObservationV0,
-    RunRewardItemObservationV0, RunScreenObservationV0,
+    RunMapNodeObservationV0, RunMapObservationV0, RunMapRouteContextV1, RunMonsterObservationV0,
+    RunPendingChoiceObservationV0, RunPendingChoiceOptionObservationV0, RunPotionSlotObservationV0,
+    RunPowerObservationV0, RunRecordingViewV1, RunRelicObservationV0,
+    RunRewardCardChoiceObservationV0, RunRewardItemObservationV0, RunScreenObservationV0,
 };
 
-pub const FULL_RUN_PUBLIC_OBSERVATION_SCHEMA_VERSION: &str = "full_run_public_observation_v1";
-pub const FULL_RUN_PUBLIC_ACTION_SCHEMA_VERSION: &str = "full_run_public_action_candidate_v2";
+pub const FULL_RUN_PUBLIC_OBSERVATION_SCHEMA_VERSION: &str =
+    "full_run_public_observation_v4_decision_frame";
+pub const FULL_RUN_PUBLIC_ACTION_SCHEMA_VERSION: &str =
+    "full_run_public_action_candidate_v6_choice_option";
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct FullRunPublicObservationV1 {
@@ -36,10 +40,23 @@ pub struct FullRunPublicObservationV1 {
     pub potions: Vec<PublicPotionSlotV1>,
     pub map: Option<PublicMapV1>,
     pub next_nodes: Vec<PublicMapNodeV1>,
+    pub map_route_context: Option<RunMapRouteContextV1>,
     pub act_boss: Option<String>,
     pub reward_source: Option<String>,
     pub combat: Option<PublicCombatObservationV1>,
     pub screen: PublicScreenObservationV1,
+    pub recording_view: PublicRecordingViewV1,
+    pub decision_frame: RunDecisionFrameV1,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct PublicRecordingViewV1 {
+    pub schema_name: String,
+    pub schema_version: u8,
+    pub recording_source: String,
+    pub state_lines: Vec<String>,
+    pub context_lines: Vec<String>,
+    pub warning_lines: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -119,6 +136,7 @@ pub struct PublicMapEdgeV1 {
 pub struct PublicCombatObservationV1 {
     pub player_hp: i32,
     pub player_block: i32,
+    pub player_powers: Vec<PublicPowerV1>,
     pub energy: i32,
     pub combat_phase: String,
     pub turn_count: u32,
@@ -139,6 +157,34 @@ pub struct PublicCombatObservationV1 {
     pub limbo_count: usize,
     pub pending_choice_kind: Option<String>,
     pub pending_choice: Option<PublicPendingChoiceV1>,
+    pub monsters: Vec<PublicMonsterV1>,
+    pub encounter_hints: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct PublicMonsterV1 {
+    pub entity_id: usize,
+    pub slot: u8,
+    pub monster_id: String,
+    pub name: String,
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub alive: bool,
+    pub planned_move_id: u8,
+    pub visible_intent: Option<String>,
+    pub visible_intent_kind: String,
+    pub visible_intent_damage_per_hit: Option<i32>,
+    pub visible_intent_hits: u8,
+    pub visible_intent_total_damage: Option<i32>,
+    pub powers: Vec<PublicPowerV1>,
+    pub mechanic_hints: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct PublicPowerV1 {
+    pub power_id: String,
+    pub amount: i32,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -160,6 +206,11 @@ pub struct PublicPendingChoiceOptionV1 {
     pub card_uuid: Option<u32>,
     pub selection_uuids: Vec<u32>,
     pub source_pile: Option<String>,
+    pub subject_ref: Option<String>,
+    pub before_summary: Option<String>,
+    pub after_summary: Option<String>,
+    pub delta_summary: Option<String>,
+    pub preview_status: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -178,10 +229,12 @@ pub struct PublicCombatHandCardV1 {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct PublicScreenObservationV1 {
     pub event_option_count: usize,
+    pub event_options: Vec<PublicEventOptionV1>,
     pub reward_item_count: usize,
     pub reward_card_choice_count: usize,
     pub reward_phase: String,
     pub reward_items: Vec<PublicRewardItemV1>,
+    pub reward_card_choices: Vec<PublicRewardCardChoiceV1>,
     pub reward_claimable_item_count: usize,
     pub reward_unclaimed_card_item_count: usize,
     pub shop_card_count: usize,
@@ -189,6 +242,15 @@ pub struct PublicScreenObservationV1 {
     pub shop_potion_count: usize,
     pub boss_relic_choice_count: usize,
     pub selection_target_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct PublicEventOptionV1 {
+    pub option_index: usize,
+    pub label: String,
+    pub disabled: bool,
+    pub disabled_reason: Option<String>,
+    pub semantic_descriptor: ActionSemanticDescriptorV1,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -201,6 +263,22 @@ pub struct PublicRewardItemV1 {
     pub potion_id: Option<String>,
     pub claimable: bool,
     pub opens_card_choice: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct PublicRewardCardChoiceV1 {
+    pub option_index: usize,
+    pub card_id: String,
+    pub card_name: String,
+    pub upgrades: u8,
+    pub card_type: String,
+    pub rarity: String,
+    pub cost: i8,
+    pub base_semantics: Vec<String>,
+    pub deck_copies: usize,
+    pub card: PublicCardFeatureV1,
+    pub plan_delta: CandidatePlanDeltaV0,
+    pub semantic_descriptor: ActionSemanticDescriptorV1,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -237,8 +315,17 @@ pub struct FullRunPublicActionCandidatePayloadV1 {
     pub action_index: usize,
     pub action_id: u32,
     pub action_key: String,
+    pub recording_label: String,
+    pub recording_detail: Option<String>,
+    pub recording_kind: String,
     pub action: Value,
     pub card: Option<PublicCardFeatureV1>,
+    pub plan_delta: Option<Value>,
+    pub reward_structure: Option<Value>,
+    pub semantic_descriptor: Option<ActionSemanticDescriptorV1>,
+    pub choice_option: RunChoiceOptionV1,
+    pub dominated: bool,
+    pub dominated_by_index: Option<usize>,
 }
 
 impl FullRunPublicObservationV1 {
@@ -270,10 +357,13 @@ impl FullRunPublicObservationV1 {
             potions: value.potions.iter().map(PublicPotionSlotV1::from).collect(),
             map: value.map.as_ref().map(PublicMapV1::from),
             next_nodes: value.next_nodes.iter().map(PublicMapNodeV1::from).collect(),
+            map_route_context: value.map_route_context.clone(),
             act_boss: value.act_boss.clone(),
             reward_source: value.reward_source.clone(),
             combat: value.combat.as_ref().map(PublicCombatObservationV1::from),
             screen: PublicScreenObservationV1::from(&value.screen),
+            recording_view: PublicRecordingViewV1::from(&value.recording_view),
+            decision_frame: value.decision_frame.clone(),
         }
     }
 }
@@ -285,9 +375,39 @@ impl FullRunPublicActionCandidatePayloadV1 {
             action_index: candidate.action_index,
             action_id: candidate.action_id,
             action_key: candidate.action_key.clone(),
+            recording_label: candidate.recording_label.clone(),
+            recording_detail: candidate.recording_detail.clone(),
+            recording_kind: candidate.recording_kind.clone(),
             action: serde_json::to_value(&candidate.action)?,
             card: candidate.card.as_ref().map(PublicCardFeatureV1::from),
+            plan_delta: candidate
+                .plan_delta
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()?,
+            reward_structure: candidate
+                .reward_structure
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()?,
+            semantic_descriptor: candidate.semantic_descriptor.clone(),
+            choice_option: candidate.choice_option.clone(),
+            dominated: candidate.dominated,
+            dominated_by_index: candidate.dominated_by_index,
         })
+    }
+}
+
+impl From<&RunRecordingViewV1> for PublicRecordingViewV1 {
+    fn from(value: &RunRecordingViewV1) -> Self {
+        Self {
+            schema_name: value.schema_name.clone(),
+            schema_version: value.schema_version,
+            recording_source: value.recording_source.clone(),
+            state_lines: value.state_lines.clone(),
+            context_lines: value.context_lines.clone(),
+            warning_lines: value.warning_lines.clone(),
+        }
     }
 }
 
@@ -393,6 +513,11 @@ impl From<&RunCombatObservationV0> for PublicCombatObservationV1 {
         Self {
             player_hp: value.player_hp,
             player_block: value.player_block,
+            player_powers: value
+                .player_powers
+                .iter()
+                .map(PublicPowerV1::from)
+                .collect(),
             energy: value.energy,
             combat_phase: value.combat_phase.clone(),
             turn_count: value.turn_count,
@@ -420,6 +545,40 @@ impl From<&RunCombatObservationV0> for PublicCombatObservationV1 {
                 .pending_choice
                 .as_ref()
                 .map(PublicPendingChoiceV1::from),
+            monsters: value.monsters.iter().map(PublicMonsterV1::from).collect(),
+            encounter_hints: value.encounter_hints.clone(),
+        }
+    }
+}
+
+impl From<&RunMonsterObservationV0> for PublicMonsterV1 {
+    fn from(value: &RunMonsterObservationV0) -> Self {
+        Self {
+            entity_id: value.entity_id,
+            slot: value.slot,
+            monster_id: value.monster_id.clone(),
+            name: value.name.clone(),
+            current_hp: value.current_hp,
+            max_hp: value.max_hp,
+            block: value.block,
+            alive: value.alive,
+            planned_move_id: value.planned_move_id,
+            visible_intent: value.visible_intent.clone(),
+            visible_intent_kind: value.visible_intent_kind.clone(),
+            visible_intent_damage_per_hit: value.visible_intent_damage_per_hit,
+            visible_intent_hits: value.visible_intent_hits,
+            visible_intent_total_damage: value.visible_intent_total_damage,
+            powers: value.powers.iter().map(PublicPowerV1::from).collect(),
+            mechanic_hints: value.mechanic_hints.clone(),
+        }
+    }
+}
+
+impl From<&RunPowerObservationV0> for PublicPowerV1 {
+    fn from(value: &RunPowerObservationV0) -> Self {
+        Self {
+            power_id: value.power_id.clone(),
+            amount: value.amount,
         }
     }
 }
@@ -451,6 +610,11 @@ impl From<&RunPendingChoiceOptionObservationV0> for PublicPendingChoiceOptionV1 
             card_uuid: value.card_uuid,
             selection_uuids: value.selection_uuids.clone(),
             source_pile: value.source_pile.clone(),
+            subject_ref: value.subject_ref.clone(),
+            before_summary: value.before_summary.clone(),
+            after_summary: value.after_summary.clone(),
+            delta_summary: value.delta_summary.clone(),
+            preview_status: value.preview_status.clone(),
         }
     }
 }
@@ -475,6 +639,17 @@ impl From<&RunScreenObservationV0> for PublicScreenObservationV1 {
     fn from(value: &RunScreenObservationV0) -> Self {
         Self {
             event_option_count: value.event_option_count,
+            event_options: value
+                .event_options
+                .iter()
+                .map(|option| PublicEventOptionV1 {
+                    option_index: option.option_index,
+                    label: option.label.clone(),
+                    disabled: option.disabled,
+                    disabled_reason: option.disabled_reason.clone(),
+                    semantic_descriptor: option.semantic_descriptor.clone(),
+                })
+                .collect(),
             reward_item_count: value.reward_item_count,
             reward_card_choice_count: value.reward_card_choice_count,
             reward_phase: value.reward_phase.clone(),
@@ -482,6 +657,11 @@ impl From<&RunScreenObservationV0> for PublicScreenObservationV1 {
                 .reward_items
                 .iter()
                 .map(PublicRewardItemV1::from)
+                .collect(),
+            reward_card_choices: value
+                .reward_card_choices
+                .iter()
+                .map(PublicRewardCardChoiceV1::from)
                 .collect(),
             reward_claimable_item_count: value.reward_claimable_item_count,
             reward_unclaimed_card_item_count: value.reward_unclaimed_card_item_count,
@@ -505,6 +685,25 @@ impl From<&RunRewardItemObservationV0> for PublicRewardItemV1 {
             potion_id: value.potion_id.clone(),
             claimable: value.claimable,
             opens_card_choice: value.opens_card_choice,
+        }
+    }
+}
+
+impl From<&RunRewardCardChoiceObservationV0> for PublicRewardCardChoiceV1 {
+    fn from(value: &RunRewardCardChoiceObservationV0) -> Self {
+        Self {
+            option_index: value.option_index,
+            card_id: value.card_id.clone(),
+            card_name: value.card_name.clone(),
+            upgrades: value.upgrades,
+            card_type: value.card_type.clone(),
+            rarity: value.rarity.clone(),
+            cost: value.cost,
+            base_semantics: value.base_semantics.clone(),
+            deck_copies: value.deck_copies,
+            card: PublicCardFeatureV1::from(&value.card),
+            plan_delta: value.plan_delta.clone(),
+            semantic_descriptor: value.semantic_descriptor.clone(),
         }
     }
 }

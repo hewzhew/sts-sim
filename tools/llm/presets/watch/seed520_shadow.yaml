@@ -1,0 +1,52 @@
+name: watch_seed520_shadow
+description: >
+  Interactive seed 520 run for manual human play recording. Human controls
+  non-combat and combat decisions; combat search is recorded only as shadow
+  evidence so later search can replay from the same combat start and try to find
+  a full trajectory not weaker than the human demonstration.
+purpose: watch
+script: tools/llm/llm_full_run_controller.py
+
+args:
+  provider: mock
+  seed: 520
+  ascension: 0
+  class: ironclad
+  run_mode: llm_live_controller
+  agent_mode: planner
+  combat_search_engine: compact
+  combat_shadow_compare: true
+  context_ablation: mechanics_plus_strategy_hints
+  trace_level: compact
+  journal_format: events
+  watch_decisions: true
+  watch_before_llm: true
+  human_recording_mode: true
+  watch_max_candidates: 32
+  steps: 999
+  timeout: 120
+  out: auto
+
+limits:
+  max_steps: 999
+  max_llm_calls: 0
+  max_wall_seconds: 900
+  allow_long_run: false
+
+claims:
+  benchmark_claim: false
+  policy_quality_claim: false
+  winrate_claim: false
+  purpose_statement: combat_shadow_case_discovery
+
+artifacts:
+  run_dir: auto
+  events: events.jsonl
+  summary: summary.json
+  stdout: stdout.log
+  stderr: stderr.log
+  command: command.txt
+  resolved_config: resolved_config.yaml
+
+hypothesis: null
+acceptance_criteria: []

@@ -1,0 +1,39 @@
+name: mock_20_steps
+purpose: smoke
+description: >
+  Local mock smoke test for the LLM controller harness. This checks controller
+  wiring and artifact creation without external LLM calls.
+script: tools/llm/llm_full_run_controller.py
+args:
+  provider: mock
+  run_mode: llm_live_controller
+  agent_mode: planner
+  combat_search_engine: compact
+  context_ablation: mechanics_plus_strategy_hints
+  trace_level: compact
+  journal_format: events
+  seed: 42
+  ascension: 0
+  class: ironclad
+  steps: 20
+  out: auto
+limits:
+  max_llm_calls: 0
+  max_steps: 20
+  max_wall_seconds: 120
+  allow_long_run: false
+claims:
+  benchmark_claim: false
+  policy_quality_claim: false
+  winrate_claim: false
+  purpose_statement: smoke_test
+artifacts:
+  run_dir: auto
+  events: events.jsonl
+  summary: summary.json
+  stdout: stdout.log
+  stderr: stderr.log
+  command: command.txt
+  resolved_config: resolved_config.yaml
+hypothesis: null
+acceptance_criteria: []

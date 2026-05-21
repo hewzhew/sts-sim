@@ -91,9 +91,11 @@ fn apply_secret_portal_boss_room_entry_relics(run_state: &mut RunState) {
     // before MonsterRoomBoss.onPlayerEntry(). For a synthetic boss room, the
     // only modeled all-room mechanical hook here is Maw Bank; shop/rest/event
     // room-specific hooks do not apply.
-    if run_state.relics.iter().any(|relic| {
-        relic.id == crate::content::relics::RelicId::MawBank && !relic.used_up
-    }) {
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == crate::content::relics::RelicId::MawBank && !relic.used_up)
+    {
         run_state.change_gold_with_source(
             12,
             crate::state::selection::DomainEventSource::Relic(

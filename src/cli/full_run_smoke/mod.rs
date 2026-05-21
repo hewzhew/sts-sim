@@ -105,6 +105,32 @@ impl FullRunEnv {
         Ok(Some((self.ctx.engine_state.clone(), combat, legal_actions)))
     }
 
+    pub fn combat_plan_probe(
+        &mut self,
+        config: crate::bot::combat::CombatTurnPlanProbeConfig,
+    ) -> Result<crate::bot::combat::CombatTurnPlanProbeReport, String> {
+        let _ = self.prepare_state()?;
+        if self.done {
+            return Err(
+                "combat_plan_probe requires an active combat decision; env is done".to_string(),
+            );
+        }
+        if !matches!(self.ctx.engine_state, EngineState::CombatPlayerTurn) {
+            return Err(format!(
+                "combat_plan_probe requires combat_player_turn, got {}",
+                engine_state_label(&self.ctx.engine_state)
+            ));
+        }
+        let Some(combat) = self.ctx.combat_state.as_ref() else {
+            return Err("combat_plan_probe requires active combat state".to_string());
+        };
+        Ok(crate::bot::combat::probe_turn_plans(
+            &self.ctx.engine_state,
+            combat,
+            config,
+        ))
+    }
+
     pub fn cache_bucket_hint(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.config.seed.hash(&mut hasher);
@@ -778,6 +804,7 @@ mod tests {
             potions: Vec::new(),
             map: None,
             next_nodes: Vec::new(),
+            map_route_context: None,
             act_boss: None,
             reward_source: None,
             combat: Some(RunCombatObservationV0 {
@@ -788,6 +815,9 @@ mod tests {
                 turn_count: 2,
                 hand_count: 1,
                 hand_cards: Vec::new(),
+                player_powers: Vec::new(),
+                monsters: Vec::new(),
+                encounter_hints: Vec::new(),
                 draw_count: 5,
                 discard_count: 4,
                 exhaust_count: 0,
@@ -805,11 +835,30 @@ mod tests {
                 pending_choice: None,
             }),
             screen: empty_screen_observation(),
+            recording_view: RunRecordingViewV1 {
+                schema_name: "RecordingViewV1".to_string(),
+                schema_version: 1,
+                recording_source: "test".to_string(),
+                state_lines: Vec::new(),
+                context_lines: Vec::new(),
+                warning_lines: Vec::new(),
+            },
+            decision_frame: RunDecisionFrameV1 {
+                schema_name: "DecisionFrameV1".to_string(),
+                schema_version: 1,
+                decision_kind: "combat".to_string(),
+                prompt: "Choose a combat action.".to_string(),
+                source: None,
+                warnings: Vec::new(),
+            },
         };
         let action_mask = vec![RunActionCandidate {
             action_index: 0,
             action_id: stable_action_id("combat/play_card/card:Apparition/hand:0/target:none"),
             action_key: "combat/play_card/card:Apparition/hand:0/target:none".to_string(),
+            recording_label: "Play Apparition h0 -> none".to_string(),
+            recording_detail: None,
+            recording_kind: "combat_play_card".to_string(),
             action: TraceClientInput::PlayCard {
                 card_index: 0,
                 target: None,
@@ -817,6 +866,24 @@ mod tests {
             card: None,
             plan_delta: Some(empty_candidate_plan_delta()),
             reward_structure: Some(empty_reward_action_structure()),
+            semantic_descriptor: None,
+            choice_option: RunChoiceOptionV1 {
+                schema_name: "ChoiceOptionV1".to_string(),
+                schema_version: 1,
+                option_id: 0,
+                action_id: stable_action_id("combat/play_card/card:Apparition/hand:0/target:none"),
+                action_key: "combat/play_card/card:Apparition/hand:0/target:none".to_string(),
+                label: "Play Apparition h0 -> none".to_string(),
+                subject_ref: None,
+                before_summary: None,
+                after_summary: None,
+                delta_summary: None,
+                preview_status: "unavailable".to_string(),
+                unavailable_reason: Some("test_fixture".to_string()),
+                danger_flags: Vec::new(),
+                requires_confirmation: false,
+                confirmation_command: None,
+            },
             dominated: false,
             dominated_by_index: None,
         }];

@@ -11,6 +11,7 @@ pub mod protocol;
 pub mod runtime;
 mod semantics;
 mod shop;
+pub mod sim;
 pub mod state;
 pub mod verification;
 
@@ -18,6 +19,7 @@ pub mod verification;
 pub mod ai;
 pub mod app;
 pub mod diff;
+pub mod eval;
 mod testing;
 pub use testing::fixtures;
 pub use testing::support as test_support;
