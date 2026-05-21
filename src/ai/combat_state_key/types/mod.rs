@@ -5,7 +5,7 @@ mod reward;
 mod shop;
 mod stable;
 
-pub(crate) use combat::{CombatDominanceKey, TurnStateKey};
+pub(crate) use combat::CombatDominanceKey;
 pub(crate) use pending_choice::{
     StableBossRelicKey, StableChoiceCandidateKey, StableEventCombatKey, StablePendingChoiceKey,
     StablePostCombatReturnKey, StableRunPendingChoiceKey, StableRunPendingReturnKey,

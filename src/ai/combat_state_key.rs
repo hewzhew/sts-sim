@@ -1,5 +1,4 @@
 mod dominance;
-mod memo;
 mod monster;
 mod pending_choice;
 mod postcombat;
@@ -13,10 +12,12 @@ use crate::runtime::combat::CombatState;
 use crate::state::EngineState;
 
 use dominance::combat_dominance_bucket_key;
-use memo::render_state_key;
 use stable::build_stable_outcome_key;
-pub(crate) use types::{CombatDominanceKey, StableOutcomeKey, TurnStateKey};
+pub(crate) use types::{CombatDominanceKey, StableOutcomeKey};
 
+/// In-combat key for Combat Search V2 transposition and resource dominance.
+/// It keeps runtime details that affect future combat transitions, while
+/// leaving current hp/block to the searched resource vector.
 pub(crate) fn combat_dominance_key(
     engine: &EngineState,
     combat: &CombatState,
@@ -24,10 +25,9 @@ pub(crate) fn combat_dominance_key(
     combat_dominance_bucket_key(engine, combat)
 }
 
-pub(crate) fn turn_state_key(engine: &EngineState, combat: &CombatState) -> TurnStateKey {
-    TurnStateKey(render_state_key(engine, combat, true, true, true, true))
-}
-
+/// Stable frontier key for comparing outcomes after the engine reaches a
+/// player decision boundary. This intentionally abstracts display/runtime noise
+/// that should not affect future decisions from that boundary.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn stable_outcome_key(engine: &EngineState, combat: &CombatState) -> StableOutcomeKey {
     debug_assert_ne!(
@@ -38,6 +38,8 @@ pub(crate) fn stable_outcome_key(engine: &EngineState, combat: &CombatState) -> 
     diagnostic_outcome_key(engine, combat)
 }
 
+/// Stable dominance bucket only exists at stable frontiers. Unstable engine
+/// processing states must not be merged under this abstraction.
 pub(crate) fn stable_dominance_bucket_key(
     engine: &EngineState,
     combat: &CombatState,

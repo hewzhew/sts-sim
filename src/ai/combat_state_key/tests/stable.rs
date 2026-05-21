@@ -32,8 +32,8 @@ fn stable_outcome_key_ignores_player_resources_potions_and_runtime_noise() {
         stable_outcome_key(&EngineState::CombatPlayerTurn, &variant),
     );
     assert_ne!(
-        turn_state_key(&EngineState::CombatPlayerTurn, &baseline),
-        turn_state_key(&EngineState::CombatPlayerTurn, &variant),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &variant),
     );
 }
 
