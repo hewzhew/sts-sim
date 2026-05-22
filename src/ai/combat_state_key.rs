@@ -5,7 +5,7 @@
 //! outcome keys are only for stable frontiers and may ignore runtime noise.
 //! Do not use one key family in place of another.
 
-mod dominance;
+mod combat;
 mod monster;
 mod pending_choice;
 mod postcombat;
@@ -18,7 +18,7 @@ use crate::engine::core::is_smoke_escape_stable_boundary;
 use crate::runtime::combat::CombatState;
 use crate::state::EngineState;
 
-use dominance::{combat_dominance_bucket_key, combat_exact_runtime_key};
+use combat::{combat_dominance_bucket_key, combat_exact_runtime_key};
 use stable::build_stable_outcome_key;
 pub(crate) use types::{CombatDominanceKey, CombatExactStateKey, StableOutcomeKey};
 
