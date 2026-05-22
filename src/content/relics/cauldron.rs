@@ -22,7 +22,8 @@ pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<E
         RewardScreenContext::TreasureRoom
     ) {
         let num_cards = crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3);
-        let cards = crate::rewards::generator::generate_card_reward(run_state, num_cards, false);
+        let cards =
+            crate::rewards::generator::generate_card_reward(run_state, num_cards, false, false);
         if !cards.is_empty() {
             reward_state.items.push(RewardItem::Card { cards });
         }

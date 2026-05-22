@@ -6,7 +6,7 @@ fn push_card_reward(
     reward_state: &mut crate::rewards::state::RewardState,
 ) {
     let num_cards = crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3);
-    let cards = crate::rewards::generator::generate_card_reward(run_state, num_cards, false);
+    let cards = crate::rewards::generator::generate_card_reward(run_state, num_cards, false, false);
     if !cards.is_empty() {
         reward_state
             .items

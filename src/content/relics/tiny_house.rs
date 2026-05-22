@@ -29,7 +29,7 @@ pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
     let potion_id =
         crate::content::potions::random_potion_any(&mut run_state.rng_pool.misc_rng, potion_class);
     let num_cards = crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3);
-    let cards = crate::rewards::generator::generate_card_reward(run_state, num_cards, false);
+    let cards = crate::rewards::generator::generate_card_reward(run_state, num_cards, false, false);
 
     let mut reward_state = RewardState::new();
     reward_state.items.push(RewardItem::Gold { amount: 50 });

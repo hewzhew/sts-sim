@@ -30,7 +30,7 @@ pub(super) fn generate_card_reward_items(
     let mut items = Vec::new();
     let num_cards_eff = adjusted_card_reward_choice_count(run_state, 3);
 
-    let cards = generate_card_reward(run_state, num_cards_eff, is_elite);
+    let cards = generate_card_reward(run_state, num_cards_eff, is_elite, is_boss);
     if !cards.is_empty() {
         items.push(RewardItem::Card { cards });
     }
@@ -43,7 +43,7 @@ pub(super) fn generate_card_reward_items(
             .iter()
             .any(|r| r.id == crate::content::relics::RelicId::PrayerWheel)
     {
-        let cards = generate_card_reward(run_state, num_cards_eff, is_elite);
+        let cards = generate_card_reward(run_state, num_cards_eff, is_elite, is_boss);
         if !cards.is_empty() {
             items.push(RewardItem::Card { cards });
         }
@@ -140,6 +140,7 @@ pub(super) fn generate_card_reward(
     run_state: &mut RunState,
     num_cards: usize,
     is_elite: bool,
+    is_boss: bool,
 ) -> Vec<RewardCard> {
     const BLIZZ_GROWTH: i32 = 1;
     const BLIZZ_MAX_OFFSET: i32 = -40;
@@ -166,7 +167,9 @@ pub(super) fn generate_card_reward(
             rare_chance *= 3;
         }
 
-        let rarity = if roll < rare_chance {
+        let rarity = if is_boss {
+            CardRarity::Rare
+        } else if roll < rare_chance {
             CardRarity::Rare
         } else if roll < rare_chance + uncommon_chance {
             CardRarity::Uncommon

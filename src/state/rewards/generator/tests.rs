@@ -54,6 +54,29 @@ fn boss_combat_rewards_do_not_include_normal_relic() {
 }
 
 #[test]
+fn boss_combat_card_reward_uses_java_boss_rare_override() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.relics.clear();
+
+    let rewards = super::generate_combat_rewards(&mut run_state, false, true);
+    let cards = rewards
+        .items
+        .iter()
+        .find_map(|item| match item {
+            RewardItem::Card { cards } => Some(cards),
+            _ => None,
+        })
+        .expect("boss combat should append a card reward");
+
+    assert!(
+        cards.iter().all(|card| {
+            crate::content::cards::get_card_definition(card.id).rarity == CardRarity::Rare
+        }),
+        "Java MonsterRoomBoss.getCardRarity always returns RARE for boss combat rewards"
+    );
+}
+
+#[test]
 fn elite_rewards_follow_java_drop_potion_card_order() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.relics.clear();

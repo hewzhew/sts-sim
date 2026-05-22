@@ -59,6 +59,7 @@ pub fn handle(
                             run_state, 3,
                         ),
                         false,
+                        false,
                     );
                     let mut reward_state = crate::state::rewards::RewardState::new();
                     reward_state

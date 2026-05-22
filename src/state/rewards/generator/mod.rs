@@ -79,6 +79,7 @@ pub fn generate_card_reward(
     run_state: &mut RunState,
     num_cards: usize,
     is_elite: bool,
+    is_boss: bool,
 ) -> Vec<RewardCard> {
-    card::generate_card_reward(run_state, num_cards, is_elite)
+    card::generate_card_reward(run_state, num_cards, is_elite, is_boss)
 }
