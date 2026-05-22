@@ -6,6 +6,7 @@ mod panels;
 pub mod registry;
 mod render;
 mod session;
+mod session_trace;
 mod transition_report;
 mod view_model;
 
@@ -27,6 +28,12 @@ pub use render::{
 };
 pub use session::{
     canonical_player_class, RunControlCommandOutcome, RunControlConfig, RunControlSession,
+};
+pub use session_trace::{
+    SessionTraceArtifactKind, SessionTraceArtifactRefV1, SessionTraceBoundaryFingerprintV1,
+    SessionTraceCandidateV1, SessionTraceCombatFingerprintV1, SessionTraceRecorder,
+    SessionTraceRunConfigV1, SessionTraceSelectionResolution, SessionTraceStepV1, SessionTraceV1,
+    SESSION_TRACE_SCHEMA_NAME, SESSION_TRACE_SCHEMA_VERSION,
 };
 pub use transition_report::{
     ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,

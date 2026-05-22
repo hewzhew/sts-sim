@@ -22,6 +22,9 @@ Active binaries:
     after the current room is complete
   - `d` shows legacy details, `r` shows raw debug output, `h` shows the full
     categorized help
+  - `--trace <path>`: write a `SessionTraceV1` diagnostic fact log for
+    successful state-changing commands and benchmark artifact refs; omitted by
+    default, with no implicit trace path
   - `case [path]`: save a diagnostic `RunDecisionCaseV1` with no teacher-label
     or policy-quality claim
   - `capture <path> [label]`: save `CombatCaptureV1` only from active stable

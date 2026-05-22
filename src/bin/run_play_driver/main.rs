@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use clap::{Parser, ValueEnum};
 use sts_simulator::eval::run_control::{
     canonical_player_class, parse_run_control_command, render_run_control_state, RunControlConfig,
-    RunControlSession,
+    RunControlSession, SessionTraceRecorder,
 };
 
 #[derive(Parser, Debug)]
@@ -28,6 +28,9 @@ struct Args {
 
     #[arg(long)]
     script: Option<PathBuf>,
+
+    #[arg(long)]
+    trace: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -61,15 +64,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     println!("{}", render_run_control_state(&session));
+    let mut trace = args
+        .trace
+        .as_ref()
+        .map(|path| SessionTraceRecorder::new(path.clone(), &session));
+
     if let Some(script) = args.script.as_ref() {
-        run_script(&mut session, script)?;
+        run_script(&mut session, script, trace.as_mut())?;
     } else {
-        run_repl(&mut session)?;
+        run_repl(&mut session, trace.as_mut())?;
     }
     Ok(())
 }
 
-fn run_script(session: &mut RunControlSession, script: &PathBuf) -> Result<(), String> {
+fn run_script(
+    session: &mut RunControlSession,
+    script: &PathBuf,
+    mut trace: Option<&mut SessionTraceRecorder>,
+) -> Result<(), String> {
     let payload = fs::read_to_string(script).map_err(|err| err.to_string())?;
     for (line_number, line) in payload.lines().enumerate() {
         let trimmed = line.trim();
@@ -77,7 +89,7 @@ fn run_script(session: &mut RunControlSession, script: &PathBuf) -> Result<(), S
             continue;
         }
         println!("> {trimmed}");
-        if execute_line(session, trimmed)
+        if execute_line(session, trimmed, trace.as_deref_mut())
             .map_err(|err| format!("{}:{}: {err}", script.display(), line_number + 1))?
         {
             break;
@@ -86,7 +98,10 @@ fn run_script(session: &mut RunControlSession, script: &PathBuf) -> Result<(), S
     Ok(())
 }
 
-fn run_repl(session: &mut RunControlSession) -> Result<(), String> {
+fn run_repl(
+    session: &mut RunControlSession,
+    mut trace: Option<&mut SessionTraceRecorder>,
+) -> Result<(), String> {
     let stdin = io::stdin();
     loop {
         print!("run-play> ");
@@ -96,7 +111,7 @@ fn run_repl(session: &mut RunControlSession) -> Result<(), String> {
         if bytes == 0 {
             break;
         }
-        match execute_line(session, &line) {
+        match execute_line(session, &line, trace.as_deref_mut()) {
             Ok(true) => break,
             Ok(false) => {}
             Err(err) => {
@@ -108,11 +123,28 @@ fn run_repl(session: &mut RunControlSession) -> Result<(), String> {
     Ok(())
 }
 
-fn execute_line(session: &mut RunControlSession, line: &str) -> Result<bool, String> {
+fn execute_line(
+    session: &mut RunControlSession,
+    line: &str,
+    mut trace: Option<&mut SessionTraceRecorder>,
+) -> Result<bool, String> {
+    let trimmed = line.trim();
     let command = parse_run_control_command(line)?;
-    let outcome = session.apply_command(command)?;
+    let pending_trace = trace
+        .as_ref()
+        .map(|_| SessionTraceRecorder::prepare_step(session, trimmed, &command));
+    let outcome = session.apply_command(command.clone())?;
     if !outcome.message.is_empty() {
         println!("{}", outcome.message);
+    }
+    if let Some(recorder) = trace.as_deref_mut() {
+        if let Some(action_result) = outcome.action_result.as_ref() {
+            if let Some(pending) = pending_trace {
+                recorder.record_action_step(pending, session, action_result)?;
+            }
+        } else {
+            recorder.record_artifact_command(trimmed, session, &command)?;
+        }
     }
     Ok(outcome.should_quit)
 }
