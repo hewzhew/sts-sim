@@ -21,15 +21,18 @@ pub struct CombatSearchV2RunOptions {
 
 impl CombatSearchV2RunOptions {
     pub fn to_search_config(&self, input_label: String) -> CombatSearchV2Config {
+        let defaults = CombatSearchV2Config::default();
         CombatSearchV2Config {
-            max_nodes: self.max_nodes.unwrap_or(50_000),
-            max_actions_per_line: self.max_actions_per_line.unwrap_or(200),
-            max_engine_steps_per_action: self.max_engine_steps_per_action.unwrap_or(250),
+            max_nodes: self.max_nodes.unwrap_or(defaults.max_nodes),
+            max_actions_per_line: self
+                .max_actions_per_line
+                .unwrap_or(defaults.max_actions_per_line),
+            max_engine_steps_per_action: self
+                .max_engine_steps_per_action
+                .unwrap_or(defaults.max_engine_steps_per_action),
             wall_time: self.wall_ms.map(Duration::from_millis),
             input_label: Some(input_label),
-            potion_policy: self
-                .potion_policy
-                .unwrap_or(CombatSearchV2PotionPolicy::Never),
+            potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
         }
     }
 }

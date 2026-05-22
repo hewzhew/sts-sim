@@ -36,7 +36,10 @@ use value::{
     visible_incoming_damage,
 };
 
-pub use baseline::compare_trajectory_reports;
+pub use baseline::{
+    compare_outcome_metrics, compare_trajectory_reports, CombatSearchV2OutcomeMetrics,
+    WHOLE_COMBAT_OUTCOME_CRITERIA,
+};
 pub use report::trajectory_from_state;
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use types::*;

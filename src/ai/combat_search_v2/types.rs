@@ -227,7 +227,7 @@ pub struct CombatSearchV2StateSummary {
     pub queued_cards_count: usize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchTerminalLabel {
     Win,

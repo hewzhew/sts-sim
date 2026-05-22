@@ -7,7 +7,8 @@ not grow new long-lived binaries here.
 Active binaries:
 
 - `combat_search_v2_driver`
-  - whole-combat search runner over start-spec inputs
+  - `--start-spec <path>`: single whole-combat search report
+  - `--benchmark-spec <path>`: bounded multi-start-spec benchmark summary
 
 Removed from the active binary surface:
 

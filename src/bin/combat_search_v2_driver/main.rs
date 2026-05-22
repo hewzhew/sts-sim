@@ -1,17 +1,24 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, ValueEnum};
+use clap::{ArgGroup, Parser, ValueEnum};
 use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use sts_simulator::eval::combat_search_v2::{
-    load_combat_search_v2_start, run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
+    load_combat_search_v2_benchmark, load_combat_search_v2_start, run_combat_search_v2_benchmark,
+    run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
 };
 
 #[derive(Parser, Debug)]
-#[command(about = "Combat Search V2 whole-combat runner over a start-spec")]
+#[command(
+    about = "Combat Search V2 whole-combat runner over start-spec inputs",
+    group(ArgGroup::new("input").required(true).args(["start_spec", "benchmark_spec"]))
+)]
 struct Args {
-    #[arg(long)]
-    start_spec: PathBuf,
+    #[arg(long, conflicts_with = "benchmark_spec")]
+    start_spec: Option<PathBuf>,
+
+    #[arg(long, conflicts_with = "start_spec")]
+    benchmark_spec: Option<PathBuf>,
 
     #[arg(long)]
     max_nodes: Option<usize>,
@@ -49,18 +56,26 @@ impl From<CliPotionPolicy> for CombatSearchV2PotionPolicy {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let loaded = load_combat_search_v2_start(&args.start_spec)?;
-    let run = run_combat_search_v2_loaded_start(
-        &loaded,
-        CombatSearchV2RunOptions {
-            max_nodes: args.max_nodes,
-            max_actions_per_line: args.max_actions_per_line,
-            max_engine_steps_per_action: args.max_engine_steps_per_action,
-            wall_ms: args.wall_ms,
-            potion_policy: args.potion_policy.map(Into::into),
-        },
-    );
-    let payload = serde_json::to_string_pretty(&run.search_report)?;
+    let options = CombatSearchV2RunOptions {
+        max_nodes: args.max_nodes,
+        max_actions_per_line: args.max_actions_per_line,
+        max_engine_steps_per_action: args.max_engine_steps_per_action,
+        wall_ms: args.wall_ms,
+        potion_policy: args.potion_policy.map(Into::into),
+    };
+    let payload = if let Some(path) = args.benchmark_spec.as_ref() {
+        let loaded = load_combat_search_v2_benchmark(path)?;
+        let run = run_combat_search_v2_benchmark(&loaded, options);
+        serde_json::to_string_pretty(&run)?
+    } else {
+        let path = args
+            .start_spec
+            .as_ref()
+            .expect("clap requires --start-spec or --benchmark-spec");
+        let loaded = load_combat_search_v2_start(path)?;
+        let run = run_combat_search_v2_loaded_start(&loaded, options);
+        serde_json::to_string_pretty(&run.search_report)?
+    };
     write_or_print(args.output.as_ref(), &payload)?;
     Ok(())
 }
