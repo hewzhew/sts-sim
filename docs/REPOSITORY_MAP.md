@@ -61,6 +61,7 @@ The active AI-facing path is infrastructure only:
    - `src/eval/`
      - exact combat capture and search benchmark adapters
    - `src/bin/combat_search_v2_driver/`
+   - `src/bin/run_play_driver/`
 2. historical collection and replay checks
    - `tools/learning/`
 

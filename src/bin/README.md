@@ -12,6 +12,10 @@ Active binaries:
     `CombatCaptureV1` position
   - `--benchmark-spec <path>`: bounded benchmark summary over start-spec or
     combat-snapshot cases
+- `run_play_driver`
+  - thin simulator run/play shell
+  - `capture <path> [label]`: save `CombatCaptureV1` only from active stable
+    combat decision boundaries
 
 Removed from the active binary surface:
 

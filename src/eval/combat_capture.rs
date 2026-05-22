@@ -9,7 +9,9 @@ use crate::ai::combat_state_key::{
 };
 use crate::content::cards::java_id;
 use crate::content::monsters::EnemyId;
+use crate::runtime::combat::Intent;
 use crate::sim::combat::{combat_terminal, stable_boundary, CombatPosition, CombatTerminal};
+use crate::state::core::EngineState;
 
 pub const COMBAT_CAPTURE_SCHEMA_NAME: &str = "CombatCaptureV1";
 pub const COMBAT_CAPTURE_SCHEMA_VERSION: u32 = 1;
@@ -119,8 +121,10 @@ pub fn capture_combat_position_v1(
     label: Option<String>,
     position: &CombatPosition,
 ) -> Result<CombatCaptureV1, String> {
-    if !stable_boundary(&position.engine, &position.combat) {
-        return Err("CombatCaptureV1 requires a stable combat boundary before capture".to_string());
+    if !active_combat_capture_boundary(&position.engine, &position.combat) {
+        return Err(
+            "CombatCaptureV1 requires an active stable combat decision boundary".to_string(),
+        );
     }
 
     let integrity = integrity_for_position(&position);
@@ -176,8 +180,10 @@ pub fn validate_combat_capture_v1(capture: &CombatCaptureV1) -> Result<(), Strin
     if capture.capture_kind != CombatCaptureKind::CombatPosition {
         return Err("unsupported combat capture kind".to_string());
     }
-    if !stable_boundary(&capture.position.engine, &capture.position.combat) {
-        return Err("combat capture position is not at a stable boundary".to_string());
+    if !active_combat_capture_boundary(&capture.position.engine, &capture.position.combat) {
+        return Err(
+            "combat capture position is not an active stable combat decision boundary".to_string(),
+        );
     }
 
     let expected = integrity_for_position(&capture.position);
@@ -199,6 +205,17 @@ fn integrity_for_position(position: &CombatPosition) -> CombatCaptureIntegrityV1
         exact_state_fingerprint: fingerprint_debug(&exact),
         stable_outcome_fingerprint: stable.as_ref().map(fingerprint_debug),
     }
+}
+
+fn active_combat_capture_boundary(
+    engine: &EngineState,
+    combat: &crate::runtime::combat::CombatState,
+) -> bool {
+    stable_boundary(engine, combat)
+        && matches!(
+            engine,
+            EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+        )
 }
 
 fn summary_for_position(position: &CombatPosition) -> CombatCaptureSummaryV1 {
@@ -254,6 +271,7 @@ fn summary_for_position(position: &CombatPosition) -> CombatCaptureSummaryV1 {
                     .monster_protocol
                     .get(&monster.id)
                     .map(|protocol| &protocol.observation);
+                let turn_plan = monster.turn_plan();
                 CombatCaptureMonsterSummaryV1 {
                     slot: monster.slot,
                     entity_id: monster.id,
@@ -269,10 +287,13 @@ fn summary_for_position(position: &CombatPosition) -> CombatCaptureSummaryV1 {
                     half_dead: monster.half_dead,
                     planned_move_id: monster.planned_move_id(),
                     visible_intent: observation
+                        .filter(|obs| obs.visible_intent != Intent::Unknown)
                         .map(|obs| format!("{:?}", obs.visible_intent))
-                        .unwrap_or_else(|| "Unknown".to_string()),
+                        .unwrap_or_else(|| format!("{:?}", turn_plan.summary_spec())),
                     preview_damage_per_hit: observation
+                        .filter(|obs| obs.preview_damage_per_hit > 0)
                         .map(|obs| obs.preview_damage_per_hit)
+                        .or_else(|| turn_plan.attack().map(|attack| attack.base_damage))
                         .unwrap_or(0),
                 }
             })
@@ -341,6 +362,17 @@ mod tests {
             .expect_err("tampered fingerprint should be rejected");
 
         assert!(err.contains("fingerprints"));
+    }
+
+    #[test]
+    fn combat_capture_rejects_postcombat_engine_boundaries() {
+        let mut position = jaw_worm_position();
+        position.engine = EngineState::RewardScreen(crate::state::rewards::RewardState::new());
+
+        let err = capture_combat_position_v1(None, &position)
+            .expect_err("postcombat boundary should not be a search start capture");
+
+        assert!(err.contains("active stable combat decision boundary"));
     }
 
     fn jaw_worm_position() -> CombatPosition {

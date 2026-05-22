@@ -1,6 +1,6 @@
 # Play Guide
 
-`play` is a local debug harness for the simulator. It is useful for:
+`run_play_driver` is a local debug harness for the simulator. It is useful for:
 
 - quick manual or autoplay smoke tests
 - inspecting local run flow without Java
@@ -10,40 +10,43 @@ the Java protocol. Java-connected work is retired until a new adapter is built.
 
 ## Basic Usage
 
-`play` accepts positional `seed` and `ascension`, then free-form flags:
+`run_play_driver` accepts explicit flags and then a small command shell:
 
 ```powershell
-cargo run --release --bin play
-cargo run --release --bin play -- 42 15
-cargo run --release --bin play -- 42 0 --class silent --auto --summary
+cargo run --release --bin run_play_driver -- --seed 42 --ascension 0 --class silent
+cargo run --release --bin run_play_driver -- --seed 42 --skip-neow
+cargo run --release --bin run_play_driver -- --script commands.txt
 ```
 
 Important current flags:
 
 - `--class <ironclad|silent|defect|watcher>`
-- `--auto`
-- `--summary`
-- `--silent`
-- `--fast-act1`
-- `--panic-watch`
-- `--boss-only`
+- `--seed <n>`
+- `--ascension <n>`
+- `--final-act`
+- `--skip-neow`
+- `--script <path>`
 
-`play` does not currently expose a proper `--help` surface. If you change flags,
-verify them against [`src/bin/play/main.rs`](../src/bin/play/main.rs).
+The binary owns no simulator semantics; it delegates to `engine::run_loop` and
+`eval::run_play`.
 
 ## Local Manual Commands
 
-Current manual parser lives in [`src/cli/input.rs`](../src/cli/input.rs).
+Current manual parser lives in [`src/eval/run_play.rs`](../src/eval/run_play.rs).
 
 Combat:
 
 - `play <idx> [target]`
 - `end`
 - `potion <slot> [target]`
+- `actions`
+- `action <idx>`
+- `capture <path> [label]`
 
 Map / event / reward / campfire / shop:
 
-- `go <x>` or `<number>` on map/event screens
+- `go <x>`
+- `event <idx>`
 - `claim <idx>`
 - `pick <idx>`
 - `proceed`
@@ -61,17 +64,7 @@ Map / event / reward / campfire / shop:
 Inspection and mode control:
 
 - `state`
-- `relics`
-- `potions`
-- `draw`
-- `discard`
-- `exhaust`
-- `a` / `step`
-- `auto`
-- `auto run`
-- `manual`
-- `skip`
-- `fast`
+- `actions`
 - `help`
 - `quit`
 
@@ -80,6 +73,8 @@ Inspection and mode control:
 Keep these distinctions in mind:
 
 - the manual `play` parser is narrower than the bot's internal noncombat logic
+- `capture` only writes active stable combat decision boundaries; post-combat
+  states and current `EventCombat` wrapper states are rejected
 - campfire input here is still only `rest` and `smith`
 - old `live_comm` noncombat handling and profile launch paths are not active
   architecture

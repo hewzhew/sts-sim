@@ -22,6 +22,9 @@ Current testing infrastructure should support the simulator/search mainline:
   - runs Combat Search V2 from that start state
 - `cargo run --bin combat_search_v2_driver -- --combat-snapshot <capture.json>`
   - runs Combat Search V2 from an exact captured combat position
+- `cargo run --bin run_play_driver -- --seed <seed> --ascension <n>`
+  - opens the simulator run/play shell; `capture <path> [label]` writes a
+    `CombatCaptureV1` only at active stable combat decision boundaries
 
 ## Start-Spec Shape
 
