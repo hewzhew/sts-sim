@@ -1,8 +1,10 @@
+mod artifact_commands;
 mod auto_step;
 mod combat_search;
 mod combat_start;
 mod commands;
 mod decision_case;
+mod input_gate;
 pub mod outcome;
 mod panels;
 pub mod registry;

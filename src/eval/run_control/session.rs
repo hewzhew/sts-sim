@@ -1,27 +1,15 @@
-use std::path::Path;
-
 use crate::engine::run_loop::tick_run_active_with_observer;
-use crate::eval::combat_capture::{
-    capture_combat_position_from_run_v1, save_combat_capture_v1, CombatCaptureV1,
-};
 use crate::sim::combat::CombatPosition;
-use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
 
 use super::combat_start::ensure_combat_started_if_needed;
 use super::commands::{run_control_help, RunControlCommand};
-use super::decision_case::{
-    default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
-};
-use super::outcome::{
-    save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1, CombatOutcomeTracker,
-};
+use super::outcome::CombatOutcomeTracker;
 use super::panels::{
     render_combat_zone_panel, render_deck_panel, render_inspect_panel, render_map_panel,
     render_potions_panel, render_relics_panel, CombatZonePanel,
 };
-use super::registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 use super::render::{
     render_combat_actions, render_run_control_details, render_run_control_raw,
     render_run_control_state,
@@ -62,7 +50,7 @@ pub struct RunControlSession {
     pub active_combat: Option<ActiveCombat>,
     pub decision_step: u64,
     pub reward_automation: RewardAutomationConfig,
-    combat_outcomes: CombatOutcomeTracker,
+    pub(super) combat_outcomes: CombatOutcomeTracker,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -159,16 +147,7 @@ impl RunControlSession {
                 render_inspect_panel(self, &id),
             )),
             RunControlCommand::SaveDecisionCase { path } => {
-                let path = path.unwrap_or_else(|| default_run_decision_case_path(self));
-                let decision_case = RunDecisionCaseV1::from_session(self);
-                save_run_decision_case_v1(&path, &decision_case)?;
-                Ok(RunControlCommandOutcome::message(format!(
-                    "saved RunDecisionCaseV1 to {} [label_role={} trainable_as_action_label={} policy_quality_claim={}]",
-                    path.display(),
-                    decision_case.label_role,
-                    decision_case.trainable_as_action_label,
-                    decision_case.policy_quality_claim
-                )))
+                super::artifact_commands::apply_save_decision_case(self, path)
             }
             RunControlCommand::Details => Ok(RunControlCommandOutcome::message(
                 render_run_control_details(self),
@@ -180,91 +159,21 @@ impl RunControlSession {
                 render_combat_actions(self)?,
             )),
             RunControlCommand::Capture { path, label } => {
-                let capture = self.save_current_combat_capture(&path, label)?;
-                Ok(RunControlCommandOutcome::message(format!(
-                    "saved CombatCaptureV1 to {} [{} hp={}, turn={}, enemies={}]",
-                    path.display(),
-                    capture.summary.engine_state,
-                    capture.summary.player_hp,
-                    capture.summary.turn_count,
-                    capture.summary.monsters.len()
-                )))
+                super::artifact_commands::apply_capture(self, path, label)
             }
             RunControlCommand::CaptureCase {
                 root,
                 case_id,
                 label,
-            } => {
-                let paths = BenchmarkCasePaths::for_case(&root, &case_id);
-                let capture = self.save_current_combat_capture(
-                    &paths.capture_path,
-                    label.or_else(|| Some(case_id.clone())),
-                )?;
-                let paths = add_case_to_benchmark_registry(&root, &case_id)?;
-                Ok(RunControlCommandOutcome::message(format!(
-                    "saved CombatCaptureV1 case {case_id} to {} and registered {} [{} hp={}, turn={}, enemies={} trust={:?}]",
-                    paths.capture_path.display(),
-                    paths.benchmark_manifest.display(),
-                    capture.summary.engine_state,
-                    capture.summary.player_hp,
-                    capture.summary.turn_count,
-                    capture.summary.monsters.len(),
-                    capture.trust_level
-                )))
-            }
+            } => super::artifact_commands::apply_capture_case(self, root, case_id, label),
             RunControlCommand::SaveBaseline { path, case_id } => {
-                let baseline = self.save_last_combat_baseline(
-                    &path,
-                    case_id.unwrap_or_else(|| inferred_case_id_from_path(&path)),
-                )?;
-                Ok(RunControlCommandOutcome::message(format!(
-                    "saved CombatBaselineOutcomeV1 to {} [case={} terminal={:?} hp_loss={} final_hp={} turns={} potions_used={} cards_played={}]",
-                    path.display(),
-                    baseline.case_id,
-                    baseline.terminal,
-                    baseline.hp_loss,
-                    baseline.final_hp,
-                    baseline.turns,
-                    baseline.potions_used,
-                    baseline.cards_played
-                )))
+                super::artifact_commands::apply_save_baseline(self, path, case_id)
             }
             RunControlCommand::SaveBaselineCase { root, case_id } => {
-                let paths = BenchmarkCasePaths::for_case(&root, &case_id);
-                let baseline =
-                    self.save_last_combat_baseline(&paths.baseline_path, case_id.clone())?;
-                let registry_note = if paths.capture_path.exists() {
-                    let paths = add_case_to_benchmark_registry(&root, &case_id)?;
-                    format!(" and registered {}", paths.benchmark_manifest.display())
-                } else {
-                    " [benchmark not registered: matching capture is missing]".to_string()
-                };
-                Ok(RunControlCommandOutcome::message(format!(
-                    "saved CombatBaselineOutcomeV1 to {}{} [case={} terminal={:?} hp_loss={} final_hp={} turns={} potions_used={} cards_played={}]",
-                    paths.baseline_path.display(),
-                    registry_note,
-                    baseline.case_id,
-                    baseline.terminal,
-                    baseline.hp_loss,
-                    baseline.final_hp,
-                    baseline.turns,
-                    baseline.potions_used,
-                    baseline.cards_played
-                )))
+                super::artifact_commands::apply_save_baseline_case(self, root, case_id)
             }
             RunControlCommand::RegisterBenchmarkCase { root, case_id } => {
-                let paths = add_case_to_benchmark_registry(&root, &case_id)?;
-                let baseline_status = if paths.baseline_path.exists() {
-                    paths.baseline_path.display().to_string()
-                } else {
-                    "none".to_string()
-                };
-                Ok(RunControlCommandOutcome::message(format!(
-                    "registered benchmark case {case_id} in {} [capture={}, baseline={}]",
-                    paths.benchmark_manifest.display(),
-                    paths.capture_path.display(),
-                    baseline_status
-                )))
+                super::artifact_commands::apply_register_benchmark_case(root, case_id)
             }
             RunControlCommand::SearchCombat(options) => {
                 super::combat_search::apply_search_combat(self, options)
@@ -332,36 +241,6 @@ impl RunControlSession {
                 candidate.action.command_hint()
             )),
         }
-    }
-
-    pub fn save_current_combat_capture(
-        &self,
-        path: &Path,
-        label: Option<String>,
-    ) -> Result<CombatCaptureV1, String> {
-        let position = self.current_active_combat_position()?;
-        let capture = capture_combat_position_from_run_v1(label, &position, &self.run_state)?;
-        save_combat_capture_v1(path, &capture)?;
-        Ok(capture)
-    }
-
-    pub fn last_combat_baseline(&self) -> Option<&CombatBaselineOutcomeV1> {
-        self.combat_outcomes.last()
-    }
-
-    pub fn save_last_combat_baseline(
-        &self,
-        path: &Path,
-        case_id: String,
-    ) -> Result<CombatBaselineOutcomeV1, String> {
-        let mut baseline = self
-            .combat_outcomes
-            .last()
-            .cloned()
-            .ok_or_else(|| "no completed combat baseline is available".to_string())?;
-        baseline.case_id = case_id;
-        save_combat_baseline_outcome_v1(path, &baseline)?;
-        Ok(baseline)
     }
 
     pub(crate) fn current_active_combat_position(&self) -> Result<CombatPosition, String> {
@@ -484,190 +363,6 @@ impl RunControlSession {
         ))
     }
 
-    fn validate_input_for_current_state(&self, input: &ClientInput) -> Result<(), String> {
-        if self.visible_candidate_allows_input(input)
-            || self.current_screen_allows_extra_input(input)
-            || self.run_level_potion_input_is_allowed(input)
-        {
-            return Ok(());
-        }
-        Err(format!(
-            "input `{}` is not valid on the current screen: {}",
-            crate::eval::run_control::view_model::client_input_hint(input),
-            crate::eval::run_control::view_model::build_run_control_view_model(self)
-                .header
-                .title
-        ))
-    }
-
-    fn visible_candidate_allows_input(&self, input: &ClientInput) -> bool {
-        crate::eval::run_control::view_model::build_run_control_view_model(self)
-            .candidates
-            .iter()
-            .filter_map(|candidate| candidate.action.executable_input())
-            .any(|candidate_input| &candidate_input == input)
-    }
-
-    fn current_screen_allows_extra_input(&self, input: &ClientInput) -> bool {
-        match (&self.engine_state, input) {
-            (
-                EngineState::CombatPlayerTurn
-                | EngineState::CombatProcessing
-                | EngineState::PendingChoice(_),
-                _,
-            ) => self
-                .current_combat_position_for_actions()
-                .map(|position| get_legal_moves(&position.engine, &position.combat).contains(input))
-                .unwrap_or(false),
-            (EngineState::MapNavigation, ClientInput::FlyToNode(target_x, target_y)) => {
-                self.map_flight_is_allowed(*target_x, *target_y)
-            }
-            (EngineState::RunPendingChoice(choice), ClientInput::SubmitDeckSelect(indices)) => {
-                self.run_pending_selection_is_allowed(choice, indices)
-            }
-            (EngineState::RunPendingChoice(_), ClientInput::Cancel) => true,
-            (EngineState::Shop(shop), ClientInput::PurgeCard(idx)) => {
-                self.shop_purge_is_allowed(shop, *idx)
-            }
-            (EngineState::RewardScreen(reward), ClientInput::Cancel) => {
-                reward.skippable || reward.pending_card_choice.is_some()
-            }
-            _ => false,
-        }
-    }
-
-    fn map_flight_is_allowed(&self, target_x: usize, target_y: usize) -> bool {
-        let has_flight = self.run_state.relics.iter().any(|relic| {
-            relic.id == crate::content::relics::RelicId::WingBoots && relic.counter > 0
-        });
-        has_flight
-            && self
-                .run_state
-                .map
-                .can_travel_to(target_x as i32, target_y as i32, true)
-    }
-
-    fn run_pending_selection_is_allowed(
-        &self,
-        choice: &crate::state::core::RunPendingChoiceState,
-        indices: &[usize],
-    ) -> bool {
-        if indices.len() < choice.min_choices || indices.len() > choice.max_choices {
-            return false;
-        }
-        let mut seen = Vec::new();
-        for &idx in indices {
-            let Some(card) = self.run_state.master_deck.get(idx) else {
-                return false;
-            };
-            if seen.contains(&idx)
-                || !crate::state::core::run_pending_choice_allows_card_for_run(
-                    &choice.reason,
-                    card,
-                    &self.run_state,
-                )
-            {
-                return false;
-            }
-            seen.push(idx);
-        }
-        true
-    }
-
-    fn shop_purge_is_allowed(&self, shop: &crate::state::shop::ShopState, idx: usize) -> bool {
-        shop.purge_available
-            && self.run_state.gold >= shop.purge_cost
-            && self.run_state.master_deck.get(idx).is_some_and(|card| {
-                crate::state::core::master_deck_card_is_purgeable(card)
-                    && !crate::state::core::master_deck_card_is_bottled(
-                        card,
-                        &self.run_state.relics,
-                    )
-            })
-    }
-
-    fn run_level_potion_input_is_allowed(&self, input: &ClientInput) -> bool {
-        if !matches!(
-            self.engine_state,
-            EngineState::MapNavigation
-                | EngineState::EventRoom
-                | EngineState::RewardScreen(_)
-                | EngineState::TreasureRoom(_)
-                | EngineState::Campfire
-                | EngineState::Shop(_)
-                | EngineState::RunPendingChoice(_)
-                | EngineState::BossRelicSelect(_)
-        ) {
-            return false;
-        }
-        let is_we_meet_again = self
-            .run_state
-            .event_state
-            .as_ref()
-            .is_some_and(|event| event.id == crate::state::events::EventId::WeMeetAgain);
-        match input {
-            ClientInput::DiscardPotion(slot) => {
-                crate::content::potions::potion_can_discard_in_event(is_we_meet_again)
-                    && self
-                        .run_state
-                        .potions
-                        .get(*slot)
-                        .and_then(|slot| slot.as_ref())
-                        .is_some_and(|potion| potion.can_discard)
-            }
-            ClientInput::UsePotion {
-                potion_index,
-                target,
-            } if target.is_none() => self
-                .run_state
-                .potions
-                .get(*potion_index)
-                .and_then(|slot| slot.as_ref())
-                .is_some_and(|potion| {
-                    potion.can_use
-                        && crate::content::potions::potion_can_use_out_of_combat(
-                            potion.id,
-                            is_we_meet_again,
-                        )
-                }),
-            _ => false,
-        }
-    }
-
-    fn combat_action_by_index(&self, index: usize) -> Result<ClientInput, String> {
-        let position = self.current_combat_position_for_actions()?;
-        let actions = get_legal_moves(&position.engine, &position.combat);
-        actions
-            .get(index)
-            .cloned()
-            .ok_or_else(|| format!("combat action index {index} out of range"))
-    }
-
-    fn resolve_target(&self, target_slot_or_id: Option<usize>) -> Result<Option<usize>, String> {
-        let Some(raw) = target_slot_or_id else {
-            return Ok(None);
-        };
-        let combat = self
-            .active_combat
-            .as_ref()
-            .map(|active| &active.combat_state)
-            .ok_or_else(|| "targeted action requires active combat".to_string())?;
-        combat
-            .entities
-            .monsters
-            .iter()
-            .find(|monster| monster.slot as usize == raw)
-            .or_else(|| {
-                combat
-                    .entities
-                    .monsters
-                    .iter()
-                    .find(|monster| monster.id == raw)
-            })
-            .map(|monster| Some(monster.id))
-            .ok_or_else(|| format!("no monster slot or entity id {raw}"))
-    }
-
     fn cleanup_inactive_combat(&mut self) {
         if !matches!(
             self.engine_state,
@@ -696,15 +391,6 @@ impl RunControlSession {
     }
 }
 
-fn inferred_case_id_from_path(path: &Path) -> String {
-    path.file_stem()
-        .and_then(|stem| stem.to_str())
-        .filter(|stem| !stem.trim().is_empty())
-        .unwrap_or("last_combat")
-        .trim_end_matches(".baseline")
-        .to_string()
-}
-
 pub fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
     match raw.to_ascii_lowercase().as_str() {
         "ironclad" | "red" => Ok("Ironclad"),
@@ -719,10 +405,12 @@ pub fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
 mod tests {
     use super::*;
     use crate::content::monsters::factory::EncounterId;
+    use crate::eval::run_control::registry::BenchmarkCasePaths;
+    use crate::eval::run_control::CombatBaselineOutcomeV1;
     use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::state::map::state::MapState;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
