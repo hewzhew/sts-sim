@@ -94,7 +94,7 @@ impl RunDecisionCaseV1 {
                 .map(|candidate| RunDecisionCandidateV1 {
                     id: candidate.id,
                     label: candidate.label,
-                    command: candidate.command,
+                    command: candidate.action.command_hint(),
                     note: candidate.note,
                 })
                 .collect(),

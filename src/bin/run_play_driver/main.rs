@@ -96,8 +96,13 @@ fn run_repl(session: &mut RunControlSession) -> Result<(), String> {
         if bytes == 0 {
             break;
         }
-        if execute_line(session, &line)? {
-            break;
+        match execute_line(session, &line) {
+            Ok(true) => break,
+            Ok(false) => {}
+            Err(err) => {
+                println!("error: {err}");
+                println!("{}", render_run_control_state(session));
+            }
         }
     }
     Ok(())

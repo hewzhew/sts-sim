@@ -7,18 +7,34 @@ use crate::state::map::node::RoomType;
 use crate::state::rewards::RewardItem;
 use crate::state::run::RunState;
 
-use super::DecisionCandidate;
+use super::{CandidateAction, DecisionCandidate};
 
 pub(crate) fn candidate(
     id: impl Into<String>,
     label: impl Into<String>,
-    command: impl Into<String>,
+    action: impl Into<CandidateAction>,
     note: Option<impl Into<String>>,
 ) -> DecisionCandidate {
     DecisionCandidate {
         id: id.into(),
         label: label.into(),
-        command: command.into(),
+        action: action.into(),
+        note: note.map(Into::into),
+    }
+}
+
+pub(crate) fn unavailable_candidate(
+    id: impl Into<String>,
+    label: impl Into<String>,
+    reason: impl Into<String>,
+    note: Option<impl Into<String>>,
+) -> DecisionCandidate {
+    DecisionCandidate {
+        id: id.into(),
+        label: label.into(),
+        action: CandidateAction::Unavailable {
+            reason: reason.into(),
+        },
         note: note.map(Into::into),
     }
 }

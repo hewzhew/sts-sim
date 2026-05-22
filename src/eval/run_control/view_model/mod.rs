@@ -3,7 +3,7 @@ mod context;
 mod labels;
 
 use crate::sim::combat::{combat_terminal, stable_boundary};
-use crate::state::core::EngineState;
+use crate::state::core::{ClientInput, EngineState};
 
 pub(super) use super::session::RunControlSession;
 use candidates::decision_candidates;
@@ -13,7 +13,7 @@ pub(super) use labels::{
     boss_label, combat_card_label, deck_summary, monster_name, reward_card_label, room_type_label,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RunControlViewModel {
     pub header: RunControlHeader,
     pub decision: DecisionSummary,
@@ -36,12 +36,130 @@ pub struct DecisionSummary {
     pub status: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DecisionCandidate {
     pub id: String,
     pub label: String,
-    pub command: String,
+    pub action: CandidateAction,
     pub note: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CandidateAction {
+    Input(ClientInput),
+    ManualCommand { template: String },
+    Unavailable { reason: String },
+}
+
+impl CandidateAction {
+    pub fn command_hint(&self) -> String {
+        match self {
+            CandidateAction::Input(input) => client_input_hint(input),
+            CandidateAction::ManualCommand { template } => template.clone(),
+            CandidateAction::Unavailable { reason } => format!("locked: {reason}"),
+        }
+    }
+
+    pub fn executable_input(&self) -> Option<ClientInput> {
+        match self {
+            CandidateAction::Input(input) => Some(input.clone()),
+            CandidateAction::ManualCommand { .. } | CandidateAction::Unavailable { .. } => None,
+        }
+    }
+}
+
+impl From<ClientInput> for CandidateAction {
+    fn from(value: ClientInput) -> Self {
+        CandidateAction::Input(value)
+    }
+}
+
+impl From<String> for CandidateAction {
+    fn from(value: String) -> Self {
+        CandidateAction::ManualCommand { template: value }
+    }
+}
+
+impl From<&str> for CandidateAction {
+    fn from(value: &str) -> Self {
+        CandidateAction::ManualCommand {
+            template: value.to_string(),
+        }
+    }
+}
+
+pub fn client_input_hint(input: &ClientInput) -> String {
+    match input {
+        ClientInput::PlayCard { card_index, target } => match target {
+            Some(target) => format!("play {card_index} {target}"),
+            None => format!("play {card_index}"),
+        },
+        ClientInput::UsePotion {
+            potion_index,
+            target,
+        } => match target {
+            Some(target) => format!("potion {potion_index} {target}"),
+            None => format!("potion {potion_index}"),
+        },
+        ClientInput::DiscardPotion(slot) => format!("discard-potion {slot}"),
+        ClientInput::EndTurn => "end".to_string(),
+        ClientInput::SubmitCardChoice(indices) => format_usize_command("card-choice", indices),
+        ClientInput::SubmitDiscoverChoice(idx) => format!("choose {idx}"),
+        ClientInput::SelectMapNode(x) => format!("go {x}"),
+        ClientInput::FlyToNode(x, y) => format!("fly {x} {y}"),
+        ClientInput::SelectEventOption(idx) | ClientInput::EventChoice(idx) => {
+            format!("event {idx}")
+        }
+        ClientInput::CampfireOption(choice) => match choice {
+            crate::state::core::CampfireChoice::Rest => "rest".to_string(),
+            crate::state::core::CampfireChoice::Smith(idx) => format!("smith {idx}"),
+            crate::state::core::CampfireChoice::Dig => "dig".to_string(),
+            crate::state::core::CampfireChoice::Lift => "lift".to_string(),
+            crate::state::core::CampfireChoice::Toke(idx) => format!("toke {idx}"),
+            crate::state::core::CampfireChoice::Recall => "recall".to_string(),
+        },
+        ClientInput::SubmitScryDiscard(indices) => format_usize_command("scry", indices),
+        ClientInput::SubmitSelection(_) => "submit-selection".to_string(),
+        ClientInput::SubmitHandSelect(uuids) => format_u32_command("hand-select", uuids),
+        ClientInput::SubmitGridSelect(uuids) => format_u32_command("grid-select", uuids),
+        ClientInput::SubmitDeckSelect(indices) => format_usize_command("select", indices),
+        ClientInput::ClaimReward(idx) => format!("claim {idx}"),
+        ClientInput::OpenChest => "open".to_string(),
+        ClientInput::SelectCard(idx) => format!("pick {idx}"),
+        ClientInput::BuyCard(idx) => format!("buy card {idx}"),
+        ClientInput::BuyRelic(idx) => format!("buy relic {idx}"),
+        ClientInput::BuyPotion(idx) => format!("buy potion {idx}"),
+        ClientInput::PurgeCard(idx) => format!("purge {idx}"),
+        ClientInput::SubmitRelicChoice(idx) => format!("relic {idx}"),
+        ClientInput::Proceed => "proceed".to_string(),
+        ClientInput::Cancel => "cancel".to_string(),
+    }
+}
+
+fn format_usize_command(command: &str, values: &[usize]) -> String {
+    format!(
+        "{command} {}",
+        values
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+    .trim()
+    .to_string()
+}
+
+fn format_u32_command(command: &str, values: &[u32]) -> String {
+    format!(
+        "{command} {}",
+        values
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+    .trim()
+    .to_string()
 }
 
 pub fn build_run_control_view_model(session: &RunControlSession) -> RunControlViewModel {

@@ -121,7 +121,10 @@ pub fn render_inspect_panel(session: &RunControlSession, id: &str) -> String {
     if let Some(candidate) = view.candidates.iter().find(|candidate| candidate.id == id) {
         push_line(&mut out, format!("Candidate {}:", candidate.id));
         push_line(&mut out, format!("  {}", candidate.label));
-        push_line(&mut out, format!("  command: {}", candidate.command));
+        push_line(
+            &mut out,
+            format!("  command: {}", candidate.action.command_hint()),
+        );
         if let Some(note) = candidate.note.as_ref() {
             push_line(&mut out, format!("  note: {note}"));
         }
@@ -253,7 +256,7 @@ fn main_command_hint(session: &RunControlSession) -> String {
     let first = view.candidates.first();
     let primary = match first {
         Some(candidate) if view.candidates.len() == 1 && candidate.id == "0" => {
-            format!("Enter/0 = {}", candidate.label)
+            format!("Enter/0: {}", candidate.label)
         }
         Some(_) => "0-9/id = choose visible option".to_string(),
         None => "type a command".to_string(),
