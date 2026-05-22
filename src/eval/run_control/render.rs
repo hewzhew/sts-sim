@@ -320,6 +320,10 @@ mod tests {
         assert!(rendered.contains("0 | Proceed"));
         assert!(rendered.contains("Inspect: deck | map | relics"));
         assert!(
+            !rendered.contains("Route note:"),
+            "startup main panel should not present route preview as part of the current screen"
+        );
+        assert!(
             !rendered.contains("capture-case <benchmark_dir>"),
             "startup main panel should not dump full command help"
         );
@@ -340,5 +344,18 @@ mod tests {
 
         assert!(rendered.contains("engine=EventRoom"));
         assert!(rendered.contains("event=Neow"));
+    }
+
+    #[test]
+    fn neow_bonus_main_panel_does_not_present_map_as_current_action() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session
+            .apply_command(crate::eval::run_control::commands::RunControlCommand::DefaultCandidate)
+            .expect("Neow intro should advance");
+        let rendered = render_run_control_state(&session);
+
+        assert!(rendered.contains("Neow Bonus"));
+        assert!(!rendered.contains("Route note:"));
+        assert!(!rendered.contains("go <x>"));
     }
 }

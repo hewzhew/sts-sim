@@ -180,17 +180,6 @@ fn push_visible_screen(session: &RunControlSession, out: &mut String) {
             push_line(out, "");
             push_line(out, "Type `map` for the visible route summary.");
         }
-        EngineState::EventRoom => {
-            if session.run_state.event_state.as_ref().is_some_and(|event| {
-                event.id == crate::state::events::EventId::Neow && event.current_screen > 0
-            }) {
-                push_line(out, "");
-                push_line(
-                    out,
-                    "Route note: map is available; type `map` before choosing.",
-                );
-            }
-        }
         _ => {}
     }
 }

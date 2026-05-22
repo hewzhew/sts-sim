@@ -3,17 +3,28 @@ use crate::state::map::node::{MapRoomNode, RoomType};
 use super::{format_first_floor, format_range, push_line};
 use crate::eval::run_control::session::RunControlSession;
 use crate::eval::run_control::view_model::{boss_label, room_type_label};
+use crate::state::core::EngineState;
+use crate::state::events::EventId;
 
 pub fn render_map_panel(session: &RunControlSession) -> String {
     let mut out = String::new();
+    let navigable = matches!(session.engine_state, EngineState::MapNavigation);
     push_line(
         &mut out,
         format!(
-            "Map route summary to Act {} boss: {}",
+            "{} to Act {} boss: {}",
+            if navigable {
+                "Map route summary"
+            } else {
+                "Map route preview"
+            },
             session.run_state.act_num,
             boss_label(&session.run_state)
         ),
     );
+    if !navigable {
+        push_line(&mut out, map_locked_note(session));
+    }
     push_line(
         &mut out,
         "Warning: path counts are visible graph paths, not policy probabilities.",
@@ -24,7 +35,14 @@ pub fn render_map_panel(session: &RunControlSession) -> String {
     if starts.is_empty() {
         push_line(&mut out, "No visible legal map targets.");
     } else {
-        push_line(&mut out, "Start choices:");
+        push_line(
+            &mut out,
+            if navigable {
+                "Start choices:"
+            } else {
+                "Visible routes:"
+            },
+        );
         for node in starts {
             let summary = summarize_route_from(session, node.x, node.y);
             push_line(
@@ -69,8 +87,22 @@ pub fn render_map_panel(session: &RunControlSession) -> String {
         }
     }
     push_line(&mut out, "");
-    push_line(&mut out, "Commands: main | go <x> | details | raw | q");
+    if navigable {
+        push_line(&mut out, "Commands: main | go <x> | details | raw | q");
+    } else {
+        push_line(&mut out, "Commands: main | details | raw | q");
+    }
     out
+}
+
+fn map_locked_note(session: &RunControlSession) -> &'static str {
+    if session.run_state.event_state.as_ref().is_some_and(|event| {
+        event.id == EventId::Neow && matches!(session.engine_state, EngineState::EventRoom)
+    }) {
+        "Read-only: first room selection is locked until Neow is complete."
+    } else {
+        "Read-only: route selection is locked until the current screen returns to map navigation."
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -236,5 +268,20 @@ mod tests {
         assert!(rendered.contains("Start choices:"));
         assert!(rendered.contains("early pressure:"));
         assert!(rendered.contains("Warning: path counts"));
+    }
+
+    #[test]
+    fn neow_map_panel_is_read_only_and_does_not_offer_go() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session
+            .apply_command(crate::eval::run_control::commands::RunControlCommand::DefaultCandidate)
+            .expect("Neow intro should advance");
+
+        let rendered = render_map_panel(&session);
+
+        assert!(rendered.contains("Map route preview"));
+        assert!(rendered.contains("first room selection is locked until Neow is complete"));
+        assert!(rendered.contains("Visible routes:"));
+        assert!(!rendered.contains("go <x>"));
     }
 }

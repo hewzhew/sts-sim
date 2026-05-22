@@ -38,6 +38,10 @@ screen ids, deck stats, or the full command list. Use view commands for those:
 `deck`, `map`, `relics`, `potions`, `draw`, `discard`, `exhaust`, `inspect <id>`,
 `details`, and `raw`.
 
+`map` is an inspection view unless the current screen is real map navigation.
+For example, during Neow it can show a read-only route preview, but `go <x>` is
+locked until Neow is complete and the run has returned to the map screen.
+
 ## Local Manual Commands
 
 Current manual parser lives under
@@ -56,7 +60,7 @@ Combat:
 
 Map / event / reward / campfire / shop:
 
-- `go <x>`
+- `go <x>` (only on the map navigation screen)
 - `event <idx>`
 - `claim <idx>`
 - `pick <idx>`

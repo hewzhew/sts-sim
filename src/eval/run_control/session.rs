@@ -360,6 +360,7 @@ impl RunControlSession {
 
     fn apply_input(&mut self, input: ClientInput) -> Result<RunControlCommandOutcome, String> {
         self.ensure_combat_started_if_needed()?;
+        self.validate_input_for_current_state(&input)?;
         self.observe_active_combat_started();
         let potion_observation = self.combat_outcomes.observe_input_before(
             self.active_combat
@@ -423,6 +424,22 @@ impl RunControlSession {
             "{status}\n{}",
             render_run_control_state(self)
         )))
+    }
+
+    fn validate_input_for_current_state(&self, input: &ClientInput) -> Result<(), String> {
+        match input {
+            ClientInput::SelectMapNode(_) | ClientInput::FlyToNode(_, _)
+                if !matches!(self.engine_state, EngineState::MapNavigation) =>
+            {
+                Err(format!(
+                    "map travel is only valid on the map navigation screen; current screen is {}",
+                    crate::eval::run_control::view_model::build_run_control_view_model(self)
+                        .header
+                        .title
+                ))
+            }
+            _ => Ok(()),
+        }
     }
 
     fn combat_action_by_index(&self, index: usize) -> Result<ClientInput, String> {
@@ -605,6 +622,22 @@ mod tests {
                 .map(|event| event.current_screen),
             Some(1)
         );
+    }
+
+    #[test]
+    fn run_control_rejects_map_travel_before_neow_is_complete() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session
+            .apply_command(RunControlCommand::DefaultCandidate)
+            .expect("Neow intro should advance");
+
+        let err = session
+            .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+            .expect_err("Neow bonus should not allow first-room travel");
+
+        assert!(err.contains("map travel is only valid"));
+        assert!(err.contains("Neow Bonus"));
+        assert!(matches!(session.engine_state, EngineState::EventRoom));
     }
 
     fn test_session_with_first_monster_room() -> RunControlSession {

@@ -16,6 +16,8 @@ Active binaries:
   - thin shell over the `eval::run_control` kernel
   - starts in a game-like main screen; `deck`, `map`, `relics`, `potions`,
     `draw`, `discard`, `exhaust`, and `inspect <id>` open on-demand panels
+  - `map` is read-only outside actual map navigation; `go <x>` is only valid
+    after the current room is complete
   - `d` shows legacy details, `r` shows raw debug output, `h` shows the full
     categorized help
   - `case [path]`: save a diagnostic `RunDecisionCaseV1` with no teacher-label
