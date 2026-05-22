@@ -56,3 +56,32 @@ fn combat_dominance_key_separates_state_progress_from_resource_vector() {
         combat_dominance_key(&EngineState::CombatPlayerTurn, &uuid_counter_variant),
     );
 }
+
+#[test]
+fn combat_dominance_key_keeps_special_monster_runtime_state() {
+    let mut lagavulin = blank_test_combat();
+    lagavulin
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::Lagavulin, 3));
+
+    let mut lagavulin_variant = lagavulin.clone();
+    lagavulin_variant.entities.monsters[0].lagavulin.idle_count += 1;
+    assert_ne!(
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &lagavulin),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &lagavulin_variant),
+    );
+
+    let mut guardian = blank_test_combat();
+    guardian
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::TheGuardian, 3));
+
+    let mut guardian_variant = guardian.clone();
+    guardian_variant.entities.monsters[0].guardian.damage_taken += 1;
+    assert_ne!(
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &guardian),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &guardian_variant),
+    );
+}

@@ -332,7 +332,7 @@ impl MonsterEntity {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct MonsterMoveState {
     pub planned_move_id: u8,
     pub history: VecDeque<u8>,

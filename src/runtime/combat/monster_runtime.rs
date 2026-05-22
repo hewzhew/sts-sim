@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct HexaghostRuntimeState {
     pub activated: bool,
     pub orb_active_count: u8,
@@ -8,52 +8,52 @@ pub struct HexaghostRuntimeState {
     pub divider_damage: Option<i32>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct LouseRuntimeState {
     pub bite_damage: Option<i32>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct JawWormRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub hard_mode: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ThiefRuntimeState {
     pub protocol_seeded: bool,
     pub slash_count: u8,
     pub stolen_gold: i32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ByrdRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub is_flying: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ChosenRuntimeState {
     pub protocol_seeded: bool,
     pub first_turn: bool,
     pub used_hex: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SneckoRuntimeState {
     pub protocol_seeded: bool,
     pub first_turn: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ShelledParasiteRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BronzeAutomatonRuntimeState {
     pub protocol_seeded: bool,
     pub first_turn: bool,
@@ -70,7 +70,7 @@ impl Default for BronzeAutomatonRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BronzeOrbRuntimeState {
     pub protocol_seeded: bool,
     pub used_stasis: bool,
@@ -85,7 +85,7 @@ impl Default for BronzeOrbRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BookOfStabbingRuntimeState {
     pub protocol_seeded: bool,
     pub stab_count: u8,
@@ -100,7 +100,7 @@ impl Default for BookOfStabbingRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CollectorRuntimeState {
     pub protocol_seeded: bool,
     pub initial_spawn: bool,
@@ -121,7 +121,7 @@ impl Default for CollectorRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ChampRuntimeState {
     pub protocol_seeded: bool,
     pub first_turn: bool,
@@ -142,7 +142,7 @@ impl Default for ChampRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AwakenedOneRuntimeState {
     pub protocol_seeded: bool,
     pub form1: bool,
@@ -159,7 +159,7 @@ impl Default for AwakenedOneRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CorruptHeartRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
@@ -180,33 +180,33 @@ impl Default for CorruptHeartRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct WrithingMassRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub used_mega_debuff: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SpikerRuntimeState {
     pub protocol_seeded: bool,
     pub thorns_count: u8,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SpireShieldRuntimeState {
     pub protocol_seeded: bool,
     pub move_count: u8,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SpireSpearRuntimeState {
     pub protocol_seeded: bool,
     pub move_count: u8,
     pub skewer_count: u8,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SlaverRedRuntimeState {
     pub protocol_seeded: bool,
     pub first_turn: bool,
@@ -223,113 +223,113 @@ impl Default for SlaverRedRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct GremlinLeaderRuntimeState {
     pub protocol_seeded: bool,
     pub gremlin_slots: [Option<EntityId>; 3],
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct GremlinNobRuntimeState {
     pub protocol_seeded: bool,
     pub used_bellow: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct GremlinWizardRuntimeState {
     pub protocol_seeded: bool,
     pub current_charge: u8,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CultistRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SentryRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SlimeBossRuntimeState {
     pub protocol_seeded: bool,
     pub first_turn: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct LargeSlimeRuntimeState {
     pub protocol_seeded: bool,
     pub split_triggered: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SphericGuardianRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub second_move: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ReptomancerRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub dagger_slots: [Option<EntityId>; 4],
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct DarklingRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub nip_dmg: i32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct NemesisRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
     pub scythe_cooldown: i32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct GiantHeadRuntimeState {
     pub protocol_seeded: bool,
     pub count: i32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct TimeEaterRuntimeState {
     pub protocol_seeded: bool,
     pub used_haste: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct DonuRuntimeState {
     pub protocol_seeded: bool,
     pub is_attacking: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct DecaRuntimeState {
     pub protocol_seeded: bool,
     pub is_attacking: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct TransientRuntimeState {
     pub protocol_seeded: bool,
     pub count: i32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ExploderRuntimeState {
     pub protocol_seeded: bool,
     pub turn_count: i32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MawRuntimeState {
     pub protocol_seeded: bool,
     pub roared: bool,
@@ -346,7 +346,7 @@ impl Default for MawRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SnakeDaggerRuntimeState {
     pub protocol_seeded: bool,
     pub first_move: bool,
@@ -361,7 +361,7 @@ impl Default for SnakeDaggerRuntimeState {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct LagavulinRuntimeState {
     pub is_out: bool,
     pub idle_count: u8,
@@ -369,7 +369,7 @@ pub struct LagavulinRuntimeState {
     pub is_out_triggered: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GuardianRuntimeState {
     pub damage_threshold: i32,
     pub damage_taken: i32,

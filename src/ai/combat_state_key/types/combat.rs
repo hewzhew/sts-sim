@@ -5,7 +5,21 @@ use crate::content::potions::PotionId;
 use crate::content::powers::PowerId;
 use crate::content::relics::RelicId;
 use crate::runtime::action::Action;
-use crate::runtime::combat::{OrbId, QueuedCardSource, StanceId};
+use crate::runtime::combat::{
+    AwakenedOneRuntimeState, BookOfStabbingRuntimeState, BronzeAutomatonRuntimeState,
+    BronzeOrbRuntimeState, ByrdRuntimeState, ChampRuntimeState, ChosenRuntimeState,
+    CorruptHeartRuntimeState, CultistRuntimeState, DarklingRuntimeState, DecaRuntimeState,
+    DonuRuntimeState, ExploderRuntimeState, GiantHeadRuntimeState, GremlinLeaderRuntimeState,
+    GremlinNobRuntimeState, GremlinWizardRuntimeState, GuardianRuntimeState, HexaghostRuntimeState,
+    JawWormRuntimeState, LagavulinRuntimeState, LargeSlimeRuntimeState, LouseRuntimeState,
+    MawRuntimeState, MonsterMoveState, NemesisRuntimeState, OrbId, QueuedCardSource,
+    ReptomancerRuntimeState, SentryRuntimeState, ShelledParasiteRuntimeState,
+    SlaverRedRuntimeState, SlimeBossRuntimeState, SnakeDaggerRuntimeState, SneckoRuntimeState,
+    SphericGuardianRuntimeState, SpikerRuntimeState, SpireShieldRuntimeState,
+    SpireSpearRuntimeState, StanceId, ThiefRuntimeState, TimeEaterRuntimeState,
+    TransientRuntimeState, WrithingMassRuntimeState,
+};
+use crate::runtime::monster_move::MonsterTurnPlan;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct CombatExactStateKey {
@@ -311,10 +325,54 @@ pub(crate) struct CombatMonsterKey {
     pub(crate) is_dying: bool,
     pub(crate) is_escaped: bool,
     pub(crate) half_dead: bool,
-    pub(crate) planned_move_id: u8,
-    pub(crate) move_history: String,
-    pub(crate) turn_plan: String,
-    pub(crate) runtime: String,
+    pub(crate) move_state: MonsterMoveState,
+    pub(crate) turn_plan: MonsterTurnPlan,
+    pub(crate) runtime: CombatMonsterRuntimeKey,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct CombatMonsterRuntimeKey {
+    pub(crate) hexaghost: HexaghostRuntimeState,
+    pub(crate) louse: LouseRuntimeState,
+    pub(crate) jaw_worm: JawWormRuntimeState,
+    pub(crate) thief: ThiefRuntimeState,
+    pub(crate) byrd: ByrdRuntimeState,
+    pub(crate) chosen: ChosenRuntimeState,
+    pub(crate) snecko: SneckoRuntimeState,
+    pub(crate) shelled_parasite: ShelledParasiteRuntimeState,
+    pub(crate) bronze_automaton: BronzeAutomatonRuntimeState,
+    pub(crate) bronze_orb: BronzeOrbRuntimeState,
+    pub(crate) book_of_stabbing: BookOfStabbingRuntimeState,
+    pub(crate) collector: crate::runtime::combat::CollectorRuntimeState,
+    pub(crate) champ: ChampRuntimeState,
+    pub(crate) awakened_one: AwakenedOneRuntimeState,
+    pub(crate) corrupt_heart: CorruptHeartRuntimeState,
+    pub(crate) writhing_mass: WrithingMassRuntimeState,
+    pub(crate) spiker: SpikerRuntimeState,
+    pub(crate) spire_shield: SpireShieldRuntimeState,
+    pub(crate) spire_spear: SpireSpearRuntimeState,
+    pub(crate) slaver_red: SlaverRedRuntimeState,
+    pub(crate) gremlin_leader: GremlinLeaderRuntimeState,
+    pub(crate) gremlin_nob: GremlinNobRuntimeState,
+    pub(crate) gremlin_wizard: GremlinWizardRuntimeState,
+    pub(crate) cultist: CultistRuntimeState,
+    pub(crate) sentry: SentryRuntimeState,
+    pub(crate) slime_boss: SlimeBossRuntimeState,
+    pub(crate) large_slime: LargeSlimeRuntimeState,
+    pub(crate) spheric_guardian: SphericGuardianRuntimeState,
+    pub(crate) reptomancer: ReptomancerRuntimeState,
+    pub(crate) darkling: DarklingRuntimeState,
+    pub(crate) nemesis: NemesisRuntimeState,
+    pub(crate) giant_head: GiantHeadRuntimeState,
+    pub(crate) time_eater: TimeEaterRuntimeState,
+    pub(crate) donu: DonuRuntimeState,
+    pub(crate) deca: DecaRuntimeState,
+    pub(crate) transient: TransientRuntimeState,
+    pub(crate) exploder: ExploderRuntimeState,
+    pub(crate) maw: MawRuntimeState,
+    pub(crate) snake_dagger: SnakeDaggerRuntimeState,
+    pub(crate) lagavulin: LagavulinRuntimeState,
+    pub(crate) guardian: GuardianRuntimeState,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
