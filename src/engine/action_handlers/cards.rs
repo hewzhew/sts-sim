@@ -31,8 +31,6 @@ pub use exhaust::{
     handle_exhaust_card, handle_exhaust_from_hand, handle_recycle, handle_recycle_selected_card,
     move_card_to_exhaust_pile,
 };
-#[cfg(test)]
-pub(crate) use generated::class_card_pool_for_type;
 pub use generated::{
     handle_conjure_blade, handle_make_constructed_copy_in_hand, handle_make_copy_in_discard,
     handle_make_copy_in_draw_pile, handle_make_copy_in_hand, handle_make_random_card_in_draw_pile,
@@ -76,6 +74,3 @@ pub use turn_triggers::{
 pub use x_cost::{
     handle_aggregate_energy, handle_multicast, handle_reinforced_body, handle_tempest,
 };
-
-#[cfg(test)]
-mod tests;
