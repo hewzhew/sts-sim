@@ -155,6 +155,7 @@ pub fn stable_boundary(engine: &EngineState, combat: &CombatState) -> bool {
         | EngineState::GameOver(_) => true,
         EngineState::CombatProcessing if is_smoke_escape_stable_boundary(engine, combat) => true,
         EngineState::CombatProcessing => false,
+        EngineState::CombatStart(_) => false,
         EngineState::RewardScreen(_)
         | EngineState::TreasureRoom(_)
         | EngineState::Campfire
@@ -163,7 +164,6 @@ pub fn stable_boundary(engine: &EngineState, combat: &CombatState) -> bool {
         | EngineState::EventRoom
         | EngineState::RunPendingChoice(_)
         | EngineState::BossRelicSelect(_) => true,
-        EngineState::EventCombat(_) => false,
     }
 }
 
@@ -225,25 +225,25 @@ mod tests {
     use super::{combat_terminal, stable_boundary, CombatTerminal};
     use crate::content::monsters::factory::EncounterId;
     use crate::sim::combat_start::build_natural_combat_start;
-    use crate::state::core::{EngineState, EventCombatState, PostCombatReturn};
+    use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
     use crate::state::map::node::RoomType;
     use crate::state::rewards::RewardState;
     use crate::state::run::RunState;
 
     #[test]
-    fn event_combat_context_is_not_a_stable_search_boundary() {
+    fn combat_start_request_is_not_a_stable_search_boundary() {
         let mut run = RunState::new(1, 0, false, "Ironclad");
         let (_engine, combat) =
             build_natural_combat_start(&mut run, EncounterId::JawWorm, RoomType::MonsterRoom)
                 .expect("combat should initialize");
-        let event_engine = EngineState::EventCombat(EventCombatState {
-            rewards: RewardState::new(),
-            reward_allowed: true,
-            no_cards_in_rewards: false,
-            elite_trigger: false,
-            post_combat_return: PostCombatReturn::MapNavigation,
-            encounter_key: "Jaw Worm".to_string(),
-        });
+        let event_engine = EngineState::CombatStart(CombatStartRequest::event(
+            EncounterId::JawWorm,
+            RewardState::new(),
+            true,
+            false,
+            false,
+            PostCombatReturn::MapNavigation,
+        ));
 
         assert!(!stable_boundary(&event_engine, &combat));
         assert_eq!(

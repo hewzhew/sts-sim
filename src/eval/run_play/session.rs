@@ -1,13 +1,12 @@
 use std::path::Path;
 
-use crate::engine::run_loop::tick_run;
+use crate::engine::run_loop::tick_run_active;
 use crate::eval::combat_capture::{
     capture_combat_position_v1, save_combat_capture_v1, CombatCaptureV1,
 };
-use crate::runtime::combat::CombatState;
 use crate::sim::combat::CombatPosition;
 use crate::sim::combat_legal_actions::get_legal_moves;
-use crate::state::core::{ClientInput, EngineState, RunResult};
+use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
 
 use super::combat_start::ensure_combat_started_if_needed;
@@ -39,7 +38,7 @@ impl Default for RunPlayConfig {
 pub struct RunPlaySession {
     pub engine_state: EngineState,
     pub run_state: RunState,
-    pub combat_state: Option<CombatState>,
+    pub active_combat: Option<ActiveCombat>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -82,7 +81,7 @@ impl RunPlaySession {
         Self {
             engine_state,
             run_state,
-            combat_state: None,
+            active_combat: None,
         }
     }
 
@@ -151,48 +150,44 @@ impl RunPlaySession {
 
     pub(crate) fn current_active_combat_position(&self) -> Result<CombatPosition, String> {
         let combat = self
-            .combat_state
+            .active_combat
             .as_ref()
+            .map(|active| (&active.engine_state, &active.combat_state))
             .ok_or_else(|| "no active combat state to capture".to_string())?;
-        match self.engine_state {
+        match combat.0 {
             EngineState::CombatPlayerTurn | EngineState::PendingChoice(_) => {
-                Ok(CombatPosition::new(self.engine_state.clone(), combat.clone()))
+                Ok(CombatPosition::new(combat.0.clone(), combat.1.clone()))
             }
-            EngineState::EventCombat(_) => Err(
-                "event combat capture is not supported yet; EventCombat currently wraps combat outside the search engine state"
-                    .to_string(),
-            ),
             _ => Err(format!(
                 "cannot capture combat from engine state {:?}",
-                self.engine_state
+                combat.0
             )),
         }
     }
 
     pub(crate) fn current_combat_position_for_actions(&self) -> Result<CombatPosition, String> {
-        let combat = self
-            .combat_state
+        let active = self
+            .active_combat
             .as_ref()
             .ok_or_else(|| "no active combat state".to_string())?;
-        let engine = match &self.engine_state {
+        let engine = match &active.engine_state {
             EngineState::CombatPlayerTurn
             | EngineState::CombatProcessing
-            | EngineState::PendingChoice(_) => self.engine_state.clone(),
-            EngineState::EventCombat(_) => EngineState::CombatPlayerTurn,
+            | EngineState::PendingChoice(_) => active.engine_state.clone(),
             other => {
                 return Err(format!(
                     "engine state {other:?} is not an active combat input state"
                 ))
             }
         };
-        Ok(CombatPosition::new(engine, combat.clone()))
+        Ok(CombatPosition::new(engine, active.combat_state.clone()))
     }
 
     fn apply_input(&mut self, input: ClientInput) -> Result<RunPlayCommandOutcome, String> {
-        let keep_running = tick_run(
+        let keep_running = tick_run_active(
             &mut self.engine_state,
             &mut self.run_state,
-            &mut self.combat_state,
+            &mut self.active_combat,
             Some(input),
         );
         self.cleanup_inactive_combat();
@@ -227,8 +222,9 @@ impl RunPlaySession {
             return Ok(None);
         };
         let combat = self
-            .combat_state
+            .active_combat
             .as_ref()
+            .map(|active| &active.combat_state)
             .ok_or_else(|| "targeted action requires active combat".to_string())?;
         combat
             .entities
@@ -252,9 +248,8 @@ impl RunPlaySession {
             EngineState::CombatPlayerTurn
                 | EngineState::CombatProcessing
                 | EngineState::PendingChoice(_)
-                | EngineState::EventCombat(_)
         ) {
-            self.combat_state = None;
+            self.active_combat = None;
         }
     }
 
@@ -262,7 +257,7 @@ impl RunPlaySession {
         ensure_combat_started_if_needed(
             &mut self.engine_state,
             &mut self.run_state,
-            &mut self.combat_state,
+            &mut self.active_combat,
         )
     }
 }

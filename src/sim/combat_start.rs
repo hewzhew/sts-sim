@@ -154,18 +154,6 @@ pub fn encounter_id_from_input(raw: &str) -> Result<EncounterId, String> {
     }
 }
 
-pub fn encounter_id_from_event_key(encounter_key: &str) -> Result<EncounterId, String> {
-    match encounter_key {
-        "Lagavulin Event" => Ok(EncounterId::LagavulinEvent),
-        "The Mushroom Lair" => Ok(EncounterId::TheMushroomLair),
-        "Masked Bandits" => Ok(EncounterId::MaskedBandits),
-        "Colosseum Slavers" => Ok(EncounterId::ColosseumSlavers),
-        "Colosseum Nobs" => Ok(EncounterId::ColosseumNobs),
-        "2 Orb Walkers" => Ok(EncounterId::TwoOrbWalkers),
-        other => encounter_id_from_input(other),
-    }
-}
-
 pub fn room_type_from_input(raw: &str) -> Result<RoomType, String> {
     let normalized = normalize_identifier(raw);
     match normalized.as_str() {

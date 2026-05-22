@@ -68,10 +68,18 @@ pub fn render_run_play_state(session: &RunPlaySession) -> String {
             );
             render_master_deck(&session.run_state, &mut out);
         }
+        EngineState::CombatStart(request) => {
+            push_line(
+                &mut out,
+                format!(
+                    "combat_start encounter={:?} room={:?}",
+                    request.encounter_id, request.room_type
+                ),
+            );
+        }
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
-        | EngineState::PendingChoice(_)
-        | EngineState::EventCombat(_) => render_combat_state(session, &mut out),
+        | EngineState::PendingChoice(_) => render_combat_state(session, &mut out),
         EngineState::BossRelicSelect(choice) => {
             for (idx, relic) in choice.relics.iter().enumerate() {
                 push_line(&mut out, format!("boss_relic[{idx}]={relic:?}"));
@@ -181,7 +189,11 @@ fn render_master_deck(run_state: &RunState, out: &mut String) {
 }
 
 fn render_combat_state(session: &RunPlaySession, out: &mut String) {
-    let Some(combat) = session.combat_state.as_ref() else {
+    let Some(combat) = session
+        .active_combat
+        .as_ref()
+        .map(|active| &active.combat_state)
+    else {
         push_line(out, "combat state missing");
         return;
     };

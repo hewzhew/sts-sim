@@ -23,26 +23,10 @@ pub(crate) enum StableRunPendingReturnKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct StableEventCombatKey {
-    pub encounter_key: String,
-    pub reward_allowed: bool,
-    pub no_cards_in_rewards: bool,
-    pub elite_trigger: bool,
-    pub post_combat_return: StablePostCombatReturnKey,
-    pub rewards: StableRewardKey,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct StableTreasureChestKey {
     pub size: String,
     pub base_relic_tier: String,
     pub gold_reward: Option<i32>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum StablePostCombatReturnKey {
-    EventRoom,
-    MapNavigation,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -123,29 +107,6 @@ impl StableRunPendingReturnKey {
             }
             StableRunPendingReturnKey::GameOver(value) => format!("game_over:{value}"),
             StableRunPendingReturnKey::Combat => "combat".to_string(),
-        }
-    }
-}
-
-impl StableEventCombatKey {
-    pub(in crate::ai::combat_state_key) fn diagnostic_string(&self) -> String {
-        format!(
-            "encounter{}:reward_allowed{}:no_cards{}:elite{}:return{}:rewards{}",
-            self.encounter_key,
-            self.reward_allowed,
-            self.no_cards_in_rewards,
-            self.elite_trigger,
-            self.post_combat_return.diagnostic_string(),
-            self.rewards.diagnostic_string(),
-        )
-    }
-}
-
-impl StablePostCombatReturnKey {
-    pub(in crate::ai::combat_state_key) fn diagnostic_string(&self) -> &'static str {
-        match self {
-            StablePostCombatReturnKey::EventRoom => "event_room",
-            StablePostCombatReturnKey::MapNavigation => "map_navigation",
         }
     }
 }

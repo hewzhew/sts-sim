@@ -1,43 +1,52 @@
 use crate::content::monsters::factory::EncounterId;
-use crate::runtime::combat::CombatState;
-use crate::sim::combat_start::{build_natural_combat_start, encounter_id_from_event_key};
-use crate::state::core::EngineState;
+use crate::sim::combat_start::build_natural_combat_start;
+use crate::state::core::{ActiveCombat, CombatStartRequest, EngineState};
 use crate::state::map::node::RoomType;
 use crate::state::run::RunState;
 
 pub(super) fn ensure_combat_started_if_needed(
     engine_state: &mut EngineState,
     run_state: &mut RunState,
-    combat_state: &mut Option<CombatState>,
+    active_combat: &mut Option<ActiveCombat>,
 ) -> Result<(), String> {
     match engine_state {
+        EngineState::CombatStart(request) if active_combat.is_none() => {
+            let request = request.clone();
+            let active = build_active_combat(run_state, request)?;
+            *engine_state = active.engine_state.clone();
+            *active_combat = Some(active);
+        }
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
         | EngineState::PendingChoice(_)
-            if combat_state.is_none() =>
+            if active_combat.is_none() =>
         {
             let room_type = run_state
                 .map
                 .get_current_room_type()
                 .ok_or_else(|| "combat engine state without current map room".to_string())?;
             let encounter = encounter_for_current_room(run_state, room_type)?;
-            let (engine, combat) = build_natural_combat_start(run_state, encounter, room_type)?;
-            *engine_state = engine;
-            *combat_state = Some(combat);
-        }
-        EngineState::EventCombat(event_combat) if combat_state.is_none() => {
-            let encounter = encounter_id_from_event_key(&event_combat.encounter_key)?;
-            let room_type = if event_combat.elite_trigger {
-                RoomType::MonsterRoomElite
-            } else {
-                RoomType::MonsterRoom
-            };
-            let (_engine, combat) = build_natural_combat_start(run_state, encounter, room_type)?;
-            *combat_state = Some(combat);
+            let request = CombatStartRequest::room(encounter, room_type);
+            let active = build_active_combat(run_state, request)?;
+            *engine_state = active.engine_state.clone();
+            *active_combat = Some(active);
         }
         _ => {}
     }
     Ok(())
+}
+
+fn build_active_combat(
+    run_state: &mut RunState,
+    request: CombatStartRequest,
+) -> Result<ActiveCombat, String> {
+    let (engine_state, combat_state) =
+        build_natural_combat_start(run_state, request.encounter_id, request.room_type)?;
+    Ok(ActiveCombat::new(
+        engine_state,
+        combat_state,
+        request.context,
+    ))
 }
 
 fn encounter_for_current_room(

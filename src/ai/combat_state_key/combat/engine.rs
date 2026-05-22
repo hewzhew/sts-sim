@@ -16,10 +16,10 @@ pub(super) fn engine_key(engine: &EngineState) -> CombatEngineKey {
         EngineState::Shop(value) => CombatEngineKey::Shop(format!("{value:?}")),
         EngineState::MapNavigation => CombatEngineKey::MapNavigation,
         EngineState::EventRoom => CombatEngineKey::EventRoom,
+        EngineState::CombatStart(value) => CombatEngineKey::CombatStart(format!("{value:?}")),
         EngineState::RunPendingChoice(value) => {
             CombatEngineKey::RunPendingChoice(format!("{value:?}"))
         }
-        EngineState::EventCombat(value) => CombatEngineKey::EventCombat(format!("{value:?}")),
         EngineState::BossRelicSelect(value) => {
             CombatEngineKey::BossRelicSelect(format!("{value:?}"))
         }

@@ -1,5 +1,5 @@
 use crate::runtime::combat::{CombatMeta, CombatState, MetaChange, PlayerEntity};
-use crate::state::core::{EventCombatState, PostCombatReturn, RunPendingChoiceState, RunResult};
+use crate::state::core::{RunPendingChoiceState, RunResult};
 use crate::state::rewards::{
     BossRelicChoiceState, RewardCard, RewardItem, RewardState, TreasureChestState,
 };
@@ -7,10 +7,10 @@ use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 use crate::state::EngineState;
 
 use super::types::{
-    StableBossRelicKey, StableEventCombatKey, StableMetaChangeKey, StableMetaKey,
-    StablePostCombatReturnKey, StablePostcombatPlayerKey, StablePostcombatRuntimeKey,
-    StableRewardCardKey, StableRewardItemKey, StableRewardKey, StableRunPendingChoiceKey,
-    StableRunPendingReturnKey, StableShopKey, StableShopRowKey, StableTreasureChestKey,
+    StableBossRelicKey, StableMetaChangeKey, StableMetaKey, StablePostcombatPlayerKey,
+    StablePostcombatRuntimeKey, StableRewardCardKey, StableRewardItemKey, StableRewardKey,
+    StableRunPendingChoiceKey, StableRunPendingReturnKey, StableShopKey, StableShopRowKey,
+    StableTreasureChestKey,
 };
 
 pub(super) fn stable_postcombat_player_key(player: &PlayerEntity) -> StablePostcombatPlayerKey {
@@ -148,18 +148,7 @@ pub(super) fn stable_run_pending_return_key(state: &EngineState) -> StableRunPen
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
         | EngineState::PendingChoice(_)
-        | EngineState::EventCombat(_) => StableRunPendingReturnKey::Combat,
-    }
-}
-
-pub(super) fn stable_event_combat_key(state: &EventCombatState) -> StableEventCombatKey {
-    StableEventCombatKey {
-        encounter_key: state.encounter_key.to_string(),
-        reward_allowed: state.reward_allowed,
-        no_cards_in_rewards: state.no_cards_in_rewards,
-        elite_trigger: state.elite_trigger,
-        post_combat_return: stable_post_combat_return_key(&state.post_combat_return),
-        rewards: stable_reward_key(&state.rewards),
+        | EngineState::CombatStart(_) => StableRunPendingReturnKey::Combat,
     }
 }
 
@@ -227,13 +216,6 @@ fn stable_shop_potion_key(potion: &ShopPotion) -> StableShopRowKey {
         price: potion.price,
         can_buy: potion.can_buy,
         blocked_reason: potion.blocked_reason.clone(),
-    }
-}
-
-fn stable_post_combat_return_key(value: &PostCombatReturn) -> StablePostCombatReturnKey {
-    match value {
-        PostCombatReturn::EventRoom => StablePostCombatReturnKey::EventRoom,
-        PostCombatReturn::MapNavigation => StablePostCombatReturnKey::MapNavigation,
     }
 }
 

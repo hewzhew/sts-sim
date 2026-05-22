@@ -11,8 +11,8 @@ pub(crate) enum CombatEngineKey {
     Shop(String),
     MapNavigation,
     EventRoom,
+    CombatStart(String),
     RunPendingChoice(String),
-    EventCombat(String),
     BossRelicSelect(String),
     GameOver(String),
 }

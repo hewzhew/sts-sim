@@ -1,6 +1,7 @@
 use crate::content::cards::CardId;
+use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;
-use crate::state::core::EngineState;
+use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
 use crate::state::events::{
     EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
@@ -8,11 +9,11 @@ use crate::state::events::{
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-fn act1_boss_key(index: u8) -> &'static str {
+fn act1_boss_encounter_id(index: u8) -> EncounterId {
     match index {
-        0 => "The Guardian",
-        1 => "Hexaghost",
-        _ => "Slime Boss",
+        0 => EncounterId::TheGuardian,
+        1 => EncounterId::Hexaghost,
+        _ => EncounterId::SlimeBoss,
     }
 }
 
@@ -128,7 +129,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         &mut boss_indices,
                         &mut run_state.rng_pool.misc_rng,
                     );
-                    let encounter_key = act1_boss_key(boss_indices[0]);
+                    let encounter_id = act1_boss_encounter_id(boss_indices[0]);
 
                     // Java: addGoldToRewards(A13>=13 ? 25 : 50) + addRelicToRewards(RARE)
                     let mut rewards = crate::rewards::state::RewardState::new();
@@ -151,15 +152,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     event_state.current_screen = 1;
                     event_state.completed = true;
                     run_state.event_state = Some(event_state);
-                    *engine_state =
-                        EngineState::EventCombat(crate::state::core::EventCombatState {
-                            rewards,
-                            reward_allowed: true,
-                            no_cards_in_rewards: false,
-                            elite_trigger: false,
-                            post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-                            encounter_key: encounter_key.to_string(),
-                        });
+                    *engine_state = EngineState::CombatStart(CombatStartRequest::event(
+                        encounter_id,
+                        rewards,
+                        true,
+                        false,
+                        false,
+                        PostCombatReturn::MapNavigation,
+                    ));
                     return;
                 }
                 1 => {
@@ -219,6 +219,7 @@ mod tests {
     use super::*;
     use crate::content::relics::RelicState;
     use crate::runtime::combat::CombatCard;
+    use crate::state::core::CombatContext;
     use crate::state::events::{EventOptionTransition, EventRelicKind};
     use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -338,15 +339,18 @@ mod tests {
             &mut expected_indices,
             &mut expected_misc_rng,
         );
-        let expected_key = act1_boss_key(expected_indices[0]);
+        let expected_encounter_id = act1_boss_encounter_id(expected_indices[0]);
         let mut engine_state = EngineState::EventRoom;
 
         handle_choice(&mut engine_state, &mut rs, 0);
 
-        let EngineState::EventCombat(combat) = engine_state else {
-            panic!("Mind Bloom fight should enter EventCombat");
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("Mind Bloom fight should request CombatStart");
         };
-        assert_eq!(combat.encounter_key, expected_key);
+        assert_eq!(request.encounter_id, expected_encounter_id);
+        let CombatContext::Event(combat) = request.context else {
+            panic!("Mind Bloom fight should carry event combat context");
+        };
         assert!(combat
             .rewards
             .items

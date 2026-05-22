@@ -6,7 +6,7 @@ use crate::state::EngineState;
 use super::monster::stable_monster_signature;
 use super::pending_choice::pending_choice_key;
 use super::postcombat::{
-    stable_boss_relic_key, stable_event_combat_key, stable_meta_key, stable_postcombat_player_key,
+    stable_boss_relic_key, stable_meta_key, stable_postcombat_player_key,
     stable_postcombat_runtime_key, stable_reward_key, stable_run_pending_choice_key,
     stable_run_result_signature, stable_shop_key, stable_treasure_chest_key,
 };
@@ -86,6 +86,7 @@ fn stable_combat_engine_key(engine: &EngineState, combat: &CombatState) -> Stabl
         EngineState::PendingChoice(choice) => {
             StableEngineKey::PendingChoice(pending_choice_key(choice, combat))
         }
+        EngineState::CombatStart(request) => StableEngineKey::CombatStart(format!("{request:?}")),
         _ => stable_postcombat_engine_key(engine, combat),
     }
 }
@@ -103,9 +104,7 @@ fn stable_postcombat_engine_key(engine: &EngineState, combat: &CombatState) -> S
         EngineState::RunPendingChoice(state) => {
             StableEngineKey::RunPendingChoice(stable_run_pending_choice_key(state))
         }
-        EngineState::EventCombat(state) => {
-            StableEngineKey::EventCombat(stable_event_combat_key(state))
-        }
+        EngineState::CombatStart(request) => StableEngineKey::CombatStart(format!("{request:?}")),
         EngineState::BossRelicSelect(state) => {
             StableEngineKey::BossRelic(stable_boss_relic_key(state))
         }

@@ -376,19 +376,19 @@ mod tests {
     }
 
     #[test]
-    fn combat_capture_rejects_event_combat_context_wrapper() {
+    fn combat_capture_rejects_combat_start_request() {
         let mut position = jaw_worm_position();
-        position.engine = EngineState::EventCombat(crate::state::core::EventCombatState {
-            rewards: crate::state::rewards::RewardState::new(),
-            reward_allowed: true,
-            no_cards_in_rewards: false,
-            elite_trigger: false,
-            post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-            encounter_key: "Jaw Worm".to_string(),
-        });
+        position.engine = EngineState::CombatStart(crate::state::core::CombatStartRequest::event(
+            crate::content::monsters::factory::EncounterId::JawWorm,
+            crate::state::rewards::RewardState::new(),
+            true,
+            false,
+            false,
+            crate::state::core::PostCombatReturn::MapNavigation,
+        ));
 
         let err = capture_combat_position_v1(None, &position)
-            .expect_err("EventCombat wrapper should not be a search start capture");
+            .expect_err("CombatStart should not be a search start capture");
 
         assert!(err.contains("active stable combat decision boundary"));
     }

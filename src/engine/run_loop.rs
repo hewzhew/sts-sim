@@ -1,5 +1,8 @@
 use crate::runtime::combat::CombatState;
-use crate::state::core::{ClientInput, EngineState};
+use crate::state::core::{
+    ActiveCombat, ClientInput, CombatContext, CombatStartRequest, EngineState, EventCombatContext,
+    PostCombatReturn, RoomCombatContext,
+};
 use crate::state::map::node::RoomType;
 use crate::state::rewards::{RewardScreenContext, TreasureChestSize, TreasureChestState};
 use crate::state::run::RunState;
@@ -449,10 +452,269 @@ fn apply_combat_meta_change(run_state: &mut RunState, change: crate::runtime::co
     }
 }
 
+fn combat_start_request_for_room(
+    run_state: &mut RunState,
+    room_type: RoomType,
+) -> Result<CombatStartRequest, String> {
+    let encounter = match room_type {
+        RoomType::MonsterRoom => run_state
+            .peek_next_encounter()
+            .ok_or_else(|| "normal encounter queue is empty".to_string())?,
+        RoomType::MonsterRoomElite => run_state
+            .peek_next_elite()
+            .ok_or_else(|| "elite encounter queue is empty".to_string())?,
+        RoomType::MonsterRoomBoss => run_state
+            .next_boss()
+            .ok_or_else(|| "boss encounter queue is empty".to_string())?,
+        other => return Err(format!("room type {other:?} is not combat")),
+    };
+    Ok(CombatStartRequest::room(encounter, room_type))
+}
+
+fn start_pending_combat_if_needed(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+    active_combat: &mut Option<ActiveCombat>,
+) -> bool {
+    let request = match engine_state {
+        EngineState::CombatStart(request) if active_combat.is_none() => request.clone(),
+        EngineState::CombatStart(_) => {
+            eprintln!("Error: CombatStart requested while ActiveCombat already exists.");
+            return false;
+        }
+        _ => return true,
+    };
+
+    match start_active_combat(run_state, request) {
+        Ok(active) => {
+            *engine_state = active.engine_state.clone();
+            *active_combat = Some(active);
+            true
+        }
+        Err(err) => {
+            eprintln!("Combat start error: {err}");
+            false
+        }
+    }
+}
+
+fn start_active_combat(
+    run_state: &mut RunState,
+    request: CombatStartRequest,
+) -> Result<ActiveCombat, String> {
+    let (engine_state, combat_state) = crate::sim::combat_start::build_natural_combat_start(
+        run_state,
+        request.encounter_id,
+        request.room_type,
+    )?;
+    Ok(ActiveCombat::new(
+        engine_state,
+        combat_state,
+        request.context,
+    ))
+}
+
+fn finish_active_combat(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+    active_combat: &mut Option<ActiveCombat>,
+) -> bool {
+    let Some(mut active) = active_combat.take() else {
+        eprintln!("Error: tried to finish combat without ActiveCombat.");
+        return false;
+    };
+
+    run_state.absorb_combat_player(active.combat_state.entities.player.clone());
+    run_state.room_mugged |= active.combat_state.runtime.combat_mugged;
+    run_state.room_smoked |= active.combat_state.runtime.combat_smoked;
+
+    for change in active.combat_state.meta.meta_changes.drain(..) {
+        apply_combat_meta_change(run_state, change);
+    }
+
+    if let EngineState::GameOver(_) = engine_state {
+        return false;
+    }
+
+    match active.context {
+        CombatContext::Room(_) => {
+            finish_room_combat(engine_state, run_state, &mut active.combat_state);
+        }
+        CombatContext::Event(event_context) => {
+            finish_event_combat(
+                engine_state,
+                run_state,
+                &mut active.combat_state,
+                event_context,
+            );
+        }
+    }
+
+    if matches!(engine_state, EngineState::GameOver(_)) {
+        return false;
+    }
+    start_pending_combat_if_needed(engine_state, run_state, active_combat)
+}
+
+fn finish_room_combat(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+    combat_state: &mut CombatState,
+) {
+    // Java: AbstractRoom.update() skips normal reward-screen opening for
+    // TheBeyond/TheEnding boss rooms. On A20, ProceedButton sends the player
+    // directly to the second Act 3 boss while `bossList.size() == 2`.
+    if let EngineState::RewardScreen(rs) = engine_state {
+        let is_boss = combat_state.meta.is_boss_fight;
+        let is_elite = combat_state.meta.is_elite_fight;
+
+        if is_boss && run_state.act_num == 3 {
+            if run_state.should_start_act3_double_boss() {
+                run_state.reveal_next_boss_from_list();
+                match combat_start_request_for_room(run_state, RoomType::MonsterRoomBoss) {
+                    Ok(request) => *engine_state = EngineState::CombatStart(request),
+                    Err(err) => {
+                        eprintln!("Act 3 double boss start error: {err}");
+                        *engine_state =
+                            EngineState::GameOver(crate::state::core::RunResult::Defeat);
+                    }
+                }
+            } else if run_state.is_final_act_available
+                && run_state.keys[0]
+                && run_state.keys[1]
+                && run_state.keys[2]
+            {
+                run_state.enter_final_act();
+                *engine_state = EngineState::MapNavigation;
+            } else {
+                *engine_state = EngineState::GameOver(crate::state::core::RunResult::Victory);
+            }
+        } else {
+            let screen_context = if run_state.room_mugged {
+                RewardScreenContext::MuggedCombat
+            } else if run_state.room_smoked {
+                RewardScreenContext::SmokedCombat
+            } else {
+                RewardScreenContext::Standard
+            };
+            let mut existing_items = Vec::new();
+            existing_items.append(&mut combat_state.runtime.pending_rewards);
+            let normal_monster_rewards_allowed = !combat_state.have_monsters_escaped_java();
+            if matches!(screen_context, RewardScreenContext::SmokedCombat) {
+                let _hidden_room_rewards =
+                    crate::state::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
+                        run_state,
+                        is_elite,
+                        is_boss,
+                        existing_items,
+                        false,
+                        normal_monster_rewards_allowed,
+                    );
+                *rs = crate::state::rewards::RewardState::with_context(
+                    RewardScreenContext::SmokedCombat,
+                );
+            } else {
+                *rs = if existing_items.is_empty() && normal_monster_rewards_allowed {
+                    crate::state::rewards::generator::generate_combat_rewards(
+                        run_state, is_elite, is_boss,
+                    )
+                } else {
+                    crate::state::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
+                        run_state,
+                        is_elite,
+                        is_boss,
+                        existing_items,
+                        true,
+                        normal_monster_rewards_allowed,
+                    )
+                };
+                rs.screen_context = screen_context;
+            }
+
+            if is_boss && run_state.act_num <= 2 {
+                run_state.pending_boss_reward = true;
+            }
+        }
+    }
+}
+
+fn finish_event_combat(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+    combat_state: &mut CombatState,
+    event_context: EventCombatContext,
+) {
+    if event_context.reward_allowed {
+        let mut rewards = event_context.rewards;
+        rewards.screen_context = if run_state.room_mugged {
+            RewardScreenContext::MuggedCombat
+        } else if run_state.room_smoked {
+            RewardScreenContext::SmokedCombat
+        } else {
+            RewardScreenContext::Standard
+        };
+        if !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat) {
+            rewards
+                .items
+                .append(&mut combat_state.runtime.pending_rewards);
+            crate::state::rewards::generator::add_potion_reward_like_java(
+                run_state,
+                &mut rewards.items,
+            );
+        }
+        if !event_context.no_cards_in_rewards
+            && !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat)
+        {
+            rewards.items.extend(
+                crate::state::rewards::generator::generate_card_reward_items(
+                    run_state, false, false, false,
+                ),
+            );
+        } else {
+            let mut hidden_items = std::mem::take(&mut rewards.items);
+            hidden_items.append(&mut combat_state.runtime.pending_rewards);
+            crate::state::rewards::generator::add_potion_reward_like_java(
+                run_state,
+                &mut hidden_items,
+            );
+        }
+        *engine_state = EngineState::RewardScreen(rewards);
+    } else {
+        match event_context.post_combat_return {
+            PostCombatReturn::EventRoom => {
+                *engine_state = EngineState::EventRoom;
+            }
+            PostCombatReturn::MapNavigation => {
+                *engine_state = EngineState::MapNavigation;
+            }
+        }
+    }
+}
+
 pub fn tick_run(
     engine_state: &mut EngineState,
     run_state: &mut RunState,
     combat_state: &mut Option<CombatState>,
+    input: Option<ClientInput>,
+) -> bool {
+    let context = CombatContext::Room(RoomCombatContext {
+        room_type: run_state
+            .map
+            .get_current_room_type()
+            .unwrap_or(RoomType::MonsterRoom),
+    });
+    let mut active_combat = combat_state
+        .take()
+        .map(|combat| ActiveCombat::new(engine_state.clone(), combat, context));
+    let keep_running = tick_run_active(engine_state, run_state, &mut active_combat, input);
+    *combat_state = active_combat.map(|active| active.combat_state);
+    keep_running
+}
+
+pub fn tick_run_active(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+    active_combat: &mut Option<ActiveCombat>,
     input: Option<ClientInput>,
 ) -> bool {
     if handle_run_level_potion_input(engine_state, run_state, &input) {
@@ -462,112 +724,29 @@ pub fn tick_run(
         return true;
     }
 
+    if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
+        return false;
+    }
+
     // Top level controller redirecting inputs
     match engine_state {
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
         | EngineState::PendingChoice(_) => {
-            if let Some(cs) = combat_state.as_mut() {
-                let keep_running = super::core::tick_engine(engine_state, cs, input.clone());
+            if let Some(active) = active_combat.as_mut() {
+                active.engine_state = engine_state.clone();
+                let keep_running = super::core::tick_engine(
+                    &mut active.engine_state,
+                    &mut active.combat_state,
+                    input.clone(),
+                );
+                *engine_state = active.engine_state.clone();
                 if !keep_running {
-                    // Absorb combat player state back to RunState (HP, gold, relic counters)
-                    run_state.absorb_combat_player(cs.entities.player.clone());
-                    run_state.room_mugged |= cs.runtime.combat_mugged;
-                    run_state.room_smoked |= cs.runtime.combat_smoked;
-
-                    for change in cs.meta.meta_changes.drain(..) {
-                        apply_combat_meta_change(run_state, change);
-                    }
-
-                    let mut start_next_act3_boss = false;
-
-                    // Check for Act 3 boss victory and reward generation.
-                    // Java: AbstractRoom.update() skips normal reward-screen opening
-                    // for TheBeyond/TheEnding boss rooms. On A20, ProceedButton
-                    // sends the player directly to the second Act 3 boss while
-                    // `bossList.size() == 2`.
-                    if let EngineState::RewardScreen(rs) = engine_state {
-                        let is_boss = cs.meta.is_boss_fight;
-                        let is_elite = cs.meta.is_elite_fight;
-
-                        if is_boss && run_state.act_num == 3 {
-                            if run_state.should_start_act3_double_boss() {
-                                run_state.reveal_next_boss_from_list();
-                                start_next_act3_boss = true;
-                                *engine_state = EngineState::CombatPlayerTurn;
-                            } else if run_state.is_final_act_available
-                                && run_state.keys[0]
-                                && run_state.keys[1]
-                                && run_state.keys[2]
-                            {
-                                // All 3 keys collected — transition to Act 4 (TheEnding).
-                                run_state.enter_final_act();
-                                *engine_state = EngineState::MapNavigation;
-                            } else {
-                                // Act 3 boss defeated without all keys → game victory (no Act 4).
-                                *engine_state =
-                                    EngineState::GameOver(crate::state::core::RunResult::Victory);
-                            }
-                        } else {
-                            let screen_context = if run_state.room_mugged {
-                                RewardScreenContext::MuggedCombat
-                            } else if run_state.room_smoked {
-                                RewardScreenContext::SmokedCombat
-                            } else {
-                                RewardScreenContext::Standard
-                            };
-                            let mut existing_items = Vec::new();
-                            existing_items.append(&mut cs.runtime.pending_rewards);
-                            let normal_monster_rewards_allowed = !cs.have_monsters_escaped_java();
-                            if matches!(screen_context, RewardScreenContext::SmokedCombat) {
-                                let _hidden_room_rewards =
-                                    crate::state::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
-                                        run_state,
-                                        is_elite,
-                                        is_boss,
-                                        existing_items,
-                                        false,
-                                        normal_monster_rewards_allowed,
-                                    );
-                                *rs = crate::state::rewards::RewardState::with_context(
-                                    RewardScreenContext::SmokedCombat,
-                                );
-                            } else {
-                                // Populate the actual dropped rewards for normal/mugged combat.
-                                *rs = if existing_items.is_empty() && normal_monster_rewards_allowed
-                                {
-                                    crate::state::rewards::generator::generate_combat_rewards(
-                                        run_state, is_elite, is_boss,
-                                    )
-                                } else {
-                                    crate::state::rewards::generator::generate_combat_rewards_from_existing_with_escape_gate(
-                                        run_state,
-                                        is_elite,
-                                        is_boss,
-                                        existing_items,
-                                        true,
-                                        normal_monster_rewards_allowed,
-                                    )
-                                };
-                                rs.screen_context = screen_context;
-                            }
-
-                            if is_boss && run_state.act_num <= 2 {
-                                // Act 1 or Act 2 boss defeated — mark for act advance after rewards.
-                                run_state.pending_boss_reward = true;
-                            }
-                        }
-                    }
-                    if start_next_act3_boss {
-                        *combat_state = None;
-                    }
-                    if let EngineState::GameOver(_) = engine_state {
-                        return false;
-                    }
+                    return finish_active_combat(engine_state, run_state, active_combat);
                 }
                 true
             } else {
-                eprintln!("Error: EngineState designates Combat but no CombatState was provided.");
+                eprintln!("Error: EngineState designates Combat but no ActiveCombat was provided.");
                 false
             }
         }
@@ -909,8 +1088,15 @@ pub fn tick_run(
                             RoomType::MonsterRoom
                             | RoomType::MonsterRoomElite
                             | RoomType::MonsterRoomBoss => {
-                                // Instantiate combat
-                                *engine_state = EngineState::CombatPlayerTurn;
+                                match combat_start_request_for_room(run_state, actual_room_type) {
+                                    Ok(request) => {
+                                        *engine_state = EngineState::CombatStart(request);
+                                    }
+                                    Err(err) => {
+                                        eprintln!("Combat start request error: {err}");
+                                        return false;
+                                    }
+                                }
                             }
                             RoomType::RestRoom => {
                                 // Java: onEnterRestRoom() for all relics
@@ -979,6 +1165,9 @@ pub fn tick_run(
             if resolve_out_of_combat_defeat(engine_state, run_state) {
                 return false;
             }
+            if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
+                return false;
+            }
             true
         }
         EngineState::TreasureRoom(chest) => {
@@ -995,6 +1184,9 @@ pub fn tick_run(
             if resolve_out_of_combat_defeat(engine_state, run_state) {
                 return false;
             }
+            if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
+                return false;
+            }
             true
         }
         EngineState::Campfire => {
@@ -1003,6 +1195,9 @@ pub fn tick_run(
                 return false;
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return false;
+            }
+            if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
                 return false;
             }
             true
@@ -1033,6 +1228,9 @@ pub fn tick_run(
                 }
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return false;
+            }
+            if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
                 return false;
             }
             true
@@ -1071,84 +1269,8 @@ pub fn tick_run(
             }
             true
         }
-        EngineState::EventCombat(ecs) => {
-            // EventCombat is a run-loop context wrapper, not a stable combat
-            // engine state for search/capture. The active CombatState stays in
-            // combat_state, while this wrapper preserves event rewards/return.
-            if let Some(cs) = combat_state.as_mut() {
-                // Create a temporary combat engine state to tick
-                let mut temp_state = EngineState::CombatPlayerTurn;
-                let keep_running = super::core::tick_engine(&mut temp_state, cs, input.clone());
-
-                if !keep_running {
-                    // Absorb combat player state back to RunState (HP, gold, relic counters)
-                    run_state.absorb_combat_player(cs.entities.player.clone());
-                    run_state.room_mugged |= cs.runtime.combat_mugged;
-                    run_state.room_smoked |= cs.runtime.combat_smoked;
-
-                    for change in cs.meta.meta_changes.drain(..) {
-                        apply_combat_meta_change(run_state, change);
-                    }
-
-                    // Combat ended. Check if player died.
-                    if let EngineState::GameOver(_) = temp_state {
-                        *engine_state = temp_state;
-                        return false;
-                    }
-
-                    // Combat victory. Handle rewards.
-                    if ecs.reward_allowed {
-                        // Generate standard card rewards unless suppressed
-                        let mut rewards = ecs.rewards.clone();
-                        rewards.screen_context = if run_state.room_mugged {
-                            RewardScreenContext::MuggedCombat
-                        } else if run_state.room_smoked {
-                            RewardScreenContext::SmokedCombat
-                        } else {
-                            RewardScreenContext::Standard
-                        };
-                        if !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat) {
-                            rewards.items.append(&mut cs.runtime.pending_rewards);
-                            crate::state::rewards::generator::add_potion_reward_like_java(
-                                run_state,
-                                &mut rewards.items,
-                            );
-                        }
-                        if !ecs.no_cards_in_rewards
-                            && !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat)
-                        {
-                            rewards.items.extend(
-                                crate::state::rewards::generator::generate_card_reward_items(
-                                    run_state, false, false, false,
-                                ),
-                            );
-                        } else {
-                            let mut hidden_items = std::mem::take(&mut rewards.items);
-                            hidden_items.append(&mut cs.runtime.pending_rewards);
-                            crate::state::rewards::generator::add_potion_reward_like_java(
-                                run_state,
-                                &mut hidden_items,
-                            );
-                        }
-                        *engine_state = EngineState::RewardScreen(rewards);
-                    } else {
-                        // No rewards (e.g., Colosseum fight 1) — go directly to return
-                        match ecs.post_combat_return {
-                            crate::state::core::PostCombatReturn::EventRoom => {
-                                *engine_state = EngineState::EventRoom;
-                            }
-                            crate::state::core::PostCombatReturn::MapNavigation => {
-                                *engine_state = EngineState::MapNavigation;
-                            }
-                        }
-                    }
-                }
-                // If combat is still running, stay in EventCombat
-                true
-            } else {
-                eprintln!("Error: EventCombat but no CombatState provided.");
-                false
-            }
+        EngineState::CombatStart(_) => {
+            start_pending_combat_if_needed(engine_state, run_state, active_combat)
         }
         EngineState::GameOver(_) => false,
     }
@@ -1158,13 +1280,15 @@ pub fn tick_run(
 mod tests {
     use super::{
         apply_combat_meta_change, open_treasure_chest,
-        remove_one_relic_from_rewards_after_chest_open, tick_run,
+        remove_one_relic_from_rewards_after_chest_open, tick_run, tick_run_active,
     };
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState, RelicTier};
     use crate::runtime::combat::CombatCard;
     use crate::runtime::rng::StsRng;
-    use crate::state::core::{ClientInput, EngineState, EventCombatState, PostCombatReturn};
+    use crate::state::core::{
+        ActiveCombat, ClientInput, CombatContext, EngineState, EventCombatContext, PostCombatReturn,
+    };
     use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::state::map::state::MapState;
     use crate::state::rewards::{
@@ -1220,12 +1344,9 @@ mod tests {
         ));
 
         assert!(matches!(engine_state, EngineState::CombatPlayerTurn));
-        assert!(combat_state.is_none());
+        assert!(combat_state.is_some());
         assert_eq!(run_state.boss_key, Some(EncounterId::TimeEater));
-        assert_eq!(
-            run_state.boss_list,
-            vec![EncounterId::TimeEater, EncounterId::DonuAndDeca]
-        );
+        assert_eq!(run_state.boss_list, vec![EncounterId::DonuAndDeca]);
     }
 
     #[test]
@@ -1268,7 +1389,7 @@ mod tests {
             vec![EncounterId::ShieldAndSpear; 3]
         );
         assert_eq!(run_state.boss_key, Some(EncounterId::TheHeart));
-        assert!(combat_state.is_some());
+        assert!(combat_state.is_none());
     }
 
     #[test]
@@ -1286,14 +1407,14 @@ mod tests {
 
         let mut event_rewards = RewardState::new();
         event_rewards.items.push(RewardItem::Gold { amount: 100 });
-        let mut engine_state = EngineState::EventCombat(EventCombatState {
+        let mut engine_state = EngineState::CombatProcessing;
+        let event_context = EventCombatContext {
             rewards: event_rewards,
             reward_allowed: true,
             no_cards_in_rewards: false,
             elite_trigger: false,
             post_combat_return: PostCombatReturn::MapNavigation,
-            encounter_key: "Test Event Combat".to_string(),
-        });
+        };
 
         let mut combat = crate::test_support::blank_test_combat();
         combat
@@ -1304,12 +1425,16 @@ mod tests {
         monster.current_hp = 0;
         monster.is_dying = true;
         combat.entities.monsters.push(monster);
-        let mut combat_state = Some(combat);
+        let mut active_combat = Some(ActiveCombat::new(
+            EngineState::CombatProcessing,
+            combat,
+            CombatContext::Event(event_context),
+        ));
 
-        assert!(tick_run(
+        assert!(tick_run_active(
             &mut engine_state,
             &mut run_state,
-            &mut combat_state,
+            &mut active_combat,
             Some(ClientInput::EndTurn),
         ));
 

@@ -7,9 +7,8 @@ mod stable;
 
 pub(crate) use combat::*;
 pub(crate) use pending_choice::{
-    StableBossRelicKey, StableChoiceCandidateKey, StableEventCombatKey, StablePendingChoiceKey,
-    StablePostCombatReturnKey, StableRunPendingChoiceKey, StableRunPendingReturnKey,
-    StableTreasureChestKey,
+    StableBossRelicKey, StableChoiceCandidateKey, StablePendingChoiceKey,
+    StableRunPendingChoiceKey, StableRunPendingReturnKey, StableTreasureChestKey,
 };
 pub(crate) use postcombat::{
     StableMetaChangeKey, StableMetaKey, StablePostcombatPlayerKey, StablePostcombatRuntimeKey,

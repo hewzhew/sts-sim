@@ -19,8 +19,8 @@ pub(crate) enum StableEngineKey {
     Shop(StableShopKey),
     MapNavigation,
     EventRoom,
+    CombatStart(String),
     RunPendingChoice(StableRunPendingChoiceKey),
-    EventCombat(StableEventCombatKey),
     BossRelic(StableBossRelicKey),
     GameOver(&'static str),
 }
@@ -155,11 +155,9 @@ impl StableEngineKey {
             StableEngineKey::Shop(value) => format!("shop:{}", value.diagnostic_string()),
             StableEngineKey::MapNavigation => "map_navigation".to_string(),
             StableEngineKey::EventRoom => "event_room".to_string(),
+            StableEngineKey::CombatStart(value) => format!("combat_start:{value}"),
             StableEngineKey::RunPendingChoice(value) => {
                 format!("run_choice:{}", value.diagnostic_string())
-            }
-            StableEngineKey::EventCombat(value) => {
-                format!("event_combat:{}", value.diagnostic_string())
             }
             StableEngineKey::BossRelic(value) => {
                 format!("boss_relic:{}", value.diagnostic_string())

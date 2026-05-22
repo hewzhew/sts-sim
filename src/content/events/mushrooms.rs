@@ -1,6 +1,7 @@
 use crate::content::cards::CardId;
+use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;
-use crate::state::core::EngineState;
+use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
 use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -82,14 +83,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             event_state.completed = true;
             run_state.event_state = Some(event_state);
 
-            *engine_state = EngineState::EventCombat(crate::state::core::EventCombatState {
+            *engine_state = EngineState::CombatStart(CombatStartRequest::event(
+                EncounterId::TheMushroomLair,
                 rewards,
-                reward_allowed: true,
-                no_cards_in_rewards: false,
-                elite_trigger: false,
-                post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-                encounter_key: "The Mushroom Lair".to_string(),
-            });
+                true,
+                false,
+                false,
+                PostCombatReturn::MapNavigation,
+            ));
             return;
         }
         _ => {
@@ -104,6 +105,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 mod tests {
     use super::*;
     use crate::content::relics::RelicState;
+    use crate::state::core::CombatContext;
     use crate::state::selection::DomainEvent;
 
     #[test]
@@ -121,10 +123,13 @@ mod tests {
 
         handle_choice(&mut engine_state, &mut run_state, 0);
 
-        let EngineState::EventCombat(combat) = engine_state else {
-            panic!("confirmed Mushrooms fight should enter EventCombat");
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("confirmed Mushrooms fight should request CombatStart");
         };
-        assert_eq!(combat.encounter_key, "The Mushroom Lair");
+        assert_eq!(request.encounter_id, EncounterId::TheMushroomLair);
+        let CombatContext::Event(combat) = request.context else {
+            panic!("confirmed Mushrooms fight should carry event combat context");
+        };
         assert!(combat.reward_allowed);
         assert!(combat
             .rewards
@@ -151,8 +156,11 @@ mod tests {
         handle_choice(&mut engine_state, &mut run_state, 0);
         handle_choice(&mut engine_state, &mut run_state, 0);
 
-        let EngineState::EventCombat(combat) = engine_state else {
-            panic!("confirmed Mushrooms fight should enter EventCombat");
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("confirmed Mushrooms fight should request CombatStart");
+        };
+        let CombatContext::Event(combat) = request.context else {
+            panic!("confirmed Mushrooms fight should carry event combat context");
         };
         assert!(combat.rewards.items.iter().any(|item| matches!(
             item,
@@ -217,8 +225,11 @@ mod tests {
         handle_choice(&mut engine_state, &mut run_state, 0);
         handle_choice(&mut engine_state, &mut run_state, 0);
 
-        let EngineState::EventCombat(combat) = engine_state else {
-            panic!("confirmed Mushrooms fight should enter EventCombat");
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("confirmed Mushrooms fight should request CombatStart");
+        };
+        let CombatContext::Event(combat) = request.context else {
+            panic!("confirmed Mushrooms fight should carry event combat context");
         };
         assert!(combat.rewards.items.iter().any(|item| matches!(
             item,

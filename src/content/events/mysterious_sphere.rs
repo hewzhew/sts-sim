@@ -1,4 +1,5 @@
-use crate::state::core::{EngineState, EventCombatState, PostCombatReturn};
+use crate::content::monsters::factory::EncounterId;
+use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
 
@@ -58,14 +59,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             run_state.event_state = Some(event_state);
 
             // Transition to event combat
-            *engine_state = EngineState::EventCombat(EventCombatState {
+            *engine_state = EngineState::CombatStart(CombatStartRequest::event(
+                EncounterId::TwoOrbWalkers,
                 rewards,
-                reward_allowed: true,
-                no_cards_in_rewards: false,
-                elite_trigger: false,
-                post_combat_return: PostCombatReturn::MapNavigation,
-                encounter_key: "2 Orb Walkers".to_string(),
-            });
+                true,
+                false,
+                false,
+                PostCombatReturn::MapNavigation,
+            ));
             return;
         }
         _ => {
@@ -80,6 +81,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 mod tests {
     use super::*;
     use crate::content::relics::RelicId;
+    use crate::state::core::CombatContext;
 
     #[test]
     fn leave_path_preserves_java_end_screen_before_map() {
@@ -114,10 +116,13 @@ mod tests {
 
         handle_choice(&mut engine_state, &mut run_state, 0);
 
-        let EngineState::EventCombat(combat) = engine_state else {
-            panic!("confirmed Mysterious Sphere fight should enter EventCombat");
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("confirmed Mysterious Sphere fight should request CombatStart");
         };
-        assert_eq!(combat.encounter_key, "2 Orb Walkers");
+        assert_eq!(request.encounter_id, EncounterId::TwoOrbWalkers);
+        let CombatContext::Event(combat) = request.context else {
+            panic!("confirmed Mysterious Sphere fight should carry event combat context");
+        };
         assert!(combat.reward_allowed);
         assert!(combat
             .rewards
@@ -145,8 +150,11 @@ mod tests {
         handle_choice(&mut engine_state, &mut run_state, 0);
         handle_choice(&mut engine_state, &mut run_state, 0);
 
-        let EngineState::EventCombat(combat) = engine_state else {
-            panic!("confirmed Mysterious Sphere fight should enter EventCombat");
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("confirmed Mysterious Sphere fight should request CombatStart");
+        };
+        let CombatContext::Event(combat) = request.context else {
+            panic!("confirmed Mysterious Sphere fight should carry event combat context");
         };
         assert!(combat.rewards.items.iter().any(|item| matches!(
             item,
@@ -166,8 +174,11 @@ mod tests {
         handle_choice(&mut engine_state, &mut run_state, 0);
         handle_choice(&mut engine_state, &mut run_state, 0);
 
-        let EngineState::EventCombat(combat) = engine_state else {
-            panic!("confirmed Mysterious Sphere fight should enter EventCombat");
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("confirmed Mysterious Sphere fight should request CombatStart");
+        };
+        let CombatContext::Event(combat) = request.context else {
+            panic!("confirmed Mysterious Sphere fight should carry event combat context");
         };
         assert!(combat.rewards.items.iter().any(|item| matches!(
             item,

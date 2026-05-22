@@ -153,43 +153,6 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         stable_outcome_key(&EngineState::BossRelicSelect(boss_b), &baseline),
     );
 
-    let event_a = crate::state::core::EventCombatState {
-        rewards: crate::state::rewards::RewardState {
-            screen_context: crate::state::rewards::RewardScreenContext::Standard,
-            items: vec![
-                crate::state::rewards::RewardItem::Gold { amount: 10 },
-                crate::state::rewards::RewardItem::EmeraldKey,
-            ],
-            pending_card_choice: None,
-            skippable: true,
-        },
-        reward_allowed: true,
-        no_cards_in_rewards: false,
-        elite_trigger: false,
-        post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-        encounter_key: "test".to_string(),
-    };
-    let event_b = crate::state::core::EventCombatState {
-        rewards: crate::state::rewards::RewardState {
-            screen_context: crate::state::rewards::RewardScreenContext::Standard,
-            items: vec![
-                crate::state::rewards::RewardItem::EmeraldKey,
-                crate::state::rewards::RewardItem::Gold { amount: 10 },
-            ],
-            pending_card_choice: None,
-            skippable: true,
-        },
-        reward_allowed: true,
-        no_cards_in_rewards: false,
-        elite_trigger: false,
-        post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-        encounter_key: "test".to_string(),
-    };
-    assert_eq!(
-        stable_outcome_key(&EngineState::EventCombat(event_a), &baseline),
-        stable_outcome_key(&EngineState::EventCombat(event_b), &baseline),
-    );
-
     let run_a = crate::state::core::RunPendingChoiceState {
         min_choices: 1,
         max_choices: 1,

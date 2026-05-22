@@ -1,8 +1,10 @@
+mod combat_context;
 mod engine;
 mod input;
 mod pending_choice;
 mod run_choice;
 
+pub use combat_context::*;
 pub use engine::*;
 pub use input::*;
 pub use pending_choice::*;

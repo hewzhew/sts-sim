@@ -86,7 +86,9 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
         EngineState::CombatProcessing if is_smoke_escape_stable_boundary(engine, combat) => {
             StableFrontierScope::PostCombat
         }
-        EngineState::CombatProcessing => StableFrontierScope::Unstable,
+        EngineState::CombatProcessing | EngineState::CombatStart(_) => {
+            StableFrontierScope::Unstable
+        }
         EngineState::RewardScreen(_)
         | EngineState::TreasureRoom(_)
         | EngineState::Campfire
@@ -94,7 +96,6 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
         | EngineState::MapNavigation
         | EngineState::EventRoom
         | EngineState::RunPendingChoice(_)
-        | EngineState::EventCombat(_)
         | EngineState::BossRelicSelect(_) => StableFrontierScope::PostCombat,
         EngineState::GameOver(_) => StableFrontierScope::GameOver,
     }

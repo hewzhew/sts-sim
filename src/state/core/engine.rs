@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{PendingChoice, RunPendingChoiceState};
+use super::{CombatStartRequest, PendingChoice, RunPendingChoiceState};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum EngineState {
@@ -12,36 +12,13 @@ pub enum EngineState {
     Shop(crate::state::shop::ShopState),
     MapNavigation,
     EventRoom,
+    /// Request to construct a concrete active combat from RunState. This is a
+    /// transient run boundary, not a capture/search combat decision boundary.
+    CombatStart(CombatStartRequest),
     PendingChoice(PendingChoice),
     RunPendingChoice(RunPendingChoiceState),
-    /// Event-triggered combat context.
-    ///
-    /// This is a run-loop wrapper that carries post-combat return and reward
-    /// metadata while a separate CombatState is active. It is not a search or
-    /// capture-ready combat engine boundary; active combat capture must use
-    /// CombatPlayerTurn or PendingChoice.
-    EventCombat(EventCombatState),
     BossRelicSelect(crate::state::rewards::BossRelicChoiceState),
     GameOver(RunResult),
-}
-
-/// State for event-triggered combat.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct EventCombatState {
-    /// Pre-populated rewards (gold, relics) added before combat starts.
-    pub rewards: crate::state::rewards::RewardState,
-    /// If false, skip the reward screen entirely after combat (e.g., Colosseum fight 1).
-    pub reward_allowed: bool,
-    /// If true, suppress card rewards in the reward screen.
-    pub no_cards_in_rewards: bool,
-    /// Java `AbstractRoom.eliteTrigger` for event combats. This is a combat
-    /// semantics flag for relics/powers, not permission to generate normal
-    /// elite rewards.
-    pub elite_trigger: bool,
-    /// Where to transition after combat + rewards are done.
-    pub post_combat_return: PostCombatReturn,
-    /// Monster encounter key (e.g., "2 Orb Walkers") for identification.
-    pub encounter_key: String,
 }
 
 /// Where to go after event combat finishes.

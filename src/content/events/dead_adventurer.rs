@@ -1,4 +1,5 @@
-use crate::state::core::EngineState;
+use crate::content::monsters::factory::EncounterId;
+use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
 use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -47,11 +48,11 @@ fn set_combat_gold_reward(s: &mut i32, gold: i32) {
     *s = (*s & !(0x3F << 20)) | ((gold & 0x3F) << 20);
 }
 
-fn encounter_key_for_enemy(enemy: i32) -> &'static str {
+fn encounter_id_for_enemy(enemy: i32) -> EncounterId {
     match enemy {
-        0 => "3 Sentries",
-        1 => "Gremlin Nob",
-        _ => "Lagavulin Event",
+        0 => EncounterId::ThreeSentries,
+        1 => EncounterId::GremlinNob,
+        _ => EncounterId::LagavulinEvent,
     }
 }
 
@@ -120,18 +121,18 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
         }
         1 => {
             let rewards = build_combat_rewards(run_state, event_state.internal_state);
-            let encounter_key = encounter_key_for_enemy(enemy_type(event_state.internal_state));
+            let encounter_id = encounter_id_for_enemy(enemy_type(event_state.internal_state));
             event_state.current_screen = 2;
             event_state.completed = true;
             run_state.event_state = Some(event_state);
-            *engine_state = EngineState::EventCombat(crate::state::core::EventCombatState {
+            *engine_state = EngineState::CombatStart(CombatStartRequest::event(
+                encounter_id,
                 rewards,
-                reward_allowed: true,
-                no_cards_in_rewards: false,
-                elite_trigger: true,
-                post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-                encounter_key: encounter_key.to_string(),
-            });
+                true,
+                false,
+                true,
+                PostCombatReturn::MapNavigation,
+            ));
             return;
         }
         _ => {
@@ -214,10 +215,11 @@ pub fn init_dead_adventurer_state(run_state: &mut RunState) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        combat_gold_reward, encounter_key_for_enemy, enemy_type, init_dead_adventurer_state,
+        combat_gold_reward, encounter_id_for_enemy, enemy_type, init_dead_adventurer_state,
         set_encounter_chance, set_enemy_type, set_num_rewards, set_reward_types,
     };
-    use crate::state::core::{EngineState, EventCombatState, PostCombatReturn};
+    use crate::content::monsters::factory::EncounterId;
+    use crate::state::core::{CombatContext, EngineState, PostCombatReturn};
     use crate::state::events::{EventId, EventState};
     use crate::state::run::RunState;
 
@@ -316,21 +318,24 @@ mod tests {
         super::handle_choice(&mut engine_state, &mut run_state, 0);
         super::handle_choice(&mut engine_state, &mut run_state, 0);
 
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("fight prompt should request CombatStart");
+        };
+        assert_eq!(request.encounter_id, EncounterId::ThreeSentries);
+        let CombatContext::Event(combat) = request.context else {
+            panic!("fight prompt should carry event combat context");
+        };
         assert!(matches!(
-            engine_state,
-            EngineState::EventCombat(EventCombatState {
-                ref encounter_key,
-                post_combat_return: PostCombatReturn::MapNavigation,
-                elite_trigger: true,
-                ..
-            }) if encounter_key == "3 Sentries"
+            combat.post_combat_return,
+            PostCombatReturn::MapNavigation
         ));
+        assert!(combat.elite_trigger);
     }
 
     #[test]
-    fn enemy_key_mapping_matches_java_get_monster_cases() {
-        assert_eq!(encounter_key_for_enemy(0), "3 Sentries");
-        assert_eq!(encounter_key_for_enemy(1), "Gremlin Nob");
-        assert_eq!(encounter_key_for_enemy(2), "Lagavulin Event");
+    fn enemy_mapping_matches_java_get_monster_cases() {
+        assert_eq!(encounter_id_for_enemy(0), EncounterId::ThreeSentries);
+        assert_eq!(encounter_id_for_enemy(1), EncounterId::GremlinNob);
+        assert_eq!(encounter_id_for_enemy(2), EncounterId::LagavulinEvent);
     }
 }
