@@ -37,5 +37,41 @@ pub(crate) struct CombatDrawnCardKey {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct CombatMonsterProtocolKey {
     pub(crate) entity_id: usize,
-    pub(crate) payload: String,
+    pub(crate) observation: CombatMonsterProtocolObservationKey,
+    pub(crate) identity: CombatMonsterProtocolIdentityKey,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct CombatMonsterProtocolObservationKey {
+    pub(crate) visible_intent: CombatIntentKey,
+    pub(crate) preview_damage_per_hit: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct CombatMonsterProtocolIdentityKey {
+    pub(crate) instance_id: Option<u64>,
+    pub(crate) spawn_order: Option<u64>,
+    pub(crate) draw_x: Option<i32>,
+    pub(crate) group_index: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum CombatIntentKey {
+    Attack { damage: i32, hits: u8 },
+    AttackBuff { damage: i32, hits: u8 },
+    AttackDebuff { damage: i32, hits: u8 },
+    AttackDefend { damage: i32, hits: u8 },
+    Buff,
+    Debuff,
+    StrongDebuff,
+    Debug,
+    Defend,
+    DefendDebuff,
+    DefendBuff,
+    Escape,
+    Magic,
+    None,
+    Sleep,
+    Stun,
+    Unknown,
 }

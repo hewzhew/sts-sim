@@ -85,3 +85,35 @@ fn combat_dominance_key_keeps_special_monster_runtime_state() {
         combat_dominance_key(&EngineState::CombatPlayerTurn, &guardian_variant),
     );
 }
+
+#[test]
+fn combat_dominance_key_keeps_monster_protocol_observation_state() {
+    let mut baseline = blank_test_combat();
+    baseline
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::Cultist, 3));
+    let monster_id = baseline.entities.monsters[0].id;
+    baseline.set_monster_protocol_visible_intent(
+        monster_id,
+        crate::runtime::combat::Intent::Attack { damage: 6, hits: 1 },
+    );
+    baseline.set_monster_protocol_preview_damage_per_hit(monster_id, 6);
+
+    let mut intent_variant = baseline.clone();
+    intent_variant.set_monster_protocol_visible_intent(
+        monster_id,
+        crate::runtime::combat::Intent::Attack { damage: 7, hits: 1 },
+    );
+    assert_ne!(
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &intent_variant),
+    );
+
+    let mut damage_variant = baseline.clone();
+    damage_variant.set_monster_protocol_preview_damage_per_hit(monster_id, 7);
+    assert_ne!(
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &damage_variant),
+    );
+}
