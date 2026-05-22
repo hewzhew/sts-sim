@@ -10,6 +10,8 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2Stats, CombatSearchV2TrajectoryReport, SearchProofStatus, SearchTerminalLabel,
     WHOLE_COMBAT_OUTCOME_CRITERIA,
 };
+use crate::eval::artifact::ArtifactTrustLevel;
+use crate::eval::fingerprint::StateFingerprintV1;
 use crate::eval::run_control::load_combat_baseline_outcome_v1;
 use crate::sim::combat::CombatTerminal;
 
@@ -21,7 +23,13 @@ use super::{
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatSearchV2BenchmarkSpec {
+    #[serde(default = "default_benchmark_schema_name")]
+    pub schema_name: String,
+    #[serde(default = "default_benchmark_schema_version")]
+    pub schema_version: u32,
     pub name: String,
+    #[serde(default = "default_benchmark_min_trust_level")]
+    pub min_trust_level: ArtifactTrustLevel,
     pub cases: Vec<CombatSearchV2BenchmarkCaseSpec>,
 }
 
@@ -34,7 +42,20 @@ pub struct CombatSearchV2BenchmarkCaseSpec {
     #[serde(default)]
     pub combat_snapshot: Option<PathBuf>,
     #[serde(default)]
+    pub expected_fingerprints: Option<CombatSearchV2BenchmarkExpectedFingerprints>,
+    #[serde(default)]
     pub baseline: Option<CombatSearchV2BenchmarkBaselineSpec>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatSearchV2BenchmarkExpectedFingerprints {
+    pub public_observation_hash: String,
+    pub legal_candidate_set_hash: String,
+    #[serde(default)]
+    pub legal_candidate_order_hash: Option<String>,
+    #[serde(default)]
+    pub exact_state_hash: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -57,6 +78,7 @@ pub enum CombatSearchV2BenchmarkBaselineSpec {
 #[derive(Clone)]
 pub struct CombatSearchV2LoadedBenchmark {
     pub name: String,
+    pub min_trust_level: ArtifactTrustLevel,
     pub cases: Vec<CombatSearchV2LoadedBenchmarkCase>,
 }
 
@@ -65,6 +87,7 @@ pub struct CombatSearchV2LoadedBenchmarkCase {
     pub id: String,
     pub input: CombatSearchV2LoadedBenchmarkInput,
     pub start: CombatSearchV2LoadedStart,
+    pub expected_fingerprints: Option<CombatSearchV2BenchmarkExpectedFingerprints>,
     pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
     pub baseline_path: Option<PathBuf>,
 }
@@ -102,6 +125,7 @@ pub struct CombatSearchV2BenchmarkReport {
     pub schema_name: &'static str,
     pub schema_version: u32,
     pub benchmark_name: String,
+    pub min_trust_level: ArtifactTrustLevel,
     pub case_count: usize,
     pub summary: CombatSearchV2BenchmarkSummary,
     pub cases: Vec<CombatSearchV2BenchmarkCaseReport>,
@@ -131,6 +155,8 @@ pub struct CombatSearchV2BenchmarkCaseReport {
     pub input_path: String,
     pub start_spec_path: Option<String>,
     pub combat_snapshot_path: Option<String>,
+    pub input_trust_level: Option<ArtifactTrustLevel>,
+    pub input_fingerprints: Option<StateFingerprintV1>,
     pub outcome: CombatSearchV2OutcomeReport,
     pub best_complete_trajectory: Option<CombatSearchV2TrajectoryReport>,
     pub diagnostics: CombatSearchV2DiagnosticsReport,
@@ -174,6 +200,18 @@ pub fn load_combat_search_v2_benchmark(
     let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;
     let spec: CombatSearchV2BenchmarkSpec =
         serde_json::from_str(&payload).map_err(|err| err.to_string())?;
+    if spec.schema_name != default_benchmark_schema_name() {
+        return Err(format!(
+            "unsupported combat search benchmark schema '{}'",
+            spec.schema_name
+        ));
+    }
+    if spec.schema_version != default_benchmark_schema_version() {
+        return Err(format!(
+            "unsupported combat search benchmark schema_version {}",
+            spec.schema_version
+        ));
+    }
     if spec.name.trim().is_empty() {
         return Err("CombatSearchV2BenchmarkSpec requires a non-empty name".to_string());
     }
@@ -195,6 +233,7 @@ pub fn load_combat_search_v2_benchmark(
             ));
         }
         let (input, mut start) = load_benchmark_case_input(base_dir, &spec.name, &case)?;
+        validate_benchmark_case_artifact(&case, &start, spec.min_trust_level)?;
         let (baseline, baseline_path) = load_benchmark_case_baseline(base_dir, &case)?;
         start.label = format!(
             "benchmark:{}:case:{}:{}:{}",
@@ -207,6 +246,7 @@ pub fn load_combat_search_v2_benchmark(
             id: case.id,
             input,
             start,
+            expected_fingerprints: case.expected_fingerprints,
             baseline,
             baseline_path,
         });
@@ -214,6 +254,7 @@ pub fn load_combat_search_v2_benchmark(
 
     Ok(CombatSearchV2LoadedBenchmark {
         name: spec.name,
+        min_trust_level: spec.min_trust_level,
         cases,
     })
 }
@@ -233,6 +274,7 @@ pub fn run_combat_search_v2_benchmark(
         schema_name: "CombatSearchV2BenchmarkReport",
         schema_version: 1,
         benchmark_name: loaded.name.clone(),
+        min_trust_level: loaded.min_trust_level,
         case_count: cases.len(),
         summary,
         cases,
@@ -262,6 +304,8 @@ fn run_combat_search_v2_benchmark_case(
             .then(|| case.input.path.display().to_string()),
         combat_snapshot_path: (case.input.kind == CombatSearchV2BenchmarkInputKind::CombatSnapshot)
             .then(|| case.input.path.display().to_string()),
+        input_trust_level: case.start.artifact_trust_level,
+        input_fingerprints: case.start.fingerprints.clone(),
         outcome: search_report.outcome.clone(),
         best_complete_trajectory: search_report.best_complete_trajectory.clone(),
         diagnostics: search_report.diagnostics.clone(),
@@ -273,6 +317,61 @@ fn run_combat_search_v2_benchmark_case(
             .map(|path| path.display().to_string()),
         baseline_comparison,
     }
+}
+
+fn validate_benchmark_case_artifact(
+    case: &CombatSearchV2BenchmarkCaseSpec,
+    start: &CombatSearchV2LoadedStart,
+    min_trust_level: ArtifactTrustLevel,
+) -> Result<(), String> {
+    if case.combat_snapshot.is_some() {
+        let trust = start
+            .artifact_trust_level
+            .ok_or_else(|| format!("case '{}' combat_snapshot is missing trust level", case.id))?;
+        if !trust.satisfies_minimum(min_trust_level) {
+            return Err(format!(
+                "case '{}' combat_snapshot trust level {:?} does not satisfy minimum {:?}",
+                case.id, trust, min_trust_level
+            ));
+        }
+    }
+    if let Some(expected) = case.expected_fingerprints.as_ref() {
+        let actual = start.fingerprints.as_ref().ok_or_else(|| {
+            format!(
+                "case '{}' has expected_fingerprints but input has no artifact fingerprints",
+                case.id
+            )
+        })?;
+        if actual.public_observation_hash != expected.public_observation_hash {
+            return Err(format!(
+                "case '{}' public_observation_hash drift: expected {}, got {}",
+                case.id, expected.public_observation_hash, actual.public_observation_hash
+            ));
+        }
+        if actual.legal_candidate_set_hash != expected.legal_candidate_set_hash {
+            return Err(format!(
+                "case '{}' legal_candidate_set_hash drift: expected {}, got {}",
+                case.id, expected.legal_candidate_set_hash, actual.legal_candidate_set_hash
+            ));
+        }
+        if let Some(expected_order) = expected.legal_candidate_order_hash.as_ref() {
+            if actual.legal_candidate_order_hash != *expected_order {
+                return Err(format!(
+                    "case '{}' legal_candidate_order_hash drift: expected {}, got {}",
+                    case.id, expected_order, actual.legal_candidate_order_hash
+                ));
+            }
+        }
+        if let Some(expected_exact) = expected.exact_state_hash.as_ref() {
+            if actual.exact_state_hash != *expected_exact {
+                return Err(format!(
+                    "case '{}' exact_state_hash drift: expected {}, got {}",
+                    case.id, expected_exact, actual.exact_state_hash
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn summarize_benchmark_cases(
@@ -487,6 +586,18 @@ fn resolve_manifest_relative_path(base_dir: &Path, path: &Path) -> PathBuf {
     }
 }
 
+fn default_benchmark_schema_name() -> String {
+    "CombatSearchV2BenchmarkSuiteV1".to_string()
+}
+
+fn default_benchmark_schema_version() -> u32 {
+    1
+}
+
+fn default_benchmark_min_trust_level() -> ArtifactTrustLevel {
+    ArtifactTrustLevel::Restorable
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,10 +688,115 @@ mod tests {
             CombatSearchV2BenchmarkInputKind::CombatSnapshot
         );
         assert_eq!(loaded.cases[0].start.position, position);
+        assert_eq!(
+            loaded.cases[0].start.artifact_trust_level,
+            Some(ArtifactTrustLevel::Restorable)
+        );
+        assert!(loaded.cases[0].start.fingerprints.is_some());
 
         let _ = fs::remove_file(snapshot_path);
         let _ = fs::remove_file(benchmark_path);
         let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn benchmark_loader_accepts_expected_snapshot_fingerprints() {
+        let dir = unique_temp_dir("combat_search_v2_expected_fingerprint_loader");
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let snapshot_path = dir.join("jaw_worm.capture.json");
+        let benchmark_path = dir.join("benchmark.json");
+
+        let capture =
+            capture_combat_position_v1(Some("jaw_worm".to_string()), &jaw_worm_position())
+                .expect("stable position should capture");
+        let fingerprints = capture
+            .fingerprints
+            .as_ref()
+            .expect("capture should have fingerprints")
+            .clone();
+        save_combat_capture_v1(&snapshot_path, &capture).expect("capture should be written");
+        fs::write(
+            &benchmark_path,
+            format!(
+                r#"{{
+                    "schema_name": "CombatSearchV2BenchmarkSuiteV1",
+                    "schema_version": 1,
+                    "name": "smoke",
+                    "min_trust_level": "restorable",
+                    "cases": [
+                        {{
+                            "id": "jaw_worm_snapshot",
+                            "combat_snapshot": "jaw_worm.capture.json",
+                            "expected_fingerprints": {{
+                                "public_observation_hash": "{}",
+                                "legal_candidate_set_hash": "{}",
+                                "legal_candidate_order_hash": "{}",
+                                "exact_state_hash": "{}"
+                            }}
+                        }}
+                    ]
+                }}"#,
+                fingerprints.public_observation_hash,
+                fingerprints.legal_candidate_set_hash,
+                fingerprints.legal_candidate_order_hash,
+                fingerprints.exact_state_hash
+            ),
+        )
+        .expect("benchmark spec should be written");
+
+        let loaded = load_combat_search_v2_benchmark(&benchmark_path)
+            .expect("benchmark should accept matching fingerprints");
+
+        assert!(loaded.cases[0].expected_fingerprints.is_some());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn benchmark_loader_rejects_expected_snapshot_fingerprint_drift() {
+        let dir = unique_temp_dir("combat_search_v2_expected_fingerprint_drift");
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let snapshot_path = dir.join("jaw_worm.capture.json");
+        let benchmark_path = dir.join("benchmark.json");
+
+        let capture =
+            capture_combat_position_v1(Some("jaw_worm".to_string()), &jaw_worm_position())
+                .expect("stable position should capture");
+        let fingerprints = capture
+            .fingerprints
+            .as_ref()
+            .expect("capture should have fingerprints")
+            .clone();
+        save_combat_capture_v1(&snapshot_path, &capture).expect("capture should be written");
+        fs::write(
+            &benchmark_path,
+            format!(
+                r#"{{
+                    "name": "smoke",
+                    "cases": [
+                        {{
+                            "id": "jaw_worm_snapshot",
+                            "combat_snapshot": "jaw_worm.capture.json",
+                            "expected_fingerprints": {{
+                                "public_observation_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+                                "legal_candidate_set_hash": "{}"
+                            }}
+                        }}
+                    ]
+                }}"#,
+                fingerprints.legal_candidate_set_hash
+            ),
+        )
+        .expect("benchmark spec should be written");
+
+        let err = match load_combat_search_v2_benchmark(&benchmark_path) {
+            Ok(_) => panic!("benchmark should reject fingerprint drift"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("public_observation_hash drift"));
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

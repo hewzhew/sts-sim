@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::eval::combat_capture::{
-    capture_combat_position_v1, save_combat_capture_v1, CombatCaptureV1,
+    capture_combat_position_from_run_v1, save_combat_capture_v1, CombatCaptureV1,
 };
 use crate::sim::combat::CombatPosition;
 use crate::sim::combat_legal_actions::get_legal_moves;
@@ -308,7 +308,7 @@ impl RunControlSession {
         label: Option<String>,
     ) -> Result<CombatCaptureV1, String> {
         let position = self.current_active_combat_position()?;
-        let capture = capture_combat_position_v1(label, &position)?;
+        let capture = capture_combat_position_from_run_v1(label, &position, &self.run_state)?;
         save_combat_capture_v1(path, &capture)?;
         Ok(capture)
     }
@@ -707,6 +707,20 @@ mod tests {
         let loaded = crate::eval::combat_capture::load_combat_capture_v1(&path)
             .expect("saved capture should load");
         assert_eq!(loaded.label.as_deref(), Some("first fight"));
+        assert_eq!(
+            loaded.provenance.source_kind,
+            crate::eval::artifact::ArtifactSourceKind::ManualRunControl
+        );
+        assert_eq!(
+            loaded
+                .provenance
+                .run_config
+                .as_ref()
+                .and_then(|config| config.seed),
+            Some(session.run_state.seed)
+        );
+        assert!(loaded.fingerprints.is_some());
+        assert!(loaded.legal_actions.is_some());
         assert!(matches!(
             loaded.position.engine,
             EngineState::CombatPlayerTurn

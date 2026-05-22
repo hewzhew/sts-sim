@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{ArgGroup, Parser, ValueEnum};
 use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
     load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
     run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
@@ -44,6 +45,9 @@ struct Args {
     potion_policy: Option<CliPotionPolicy>,
 
     #[arg(long)]
+    validate_only: bool,
+
+    #[arg(long)]
     output: Option<PathBuf>,
 }
 
@@ -64,6 +68,12 @@ impl From<CliPotionPolicy> for CombatSearchV2PotionPolicy {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if args.validate_only {
+        let payload = validate_input_payload(&args)?;
+        write_or_print(args.output.as_ref(), &payload)?;
+        return Ok(());
+    }
+
     let options = CombatSearchV2RunOptions {
         max_nodes: args.max_nodes,
         max_actions_per_line: args.max_actions_per_line,
@@ -90,6 +100,68 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     write_or_print(args.output.as_ref(), &payload)?;
     Ok(())
+}
+
+fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Error>> {
+    let payload = if let Some(path) = args.combat_snapshot.as_ref() {
+        let capture = load_combat_capture_v1(path)?;
+        serde_json::json!({
+            "schema_name": "CombatSearchV2InputValidationReport",
+            "schema_version": 1,
+            "status": "valid",
+            "input_kind": "combat_snapshot",
+            "input_path": path.display().to_string(),
+            "trust_level": capture.trust_level,
+            "provenance": capture.provenance,
+            "fingerprints": capture.fingerprints,
+            "legal_action_count": capture.legal_actions.as_ref().map(|actions| actions.count),
+            "summary": capture.summary,
+        })
+    } else if let Some(path) = args.benchmark_spec.as_ref() {
+        let benchmark = load_combat_search_v2_benchmark(path)?;
+        let cases = benchmark
+            .cases
+            .iter()
+            .map(|case| {
+                serde_json::json!({
+                    "id": case.id,
+                    "input_kind": case.input.kind,
+                    "input_path": case.input.path.display().to_string(),
+                    "trust_level": case.start.artifact_trust_level,
+                    "fingerprints": case.start.fingerprints.clone(),
+                    "expected_fingerprints": case.expected_fingerprints.clone(),
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({
+            "schema_name": "CombatSearchV2InputValidationReport",
+            "schema_version": 1,
+            "status": "valid",
+            "input_kind": "benchmark_spec",
+            "input_path": path.display().to_string(),
+            "benchmark_name": benchmark.name,
+            "min_trust_level": benchmark.min_trust_level,
+            "case_count": cases.len(),
+            "cases": cases,
+        })
+    } else {
+        let path = args
+            .start_spec
+            .as_ref()
+            .expect("clap requires exactly one input");
+        let start = load_combat_search_v2_start(path)?;
+        serde_json::json!({
+            "schema_name": "CombatSearchV2InputValidationReport",
+            "schema_version": 1,
+            "status": "valid",
+            "input_kind": "start_spec",
+            "input_path": path.display().to_string(),
+            "label": start.label,
+            "artifact_trust_level": start.artifact_trust_level,
+            "fingerprints": start.fingerprints,
+        })
+    };
+    Ok(serde_json::to_string_pretty(&payload)?)
 }
 
 fn write_or_print(path: Option<&PathBuf>, payload: &str) -> Result<(), std::io::Error> {

@@ -7,7 +7,9 @@ use serde::Serialize;
 use crate::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
 };
+use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::combat_capture::load_combat_capture_v1;
+use crate::eval::fingerprint::StateFingerprintV1;
 use crate::fixtures::combat_start_spec::{compile_combat_start_spec, CombatStartSpec};
 use crate::sim::combat::CombatPosition;
 
@@ -42,6 +44,8 @@ impl CombatSearchV2RunOptions {
 pub struct CombatSearchV2LoadedStart {
     pub label: String,
     pub position: CombatPosition,
+    pub artifact_trust_level: Option<ArtifactTrustLevel>,
+    pub fingerprints: Option<StateFingerprintV1>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -56,6 +60,8 @@ pub fn load_combat_search_v2_start(path: &Path) -> Result<CombatSearchV2LoadedSt
     Ok(CombatSearchV2LoadedStart {
         label: format!("start_spec:{}", path.display()),
         position: CombatPosition::new(engine, combat),
+        artifact_trust_level: None,
+        fingerprints: None,
     })
 }
 
@@ -68,6 +74,8 @@ pub fn load_combat_search_v2_snapshot(path: &Path) -> Result<CombatSearchV2Loade
     Ok(CombatSearchV2LoadedStart {
         label,
         position: capture.position,
+        artifact_trust_level: Some(capture.trust_level),
+        fingerprints: capture.fingerprints,
     })
 }
 
