@@ -1,10 +1,11 @@
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::content::relics::RelicTier;
+use serde::{Deserialize, Serialize};
 
 pub(crate) mod generator;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub struct RewardCard {
     pub id: crate::content::cards::CardId,
     pub upgrades: u8,
@@ -16,7 +17,7 @@ impl RewardCard {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub enum RewardItem {
     Gold { amount: i32 },
     StolenGold { amount: i32 },
@@ -27,7 +28,7 @@ pub enum RewardItem {
     SapphireKey,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 pub enum RewardScreenContext {
     Standard,
     TreasureRoom,
@@ -35,7 +36,7 @@ pub enum RewardScreenContext {
     SmokedCombat,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub struct RewardState {
     pub items: Vec<RewardItem>,
     pub skippable: bool,
@@ -53,7 +54,7 @@ impl Default for RewardState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub struct BossRelicChoiceState {
     pub relics: Vec<RelicId>,
 }
@@ -64,14 +65,14 @@ impl BossRelicChoiceState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 pub enum TreasureChestSize {
     Small,
     Medium,
     Large,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 pub struct TreasureChestState {
     pub size: TreasureChestSize,
     pub base_relic_tier: RelicTier,

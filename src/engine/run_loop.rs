@@ -1292,7 +1292,7 @@ mod tests {
             no_cards_in_rewards: false,
             elite_trigger: false,
             post_combat_return: PostCombatReturn::MapNavigation,
-            encounter_key: "Test Event Combat",
+            encounter_key: "Test Event Combat".to_string(),
         });
 
         let mut combat = crate::test_support::blank_test_combat();

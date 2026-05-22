@@ -13,7 +13,7 @@ pub fn blank_test_combat() -> CombatState {
     CombatState {
         meta: CombatMeta {
             ascension_level: 0,
-            player_class: "Ironclad",
+            player_class: "Ironclad".to_string(),
             is_boss_fight: false,
             is_elite_fight: false,
             master_deck_snapshot: Vec::new(),

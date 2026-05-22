@@ -5,7 +5,7 @@ use super::CombatCardKey;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct CombatMetaKey {
     pub(crate) ascension_level: u8,
-    pub(crate) player_class: &'static str,
+    pub(crate) player_class: String,
     pub(crate) is_boss_fight: bool,
     pub(crate) is_elite_fight: bool,
     pub(crate) master_deck_snapshot: Vec<CombatCardKey>,

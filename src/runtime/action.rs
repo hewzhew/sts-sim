@@ -2,9 +2,10 @@ use crate::core::EntityId;
 use crate::state::{
     GridSelectFilter, GridSelectReason, HandSelectFilter, HandSelectReason, PileType,
 };
+use serde::{Deserialize, Serialize};
 
 pub const NO_SOURCE: EntityId = EntityId::MAX;
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DamageInfo {
     pub source: EntityId,
     pub target: EntityId,
@@ -14,7 +15,7 @@ pub struct DamageInfo {
     pub is_modified: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum MonsterRuntimePatch {
     Hexaghost {
         activated: Option<bool>,
@@ -203,7 +204,7 @@ pub enum MonsterRuntimePatch {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum Action {
     Damage(DamageInfo),
     /// Java `PummelDamageAction`.
@@ -1124,7 +1125,7 @@ impl Action {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CardRewardPool {
     /// All class cards (Common + Uncommon + Rare), any type
     /// Java: returnTrulyRandomCardInCombat()
@@ -1134,7 +1135,7 @@ pub enum CardRewardPool {
     Colorless,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CardDestination {
     /// Add to hand (overflow to discard if hand >= 10)
     Hand,
@@ -1142,20 +1143,20 @@ pub enum CardDestination {
     DrawPileRandom,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum DamageType {
     Normal,
     Thorns,
     HpLoss,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ActionInfo {
     pub action: Action,
     pub insertion_mode: AddTo,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum AddTo {
     Top,
     Bottom,
@@ -1165,7 +1166,7 @@ pub fn repeated_damage_matrix(enemy_count: usize, amount: i32) -> smallvec::Smal
     std::iter::repeat_n(amount, enemy_count).collect()
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum EventPayload {
     CardPlayed {
         card_uuid: u32,
@@ -1207,7 +1208,7 @@ pub enum EventPayload {
     MonsterTurnEnded,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ModifierContext {
     pub source: EntityId,
     pub target: EntityId,
@@ -1219,7 +1220,7 @@ pub type HookId = usize;
 pub type DamageModifierId = usize;
 pub type CardHookId = usize;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 pub struct ModifierBus {
     pub on_attack_to_change_damage: Vec<DamageModifierId>, // Attacker changes damage
     pub on_attacked_to_change_damage: Vec<DamageModifierId>, // Defender changes damage

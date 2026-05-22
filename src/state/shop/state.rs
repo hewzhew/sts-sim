@@ -1,6 +1,7 @@
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct ShopConfig {
@@ -17,7 +18,7 @@ pub struct ShopConfig {
     pub card_blizz_randomizer: i32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub struct ShopCard {
     pub card_id: CardId,
     pub upgrades: u8,
@@ -26,7 +27,7 @@ pub struct ShopCard {
     pub blocked_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub struct ShopRelic {
     pub relic_id: RelicId,
     pub price: i32,
@@ -34,7 +35,7 @@ pub struct ShopRelic {
     pub blocked_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub struct ShopPotion {
     pub potion_id: PotionId,
     pub price: i32,
@@ -42,7 +43,7 @@ pub struct ShopPotion {
     pub blocked_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub struct ShopState {
     pub cards: Vec<ShopCard>,
     pub relics: Vec<ShopRelic>,

@@ -4,6 +4,7 @@ use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec, MonsterTurnPlan};
 use crate::state::selection::{DomainEvent, EngineDiagnostic};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 

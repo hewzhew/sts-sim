@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PlayerEntity {
     pub id: EntityId,
     pub current_hp: i32,
@@ -128,7 +128,7 @@ impl PlayerEntity {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum Intent {
     Attack { damage: i32, hits: u8 },
     AttackBuff { damage: i32, hits: u8 },
@@ -210,7 +210,7 @@ impl Intent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MonsterEntity {
     pub id: EntityId,
     pub monster_type: MonsterId,
@@ -332,7 +332,7 @@ impl MonsterEntity {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct MonsterMoveState {
     pub planned_move_id: u8,
     pub history: VecDeque<u8>,
@@ -340,7 +340,7 @@ pub struct MonsterMoveState {
     pub planned_visible_spec: Option<crate::runtime::monster_move::MonsterMoveSpec>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct MonsterProtocolIdentity {
     pub instance_id: Option<u64>,
     pub spawn_order: Option<u64>,
@@ -348,7 +348,7 @@ pub struct MonsterProtocolIdentity {
     pub group_index: Option<usize>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MonsterProtocolObservationState {
     pub visible_intent: Intent,
     /// UI / protocol preview damage after monster damage modifiers are applied.
@@ -366,7 +366,7 @@ impl Default for MonsterProtocolObservationState {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct MonsterProtocolState {
     pub observation: MonsterProtocolObservationState,
     pub identity: MonsterProtocolIdentity,

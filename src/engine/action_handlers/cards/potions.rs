@@ -151,7 +151,7 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
 }
 
 fn potion_class_for_combat(state: &CombatState) -> crate::content::potions::PotionClass {
-    match state.meta.player_class {
+    match state.meta.player_class.as_str() {
         "Silent" => crate::content::potions::PotionClass::Silent,
         "Defect" => crate::content::potions::PotionClass::Defect,
         "Watcher" => crate::content::potions::PotionClass::Watcher,
@@ -160,7 +160,7 @@ fn potion_class_for_combat(state: &CombatState) -> crate::content::potions::Poti
 }
 
 pub fn handle_obtain_potion(state: &mut CombatState) {
-    let potion_class = match state.meta.player_class {
+    let potion_class = match state.meta.player_class.as_str() {
         "Silent" => crate::content::potions::PotionClass::Silent,
         "Defect" => crate::content::potions::PotionClass::Defect,
         "Watcher" => crate::content::potions::PotionClass::Watcher,

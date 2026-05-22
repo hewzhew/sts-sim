@@ -3,8 +3,9 @@ pub mod generator;
 
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum EventId {
     // Act 1
     BigFish,
@@ -70,7 +71,7 @@ pub enum EventId {
     Neow,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct EventState {
     pub id: EventId,
     pub current_screen: usize,

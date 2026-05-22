@@ -1,13 +1,13 @@
 use std::time::Instant;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
 use crate::runtime::combat::CombatState;
 use crate::sim::combat_action::CombatActionChoice;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CombatPosition {
     pub engine: EngineState,
     pub combat: CombatState,
@@ -19,7 +19,7 @@ impl CombatPosition {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatTerminal {
     Win,

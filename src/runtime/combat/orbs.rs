@@ -1,4 +1,6 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum OrbId {
     Empty, // Placeholder for an empty orb slot
     Lightning,
@@ -7,7 +9,7 @@ pub enum OrbId {
     Plasma,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct OrbEntity {
     pub id: OrbId,
     pub base_passive_amount: i32,
@@ -58,7 +60,7 @@ impl OrbEntity {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum StanceId {
     Neutral,
     Wrath,

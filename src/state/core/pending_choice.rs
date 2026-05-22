@@ -2,8 +2,9 @@ use crate::content::cards::{CardId, CardType};
 use crate::state::selection::{
     SelectionConstraint, SelectionReason, SelectionRequest, SelectionScope, SelectionTargetRef,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PendingChoice {
     GridSelect {
         source_pile: PileType,
@@ -47,7 +48,7 @@ pub enum PendingChoice {
     StanceChoice,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PileType {
     Draw,
     Discard,
@@ -57,7 +58,7 @@ pub enum PileType {
     MasterDeck,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum HandSelectReason {
     Exhaust,
     Discard,
@@ -72,7 +73,7 @@ pub enum HandSelectReason {
     Recycle,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DiscoveryChoiceState {
     pub cards: Vec<CardId>,
     pub colorless: bool,
@@ -81,20 +82,20 @@ pub struct DiscoveryChoiceState {
     pub can_skip: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ChooseOneCardChoice {
     pub card_id: CardId,
     pub upgrades: u8,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum HandSelectFilter {
     Any,
     Upgradeable,
     AttackOrPower,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum GridSelectReason {
     MoveToDrawPile,
     Exhume { upgrade: bool },
@@ -107,7 +108,7 @@ pub enum GridSelectReason {
     Omniscience { play_amount: u8 },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum GridSelectFilter {
     Any,
     NonExhume,
@@ -115,7 +116,7 @@ pub enum GridSelectFilter {
     Attack,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TargetValidation {
     AnyEnemy,
     AnyMonster,

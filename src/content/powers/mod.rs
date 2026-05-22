@@ -5,7 +5,9 @@ pub mod silent;
 pub mod store;
 pub mod watcher;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum PowerId {
     Strength,
     Vulnerable,
@@ -184,7 +186,7 @@ fn random_class_card_by_rarity(
     state: &mut CombatState,
     rarity: crate::content::cards::CardRarity,
 ) -> Option<crate::runtime::combat::CombatCard> {
-    let pool = class_pool_for_rarity(state.meta.player_class, rarity);
+    let pool = class_pool_for_rarity(state.meta.player_class.as_str(), rarity);
     if pool.is_empty() {
         return None;
     }

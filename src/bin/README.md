@@ -8,7 +8,10 @@ Active binaries:
 
 - `combat_search_v2_driver`
   - `--start-spec <path>`: single whole-combat search report
-  - `--benchmark-spec <path>`: bounded multi-start-spec benchmark summary
+  - `--combat-snapshot <path>`: single search report from an exact
+    `CombatCaptureV1` position
+  - `--benchmark-spec <path>`: bounded benchmark summary over start-spec or
+    combat-snapshot cases
 
 Removed from the active binary surface:
 

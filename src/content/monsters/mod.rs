@@ -2,6 +2,7 @@ use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, ActionInfo};
 use crate::runtime::combat::{CombatState, MonsterEntity, MonsterId, Power};
 use crate::semantics::combat::MonsterTurnPlan;
+use serde::{Deserialize, Serialize};
 
 pub mod beyond;
 pub mod city;
@@ -105,7 +106,7 @@ pub trait MonsterBehavior {
 }
 
 /// Identifiers for mapping specific AI routines.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum EnemyId {
     JawWorm,
     Cultist,
@@ -335,7 +336,7 @@ impl EnemyId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum PreBattleLegacyRng {
     Misc,
     MonsterHp,

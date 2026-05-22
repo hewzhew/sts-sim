@@ -9364,7 +9364,7 @@ fn defect_random_card_pools_are_complete_and_exclude_unregistered_impulse() {
 #[test]
 fn creative_ai_and_hello_world_powers_sample_defect_random_pools() {
     let mut creative_state = crate::test_support::blank_test_combat();
-    creative_state.meta.player_class = "Defect";
+    creative_state.meta.player_class = "Defect".to_string();
     let creative_actions = crate::content::powers::resolve_power_at_turn_start(
         PowerId::CreativeAI,
         &mut creative_state,
@@ -9388,7 +9388,7 @@ fn creative_ai_and_hello_world_powers_sample_defect_random_pools() {
     }
 
     let mut hello_state = crate::test_support::blank_test_combat();
-    hello_state.meta.player_class = "Defect";
+    hello_state.meta.player_class = "Defect".to_string();
     hello_state.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
     let hello_actions =
         crate::content::powers::resolve_power_at_turn_start(PowerId::Hello, &mut hello_state, 0, 1);
@@ -14989,7 +14989,7 @@ fn jack_of_all_trades_locks_random_colorless_cards_when_used() {
 #[test]
 fn metamorphosis_locks_random_attacks_and_combat_cost_when_used() {
     let mut state = crate::test_support::blank_test_combat();
-    state.meta.player_class = "Silent";
+    state.meta.player_class = "Silent".to_string();
     state.zones.hand = vec![CombatCard::new(CardId::Metamorphosis, 3971)];
 
     assert_eq!(state.rng.card_random_rng.counter, 0);
@@ -18517,7 +18517,7 @@ fn distraction_matches_java_random_skill_free_for_turn() {
     );
 
     let mut play_state = crate::test_support::blank_test_combat();
-    play_state.meta.player_class = "Silent";
+    play_state.meta.player_class = "Silent".to_string();
     play_state.zones.hand = vec![CombatCard::new(CardId::Distraction, 10080)];
     assert_eq!(play_state.rng.card_random_rng.counter, 0);
     crate::engine::action_handlers::cards::handle_play_card_from_hand(0, None, &mut play_state)

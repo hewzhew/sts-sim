@@ -1,6 +1,8 @@
 pub mod potion_effects;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum PotionId {
     // Common (20)
     FirePotion,
@@ -51,7 +53,7 @@ pub enum PotionId {
     EssenceOfDarkness, // Defect
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 pub enum PotionRarity {
     Common,
     Uncommon,
@@ -59,7 +61,7 @@ pub enum PotionRarity {
 }
 
 /// Which player class can obtain this potion (None = any class)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 pub enum PotionClass {
     Any,
     Ironclad,
@@ -604,7 +606,7 @@ pub const ALL_POTIONS: &[PotionId] = &[
     PotionId::EntropicBrew,
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Potion {
     pub id: PotionId,
     pub uuid: u32,

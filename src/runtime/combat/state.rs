@@ -1,13 +1,13 @@
 use super::*;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum MetaChange {
     AddCardToMasterDeck(CardId),
     ModifyCardMisc { card_uuid: u32, amount: i32 },
     UpgradeMasterDeckCard { card_uuid: u32 },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CombatState {
     pub meta: CombatMeta,
     pub turn: TurnRuntime,
@@ -18,17 +18,17 @@ pub struct CombatState {
     pub runtime: CombatRuntimeHints,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CombatMeta {
     pub ascension_level: u8,
-    pub player_class: &'static str,
+    pub player_class: String,
     pub is_boss_fight: bool,
     pub is_elite_fight: bool,
     pub master_deck_snapshot: Vec<CombatCard>,
     pub meta_changes: Vec<MetaChange>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TurnRuntime {
     pub turn_count: u32,
     pub current_phase: CombatPhase,
@@ -40,12 +40,12 @@ pub struct TurnRuntime {
     pub counters: EphemeralCounters,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct EngineRuntime {
     pub action_queue: VecDeque<Action>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CombatRng {
     pub pool: crate::runtime::rng::RngPool,
 }
@@ -70,7 +70,7 @@ impl DerefMut for CombatRng {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardZones {
     pub draw_pile: Vec<CombatCard>,
     pub hand: Vec<CombatCard>,
@@ -171,7 +171,7 @@ impl CardZones {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct EntityState {
     pub player: PlayerEntity,
     pub monsters: Vec<MonsterEntity>,
@@ -179,7 +179,7 @@ pub struct EntityState {
     pub power_db: HashMap<EntityId, Vec<Power>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum QueuedCardSource {
     Normal,
     Necronomicon,
@@ -190,7 +190,7 @@ pub enum QueuedCardSource {
     EchoForm,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct QueuedCardPlay {
     pub card: CombatCard,
     pub target: Option<EntityId>,
@@ -203,13 +203,13 @@ pub struct QueuedCardPlay {
     pub source: QueuedCardSource,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct DrawnCardRecord {
     pub card_uuid: u32,
     pub card_id: CardId,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CombatRuntimeHints {
     pub using_card: bool,
     pub card_queue: Vec<QueuedCardHint>,
@@ -236,7 +236,7 @@ pub struct CombatRuntimeHints {
     pub combat_smoked: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct QueuedCardHint {
     pub card_uuid: u32,
     pub card_id: CardId,
@@ -249,14 +249,14 @@ pub struct QueuedCardHint {
     pub purge_on_use: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CombatPhase {
     PlayerTurn,
     MonsterTurn,
     TurnTransition,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct EphemeralCounters {
     pub cards_played_this_turn: u8,
     pub attacks_played_this_turn: u8,
@@ -275,7 +275,7 @@ pub struct EphemeralCounters {
     pub escape_pending_reward: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct RelicBuses {
     pub at_pre_battle: smallvec::SmallVec<[usize; 4]>,
     pub at_battle_start_pre_draw: smallvec::SmallVec<[usize; 4]>,

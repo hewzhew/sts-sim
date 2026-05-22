@@ -1,6 +1,7 @@
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
+use serde::{Deserialize, Serialize};
 use smallvec::{smallvec, SmallVec};
 
 /// Runtime representation of a monster's selected move.
@@ -8,7 +9,7 @@ use smallvec::{smallvec, SmallVec};
 /// This is a core combat type, not a separate strategy/semantic layer. Monster
 /// content produces these plans; runtime actions store and execute them; search
 /// and observation code may project them into public intent summaries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum DamageKind {
     Normal,
     HpLoss,
@@ -16,26 +17,26 @@ pub enum DamageKind {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum EffectStrength {
     Normal,
     Strong,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum MoveTarget {
     Player,
     SelfTarget,
     AllMonsters,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum PowerEffectKind {
     Buff,
     Debuff,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum CardDestination {
     Hand,
     Discard,
@@ -43,7 +44,7 @@ pub enum CardDestination {
     DrawPileRandom,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct AttackSpec {
     pub base_damage: i32,
     pub hits: u8,
@@ -56,31 +57,31 @@ impl AttackSpec {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct BuffSpec {
     pub power_id: PowerId,
     pub amount: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct DebuffSpec {
     pub power_id: PowerId,
     pub amount: i32,
     pub strength: EffectStrength,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct DefendSpec {
     pub block: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct AttackStep {
     pub target: MoveTarget,
     pub attack: AttackSpec,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct ApplyPowerStep {
     pub target: MoveTarget,
     pub power_id: PowerId,
@@ -89,18 +90,18 @@ pub struct ApplyPowerStep {
     pub visible_strength: EffectStrength,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct BlockStep {
     pub target: MoveTarget,
     pub amount: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct RandomBlockStep {
     pub amount: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct AddCardStep {
     pub card_id: CardId,
     pub amount: u8,
@@ -109,40 +110,40 @@ pub struct AddCardStep {
     pub visible_strength: EffectStrength,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct StealGoldStep {
     pub amount: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct UpgradeCardsStep {
     pub card_id: CardId,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct RemovePowerStep {
     pub target: MoveTarget,
     pub power_id: PowerId,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum UtilityStep {
     RemoveAllDebuffs { target: MoveTarget },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct HealStep {
     pub target: MoveTarget,
     pub amount: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct HealSpec {
     pub target: MoveTarget,
     pub amount: i32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum SpawnHpValue {
     Rolled,
     Fixed(i32),
@@ -150,13 +151,13 @@ pub enum SpawnHpValue {
     SourceMaxHp,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct SpawnHpSpec {
     pub current: SpawnHpValue,
     pub max: SpawnHpValue,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct SpawnMonsterStep {
     pub monster_id: EnemyId,
     pub logical_position_offset: i32,
@@ -165,7 +166,7 @@ pub struct SpawnMonsterStep {
     pub is_minion: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum MoveStep {
     Attack(AttackStep),
     ApplyPower(ApplyPowerStep),
@@ -190,7 +191,7 @@ pub enum MoveStep {
 
 pub type MonsterTurnSteps = SmallVec<[MoveStep; 4]>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum MonsterMoveSpec {
     Attack(AttackSpec),
     AttackAddCard(AttackSpec, AddCardStep),
@@ -352,7 +353,7 @@ impl MonsterMoveSpec {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub struct MonsterTurnPlan {
     pub move_id: u8,
     pub steps: MonsterTurnSteps,

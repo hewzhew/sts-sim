@@ -130,7 +130,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 no_cards_in_rewards: false,
                 elite_trigger: true,
                 post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-                encounter_key,
+                encounter_key: encounter_key.to_string(),
             });
             return;
         }
@@ -319,11 +319,11 @@ mod tests {
         assert!(matches!(
             engine_state,
             EngineState::EventCombat(EventCombatState {
-                encounter_key: "3 Sentries",
+                ref encounter_key,
                 post_combat_return: PostCombatReturn::MapNavigation,
                 elite_trigger: true,
                 ..
-            })
+            }) if encounter_key == "3 Sentries"
         ));
     }
 

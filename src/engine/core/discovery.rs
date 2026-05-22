@@ -23,7 +23,7 @@ fn discovery_card_pool(
     let mut pool = if colorless {
         combat_state.colorless_combat_pool()
     } else {
-        class_combat_card_pool(combat_state.meta.player_class)
+        class_combat_card_pool(combat_state.meta.player_class.as_str())
     };
     if let Some(ct) = card_type {
         pool.retain(|&id| crate::content::cards::get_card_definition(id).card_type == ct);

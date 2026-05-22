@@ -7,7 +7,9 @@ pub mod silent;
 pub mod status;
 pub mod watcher;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 #[repr(i32)]
 pub enum CardId {
     Strike,
@@ -387,7 +389,7 @@ pub enum CardId {
     // Add more as we expand
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CardType {
     Attack,
     Skill,
@@ -396,7 +398,7 @@ pub enum CardType {
     Curse,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CardRarity {
     Basic,
     Common,
@@ -406,7 +408,7 @@ pub enum CardRarity {
     Curse,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CardTarget {
     Enemy,
     AllEnemy,
@@ -416,7 +418,7 @@ pub enum CardTarget {
     None,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CardTag {
     Strike,
     StarterStrike,

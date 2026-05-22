@@ -175,7 +175,9 @@ pub mod whetstone;
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum RelicTier {
     Starter,
     Common,
@@ -188,7 +190,7 @@ pub enum RelicTier {
     Deprecated,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum RelicId {
     Abacus,
     Akabeko,
@@ -374,7 +376,7 @@ pub enum RelicId {
     WristBlade,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct RelicState {
     pub id: RelicId,
     pub counter: i32,

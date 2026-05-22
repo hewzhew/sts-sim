@@ -1,13 +1,13 @@
 use super::*;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub enum PowerPayload {
     #[default]
     None,
     Card(CombatCard),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Power {
     pub power_type: PowerId,
     pub instance_id: Option<u32>,

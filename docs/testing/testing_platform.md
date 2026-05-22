@@ -6,7 +6,7 @@ fixture workflow has been removed from the active code path.
 Current testing infrastructure should support the simulator/search mainline:
 
 1. build a combat start state from a start-spec
-2. run local simulator/search from that state
+2. capture exact stable combat positions when a run reaches a useful fight
 3. report whole-combat outcome and unresolved budget state
 4. compare against external baselines only at whole-combat outcome level
 
@@ -14,8 +14,14 @@ Current testing infrastructure should support the simulator/search mainline:
 
 - `sts_simulator::fixtures::combat_start_spec`
   - compiles a JSON combat start-spec into `EngineState + CombatState`
+- `sts_simulator::eval::combat_capture::CombatCaptureV1`
+  - stores a stable-boundary `CombatPosition` with schema/version,
+    integrity fingerprints, a human-readable summary, and the exact typed
+    simulator state used by search
 - `cargo run --bin combat_search_v2_driver -- --start-spec <spec.json>`
   - runs Combat Search V2 from that start state
+- `cargo run --bin combat_search_v2_driver -- --combat-snapshot <capture.json>`
+  - runs Combat Search V2 from an exact captured combat position
 
 ## Start-Spec Shape
 
@@ -28,6 +34,13 @@ The start-spec is deliberately narrow:
 - potions
 
 It describes a combat start, not a replay window and not a human action program.
+
+## Combat Capture Shape
+
+`CombatCaptureV1` is the durable capture format for real search starts. The
+summary is for review; the executable payload is the typed `CombatPosition`.
+Validation rejects unknown schema versions, non-stable combat boundaries,
+fingerprint drift, and summaries that no longer match the position.
 
 ## Removed Active Paths
 

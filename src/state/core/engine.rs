@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use super::{PendingChoice, RunPendingChoiceState};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum EngineState {
     CombatPlayerTurn,
     CombatProcessing,
@@ -21,7 +23,7 @@ pub enum EngineState {
 }
 
 /// State for event-triggered combat.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct EventCombatState {
     /// Pre-populated rewards (gold, relics) added before combat starts.
     pub rewards: crate::state::rewards::RewardState,
@@ -36,11 +38,11 @@ pub struct EventCombatState {
     /// Where to transition after combat + rewards are done.
     pub post_combat_return: PostCombatReturn,
     /// Monster encounter key (e.g., "2 Orb Walkers") for identification.
-    pub encounter_key: &'static str,
+    pub encounter_key: String,
 }
 
 /// Where to go after event combat finishes.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PostCombatReturn {
     /// Return to the event dialog (e.g., Colosseum between fights).
     EventRoom,
@@ -48,13 +50,13 @@ pub enum PostCombatReturn {
     MapNavigation,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RunResult {
     Victory,
     Defeat,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TopLevelState {
     InCombat,
     OnMap,

@@ -13,7 +13,9 @@
 ///
 /// Seeded via `murmurHash3(seed)` exactly as in Java. Every public method
 /// increments `counter` to enable RNG consumption tracking.
-#[derive(Clone, Debug, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StsRng {
     pub seed0: u64,
     pub seed1: u64,
@@ -249,7 +251,7 @@ fn murmur_hash3(mut x: u64) -> u64 {
 ///
 /// Used exclusively by `Collections.shuffle(list, new Random(seed))` in the
 /// Java engine. This is NOT the game's primary PRNG.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct JavaUtilRandom {
     seed: u64,
 }
@@ -323,7 +325,7 @@ pub fn shuffle_with_random_long<T>(items: &mut [T], game_rng: &mut StsRng) {
 /// Java mechanical outcomes incorrectly use LibGDX `MathUtils.random`, whose
 /// global state is also consumed by UI effects. The simulator consumes
 /// `math_rng` only for those mechanical outcomes, never for UI-only effects.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RngPool {
     // Persistent (run-level)
     pub monster_rng: StsRng,

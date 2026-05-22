@@ -167,7 +167,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         no_cards_in_rewards: false,
         elite_trigger: false,
         post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-        encounter_key: "test",
+        encounter_key: "test".to_string(),
     };
     let event_b = crate::state::core::EventCombatState {
         rewards: crate::state::rewards::RewardState {
@@ -183,7 +183,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         no_cards_in_rewards: false,
         elite_trigger: false,
         post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-        encounter_key: "test",
+        encounter_key: "test".to_string(),
     };
     assert_eq!(
         stable_outcome_key(&EngineState::EventCombat(event_a), &baseline),

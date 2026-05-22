@@ -263,7 +263,7 @@ pub(super) fn process_combat_processing(
                         // Java: returnTrulyRandomCardInCombat() -> all cards for
                         // the current player's class, not always Ironclad.
                         card_pool.extend(discovery::class_combat_card_pool(
-                            combat_state.meta.player_class,
+                            combat_state.meta.player_class.as_str(),
                         ));
                     }
                     CardRewardPool::Colorless => {

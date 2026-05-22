@@ -7,7 +7,7 @@ pub(super) fn meta_key(combat: &CombatState) -> CombatMetaKey {
     let meta = &combat.meta;
     CombatMetaKey {
         ascension_level: meta.ascension_level,
-        player_class: meta.player_class,
+        player_class: meta.player_class.clone(),
         is_boss_fight: meta.is_boss_fight,
         is_elite_fight: meta.is_elite_fight,
         master_deck_snapshot: meta.master_deck_snapshot.iter().map(card_key).collect(),

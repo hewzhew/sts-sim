@@ -11,7 +11,10 @@ use crate::ai::combat_search_v2::{
     WHOLE_COMBAT_OUTCOME_CRITERIA,
 };
 
-use super::{load_combat_search_v2_start, CombatSearchV2LoadedStart, CombatSearchV2RunOptions};
+use super::{
+    load_combat_search_v2_snapshot, load_combat_search_v2_start, CombatSearchV2LoadedStart,
+    CombatSearchV2RunOptions,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -24,7 +27,10 @@ pub struct CombatSearchV2BenchmarkSpec {
 #[serde(deny_unknown_fields)]
 pub struct CombatSearchV2BenchmarkCaseSpec {
     pub id: String,
-    pub start_spec: PathBuf,
+    #[serde(default)]
+    pub start_spec: Option<PathBuf>,
+    #[serde(default)]
+    pub combat_snapshot: Option<PathBuf>,
     #[serde(default)]
     pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
 }
@@ -48,9 +54,37 @@ pub struct CombatSearchV2LoadedBenchmark {
 #[derive(Clone)]
 pub struct CombatSearchV2LoadedBenchmarkCase {
     pub id: String,
-    pub start_spec_path: PathBuf,
+    pub input: CombatSearchV2LoadedBenchmarkInput,
     pub start: CombatSearchV2LoadedStart,
     pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CombatSearchV2LoadedBenchmarkInput {
+    pub kind: CombatSearchV2BenchmarkInputKind,
+    pub path: PathBuf,
+}
+
+impl CombatSearchV2LoadedBenchmarkInput {
+    fn new(kind: CombatSearchV2BenchmarkInputKind, path: PathBuf) -> Self {
+        Self { kind, path }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2BenchmarkInputKind {
+    StartSpec,
+    CombatSnapshot,
+}
+
+impl CombatSearchV2BenchmarkInputKind {
+    fn as_label(self) -> &'static str {
+        match self {
+            CombatSearchV2BenchmarkInputKind::StartSpec => "start_spec",
+            CombatSearchV2BenchmarkInputKind::CombatSnapshot => "combat_snapshot",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -83,7 +117,10 @@ pub struct CombatSearchV2BenchmarkSummary {
 pub struct CombatSearchV2BenchmarkCaseReport {
     pub id: String,
     pub start_label: String,
-    pub start_spec_path: String,
+    pub input_kind: CombatSearchV2BenchmarkInputKind,
+    pub input_path: String,
+    pub start_spec_path: Option<String>,
+    pub combat_snapshot_path: Option<String>,
     pub outcome: CombatSearchV2OutcomeReport,
     pub best_complete_trajectory: Option<CombatSearchV2TrajectoryReport>,
     pub diagnostics: CombatSearchV2DiagnosticsReport,
@@ -146,18 +183,17 @@ pub fn load_combat_search_v2_benchmark(
                 case.id
             ));
         }
-        let start_spec_path = resolve_manifest_relative_path(base_dir, &case.start_spec);
-        let mut start = load_combat_search_v2_start(&start_spec_path)
-            .map_err(|err| format!("case '{}' start_spec failed: {err}", case.id))?;
+        let (input, mut start) = load_benchmark_case_input(base_dir, &spec.name, &case)?;
         start.label = format!(
-            "benchmark:{}:case:{}:start_spec:{}",
+            "benchmark:{}:case:{}:{}:{}",
             spec.name,
             case.id,
-            start_spec_path.display()
+            input.kind.as_label(),
+            input.path.display()
         );
         cases.push(CombatSearchV2LoadedBenchmarkCase {
             id: case.id,
-            start_spec_path,
+            input,
             start,
             baseline: case.baseline,
         });
@@ -207,7 +243,12 @@ fn run_combat_search_v2_benchmark_case(
     CombatSearchV2BenchmarkCaseReport {
         id: case.id.clone(),
         start_label: case.start.label.clone(),
-        start_spec_path: case.start_spec_path.display().to_string(),
+        input_kind: case.input.kind,
+        input_path: case.input.path.display().to_string(),
+        start_spec_path: (case.input.kind == CombatSearchV2BenchmarkInputKind::StartSpec)
+            .then(|| case.input.path.display().to_string()),
+        combat_snapshot_path: (case.input.kind == CombatSearchV2BenchmarkInputKind::CombatSnapshot)
+            .then(|| case.input.path.display().to_string()),
         outcome: search_report.outcome.clone(),
         best_complete_trajectory: search_report.best_complete_trajectory.clone(),
         diagnostics: search_report.diagnostics.clone(),
@@ -339,6 +380,53 @@ fn inconclusive_baseline_comparison(
     }
 }
 
+fn load_benchmark_case_input(
+    base_dir: &Path,
+    benchmark_name: &str,
+    case: &CombatSearchV2BenchmarkCaseSpec,
+) -> Result<
+    (
+        CombatSearchV2LoadedBenchmarkInput,
+        CombatSearchV2LoadedStart,
+    ),
+    String,
+> {
+    match (case.start_spec.as_ref(), case.combat_snapshot.as_ref()) {
+        (Some(start_spec), None) => {
+            let path = resolve_manifest_relative_path(base_dir, start_spec);
+            let start = load_combat_search_v2_start(&path)
+                .map_err(|err| format!("case '{}' start_spec failed: {err}", case.id))?;
+            Ok((
+                CombatSearchV2LoadedBenchmarkInput::new(
+                    CombatSearchV2BenchmarkInputKind::StartSpec,
+                    path,
+                ),
+                start,
+            ))
+        }
+        (None, Some(combat_snapshot)) => {
+            let path = resolve_manifest_relative_path(base_dir, combat_snapshot);
+            let start = load_combat_search_v2_snapshot(&path)
+                .map_err(|err| format!("case '{}' combat_snapshot failed: {err}", case.id))?;
+            Ok((
+                CombatSearchV2LoadedBenchmarkInput::new(
+                    CombatSearchV2BenchmarkInputKind::CombatSnapshot,
+                    path,
+                ),
+                start,
+            ))
+        }
+        (None, None) => Err(format!(
+            "benchmark '{benchmark_name}' case '{}' requires exactly one of start_spec or combat_snapshot",
+            case.id
+        )),
+        (Some(_), Some(_)) => Err(format!(
+            "benchmark '{benchmark_name}' case '{}' cannot set both start_spec and combat_snapshot",
+            case.id
+        )),
+    }
+}
+
 fn resolve_manifest_relative_path(base_dir: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
@@ -350,6 +438,9 @@ fn resolve_manifest_relative_path(base_dir: &Path, path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eval::combat_capture::{capture_combat_position_v1, save_combat_capture_v1};
+    use crate::fixtures::combat_start_spec::{compile_combat_start_spec, CombatStartSpec};
+    use crate::sim::combat::CombatPosition;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -387,9 +478,55 @@ mod tests {
         assert_eq!(loaded.name, "smoke");
         assert_eq!(loaded.cases.len(), 1);
         assert_eq!(loaded.cases[0].id, "jaw_worm");
+        assert_eq!(
+            loaded.cases[0].input.kind,
+            CombatSearchV2BenchmarkInputKind::StartSpec
+        );
         assert!(loaded.cases[0].baseline.is_some());
 
         let _ = fs::remove_file(start_path);
+        let _ = fs::remove_file(benchmark_path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn benchmark_loader_accepts_relative_combat_snapshot_only() {
+        let dir = unique_temp_dir("combat_search_v2_snapshot_benchmark_loader");
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let snapshot_path = dir.join("jaw_worm.capture.json");
+        let benchmark_path = dir.join("benchmark.json");
+
+        let position = jaw_worm_position();
+        let capture = capture_combat_position_v1(Some("jaw_worm".to_string()), &position)
+            .expect("stable position should capture");
+        save_combat_capture_v1(&snapshot_path, &capture).expect("capture should be written");
+        fs::write(
+            &benchmark_path,
+            r#"{
+                "name": "smoke",
+                "cases": [
+                    {
+                        "id": "jaw_worm_snapshot",
+                        "combat_snapshot": "jaw_worm.capture.json"
+                    }
+                ]
+            }"#,
+        )
+        .expect("benchmark spec should be written");
+
+        let loaded = load_combat_search_v2_benchmark(&benchmark_path)
+            .expect("benchmark should load from relative combat-snapshot path");
+
+        assert_eq!(loaded.name, "smoke");
+        assert_eq!(loaded.cases.len(), 1);
+        assert_eq!(loaded.cases[0].id, "jaw_worm_snapshot");
+        assert_eq!(
+            loaded.cases[0].input.kind,
+            CombatSearchV2BenchmarkInputKind::CombatSnapshot
+        );
+        assert_eq!(loaded.cases[0].start.position, position);
+
+        let _ = fs::remove_file(snapshot_path);
         let _ = fs::remove_file(benchmark_path);
         let _ = fs::remove_dir(dir);
     }
@@ -418,5 +555,13 @@ mod tests {
                 "Bash"
             ]
         }"#
+    }
+
+    fn jaw_worm_position() -> CombatPosition {
+        let spec: CombatStartSpec = serde_json::from_str(starter_jaw_worm_start_spec())
+            .expect("test start spec should parse");
+        let (engine, combat) =
+            compile_combat_start_spec(&spec).expect("test start spec should compile");
+        CombatPosition::new(engine, combat)
     }
 }

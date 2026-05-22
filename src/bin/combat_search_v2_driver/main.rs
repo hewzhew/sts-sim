@@ -4,20 +4,28 @@ use std::path::{Path, PathBuf};
 use clap::{ArgGroup, Parser, ValueEnum};
 use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use sts_simulator::eval::combat_search_v2::{
-    load_combat_search_v2_benchmark, load_combat_search_v2_start, run_combat_search_v2_benchmark,
-    run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
+    load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
+    run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
 };
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "Combat Search V2 whole-combat runner over start-spec inputs",
-    group(ArgGroup::new("input").required(true).args(["start_spec", "benchmark_spec"]))
+    about = "Combat Search V2 whole-combat runner over exact combat inputs",
+    group(
+        ArgGroup::new("input")
+            .required(true)
+            .multiple(false)
+            .args(["start_spec", "combat_snapshot", "benchmark_spec"])
+    )
 )]
 struct Args {
-    #[arg(long, conflicts_with = "benchmark_spec")]
+    #[arg(long)]
     start_spec: Option<PathBuf>,
 
-    #[arg(long, conflicts_with = "start_spec")]
+    #[arg(long)]
+    combat_snapshot: Option<PathBuf>,
+
+    #[arg(long)]
     benchmark_spec: Option<PathBuf>,
 
     #[arg(long)]
@@ -68,11 +76,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let run = run_combat_search_v2_benchmark(&loaded, options);
         serde_json::to_string_pretty(&run)?
     } else {
-        let path = args
-            .start_spec
-            .as_ref()
-            .expect("clap requires --start-spec or --benchmark-spec");
-        let loaded = load_combat_search_v2_start(path)?;
+        let loaded = if let Some(path) = args.combat_snapshot.as_ref() {
+            load_combat_search_v2_snapshot(path)?
+        } else {
+            let path = args
+                .start_spec
+                .as_ref()
+                .expect("clap requires exactly one input");
+            load_combat_search_v2_start(path)?
+        };
         let run = run_combat_search_v2_loaded_start(&loaded, options);
         serde_json::to_string_pretty(&run.search_report)?
     };

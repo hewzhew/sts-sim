@@ -3,8 +3,9 @@ use crate::state::core::EngineState;
 use crate::state::selection::{
     SelectionConstraint, SelectionReason, SelectionRequest, SelectionScope, SelectionTargetRef,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Serialize)]
 pub enum RunPendingChoiceReason {
     Purge,
     PurgeNonBottled,
@@ -18,7 +19,7 @@ pub enum RunPendingChoiceReason {
     BottleTornado,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
 pub struct RunPendingChoiceState {
     pub min_choices: usize,
     pub max_choices: usize,

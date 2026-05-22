@@ -52,7 +52,7 @@ pub(super) fn materialize_random_class_card_in_hand_action(
         _ => return,
     };
 
-    let pool = class_card_pool_for_type(state.meta.player_class, card_type);
+    let pool = class_card_pool_for_type(state.meta.player_class.as_str(), card_type);
     if pool.is_empty() {
         return;
     }
@@ -85,7 +85,7 @@ pub(super) fn materialize_random_class_card_in_draw_pile_action(
         _ => return,
     };
 
-    let pool = class_card_pool_for_type(state.meta.player_class, card_type);
+    let pool = class_card_pool_for_type(state.meta.player_class.as_str(), card_type);
     if pool.is_empty() {
         return;
     }
@@ -372,7 +372,7 @@ pub fn handle_make_random_card_in_hand(
     cost_for_turn: Option<u8>,
     state: &mut CombatState,
 ) {
-    let pool = class_card_pool_for_type(state.meta.player_class, card_type);
+    let pool = class_card_pool_for_type(state.meta.player_class.as_str(), card_type);
     if !pool.is_empty() {
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];
@@ -390,7 +390,7 @@ pub fn handle_make_random_card_in_draw_pile(
     random_spot: bool,
     state: &mut CombatState,
 ) {
-    let pool = class_card_pool_for_type(state.meta.player_class, card_type);
+    let pool = class_card_pool_for_type(state.meta.player_class.as_str(), card_type);
     if !pool.is_empty() {
         let idx = state.rng.card_random_rng.random(pool.len() as i32 - 1) as usize;
         let card_id = pool[idx];

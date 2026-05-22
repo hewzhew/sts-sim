@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
 };
+use crate::eval::combat_capture::load_combat_capture_v1;
 use crate::fixtures::combat_start_spec::{compile_combat_start_spec, CombatStartSpec};
 use crate::sim::combat::CombatPosition;
 
@@ -55,6 +56,18 @@ pub fn load_combat_search_v2_start(path: &Path) -> Result<CombatSearchV2LoadedSt
     Ok(CombatSearchV2LoadedStart {
         label: format!("start_spec:{}", path.display()),
         position: CombatPosition::new(engine, combat),
+    })
+}
+
+pub fn load_combat_search_v2_snapshot(path: &Path) -> Result<CombatSearchV2LoadedStart, String> {
+    let capture = load_combat_capture_v1(path)?;
+    let label = match capture.label.as_deref().filter(|label| !label.is_empty()) {
+        Some(label) => format!("combat_snapshot:{}:{label}", path.display()),
+        None => format!("combat_snapshot:{}", path.display()),
+    };
+    Ok(CombatSearchV2LoadedStart {
+        label,
+        position: capture.position,
     })
 }
 

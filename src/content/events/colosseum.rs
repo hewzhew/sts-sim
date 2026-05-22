@@ -52,7 +52,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 no_cards_in_rewards: true,
                 elite_trigger: false,
                 post_combat_return: PostCombatReturn::EventRoom,
-                encounter_key: "Colosseum Slavers",
+                encounter_key: "Colosseum Slavers".to_string(),
             });
             return;
         }
@@ -91,7 +91,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         no_cards_in_rewards: false,
                         elite_trigger: true,
                         post_combat_return: PostCombatReturn::MapNavigation,
-                        encounter_key: "Colosseum Nobs",
+                        encounter_key: "Colosseum Nobs".to_string(),
                     });
                     return;
                 }

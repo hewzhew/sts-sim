@@ -793,7 +793,7 @@ pub fn make_random_class_card_copy_for_combat(
     state: &mut CombatState,
     card_type: Option<CardType>,
 ) -> Option<CombatCard> {
-    let pool = class_combat_card_pool_for_type(state.meta.player_class, card_type);
+    let pool = class_combat_card_pool_for_type(state.meta.player_class.as_str(), card_type);
     if pool.is_empty() {
         return None;
     }

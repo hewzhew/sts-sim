@@ -158,7 +158,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             no_cards_in_rewards: false,
                             elite_trigger: false,
                             post_combat_return: crate::state::core::PostCombatReturn::MapNavigation,
-                            encounter_key,
+                            encounter_key: encounter_key.to_string(),
                         });
                     return;
                 }

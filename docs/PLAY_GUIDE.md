@@ -88,4 +88,6 @@ Keep these distinctions in mind:
 
 - use [live_comm/README.md](live_comm/README.md) only for legacy boundary notes
 - use `cargo run --bin combat_search_v2_driver -- --start-spec <spec.json>` for
-  the active combat search entrypoint
+  synthetic combat starts
+- use `cargo run --bin combat_search_v2_driver -- --combat-snapshot <capture.json>`
+  for exact stable combat positions captured from simulator state

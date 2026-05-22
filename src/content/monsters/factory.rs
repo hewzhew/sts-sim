@@ -1,6 +1,8 @@
 use crate::runtime::combat::{LouseRuntimeState, MonsterEntity, MonsterMoveState};
 use crate::runtime::rng::StsRng;
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum EncounterId {
     // === Act 1: Exordium ===
     BlueSlaver,
