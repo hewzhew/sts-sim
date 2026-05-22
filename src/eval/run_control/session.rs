@@ -15,7 +15,10 @@ use super::outcome::{
     save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1, CombatOutcomeTracker,
 };
 use super::registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
-use super::render::{render_combat_actions, render_run_control_state};
+use super::render::{
+    render_combat_actions, render_run_control_details, render_run_control_raw,
+    render_run_control_state,
+};
 
 const MAX_STABLE_ADVANCE_TICKS: usize = 2_000;
 
@@ -45,6 +48,7 @@ pub struct RunControlSession {
     pub engine_state: EngineState,
     pub run_state: RunState,
     pub active_combat: Option<ActiveCombat>,
+    pub decision_step: u64,
     combat_outcomes: CombatOutcomeTracker,
 }
 
@@ -89,6 +93,7 @@ impl RunControlSession {
             engine_state,
             run_state,
             active_combat: None,
+            decision_step: 0,
             combat_outcomes: CombatOutcomeTracker::default(),
         }
     }
@@ -105,6 +110,12 @@ impl RunControlSession {
             RunControlCommand::Quit => Ok(RunControlCommandOutcome::quit("quit")),
             RunControlCommand::State => Ok(RunControlCommandOutcome::message(
                 render_run_control_state(self),
+            )),
+            RunControlCommand::Details => Ok(RunControlCommandOutcome::message(
+                render_run_control_details(self),
+            )),
+            RunControlCommand::Raw => Ok(RunControlCommandOutcome::message(
+                render_run_control_raw(self),
             )),
             RunControlCommand::Actions => Ok(RunControlCommandOutcome::message(
                 render_combat_actions(self)?,
@@ -320,6 +331,7 @@ impl RunControlSession {
         self.cleanup_inactive_combat();
         self.ensure_combat_started_if_needed()?;
         self.observe_active_combat_started();
+        self.decision_step = self.decision_step.saturating_add(1);
 
         let status = if tick.keep_running {
             "ok".to_string()

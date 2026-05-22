@@ -8,6 +8,8 @@ pub enum RunControlCommand {
     Help,
     Quit,
     State,
+    Details,
+    Raw,
     Actions,
     Capture {
         path: PathBuf,
@@ -55,9 +57,11 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
     let rest = parts.collect::<Vec<_>>();
 
     match command.to_ascii_lowercase().as_str() {
-        "?" | "help" => Ok(RunControlCommand::Help),
+        "?" | "h" | "help" => Ok(RunControlCommand::Help),
         "q" | "quit" | "exit" => Ok(RunControlCommand::Quit),
         "state" => Ok(RunControlCommand::State),
+        "d" | "details" => Ok(RunControlCommand::Details),
+        "r" | "raw" => Ok(RunControlCommand::Raw),
         "actions" | "legal" => Ok(RunControlCommand::Actions),
         "capture" | "save-capture" => parse_capture_command(&rest),
         "capture-case" => parse_capture_case_command(&rest),
@@ -141,7 +145,31 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
 }
 
 pub fn run_control_help() -> &'static str {
-    "commands: state, actions, action <idx>, capture <path> [label], capture-case <benchmark_dir> <case_id> [label], save-baseline <path> [case_id], save-baseline-case <benchmark_dir> <case_id>, bench-add <benchmark_dir> <case_id>, play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>, go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>, hand-select <uuid...>, grid-select <uuid...>, open, rest, smith <deck_idx>, buy card|relic|potion <idx>, purge <deck_idx>, relic <idx>, proceed, cancel, quit"
+    "\
+Help:
+  Core:
+    state, d/details, r/raw, actions, action <idx>, proceed, cancel, quit
+
+  Combat:
+    play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
+
+  Map/Event/Reward:
+    go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
+    hand-select <uuid...>, grid-select <uuid...>, choose <idx>, open, relic <idx>
+
+  Shop/Campfire:
+    buy card|relic|potion <idx>, purge <deck_idx>, rest, smith <deck_idx>, dig, lift, recall, toke <deck_idx>
+
+  Combat Capture / Benchmark:
+    capture <path> [label]
+    capture-case <benchmark_dir> <case_id> [label]
+    save-baseline <path> [case_id]
+    save-baseline-case <benchmark_dir> <case_id>
+    bench-add <benchmark_dir> <case_id>"
+}
+
+pub fn run_control_short_hint() -> &'static str {
+    "action <id> / event <id> / proceed | d=details | r=raw | h=help | q=quit"
 }
 
 fn parse_capture_command(rest: &[&str]) -> Result<RunControlCommand, String> {
@@ -303,6 +331,22 @@ mod tests {
                 root: PathBuf::from("data/bench"),
                 case_id: "case_a".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn run_control_parser_accepts_view_commands() {
+        assert_eq!(
+            parse_run_control_command("h").expect("h should parse"),
+            RunControlCommand::Help
+        );
+        assert_eq!(
+            parse_run_control_command("d").expect("d should parse"),
+            RunControlCommand::Details
+        );
+        assert_eq!(
+            parse_run_control_command("raw").expect("raw should parse"),
+            RunControlCommand::Raw
         );
     }
 }

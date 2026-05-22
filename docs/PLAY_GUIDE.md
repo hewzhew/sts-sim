@@ -32,6 +32,11 @@ The binary owns no simulator semantics; it delegates to `engine::run_loop` and
 point is to let real Neow, route, reward, shop, event, and campfire decisions
 produce the combat start state.
 
+The default view is a compact decision panel. It shows the current decision,
+candidate commands, and a small context block. Use `d` when you need the older
+low-level engine details, `r` for raw Rust debug output, and `h` for the full
+categorized command list.
+
 ## Local Manual Commands
 
 Current manual parser lives under
@@ -69,8 +74,10 @@ Map / event / reward / campfire / shop:
 Inspection and mode control:
 
 - `state`
+- `d` / `details`
+- `r` / `raw`
+- `h` / `help`
 - `actions`
-- `help`
 - `quit`
 
 Benchmark artifacts:

@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use sts_simulator::eval::run_control::{
-    canonical_player_class, parse_run_control_command, render_run_control_state, run_control_help,
-    RunControlConfig, RunControlSession,
+    canonical_player_class, parse_run_control_command, render_run_control_state, RunControlConfig,
+    RunControlSession,
 };
 
 #[derive(Parser, Debug)]
@@ -87,7 +87,6 @@ fn run_script(session: &mut RunControlSession, script: &PathBuf) -> Result<(), S
 }
 
 fn run_repl(session: &mut RunControlSession) -> Result<(), String> {
-    println!("{}", run_control_help());
     let stdin = io::stdin();
     loop {
         print!("run-play> ");
