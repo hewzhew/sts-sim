@@ -1,6 +1,8 @@
 mod combat_start;
 mod commands;
+mod decision_case;
 pub mod outcome;
+mod panels;
 pub mod registry;
 mod render;
 mod session;
@@ -8,6 +10,10 @@ mod view_model;
 
 pub use commands::{
     parse_run_control_command, run_control_help, run_control_short_hint, RunControlCommand,
+};
+pub use decision_case::{
+    default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
+    RUN_DECISION_CASE_SCHEMA_NAME, RUN_DECISION_CASE_SCHEMA_VERSION,
 };
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,

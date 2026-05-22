@@ -14,8 +14,12 @@ Active binaries:
     combat-snapshot cases
 - `run_play_driver`
   - thin shell over the `eval::run_control` kernel
-  - starts in a compact decision-panel view; `d` shows legacy details, `r`
-    shows raw debug output, `h` shows the full categorized help
+  - starts in a game-like main screen; `deck`, `map`, `relics`, `potions`,
+    `draw`, `discard`, `exhaust`, and `inspect <id>` open on-demand panels
+  - `d` shows legacy details, `r` shows raw debug output, `h` shows the full
+    categorized help
+  - `case [path]`: save a diagnostic `RunDecisionCaseV1` with no teacher-label
+    or policy-quality claim
   - `capture <path> [label]`: save `CombatCaptureV1` only from active stable
     combat decision boundaries
   - `capture-case <benchmark_dir> <case_id> [label]`: write the standard

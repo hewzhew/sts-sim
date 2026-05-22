@@ -5,9 +5,22 @@ use crate::state::core::{CampfireChoice, ClientInput};
 #[derive(Clone, Debug, PartialEq)]
 pub enum RunControlCommand {
     Noop,
+    DefaultCandidate,
+    Candidate(String),
     Help,
     Quit,
-    State,
+    Main,
+    Deck,
+    Map,
+    Relics,
+    Potions,
+    Draw,
+    Discard,
+    Exhaust,
+    Inspect(String),
+    SaveDecisionCase {
+        path: Option<PathBuf>,
+    },
     Details,
     Raw,
     Actions,
@@ -46,7 +59,10 @@ pub enum RunControlCommand {
 
 pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String> {
     let trimmed = line.trim();
-    if trimmed.is_empty() || trimmed.starts_with('#') {
+    if trimmed.is_empty() {
+        return Ok(RunControlCommand::DefaultCandidate);
+    }
+    if trimmed.starts_with('#') {
         return Ok(RunControlCommand::Noop);
     }
 
@@ -55,11 +71,30 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         return Ok(RunControlCommand::Noop);
     };
     let rest = parts.collect::<Vec<_>>();
+    if is_candidate_id(command) {
+        return Ok(RunControlCommand::Candidate(command.to_string()));
+    }
 
     match command.to_ascii_lowercase().as_str() {
         "?" | "h" | "help" => Ok(RunControlCommand::Help),
         "q" | "quit" | "exit" => Ok(RunControlCommand::Quit),
-        "state" => Ok(RunControlCommand::State),
+        "main" | "state" => Ok(RunControlCommand::Main),
+        "deck" => Ok(RunControlCommand::Deck),
+        "map" => Ok(RunControlCommand::Map),
+        "relics" | "relic-list" => Ok(RunControlCommand::Relics),
+        "potions" | "potion-list" => Ok(RunControlCommand::Potions),
+        "draw" | "draw-pile" => Ok(RunControlCommand::Draw),
+        "discard" | "discard-pile" => Ok(RunControlCommand::Discard),
+        "exhaust" | "exhaust-pile" => Ok(RunControlCommand::Exhaust),
+        "inspect" => Ok(RunControlCommand::Inspect(
+            rest.first()
+                .ok_or_else(|| "inspect requires a visible id".to_string())?
+                .to_string(),
+        )),
+        "case" | "save-case" => Ok(RunControlCommand::SaveDecisionCase {
+            path: rest.first().map(PathBuf::from),
+        }),
+        "skip" => Ok(RunControlCommand::Candidate("skip".to_string())),
         "d" | "details" => Ok(RunControlCommand::Details),
         "r" | "raw" => Ok(RunControlCommand::Raw),
         "actions" | "legal" => Ok(RunControlCommand::Actions),
@@ -148,10 +183,12 @@ pub fn run_control_help() -> &'static str {
     "\
 Help:
   Core:
-    state, d/details, r/raw, actions, action <idx>, proceed, cancel, quit
+    main/state, deck, map, relics, potions, inspect <id>, case [path], d/details, r/raw, quit
+    <id> chooses a visible option; Enter chooses the single visible option when safe
 
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
+    draw, discard, exhaust, actions, action <idx>
 
   Map/Event/Reward:
     go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
@@ -169,7 +206,12 @@ Help:
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "action <id> / event <id> / proceed | d=details | r=raw | h=help | q=quit"
+    "main | deck | map | relics | potions | inspect <id> | details | raw | help"
+}
+
+fn is_candidate_id(command: &str) -> bool {
+    command.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
+        && command.chars().any(|ch| ch.is_ascii_digit())
 }
 
 fn parse_capture_command(rest: &[&str]) -> Result<RunControlCommand, String> {
@@ -341,12 +383,28 @@ mod tests {
             RunControlCommand::Help
         );
         assert_eq!(
+            parse_run_control_command("").expect("enter should parse"),
+            RunControlCommand::DefaultCandidate
+        );
+        assert_eq!(
+            parse_run_control_command("0").expect("candidate id should parse"),
+            RunControlCommand::Candidate("0".to_string())
+        );
+        assert_eq!(
+            parse_run_control_command("deck").expect("deck should parse"),
+            RunControlCommand::Deck
+        );
+        assert_eq!(
             parse_run_control_command("d").expect("d should parse"),
             RunControlCommand::Details
         );
         assert_eq!(
             parse_run_control_command("raw").expect("raw should parse"),
             RunControlCommand::Raw
+        );
+        assert_eq!(
+            parse_run_control_command("case").expect("case should parse"),
+            RunControlCommand::SaveDecisionCase { path: None }
         );
     }
 }

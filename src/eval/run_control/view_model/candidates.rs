@@ -1,11 +1,11 @@
-use crate::sim::combat_action::combat_action_key;
 use crate::sim::combat_legal_actions::get_legal_moves;
-use crate::state::core::EngineState;
-use crate::state::events::{EventOption, EventOptionTransition};
+use crate::state::core::{ClientInput, EngineState};
+use crate::state::events::{EventEffect, EventOption, EventOptionTransition, EventRelicKind};
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
+use std::collections::BTreeMap;
 
 use super::labels::{
-    candidate, clean_event_label, combat_card_label, describe_combat_input, event_effect_summary,
+    candidate, clean_event_label, combat_card_label, event_effect_summary, monster_name,
     reward_card_label, reward_item_label, room_type_label, shop_block_note,
 };
 use super::{DecisionCandidate, RunControlSession};
@@ -36,21 +36,23 @@ fn event_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         .iter()
         .enumerate()
         .map(|(idx, option)| {
-            let mut label = clean_event_label(&option.ui.text);
-            if let Some(effect_summary) = event_effect_summary(&option.semantics.effects) {
-                label = format!("{label} | {effect_summary}");
-            }
+            let label = clean_event_label(&option.ui.text);
+            let effect_summary = event_effect_summary(&option.semantics.effects);
             candidate(
                 idx.to_string(),
                 label,
                 format!("event {idx}"),
-                event_option_note(option, options.len()),
+                event_option_note(option, options.len(), effect_summary.as_deref()),
             )
         })
         .collect()
 }
 
-fn event_option_note(option: &EventOption, option_count: usize) -> Option<String> {
+fn event_option_note(
+    option: &EventOption,
+    option_count: usize,
+    effect_summary: Option<&str>,
+) -> Option<String> {
     if option.ui.disabled {
         return Some(format!(
             "locked: {}",
@@ -65,6 +67,24 @@ fn event_option_note(option: &EventOption, option_count: usize) -> Option<String
     {
         return Some("routine".to_string());
     }
+    let prefix = if event_effects_are_partial(&option.semantics.effects)
+        || matches!(
+            option.semantics.transition,
+            EventOptionTransition::OpenSelection(_) | EventOptionTransition::OpenReward
+        ) {
+        "partial"
+    } else {
+        "known"
+    };
+    if let Some(effect_summary) = effect_summary {
+        let transition = match option.semantics.transition {
+            EventOptionTransition::OpenSelection(kind) => format!("; opens {kind:?} selection"),
+            EventOptionTransition::OpenReward => "; opens follow-up reward".to_string(),
+            EventOptionTransition::StartCombat => "; starts combat".to_string(),
+            _ => String::new(),
+        };
+        return Some(format!("{prefix}: {effect_summary}{transition}"));
+    }
     match option.semantics.transition {
         EventOptionTransition::OpenSelection(kind) => Some(format!("opens {kind:?} selection")),
         EventOptionTransition::OpenReward => Some("opens reward".to_string()),
@@ -73,6 +93,24 @@ fn event_option_note(option: &EventOption, option_count: usize) -> Option<String
         EventOptionTransition::Complete => Some("leaves event".to_string()),
         EventOptionTransition::None => None,
     }
+}
+
+fn event_effects_are_partial(effects: &[EventEffect]) -> bool {
+    effects.iter().any(|effect| {
+        matches!(
+            effect,
+            EventEffect::ObtainRelic {
+                kind: EventRelicKind::RandomRelic
+                    | EventRelicKind::RandomBook
+                    | EventRelicKind::RandomFace,
+                ..
+            } | EventEffect::ObtainPotion { .. }
+                | EventEffect::ObtainCard { .. }
+                | EventEffect::ObtainColorlessCard { .. }
+                | EventEffect::ObtainCurse { .. }
+                | EventEffect::TransformCard { .. }
+        )
+    })
 }
 
 fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
@@ -115,7 +153,7 @@ fn reward_candidates(reward: &RewardState) -> Vec<DecisionCandidate> {
             })
             .collect::<Vec<_>>();
         candidates.push(candidate(
-            "skip",
+            cards.len().to_string(),
             "Skip card reward",
             "proceed",
             None::<String>,
@@ -218,18 +256,99 @@ fn combat_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     let Ok(position) = session.current_combat_position_for_actions() else {
         return Vec::new();
     };
-    get_legal_moves(&position.engine, &position.combat)
+    let legal_moves = get_legal_moves(&position.engine, &position.combat);
+    let mut playable: BTreeMap<usize, Vec<Option<usize>>> = BTreeMap::new();
+    let mut end_turn = false;
+    for action in &legal_moves {
+        match action {
+            ClientInput::PlayCard { card_index, target } => {
+                playable.entry(*card_index).or_default().push(*target);
+            }
+            ClientInput::EndTurn => end_turn = true,
+            _ => {}
+        }
+    }
+
+    let mut candidates = Vec::new();
+    for (card_index, targets) in playable {
+        let Some(card) = position.combat.zones.hand.get(card_index) else {
+            continue;
+        };
+        if targets.len() == 1 {
+            let target = targets[0];
+            let label = match target {
+                Some(target_id) => format!(
+                    "Play {} -> {}",
+                    combat_card_label(card),
+                    combat_target_label(&position.combat, target_id)
+                ),
+                None => format!("Play {}", combat_card_label(card)),
+            };
+            let command = match target
+                .and_then(|target_id| combat_target_slot(&position.combat, target_id))
+            {
+                Some(slot) => format!("play {card_index} {slot}"),
+                None => format!("play {card_index}"),
+            };
+            candidates.push(candidate(
+                card_index.to_string(),
+                label,
+                command,
+                None::<String>,
+            ));
+        } else {
+            for target in targets {
+                let Some(target_id) = target else {
+                    continue;
+                };
+                let Some(slot) = combat_target_slot(&position.combat, target_id) else {
+                    continue;
+                };
+                candidates.push(candidate(
+                    format!("{card_index}.{slot}"),
+                    format!(
+                        "Play {} -> {}",
+                        combat_card_label(card),
+                        combat_target_label(&position.combat, target_id)
+                    ),
+                    format!("play {card_index} {slot}"),
+                    None::<String>,
+                ));
+            }
+        }
+    }
+    if end_turn {
+        candidates.push(candidate("end", "End turn", "end", None::<String>));
+    }
+    candidates
+}
+
+fn combat_target_slot(
+    combat: &crate::runtime::combat::CombatState,
+    target_id: usize,
+) -> Option<u8> {
+    combat
+        .entities
+        .monsters
         .iter()
-        .enumerate()
-        .map(|(idx, action)| {
-            candidate(
-                idx.to_string(),
-                describe_combat_input(&position.combat, action),
-                format!("action {idx}"),
-                Some(combat_action_key(&position.combat, action)),
+        .find(|monster| monster.id == target_id)
+        .map(|monster| monster.slot)
+}
+
+fn combat_target_label(combat: &crate::runtime::combat::CombatState, target_id: usize) -> String {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.id == target_id)
+        .map(|monster| {
+            format!(
+                "{} slot {}",
+                monster_name(monster.monster_type),
+                monster.slot
             )
         })
-        .collect()
+        .unwrap_or_else(|| format!("entity {target_id}"))
 }
 
 fn run_choice_candidates(

@@ -1,7 +1,7 @@
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::monsters::EnemyId;
-use crate::runtime::combat::{CombatCard, CombatState};
-use crate::state::core::{ClientInput, PendingChoice};
+use crate::runtime::combat::CombatCard;
+use crate::state::core::PendingChoice;
 use crate::state::events::EventEffect;
 use crate::state::map::node::RoomType;
 use crate::state::rewards::RewardItem;
@@ -9,7 +9,7 @@ use crate::state::run::RunState;
 
 use super::DecisionCandidate;
 
-pub(super) fn candidate(
+pub(crate) fn candidate(
     id: impl Into<String>,
     label: impl Into<String>,
     command: impl Into<String>,
@@ -23,46 +23,7 @@ pub(super) fn candidate(
     }
 }
 
-pub(super) fn describe_combat_input(combat: &CombatState, input: &ClientInput) -> String {
-    match input {
-        ClientInput::PlayCard { card_index, target } => {
-            let card = combat
-                .zones
-                .hand
-                .get(*card_index)
-                .map(combat_card_label)
-                .unwrap_or_else(|| format!("hand[{card_index}]"));
-            match target {
-                Some(target) => {
-                    format!(
-                        "Play {card} h{card_index} -> {}",
-                        monster_label(combat, *target)
-                    )
-                }
-                None => format!("Play {card} h{card_index}"),
-            }
-        }
-        ClientInput::UsePotion {
-            potion_index,
-            target,
-        } => match target {
-            Some(target) => format!(
-                "Use potion p{potion_index} -> {}",
-                monster_label(combat, *target)
-            ),
-            None => format!("Use potion p{potion_index}"),
-        },
-        ClientInput::DiscardPotion(slot) => format!("Discard potion p{slot}"),
-        ClientInput::EndTurn => "End turn".to_string(),
-        ClientInput::SubmitHandSelect(uuids) => format!("Submit hand selection {uuids:?}"),
-        ClientInput::SubmitGridSelect(uuids) => format!("Submit grid selection {uuids:?}"),
-        ClientInput::SubmitDiscoverChoice(idx) => format!("Choose generated card {idx}"),
-        ClientInput::Cancel => "Cancel".to_string(),
-        other => format!("{other:?}"),
-    }
-}
-
-pub(super) fn event_effect_summary(effects: &[EventEffect]) -> Option<String> {
+pub(crate) fn event_effect_summary(effects: &[EventEffect]) -> Option<String> {
     if effects.is_empty() {
         return None;
     }
@@ -101,7 +62,7 @@ pub(super) fn event_effect_summary(effects: &[EventEffect]) -> Option<String> {
     Some(effects.join(", "))
 }
 
-pub(super) fn reward_item_label(item: &RewardItem) -> String {
+pub(crate) fn reward_item_label(item: &RewardItem) -> String {
     match item {
         RewardItem::Gold { amount } => format!("{amount} gold"),
         RewardItem::StolenGold { amount } => format!("{amount} stolen gold"),
@@ -120,7 +81,7 @@ pub(super) fn reward_item_label(item: &RewardItem) -> String {
     }
 }
 
-pub(super) fn reward_card_label(id: CardId, upgrades: u8) -> String {
+pub(crate) fn reward_card_label(id: CardId, upgrades: u8) -> String {
     let name = get_card_definition(id).name;
     if upgrades == 0 {
         name.to_string()
@@ -129,7 +90,7 @@ pub(super) fn reward_card_label(id: CardId, upgrades: u8) -> String {
     }
 }
 
-pub(super) fn combat_card_label(card: &CombatCard) -> String {
+pub(crate) fn combat_card_label(card: &CombatCard) -> String {
     let name = get_card_definition(card.id).name;
     if card.upgrades == 0 {
         name.to_string()
@@ -138,7 +99,7 @@ pub(super) fn combat_card_label(card: &CombatCard) -> String {
     }
 }
 
-pub(super) fn deck_summary(run_state: &RunState) -> String {
+pub(crate) fn deck_summary(run_state: &RunState) -> String {
     let mut attacks = 0usize;
     let mut skills = 0usize;
     let mut powers = 0usize;
@@ -172,7 +133,7 @@ pub(super) fn deck_summary(run_state: &RunState) -> String {
     )
 }
 
-pub(super) fn room_type_label(room_type: Option<RoomType>) -> &'static str {
+pub(crate) fn room_type_label(room_type: Option<RoomType>) -> &'static str {
     match room_type {
         Some(RoomType::EventRoom) => "Event",
         Some(RoomType::MonsterRoom) => "Monster",
@@ -186,14 +147,14 @@ pub(super) fn room_type_label(room_type: Option<RoomType>) -> &'static str {
     }
 }
 
-pub(super) fn boss_label(run_state: &RunState) -> String {
+pub(crate) fn boss_label(run_state: &RunState) -> String {
     run_state
         .boss_key
-        .map(|boss| format!("{boss:?}"))
+        .map(|boss| debug_words(&format!("{boss:?}")))
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-pub(super) fn clean_event_label(raw: &str) -> String {
+pub(crate) fn clean_event_label(raw: &str) -> String {
     raw.trim()
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
@@ -201,7 +162,7 @@ pub(super) fn clean_event_label(raw: &str) -> String {
         .to_string()
 }
 
-pub(super) fn pending_choice_label(choice: &PendingChoice) -> &'static str {
+pub(crate) fn pending_choice_label(choice: &PendingChoice) -> &'static str {
     match choice {
         PendingChoice::GridSelect { .. } => "grid select",
         PendingChoice::HandSelect { .. } => "hand select",
@@ -214,7 +175,7 @@ pub(super) fn pending_choice_label(choice: &PendingChoice) -> &'static str {
     }
 }
 
-pub(super) fn shop_block_note(can_buy: bool, blocked_reason: Option<&str>) -> Option<String> {
+pub(crate) fn shop_block_note(can_buy: bool, blocked_reason: Option<&str>) -> Option<String> {
     if can_buy {
         None
     } else {
@@ -225,24 +186,19 @@ pub(super) fn shop_block_note(can_buy: bool, blocked_reason: Option<&str>) -> Op
     }
 }
 
-pub(super) fn monster_name(monster_type: usize) -> String {
+pub(crate) fn monster_name(monster_type: usize) -> String {
     EnemyId::from_id(monster_type)
         .map(|enemy| enemy.get_name().to_string())
         .unwrap_or_else(|| format!("monster_type:{monster_type}"))
 }
 
-fn monster_label(combat: &CombatState, target_id: usize) -> String {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .find(|monster| monster.id == target_id)
-        .map(|monster| {
-            format!(
-                "{} slot {}",
-                monster_name(monster.monster_type),
-                monster.slot
-            )
-        })
-        .unwrap_or_else(|| format!("entity {target_id}"))
+fn debug_words(raw: &str) -> String {
+    let mut out = String::new();
+    for (idx, ch) in raw.chars().enumerate() {
+        if idx > 0 && ch.is_ascii_uppercase() {
+            out.push(' ');
+        }
+        out.push(ch);
+    }
+    out
 }

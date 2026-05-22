@@ -10,9 +10,16 @@ use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
 
 use super::combat_start::ensure_combat_started_if_needed;
-use super::commands::{run_control_help, RunControlCommand};
+use super::commands::{parse_run_control_command, run_control_help, RunControlCommand};
+use super::decision_case::{
+    default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
+};
 use super::outcome::{
     save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1, CombatOutcomeTracker,
+};
+use super::panels::{
+    render_combat_zone_panel, render_deck_panel, render_inspect_panel, render_map_panel,
+    render_potions_panel, render_relics_panel, CombatZonePanel,
 };
 use super::registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 use super::render::{
@@ -106,11 +113,47 @@ impl RunControlSession {
 
         match command {
             RunControlCommand::Noop => Ok(RunControlCommandOutcome::message("")),
+            RunControlCommand::DefaultCandidate => self.apply_default_candidate(),
+            RunControlCommand::Candidate(id) => self.apply_visible_candidate(&id),
             RunControlCommand::Help => Ok(RunControlCommandOutcome::message(run_control_help())),
             RunControlCommand::Quit => Ok(RunControlCommandOutcome::quit("quit")),
-            RunControlCommand::State => Ok(RunControlCommandOutcome::message(
+            RunControlCommand::Main => Ok(RunControlCommandOutcome::message(
                 render_run_control_state(self),
             )),
+            RunControlCommand::Deck => {
+                Ok(RunControlCommandOutcome::message(render_deck_panel(self)))
+            }
+            RunControlCommand::Map => Ok(RunControlCommandOutcome::message(render_map_panel(self))),
+            RunControlCommand::Relics => {
+                Ok(RunControlCommandOutcome::message(render_relics_panel(self)))
+            }
+            RunControlCommand::Potions => Ok(RunControlCommandOutcome::message(
+                render_potions_panel(self),
+            )),
+            RunControlCommand::Draw => Ok(RunControlCommandOutcome::message(
+                render_combat_zone_panel(self, CombatZonePanel::Draw),
+            )),
+            RunControlCommand::Discard => Ok(RunControlCommandOutcome::message(
+                render_combat_zone_panel(self, CombatZonePanel::Discard),
+            )),
+            RunControlCommand::Exhaust => Ok(RunControlCommandOutcome::message(
+                render_combat_zone_panel(self, CombatZonePanel::Exhaust),
+            )),
+            RunControlCommand::Inspect(id) => Ok(RunControlCommandOutcome::message(
+                render_inspect_panel(self, &id),
+            )),
+            RunControlCommand::SaveDecisionCase { path } => {
+                let path = path.unwrap_or_else(|| default_run_decision_case_path(self));
+                let decision_case = RunDecisionCaseV1::from_session(self);
+                save_run_decision_case_v1(&path, &decision_case)?;
+                Ok(RunControlCommandOutcome::message(format!(
+                    "saved RunDecisionCaseV1 to {} [label_role={} trainable_as_action_label={} policy_quality_claim={}]",
+                    path.display(),
+                    decision_case.label_role,
+                    decision_case.trainable_as_action_label,
+                    decision_case.policy_quality_claim
+                )))
+            }
             RunControlCommand::Details => Ok(RunControlCommandOutcome::message(
                 render_run_control_details(self),
             )),
@@ -213,6 +256,40 @@ impl RunControlSession {
                 })
             }
             RunControlCommand::Input(input) => self.apply_input(input),
+        }
+    }
+
+    fn apply_default_candidate(&mut self) -> Result<RunControlCommandOutcome, String> {
+        let view = crate::eval::run_control::view_model::build_run_control_view_model(self);
+        if view.candidates.len() != 1 {
+            return Err(
+                "Enter only executes when exactly one visible action is available; choose an id"
+                    .to_string(),
+            );
+        }
+        let id = view.candidates[0].id.clone();
+        self.apply_visible_candidate(&id)
+    }
+
+    fn apply_visible_candidate(&mut self, id: &str) -> Result<RunControlCommandOutcome, String> {
+        let view = crate::eval::run_control::view_model::build_run_control_view_model(self);
+        let command = view
+            .candidates
+            .iter()
+            .find(|candidate| candidate.id == id)
+            .map(|candidate| candidate.command.clone())
+            .ok_or_else(|| format!("no visible candidate '{id}'"))?;
+        if command.contains('<') {
+            return Err(format!(
+                "candidate '{id}' requires an explicit command: {command}"
+            ));
+        }
+        let parsed = parse_run_control_command(&command)?;
+        match parsed {
+            RunControlCommand::Candidate(_) | RunControlCommand::DefaultCandidate => Err(format!(
+                "candidate '{id}' resolved to another candidate instead of an executable command"
+            )),
+            other => self.apply_command(other),
         }
     }
 
@@ -485,6 +562,49 @@ mod tests {
             .expect_err("map state should not capture");
 
         assert!(err.contains("no active combat state"));
+    }
+
+    #[test]
+    fn run_control_case_command_saves_diagnostic_decision_case() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let dir = unique_temp_dir("run_control_decision_case");
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let path = dir.join("decision.json");
+
+        let outcome = session
+            .apply_command(RunControlCommand::SaveDecisionCase {
+                path: Some(path.clone()),
+            })
+            .expect("case command should save");
+
+        assert!(outcome.message.contains("saved RunDecisionCaseV1"));
+        let payload = fs::read_to_string(&path).expect("decision case should exist");
+        assert!(payload.contains("\"schema_name\": \"sts_simulator.run_decision_case\""));
+        assert!(payload.contains("\"label_role\": \"diagnostic_not_teacher_label\""));
+        assert!(payload.contains("\"trainable_as_action_label\": false"));
+        assert!(payload.contains("\"policy_quality_claim\": false"));
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn run_control_visible_candidate_command_advances_current_screen() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let outcome = session
+            .apply_command(RunControlCommand::DefaultCandidate)
+            .expect("single visible Neow intro action should execute");
+
+        assert!(outcome.message.contains("Neow Bonus"));
+        assert_eq!(session.decision_step, 1);
+        assert_eq!(
+            session
+                .run_state
+                .event_state
+                .as_ref()
+                .map(|event| event.current_screen),
+            Some(1)
+        );
     }
 
     fn test_session_with_first_monster_room() -> RunControlSession {

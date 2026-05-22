@@ -32,10 +32,11 @@ The binary owns no simulator semantics; it delegates to `engine::run_loop` and
 point is to let real Neow, route, reward, shop, event, and campfire decisions
 produce the combat start state.
 
-The default view is a compact decision panel. It shows the current decision,
-candidate commands, and a small context block. Use `d` when you need the older
-low-level engine details, `r` for raw Rust debug output, and `h` for the full
-categorized command list.
+The default view is a game-like main screen: current location, current visible
+screen, and visible actions. It deliberately does not show engine state, event
+screen ids, deck stats, or the full command list. Use view commands for those:
+`deck`, `map`, `relics`, `potions`, `draw`, `discard`, `exhaust`, `inspect <id>`,
+`details`, and `raw`.
 
 ## Local Manual Commands
 
@@ -73,7 +74,16 @@ Map / event / reward / campfire / shop:
 
 Inspection and mode control:
 
-- `state`
+- `main` / `state`
+- `deck`
+- `map`
+- `relics`
+- `potions`
+- `draw`
+- `discard`
+- `exhaust`
+- `inspect <id>`
+- `case [path]`
 - `d` / `details`
 - `r` / `raw`
 - `h` / `help`
@@ -104,6 +114,9 @@ Keep these distinctions in mind:
 - `capture` only writes active stable combat decision boundaries; post-combat
   states and transient combat-start requests are rejected
 - combat input advances to the next stable boundary before returning control
+- `case` saves a `RunDecisionCaseV1` diagnostic snapshot with
+  `trainable_as_action_label=false` and `policy_quality_claim=false`; it is not
+  a teacher label, policy sample, or search benchmark by itself
 - `save-baseline-case` uses the last completed whole-combat outcome; it does
   not record stepwise action agreement
 - campfire input here is still only `rest` and `smith`

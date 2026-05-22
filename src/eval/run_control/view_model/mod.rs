@@ -8,7 +8,10 @@ use crate::state::core::EngineState;
 pub(super) use super::session::RunControlSession;
 use candidates::decision_candidates;
 use context::{decision_context, decision_warnings};
-use labels::{boss_label, pending_choice_label};
+use labels::pending_choice_label;
+pub(super) use labels::{
+    boss_label, combat_card_label, deck_summary, monster_name, reward_card_label, room_type_label,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunControlViewModel {
@@ -67,32 +70,28 @@ fn decision_title(session: &RunControlSession) -> String {
             };
             if event.id == crate::state::events::EventId::Neow {
                 if event.current_screen == 0 {
-                    "Neow intro".to_string()
+                    "Neow Intro".to_string()
                 } else {
-                    "Neow bonus".to_string()
+                    "Neow Bonus".to_string()
                 }
             } else {
                 format!("{:?}", event.id)
             }
         }
-        EngineState::MapNavigation => "Map choice".to_string(),
+        EngineState::MapNavigation => "Map".to_string(),
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
-            "Card reward".to_string()
+            "Card Reward".to_string()
         }
-        EngineState::RewardScreen(_) => "Reward screen".to_string(),
-        EngineState::TreasureRoom(_) => "Treasure room".to_string(),
+        EngineState::RewardScreen(_) => "Reward Screen".to_string(),
+        EngineState::TreasureRoom(_) => "Treasure Room".to_string(),
         EngineState::Campfire => "Campfire".to_string(),
         EngineState::Shop(_) => "Shop".to_string(),
-        EngineState::CombatStart(request) => format!("Combat start {:?}", request.encounter_id),
-        EngineState::CombatPlayerTurn | EngineState::CombatProcessing => {
-            "Combat decision".to_string()
-        }
-        EngineState::PendingChoice(choice) => {
-            format!("Combat choice {}", pending_choice_label(choice))
-        }
-        EngineState::RunPendingChoice(choice) => format!("Run choice {:?}", choice.reason),
-        EngineState::BossRelicSelect(_) => "Boss relic".to_string(),
-        EngineState::GameOver(result) => format!("Game over {:?}", result),
+        EngineState::CombatStart(request) => format!("Combat Start {:?}", request.encounter_id),
+        EngineState::CombatPlayerTurn | EngineState::CombatProcessing => "Combat".to_string(),
+        EngineState::PendingChoice(choice) => format!("Combat {}", pending_choice_label(choice)),
+        EngineState::RunPendingChoice(choice) => format!("Run Choice {:?}", choice.reason),
+        EngineState::BossRelicSelect(_) => "Boss Relic".to_string(),
+        EngineState::GameOver(result) => format!("Game Over {:?}", result),
     }
 }
 
@@ -101,55 +100,56 @@ fn decision_summary(session: &RunControlSession) -> DecisionSummary {
         EngineState::EventRoom => {
             let Some(event) = session.run_state.event_state.as_ref() else {
                 return DecisionSummary {
-                    label: "event room without event state".to_string(),
-                    status: Some("invalid boundary".to_string()),
+                    label: "Event state is missing.".to_string(),
+                    status: None,
                 };
             };
             let options = crate::engine::event_handler::get_event_options(&session.run_state);
-            let status = if event.id == crate::state::events::EventId::Neow
-                && event.current_screen == 0
-                && options.len() == 1
-            {
-                Some("routine mechanical proceed".to_string())
+            let label = if event.id == crate::state::events::EventId::Neow {
+                if event.current_screen == 0 {
+                    "Neow greets you.".to_string()
+                } else {
+                    "Choose a starting bonus.".to_string()
+                }
             } else if options.iter().all(|option| option.ui.disabled) {
-                Some("all visible options locked".to_string())
+                format!("{:?}: all visible options are locked.", event.id)
             } else {
-                None
+                format!("{:?}", event.id)
             };
             DecisionSummary {
-                label: format!("{:?} event screen {}", event.id, event.current_screen),
-                status,
+                label,
+                status: None,
             }
         }
         EngineState::MapNavigation => DecisionSummary {
-            label: "choose next map node".to_string(),
+            label: "Choose the next room.".to_string(),
             status: None,
         },
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             DecisionSummary {
-                label: "choose one reward card or skip".to_string(),
+                label: "Choose a card or skip.".to_string(),
                 status: None,
             }
         }
         EngineState::RewardScreen(_) => DecisionSummary {
-            label: "claim rewards or proceed".to_string(),
+            label: "Claim rewards or proceed.".to_string(),
             status: None,
         },
         EngineState::TreasureRoom(_) => DecisionSummary {
-            label: "open chest".to_string(),
-            status: Some("routine room action".to_string()),
+            label: "Open the chest.".to_string(),
+            status: None,
         },
         EngineState::Campfire => DecisionSummary {
-            label: "choose campfire action".to_string(),
+            label: "Choose a campfire action.".to_string(),
             status: None,
         },
         EngineState::Shop(_) => DecisionSummary {
-            label: "buy, purge, or leave shop".to_string(),
+            label: "Buy, remove a card, or leave.".to_string(),
             status: None,
         },
         EngineState::CombatStart(request) => DecisionSummary {
             label: format!("construct combat for {:?}", request.encounter_id),
-            status: Some("transient engine boundary".to_string()),
+            status: None,
         },
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
@@ -162,7 +162,7 @@ fn decision_summary(session: &RunControlSession) -> DecisionSummary {
             status: None,
         },
         EngineState::BossRelicSelect(_) => DecisionSummary {
-            label: "choose boss relic".to_string(),
+            label: "Choose a boss relic.".to_string(),
             status: None,
         },
         EngineState::GameOver(result) => DecisionSummary {
@@ -187,14 +187,13 @@ fn combat_decision_summary(session: &RunControlSession) -> DecisionSummary {
         .as_ref()
         .map(|position| combat_terminal(&position.engine, &position.combat));
     DecisionSummary {
-        label: format!(
-            "player turn {} | hp {}/{} | energy {}",
-            active.combat_state.turn.turn_count,
+        label: format!("Combat turn {}.", active.combat_state.turn.turn_count + 1,),
+        status: Some(format!(
+            "hp {}/{} | energy {} | stable_capture={stable} terminal={terminal:?}",
             active.combat_state.entities.player.current_hp,
             active.combat_state.entities.player.max_hp,
-            active.combat_state.turn.energy
-        ),
-        status: Some(format!("stable_capture={stable} terminal={terminal:?}")),
+            active.combat_state.turn.energy,
+        )),
     }
 }
 
@@ -222,17 +221,7 @@ fn header_location(session: &RunControlSession) -> String {
 
 fn header_config(session: &RunControlSession) -> String {
     format!(
-        "Seed={} | Ascension={} | Class={} | Deck={} | Relics={} | Potions={}",
-        session.run_state.seed,
-        session.run_state.ascension_level,
-        session.run_state.player_class,
-        session.run_state.master_deck.len(),
-        session.run_state.relics.len(),
-        session
-            .run_state
-            .potions
-            .iter()
-            .filter(|slot| slot.is_some())
-            .count()
+        "Seed {} | {} A{}",
+        session.run_state.seed, session.run_state.player_class, session.run_state.ascension_level,
     )
 }

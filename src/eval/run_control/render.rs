@@ -6,12 +6,10 @@ use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
-use super::commands::run_control_short_hint;
 use super::session::RunControlSession;
-use super::view_model::{build_run_control_view_model, DecisionCandidate};
 
 pub fn render_run_control_state(session: &RunControlSession) -> String {
-    render_run_control_compact(session)
+    super::panels::render_run_control_main(session)
 }
 
 pub fn render_run_control_details(session: &RunControlSession) -> String {
@@ -124,86 +122,6 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
 
 pub fn render_run_control_raw(session: &RunControlSession) -> String {
     format!("{session:#?}")
-}
-
-fn render_run_control_compact(session: &RunControlSession) -> String {
-    let view = build_run_control_view_model(session);
-    let mut out = String::new();
-    push_line(
-        &mut out,
-        "================================================================================",
-    );
-    push_line(
-        &mut out,
-        format!(
-            "STEP {} | {} | {}",
-            view.header.step, view.header.title, view.header.location
-        ),
-    );
-    push_line(&mut out, view.header.config);
-    push_line(
-        &mut out,
-        "--------------------------------------------------------------------------------",
-    );
-    push_line(
-        &mut out,
-        format!("Current decision: {}", view.decision.label),
-    );
-    if let Some(status) = view.decision.status.as_ref() {
-        push_line(&mut out, format!("Status: {status}"));
-    }
-    push_line(&mut out, "");
-    push_line(&mut out, "Candidates:");
-    if view.candidates.is_empty() {
-        push_line(&mut out, "  none");
-    } else {
-        for candidate in view.candidates.iter().take(COMPACT_CANDIDATE_LIMIT) {
-            push_candidate(&mut out, candidate);
-        }
-        if view.candidates.len() > COMPACT_CANDIDATE_LIMIT {
-            push_line(
-                &mut out,
-                format!(
-                    "  ... {} more candidates hidden in compact view; use d=details/actions",
-                    view.candidates.len() - COMPACT_CANDIDATE_LIMIT
-                ),
-            );
-        }
-    }
-    if !view.context.is_empty() {
-        push_line(&mut out, "");
-        push_line(&mut out, "Context:");
-        for line in view.context {
-            push_line(&mut out, format!("  {line}"));
-        }
-    }
-    if !view.warnings.is_empty() {
-        push_line(&mut out, "");
-        push_line(&mut out, "Warnings:");
-        for warning in view.warnings {
-            push_line(&mut out, format!("  {warning}"));
-        }
-    }
-    push_line(&mut out, "");
-    push_line(&mut out, format!("Commands: {}", run_control_short_hint()));
-    out
-}
-
-const COMPACT_CANDIDATE_LIMIT: usize = 40;
-
-fn push_candidate(out: &mut String, candidate: &DecisionCandidate) {
-    let note = candidate
-        .note
-        .as_ref()
-        .map(|note| format!(" [{note}]"))
-        .unwrap_or_default();
-    push_line(
-        out,
-        format!(
-            "  {} | {}{} | {}",
-            candidate.id, candidate.label, note, candidate.command
-        ),
-    );
 }
 
 pub fn render_combat_actions(session: &RunControlSession) -> Result<String, String> {
@@ -389,19 +307,29 @@ mod tests {
     use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
 
     #[test]
-    fn compact_view_is_default_and_keeps_long_help_out_of_startup_panel() {
+    fn main_view_is_default_and_keeps_debug_fields_out_of_startup_panel() {
         let session = RunControlSession::new(RunControlConfig {
             seed: 521,
             ..RunControlConfig::default()
         });
         let rendered = render_run_control_state(&session);
 
-        assert!(rendered.contains("STEP 0 | Neow intro"));
-        assert!(rendered.contains("Current decision:"));
-        assert!(rendered.contains("Commands: action <id> / event <id> / proceed"));
+        assert!(rendered.contains("Act 1 Floor 0"));
+        assert!(rendered.contains("Neow Intro"));
+        assert!(rendered.contains("Neow greets you."));
+        assert!(rendered.contains("0 | Proceed"));
+        assert!(rendered.contains("Inspect: deck | map | relics"));
         assert!(
             !rendered.contains("capture-case <benchmark_dir>"),
-            "startup compact panel should not dump full command help"
+            "startup main panel should not dump full command help"
+        );
+        assert!(
+            !rendered.contains("screen=0"),
+            "startup main panel should not show internal event screen ids"
+        );
+        assert!(
+            !rendered.contains("attacks=6"),
+            "startup main panel should not show deck stats by default"
         );
     }
 
