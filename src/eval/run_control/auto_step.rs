@@ -389,6 +389,7 @@ fn auto_boundary_key(session: &RunControlSession) -> String {
         .map(|candidate| format!("{}={}", candidate.id, candidate.action.command_hint()))
         .collect::<Vec<_>>()
         .join(",");
+    let (player_hp, _) = session.visible_player_hp();
     format!(
         "{:?}|{}|{}|act{}|floor{}|hp{}|gold{}|{}|{}",
         session.engine_state,
@@ -396,7 +397,7 @@ fn auto_boundary_key(session: &RunControlSession) -> String {
         event,
         session.run_state.act_num,
         session.run_state.floor_num,
-        session.run_state.current_hp,
+        player_hp,
         session.run_state.gold,
         active_combat,
         candidates

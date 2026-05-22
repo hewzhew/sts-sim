@@ -471,6 +471,18 @@ impl RunControlSession {
             .map(|active| active.combat_state.entities.potions.as_slice())
             .unwrap_or(self.run_state.potions.as_slice())
     }
+
+    pub(in crate::eval::run_control) fn visible_player_hp(&self) -> (i32, i32) {
+        self.active_combat
+            .as_ref()
+            .map(|active| {
+                (
+                    active.combat_state.entities.player.current_hp,
+                    active.combat_state.entities.player.max_hp,
+                )
+            })
+            .unwrap_or((self.run_state.current_hp, self.run_state.max_hp))
+    }
 }
 
 pub fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
@@ -690,6 +702,7 @@ mod tests {
             .is_none()));
         let rendered = render_run_control_state(&session);
         assert!(!rendered.contains("Fruit Juice"));
+        assert!(render_run_control_details(&session).contains("potions=0"));
     }
 
     #[test]

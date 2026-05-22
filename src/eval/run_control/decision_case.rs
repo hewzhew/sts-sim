@@ -58,16 +58,7 @@ pub struct RunDecisionDebugBoundaryV1 {
 impl RunDecisionCaseV1 {
     pub fn from_session(session: &RunControlSession) -> Self {
         let view = build_run_control_view_model(session);
-        let (current_hp, max_hp) = session
-            .active_combat
-            .as_ref()
-            .map(|active| {
-                (
-                    active.combat_state.entities.player.current_hp,
-                    active.combat_state.entities.player.max_hp,
-                )
-            })
-            .unwrap_or((session.run_state.current_hp, session.run_state.max_hp));
+        let (current_hp, max_hp) = session.visible_player_hp();
 
         Self {
             schema_name: RUN_DECISION_CASE_SCHEMA_NAME,

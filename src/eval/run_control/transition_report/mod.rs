@@ -101,16 +101,7 @@ pub(super) fn render_action_result(result: &ActionResult) -> String {
 impl RunVisibleSnapshot {
     pub(super) fn capture(session: &RunControlSession) -> Self {
         let view = build_run_control_view_model(session);
-        let (current_hp, max_hp) = session
-            .active_combat
-            .as_ref()
-            .map(|active| {
-                (
-                    active.combat_state.entities.player.current_hp,
-                    active.combat_state.entities.player.max_hp,
-                )
-            })
-            .unwrap_or((session.run_state.current_hp, session.run_state.max_hp));
+        let (current_hp, max_hp) = session.visible_player_hp();
         Self {
             title: view.header.title,
             current_hp,

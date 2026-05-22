@@ -368,16 +368,7 @@ fn boundary_fingerprint(session: &RunControlSession) -> SessionTraceBoundaryFing
         .map(SessionTraceCandidateV1::from)
         .collect::<Vec<_>>();
     let (candidate_set_hash, candidate_order_hash) = candidate_hashes(&candidates);
-    let (current_hp, max_hp) = session
-        .active_combat
-        .as_ref()
-        .map(|active| {
-            (
-                active.combat_state.entities.player.current_hp,
-                active.combat_state.entities.player.max_hp,
-            )
-        })
-        .unwrap_or((session.run_state.current_hp, session.run_state.max_hp));
+    let (current_hp, max_hp) = session.visible_player_hp();
     SessionTraceBoundaryFingerprintV1 {
         decision_step: session.decision_step,
         engine_state: format!("{:?}", session.engine_state),

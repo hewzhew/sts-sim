@@ -319,16 +319,7 @@ fn combat_decision_summary(session: &RunControlSession) -> DecisionSummary {
 }
 
 fn header_location(session: &RunControlSession) -> String {
-    let (player_hp, player_max_hp) = session
-        .active_combat
-        .as_ref()
-        .map(|active| {
-            (
-                active.combat_state.entities.player.current_hp,
-                active.combat_state.entities.player.max_hp,
-            )
-        })
-        .unwrap_or((session.run_state.current_hp, session.run_state.max_hp));
+    let (player_hp, player_max_hp) = session.visible_player_hp();
     format!(
         "Act {} Floor {} | HP {}/{} | Gold {} | Boss {}",
         session.run_state.act_num,
