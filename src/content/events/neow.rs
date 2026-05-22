@@ -1,3 +1,4 @@
+use crate::content::relics::RelicTier;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 /// Neow Event — the starting blessing event.
 ///
@@ -393,17 +394,21 @@ fn neow_reward_effects(run_state: &RunState, reward: NeowRewardType) -> Vec<Even
         NeowRewardType::TwentyPercentHpBonus => vec![EventEffect::GainMaxHp(hp_bonus * 2)],
         NeowRewardType::HundredGold => vec![EventEffect::GainGold(100)],
         NeowRewardType::TwoFiftyGold => vec![EventEffect::GainGold(250)],
-        NeowRewardType::RandomCommonRelic | NeowRewardType::OneRareRelic => {
-            vec![EventEffect::ObtainRelic {
-                count: 1,
-                kind: EventRelicKind::RandomRelic,
-            }]
-        }
+        NeowRewardType::RandomCommonRelic => vec![EventEffect::ObtainRelic {
+            count: 1,
+            kind: EventRelicKind::RandomCommonRelic,
+        }],
+        NeowRewardType::OneRareRelic => vec![EventEffect::ObtainRelic {
+            count: 1,
+            kind: EventRelicKind::RandomRareRelic,
+        }],
         NeowRewardType::BossRelic => vec![
-            EventEffect::LoseStarterRelic { specific: None },
+            EventEffect::LoseStarterRelic {
+                specific: run_state.relics.first().map(|relic| relic.id),
+            },
             EventEffect::ObtainRelic {
                 count: 1,
-                kind: EventRelicKind::RandomRelic,
+                kind: EventRelicKind::RandomBossRelic,
             },
         ],
         NeowRewardType::OneRandomRareCard => vec![EventEffect::ObtainCard {
@@ -552,25 +557,23 @@ fn apply_reward(
             );
         }
         NeowRewardType::RandomCommonRelic => {
-            if let Some(relic_id) = run_state.common_relic_pool.pop() {
-                if let Some(next_state) = run_state.obtain_relic_with_source(
-                    relic_id,
-                    crate::state::core::EngineState::EventRoom,
-                    DomainEventSource::Event(crate::state::events::EventId::Neow),
-                ) {
-                    *engine_state = next_state;
-                }
+            let relic_id = run_state.random_relic_by_tier(RelicTier::Common);
+            if let Some(next_state) = run_state.obtain_relic_with_source(
+                relic_id,
+                crate::state::core::EngineState::EventRoom,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            ) {
+                *engine_state = next_state;
             }
         }
         NeowRewardType::OneRareRelic => {
-            if let Some(relic_id) = run_state.rare_relic_pool.pop() {
-                if let Some(next_state) = run_state.obtain_relic_with_source(
-                    relic_id,
-                    crate::state::core::EngineState::EventRoom,
-                    DomainEventSource::Event(crate::state::events::EventId::Neow),
-                ) {
-                    *engine_state = next_state;
-                }
+            let relic_id = run_state.random_relic_by_tier(RelicTier::Rare);
+            if let Some(next_state) = run_state.obtain_relic_with_source(
+                relic_id,
+                crate::state::core::EngineState::EventRoom,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            ) {
+                *engine_state = next_state;
             }
         }
         NeowRewardType::BossRelic => {
@@ -580,15 +583,14 @@ fn apply_reward(
                 DomainEventSource::Event(crate::state::events::EventId::Neow),
             );
             // Obtain random boss relic
-            if let Some(relic_id) = run_state.boss_relic_pool.pop() {
-                // Trigger effects like Pandora's Box transforming the deck
-                if let Some(next_state) = run_state.obtain_relic_with_source(
-                    relic_id,
-                    crate::state::core::EngineState::EventRoom,
-                    DomainEventSource::Event(crate::state::events::EventId::Neow),
-                ) {
-                    *engine_state = next_state;
-                }
+            let relic_id = run_state.random_relic_by_tier(RelicTier::Boss);
+            // Trigger effects like Pandora's Box transforming the deck.
+            if let Some(next_state) = run_state.obtain_relic_with_source(
+                relic_id,
+                crate::state::core::EngineState::EventRoom,
+                DomainEventSource::Event(crate::state::events::EventId::Neow),
+            ) {
+                *engine_state = next_state;
             }
         }
         NeowRewardType::OneRandomRareCard => {
@@ -835,7 +837,7 @@ fn generate_neow_colorless_cards(
 mod tests {
     use super::{
         encode_drawback, encode_reward, generate_neow_class_cards, generate_neow_colorless_cards,
-        handle_choice, NeowDrawback, NeowRewardType,
+        handle_choice, neow_reward_effects, NeowDrawback, NeowRewardType,
     };
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
@@ -843,7 +845,7 @@ mod tests {
     use crate::runtime::combat::CombatCard;
     use crate::runtime::rng::StsRng;
     use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{EventEffect, EventId, EventRelicKind, EventState};
     use crate::state::run::RunState;
     use crate::state::selection::{
         DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
@@ -879,6 +881,78 @@ mod tests {
         let mut engine_state = EngineState::EventRoom;
         handle_choice(&mut engine_state, run_state, 0);
         engine_state
+    }
+
+    #[test]
+    fn reward_semantics_preserve_relic_pool_boundaries() {
+        let run_state = RunState::new(1, 0, true, "Ironclad");
+
+        assert!(
+            neow_reward_effects(&run_state, NeowRewardType::RandomCommonRelic).contains(
+                &EventEffect::ObtainRelic {
+                    count: 1,
+                    kind: EventRelicKind::RandomCommonRelic,
+                }
+            )
+        );
+        assert!(
+            neow_reward_effects(&run_state, NeowRewardType::OneRareRelic).contains(
+                &EventEffect::ObtainRelic {
+                    count: 1,
+                    kind: EventRelicKind::RandomRareRelic,
+                }
+            )
+        );
+
+        let boss_effects = neow_reward_effects(&run_state, NeowRewardType::BossRelic);
+        assert!(boss_effects.contains(&EventEffect::LoseStarterRelic {
+            specific: Some(RelicId::BurningBlood),
+        }));
+        assert!(boss_effects.contains(&EventEffect::ObtainRelic {
+            count: 1,
+            kind: EventRelicKind::RandomBossRelic,
+        }));
+    }
+
+    #[test]
+    fn relic_rewards_use_java_front_pool_path() {
+        let mut common = neow_run_with_reward(NeowRewardType::RandomCommonRelic, Vec::new());
+        common.common_relic_pool = vec![RelicId::BloodVial, RelicId::Anchor];
+        choose_neow_reward(&mut common);
+        assert!(
+            common
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::BloodVial),
+            "Java Neow RANDOM_COMMON_RELIC calls returnRandomRelic(COMMON), which removes index 0"
+        );
+        assert!(!common
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Anchor));
+
+        let mut rare = neow_run_with_reward(NeowRewardType::OneRareRelic, Vec::new());
+        rare.rare_relic_pool = vec![RelicId::Mango, RelicId::OldCoin];
+        choose_neow_reward(&mut rare);
+        assert!(
+            rare.relics.iter().any(|relic| relic.id == RelicId::Mango),
+            "Java Neow ONE_RARE_RELIC calls returnRandomRelic(RARE), which removes index 0"
+        );
+        assert!(!rare.relics.iter().any(|relic| relic.id == RelicId::OldCoin));
+
+        let mut boss = neow_run_with_reward(NeowRewardType::BossRelic, Vec::new());
+        boss.boss_relic_pool = vec![RelicId::CoffeeDripper, RelicId::SneckoEye];
+        choose_neow_reward(&mut boss);
+        assert!(
+            boss.relics
+                .iter()
+                .any(|relic| relic.id == RelicId::CoffeeDripper),
+            "Java Neow BOSS_RELIC calls returnRandomRelic(BOSS), which removes index 0"
+        );
+        assert!(!boss
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::SneckoEye));
     }
 
     #[test]

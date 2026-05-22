@@ -86,6 +86,11 @@ pub enum HiddenInfoVisibility {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum RelicPoolBoundary {
     AnyRelic,
+    Common,
+    Uncommon,
+    Rare,
+    Shop,
+    Boss,
     Book,
     Face,
     Unknown,
@@ -210,7 +215,7 @@ impl KnownEffect {
             KnownEffect::Heal(amount) => format!("heal {amount} hp"),
             KnownEffect::GainMaxHp(amount) => format!("gain {amount} max hp"),
             KnownEffect::ObtainSpecificRelic { count, relic } => {
-                format!("obtain {count} specific relic {relic:?}")
+                format!("obtain {count} specific relic {}", relic_label(*relic))
             }
             KnownEffect::ObtainSpecificCard { count, card } => {
                 format!("obtain {count} specific card {card:?}")
@@ -230,9 +235,9 @@ impl KnownEffect {
                 starter_only,
             } => {
                 if *starter_only {
-                    format!("lose starter relic {relic:?}")
+                    format!("lose starter relic {}", relic_label(*relic))
                 } else {
-                    format!("lose relic {relic:?}")
+                    format!("lose relic {}", relic_label(*relic))
                 }
             }
             KnownEffect::LoseRelic { starter_only } => {
@@ -306,6 +311,11 @@ impl RelicPoolBoundary {
     fn brief(self) -> &'static str {
         match self {
             RelicPoolBoundary::AnyRelic => "random relic",
+            RelicPoolBoundary::Common => "random common relic",
+            RelicPoolBoundary::Uncommon => "random uncommon relic",
+            RelicPoolBoundary::Rare => "random rare relic",
+            RelicPoolBoundary::Shop => "random shop relic",
+            RelicPoolBoundary::Boss => "random boss relic",
             RelicPoolBoundary::Book => "random book relic",
             RelicPoolBoundary::Face => "random face relic",
             RelicPoolBoundary::Unknown => "unknown relic",
@@ -380,6 +390,21 @@ fn push_effect_resolution(
             }
             EventRelicKind::RandomRelic => {
                 push_random_relic(unresolved_effects, *count, RelicPoolBoundary::AnyRelic)
+            }
+            EventRelicKind::RandomCommonRelic => {
+                push_random_relic(unresolved_effects, *count, RelicPoolBoundary::Common)
+            }
+            EventRelicKind::RandomUncommonRelic => {
+                push_random_relic(unresolved_effects, *count, RelicPoolBoundary::Uncommon)
+            }
+            EventRelicKind::RandomRareRelic => {
+                push_random_relic(unresolved_effects, *count, RelicPoolBoundary::Rare)
+            }
+            EventRelicKind::RandomShopRelic => {
+                push_random_relic(unresolved_effects, *count, RelicPoolBoundary::Shop)
+            }
+            EventRelicKind::RandomBossRelic => {
+                push_random_relic(unresolved_effects, *count, RelicPoolBoundary::Boss)
             }
             EventRelicKind::RandomBook => {
                 push_random_relic(unresolved_effects, *count, RelicPoolBoundary::Book)
@@ -536,6 +561,21 @@ fn push_random_relic(
         pool,
         visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
     });
+}
+
+fn relic_label(id: RelicId) -> String {
+    debug_words(&format!("{id:?}"))
+}
+
+fn debug_words(raw: &str) -> String {
+    let mut out = String::new();
+    for (idx, ch) in raw.chars().enumerate() {
+        if idx > 0 && ch.is_ascii_uppercase() {
+            out.push(' ');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn followup_boundary(transition: EventOptionTransition) -> Option<FollowupBoundary> {

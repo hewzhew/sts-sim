@@ -266,6 +266,11 @@ pub enum EventRelicKind {
     #[default]
     Unknown,
     Specific(RelicId),
+    RandomCommonRelic,
+    RandomUncommonRelic,
+    RandomRareRelic,
+    RandomShopRelic,
+    RandomBossRelic,
     RandomRelic,
     RandomBook,
     RandomFace,
