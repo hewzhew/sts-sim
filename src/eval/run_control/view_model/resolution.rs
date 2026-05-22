@@ -64,6 +64,11 @@ pub enum UnresolvedEffect {
         pool: CardPoolBoundary,
         visibility: HiddenInfoVisibility,
     },
+    CardRewardChoices {
+        count: usize,
+        pool: CardPoolBoundary,
+        visibility: HiddenInfoVisibility,
+    },
     RandomCurse {
         count: usize,
         pool: CardPoolBoundary,
@@ -99,7 +104,11 @@ pub enum RelicPoolBoundary {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum CardPoolBoundary {
     ClassCard,
+    ClassCommonOrUncommon,
+    ClassRare,
     Colorless,
+    ColorlessUncommon,
+    ColorlessRare,
     Unknown,
 }
 
@@ -262,6 +271,9 @@ impl UnresolvedEffect {
             UnresolvedEffect::RandomCard { pool, .. } => {
                 format!("{} outcome", pool.brief())
             }
+            UnresolvedEffect::CardRewardChoices { count, pool, .. } => {
+                format!("{count} {} choices", pool.brief())
+            }
             UnresolvedEffect::RandomCurse { pool, .. } => {
                 format!("{} outcome", pool.brief())
             }
@@ -288,6 +300,12 @@ impl UnresolvedEffect {
             UnresolvedEffect::RandomCard { count, pool, .. } => {
                 format!(
                     "{count} {}; distribution known, result hidden",
+                    pool.brief()
+                )
+            }
+            UnresolvedEffect::CardRewardChoices { count, pool, .. } => {
+                format!(
+                    "{count} {} reward choices; distribution known, exact candidates hidden until reward screen",
                     pool.brief()
                 )
             }
@@ -327,7 +345,11 @@ impl CardPoolBoundary {
     fn brief(self) -> &'static str {
         match self {
             CardPoolBoundary::ClassCard => "random class card",
+            CardPoolBoundary::ClassCommonOrUncommon => "random common/uncommon class card",
+            CardPoolBoundary::ClassRare => "random rare class card",
             CardPoolBoundary::Colorless => "random colorless card",
+            CardPoolBoundary::ColorlessUncommon => "random uncommon colorless card",
+            CardPoolBoundary::ColorlessRare => "random rare colorless card",
             CardPoolBoundary::Unknown => "unknown card",
         }
     }
@@ -436,6 +458,11 @@ fn push_effect_resolution(
             *kind,
             CardFactKind::Colorless,
         ),
+        EventEffect::OfferCards { count, kind } => push_card_choices(
+            unresolved_effects,
+            *count,
+            card_pool_boundary(*kind, CardFactKind::Class),
+        ),
         EventEffect::ObtainCurse { count, kind } => match kind {
             EventCardKind::Specific(card) => {
                 known_effects.push(KnownEffect::ObtainSpecificCurse {
@@ -443,17 +470,21 @@ fn push_effect_resolution(
                     card: *card,
                 });
             }
-            EventCardKind::RandomClassCard => {
+            EventCardKind::RandomClassCard
+            | EventCardKind::RandomClassCommonOrUncommon
+            | EventCardKind::RandomClassRare => {
                 unresolved_effects.push(UnresolvedEffect::RandomCurse {
                     count: *count,
-                    pool: CardPoolBoundary::ClassCard,
+                    pool: card_pool_boundary(*kind, CardFactKind::Class),
                     visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
                 })
             }
-            EventCardKind::RandomColorless => {
+            EventCardKind::RandomColorless
+            | EventCardKind::RandomColorlessUncommon
+            | EventCardKind::RandomColorlessRare => {
                 unresolved_effects.push(UnresolvedEffect::RandomCurse {
                     count: *count,
-                    pool: CardPoolBoundary::Colorless,
+                    pool: card_pool_boundary(*kind, CardFactKind::Colorless),
                     visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
                 })
             }
@@ -530,16 +561,18 @@ fn push_card_effect(
                 known_effects.push(KnownEffect::ObtainSpecificColorlessCard { count, card })
             }
         },
-        EventCardKind::RandomClassCard => unresolved_effects.push(UnresolvedEffect::RandomCard {
-            count,
-            pool: CardPoolBoundary::ClassCard,
-            visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
-        }),
-        EventCardKind::RandomColorless => unresolved_effects.push(UnresolvedEffect::RandomCard {
-            count,
-            pool: CardPoolBoundary::Colorless,
-            visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
-        }),
+        EventCardKind::RandomClassCard
+        | EventCardKind::RandomClassCommonOrUncommon
+        | EventCardKind::RandomClassRare
+        | EventCardKind::RandomColorless
+        | EventCardKind::RandomColorlessUncommon
+        | EventCardKind::RandomColorlessRare => {
+            unresolved_effects.push(UnresolvedEffect::RandomCard {
+                count,
+                pool: card_pool_boundary(kind, fact_kind),
+                visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
+            })
+        }
         EventCardKind::Unknown => unresolved_effects.push(UnresolvedEffect::RandomCard {
             count,
             pool: match fact_kind {
@@ -548,6 +581,33 @@ fn push_card_effect(
             },
             visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
         }),
+    }
+}
+
+fn push_card_choices(
+    unresolved_effects: &mut Vec<UnresolvedEffect>,
+    count: usize,
+    pool: CardPoolBoundary,
+) {
+    unresolved_effects.push(UnresolvedEffect::CardRewardChoices {
+        count,
+        pool,
+        visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
+    });
+}
+
+fn card_pool_boundary(kind: EventCardKind, fact_kind: CardFactKind) -> CardPoolBoundary {
+    match kind {
+        EventCardKind::RandomClassCard => CardPoolBoundary::ClassCard,
+        EventCardKind::RandomClassCommonOrUncommon => CardPoolBoundary::ClassCommonOrUncommon,
+        EventCardKind::RandomClassRare => CardPoolBoundary::ClassRare,
+        EventCardKind::RandomColorless => CardPoolBoundary::Colorless,
+        EventCardKind::RandomColorlessUncommon => CardPoolBoundary::ColorlessUncommon,
+        EventCardKind::RandomColorlessRare => CardPoolBoundary::ColorlessRare,
+        EventCardKind::Specific(_) | EventCardKind::Unknown => match fact_kind {
+            CardFactKind::Class => CardPoolBoundary::Unknown,
+            CardFactKind::Colorless => CardPoolBoundary::Colorless,
+        },
     }
 }
 

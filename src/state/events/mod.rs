@@ -191,6 +191,10 @@ pub enum EventEffect {
         count: usize,
         kind: EventCardKind,
     },
+    OfferCards {
+        count: usize,
+        kind: EventCardKind,
+    },
     ObtainCurse {
         count: usize,
         kind: EventCardKind,
@@ -257,8 +261,12 @@ pub enum EventCardKind {
     #[default]
     Unknown,
     Specific(CardId),
-    RandomColorless,
     RandomClassCard,
+    RandomClassCommonOrUncommon,
+    RandomClassRare,
+    RandomColorless,
+    RandomColorlessUncommon,
+    RandomColorlessRare,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

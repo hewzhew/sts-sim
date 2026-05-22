@@ -413,7 +413,7 @@ fn neow_reward_effects(run_state: &RunState, reward: NeowRewardType) -> Vec<Even
         ],
         NeowRewardType::OneRandomRareCard => vec![EventEffect::ObtainCard {
             count: 1,
-            kind: EventCardKind::RandomClassCard,
+            kind: EventCardKind::RandomClassRare,
         }],
         NeowRewardType::RemoveCard => vec![EventEffect::RemoveCard {
             count: 1,
@@ -429,18 +429,22 @@ fn neow_reward_effects(run_state: &RunState, reward: NeowRewardType) -> Vec<Even
         NeowRewardType::TransformCard => vec![EventEffect::TransformCard { count: 1 }],
         NeowRewardType::TransformTwoCards => vec![EventEffect::TransformCard { count: 2 }],
         NeowRewardType::ThreeSmallPotions => vec![EventEffect::ObtainPotion { count: 3 }],
-        NeowRewardType::ThreeCards | NeowRewardType::ThreeRareCards => {
-            vec![EventEffect::ObtainCard {
-                count: 1,
-                kind: EventCardKind::RandomClassCard,
-            }]
-        }
-        NeowRewardType::RandomColorless | NeowRewardType::RandomColorless2 => {
-            vec![EventEffect::ObtainColorlessCard {
-                count: 1,
-                kind: EventCardKind::RandomColorless,
-            }]
-        }
+        NeowRewardType::ThreeCards => vec![EventEffect::OfferCards {
+            count: 3,
+            kind: EventCardKind::RandomClassCommonOrUncommon,
+        }],
+        NeowRewardType::ThreeRareCards => vec![EventEffect::OfferCards {
+            count: 3,
+            kind: EventCardKind::RandomClassRare,
+        }],
+        NeowRewardType::RandomColorless => vec![EventEffect::OfferCards {
+            count: 3,
+            kind: EventCardKind::RandomColorlessUncommon,
+        }],
+        NeowRewardType::RandomColorless2 => vec![EventEffect::OfferCards {
+            count: 3,
+            kind: EventCardKind::RandomColorlessRare,
+        }],
     }
 }
 
@@ -673,7 +677,9 @@ fn apply_reward(
             *engine_state = EngineState::RewardScreen(reward_state);
         }
         NeowRewardType::RandomColorless => {
-            // 3 colorless cards (uncommon or rare)
+            // Java rollRarity only returns common/uncommon, then maps common
+            // colorless rewards to uncommon. This reward is therefore three
+            // uncommon colorless choices.
             let cards = generate_neow_colorless_cards(run_state, false);
             let mut reward_state = crate::rewards::state::RewardState::new();
             reward_state
@@ -803,7 +809,8 @@ const COLORLESS_RARE_POOL: &[crate::content::cards::CardId] = &[
 
 /// Generate 3 colorless cards for Neow rewards.
 /// If `rare_only` is true, picks from rare colorless pool only.
-/// Otherwise picks from uncommon + rare with standard rarity weighting.
+/// Otherwise picks from uncommon only: Java rollRarity returns common/uncommon,
+/// and getColorlessRewardCards maps common to uncommon.
 fn generate_neow_colorless_cards(
     run_state: &mut RunState,
     rare_only: bool,
@@ -845,7 +852,7 @@ mod tests {
     use crate::runtime::combat::CombatCard;
     use crate::runtime::rng::StsRng;
     use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
-    use crate::state::events::{EventEffect, EventId, EventRelicKind, EventState};
+    use crate::state::events::{EventCardKind, EventEffect, EventId, EventRelicKind, EventState};
     use crate::state::run::RunState;
     use crate::state::selection::{
         DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
@@ -912,6 +919,52 @@ mod tests {
             count: 1,
             kind: EventRelicKind::RandomBossRelic,
         }));
+    }
+
+    #[test]
+    fn reward_semantics_preserve_card_pool_boundaries() {
+        let run_state = RunState::new(1, 0, true, "Ironclad");
+
+        assert!(
+            neow_reward_effects(&run_state, NeowRewardType::OneRandomRareCard).contains(
+                &EventEffect::ObtainCard {
+                    count: 1,
+                    kind: EventCardKind::RandomClassRare,
+                }
+            )
+        );
+        assert!(
+            neow_reward_effects(&run_state, NeowRewardType::ThreeCards).contains(
+                &EventEffect::OfferCards {
+                    count: 3,
+                    kind: EventCardKind::RandomClassCommonOrUncommon,
+                }
+            )
+        );
+        assert!(
+            neow_reward_effects(&run_state, NeowRewardType::ThreeRareCards).contains(
+                &EventEffect::OfferCards {
+                    count: 3,
+                    kind: EventCardKind::RandomClassRare,
+                }
+            )
+        );
+        assert!(
+            neow_reward_effects(&run_state, NeowRewardType::RandomColorless).contains(
+                &EventEffect::OfferCards {
+                    count: 3,
+                    kind: EventCardKind::RandomColorlessUncommon,
+                }
+            )
+        );
+        assert!(
+            neow_reward_effects(&run_state, NeowRewardType::RandomColorless2).contains(
+                &EventEffect::OfferCards {
+                    count: 3,
+                    kind: EventCardKind::RandomColorlessRare,
+                }
+            )
+        );
     }
 
     #[test]

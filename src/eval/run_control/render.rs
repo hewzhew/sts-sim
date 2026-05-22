@@ -388,7 +388,7 @@ mod tests {
         assert!(!rendered.contains("known:"));
         assert!(!rendered.contains("partial:"));
         assert!(rendered.contains("gain 100 gold"));
-        assert!(rendered.contains("random colorless card outcome"));
+        assert!(rendered.contains("3 random uncommon colorless card choices"));
         assert!(rendered.contains("random rare relic outcome"));
         assert!(rendered.contains("lose starter relic Burning Blood"));
         assert!(rendered.contains("random boss relic outcome"));
