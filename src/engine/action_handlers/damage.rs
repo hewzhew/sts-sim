@@ -7,7 +7,9 @@
 //          LimitBreak, BlockPerNonAttack, ExhaustAllNonAttack, ExhaustRandomCard
 
 mod core;
+mod gold;
 mod health;
+mod vampire;
 
 use crate::content::powers::store;
 use crate::content::powers::PowerId;
@@ -19,11 +21,13 @@ use core::{
     target_receives_java_unique_kill_reward,
 };
 pub use core::{apply_raw_damage_to_monster, deduct_block, handle_damage};
+pub use gold::{handle_gain_gold, handle_steal_player_gold};
 pub use health::{
     handle_double_block, handle_gain_block, handle_gain_block_random_monster, handle_heal,
     handle_lose_block, handle_lose_hp, handle_poison_lose_hp, handle_remove_all_block,
     handle_set_current_hp, increase_player_max_hp_like_java,
 };
+pub use vampire::{handle_vampire_damage, handle_vampire_damage_all_enemies};
 fn pummel_source_is_dying(state: &CombatState, source_id: usize) -> bool {
     if source_id == 0 {
         state.entities.player.current_hp <= 0
@@ -616,150 +620,6 @@ pub fn handle_ritual_dagger(
         );
     }
     clear_post_combat_actions_if_ready(state);
-}
-
-pub fn handle_gain_gold(amount: i32, state: &mut CombatState) {
-    if amount <= 0 {
-        return;
-    }
-
-    if state
-        .entities
-        .player
-        .has_relic(crate::content::relics::RelicId::Ectoplasm)
-    {
-        return;
-    }
-
-    state.entities.player.gold += amount;
-    state.entities.player.gold_delta_this_combat += amount;
-
-    if state
-        .entities
-        .player
-        .has_relic(crate::content::relics::RelicId::BloodyIdol)
-    {
-        let actions = crate::content::relics::bloody_idol::BloodyIdol::on_gain_gold();
-        state.queue_actions(actions);
-    }
-}
-
-pub fn handle_steal_player_gold(thief_id: usize, amount: i32, state: &mut CombatState) {
-    if amount <= 0 {
-        if let Some(thief) = state
-            .entities
-            .monsters
-            .iter_mut()
-            .find(|m| m.id == thief_id)
-        {
-            thief.thief.protocol_seeded = true;
-            thief.thief.slash_count = thief.thief.slash_count.saturating_add(1);
-        }
-        return;
-    }
-
-    let actual = amount.min(state.entities.player.gold).max(0);
-    state.entities.player.gold = (state.entities.player.gold - actual).max(0);
-    state.entities.player.gold_delta_this_combat -= actual;
-
-    if let Some(thief) = state
-        .entities
-        .monsters
-        .iter_mut()
-        .find(|m| m.id == thief_id)
-    {
-        thief.thief.protocol_seeded = true;
-        thief.thief.slash_count = thief.thief.slash_count.saturating_add(1);
-        thief.thief.stolen_gold += actual;
-    }
-}
-
-pub fn handle_vampire_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
-    let source = info.source;
-    if info.target == 0 {
-        let previous_hp = state.entities.player.current_hp;
-        handle_damage(info, state);
-        let hp_lost = (previous_hp - state.entities.player.current_hp).max(0);
-        if hp_lost > 0 {
-            queue_vampire_heal_source(state, source, hp_lost, AddTo::Top);
-        }
-    } else {
-        let outcome = apply_damage_to_monster_via_pipeline(state, &info, info.output.max(0));
-        if outcome.hp_lost > 0 {
-            queue_vampire_heal_source(state, source, outcome.hp_lost, AddTo::Top);
-        }
-        clear_post_combat_actions_if_ready(state);
-    }
-}
-
-pub fn handle_vampire_damage_all_enemies(
-    source: usize,
-    damages: smallvec::SmallVec<[i32; 5]>,
-    damage_type: DamageType,
-    state: &mut CombatState,
-) {
-    let mut total_hp_lost = 0;
-    let target_damage_pairs: Vec<(usize, i32)> = state
-        .entities
-        .monsters
-        .iter()
-        .zip(damages.iter())
-        .filter_map(|(m, &dmg)| {
-            // Java VampireDamageAllEnemiesAction skips only isDying,
-            // currentHealth <= 0, and isEscaping.  It does not consult
-            // isDeadOrEscaped(), so `halfDead` is intentionally not a filter
-            // here.
-            if m.is_dying || m.current_hp <= 0 || m.is_escaped {
-                None
-            } else {
-                Some((m.id, dmg))
-            }
-        })
-        .collect();
-
-    for (target_id, dmg) in target_damage_pairs {
-        if dmg <= 0 {
-            continue;
-        }
-        let outcome = apply_damage_to_monster_via_pipeline(
-            state,
-            &crate::runtime::action::DamageInfo {
-                source,
-                target: target_id,
-                base: dmg,
-                output: dmg,
-                damage_type,
-                is_modified: true,
-            },
-            dmg.max(0),
-        );
-        total_hp_lost += outcome.hp_lost;
-    }
-    if total_hp_lost > 0 {
-        queue_vampire_heal_source(state, source, total_hp_lost, AddTo::Bottom);
-    }
-    clear_post_combat_actions_if_ready(state);
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AddTo {
-    Top,
-    Bottom,
-}
-
-fn queue_vampire_heal_source(state: &mut CombatState, source: usize, amount: i32, add_to: AddTo) {
-    if amount <= 0 {
-        return;
-    }
-
-    let action = Action::Heal {
-        target: source,
-        amount,
-    };
-    match add_to {
-        AddTo::Top => state.queue_action_front(action),
-        AddTo::Bottom => state.queue_action_back(action),
-    }
 }
 
 pub fn handle_limit_break(state: &mut CombatState) {
