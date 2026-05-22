@@ -1,3 +1,4 @@
+use crate::runtime::action::MonsterRuntimePatch;
 use crate::runtime::combat::CombatState;
 
 pub(super) fn handle_update_awakened_one_state(
@@ -316,4 +317,97 @@ pub(super) fn handle_update_snake_dagger_state(
             monster.snake_dagger.protocol_seeded = value;
         }
     }
+}
+
+pub(super) fn try_handle_patch(
+    monster_id: usize,
+    patch: MonsterRuntimePatch,
+    state: &mut CombatState,
+) -> Result<(), MonsterRuntimePatch> {
+    match patch {
+        MonsterRuntimePatch::AwakenedOne {
+            form1,
+            first_turn,
+            protocol_seeded,
+        } => {
+            handle_update_awakened_one_state(monster_id, form1, first_turn, protocol_seeded, state)
+        }
+        MonsterRuntimePatch::Darkling {
+            first_move,
+            nip_dmg,
+            protocol_seeded,
+        } => handle_update_darkling_state(monster_id, first_move, nip_dmg, protocol_seeded, state),
+        MonsterRuntimePatch::WrithingMass {
+            first_move,
+            used_mega_debuff,
+            protocol_seeded,
+        } => handle_update_writhing_mass_state(
+            monster_id,
+            first_move,
+            used_mega_debuff,
+            protocol_seeded,
+            state,
+        ),
+        MonsterRuntimePatch::Spiker {
+            thorns_count,
+            protocol_seeded,
+        } => handle_update_spiker_state(monster_id, thorns_count, protocol_seeded, state),
+        MonsterRuntimePatch::Reptomancer {
+            first_move,
+            dagger_slots,
+            protocol_seeded,
+        } => handle_update_reptomancer_state(
+            monster_id,
+            first_move,
+            dagger_slots,
+            protocol_seeded,
+            state,
+        ),
+        MonsterRuntimePatch::Nemesis {
+            first_move,
+            scythe_cooldown,
+            protocol_seeded,
+        } => handle_update_nemesis_state(
+            monster_id,
+            first_move,
+            scythe_cooldown,
+            protocol_seeded,
+            state,
+        ),
+        MonsterRuntimePatch::GiantHead {
+            count,
+            protocol_seeded,
+        } => handle_update_giant_head_state(monster_id, count, protocol_seeded, state),
+        MonsterRuntimePatch::TimeEater {
+            used_haste,
+            protocol_seeded,
+        } => handle_update_time_eater_state(monster_id, used_haste, protocol_seeded, state),
+        MonsterRuntimePatch::Donu {
+            is_attacking,
+            protocol_seeded,
+        } => handle_update_donu_state(monster_id, is_attacking, protocol_seeded, state),
+        MonsterRuntimePatch::Deca {
+            is_attacking,
+            protocol_seeded,
+        } => handle_update_deca_state(monster_id, is_attacking, protocol_seeded, state),
+        MonsterRuntimePatch::Transient {
+            count,
+            protocol_seeded,
+        } => handle_update_transient_state(monster_id, count, protocol_seeded, state),
+        MonsterRuntimePatch::Exploder {
+            turn_count,
+            protocol_seeded,
+        } => handle_update_exploder_state(monster_id, turn_count, protocol_seeded, state),
+        MonsterRuntimePatch::Maw {
+            roared,
+            turn_count,
+            protocol_seeded,
+        } => handle_update_maw_state(monster_id, roared, turn_count, protocol_seeded, state),
+        MonsterRuntimePatch::SnakeDagger {
+            first_move,
+            protocol_seeded,
+        } => handle_update_snake_dagger_state(monster_id, first_move, protocol_seeded, state),
+        other => return Err(other),
+    }
+    Ok(())
 }

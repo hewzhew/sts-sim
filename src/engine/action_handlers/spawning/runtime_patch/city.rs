@@ -1,3 +1,4 @@
+use crate::runtime::action::MonsterRuntimePatch;
 use crate::runtime::combat::CombatState;
 
 pub(super) fn handle_update_byrd_state(
@@ -294,4 +295,108 @@ pub(super) fn handle_update_spheric_guardian_state(
             monster.spheric_guardian.protocol_seeded = value;
         }
     }
+}
+
+pub(super) fn try_handle_patch(
+    monster_id: usize,
+    patch: MonsterRuntimePatch,
+    state: &mut CombatState,
+) -> Result<(), MonsterRuntimePatch> {
+    match patch {
+        MonsterRuntimePatch::Byrd {
+            first_move,
+            is_flying,
+            protocol_seeded,
+        } => handle_update_byrd_state(monster_id, first_move, is_flying, protocol_seeded, state),
+        MonsterRuntimePatch::Chosen {
+            first_turn,
+            used_hex,
+            protocol_seeded,
+        } => handle_update_chosen_state(monster_id, first_turn, used_hex, protocol_seeded, state),
+        MonsterRuntimePatch::Snecko {
+            first_turn,
+            protocol_seeded,
+        } => handle_update_snecko_state(monster_id, first_turn, protocol_seeded, state),
+        MonsterRuntimePatch::ShelledParasite {
+            first_move,
+            protocol_seeded,
+        } => handle_update_shelled_parasite_state(monster_id, first_move, protocol_seeded, state),
+        MonsterRuntimePatch::BronzeAutomaton {
+            first_turn,
+            num_turns,
+            protocol_seeded,
+        } => handle_update_bronze_automaton_state(
+            monster_id,
+            first_turn,
+            num_turns,
+            protocol_seeded,
+            state,
+        ),
+        MonsterRuntimePatch::BronzeOrb {
+            used_stasis,
+            protocol_seeded,
+        } => handle_update_bronze_orb_state(monster_id, used_stasis, protocol_seeded, state),
+        MonsterRuntimePatch::BookOfStabbing {
+            stab_count,
+            protocol_seeded,
+        } => handle_update_book_of_stabbing_state(monster_id, stab_count, protocol_seeded, state),
+        MonsterRuntimePatch::Collector {
+            initial_spawn,
+            ult_used,
+            turns_taken,
+            enemy_slots,
+            protocol_seeded,
+        } => handle_update_collector_state(
+            monster_id,
+            initial_spawn,
+            ult_used,
+            turns_taken,
+            enemy_slots,
+            protocol_seeded,
+            state,
+        ),
+        MonsterRuntimePatch::Champ {
+            first_turn,
+            num_turns,
+            forge_times,
+            threshold_reached,
+            protocol_seeded,
+        } => handle_update_champ_state(
+            monster_id,
+            first_turn,
+            num_turns,
+            forge_times,
+            threshold_reached,
+            protocol_seeded,
+            state,
+        ),
+        MonsterRuntimePatch::SlaverRed {
+            first_turn,
+            used_entangle,
+            protocol_seeded,
+        } => handle_update_slaver_red_state(
+            monster_id,
+            first_turn,
+            used_entangle,
+            protocol_seeded,
+            state,
+        ),
+        MonsterRuntimePatch::GremlinLeader {
+            gremlin_slots,
+            protocol_seeded,
+        } => handle_update_gremlin_leader_state(monster_id, gremlin_slots, protocol_seeded, state),
+        MonsterRuntimePatch::SphericGuardian {
+            first_move,
+            second_move,
+            protocol_seeded,
+        } => handle_update_spheric_guardian_state(
+            monster_id,
+            first_move,
+            second_move,
+            protocol_seeded,
+            state,
+        ),
+        other => return Err(other),
+    }
+    Ok(())
 }

@@ -1,3 +1,4 @@
+use crate::runtime::action::MonsterRuntimePatch;
 use crate::runtime::combat::CombatState;
 
 pub(super) fn handle_update_corrupt_heart_state(
@@ -77,4 +78,45 @@ pub(super) fn handle_update_spire_spear_state(
             monster.spire_spear.protocol_seeded = value;
         }
     }
+}
+
+pub(super) fn try_handle_patch(
+    monster_id: usize,
+    patch: MonsterRuntimePatch,
+    state: &mut CombatState,
+) -> Result<(), MonsterRuntimePatch> {
+    match patch {
+        MonsterRuntimePatch::CorruptHeart {
+            first_move,
+            move_count,
+            buff_count,
+            blood_hit_count,
+            protocol_seeded,
+        } => handle_update_corrupt_heart_state(
+            monster_id,
+            first_move,
+            move_count,
+            buff_count,
+            blood_hit_count,
+            protocol_seeded,
+            state,
+        ),
+        MonsterRuntimePatch::SpireShield {
+            move_count,
+            protocol_seeded,
+        } => handle_update_spire_shield_state(monster_id, move_count, protocol_seeded, state),
+        MonsterRuntimePatch::SpireSpear {
+            move_count,
+            skewer_count,
+            protocol_seeded,
+        } => handle_update_spire_spear_state(
+            monster_id,
+            move_count,
+            skewer_count,
+            protocol_seeded,
+            state,
+        ),
+        other => return Err(other),
+    }
+    Ok(())
 }

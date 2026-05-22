@@ -1,3 +1,4 @@
+use crate::runtime::action::MonsterRuntimePatch;
 use crate::runtime::combat::CombatState;
 
 pub(super) fn handle_update_hexaghost_state(
@@ -247,4 +248,87 @@ pub(super) fn handle_update_large_slime_state(
             monster.large_slime.protocol_seeded = value;
         }
     }
+}
+
+pub(super) fn try_handle_patch(
+    monster_id: usize,
+    patch: MonsterRuntimePatch,
+    state: &mut CombatState,
+) -> Result<(), MonsterRuntimePatch> {
+    match patch {
+        MonsterRuntimePatch::Hexaghost {
+            activated,
+            orb_active_count,
+            burn_upgraded,
+            divider_damage,
+            clear_divider_damage,
+        } => handle_update_hexaghost_state(
+            monster_id,
+            activated,
+            orb_active_count,
+            burn_upgraded,
+            divider_damage,
+            clear_divider_damage,
+            state,
+        ),
+        MonsterRuntimePatch::Lagavulin {
+            idle_count,
+            debuff_turn_count,
+            is_out,
+            is_out_triggered,
+        } => handle_update_lagavulin_state(
+            monster_id,
+            idle_count,
+            debuff_turn_count,
+            is_out,
+            is_out_triggered,
+            state,
+        ),
+        MonsterRuntimePatch::JawWorm {
+            first_move,
+            hard_mode,
+            protocol_seeded,
+        } => {
+            handle_update_jaw_worm_state(monster_id, first_move, hard_mode, protocol_seeded, state)
+        }
+        MonsterRuntimePatch::Guardian {
+            damage_threshold,
+            damage_taken,
+            is_open,
+            close_up_triggered,
+        } => handle_update_guardian_state(
+            monster_id,
+            damage_threshold,
+            damage_taken,
+            is_open,
+            close_up_triggered,
+            state,
+        ),
+        MonsterRuntimePatch::GremlinNob {
+            used_bellow,
+            protocol_seeded,
+        } => handle_update_gremlin_nob_state(monster_id, used_bellow, protocol_seeded, state),
+        MonsterRuntimePatch::GremlinWizard {
+            current_charge,
+            protocol_seeded,
+        } => handle_update_gremlin_wizard_state(monster_id, current_charge, protocol_seeded, state),
+        MonsterRuntimePatch::Cultist {
+            first_move,
+            protocol_seeded,
+        } => handle_update_cultist_state(monster_id, first_move, protocol_seeded, state),
+        MonsterRuntimePatch::Sentry {
+            first_move,
+            protocol_seeded,
+        } => handle_update_sentry_state(monster_id, first_move, protocol_seeded, state),
+        MonsterRuntimePatch::SlimeBoss {
+            first_turn,
+            protocol_seeded,
+        } => handle_update_slime_boss_state(monster_id, first_turn, protocol_seeded, state),
+        MonsterRuntimePatch::LargeSlime {
+            split_triggered,
+            protocol_seeded,
+        } => handle_update_large_slime_state(monster_id, split_triggered, protocol_seeded, state),
+        other => return Err(other),
+    }
+    Ok(())
 }
