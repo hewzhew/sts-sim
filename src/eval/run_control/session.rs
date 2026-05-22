@@ -39,7 +39,6 @@ pub struct RunControlConfig {
     pub ascension_level: u8,
     pub final_act: bool,
     pub player_class: &'static str,
-    pub skip_neow: bool,
 }
 
 impl Default for RunControlConfig {
@@ -49,7 +48,6 @@ impl Default for RunControlConfig {
             ascension_level: 0,
             final_act: false,
             player_class: "Ironclad",
-            skip_neow: false,
         }
     }
 }
@@ -101,18 +99,13 @@ impl RunControlCommandOutcome {
 
 impl RunControlSession {
     pub fn new(config: RunControlConfig) -> Self {
-        let mut run_state = RunState::new(
+        let run_state = RunState::new(
             config.seed,
             config.ascension_level,
             config.final_act,
             config.player_class,
         );
-        let engine_state = if config.skip_neow {
-            run_state.event_state = None;
-            EngineState::MapNavigation
-        } else {
-            EngineState::EventRoom
-        };
+        let engine_state = EngineState::EventRoom;
 
         Self {
             engine_state,
@@ -786,10 +779,7 @@ mod tests {
 
     #[test]
     fn run_control_capture_command_rejects_map_state() {
-        let session = RunControlSession::new(RunControlConfig {
-            skip_neow: true,
-            ..RunControlConfig::default()
-        });
+        let session = test_session_after_neow_at_map();
 
         let err = session
             .save_current_combat_capture(Path::new("unused.json"), None)
@@ -944,10 +934,7 @@ mod tests {
     }
 
     fn test_session_with_first_monster_room() -> RunControlSession {
-        let mut session = RunControlSession::new(RunControlConfig {
-            skip_neow: true,
-            ..RunControlConfig::default()
-        });
+        let mut session = test_session_after_neow_at_map();
         let mut first = MapRoomNode::new(0, 0);
         first.class = Some(RoomType::MonsterRoom);
         first.edges.insert(MapEdge::new(0, 0, 0, 1));
@@ -955,6 +942,13 @@ mod tests {
         second.class = Some(RoomType::MonsterRoom);
         session.run_state.map = MapState::new(vec![vec![first], vec![second]]);
         session.run_state.monster_list = vec![EncounterId::JawWorm, EncounterId::Cultist];
+        session
+    }
+
+    fn test_session_after_neow_at_map() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.engine_state = EngineState::MapNavigation;
         session
     }
 

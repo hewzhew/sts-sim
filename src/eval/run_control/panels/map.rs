@@ -255,13 +255,11 @@ fn legal_next_map_nodes(session: &RunControlSession) -> Vec<&MapRoomNode> {
 mod tests {
     use super::*;
     use crate::eval::run_control::session::RunControlConfig;
+    use crate::state::core::EngineState;
 
     #[test]
     fn map_panel_shows_route_summary_on_demand() {
-        let session = RunControlSession::new(RunControlConfig {
-            skip_neow: true,
-            ..RunControlConfig::default()
-        });
+        let session = test_session_after_neow_at_map();
         let rendered = render_map_panel(&session);
 
         assert!(rendered.contains("Map route summary"));
@@ -283,5 +281,12 @@ mod tests {
         assert!(rendered.contains("first room selection is locked until Neow is complete"));
         assert!(rendered.contains("Visible routes:"));
         assert!(!rendered.contains("go <x>"));
+    }
+
+    fn test_session_after_neow_at_map() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.engine_state = EngineState::MapNavigation;
+        session
     }
 }

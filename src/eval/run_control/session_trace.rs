@@ -11,7 +11,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 1;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -48,7 +48,6 @@ pub struct SessionTraceRunConfigV1 {
     pub ascension_level: u8,
     pub player_class: String,
     pub final_act: bool,
-    pub skip_neow: bool,
 }
 
 impl SessionTraceRunConfigV1 {
@@ -58,7 +57,6 @@ impl SessionTraceRunConfigV1 {
             ascension_level: session.run_state.ascension_level,
             player_class: session.run_state.player_class.to_string(),
             final_act: session.run_state.is_final_act_available,
-            skip_neow: session.run_state.event_state.is_none() && session.run_state.floor_num == 0,
         }
     }
 }
@@ -481,7 +479,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::eval::run_control::{RunControlCommand, RunControlConfig};
-    use crate::state::core::ClientInput;
+    use crate::state::core::{ClientInput, EngineState};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -575,10 +573,7 @@ mod tests {
 
     #[test]
     fn recorder_records_capture_case_artifact_ref() {
-        let mut session = RunControlSession::new(RunControlConfig {
-            skip_neow: true,
-            ..RunControlConfig::default()
-        });
+        let mut session = test_session_after_neow_at_map();
         session
             .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(1)))
             .expect("map input should enter combat for default seed");
@@ -617,6 +612,13 @@ mod tests {
             .is_some());
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    fn test_session_after_neow_at_map() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.engine_state = EngineState::MapNavigation;
+        session
     }
 
     fn unique_temp_dir(label: &str) -> PathBuf {

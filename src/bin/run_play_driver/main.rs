@@ -24,9 +24,6 @@ struct Args {
     final_act: bool,
 
     #[arg(long)]
-    skip_neow: bool,
-
-    #[arg(long)]
     script: Option<PathBuf>,
 
     #[arg(long)]
@@ -60,7 +57,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ascension_level: args.ascension,
         final_act: args.final_act,
         player_class,
-        skip_neow: args.skip_neow,
     });
 
     println!("{}", render_run_control_state(&session));
