@@ -40,6 +40,7 @@ pub(super) fn apply_search_combat(
 
     let before_snapshot = RunVisibleSnapshot::capture(session);
     let applied = trajectory.actions.clone();
+    session.mark_current_combat_search_resolved();
     for action in &applied {
         session.apply_input(action.input.clone())?;
     }

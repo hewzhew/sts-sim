@@ -58,7 +58,7 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
                 case.root.display(),
                 case.case_id,
                 case.combat_sequence,
-                session.last_completed_combat_matches_capture_case()
+                session.last_completed_manual_combat_matches_capture_case()
             ),
         );
     }

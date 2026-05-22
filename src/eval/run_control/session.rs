@@ -56,6 +56,8 @@ pub struct RunControlSession {
     pub(super) combat_outcomes: CombatOutcomeTracker,
     combat_sequence: u64,
     last_completed_combat_sequence: Option<u64>,
+    last_completed_combat_source: Option<CombatCompletionSource>,
+    current_combat_source: Option<CombatCompletionSource>,
     last_capture_case: Option<LastBenchmarkCaptureCase>,
 }
 
@@ -64,6 +66,12 @@ pub(in crate::eval::run_control) struct LastBenchmarkCaptureCase {
     pub root: PathBuf,
     pub case_id: String,
     pub combat_sequence: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::eval::run_control) enum CombatCompletionSource {
+    Manual,
+    SearchCombat,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -121,6 +129,8 @@ impl RunControlSession {
             combat_outcomes: CombatOutcomeTracker::default(),
             combat_sequence: 0,
             last_completed_combat_sequence: None,
+            last_completed_combat_source: None,
+            current_combat_source: None,
             last_capture_case: None,
         }
     }
@@ -376,6 +386,11 @@ impl RunControlSession {
         if let Some(finished) = finished_combat.as_ref() {
             self.combat_outcomes.finish("last_combat", finished);
             self.last_completed_combat_sequence = Some(self.combat_sequence);
+            self.last_completed_combat_source = Some(
+                self.current_combat_source
+                    .take()
+                    .unwrap_or(CombatCompletionSource::Manual),
+            );
         }
         self.cleanup_inactive_combat();
         self.ensure_combat_started_if_needed()?;
@@ -436,6 +451,7 @@ impl RunControlSession {
         );
         if started {
             self.combat_sequence = self.combat_sequence.saturating_add(1);
+            self.current_combat_source = Some(CombatCompletionSource::Manual);
         }
     }
 
@@ -463,6 +479,25 @@ impl RunControlSession {
             return false;
         };
         self.last_completed_combat_sequence == Some(case.combat_sequence)
+    }
+
+    pub(in crate::eval::run_control) fn last_completed_manual_combat_matches_capture_case(
+        &self,
+    ) -> bool {
+        self.last_completed_combat_matches_capture_case()
+            && self.last_completed_combat_source == Some(CombatCompletionSource::Manual)
+    }
+
+    pub(in crate::eval::run_control) fn last_completed_combat_source(
+        &self,
+    ) -> Option<CombatCompletionSource> {
+        self.last_completed_combat_source
+    }
+
+    pub(in crate::eval::run_control) fn mark_current_combat_search_resolved(&mut self) {
+        if self.active_combat.is_some() {
+            self.current_combat_source = Some(CombatCompletionSource::SearchCombat);
+        }
     }
 
     pub(in crate::eval::run_control) fn visible_potions(&self) -> &[Option<Potion>] {
@@ -591,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn run_control_baseline_command_uses_last_capture_case() {
+    fn run_control_baseline_command_rejects_search_resolved_combat() {
         let mut session = test_session_with_first_monster_room();
         session
             .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
@@ -614,20 +649,18 @@ mod tests {
                 },
             ))
             .expect("search-combat should finish the captured combat");
+        assert!(session.last_completed_combat_matches_capture_case());
+        assert!(!session.last_completed_manual_combat_matches_capture_case());
 
-        let outcome = session
+        let err = session
             .apply_command(RunControlCommand::SaveBaselineForLastCaptureCase)
-            .expect("baseline should save against the last capture-case");
+            .expect_err("search-combat outcome should not save as human baseline");
 
-        assert!(outcome.message.contains("saved CombatBaselineOutcomeV1"));
+        assert!(err.contains("resolved by search-combat"));
         let paths = BenchmarkCasePaths::for_case(&root, "first_fight");
-        assert!(paths.baseline_path.exists());
-        let baseline =
-            crate::eval::run_control::load_combat_baseline_outcome_v1(&paths.baseline_path)
-                .expect("baseline should load");
-        assert_eq!(baseline.case_id, "first_fight");
+        assert!(!paths.baseline_path.exists());
         let manifest = fs::read_to_string(&paths.benchmark_manifest).expect("manifest readable");
-        assert!(manifest.contains("\"baseline\": \"baselines/first_fight.baseline.json\""));
+        assert!(!manifest.contains("\"baseline\""));
 
         let _ = fs::remove_dir_all(root);
     }

@@ -9,7 +9,7 @@ use super::decision_case::{
 };
 use super::outcome::{save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1};
 use super::registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
-use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::session::{CombatCompletionSource, RunControlCommandOutcome, RunControlSession};
 
 pub(super) fn apply_save_decision_case(
     session: &RunControlSession,
@@ -188,6 +188,12 @@ impl RunControlSession {
         path: &Path,
         case_id: String,
     ) -> Result<CombatBaselineOutcomeV1, String> {
+        if self.last_completed_combat_source() == Some(CombatCompletionSource::SearchCombat) {
+            return Err(
+                "last completed combat was resolved by search-combat; refusing to save it as a human/manual CombatBaselineOutcomeV1"
+                    .to_string(),
+            );
+        }
         let mut baseline = self
             .combat_outcomes
             .last()
