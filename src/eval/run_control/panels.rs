@@ -261,10 +261,10 @@ fn main_command_hint(session: &RunControlSession) -> String {
     let view = build_run_control_view_model(session);
     let first = view.candidates.first();
     let primary = match first {
-        Some(candidate) if view.candidates.len() == 1 && candidate.id == "0" => {
-            format!("Enter/0: {}", candidate.label)
+        Some(candidate) if view.candidates.len() == 1 => {
+            format!("Enter/{}: {}", candidate.id, candidate.label)
         }
-        Some(_) => "0-9/id = choose visible option".to_string(),
+        Some(_) => state_command_hint(session),
         None => "type a command".to_string(),
     };
     let views = match session.engine_state {
@@ -276,6 +276,19 @@ fn main_command_hint(session: &RunControlSession) -> String {
         _ => "deck | map | relics | potions | case | raw | help | q",
     };
     format!("{primary} | {views}")
+}
+
+fn state_command_hint(session: &RunControlSession) -> String {
+    match session.engine_state {
+        EngineState::Shop(_) => "type visible id: card-2 / relic-1 / potion-0 / leave".to_string(),
+        EngineState::Campfire => "rest | smith-<deck_idx> | recall".to_string(),
+        EngineState::MapNavigation => "type a path id, e.g. 0 or 5".to_string(),
+        EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
+        EngineState::CombatPlayerTurn
+        | EngineState::CombatProcessing
+        | EngineState::PendingChoice(_) => "type visible action id, end, or n".to_string(),
+        _ => "type visible id".to_string(),
+    }
 }
 
 pub(super) fn card_line(card: &CombatCard, runtime_cost: bool) -> String {

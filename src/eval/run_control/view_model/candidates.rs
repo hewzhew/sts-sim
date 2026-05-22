@@ -1,3 +1,4 @@
+use crate::content::potions::get_potion_definition;
 use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 use crate::state::events::{EventOption, EventOptionTransition};
@@ -205,7 +206,6 @@ fn campfire_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         .iter()
         .enumerate()
         .filter(|(_, card)| crate::state::core::master_deck_card_can_upgrade(card))
-        .take(8)
         .map(|(idx, card)| {
             candidate(
                 format!("smith-{idx}"),
@@ -277,7 +277,11 @@ fn shop_candidates(
         }
     }));
     candidates.extend(shop.potions.iter().enumerate().map(|(idx, potion)| {
-        let label = format!("{:?} | {} gold", potion.potion_id, potion.price);
+        let label = format!(
+            "{} | {} gold",
+            get_potion_definition(potion.potion_id).name,
+            potion.price
+        );
         let note = shop_block_note(potion.can_buy, potion.blocked_reason.as_deref());
         if potion.can_buy {
             candidate(

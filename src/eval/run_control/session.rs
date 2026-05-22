@@ -190,6 +190,24 @@ impl RunControlSession {
                     self.reward_automation.summary(),
                 ))
             }
+            RunControlCommand::CardIndex(index) => {
+                if matches!(self.engine_state, EngineState::Shop(_)) {
+                    self.apply_input(ClientInput::BuyCard(index))
+                } else if matches!(self.engine_state, EngineState::RewardScreen(_)) {
+                    self.apply_input(ClientInput::SelectCard(index))
+                } else {
+                    Err("card <idx> is only valid in shop or card reward screens".to_string())
+                }
+            }
+            RunControlCommand::RelicIndex(index) => {
+                if matches!(self.engine_state, EngineState::Shop(_)) {
+                    self.apply_input(ClientInput::BuyRelic(index))
+                } else if matches!(self.engine_state, EngineState::BossRelicSelect(_)) {
+                    self.apply_input(ClientInput::SubmitRelicChoice(index))
+                } else {
+                    Err("relic <idx> is only valid in shop or boss relic screens".to_string())
+                }
+            }
             RunControlCommand::ActionIndex(index) => {
                 let input = self.combat_action_by_index(index)?;
                 self.apply_input(input)
@@ -205,11 +223,16 @@ impl RunControlSession {
                 potion_index,
                 target_slot_or_id,
             } => {
-                let target = self.resolve_target(target_slot_or_id)?;
-                self.apply_input(ClientInput::UsePotion {
-                    potion_index,
-                    target,
-                })
+                if matches!(self.engine_state, EngineState::Shop(_)) && target_slot_or_id.is_none()
+                {
+                    self.apply_input(ClientInput::BuyPotion(potion_index))
+                } else {
+                    let target = self.resolve_target(target_slot_or_id)?;
+                    self.apply_input(ClientInput::UsePotion {
+                        potion_index,
+                        target,
+                    })
+                }
             }
             RunControlCommand::Input(input) => self.apply_input(input),
         }
@@ -765,6 +788,50 @@ mod tests {
         assert!(matches!(session.engine_state, EngineState::EventRoom));
     }
 
+    #[test]
+    fn run_control_shop_accepts_visible_candidate_ids_and_contextual_words() {
+        let mut session = test_session_at_shop();
+
+        let outcome = session
+            .apply_command(RunControlCommand::Candidate("card-0".to_string()))
+            .expect("visible shop card id should buy");
+        assert!(outcome.message.contains("Added card: Armaments"));
+        assert_eq!(session.run_state.gold, 51);
+
+        let mut session = test_session_at_shop();
+        let outcome = session
+            .apply_command(RunControlCommand::CardIndex(1))
+            .expect("card <idx> should buy in shop");
+        assert!(outcome.message.contains("Added card: Shrug It Off"));
+        assert_eq!(session.run_state.gold, 50);
+    }
+
+    #[test]
+    fn run_control_shop_leave_candidate_exits_shop() {
+        let mut session = test_session_at_shop();
+
+        let outcome = session
+            .apply_command(RunControlCommand::Candidate("leave".to_string()))
+            .expect("visible leave id should leave shop");
+
+        assert!(outcome.message.contains("Chose: Leave shop"));
+        assert!(!matches!(session.engine_state, EngineState::Shop(_)));
+    }
+
+    #[test]
+    fn run_control_campfire_renders_all_upgradeable_smith_targets() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::Campfire;
+
+        let rendered = render_run_control_state(&session);
+
+        assert!(rendered.contains("smith-9 | Smith Bash"));
+        assert!(
+            rendered.contains("smith-8 | Smith Defend"),
+            "campfire smith candidates must not truncate after the first eight deck cards"
+        );
+    }
+
     fn test_session_with_first_monster_room() -> RunControlSession {
         let mut session = test_session_after_neow_at_map();
         let mut first = MapRoomNode::new(0, 0);
@@ -774,6 +841,31 @@ mod tests {
         second.class = Some(RoomType::MonsterRoom);
         session.run_state.map = MapState::new(vec![vec![first], vec![second]]);
         session.run_state.monster_list = vec![EncounterId::JawWorm, EncounterId::Cultist];
+        session
+    }
+
+    fn test_session_at_shop() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.run_state.gold = 100;
+        let mut shop = crate::state::shop::ShopState::new();
+        shop.cards = vec![
+            crate::state::shop::ShopCard {
+                card_id: crate::content::cards::CardId::Armaments,
+                upgrades: 0,
+                price: 49,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            crate::state::shop::ShopCard {
+                card_id: crate::content::cards::CardId::ShrugItOff,
+                upgrades: 0,
+                price: 50,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ];
+        session.engine_state = EngineState::Shop(shop);
         session
     }
 

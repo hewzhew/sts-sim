@@ -55,6 +55,8 @@ pub enum RunControlCommand {
         target: RewardAutomationTarget,
         enabled: bool,
     },
+    CardIndex(usize),
+    RelicIndex(usize),
     ActionIndex(usize),
     PlayCard {
         card_index: usize,
@@ -96,7 +98,7 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         return Ok(RunControlCommand::Noop);
     };
     let rest = parts.collect::<Vec<_>>();
-    if is_candidate_id(command) {
+    if is_candidate_id(command) || is_structured_candidate_id(command) {
         return Ok(RunControlCommand::Candidate(command.to_string()));
     }
 
@@ -120,6 +122,7 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
             path: rest.first().map(PathBuf::from),
         }),
         "skip" => Ok(RunControlCommand::Candidate("skip".to_string())),
+        "leave" => Ok(RunControlCommand::Candidate("leave".to_string())),
         "d" | "details" => Ok(RunControlCommand::Details),
         "r" | "raw" => Ok(RunControlCommand::Raw),
         "actions" | "legal" => Ok(RunControlCommand::Actions),
@@ -162,7 +165,11 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "claim" => Ok(RunControlCommand::Input(ClientInput::ClaimReward(
             parse_usize_arg(rest.first(), "reward index")?,
         ))),
-        "pick" | "card" | "select-card" => Ok(RunControlCommand::Input(ClientInput::SelectCard(
+        "card" => Ok(RunControlCommand::CardIndex(parse_usize_arg(
+            rest.first(),
+            "card index",
+        )?)),
+        "pick" | "select-card" => Ok(RunControlCommand::Input(ClientInput::SelectCard(
             parse_usize_arg(rest.first(), "card option index")?,
         ))),
         "select" => Ok(RunControlCommand::Input(ClientInput::SubmitDeckSelect(
@@ -199,12 +206,14 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
             CampfireChoice::Toke(parse_usize_arg(rest.first(), "deck index")?),
         ))),
         "buy" => parse_buy_command(&rest),
+        "purge" if rest.is_empty() => Ok(RunControlCommand::Candidate("purge".to_string())),
         "purge" => Ok(RunControlCommand::Input(ClientInput::PurgeCard(
             parse_usize_arg(rest.first(), "deck index")?,
         ))),
-        "relic" => Ok(RunControlCommand::Input(ClientInput::SubmitRelicChoice(
-            parse_usize_arg(rest.first(), "boss relic index")?,
-        ))),
+        "relic" => Ok(RunControlCommand::RelicIndex(parse_usize_arg(
+            rest.first(),
+            "relic index",
+        )?)),
         other => Err(format!("unknown run/play command '{other}'")),
     }
 }
@@ -249,6 +258,15 @@ pub fn run_control_short_hint() -> &'static str {
 fn is_candidate_id(command: &str) -> bool {
     command.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
         && command.chars().any(|ch| ch.is_ascii_digit())
+}
+
+fn is_structured_candidate_id(command: &str) -> bool {
+    let Some((prefix, suffix)) = command.split_once('-') else {
+        return false;
+    };
+    matches!(prefix, "card" | "relic" | "potion" | "smith")
+        && !suffix.is_empty()
+        && suffix.chars().all(|ch| ch.is_ascii_digit())
 }
 
 fn parse_capture_command(rest: &[&str]) -> Result<RunControlCommand, String> {
@@ -554,6 +572,46 @@ mod tests {
                 target: RewardAutomationTarget::Potion,
                 enabled: false,
             }
+        );
+    }
+
+    #[test]
+    fn run_control_parser_accepts_visible_non_numeric_ids() {
+        assert_eq!(
+            parse_run_control_command("card-2").expect("shop card id should parse"),
+            RunControlCommand::Candidate("card-2".to_string())
+        );
+        assert_eq!(
+            parse_run_control_command("relic-1").expect("shop relic id should parse"),
+            RunControlCommand::Candidate("relic-1".to_string())
+        );
+        assert_eq!(
+            parse_run_control_command("potion-0").expect("shop potion id should parse"),
+            RunControlCommand::Candidate("potion-0".to_string())
+        );
+        assert_eq!(
+            parse_run_control_command("smith-8").expect("campfire smith id should parse"),
+            RunControlCommand::Candidate("smith-8".to_string())
+        );
+        assert_eq!(
+            parse_run_control_command("leave").expect("leave id should parse"),
+            RunControlCommand::Candidate("leave".to_string())
+        );
+        assert_eq!(
+            parse_run_control_command("purge").expect("purge candidate should parse"),
+            RunControlCommand::Candidate("purge".to_string())
+        );
+    }
+
+    #[test]
+    fn run_control_parser_accepts_contextual_shop_words() {
+        assert_eq!(
+            parse_run_control_command("card 2").expect("card index should parse"),
+            RunControlCommand::CardIndex(2)
+        );
+        assert_eq!(
+            parse_run_control_command("relic 1").expect("relic index should parse"),
+            RunControlCommand::RelicIndex(1)
         );
     }
 
