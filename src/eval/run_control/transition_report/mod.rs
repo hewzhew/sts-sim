@@ -131,8 +131,7 @@ impl RunVisibleSnapshot {
                 })
                 .collect(),
             potions: session
-                .run_state
-                .potions
+                .visible_potions()
                 .iter()
                 .map(|slot| {
                     slot.as_ref().map(|potion| PotionSnapshot {

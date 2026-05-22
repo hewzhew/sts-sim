@@ -525,6 +525,7 @@ fn finish_active_combat(
     };
 
     run_state.absorb_combat_player(active.combat_state.entities.player.clone());
+    run_state.potions = active.combat_state.entities.potions.clone();
     run_state.room_mugged |= active.combat_state.runtime.combat_mugged;
     run_state.room_smoked |= active.combat_state.runtime.combat_smoked;
 
@@ -1519,6 +1520,43 @@ mod tests {
                 .count(),
             1,
             "event combat keeps pre-populated event gold without adding standard monster gold"
+        );
+    }
+
+    #[test]
+    fn finished_combat_syncs_potion_slots_back_to_run_state() {
+        use crate::content::monsters::EnemyId;
+        use crate::content::potions::{Potion, PotionId};
+
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.potions[0] = Some(Potion::new(PotionId::FruitJuice, 42));
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.potions = run_state.potions.clone();
+        combat.entities.potions[0] = None;
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.current_hp = 0;
+        monster.is_dying = true;
+        combat.entities.monsters.push(monster);
+
+        let mut engine_state = EngineState::CombatProcessing;
+        let mut active_combat = Some(ActiveCombat::new(
+            EngineState::CombatProcessing,
+            combat,
+            CombatContext::Room(crate::state::core::RoomCombatContext {
+                room_type: crate::state::map::node::RoomType::MonsterRoom,
+            }),
+        ));
+
+        assert!(tick_run_active(
+            &mut engine_state,
+            &mut run_state,
+            &mut active_combat,
+            Some(ClientInput::EndTurn),
+        ));
+        assert!(
+            run_state.potions[0].is_none(),
+            "combat potion inventory must persist after combat ends"
         );
     }
 

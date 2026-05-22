@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::content::potions::Potion;
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::sim::combat::CombatPosition;
 use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
@@ -463,6 +464,13 @@ impl RunControlSession {
         };
         self.last_completed_combat_sequence == Some(case.combat_sequence)
     }
+
+    pub(in crate::eval::run_control) fn visible_potions(&self) -> &[Option<Potion>] {
+        self.active_combat
+            .as_ref()
+            .map(|active| active.combat_state.entities.potions.as_slice())
+            .unwrap_or(self.run_state.potions.as_slice())
+    }
 }
 
 pub fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
@@ -654,6 +662,34 @@ mod tests {
                 .map(CombatBaselineOutcomeV1::terminal),
             Some(crate::sim::combat::CombatTerminal::Win)
         );
+    }
+
+    #[test]
+    fn run_control_combat_potion_use_updates_visible_potion_slots() {
+        let mut session = test_session_with_first_monster_room();
+        session.run_state.potions[1] = Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FruitJuice,
+            42,
+        ));
+        session
+            .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+            .expect("map input should enter combat");
+
+        let outcome = session
+            .apply_command(RunControlCommand::UsePotion {
+                potion_index: 1,
+                target_slot_or_id: None,
+            })
+            .expect("fruit juice should be usable in combat");
+
+        assert!(outcome.message.contains("Lost potion: Fruit Juice"));
+        assert!(session.active_combat.as_ref().is_some_and(|active| active
+            .combat_state
+            .entities
+            .potions[1]
+            .is_none()));
+        let rendered = render_run_control_state(&session);
+        assert!(!rendered.contains("Fruit Juice"));
     }
 
     #[test]

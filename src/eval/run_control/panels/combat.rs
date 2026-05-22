@@ -285,8 +285,7 @@ fn signed_amount(amount: i32) -> String {
 
 fn combat_potion_short_line(session: &RunControlSession) -> String {
     let potions = session
-        .run_state
-        .potions
+        .visible_potions()
         .iter()
         .enumerate()
         .filter_map(|(idx, potion)| {

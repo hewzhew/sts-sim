@@ -85,9 +85,9 @@ pub fn render_potions_panel(session: &RunControlSession) -> String {
     let mut out = String::new();
     push_line(
         &mut out,
-        format!("Potions {} slots:", session.run_state.potions.len()),
+        format!("Potions {} slots:", session.visible_potions().len()),
     );
-    for (idx, slot) in session.run_state.potions.iter().enumerate() {
+    for (idx, slot) in session.visible_potions().iter().enumerate() {
         match slot {
             Some(potion) => {
                 let def = get_potion_definition(potion.id);
