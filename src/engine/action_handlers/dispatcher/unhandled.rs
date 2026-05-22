@@ -26,9 +26,9 @@ pub(super) fn execute(action: Action, _state: &mut CombatState) {
             // These suspend actions are intercepted in engine::core and converted into
             // PendingChoice states. Reaching the thin dispatcher is not actionable noise.
         }
-        other => {
+        _other => {
             #[cfg(debug_assertions)]
-            eprintln!("[action_handlers] Unrouted action: {:?}", other);
+            eprintln!("[action_handlers] Unrouted action: {:?}", _other);
         }
     }
 }
