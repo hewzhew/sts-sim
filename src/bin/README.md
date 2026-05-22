@@ -13,9 +13,15 @@ Active binaries:
   - `--benchmark-spec <path>`: bounded benchmark summary over start-spec or
     combat-snapshot cases
 - `run_play_driver`
-  - thin simulator run/play shell
+  - thin shell over the `eval::run_control` kernel
   - `capture <path> [label]`: save `CombatCaptureV1` only from active stable
     combat decision boundaries
+  - `capture-case <benchmark_dir> <case_id> [label]`: write the standard
+    `captures/<case_id>.capture.json`
+  - `save-baseline-case <benchmark_dir> <case_id>`: write the last completed
+    whole-combat `CombatBaselineOutcomeV1`
+  - `bench-add <benchmark_dir> <case_id>`: register the capture/baseline pair
+    in `benchmark.json`
 
 Removed from the active binary surface:
 

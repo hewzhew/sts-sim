@@ -3,9 +3,9 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
-use sts_simulator::eval::run_play::{
-    canonical_player_class, parse_run_play_command, render_run_play_state, run_play_help,
-    RunPlayConfig, RunPlaySession,
+use sts_simulator::eval::run_control::{
+    canonical_player_class, parse_run_control_command, render_run_control_state, run_control_help,
+    RunControlConfig, RunControlSession,
 };
 
 #[derive(Parser, Debug)]
@@ -52,7 +52,7 @@ impl CliPlayerClass {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let player_class = canonical_player_class(args.class.as_str())?;
-    let mut session = RunPlaySession::new(RunPlayConfig {
+    let mut session = RunControlSession::new(RunControlConfig {
         seed: args.seed,
         ascension_level: args.ascension,
         final_act: args.final_act,
@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         skip_neow: args.skip_neow,
     });
 
-    println!("{}", render_run_play_state(&session));
+    println!("{}", render_run_control_state(&session));
     if let Some(script) = args.script.as_ref() {
         run_script(&mut session, script)?;
     } else {
@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_script(session: &mut RunPlaySession, script: &PathBuf) -> Result<(), String> {
+fn run_script(session: &mut RunControlSession, script: &PathBuf) -> Result<(), String> {
     let payload = fs::read_to_string(script).map_err(|err| err.to_string())?;
     for (line_number, line) in payload.lines().enumerate() {
         let trimmed = line.trim();
@@ -86,8 +86,8 @@ fn run_script(session: &mut RunPlaySession, script: &PathBuf) -> Result<(), Stri
     Ok(())
 }
 
-fn run_repl(session: &mut RunPlaySession) -> Result<(), String> {
-    println!("{}", run_play_help());
+fn run_repl(session: &mut RunControlSession) -> Result<(), String> {
+    println!("{}", run_control_help());
     let stdin = io::stdin();
     loop {
         print!("run-play> ");
@@ -104,8 +104,8 @@ fn run_repl(session: &mut RunPlaySession) -> Result<(), String> {
     Ok(())
 }
 
-fn execute_line(session: &mut RunPlaySession, line: &str) -> Result<bool, String> {
-    let command = parse_run_play_command(line)?;
+fn execute_line(session: &mut RunControlSession, line: &str) -> Result<bool, String> {
+    let command = parse_run_control_command(line)?;
     let outcome = session.apply_command(command)?;
     if !outcome.message.is_empty() {
         println!("{}", outcome.message);

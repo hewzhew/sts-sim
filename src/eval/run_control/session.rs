@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::engine::run_loop::tick_run_active;
+use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::eval::combat_capture::{
     capture_combat_position_v1, save_combat_capture_v1, CombatCaptureV1,
 };
@@ -10,11 +10,17 @@ use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
 
 use super::combat_start::ensure_combat_started_if_needed;
-use super::commands::{run_play_help, RunPlayCommand};
-use super::render::{render_combat_actions, render_run_play_state};
+use super::commands::{run_control_help, RunControlCommand};
+use super::outcome::{
+    save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1, CombatOutcomeTracker,
+};
+use super::registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
+use super::render::{render_combat_actions, render_run_control_state};
+
+const MAX_STABLE_ADVANCE_TICKS: usize = 2_000;
 
 #[derive(Clone, Debug)]
-pub struct RunPlayConfig {
+pub struct RunControlConfig {
     pub seed: u64,
     pub ascension_level: u8,
     pub final_act: bool,
@@ -22,7 +28,7 @@ pub struct RunPlayConfig {
     pub skip_neow: bool,
 }
 
-impl Default for RunPlayConfig {
+impl Default for RunControlConfig {
     fn default() -> Self {
         Self {
             seed: 1,
@@ -35,19 +41,20 @@ impl Default for RunPlayConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct RunPlaySession {
+pub struct RunControlSession {
     pub engine_state: EngineState,
     pub run_state: RunState,
     pub active_combat: Option<ActiveCombat>,
+    combat_outcomes: CombatOutcomeTracker,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RunPlayCommandOutcome {
+pub struct RunControlCommandOutcome {
     pub should_quit: bool,
     pub message: String,
 }
 
-impl RunPlayCommandOutcome {
+impl RunControlCommandOutcome {
     fn message(message: impl Into<String>) -> Self {
         Self {
             should_quit: false,
@@ -63,8 +70,8 @@ impl RunPlayCommandOutcome {
     }
 }
 
-impl RunPlaySession {
-    pub fn new(config: RunPlayConfig) -> Self {
+impl RunControlSession {
+    pub fn new(config: RunControlConfig) -> Self {
         let mut run_state = RunState::new(
             config.seed,
             config.ascension_level,
@@ -82,28 +89,29 @@ impl RunPlaySession {
             engine_state,
             run_state,
             active_combat: None,
+            combat_outcomes: CombatOutcomeTracker::default(),
         }
     }
 
     pub fn apply_command(
         &mut self,
-        command: RunPlayCommand,
-    ) -> Result<RunPlayCommandOutcome, String> {
+        command: RunControlCommand,
+    ) -> Result<RunControlCommandOutcome, String> {
         self.ensure_combat_started_if_needed()?;
 
         match command {
-            RunPlayCommand::Noop => Ok(RunPlayCommandOutcome::message("")),
-            RunPlayCommand::Help => Ok(RunPlayCommandOutcome::message(run_play_help())),
-            RunPlayCommand::Quit => Ok(RunPlayCommandOutcome::quit("quit")),
-            RunPlayCommand::State => {
-                Ok(RunPlayCommandOutcome::message(render_run_play_state(self)))
-            }
-            RunPlayCommand::Actions => {
-                Ok(RunPlayCommandOutcome::message(render_combat_actions(self)?))
-            }
-            RunPlayCommand::Capture { path, label } => {
+            RunControlCommand::Noop => Ok(RunControlCommandOutcome::message("")),
+            RunControlCommand::Help => Ok(RunControlCommandOutcome::message(run_control_help())),
+            RunControlCommand::Quit => Ok(RunControlCommandOutcome::quit("quit")),
+            RunControlCommand::State => Ok(RunControlCommandOutcome::message(
+                render_run_control_state(self),
+            )),
+            RunControlCommand::Actions => Ok(RunControlCommandOutcome::message(
+                render_combat_actions(self)?,
+            )),
+            RunControlCommand::Capture { path, label } => {
                 let capture = self.save_current_combat_capture(&path, label)?;
-                Ok(RunPlayCommandOutcome::message(format!(
+                Ok(RunControlCommandOutcome::message(format!(
                     "saved CombatCaptureV1 to {} [{} hp={}, turn={}, enemies={}]",
                     path.display(),
                     capture.summary.engine_state,
@@ -112,18 +120,78 @@ impl RunPlaySession {
                     capture.summary.monsters.len()
                 )))
             }
-            RunPlayCommand::ActionIndex(index) => {
+            RunControlCommand::CaptureCase {
+                root,
+                case_id,
+                label,
+            } => {
+                let paths = BenchmarkCasePaths::for_case(&root, &case_id);
+                let capture = self.save_current_combat_capture(
+                    &paths.capture_path,
+                    label.or_else(|| Some(case_id.clone())),
+                )?;
+                Ok(RunControlCommandOutcome::message(format!(
+                    "saved CombatCaptureV1 case {case_id} to {} [{} hp={}, turn={}, enemies={}]",
+                    paths.capture_path.display(),
+                    capture.summary.engine_state,
+                    capture.summary.player_hp,
+                    capture.summary.turn_count,
+                    capture.summary.monsters.len()
+                )))
+            }
+            RunControlCommand::SaveBaseline { path, case_id } => {
+                let baseline = self.save_last_combat_baseline(
+                    &path,
+                    case_id.unwrap_or_else(|| inferred_case_id_from_path(&path)),
+                )?;
+                Ok(RunControlCommandOutcome::message(format!(
+                    "saved CombatBaselineOutcomeV1 to {} [case={} terminal={:?} hp_loss={} final_hp={} turns={} potions_used={} cards_played={}]",
+                    path.display(),
+                    baseline.case_id,
+                    baseline.terminal,
+                    baseline.hp_loss,
+                    baseline.final_hp,
+                    baseline.turns,
+                    baseline.potions_used,
+                    baseline.cards_played
+                )))
+            }
+            RunControlCommand::SaveBaselineCase { root, case_id } => {
+                let paths = BenchmarkCasePaths::for_case(&root, &case_id);
+                let baseline = self.save_last_combat_baseline(&paths.baseline_path, case_id)?;
+                Ok(RunControlCommandOutcome::message(format!(
+                    "saved CombatBaselineOutcomeV1 to {} [case={} terminal={:?} hp_loss={} final_hp={} turns={} potions_used={} cards_played={}]",
+                    paths.baseline_path.display(),
+                    baseline.case_id,
+                    baseline.terminal,
+                    baseline.hp_loss,
+                    baseline.final_hp,
+                    baseline.turns,
+                    baseline.potions_used,
+                    baseline.cards_played
+                )))
+            }
+            RunControlCommand::RegisterBenchmarkCase { root, case_id } => {
+                let paths = add_case_to_benchmark_registry(&root, &case_id)?;
+                Ok(RunControlCommandOutcome::message(format!(
+                    "registered benchmark case {case_id} in {} [capture={}, baseline={}]",
+                    paths.benchmark_manifest.display(),
+                    paths.capture_path.display(),
+                    paths.baseline_path.display()
+                )))
+            }
+            RunControlCommand::ActionIndex(index) => {
                 let input = self.combat_action_by_index(index)?;
                 self.apply_input(input)
             }
-            RunPlayCommand::PlayCard {
+            RunControlCommand::PlayCard {
                 card_index,
                 target_slot_or_id,
             } => {
                 let target = self.resolve_target(target_slot_or_id)?;
                 self.apply_input(ClientInput::PlayCard { card_index, target })
             }
-            RunPlayCommand::UsePotion {
+            RunControlCommand::UsePotion {
                 potion_index,
                 target_slot_or_id,
             } => {
@@ -133,7 +201,7 @@ impl RunPlaySession {
                     target,
                 })
             }
-            RunPlayCommand::Input(input) => self.apply_input(input),
+            RunControlCommand::Input(input) => self.apply_input(input),
         }
     }
 
@@ -146,6 +214,25 @@ impl RunPlaySession {
         let capture = capture_combat_position_v1(label, &position)?;
         save_combat_capture_v1(path, &capture)?;
         Ok(capture)
+    }
+
+    pub fn last_combat_baseline(&self) -> Option<&CombatBaselineOutcomeV1> {
+        self.combat_outcomes.last()
+    }
+
+    pub fn save_last_combat_baseline(
+        &self,
+        path: &Path,
+        case_id: String,
+    ) -> Result<CombatBaselineOutcomeV1, String> {
+        let mut baseline = self
+            .combat_outcomes
+            .last()
+            .cloned()
+            .ok_or_else(|| "no completed combat baseline is available".to_string())?;
+        baseline.case_id = case_id;
+        save_combat_baseline_outcome_v1(path, &baseline)?;
+        Ok(baseline)
     }
 
     pub(crate) fn current_active_combat_position(&self) -> Result<CombatPosition, String> {
@@ -183,17 +270,58 @@ impl RunPlaySession {
         Ok(CombatPosition::new(engine, active.combat_state.clone()))
     }
 
-    fn apply_input(&mut self, input: ClientInput) -> Result<RunPlayCommandOutcome, String> {
-        let keep_running = tick_run_active(
+    fn apply_input(&mut self, input: ClientInput) -> Result<RunControlCommandOutcome, String> {
+        self.ensure_combat_started_if_needed()?;
+        self.observe_active_combat_started();
+        let potion_observation = self.combat_outcomes.observe_input_before(
+            self.active_combat
+                .as_ref()
+                .map(|active| &active.combat_state),
+            &input,
+        );
+        let mut tick = tick_run_active_with_observer(
             &mut self.engine_state,
             &mut self.run_state,
             &mut self.active_combat,
             Some(input),
         );
+        let mut finished_combat = tick.finished_combat.take();
+        let mut advance_ticks = 0usize;
+        while tick.keep_running && matches!(self.engine_state, EngineState::CombatProcessing) {
+            if advance_ticks >= MAX_STABLE_ADVANCE_TICKS {
+                return Err(format!(
+                    "run-control exceeded {MAX_STABLE_ADVANCE_TICKS} engine ticks while advancing to a stable boundary"
+                ));
+            }
+            advance_ticks += 1;
+            tick = tick_run_active_with_observer(
+                &mut self.engine_state,
+                &mut self.run_state,
+                &mut self.active_combat,
+                None,
+            );
+            if finished_combat.is_none() {
+                finished_combat = tick.finished_combat.take();
+            }
+        }
+        let after_combat = finished_combat
+            .as_ref()
+            .map(|finished| &finished.combat_state)
+            .or_else(|| {
+                self.active_combat
+                    .as_ref()
+                    .map(|active| &active.combat_state)
+            });
+        self.combat_outcomes
+            .observe_input_after(potion_observation, after_combat);
+        if let Some(finished) = finished_combat.as_ref() {
+            self.combat_outcomes.finish("last_combat", finished);
+        }
         self.cleanup_inactive_combat();
         self.ensure_combat_started_if_needed()?;
+        self.observe_active_combat_started();
 
-        let status = if keep_running {
+        let status = if tick.keep_running {
             "ok".to_string()
         } else {
             match self.engine_state {
@@ -202,9 +330,9 @@ impl RunPlaySession {
                 _ => "stopped".to_string(),
             }
         };
-        Ok(RunPlayCommandOutcome::message(format!(
+        Ok(RunControlCommandOutcome::message(format!(
             "{status}\n{}",
-            render_run_play_state(self)
+            render_run_control_state(self)
         )))
     }
 
@@ -260,6 +388,23 @@ impl RunPlaySession {
             &mut self.active_combat,
         )
     }
+
+    fn observe_active_combat_started(&mut self) {
+        self.combat_outcomes.ensure_started(
+            self.active_combat
+                .as_ref()
+                .map(|active| &active.combat_state),
+        );
+    }
+}
+
+fn inferred_case_id_from_path(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.trim().is_empty())
+        .unwrap_or("last_combat")
+        .trim_end_matches(".baseline")
+        .to_string()
 }
 
 pub fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
@@ -283,21 +428,21 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn run_play_capture_command_saves_active_combat_position() {
+    fn run_control_capture_command_saves_active_combat_position() {
         let mut session = test_session_with_first_monster_room();
         session
-            .apply_command(RunPlayCommand::Input(ClientInput::SelectMapNode(0)))
+            .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
             .expect("map input should enter combat");
         assert!(matches!(
             session.engine_state,
             EngineState::CombatPlayerTurn
         ));
 
-        let dir = unique_temp_dir("run_play_capture");
+        let dir = unique_temp_dir("run_control_capture");
         fs::create_dir_all(&dir).expect("temp dir should be created");
         let path = dir.join("capture.json");
         let outcome = session
-            .apply_command(RunPlayCommand::Capture {
+            .apply_command(RunControlCommand::Capture {
                 path: path.clone(),
                 label: Some("first fight".to_string()),
             })
@@ -317,10 +462,10 @@ mod tests {
     }
 
     #[test]
-    fn run_play_capture_command_rejects_map_state() {
-        let session = RunPlaySession::new(RunPlayConfig {
+    fn run_control_capture_command_rejects_map_state() {
+        let session = RunControlSession::new(RunControlConfig {
             skip_neow: true,
-            ..RunPlayConfig::default()
+            ..RunControlConfig::default()
         });
 
         let err = session
@@ -330,10 +475,10 @@ mod tests {
         assert!(err.contains("no active combat state"));
     }
 
-    fn test_session_with_first_monster_room() -> RunPlaySession {
-        let mut session = RunPlaySession::new(RunPlayConfig {
+    fn test_session_with_first_monster_room() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig {
             skip_neow: true,
-            ..RunPlayConfig::default()
+            ..RunControlConfig::default()
         });
         let mut first = MapRoomNode::new(0, 0);
         first.class = Some(RoomType::MonsterRoom);

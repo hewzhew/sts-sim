@@ -706,9 +706,32 @@ pub fn tick_run(
     let mut active_combat = combat_state
         .take()
         .map(|combat| ActiveCombat::new(engine_state.clone(), combat, context));
-    let keep_running = tick_run_active(engine_state, run_state, &mut active_combat, input);
+    let keep_running =
+        tick_run_active_with_observer(engine_state, run_state, &mut active_combat, input)
+            .keep_running;
     *combat_state = active_combat.map(|active| active.combat_state);
     keep_running
+}
+
+#[derive(Clone, Debug)]
+pub struct FinishedActiveCombat {
+    pub engine_state: EngineState,
+    pub combat_state: CombatState,
+}
+
+#[derive(Clone, Debug)]
+pub struct RunTickOutcome {
+    pub keep_running: bool,
+    pub finished_combat: Option<FinishedActiveCombat>,
+}
+
+impl RunTickOutcome {
+    fn without_finished(keep_running: bool) -> Self {
+        Self {
+            keep_running,
+            finished_combat: None,
+        }
+    }
 }
 
 pub fn tick_run_active(
@@ -717,19 +740,37 @@ pub fn tick_run_active(
     active_combat: &mut Option<ActiveCombat>,
     input: Option<ClientInput>,
 ) -> bool {
+    tick_run_active_with_observer(engine_state, run_state, active_combat, input).keep_running
+}
+
+pub fn tick_run_active_with_observer(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+    active_combat: &mut Option<ActiveCombat>,
+    input: Option<ClientInput>,
+) -> RunTickOutcome {
     if handle_run_level_potion_input(engine_state, run_state, &input) {
         if resolve_out_of_combat_defeat(engine_state, run_state) {
-            return false;
+            return RunTickOutcome {
+                keep_running: false,
+                finished_combat: None,
+            };
         }
-        return true;
+        return RunTickOutcome {
+            keep_running: true,
+            finished_combat: None,
+        };
     }
 
     if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
-        return false;
+        return RunTickOutcome {
+            keep_running: false,
+            finished_combat: None,
+        };
     }
 
     // Top level controller redirecting inputs
-    match engine_state {
+    let keep_running = match engine_state {
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
         | EngineState::PendingChoice(_) => {
@@ -742,7 +783,16 @@ pub fn tick_run_active(
                 );
                 *engine_state = active.engine_state.clone();
                 if !keep_running {
-                    return finish_active_combat(engine_state, run_state, active_combat);
+                    let finished_combat =
+                        active_combat.as_ref().map(|active| FinishedActiveCombat {
+                            engine_state: active.engine_state.clone(),
+                            combat_state: active.combat_state.clone(),
+                        });
+                    let keep_running = finish_active_combat(engine_state, run_state, active_combat);
+                    return RunTickOutcome {
+                        keep_running,
+                        finished_combat,
+                    };
                 }
                 true
             } else {
@@ -756,12 +806,12 @@ pub fn tick_run_active(
                 .and_then(|value| resolve_run_pending_selection(value, run_state))
             {
                 if indices.len() < rpc_state.min_choices || indices.len() > rpc_state.max_choices {
-                    return true;
+                    return RunTickOutcome::without_finished(true);
                 }
                 let mut seen_indices = Vec::new();
                 for &idx in &indices {
                     let Some(card) = run_state.master_deck.get(idx) else {
-                        return true;
+                        return RunTickOutcome::without_finished(true);
                     };
                     if seen_indices.contains(&idx)
                         || !crate::state::core::run_pending_choice_allows_card_for_run(
@@ -770,7 +820,7 @@ pub fn tick_run_active(
                             run_state,
                         )
                     {
-                        return true;
+                        return RunTickOutcome::without_finished(true);
                     }
                     seen_indices.push(idx);
                 }
@@ -936,7 +986,7 @@ pub fn tick_run_active(
                         )
                     {
                         eprintln!("Event post-selection error: {}", e);
-                        return false;
+                        return RunTickOutcome::without_finished(false);
                     }
                 }
             } else if let Some(ClientInput::Cancel) = input {
@@ -1094,7 +1144,7 @@ pub fn tick_run_active(
                                     }
                                     Err(err) => {
                                         eprintln!("Combat start request error: {err}");
-                                        return false;
+                                        return RunTickOutcome::without_finished(false);
                                     }
                                 }
                             }
@@ -1163,10 +1213,10 @@ pub fn tick_run_active(
                 }
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             true
         }
@@ -1182,23 +1232,23 @@ pub fn tick_run_active(
                 _ => {}
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             true
         }
         EngineState::Campfire => {
             let keep_running = campfire_handler::handle(engine_state, run_state, input);
             if !keep_running {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             true
         }
@@ -1213,7 +1263,7 @@ pub fn tick_run_active(
                 *engine_state = new_state;
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             true
         }
@@ -1228,10 +1278,10 @@ pub fn tick_run_active(
                 }
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             if !start_pending_combat_if_needed(engine_state, run_state, active_combat) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             true
         }
@@ -1248,7 +1298,7 @@ pub fn tick_run_active(
                 *engine_state = new_state;
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             true
         }
@@ -1265,7 +1315,7 @@ pub fn tick_run_active(
                 *engine_state = new_state;
             }
             if resolve_out_of_combat_defeat(engine_state, run_state) {
-                return false;
+                return RunTickOutcome::without_finished(false);
             }
             true
         }
@@ -1273,6 +1323,10 @@ pub fn tick_run_active(
             start_pending_combat_if_needed(engine_state, run_state, active_combat)
         }
         EngineState::GameOver(_) => false,
+    };
+    RunTickOutcome {
+        keep_running,
+        finished_combat: None,
     }
 }
 

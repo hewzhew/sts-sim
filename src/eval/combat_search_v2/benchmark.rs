@@ -10,6 +10,8 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2Stats, CombatSearchV2TrajectoryReport, SearchProofStatus, SearchTerminalLabel,
     WHOLE_COMBAT_OUTCOME_CRITERIA,
 };
+use crate::eval::run_control::load_combat_baseline_outcome_v1;
+use crate::sim::combat::CombatTerminal;
 
 use super::{
     load_combat_search_v2_snapshot, load_combat_search_v2_start, CombatSearchV2LoadedStart,
@@ -32,7 +34,7 @@ pub struct CombatSearchV2BenchmarkCaseSpec {
     #[serde(default)]
     pub combat_snapshot: Option<PathBuf>,
     #[serde(default)]
-    pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
+    pub baseline: Option<CombatSearchV2BenchmarkBaselineSpec>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -43,6 +45,13 @@ pub struct CombatSearchV2BaselineOutcomeSpec {
     pub potions_used: u32,
     pub turns: u32,
     pub cards_played: u32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum CombatSearchV2BenchmarkBaselineSpec {
+    Inline(CombatSearchV2BaselineOutcomeSpec),
+    Path(PathBuf),
 }
 
 #[derive(Clone)]
@@ -57,6 +66,7 @@ pub struct CombatSearchV2LoadedBenchmarkCase {
     pub input: CombatSearchV2LoadedBenchmarkInput,
     pub start: CombatSearchV2LoadedStart,
     pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
+    pub baseline_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -126,6 +136,7 @@ pub struct CombatSearchV2BenchmarkCaseReport {
     pub diagnostics: CombatSearchV2DiagnosticsReport,
     pub stats: CombatSearchV2Stats,
     pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
+    pub baseline_path: Option<String>,
     pub baseline_comparison: Option<CombatSearchV2BaselineComparison>,
 }
 
@@ -184,6 +195,7 @@ pub fn load_combat_search_v2_benchmark(
             ));
         }
         let (input, mut start) = load_benchmark_case_input(base_dir, &spec.name, &case)?;
+        let (baseline, baseline_path) = load_benchmark_case_baseline(base_dir, &case)?;
         start.label = format!(
             "benchmark:{}:case:{}:{}:{}",
             spec.name,
@@ -195,7 +207,8 @@ pub fn load_combat_search_v2_benchmark(
             id: case.id,
             input,
             start,
-            baseline: case.baseline,
+            baseline,
+            baseline_path,
         });
     }
 
@@ -254,6 +267,10 @@ fn run_combat_search_v2_benchmark_case(
         diagnostics: search_report.diagnostics.clone(),
         stats: search_report.stats.clone(),
         baseline: case.baseline.clone(),
+        baseline_path: case
+            .baseline_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
         baseline_comparison,
     }
 }
@@ -427,6 +444,41 @@ fn load_benchmark_case_input(
     }
 }
 
+fn load_benchmark_case_baseline(
+    base_dir: &Path,
+    case: &CombatSearchV2BenchmarkCaseSpec,
+) -> Result<(Option<CombatSearchV2BaselineOutcomeSpec>, Option<PathBuf>), String> {
+    match case.baseline.as_ref() {
+        None => Ok((None, None)),
+        Some(CombatSearchV2BenchmarkBaselineSpec::Inline(inline)) => {
+            Ok((Some(inline.clone()), None))
+        }
+        Some(CombatSearchV2BenchmarkBaselineSpec::Path(path)) => {
+            let path = resolve_manifest_relative_path(base_dir, path);
+            let baseline = load_combat_baseline_outcome_v1(&path)
+                .map_err(|err| format!("case '{}' baseline failed: {err}", case.id))?;
+            Ok((
+                Some(CombatSearchV2BaselineOutcomeSpec {
+                    terminal: search_terminal_from_combat_terminal(baseline.terminal()),
+                    final_hp: baseline.final_hp,
+                    potions_used: baseline.potions_used,
+                    turns: baseline.turns,
+                    cards_played: baseline.cards_played,
+                }),
+                Some(path),
+            ))
+        }
+    }
+}
+
+fn search_terminal_from_combat_terminal(terminal: CombatTerminal) -> SearchTerminalLabel {
+    match terminal {
+        CombatTerminal::Win => SearchTerminalLabel::Win,
+        CombatTerminal::Loss => SearchTerminalLabel::Loss,
+        CombatTerminal::Unresolved => SearchTerminalLabel::Unresolved,
+    }
+}
+
 fn resolve_manifest_relative_path(base_dir: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
@@ -529,6 +581,63 @@ mod tests {
         let _ = fs::remove_file(snapshot_path);
         let _ = fs::remove_file(benchmark_path);
         let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn benchmark_loader_accepts_relative_baseline_path() {
+        let dir = unique_temp_dir("combat_search_v2_baseline_path_loader");
+        fs::create_dir_all(dir.join("captures")).expect("capture dir should be created");
+        fs::create_dir_all(dir.join("baselines")).expect("baseline dir should be created");
+        let snapshot_path = dir.join("captures").join("jaw.capture.json");
+        let baseline_path = dir.join("baselines").join("jaw.baseline.json");
+        let benchmark_path = dir.join("benchmark.json");
+
+        let position = jaw_worm_position();
+        let capture = capture_combat_position_v1(Some("jaw".to_string()), &position)
+            .expect("stable position should capture");
+        save_combat_capture_v1(&snapshot_path, &capture).expect("capture should be written");
+        fs::write(
+            &baseline_path,
+            r#"{
+                "schema_name": "CombatBaselineOutcomeV1",
+                "schema_version": 1,
+                "case_id": "jaw",
+                "terminal": "win",
+                "start_hp": 80,
+                "final_hp": 70,
+                "hp_loss": 10,
+                "turns": 4,
+                "potions_used": 0,
+                "potions_discarded": 0,
+                "cards_played": 9
+            }"#,
+        )
+        .expect("baseline should be written");
+        fs::write(
+            &benchmark_path,
+            r#"{
+                "name": "baseline_path",
+                "cases": [
+                    {
+                        "id": "jaw",
+                        "combat_snapshot": "captures/jaw.capture.json",
+                        "baseline": "baselines/jaw.baseline.json"
+                    }
+                ]
+            }"#,
+        )
+        .expect("benchmark should be written");
+
+        let loaded = load_combat_search_v2_benchmark(&benchmark_path)
+            .expect("benchmark should load baseline path");
+
+        assert_eq!(loaded.cases[0].baseline.as_ref().unwrap().final_hp, 70);
+        assert_eq!(
+            loaded.cases[0].baseline_path.as_ref().unwrap(),
+            &baseline_path
+        );
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     fn unique_temp_dir(label: &str) -> PathBuf {

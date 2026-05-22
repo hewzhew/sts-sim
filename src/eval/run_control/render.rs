@@ -6,10 +6,20 @@ use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
-use super::session::RunPlaySession;
+use super::session::RunControlSession;
 
-pub fn render_run_play_state(session: &RunPlaySession) -> String {
+pub fn render_run_control_state(session: &RunControlSession) -> String {
     let mut out = String::new();
+    let (player_hp, player_max_hp) = session
+        .active_combat
+        .as_ref()
+        .map(|active| {
+            (
+                active.combat_state.entities.player.current_hp,
+                active.combat_state.entities.player.max_hp,
+            )
+        })
+        .unwrap_or((session.run_state.current_hp, session.run_state.max_hp));
     push_line(
         &mut out,
         format!(
@@ -18,8 +28,8 @@ pub fn render_run_play_state(session: &RunPlaySession) -> String {
             session.run_state.seed,
             session.run_state.act_num,
             session.run_state.floor_num,
-            session.run_state.current_hp,
-            session.run_state.max_hp,
+            player_hp,
+            player_max_hp,
             session.run_state.gold,
             session.run_state.master_deck.len(),
             session.run_state.relics.len(),
@@ -31,6 +41,21 @@ pub fn render_run_play_state(session: &RunPlaySession) -> String {
                 .count()
         ),
     );
+    if let Some(outcome) = session.last_combat_baseline() {
+        push_line(
+            &mut out,
+            format!(
+                "last_combat case={} terminal={:?} final_hp={} hp_loss={} turns={} potions_used={} cards_played={}",
+                outcome.case_id,
+                outcome.terminal,
+                outcome.final_hp,
+                outcome.hp_loss,
+                outcome.turns,
+                outcome.potions_used,
+                outcome.cards_played
+            ),
+        );
+    }
 
     match &session.engine_state {
         EngineState::MapNavigation => render_map_state(session, &mut out),
@@ -91,7 +116,7 @@ pub fn render_run_play_state(session: &RunPlaySession) -> String {
     out
 }
 
-pub fn render_combat_actions(session: &RunPlaySession) -> Result<String, String> {
+pub fn render_combat_actions(session: &RunControlSession) -> Result<String, String> {
     let position = session.current_combat_position_for_actions()?;
     let actions = get_legal_moves(&position.engine, &position.combat);
     if actions.is_empty() {
@@ -112,7 +137,7 @@ pub fn render_combat_actions(session: &RunPlaySession) -> Result<String, String>
     Ok(out)
 }
 
-fn render_map_state(session: &RunPlaySession, out: &mut String) {
+fn render_map_state(session: &RunControlSession, out: &mut String) {
     let target_y = if session.run_state.map.current_y == -1 {
         0
     } else {
@@ -136,7 +161,7 @@ fn render_map_state(session: &RunPlaySession, out: &mut String) {
     }
 }
 
-fn render_event_state(session: &RunPlaySession, out: &mut String) {
+fn render_event_state(session: &RunControlSession, out: &mut String) {
     let Some(event) = session.run_state.event_state.as_ref() else {
         push_line(out, "event state missing");
         return;
@@ -188,7 +213,7 @@ fn render_master_deck(run_state: &RunState, out: &mut String) {
     }
 }
 
-fn render_combat_state(session: &RunPlaySession, out: &mut String) {
+fn render_combat_state(session: &RunControlSession, out: &mut String) {
     let Some(combat) = session
         .active_combat
         .as_ref()
