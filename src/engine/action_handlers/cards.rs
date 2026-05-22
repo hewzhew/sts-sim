@@ -8,9 +8,6 @@
 //          EndTurnTrigger, StartTurnTrigger, PostDrawTrigger, BattleStartTrigger, ClearCardQueue,
 //          AddCardToMasterDeck, MakeTempCardInDiscardAndDeck, SuspendForCardReward
 
-use crate::content::cards::CardId;
-use crate::runtime::action::Action;
-
 mod discard;
 mod draw;
 mod exhaust;
@@ -20,7 +17,9 @@ mod mutation;
 mod pile_ops;
 mod play_queue;
 mod potions;
+mod specials;
 mod turn_triggers;
+mod x_cost;
 pub use discard::{
     handle_calculated_gamble, handle_discard_card, handle_discard_card_with_order,
     handle_discard_from_hand, handle_discard_to_hand, handle_scrape_follow_up, DiscardHookOrder,
@@ -65,188 +64,18 @@ pub use play_queue::{
     handle_skip_enemies_turn, handle_use_card_after_use_hooks, handle_use_card_done,
 };
 pub use potions::{handle_obtain_potion, handle_use_potion, obtain_specific_potion_if_allowed};
+pub use specials::{
+    handle_barrage, handle_blade_fury, handle_escape_plan_block_if_skill, handle_expertise_draw,
+    handle_halt, handle_unload_non_attack,
+};
 pub use turn_triggers::{
     handle_add_card_to_master_deck, handle_battle_start_pre_draw_trigger,
     handle_battle_start_trigger, handle_clear_card_queue, handle_end_turn_trigger,
     handle_post_draw_trigger, handle_pre_battle_trigger,
 };
-
-use crate::runtime::combat::CombatState;
-
-pub fn handle_barrage(damage: crate::runtime::action::DamageInfo, state: &mut CombatState) {
-    let count = state
-        .entities
-        .player
-        .orbs
-        .iter()
-        .filter(|orb| orb.id != crate::runtime::combat::OrbId::Empty)
-        .count();
-
-    for _ in 0..count {
-        state.queue_action_front(Action::Damage(damage.clone()));
-    }
-}
-
-pub fn handle_escape_plan_block_if_skill(block: i32, state: &mut CombatState) {
-    if state.runtime.last_drawn_cards.iter().any(|record| {
-        crate::content::cards::get_card_definition(record.card_id).card_type
-            == crate::content::cards::CardType::Skill
-    }) {
-        state.queue_action_front(Action::GainBlock {
-            target: 0,
-            amount: block,
-        });
-    }
-}
-
-pub fn handle_blade_fury(upgraded: bool, state: &mut CombatState) {
-    let count = state.zones.hand.len() as u8;
-    state.queue_action_front(
-        crate::content::cards::make_constructed_temp_card_in_hand_action(
-            CardId::Shiv,
-            count,
-            upgraded,
-            state,
-        ),
-    );
-    state.queue_action_front(Action::DiscardFromHand {
-        amount: count as i32,
-        random: false,
-        end_turn: false,
-    });
-}
-
-pub fn handle_unload_non_attack(state: &mut CombatState) {
-    let non_attacks: Vec<u32> = state
-        .zones
-        .hand
-        .iter()
-        .filter(|card| {
-            crate::content::cards::get_card_definition(card.id).card_type
-                != crate::content::cards::CardType::Attack
-        })
-        .map(|card| card.uuid)
-        .collect();
-
-    for uuid in non_attacks {
-        state.queue_action_front(Action::DiscardCard { card_uuid: uuid });
-    }
-}
-
-pub fn handle_expertise_draw(target_hand_size: i32, state: &mut CombatState) {
-    let to_draw = target_hand_size - state.zones.hand.len() as i32;
-    if to_draw > 0 {
-        state.queue_action_front(Action::DrawCards(to_draw as u32));
-    }
-}
-
-pub fn handle_halt(block: i32, additional: i32, state: &mut CombatState) {
-    let amount = if state.entities.player.stance == crate::runtime::combat::StanceId::Wrath {
-        block + additional
-    } else {
-        block
-    };
-    state.queue_action_front(Action::GainBlock { target: 0, amount });
-}
-
-pub fn handle_aggregate_energy(divide_amount: i32, state: &mut CombatState) {
-    if divide_amount <= 0 {
-        return;
-    }
-    let amount = state.zones.draw_pile.len() as i32 / divide_amount;
-    if amount > 0 {
-        state.turn.adjust_energy(amount);
-    }
-}
-
-pub fn handle_tempest(
-    upgraded: bool,
-    free_to_play_once: bool,
-    energy_on_use: i32,
-    state: &mut CombatState,
-) {
-    let base_effect = if energy_on_use != -1 {
-        energy_on_use
-    } else {
-        state.turn.energy as i32
-    };
-    let mut effect = crate::content::relics::hooks::on_calculate_x_cost(state, base_effect);
-    if upgraded {
-        effect += 1;
-    }
-
-    if effect > 0 {
-        for _ in 0..effect {
-            state.queue_action_back(Action::ChannelOrb(crate::runtime::combat::OrbId::Lightning));
-        }
-        if !free_to_play_once {
-            state.turn.spend_energy(state.turn.energy as i32);
-        }
-    }
-}
-
-pub fn handle_multicast(
-    upgraded: bool,
-    free_to_play_once: bool,
-    energy_on_use: i32,
-    state: &mut CombatState,
-) {
-    if !state
-        .entities
-        .player
-        .orbs
-        .first()
-        .is_some_and(|orb| orb.id != crate::runtime::combat::OrbId::Empty)
-    {
-        return;
-    }
-
-    let base_effect = if energy_on_use != -1 {
-        energy_on_use
-    } else {
-        state.turn.energy as i32
-    };
-    let mut effect = crate::content::relics::hooks::on_calculate_x_cost(state, base_effect);
-    if upgraded {
-        effect += 1;
-    }
-
-    if effect > 0 {
-        for _ in 0..effect - 1 {
-            state.queue_action_back(Action::EvokeOrbWithoutRemoving);
-        }
-        state.queue_action_back(Action::EvokeOrb);
-        if !free_to_play_once {
-            state.turn.spend_energy(state.turn.energy as i32);
-        }
-    }
-}
-
-pub fn handle_reinforced_body(
-    block_amount: i32,
-    free_to_play_once: bool,
-    energy_on_use: i32,
-    state: &mut CombatState,
-) {
-    let base_effect = if energy_on_use != -1 {
-        energy_on_use
-    } else {
-        state.turn.energy as i32
-    };
-    let effect = crate::content::relics::hooks::on_calculate_x_cost(state, base_effect);
-
-    if effect > 0 {
-        for _ in 0..effect {
-            state.queue_action_back(Action::GainBlock {
-                target: 0,
-                amount: block_amount,
-            });
-        }
-        if !free_to_play_once {
-            state.turn.spend_energy(state.turn.energy as i32);
-        }
-    }
-}
+pub use x_cost::{
+    handle_aggregate_energy, handle_multicast, handle_reinforced_body, handle_tempest,
+};
 
 #[cfg(test)]
 mod tests {
