@@ -8,6 +8,7 @@ pub(super) struct SearchDiagnosticsCollector {
     states_with_legal_actions: u64,
     legal_actions_total: u64,
     legal_actions_max: usize,
+    expansion: ActionExpansionDiagnosticsCollector,
 }
 
 pub(super) struct SearchDiagnosticsFinish<'a> {
@@ -23,13 +24,15 @@ pub(super) struct SearchDiagnosticsFinish<'a> {
 }
 
 impl SearchDiagnosticsCollector {
-    pub(super) fn observe_legal_actions(&mut self, action_count: usize) {
+    pub(super) fn observe_legal_actions(&mut self, expansion: &ActionExpansionSummary) {
+        let action_count = expansion.action_count;
         self.states_queried = self.states_queried.saturating_add(1);
         if action_count > 0 {
             self.states_with_legal_actions = self.states_with_legal_actions.saturating_add(1);
         }
         self.legal_actions_total = self.legal_actions_total.saturating_add(action_count as u64);
         self.legal_actions_max = self.legal_actions_max.max(action_count);
+        self.expansion.observe(expansion);
     }
 
     pub(super) fn finish(
@@ -67,19 +70,22 @@ impl SearchDiagnosticsCollector {
             sample_limit: FRONTIER_SAMPLE_LIMIT,
             sampled_states: input.frontier_sample_count,
         };
+        let expansion = self.expansion.finish();
         let diagnosis = diagnosis_tags(
             input.proof_status,
             input.stats,
             &branching,
+            &expansion,
             &pruning,
             frontier.remaining_states,
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 1,
+            schema_version: 2,
             mode: "summary",
             tables,
             branching,
+            expansion,
             pruning,
             frontier,
             diagnosis,
@@ -103,6 +109,7 @@ fn diagnosis_tags(
     proof_status: SearchProofStatus,
     stats: &CombatSearchV2Stats,
     branching: &CombatSearchV2DiagnosticsBranching,
+    expansion: &CombatSearchV2DiagnosticsExpansion,
     pruning: &CombatSearchV2DiagnosticsPruning,
     frontier_remaining_states: usize,
 ) -> Vec<&'static str> {
@@ -157,6 +164,12 @@ fn diagnosis_tags(
     if branching.states_queried > 0 && branching.legal_actions_max == 0 {
         tags.push("no_legal_actions_observed");
     }
+    if expansion.states_observed > 0 {
+        tags.push("action_expansion_diagnostics_active");
+    }
+    if expansion.max_group_size > 1 {
+        tags.push("action_fanout_groups_observed");
+    }
     if frontier_remaining_states > 0 {
         tags.push("frontier_remaining");
     }
@@ -203,6 +216,19 @@ mod tests {
             SearchProofStatus::BudgetExhausted,
             &stats,
             &branching,
+            &CombatSearchV2DiagnosticsExpansion {
+                grouping_policy: "typed_fanout_groups_with_no_action_merge",
+                behavioral_effect: "diagnostic_only_search_expansion_unchanged",
+                states_observed: 1,
+                total_atomic_actions: 0,
+                total_fanout_groups: 0,
+                fanout_groups_avg: 0.0,
+                fanout_groups_max: 0,
+                max_group_size: 0,
+                action_kind_counts: Vec::new(),
+                largest_groups: Vec::new(),
+                notes: Vec::new(),
+            },
             &pruning,
             4,
         );
@@ -213,6 +239,7 @@ mod tests {
         assert!(tags.contains(&"dominance_pruning_inactive"));
         assert!(tags.contains(&"unresolved_leaf_states"));
         assert!(tags.contains(&"no_legal_actions_observed"));
+        assert!(tags.contains(&"action_expansion_diagnostics_active"));
         assert!(tags.contains(&"frontier_remaining"));
     }
 }

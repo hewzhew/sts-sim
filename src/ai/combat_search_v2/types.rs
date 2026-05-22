@@ -103,6 +103,7 @@ pub struct CombatSearchV2DiagnosticsReport {
     pub mode: &'static str,
     pub tables: CombatSearchV2DiagnosticsTables,
     pub branching: CombatSearchV2DiagnosticsBranching,
+    pub expansion: CombatSearchV2DiagnosticsExpansion,
     pub pruning: CombatSearchV2DiagnosticsPruning,
     pub frontier: CombatSearchV2DiagnosticsFrontier,
     pub diagnosis: Vec<&'static str>,
@@ -124,6 +125,37 @@ pub struct CombatSearchV2DiagnosticsBranching {
     pub legal_actions_avg: f64,
     pub legal_actions_max: usize,
     pub nodes_generated_per_expanded: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsExpansion {
+    pub grouping_policy: &'static str,
+    pub behavioral_effect: &'static str,
+    pub states_observed: u64,
+    pub total_atomic_actions: u64,
+    pub total_fanout_groups: u64,
+    pub fanout_groups_avg: f64,
+    pub fanout_groups_max: usize,
+    pub max_group_size: usize,
+    pub action_kind_counts: Vec<CombatSearchV2DiagnosticsActionKindCount>,
+    pub largest_groups: Vec<CombatSearchV2DiagnosticsActionGroupSample>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsActionKindCount {
+    pub kind: String,
+    pub atomic_actions: u64,
+    pub fanout_groups: u64,
+    pub max_group_size: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsActionGroupSample {
+    pub observed_at_state_query: u64,
+    pub kind: String,
+    pub group_key: String,
+    pub atomic_actions: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]

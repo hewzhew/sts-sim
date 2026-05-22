@@ -17,6 +17,7 @@ use crate::state::core::{ClientInput, EngineState};
 
 mod baseline;
 mod diagnostics;
+mod expansion;
 mod frontier;
 mod report;
 mod search;
@@ -25,6 +26,9 @@ mod types;
 mod value;
 
 use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
+use expansion::{
+    summarize_action_expansion, ActionExpansionDiagnosticsCollector, ActionExpansionSummary,
+};
 use frontier::{
     is_resource_covered, push_frontier, remember_best_complete, remember_best_frontier,
     ResourceVector, SearchNode,

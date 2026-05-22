@@ -103,7 +103,8 @@ pub fn run_combat_search_v2_with_stepper(
             stepper.legal_action_choices(&position),
             config.potion_policy,
         );
-        diagnostics.observe_legal_actions(legal.len());
+        let expansion = summarize_action_expansion(&node.engine, &node.combat, &legal);
+        diagnostics.observe_legal_actions(&expansion);
         if legal.is_empty() {
             unresolved_leaf_count = unresolved_leaf_count.saturating_add(1);
             continue;
