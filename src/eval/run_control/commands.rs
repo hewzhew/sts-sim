@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use crate::state::core::{CampfireChoice, ClientInput};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,6 +46,7 @@ pub enum RunControlCommand {
         root: PathBuf,
         case_id: String,
     },
+    SearchCombat(RunControlSearchCombatOptions),
     ActionIndex(usize),
     PlayCard {
         card_index: usize,
@@ -55,6 +57,15 @@ pub enum RunControlCommand {
         target_slot_or_id: Option<usize>,
     },
     Input(ClientInput),
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RunControlSearchCombatOptions {
+    pub max_nodes: Option<usize>,
+    pub max_actions_per_line: Option<usize>,
+    pub max_engine_steps_per_action: Option<usize>,
+    pub wall_ms: Option<u64>,
+    pub potion_policy: Option<CombatSearchV2PotionPolicy>,
 }
 
 pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String> {
@@ -103,6 +114,7 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "save-baseline" => parse_save_baseline_command(&rest),
         "save-baseline-case" => parse_save_baseline_case_command(&rest),
         "bench-add" => parse_bench_add_command(&rest),
+        "search-combat" | "solve-combat" | "auto-combat" => parse_search_combat_command(&rest),
         "action" => Ok(RunControlCommand::ActionIndex(parse_usize_arg(
             rest.first(),
             "action index",
@@ -189,6 +201,7 @@ Help:
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
     draw, discard, exhaust, actions, action <idx>
+    search-combat [max_nodes=N] [wall_ms=N] [potion=never|all]
 
   Map/Event/Reward:
     go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
@@ -276,6 +289,46 @@ fn parse_bench_add_command(rest: &[&str]) -> Result<RunControlCommand, String> {
     })
 }
 
+fn parse_search_combat_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    let mut options = RunControlSearchCombatOptions::default();
+    for token in rest {
+        let (key, value) = token
+            .split_once('=')
+            .ok_or_else(|| format!("search-combat option must be key=value, got '{token}'"))?;
+        match key.to_ascii_lowercase().as_str() {
+            "max_nodes" | "nodes" => {
+                options.max_nodes = Some(parse_usize_value(value, "max_nodes")?);
+            }
+            "max_actions" | "max_actions_per_line" => {
+                options.max_actions_per_line =
+                    Some(parse_usize_value(value, "max_actions_per_line")?);
+            }
+            "max_steps" | "max_engine_steps_per_action" => {
+                options.max_engine_steps_per_action =
+                    Some(parse_usize_value(value, "max_engine_steps_per_action")?);
+            }
+            "wall_ms" | "ms" => {
+                options.wall_ms = Some(parse_u64_value(value, "wall_ms")?);
+            }
+            "potion" | "potion_policy" => {
+                options.potion_policy = Some(parse_potion_policy(value)?);
+            }
+            other => return Err(format!("unknown search-combat option '{other}'")),
+        }
+    }
+    Ok(RunControlCommand::SearchCombat(options))
+}
+
+fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "never" => Ok(CombatSearchV2PotionPolicy::Never),
+        "all" | "all_legal_potion_actions" => Ok(CombatSearchV2PotionPolicy::All),
+        _ => Err(format!(
+            "invalid potion policy '{value}', expected never|all"
+        )),
+    }
+}
+
 fn parse_buy_command(rest: &[&str]) -> Result<RunControlCommand, String> {
     let kind = rest
         .first()
@@ -288,6 +341,18 @@ fn parse_buy_command(rest: &[&str]) -> Result<RunControlCommand, String> {
         "potion" => Ok(RunControlCommand::Input(ClientInput::BuyPotion(index))),
         _ => Err("buy requires card|relic|potion".to_string()),
     }
+}
+
+fn parse_usize_value(value: &str, name: &str) -> Result<usize, String> {
+    value
+        .parse::<usize>()
+        .map_err(|_| format!("invalid {name} '{value}'"))
+}
+
+fn parse_u64_value(value: &str, name: &str) -> Result<u64, String> {
+    value
+        .parse::<u64>()
+        .map_err(|_| format!("invalid {name} '{value}'"))
 }
 
 fn parse_usize_arg(value: Option<&&str>, name: &str) -> Result<usize, String> {
@@ -373,6 +438,21 @@ mod tests {
                 root: PathBuf::from("data/bench"),
                 case_id: "case_a".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn run_control_parser_accepts_search_combat_options() {
+        assert_eq!(
+            parse_run_control_command("search-combat max_nodes=123 wall_ms=50 potion=all")
+                .expect("search-combat should parse"),
+            RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
+                max_nodes: Some(123),
+                max_actions_per_line: None,
+                max_engine_steps_per_action: None,
+                wall_ms: Some(50),
+                potion_policy: Some(CombatSearchV2PotionPolicy::All),
+            })
         );
     }
 

@@ -71,7 +71,7 @@ pub struct RunControlCommandOutcome {
 }
 
 impl RunControlCommandOutcome {
-    fn message(message: impl Into<String>) -> Self {
+    pub(in crate::eval::run_control) fn message(message: impl Into<String>) -> Self {
         Self {
             should_quit: false,
             message: message.into(),
@@ -87,7 +87,10 @@ impl RunControlCommandOutcome {
         }
     }
 
-    fn action(message: impl Into<String>, action_result: ActionResult) -> Self {
+    pub(in crate::eval::run_control) fn action(
+        message: impl Into<String>,
+        action_result: ActionResult,
+    ) -> Self {
         Self {
             should_quit: false,
             message: message.into(),
@@ -265,6 +268,9 @@ impl RunControlSession {
                     baseline_status
                 )))
             }
+            RunControlCommand::SearchCombat(options) => {
+                super::combat_search::apply_search_combat(self, options)
+            }
             RunControlCommand::ActionIndex(index) => {
                 let input = self.combat_action_by_index(index)?;
                 self.apply_input(input)
@@ -383,7 +389,10 @@ impl RunControlSession {
         Ok(CombatPosition::new(engine, active.combat_state.clone()))
     }
 
-    fn apply_input(&mut self, input: ClientInput) -> Result<RunControlCommandOutcome, String> {
+    pub(in crate::eval::run_control) fn apply_input(
+        &mut self,
+        input: ClientInput,
+    ) -> Result<RunControlCommandOutcome, String> {
         self.ensure_combat_started_if_needed()?;
         self.validate_input_for_current_state(&input)?;
         let before_snapshot = RunVisibleSnapshot::capture(self);
@@ -787,6 +796,39 @@ mod tests {
             .expect_err("map state should not capture");
 
         assert!(err.contains("no active combat state"));
+    }
+
+    #[test]
+    fn run_control_search_combat_applies_complete_winning_trajectory() {
+        let mut session = test_session_with_first_monster_room();
+        session
+            .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+            .expect("map input should enter combat");
+
+        let outcome = session
+            .apply_command(RunControlCommand::SearchCombat(
+                crate::eval::run_control::RunControlSearchCombatOptions {
+                    max_nodes: Some(2_000),
+                    wall_ms: Some(5_000),
+                    ..Default::default()
+                },
+            ))
+            .expect("search-combat should resolve starter combat");
+
+        assert!(outcome
+            .message
+            .contains("Search combat applied complete winning trajectory"));
+        assert!(outcome
+            .message
+            .contains("optimality=not_claimed_budgeted_complete_win"));
+        assert!(outcome.action_result.is_some());
+        assert!(session.active_combat.is_none());
+        assert_eq!(
+            session
+                .last_combat_baseline()
+                .map(CombatBaselineOutcomeV1::terminal),
+            Some(crate::sim::combat::CombatTerminal::Win)
+        );
     }
 
     #[test]

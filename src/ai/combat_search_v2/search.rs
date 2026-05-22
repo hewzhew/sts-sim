@@ -139,6 +139,7 @@ pub fn run_combat_search_v2_with_stepper(
                 action_id,
                 action_key: choice.action_key,
                 action_debug: choice.action_debug,
+                input: choice.input,
             });
             stats.nodes_generated = stats.nodes_generated.saturating_add(1);
 

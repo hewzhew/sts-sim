@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::state::core::ClientInput;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
@@ -221,6 +222,7 @@ pub struct CombatSearchV2ActionTrace {
     pub action_id: usize,
     pub action_key: String,
     pub action_debug: String,
+    pub input: ClientInput,
 }
 
 #[derive(Clone, Debug, Serialize)]
