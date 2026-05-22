@@ -181,6 +181,9 @@ impl RunControlSession {
                 case_id,
                 label,
             } => super::artifact_commands::apply_capture_case(self, root, case_id, label),
+            RunControlCommand::CaptureCaseDefault { case_id, label } => {
+                super::artifact_commands::apply_default_capture_case(self, case_id, label)
+            }
             RunControlCommand::SaveBaseline { path, case_id } => {
                 super::artifact_commands::apply_save_baseline(self, path, case_id)
             }

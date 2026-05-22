@@ -291,7 +291,9 @@ fn state_command_hint(session: &RunControlSession) -> String {
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
-        | EngineState::PendingChoice(_) => "type visible action id, end, or n".to_string(),
+        | EngineState::PendingChoice(_) => {
+            "cap <case_id> | n | visible action id | end".to_string()
+        }
         _ => "type visible id".to_string(),
     }
 }

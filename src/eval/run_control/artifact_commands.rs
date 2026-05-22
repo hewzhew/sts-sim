@@ -68,6 +68,25 @@ pub(super) fn apply_capture_case(
     )))
 }
 
+pub(super) fn apply_default_capture_case(
+    session: &mut RunControlSession,
+    case_id: String,
+    label: Option<String>,
+) -> Result<RunControlCommandOutcome, String> {
+    let root = default_benchmark_root(session);
+    apply_capture_case(session, root, case_id, label)
+}
+
+pub(super) fn default_benchmark_root(session: &RunControlSession) -> PathBuf {
+    PathBuf::from("tools")
+        .join("artifacts")
+        .join("benchmarks")
+        .join(format!(
+            "seed{}_act{}",
+            session.run_state.seed, session.run_state.act_num
+        ))
+}
+
 pub(super) fn apply_save_baseline(
     session: &RunControlSession,
     path: PathBuf,

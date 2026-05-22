@@ -36,6 +36,10 @@ pub enum RunControlCommand {
         case_id: String,
         label: Option<String>,
     },
+    CaptureCaseDefault {
+        case_id: String,
+        label: Option<String>,
+    },
     SaveBaseline {
         path: PathBuf,
         case_id: Option<String>,
@@ -129,9 +133,10 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "actions" | "legal" => Ok(RunControlCommand::Actions),
         "capture" | "save-capture" => parse_capture_command(&rest),
         "capture-case" => parse_capture_case_command(&rest),
+        "cap" | "capture-combat" => parse_default_capture_case_command(&rest),
         "save-baseline" => parse_save_baseline_command(&rest),
         "save-baseline-case" => parse_save_baseline_case_command(&rest),
-        "baseline" | "save-baseline-last" | "baseline-last" => {
+        "b" | "baseline" | "save-baseline-last" | "baseline-last" => {
             parse_save_baseline_last_command(&rest)
         }
         "bench-add" => parse_bench_add_command(&rest),
@@ -245,9 +250,10 @@ Help:
     buy card|relic|potion <idx>, purge <deck_idx>, rest, smith <deck_idx>, dig, lift, recall, toke <deck_idx>
 
   Combat Capture / Benchmark:
+    cap <case_id> [label] = capture current combat under tools/artifacts/benchmarks/seed<seed>_act<act>
+    b/baseline = save last completed combat baseline for the last capture-case
     capture <path> [label]
     capture-case <benchmark_dir> <case_id> [label]
-    baseline = save last completed combat baseline for the last capture-case
     save-baseline <path> [case_id]
     save-baseline-case <benchmark_dir> <case_id>
     bench-add <benchmark_dir> <case_id>
@@ -297,6 +303,17 @@ fn parse_capture_case_command(rest: &[&str]) -> Result<RunControlCommand, String
     let label = (!rest[2.min(rest.len())..].is_empty()).then(|| rest[2..].join(" "));
     Ok(RunControlCommand::CaptureCase {
         root: PathBuf::from(root),
+        case_id: case_id.to_string(),
+        label,
+    })
+}
+
+fn parse_default_capture_case_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    let case_id = rest
+        .first()
+        .ok_or_else(|| "cap requires a case_id, for example: cap first_combat".to_string())?;
+    let label = (!rest[1.min(rest.len())..].is_empty()).then(|| rest[1..].join(" "));
+    Ok(RunControlCommand::CaptureCaseDefault {
         case_id: case_id.to_string(),
         label,
     })
@@ -518,6 +535,13 @@ mod tests {
             }
         );
         assert_eq!(
+            parse_run_control_command("cap case_a first fight").expect("cap should parse"),
+            RunControlCommand::CaptureCaseDefault {
+                case_id: "case_a".to_string(),
+                label: Some("first fight".to_string()),
+            }
+        );
+        assert_eq!(
             parse_run_control_command("save-baseline-case data/bench case_a")
                 .expect("save-baseline-case should parse"),
             RunControlCommand::SaveBaselineCase {
@@ -527,6 +551,10 @@ mod tests {
         );
         assert_eq!(
             parse_run_control_command("baseline").expect("baseline should parse"),
+            RunControlCommand::SaveBaselineForLastCaptureCase
+        );
+        assert_eq!(
+            parse_run_control_command("b").expect("b should parse"),
             RunControlCommand::SaveBaselineForLastCaptureCase
         );
         assert_eq!(

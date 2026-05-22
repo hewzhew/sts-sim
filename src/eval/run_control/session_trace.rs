@@ -281,6 +281,21 @@ impl SessionTraceRecorder {
                     benchmark_manifest_path: Some(path_string(&paths.benchmark_manifest)),
                 })
             }
+            RunControlCommand::CaptureCaseDefault { case_id, .. } => {
+                let root = super::artifact_commands::default_benchmark_root(session);
+                let paths = BenchmarkCasePaths::for_case(&root, case_id);
+                Some(SessionTraceArtifactRefV1 {
+                    raw_command_line,
+                    decision_step: session.decision_step,
+                    artifact_kind: SessionTraceArtifactKind::CombatCaptureCase,
+                    capture_path: Some(path_string(&paths.capture_path)),
+                    baseline_path: paths
+                        .baseline_path
+                        .exists()
+                        .then(|| path_string(&paths.baseline_path)),
+                    benchmark_manifest_path: Some(path_string(&paths.benchmark_manifest)),
+                })
+            }
             RunControlCommand::SaveBaselineCase { root, case_id } => {
                 let paths = BenchmarkCasePaths::for_case(root, case_id);
                 Some(SessionTraceArtifactRefV1 {
