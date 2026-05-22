@@ -36,10 +36,10 @@ Active binaries:
     Search V2 from the current active combat boundary, dry-run the selected
     complete winning trajectory, and apply it only if the dry-run still wins;
     budgeted wins are reported as no optimality claim
-  - `n` / `next` / `auto-step [max_nodes=N] [wall_ms=N] [potion=never|all]`:
-    guarded convenience step; it advances routine screens, claims low-risk
-    rewards, and uses combat search only when a complete winning trajectory is
-    available, then stops at the next human strategic choice
+  - `n` / `next` / `advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all]`:
+    advances routine or forced-safe screens, claims low-risk rewards, and uses
+    combat search only when a complete winning trajectory is available, then
+    stops at the next human strategic choice
   - reward screens auto-claim gold/stolen gold and only claim potion rewards
     when an empty potion slot exists; use `auto-reward gold|potion|all on|off`
     to inspect or change this convenience setting

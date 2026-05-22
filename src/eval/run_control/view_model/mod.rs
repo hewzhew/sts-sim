@@ -13,7 +13,7 @@ use labels::pending_choice_label;
 pub(super) use labels::{
     boss_label, combat_card_label, deck_summary, monster_name, reward_card_label, room_type_label,
 };
-pub use resolution::CandidateResolution;
+pub use resolution::{CandidateResolution, FollowupBoundary};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunControlViewModel {

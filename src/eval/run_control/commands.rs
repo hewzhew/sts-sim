@@ -134,7 +134,9 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "sc" | "search-combat" | "solve-combat" | "auto-combat" => {
             parse_search_combat_command(&rest)
         }
-        "n" | "next" | "auto-step" | "autostep" => parse_auto_step_command(&rest),
+        "n" | "next" | "advance" | "advance-to-human-boundary" | "auto-step" | "autostep" => {
+            parse_auto_step_command(&rest)
+        }
         "auto-reward" => parse_auto_reward_command(&rest),
         "action" => Ok(RunControlCommand::ActionIndex(parse_usize_arg(
             rest.first(),
@@ -223,7 +225,7 @@ pub fn run_control_help() -> &'static str {
 Help:
   Core:
     main/state, deck, map, relics, potions, inspect <id>, case [path], d/details, r/raw, quit
-    n/next = guarded auto step; <id> chooses a visible option
+    n/next = advance to next human choice; <id> chooses a visible option
     Enter chooses the single visible option when safe
 
   Combat:
@@ -246,13 +248,13 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
-    n/next [max_nodes=N] [wall_ms=N] [potion=never|all] [max_ops=N]
+    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all] [max_ops=N]
     auto-reward
     auto-reward gold|potion|all on|off"
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "main | n=auto-step | deck | map | relics | potions | inspect <id> | auto-reward | details | raw | help"
+    "main | n=advance | deck | map | relics | potions | inspect <id> | auto-reward | details | raw | help"
 }
 
 fn is_candidate_id(command: &str) -> bool {
@@ -372,7 +374,7 @@ fn parse_auto_step_command(rest: &[&str]) -> Result<RunControlCommand, String> {
     let mut search_tokens = Vec::new();
     for token in rest {
         let Some((key, value)) = token.split_once('=') else {
-            return Err(format!("auto-step option must be key=value, got '{token}'"));
+            return Err(format!("advance option must be key=value, got '{token}'"));
         };
         match key.to_ascii_lowercase().as_str() {
             "max_ops" | "max_operations" | "max_steps" => {
@@ -541,6 +543,11 @@ mod tests {
     fn run_control_parser_accepts_auto_step_options() {
         assert_eq!(
             parse_run_control_command("n").expect("n should parse"),
+            RunControlCommand::AutoStep(RunControlAutoStepOptions::default())
+        );
+        assert_eq!(
+            parse_run_control_command("advance-to-human-boundary")
+                .expect("long advance command should parse"),
             RunControlCommand::AutoStep(RunControlAutoStepOptions::default())
         );
         assert_eq!(

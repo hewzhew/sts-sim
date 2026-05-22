@@ -598,6 +598,26 @@ mod tests {
     }
 
     #[test]
+    fn run_control_auto_step_leaves_empty_shop() {
+        let mut session = test_session_at_shop();
+        if let EngineState::Shop(shop) = &mut session.engine_state {
+            shop.cards.clear();
+            shop.relics.clear();
+            shop.potions.clear();
+            shop.purge_available = false;
+        }
+
+        let outcome = session
+            .apply_command(RunControlCommand::AutoStep(Default::default()))
+            .expect("auto-step should leave a shop with no remaining executable choices");
+
+        assert!(outcome
+            .message
+            .contains("routine: Leave shop (only shop exit remains)"));
+        assert!(!matches!(session.engine_state, EngineState::Shop(_)));
+    }
+
+    #[test]
     fn run_control_auto_step_claims_low_risk_rewards_then_stops() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         let mut rewards = crate::state::rewards::RewardState::new();
@@ -621,7 +641,7 @@ mod tests {
 
         assert!(outcome
             .message
-            .contains("auto reward: 19 gold, Essence of Steel potion"));
+            .contains("routine reward: 19 gold, Essence of Steel potion"));
         assert!(outcome
             .message
             .contains("Reason: card reward requires human choice"));

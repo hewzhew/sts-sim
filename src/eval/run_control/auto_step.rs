@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
 use super::commands::{RunControlAutoStepOptions, RunControlSearchCombatOptions};
@@ -11,19 +13,47 @@ use super::view_model::{build_run_control_view_model, DecisionCandidate, RunCont
 const DEFAULT_MAX_OPERATIONS: usize = 16;
 const DEFAULT_AUTO_SEARCH_WALL_MS: u64 = 5_000;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AutoAdvanceClass {
+    Routine,
+    Forced,
+    Strategic,
+    Unsafe,
+}
+
+struct AutoAdvanceCandidate<'a> {
+    candidate: &'a DecisionCandidate,
+    class: AutoAdvanceClass,
+    reason: &'static str,
+}
+
 pub(super) fn apply_guarded_auto_step(
     session: &mut RunControlSession,
     options: RunControlAutoStepOptions,
 ) -> Result<RunControlCommandOutcome, String> {
     let before = RunVisibleSnapshot::capture(session);
     let mut applied = Vec::new();
+    let mut seen_boundaries = BTreeSet::new();
     let max_operations = options.max_operations.unwrap_or(DEFAULT_MAX_OPERATIONS);
 
     for _ in 0..max_operations {
+        let boundary_key = auto_boundary_key(session);
+        if !seen_boundaries.insert(boundary_key.clone()) {
+            return finish_auto_step(
+                session,
+                &before,
+                applied,
+                "repeated boundary detected while advancing automatically",
+                Some(format!(
+                    "boundary={boundary_key}\nThis usually means an event or transition kept presenting the same screen after an automatic action."
+                )),
+            );
+        }
+
         let reward_report = super::reward_auto::apply_reward_automation(session)?;
         if !reward_report.is_empty() {
             applied.push(format!(
-                "auto reward: {}",
+                "routine reward: {}",
                 reward_report
                     .claims
                     .iter()
@@ -53,13 +83,13 @@ pub(super) fn apply_guarded_auto_step(
         }
 
         let view = build_run_control_view_model(session);
-        if let Some(candidate) = routine_candidate(session, &view) {
-            let Some(input) = candidate.action.executable_input() else {
+        if let Some(auto_candidate) = auto_advance_candidate(session, &view) {
+            let Some(input) = auto_candidate.candidate.action.executable_input() else {
                 return finish_auto_step(
                     session,
                     &before,
                     applied,
-                    "routine candidate is not executable",
+                    "auto-selected candidate is not executable",
                     None,
                 );
             };
@@ -68,8 +98,12 @@ pub(super) fn apply_guarded_auto_step(
                 .action_result
                 .as_ref()
                 .map(|result| result.chosen_label.clone())
-                .unwrap_or_else(|| candidate.label.clone());
-            applied.push(format!("routine: {label}"));
+                .unwrap_or_else(|| auto_candidate.candidate.label.clone());
+            applied.push(format!(
+                "{}: {label} ({})",
+                auto_class_label(auto_candidate.class),
+                auto_candidate.reason
+            ));
             continue;
         }
 
@@ -80,7 +114,7 @@ pub(super) fn apply_guarded_auto_step(
         session,
         &before,
         applied,
-        format!("operation budget exhausted at {max_operations} guarded operations"),
+        format!("operation budget exhausted at {max_operations} automatic operations"),
         None,
     )
 }
@@ -94,15 +128,21 @@ fn auto_search_options(
     options
 }
 
-fn routine_candidate<'a>(
+fn auto_advance_candidate<'a>(
     session: &RunControlSession,
     view: &'a RunControlViewModel,
-) -> Option<&'a DecisionCandidate> {
+) -> Option<AutoAdvanceCandidate<'a>> {
     if let EngineState::RewardScreen(reward) = &session.engine_state {
         if reward.pending_card_choice.is_none() && reward.items.is_empty() && reward.skippable {
-            return view.candidates.iter().find(|candidate| {
-                candidate.action.executable_input() == Some(ClientInput::Proceed)
-            });
+            return view
+                .candidates
+                .iter()
+                .find(|candidate| candidate.action.executable_input() == Some(ClientInput::Proceed))
+                .map(|candidate| AutoAdvanceCandidate {
+                    candidate,
+                    class: AutoAdvanceClass::Routine,
+                    reason: "empty reward screen",
+                });
         }
     }
 
@@ -110,10 +150,105 @@ fn routine_candidate<'a>(
         && view.candidates[0].note.as_deref() == Some("routine")
         && view.candidates[0].action.executable_input().is_some()
     {
-        return Some(&view.candidates[0]);
+        return Some(AutoAdvanceCandidate {
+            candidate: &view.candidates[0],
+            class: AutoAdvanceClass::Routine,
+            reason: "single routine action",
+        });
+    }
+
+    let executable = view
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.action.executable_input().is_some())
+        .collect::<Vec<_>>();
+    if executable.len() == 1 {
+        let candidate = executable[0];
+        let class = classify_single_executable_candidate(session, candidate);
+        if matches!(class, AutoAdvanceClass::Routine | AutoAdvanceClass::Forced) {
+            return Some(AutoAdvanceCandidate {
+                candidate,
+                class,
+                reason: single_candidate_reason(session, candidate, class),
+            });
+        }
     }
 
     None
+}
+
+fn classify_single_executable_candidate(
+    session: &RunControlSession,
+    candidate: &DecisionCandidate,
+) -> AutoAdvanceClass {
+    if candidate.action.executable_input().is_none() {
+        return AutoAdvanceClass::Unsafe;
+    }
+    match &session.engine_state {
+        EngineState::TreasureRoom(_)
+            if candidate.action.executable_input() == Some(ClientInput::OpenChest) =>
+        {
+            AutoAdvanceClass::Routine
+        }
+        EngineState::Shop(_) if candidate.id == "leave" => AutoAdvanceClass::Routine,
+        EngineState::RewardScreen(reward)
+            if reward.pending_card_choice.is_none()
+                && reward.items.is_empty()
+                && candidate.action.executable_input() == Some(ClientInput::Proceed) =>
+        {
+            AutoAdvanceClass::Routine
+        }
+        EngineState::EventRoom if event_single_candidate_is_safe(session, candidate) => {
+            AutoAdvanceClass::Forced
+        }
+        EngineState::GameOver(_) => AutoAdvanceClass::Unsafe,
+        _ => AutoAdvanceClass::Strategic,
+    }
+}
+
+fn event_single_candidate_is_safe(
+    session: &RunControlSession,
+    candidate: &DecisionCandidate,
+) -> bool {
+    if session.run_state.event_state.as_ref().is_some_and(|event| {
+        event.id == crate::state::events::EventId::Neow && event.current_screen > 0
+    }) {
+        return false;
+    }
+    let Some(resolution) = candidate.resolution.as_ref() else {
+        return candidate.note.as_deref() == Some("routine");
+    };
+    resolution.known_effects.is_empty()
+        && resolution.unresolved_effects.is_empty()
+        && matches!(
+            resolution.followup,
+            Some(
+                super::view_model::FollowupBoundary::EventScreenAdvance
+                    | super::view_model::FollowupBoundary::EventComplete
+            )
+        )
+}
+
+fn single_candidate_reason(
+    session: &RunControlSession,
+    candidate: &DecisionCandidate,
+    class: AutoAdvanceClass,
+) -> &'static str {
+    match (&session.engine_state, class, candidate.id.as_str()) {
+        (EngineState::TreasureRoom(_), AutoAdvanceClass::Routine, _) => "single chest action",
+        (EngineState::Shop(_), AutoAdvanceClass::Routine, "leave") => "only shop exit remains",
+        (EngineState::EventRoom, AutoAdvanceClass::Forced, _) => "single safe event transition",
+        _ => "single safe action",
+    }
+}
+
+fn auto_class_label(class: AutoAdvanceClass) -> &'static str {
+    match class {
+        AutoAdvanceClass::Routine => "routine",
+        AutoAdvanceClass::Forced => "forced",
+        AutoAdvanceClass::Strategic => "strategic",
+        AutoAdvanceClass::Unsafe => "unsafe",
+    }
 }
 
 fn human_stop_reason(session: &RunControlSession) -> String {
@@ -186,7 +321,7 @@ fn finish_auto_step(
     let reason = reason.into();
     let view = build_run_control_view_model(session);
     let mut lines = vec![
-        format!("Guarded auto step stopped: {}", view.header.title),
+        format!("Advanced to human boundary: {}", view.header.title),
         "Applied:".to_string(),
     ];
     if applied.is_empty() {
@@ -210,7 +345,10 @@ fn finish_auto_step(
     let after = RunVisibleSnapshot::capture(session);
     let action_result = action_result_from_transition(
         TransitionAction {
-            label: format!("guarded auto-step applied {} operation(s)", applied.len()),
+            label: format!(
+                "advance-to-human-boundary applied {} operation(s)",
+                applied.len()
+            ),
         },
         before,
         &after,
@@ -222,6 +360,47 @@ fn finish_auto_step(
         lines.join("\n"),
         action_result,
     ))
+}
+
+fn auto_boundary_key(session: &RunControlSession) -> String {
+    let view = build_run_control_view_model(session);
+    let active_combat = session
+        .active_combat
+        .as_ref()
+        .map(|active| {
+            format!(
+                "{:?}:turn{}:hp{}:hand{}",
+                active.engine_state,
+                active.combat_state.turn.turn_count,
+                active.combat_state.entities.player.current_hp,
+                active.combat_state.zones.hand.len()
+            )
+        })
+        .unwrap_or_else(|| "no-combat".to_string());
+    let event = session
+        .run_state
+        .event_state
+        .as_ref()
+        .map(|event| format!("{:?}:screen{}", event.id, event.current_screen))
+        .unwrap_or_else(|| "no-event".to_string());
+    let candidates = view
+        .candidates
+        .iter()
+        .map(|candidate| format!("{}={}", candidate.id, candidate.action.command_hint()))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{:?}|{}|{}|act{}|floor{}|hp{}|gold{}|{}|{}",
+        session.engine_state,
+        view.header.title,
+        event,
+        session.run_state.act_num,
+        session.run_state.floor_num,
+        session.run_state.current_hp,
+        session.run_state.gold,
+        active_combat,
+        candidates
+    )
 }
 
 fn current_run_apply_status(session: &RunControlSession) -> RunApplyStatus {
