@@ -275,7 +275,12 @@ fn main_command_hint(session: &RunControlSession) -> String {
         }
         _ => "deck | map | relics | potions | case | raw | help | q",
     };
-    format!("{primary} | {views}")
+    let baseline = if session.last_completed_combat_matches_capture_case() {
+        " | baseline"
+    } else {
+        ""
+    };
+    format!("{primary} | {views}{baseline}")
 }
 
 fn state_command_hint(session: &RunControlSession) -> String {

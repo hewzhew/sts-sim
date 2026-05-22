@@ -32,6 +32,8 @@ Active binaries:
   - `capture-case <benchmark_dir> <case_id> [label]`: write the standard
     `captures/<case_id>.capture.json` and refresh `benchmark.json` with trust
     and expected fingerprints
+  - `baseline`: after a `capture-case` and the matching combat finishes, save
+    the last completed whole-combat baseline to that same case
   - `sc` / `search-combat [max_nodes=N] [wall_ms=N] [potion=never|all]`: run Combat
     Search V2 from the current active combat boundary, dry-run the selected
     complete winning trajectory, and apply it only if the dry-run still wins;

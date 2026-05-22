@@ -60,6 +60,18 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
             ),
         );
     }
+    if let Some(case) = session.last_capture_case() {
+        push_line(
+            &mut out,
+            format!(
+                "last_capture_case root={} case_id={} combat_sequence={} baseline_ready={}",
+                case.root.display(),
+                case.case_id,
+                case.combat_sequence,
+                session.last_completed_combat_matches_capture_case()
+            ),
+        );
+    }
     render_candidate_resolution_details(session, &mut out);
 
     match &session.engine_state {

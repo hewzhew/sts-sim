@@ -44,7 +44,7 @@ pub(super) fn apply_capture(
 }
 
 pub(super) fn apply_capture_case(
-    session: &RunControlSession,
+    session: &mut RunControlSession,
     root: PathBuf,
     case_id: String,
     label: Option<String>,
@@ -55,8 +55,9 @@ pub(super) fn apply_capture_case(
         label.or_else(|| Some(case_id.clone())),
     )?;
     let paths = add_case_to_benchmark_registry(&root, &case_id)?;
+    session.remember_capture_case(root, case_id.clone());
     Ok(RunControlCommandOutcome::message(format!(
-        "saved CombatCaptureV1 case {case_id} to {} and registered {} [{} hp={}, turn={}, enemies={} trust={:?}]",
+        "saved CombatCaptureV1 case {case_id} to {} and registered {} [{} hp={}, turn={}, enemies={} trust={:?}]\nAfter this combat ends, type `baseline` to save the matching CombatBaselineOutcomeV1.",
         paths.capture_path.display(),
         paths.benchmark_manifest.display(),
         capture.summary.engine_state,
@@ -83,6 +84,30 @@ pub(super) fn apply_save_baseline(
 }
 
 pub(super) fn apply_save_baseline_case(
+    session: &RunControlSession,
+    root: PathBuf,
+    case_id: String,
+) -> Result<RunControlCommandOutcome, String> {
+    save_baseline_case(session, root, case_id)
+}
+
+pub(super) fn apply_save_baseline_for_last_capture_case(
+    session: &RunControlSession,
+) -> Result<RunControlCommandOutcome, String> {
+    let last = session.last_capture_case().ok_or_else(|| {
+        "no previous capture-case is available; use capture-case <benchmark_dir> <case_id> first"
+            .to_string()
+    })?;
+    if !session.last_completed_combat_matches_capture_case() {
+        return Err(format!(
+            "last completed combat does not match the last capture-case '{}'; use save-baseline-case <benchmark_dir> <case_id> only if you intentionally want to override",
+            last.case_id
+        ));
+    }
+    save_baseline_case(session, last.root.clone(), last.case_id.clone())
+}
+
+fn save_baseline_case(
     session: &RunControlSession,
     root: PathBuf,
     case_id: String,

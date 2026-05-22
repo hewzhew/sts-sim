@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::sim::combat::CombatPosition;
 use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
@@ -51,6 +53,16 @@ pub struct RunControlSession {
     pub decision_step: u64,
     pub reward_automation: RewardAutomationConfig,
     pub(super) combat_outcomes: CombatOutcomeTracker,
+    combat_sequence: u64,
+    last_completed_combat_sequence: Option<u64>,
+    last_capture_case: Option<LastBenchmarkCaptureCase>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::eval::run_control) struct LastBenchmarkCaptureCase {
+    pub root: PathBuf,
+    pub case_id: String,
+    pub combat_sequence: u64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -106,6 +118,9 @@ impl RunControlSession {
             decision_step: 0,
             reward_automation: config.reward_automation,
             combat_outcomes: CombatOutcomeTracker::default(),
+            combat_sequence: 0,
+            last_completed_combat_sequence: None,
+            last_capture_case: None,
         }
     }
 
@@ -171,6 +186,9 @@ impl RunControlSession {
             }
             RunControlCommand::SaveBaselineCase { root, case_id } => {
                 super::artifact_commands::apply_save_baseline_case(self, root, case_id)
+            }
+            RunControlCommand::SaveBaselineForLastCaptureCase => {
+                super::artifact_commands::apply_save_baseline_for_last_capture_case(self)
             }
             RunControlCommand::RegisterBenchmarkCase { root, case_id } => {
                 super::artifact_commands::apply_register_benchmark_case(root, case_id)
@@ -353,6 +371,7 @@ impl RunControlSession {
             .observe_input_after(potion_observation, after_combat);
         if let Some(finished) = finished_combat.as_ref() {
             self.combat_outcomes.finish("last_combat", finished);
+            self.last_completed_combat_sequence = Some(self.combat_sequence);
         }
         self.cleanup_inactive_combat();
         self.ensure_combat_started_if_needed()?;
@@ -406,11 +425,40 @@ impl RunControlSession {
     }
 
     fn observe_active_combat_started(&mut self) {
-        self.combat_outcomes.ensure_started(
+        let started = self.combat_outcomes.ensure_started(
             self.active_combat
                 .as_ref()
                 .map(|active| &active.combat_state),
         );
+        if started {
+            self.combat_sequence = self.combat_sequence.saturating_add(1);
+        }
+    }
+
+    pub(in crate::eval::run_control) fn remember_capture_case(
+        &mut self,
+        root: PathBuf,
+        case_id: String,
+    ) {
+        self.observe_active_combat_started();
+        self.last_capture_case = Some(LastBenchmarkCaptureCase {
+            root,
+            case_id,
+            combat_sequence: self.combat_sequence,
+        });
+    }
+
+    pub(in crate::eval::run_control) fn last_capture_case(
+        &self,
+    ) -> Option<&LastBenchmarkCaptureCase> {
+        self.last_capture_case.as_ref()
+    }
+
+    pub(in crate::eval::run_control) fn last_completed_combat_matches_capture_case(&self) -> bool {
+        let Some(case) = self.last_capture_case.as_ref() else {
+            return false;
+        };
+        self.last_completed_combat_sequence == Some(case.combat_sequence)
     }
 }
 
@@ -509,6 +557,54 @@ mod tests {
         assert!(manifest.contains("\"expected_fingerprints\""));
         crate::eval::combat_search_v2::load_combat_search_v2_benchmark(&paths.benchmark_manifest)
             .expect("registered suite should validate through search benchmark loader");
+        assert_eq!(
+            session
+                .last_capture_case()
+                .map(|case| (case.root.clone(), case.case_id.clone())),
+            Some((root.clone(), "first_fight".to_string()))
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn run_control_baseline_command_uses_last_capture_case() {
+        let mut session = test_session_with_first_monster_room();
+        session
+            .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+            .expect("map input should enter combat");
+
+        let root = unique_temp_dir("run_control_baseline_last");
+        session
+            .apply_command(RunControlCommand::CaptureCase {
+                root: root.clone(),
+                case_id: "first_fight".to_string(),
+                label: None,
+            })
+            .expect("capture-case should remember the case");
+        session
+            .apply_command(RunControlCommand::SearchCombat(
+                crate::eval::run_control::RunControlSearchCombatOptions {
+                    max_nodes: Some(2_000),
+                    wall_ms: Some(5_000),
+                    ..Default::default()
+                },
+            ))
+            .expect("search-combat should finish the captured combat");
+
+        let outcome = session
+            .apply_command(RunControlCommand::SaveBaselineForLastCaptureCase)
+            .expect("baseline should save against the last capture-case");
+
+        assert!(outcome.message.contains("saved CombatBaselineOutcomeV1"));
+        let paths = BenchmarkCasePaths::for_case(&root, "first_fight");
+        assert!(paths.baseline_path.exists());
+        let baseline =
+            crate::eval::run_control::load_combat_baseline_outcome_v1(&paths.baseline_path)
+                .expect("baseline should load");
+        assert_eq!(baseline.case_id, "first_fight");
+        let manifest = fs::read_to_string(&paths.benchmark_manifest).expect("manifest readable");
+        assert!(manifest.contains("\"baseline\": \"baselines/first_fight.baseline.json\""));
 
         let _ = fs::remove_dir_all(root);
     }

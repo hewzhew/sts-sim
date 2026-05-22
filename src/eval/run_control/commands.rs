@@ -44,6 +44,7 @@ pub enum RunControlCommand {
         root: PathBuf,
         case_id: String,
     },
+    SaveBaselineForLastCaptureCase,
     RegisterBenchmarkCase {
         root: PathBuf,
         case_id: String,
@@ -130,6 +131,9 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "capture-case" => parse_capture_case_command(&rest),
         "save-baseline" => parse_save_baseline_command(&rest),
         "save-baseline-case" => parse_save_baseline_case_command(&rest),
+        "baseline" | "save-baseline-last" | "baseline-last" => {
+            parse_save_baseline_last_command(&rest)
+        }
         "bench-add" => parse_bench_add_command(&rest),
         "sc" | "search-combat" | "solve-combat" | "auto-combat" => {
             parse_search_combat_command(&rest)
@@ -243,6 +247,7 @@ Help:
   Combat Capture / Benchmark:
     capture <path> [label]
     capture-case <benchmark_dir> <case_id> [label]
+    baseline = save last completed combat baseline for the last capture-case
     save-baseline <path> [case_id]
     save-baseline-case <benchmark_dir> <case_id>
     bench-add <benchmark_dir> <case_id>
@@ -318,6 +323,16 @@ fn parse_save_baseline_case_command(rest: &[&str]) -> Result<RunControlCommand, 
         root: PathBuf::from(root),
         case_id: case_id.to_string(),
     })
+}
+
+fn parse_save_baseline_last_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    if !rest.is_empty() {
+        return Err(
+            "baseline uses the last capture-case; use save-baseline-case <benchmark_dir> <case_id> to override"
+                .to_string(),
+        );
+    }
+    Ok(RunControlCommand::SaveBaselineForLastCaptureCase)
 }
 
 fn parse_bench_add_command(rest: &[&str]) -> Result<RunControlCommand, String> {
@@ -509,6 +524,10 @@ mod tests {
                 root: PathBuf::from("data/bench"),
                 case_id: "case_a".to_string(),
             }
+        );
+        assert_eq!(
+            parse_run_control_command("baseline").expect("baseline should parse"),
+            RunControlCommand::SaveBaselineForLastCaptureCase
         );
         assert_eq!(
             parse_run_control_command("bench-add data/bench case_a")
