@@ -9,7 +9,8 @@ use crate::sim::combat::{
 use crate::sim::combat_action::CombatActionChoice;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
-use super::commands::RunControlSearchCombatOptions;
+use super::commands::{RunControlSearchCombatOptions, RunControlSearchEvidenceTarget};
+use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::transition_report::{
     action_result_from_transition, render_action_result, RunApplyStatus, RunVisibleSnapshot,
@@ -22,16 +23,19 @@ pub(super) fn apply_search_combat(
     options: RunControlSearchCombatOptions,
 ) -> Result<RunControlCommandOutcome, String> {
     let start = session.current_active_combat_position()?;
-    let config = search_config(options, session.decision_step);
+    let config = search_config(options.clone(), session.decision_step);
     let report = run_combat_search_v2(&start.engine, &start.combat, config.clone());
+    let saved_evidence =
+        save_search_evidence_if_requested(session, options.evidence.as_ref(), &report)?;
     let Some(trajectory) = report
         .best_complete_trajectory
         .as_ref()
         .filter(|trajectory| trajectory.terminal == SearchTerminalLabel::Win)
     else {
         return Ok(RunControlCommandOutcome::message(format!(
-            "{}\n\n{}",
+            "{}{}\n\n{}",
             render_search_rejection(&report),
+            render_saved_evidence_note(saved_evidence.as_deref()),
             super::render::render_run_control_state(session)
         )));
     };
@@ -46,25 +50,73 @@ pub(super) fn apply_search_combat(
     }
     let after_snapshot = RunVisibleSnapshot::capture(session);
     let status = current_run_apply_status(session);
+    let mut transition_label = format!(
+        "search-combat applied {} actions [proof_status={:?}]",
+        applied.len(),
+        report.outcome.proof_status
+    );
+    if let Some(path) = saved_evidence.as_ref() {
+        transition_label.push_str(&format!(" saved_search={}", path.display()));
+    }
     let action_result = action_result_from_transition(
         TransitionAction {
-            label: format!(
-                "search-combat applied {} actions [proof_status={:?}]",
-                applied.len(),
-                report.outcome.proof_status
-            ),
+            label: transition_label,
         },
         &before_snapshot,
         &after_snapshot,
         status,
     );
     let message = format!(
-        "{}\n{}\n{}",
+        "{}{}\n{}\n{}",
         render_search_application(&report, &applied),
+        render_saved_evidence_note(saved_evidence.as_deref()),
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
     Ok(RunControlCommandOutcome::action(message, action_result))
+}
+
+fn save_search_evidence_if_requested(
+    session: &RunControlSession,
+    target: Option<&RunControlSearchEvidenceTarget>,
+    report: &CombatSearchV2Report,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let Some(target) = target else {
+        return Ok(None);
+    };
+    let (path, capture_case_id, capture_root) = match target {
+        RunControlSearchEvidenceTarget::Path(path) => (path.clone(), None, None),
+        RunControlSearchEvidenceTarget::LastCaptureCase => {
+            let case = session.active_capture_case().ok_or_else(|| {
+                "search evidence save=case requires the current combat to have a matching cap <case_id>"
+                    .to_string()
+            })?;
+            (
+                case.root.join("search_evidence").join(format!(
+                    "{}.step{}.search.json",
+                    case.case_id, session.decision_step
+                )),
+                Some(case.case_id.clone()),
+                Some(case.root.display().to_string()),
+            )
+        }
+    };
+    save_combat_search_evidence_v1(
+        &path,
+        CombatSearchEvidenceContextV1 {
+            source_kind: "run_control_search_combat",
+            decision_step: session.decision_step,
+            capture_case_id,
+            capture_root,
+        },
+        report,
+    )?;
+    Ok(Some(path))
+}
+
+fn render_saved_evidence_note(path: Option<&std::path::Path>) -> String {
+    path.map(|path| format!("\nSearch evidence saved: {}", path.display()))
+        .unwrap_or_default()
 }
 
 fn search_config(

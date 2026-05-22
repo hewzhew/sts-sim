@@ -81,6 +81,13 @@ pub struct RunControlSearchCombatOptions {
     pub max_engine_steps_per_action: Option<usize>,
     pub wall_ms: Option<u64>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
+    pub evidence: Option<RunControlSearchEvidenceTarget>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RunControlSearchEvidenceTarget {
+    LastCaptureCase,
+    Path(PathBuf),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -240,7 +247,7 @@ Help:
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
     draw, discard, exhaust, actions, action <idx>
-    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all]
+    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all] [save=case|path]
 
   Map/Event/Reward:
     go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
@@ -259,7 +266,7 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
-    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all] [max_ops=N]
+    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all] [save=case|path] [max_ops=N]
     auto-reward
     auto-reward gold|potion|all on|off"
 }
@@ -395,10 +402,22 @@ fn parse_search_combat_options(rest: &[&str]) -> Result<RunControlSearchCombatOp
             "potion" | "potion_policy" => {
                 options.potion_policy = Some(parse_potion_policy(value)?);
             }
+            "save" | "evidence" | "output" | "out" => {
+                options.evidence = Some(parse_search_evidence_target(value));
+            }
             other => return Err(format!("unknown search-combat option '{other}'")),
         }
     }
     Ok(options)
+}
+
+fn parse_search_evidence_target(value: &str) -> RunControlSearchEvidenceTarget {
+    match value.to_ascii_lowercase().as_str() {
+        "case" | "capture" | "last_capture" | "last-capture" => {
+            RunControlSearchEvidenceTarget::LastCaptureCase
+        }
+        _ => RunControlSearchEvidenceTarget::Path(PathBuf::from(value)),
+    }
 }
 
 fn parse_auto_step_command(rest: &[&str]) -> Result<RunControlCommand, String> {
@@ -578,11 +597,19 @@ mod tests {
                 max_engine_steps_per_action: None,
                 wall_ms: Some(50),
                 potion_policy: Some(CombatSearchV2PotionPolicy::All),
+                evidence: None,
             })
         );
         assert_eq!(
             parse_run_control_command("sc").expect("sc should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions::default())
+        );
+        assert_eq!(
+            parse_run_control_command("sc save=case").expect("search evidence should parse"),
+            RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
+                evidence: Some(RunControlSearchEvidenceTarget::LastCaptureCase),
+                ..Default::default()
+            })
         );
     }
 
@@ -607,6 +634,7 @@ mod tests {
                     max_engine_steps_per_action: None,
                     wall_ms: Some(50),
                     potion_policy: None,
+                    evidence: None,
                 },
                 max_operations: Some(9),
             })

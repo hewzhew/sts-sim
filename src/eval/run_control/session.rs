@@ -474,6 +474,14 @@ impl RunControlSession {
         self.last_capture_case.as_ref()
     }
 
+    pub(in crate::eval::run_control) fn active_capture_case(
+        &self,
+    ) -> Option<&LastBenchmarkCaptureCase> {
+        let case = self.last_capture_case.as_ref()?;
+        (self.active_combat.is_some() && case.combat_sequence == self.combat_sequence)
+            .then_some(case)
+    }
+
     pub(in crate::eval::run_control) fn last_completed_combat_matches_capture_case(&self) -> bool {
         let Some(case) = self.last_capture_case.as_ref() else {
             return false;
@@ -661,6 +669,49 @@ mod tests {
         assert!(!paths.baseline_path.exists());
         let manifest = fs::read_to_string(&paths.benchmark_manifest).expect("manifest readable");
         assert!(!manifest.contains("\"baseline\""));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn run_control_search_combat_can_save_search_evidence_for_capture_case() {
+        let mut session = test_session_with_first_monster_room();
+        session
+            .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+            .expect("map input should enter combat");
+
+        let root = unique_temp_dir("run_control_search_evidence");
+        session
+            .apply_command(RunControlCommand::CaptureCase {
+                root: root.clone(),
+                case_id: "first_fight".to_string(),
+                label: None,
+            })
+            .expect("capture-case should remember the case");
+        let decision_step = session.decision_step;
+
+        let outcome = session
+            .apply_command(RunControlCommand::SearchCombat(
+                crate::eval::run_control::RunControlSearchCombatOptions {
+                    max_nodes: Some(2_000),
+                    wall_ms: Some(5_000),
+                    evidence: Some(
+                        crate::eval::run_control::RunControlSearchEvidenceTarget::LastCaptureCase,
+                    ),
+                    ..Default::default()
+                },
+            ))
+            .expect("search-combat should finish and save evidence");
+
+        assert!(outcome.message.contains("Search evidence saved"));
+        let evidence_path = root
+            .join("search_evidence")
+            .join(format!("first_fight.step{decision_step}.search.json"));
+        let payload = fs::read_to_string(&evidence_path).expect("search evidence should exist");
+        assert!(payload.contains("\"schema_name\": \"CombatSearchEvidenceV1\""));
+        assert!(payload.contains("\"label_role\": \"search_evidence_not_human_baseline\""));
+        assert!(payload.contains("\"capture_case_id\": \"first_fight\""));
+        assert!(payload.contains("\"schema_name\": \"CombatSearchV2Report\""));
 
         let _ = fs::remove_dir_all(root);
     }

@@ -10,6 +10,7 @@ mod panels;
 pub mod registry;
 mod render;
 mod reward_auto;
+mod search_evidence;
 mod session;
 mod session_trace;
 mod transition_report;
@@ -17,7 +18,7 @@ mod view_model;
 
 pub use commands::{
     parse_run_control_command, run_control_help, run_control_short_hint, RunControlAutoStepOptions,
-    RunControlCommand, RunControlSearchCombatOptions,
+    RunControlCommand, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
 };
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
