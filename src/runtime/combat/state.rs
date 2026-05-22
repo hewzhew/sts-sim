@@ -179,7 +179,7 @@ pub struct EntityState {
     pub power_db: HashMap<EntityId, Vec<Power>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum QueuedCardSource {
     Normal,
     Necronomicon,
