@@ -156,7 +156,7 @@ pub struct CombatSearchV2BenchmarkCaseReport {
     pub start_spec_path: Option<String>,
     pub combat_snapshot_path: Option<String>,
     pub input_trust_level: Option<ArtifactTrustLevel>,
-    pub input_fingerprints: Option<StateFingerprintV1>,
+    pub input_fingerprints: Option<CombatSearchV2InputFingerprintReport>,
     pub outcome: CombatSearchV2OutcomeReport,
     pub best_complete_trajectory: Option<CombatSearchV2TrajectoryReport>,
     pub diagnostics: CombatSearchV2DiagnosticsReport,
@@ -164,6 +164,35 @@ pub struct CombatSearchV2BenchmarkCaseReport {
     pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
     pub baseline_path: Option<String>,
     pub baseline_comparison: Option<CombatSearchV2BaselineComparison>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2InputFingerprintReport {
+    pub boundary: crate::eval::fingerprint::DecisionBoundaryFingerprintV1,
+    pub public_observation_hash: String,
+    pub legal_candidate_set_hash: String,
+    pub legal_candidate_order_hash: String,
+    pub exact_state_hash: String,
+    pub stable_outcome_hash: Option<String>,
+    pub rng_boundary_status: crate::eval::fingerprint::RngFingerprintStatus,
+    pub rng_boundary_stream_count: usize,
+    pub rng_boundary_digest: String,
+}
+
+impl From<&StateFingerprintV1> for CombatSearchV2InputFingerprintReport {
+    fn from(value: &StateFingerprintV1) -> Self {
+        Self {
+            boundary: value.boundary.clone(),
+            public_observation_hash: value.public_observation_hash.clone(),
+            legal_candidate_set_hash: value.legal_candidate_set_hash.clone(),
+            legal_candidate_order_hash: value.legal_candidate_order_hash.clone(),
+            exact_state_hash: value.exact_state_hash.clone(),
+            stable_outcome_hash: value.stable_outcome_hash.clone(),
+            rng_boundary_status: value.rng_boundary.status,
+            rng_boundary_stream_count: value.rng_boundary.stream_count,
+            rng_boundary_digest: value.rng_boundary.digest.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -305,7 +334,11 @@ fn run_combat_search_v2_benchmark_case(
         combat_snapshot_path: (case.input.kind == CombatSearchV2BenchmarkInputKind::CombatSnapshot)
             .then(|| case.input.path.display().to_string()),
         input_trust_level: case.start.artifact_trust_level,
-        input_fingerprints: case.start.fingerprints.clone(),
+        input_fingerprints: case
+            .start
+            .fingerprints
+            .as_ref()
+            .map(CombatSearchV2InputFingerprintReport::from),
         outcome: search_report.outcome.clone(),
         best_complete_trajectory: search_report.best_complete_trajectory.clone(),
         diagnostics: search_report.diagnostics.clone(),

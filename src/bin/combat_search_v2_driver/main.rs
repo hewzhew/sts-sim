@@ -8,6 +8,7 @@ use sts_simulator::eval::combat_search_v2::{
     load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
     run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
 };
+use sts_simulator::eval::fingerprint::StateFingerprintV1;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -113,7 +114,7 @@ fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Err
             "input_path": path.display().to_string(),
             "trust_level": capture.trust_level,
             "provenance": capture.provenance,
-            "fingerprints": capture.fingerprints,
+            "fingerprints": capture.fingerprints.as_ref().map(compact_fingerprint_report),
             "legal_action_count": capture.legal_actions.as_ref().map(|actions| actions.count),
             "summary": capture.summary,
         })
@@ -128,7 +129,7 @@ fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Err
                     "input_kind": case.input.kind,
                     "input_path": case.input.path.display().to_string(),
                     "trust_level": case.start.artifact_trust_level,
-                    "fingerprints": case.start.fingerprints.clone(),
+                    "fingerprints": case.start.fingerprints.as_ref().map(compact_fingerprint_report),
                     "expected_fingerprints": case.expected_fingerprints.clone(),
                 })
             })
@@ -158,10 +159,26 @@ fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Err
             "input_path": path.display().to_string(),
             "label": start.label,
             "artifact_trust_level": start.artifact_trust_level,
-            "fingerprints": start.fingerprints,
+            "fingerprints": start.fingerprints.as_ref().map(compact_fingerprint_report),
         })
     };
     Ok(serde_json::to_string_pretty(&payload)?)
+}
+
+fn compact_fingerprint_report(fingerprints: &StateFingerprintV1) -> serde_json::Value {
+    serde_json::json!({
+        "boundary": fingerprints.boundary,
+        "public_observation_hash": fingerprints.public_observation_hash,
+        "legal_candidate_set_hash": fingerprints.legal_candidate_set_hash,
+        "legal_candidate_order_hash": fingerprints.legal_candidate_order_hash,
+        "exact_state_hash": fingerprints.exact_state_hash,
+        "stable_outcome_hash": fingerprints.stable_outcome_hash,
+        "rng_boundary": {
+            "status": fingerprints.rng_boundary.status,
+            "stream_count": fingerprints.rng_boundary.stream_count,
+            "digest": fingerprints.rng_boundary.digest,
+        }
+    })
 }
 
 fn write_or_print(path: Option<&PathBuf>, payload: &str) -> Result<(), std::io::Error> {

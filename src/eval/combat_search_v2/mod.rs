@@ -5,8 +5,9 @@ pub use benchmark::{
     load_combat_search_v2_benchmark, run_combat_search_v2_benchmark,
     CombatSearchV2BaselineComparison, CombatSearchV2BaselineOutcomeSpec,
     CombatSearchV2BaselineVerdict, CombatSearchV2BenchmarkCaseReport,
-    CombatSearchV2BenchmarkCaseSpec, CombatSearchV2BenchmarkInputKind,
-    CombatSearchV2BenchmarkReport, CombatSearchV2BenchmarkSpec, CombatSearchV2BenchmarkSummary,
+    CombatSearchV2BenchmarkCaseSpec, CombatSearchV2BenchmarkExpectedFingerprints,
+    CombatSearchV2BenchmarkInputKind, CombatSearchV2BenchmarkReport, CombatSearchV2BenchmarkSpec,
+    CombatSearchV2BenchmarkSummary, CombatSearchV2InputFingerprintReport,
     CombatSearchV2LoadedBenchmark, CombatSearchV2LoadedBenchmarkCase,
     CombatSearchV2LoadedBenchmarkInput,
 };

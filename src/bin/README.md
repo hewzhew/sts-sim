@@ -12,6 +12,8 @@ Active binaries:
     `CombatCaptureV1` position
   - `--benchmark-spec <path>`: bounded benchmark summary over start-spec or
     combat-snapshot cases
+  - `--validate-only`: validate a start spec, capture, or benchmark suite
+    without running search
 - `run_play_driver`
   - thin shell over the `eval::run_control` kernel
   - starts in a game-like main screen; `deck`, `map`, `relics`, `potions`,
@@ -25,11 +27,13 @@ Active binaries:
   - `capture <path> [label]`: save `CombatCaptureV1` only from active stable
     combat decision boundaries
   - `capture-case <benchmark_dir> <case_id> [label]`: write the standard
-    `captures/<case_id>.capture.json`
+    `captures/<case_id>.capture.json` and refresh `benchmark.json` with trust
+    and expected fingerprints
   - `save-baseline-case <benchmark_dir> <case_id>`: write the last completed
-    whole-combat `CombatBaselineOutcomeV1`
-  - `bench-add <benchmark_dir> <case_id>`: register the capture/baseline pair
-    in `benchmark.json`
+    whole-combat `CombatBaselineOutcomeV1`; if the matching capture exists,
+    refresh `benchmark.json`
+  - `bench-add <benchmark_dir> <case_id>`: refresh a suite case from the saved
+    capture and optional baseline
 
 Removed from the active binary surface:
 

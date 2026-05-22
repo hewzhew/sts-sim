@@ -199,13 +199,16 @@ impl RunControlSession {
                     &paths.capture_path,
                     label.or_else(|| Some(case_id.clone())),
                 )?;
+                let paths = add_case_to_benchmark_registry(&root, &case_id)?;
                 Ok(RunControlCommandOutcome::message(format!(
-                    "saved CombatCaptureV1 case {case_id} to {} [{} hp={}, turn={}, enemies={}]",
+                    "saved CombatCaptureV1 case {case_id} to {} and registered {} [{} hp={}, turn={}, enemies={} trust={:?}]",
                     paths.capture_path.display(),
+                    paths.benchmark_manifest.display(),
                     capture.summary.engine_state,
                     capture.summary.player_hp,
                     capture.summary.turn_count,
-                    capture.summary.monsters.len()
+                    capture.summary.monsters.len(),
+                    capture.trust_level
                 )))
             }
             RunControlCommand::SaveBaseline { path, case_id } => {
@@ -227,10 +230,18 @@ impl RunControlSession {
             }
             RunControlCommand::SaveBaselineCase { root, case_id } => {
                 let paths = BenchmarkCasePaths::for_case(&root, &case_id);
-                let baseline = self.save_last_combat_baseline(&paths.baseline_path, case_id)?;
+                let baseline =
+                    self.save_last_combat_baseline(&paths.baseline_path, case_id.clone())?;
+                let registry_note = if paths.capture_path.exists() {
+                    let paths = add_case_to_benchmark_registry(&root, &case_id)?;
+                    format!(" and registered {}", paths.benchmark_manifest.display())
+                } else {
+                    " [benchmark not registered: matching capture is missing]".to_string()
+                };
                 Ok(RunControlCommandOutcome::message(format!(
-                    "saved CombatBaselineOutcomeV1 to {} [case={} terminal={:?} hp_loss={} final_hp={} turns={} potions_used={} cards_played={}]",
+                    "saved CombatBaselineOutcomeV1 to {}{} [case={} terminal={:?} hp_loss={} final_hp={} turns={} potions_used={} cards_played={}]",
                     paths.baseline_path.display(),
+                    registry_note,
                     baseline.case_id,
                     baseline.terminal,
                     baseline.hp_loss,
@@ -242,11 +253,16 @@ impl RunControlSession {
             }
             RunControlCommand::RegisterBenchmarkCase { root, case_id } => {
                 let paths = add_case_to_benchmark_registry(&root, &case_id)?;
+                let baseline_status = if paths.baseline_path.exists() {
+                    paths.baseline_path.display().to_string()
+                } else {
+                    "none".to_string()
+                };
                 Ok(RunControlCommandOutcome::message(format!(
                     "registered benchmark case {case_id} in {} [capture={}, baseline={}]",
                     paths.benchmark_manifest.display(),
                     paths.capture_path.display(),
-                    paths.baseline_path.display()
+                    baseline_status
                 )))
             }
             RunControlCommand::ActionIndex(index) => {
@@ -728,6 +744,35 @@ mod tests {
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn run_control_capture_case_registers_benchmark_manifest() {
+        let mut session = test_session_with_first_monster_room();
+        session
+            .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+            .expect("map input should enter combat");
+
+        let root = unique_temp_dir("run_control_capture_case");
+        let outcome = session
+            .apply_command(RunControlCommand::CaptureCase {
+                root: root.clone(),
+                case_id: "first_fight".to_string(),
+                label: Some("first fight".to_string()),
+            })
+            .expect("capture-case should save and register");
+
+        assert!(outcome.message.contains("registered"));
+        let paths = BenchmarkCasePaths::for_case(&root, "first_fight");
+        assert!(paths.capture_path.exists());
+        assert!(paths.benchmark_manifest.exists());
+        let manifest = fs::read_to_string(&paths.benchmark_manifest).expect("manifest readable");
+        assert!(manifest.contains("\"combat_snapshot\": \"captures/first_fight.capture.json\""));
+        assert!(manifest.contains("\"expected_fingerprints\""));
+        crate::eval::combat_search_v2::load_combat_search_v2_benchmark(&paths.benchmark_manifest)
+            .expect("registered suite should validate through search benchmark loader");
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
