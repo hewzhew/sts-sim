@@ -162,8 +162,8 @@ pub fn stable_boundary(engine: &EngineState, combat: &CombatState) -> bool {
         | EngineState::MapNavigation
         | EngineState::EventRoom
         | EngineState::RunPendingChoice(_)
-        | EngineState::EventCombat(_)
         | EngineState::BossRelicSelect(_) => true,
+        EngineState::EventCombat(_) => false,
     }
 }
 
@@ -210,7 +210,6 @@ fn post_combat_engine_state(engine: &EngineState) -> bool {
             | EngineState::MapNavigation
             | EngineState::EventRoom
             | EngineState::RunPendingChoice(_)
-            | EngineState::EventCombat(_)
             | EngineState::BossRelicSelect(_)
     )
 }
@@ -219,4 +218,37 @@ fn combat_cleared(combat: &CombatState) -> bool {
     combat.entities.monsters.iter().all(|monster| {
         monster.is_dying || monster.is_escaped || monster.half_dead || monster.current_hp <= 0
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{combat_terminal, stable_boundary, CombatTerminal};
+    use crate::content::monsters::factory::EncounterId;
+    use crate::sim::combat_start::build_natural_combat_start;
+    use crate::state::core::{EngineState, EventCombatState, PostCombatReturn};
+    use crate::state::map::node::RoomType;
+    use crate::state::rewards::RewardState;
+    use crate::state::run::RunState;
+
+    #[test]
+    fn event_combat_context_is_not_a_stable_search_boundary() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        let (_engine, combat) =
+            build_natural_combat_start(&mut run, EncounterId::JawWorm, RoomType::MonsterRoom)
+                .expect("combat should initialize");
+        let event_engine = EngineState::EventCombat(EventCombatState {
+            rewards: RewardState::new(),
+            reward_allowed: true,
+            no_cards_in_rewards: false,
+            elite_trigger: false,
+            post_combat_return: PostCombatReturn::MapNavigation,
+            encounter_key: "Jaw Worm".to_string(),
+        });
+
+        assert!(!stable_boundary(&event_engine, &combat));
+        assert_eq!(
+            combat_terminal(&event_engine, &combat),
+            CombatTerminal::Unresolved
+        );
+    }
 }

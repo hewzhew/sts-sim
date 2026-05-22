@@ -1072,9 +1072,9 @@ pub fn tick_run(
             true
         }
         EngineState::EventCombat(ecs) => {
-            // Event combat delegates to normal combat tick.
-            // When combat ends (engine transitions away from Combat states),
-            // we intercept and handle rewards/return based on EventCombatState.
+            // EventCombat is a run-loop context wrapper, not a stable combat
+            // engine state for search/capture. The active CombatState stays in
+            // combat_state, while this wrapper preserves event rewards/return.
             if let Some(cs) = combat_state.as_mut() {
                 // Create a temporary combat engine state to tick
                 let mut temp_state = EngineState::CombatPlayerTurn;

@@ -14,9 +14,12 @@ pub enum EngineState {
     EventRoom,
     PendingChoice(PendingChoice),
     RunPendingChoice(RunPendingChoiceState),
-    /// Event-triggered combat: carries pre-populated rewards and post-combat return info.
-    /// Combat proceeds normally (CombatPlayerTurn), and when it ends, the engine
-    /// checks this state to determine how to handle rewards and where to return.
+    /// Event-triggered combat context.
+    ///
+    /// This is a run-loop wrapper that carries post-combat return and reward
+    /// metadata while a separate CombatState is active. It is not a search or
+    /// capture-ready combat engine boundary; active combat capture must use
+    /// CombatPlayerTurn or PendingChoice.
     EventCombat(EventCombatState),
     BossRelicSelect(crate::state::rewards::BossRelicChoiceState),
     GameOver(RunResult),
