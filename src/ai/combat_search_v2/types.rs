@@ -29,8 +29,6 @@ impl Default for CombatSearchV2Config {
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2PotionPolicy {
     Never,
-    #[serde(alias = "lethal-only", alias = "visible_lethal_only")]
-    LethalOnly,
     #[serde(alias = "all_legal_potion_actions")]
     All,
 }
@@ -39,7 +37,6 @@ impl CombatSearchV2PotionPolicy {
     pub(super) fn label(self) -> &'static str {
         match self {
             CombatSearchV2PotionPolicy::Never => "never",
-            CombatSearchV2PotionPolicy::LethalOnly => "visible_lethal_only",
             CombatSearchV2PotionPolicy::All => "all_legal_potion_actions",
         }
     }

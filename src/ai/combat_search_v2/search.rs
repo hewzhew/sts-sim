@@ -85,16 +85,13 @@ pub fn run_combat_search_v2_with_stepper(
         let resource = node.resource_vector();
         if is_dominated(&mut dominance, dominance_key, resource) {
             stats.dominance_prunes = stats.dominance_prunes.saturating_add(1);
-            stats.transposition_prunes = stats.transposition_prunes.saturating_add(1);
             continue;
         }
 
         stats.nodes_expanded = stats.nodes_expanded.saturating_add(1);
         let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
-        let legal = filtered_legal_moves(
-            &node.engine,
-            &node.combat,
-            stepper.legal_actions(&position),
+        let legal = filtered_legal_actions(
+            stepper.legal_action_choices(&position),
             config.potion_policy,
         );
         if legal.is_empty() {
@@ -102,7 +99,7 @@ pub fn run_combat_search_v2_with_stepper(
             continue;
         }
 
-        for (action_id, input) in legal.into_iter().enumerate() {
+        for (action_id, choice) in legal.into_iter().enumerate() {
             if deadline.is_some_and(|limit| Instant::now() >= limit) {
                 stats.deadline_hit = true;
                 exhausted = true;
@@ -110,7 +107,7 @@ pub fn run_combat_search_v2_with_stepper(
             }
             let step = stepper.apply_to_stable(
                 &position,
-                input.clone(),
+                choice.input.clone(),
                 CombatStepLimits {
                     max_engine_steps: config.max_engine_steps_per_action,
                     deadline,
@@ -125,12 +122,12 @@ pub fn run_combat_search_v2_with_stepper(
             }
 
             let mut child = node.clone_for_child(step.position.engine, step.position.combat);
-            child.note_input(&input);
+            child.note_input(&choice.input);
             child.actions.push(CombatSearchV2ActionTrace {
                 step_index: node.actions.len(),
                 action_id,
-                action_key: action_key(&node.combat, &input),
-                action_debug: format!("{input:?}"),
+                action_key: choice.action_key,
+                action_debug: choice.action_debug,
             });
             stats.nodes_generated = stats.nodes_generated.saturating_add(1);
 
@@ -202,7 +199,7 @@ pub fn run_combat_search_v2_with_stepper(
             terminal_policy: "whole_combat_terminal_only",
             expansion_order: "lexicographic_priority_enemy_progress_hp_resource_line_length",
             potion_policy: config.potion_policy.label(),
-            transposition_table: "exact_runtime_state_key_with_rng_signature",
+            transposition_table: "not_separate_yet; dominance_bucket_key_includes_rng_and_runtime",
             dominance_pruning: "same_abstraction_resource_dominance_hp_block_potions_cards_actions",
             rollout_value: "not_used_for_terminal_claims",
             llm_authority: "none",

@@ -3,13 +3,13 @@ use std::collections::{BinaryHeap, HashMap};
 use std::time::Instant;
 
 use crate::ai::combat_state_key::{combat_dominance_key, CombatDominanceKey};
-use crate::content::cards;
 use crate::content::monsters::EnemyId;
-use crate::runtime::combat::{CombatCard, CombatState, MonsterEntity};
+use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
     EngineCombatStepper,
 };
+use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
 use crate::state::core::{ClientInput, EngineState};
 
@@ -25,8 +25,8 @@ use frontier::{
     is_dominated, push_frontier, remember_best_complete, remember_best_frontier, ResourceVector,
     SearchNode,
 };
-use report::{action_key, summarize_state, trajectory_report};
-use transition::{filtered_legal_moves, terminal_label};
+use report::{summarize_state, trajectory_report};
+use transition::{filtered_legal_actions, terminal_label};
 use value::{
     living_enemy_count, survival_margin, terminal_rank, total_living_enemy_hp,
     visible_incoming_damage,

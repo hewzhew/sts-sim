@@ -4,6 +4,7 @@ use serde::Serialize;
 
 use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
 use crate::runtime::combat::CombatState;
+use crate::sim::combat_action::CombatActionChoice;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -44,6 +45,13 @@ pub struct CombatStepResult {
 
 pub trait CombatStepper {
     fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput>;
+
+    fn legal_action_choices(&self, position: &CombatPosition) -> Vec<CombatActionChoice> {
+        self.legal_actions(position)
+            .into_iter()
+            .map(|input| CombatActionChoice::from_input(&position.combat, input))
+            .collect()
+    }
 
     fn apply_to_stable(
         &self,

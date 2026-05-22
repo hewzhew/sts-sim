@@ -1,26 +1,15 @@
 use super::*;
 
-pub(super) fn filtered_legal_moves(
-    engine: &EngineState,
-    combat: &CombatState,
-    legal: Vec<ClientInput>,
+pub(super) fn filtered_legal_actions(
+    legal: Vec<CombatActionChoice>,
     potion_policy: CombatSearchV2PotionPolicy,
-) -> Vec<ClientInput> {
+) -> Vec<CombatActionChoice> {
     match potion_policy {
         CombatSearchV2PotionPolicy::All => legal,
         CombatSearchV2PotionPolicy::Never => legal
             .into_iter()
-            .filter(|input| !is_potion_input(input))
+            .filter(|choice| !is_potion_input(&choice.input))
             .collect(),
-        CombatSearchV2PotionPolicy::LethalOnly => {
-            let allow_potions = matches!(engine, EngineState::CombatPlayerTurn)
-                && visible_incoming_damage(combat)
-                    >= combat.entities.player.current_hp + combat.entities.player.block;
-            legal
-                .into_iter()
-                .filter(|input| allow_potions || !is_potion_input(input))
-                .collect()
-        }
     }
 }
 

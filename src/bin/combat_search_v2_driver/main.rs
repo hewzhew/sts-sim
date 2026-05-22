@@ -35,7 +35,6 @@ struct Args {
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum CliPotionPolicy {
     Never,
-    LethalOnly,
     All,
 }
 
@@ -43,7 +42,6 @@ impl From<CliPotionPolicy> for CombatSearchV2PotionPolicy {
     fn from(value: CliPotionPolicy) -> Self {
         match value {
             CliPotionPolicy::Never => CombatSearchV2PotionPolicy::Never,
-            CliPotionPolicy::LethalOnly => CombatSearchV2PotionPolicy::LethalOnly,
             CliPotionPolicy::All => CombatSearchV2PotionPolicy::All,
         }
     }
