@@ -4,6 +4,7 @@
 // is grouped around how the engine/search layer uses it: spawn construction,
 // lifecycle mutations, move selection, runtime patches, and relic state updates.
 
+mod initial_runtime;
 mod lifecycle;
 mod move_roll;
 mod relics;
