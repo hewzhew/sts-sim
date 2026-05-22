@@ -5,10 +5,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use super::session::RunControlSession;
-use super::view_model::build_run_control_view_model;
+use super::view_model::{build_run_control_view_model, CandidateResolution};
 
 pub const RUN_DECISION_CASE_SCHEMA_NAME: &str = "sts_simulator.run_decision_case";
-pub const RUN_DECISION_CASE_SCHEMA_VERSION: u32 = 1;
+pub const RUN_DECISION_CASE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RunDecisionCaseV1 {
@@ -45,6 +45,7 @@ pub struct RunDecisionCandidateV1 {
     pub label: String,
     pub command: String,
     pub note: Option<String>,
+    pub resolution: Option<CandidateResolution>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -96,6 +97,7 @@ impl RunDecisionCaseV1 {
                     label: candidate.label,
                     command: candidate.action.command_hint(),
                     note: candidate.note,
+                    resolution: candidate.resolution,
                 })
                 .collect(),
             panels_available: vec![

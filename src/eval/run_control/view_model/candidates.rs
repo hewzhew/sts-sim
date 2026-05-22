@@ -1,14 +1,14 @@
 use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
-use crate::state::events::{EventEffect, EventOption, EventOptionTransition, EventRelicKind};
+use crate::state::events::{EventOption, EventOptionTransition};
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
 use std::collections::BTreeMap;
 
 use super::labels::{
-    candidate, clean_event_label, combat_card_label, event_effect_summary, monster_name,
-    reward_card_label, reward_item_label, room_type_label, shop_block_note, unavailable_candidate,
+    candidate, clean_event_label, combat_card_label, monster_name, reward_card_label,
+    reward_item_label, room_type_label, shop_block_note, unavailable_candidate,
 };
-use super::{DecisionCandidate, RunControlSession};
+use super::{CandidateResolution, DecisionCandidate, RunControlSession};
 
 pub(super) fn decision_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     match &session.engine_state {
@@ -42,8 +42,8 @@ fn event_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         .enumerate()
         .map(|(idx, option)| {
             let label = clean_event_label(&option.ui.text);
-            let effect_summary = event_effect_summary(&option.semantics.effects);
-            let note = event_option_note(option, options.len(), effect_summary.as_deref());
+            let resolution = CandidateResolution::from_event_option(option);
+            let note = event_option_note(option, options.len(), resolution.as_ref());
             if option.ui.disabled {
                 unavailable_candidate(
                     idx.to_string(),
@@ -56,7 +56,10 @@ fn event_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
                     note,
                 )
             } else {
-                candidate(idx.to_string(), label, ClientInput::EventChoice(idx), note)
+                let mut candidate =
+                    candidate(idx.to_string(), label, ClientInput::EventChoice(idx), note);
+                candidate.resolution = resolution;
+                candidate
             }
         })
         .collect()
@@ -65,7 +68,7 @@ fn event_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
 fn event_option_note(
     option: &EventOption,
     option_count: usize,
-    effect_summary: Option<&str>,
+    resolution: Option<&CandidateResolution>,
 ) -> Option<String> {
     if option.ui.disabled {
         return Some(format!(
@@ -81,26 +84,13 @@ fn event_option_note(
     {
         return Some("routine".to_string());
     }
-    let prefix = if event_effects_are_partial(&option.semantics.effects)
-        || matches!(
-            option.semantics.transition,
-            EventOptionTransition::OpenSelection(_) | EventOptionTransition::OpenReward
-        ) {
-        "partial"
-    } else {
-        "known"
-    };
-    if let Some(effect_summary) = effect_summary {
-        let transition = match option.semantics.transition {
-            EventOptionTransition::OpenSelection(kind) => format!("; opens {kind:?} selection"),
-            EventOptionTransition::OpenReward => "; opens follow-up reward".to_string(),
-            EventOptionTransition::StartCombat => "; starts combat".to_string(),
-            _ => String::new(),
-        };
-        return Some(format!("{prefix}: {effect_summary}{transition}"));
+    if let Some(note) = resolution.and_then(CandidateResolution::main_note) {
+        return Some(note);
     }
     match option.semantics.transition {
-        EventOptionTransition::OpenSelection(kind) => Some(format!("opens {kind:?} selection")),
+        EventOptionTransition::OpenSelection(kind) => {
+            Some(format!("opens {} selection", selection_kind_label(kind)))
+        }
         EventOptionTransition::OpenReward => Some("opens reward".to_string()),
         EventOptionTransition::StartCombat => Some("starts combat".to_string()),
         EventOptionTransition::AdvanceScreen => Some("advances event".to_string()),
@@ -109,22 +99,15 @@ fn event_option_note(
     }
 }
 
-fn event_effects_are_partial(effects: &[EventEffect]) -> bool {
-    effects.iter().any(|effect| {
-        matches!(
-            effect,
-            EventEffect::ObtainRelic {
-                kind: EventRelicKind::RandomRelic
-                    | EventRelicKind::RandomBook
-                    | EventRelicKind::RandomFace,
-                ..
-            } | EventEffect::ObtainPotion { .. }
-                | EventEffect::ObtainCard { .. }
-                | EventEffect::ObtainColorlessCard { .. }
-                | EventEffect::ObtainCurse { .. }
-                | EventEffect::TransformCard { .. }
-        )
-    })
+fn selection_kind_label(kind: crate::state::events::EventSelectionKind) -> &'static str {
+    match kind {
+        crate::state::events::EventSelectionKind::None => "unknown",
+        crate::state::events::EventSelectionKind::RemoveCard => "remove card",
+        crate::state::events::EventSelectionKind::UpgradeCard => "upgrade card",
+        crate::state::events::EventSelectionKind::TransformCard => "transform card",
+        crate::state::events::EventSelectionKind::DuplicateCard => "duplicate card",
+        crate::state::events::EventSelectionKind::OfferCard => "offer card",
+    }
 }
 
 fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {

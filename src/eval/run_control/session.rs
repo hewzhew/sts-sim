@@ -728,6 +728,7 @@ mod tests {
         assert!(payload.contains("\"label_role\": \"diagnostic_not_teacher_label\""));
         assert!(payload.contains("\"trainable_as_action_label\": false"));
         assert!(payload.contains("\"policy_quality_claim\": false"));
+        assert!(payload.contains("\"resolution\""));
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_dir(dir);

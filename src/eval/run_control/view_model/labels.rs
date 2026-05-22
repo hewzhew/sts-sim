@@ -2,7 +2,6 @@ use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::PendingChoice;
-use crate::state::events::EventEffect;
 use crate::state::map::node::RoomType;
 use crate::state::rewards::RewardItem;
 use crate::state::run::RunState;
@@ -20,6 +19,7 @@ pub(crate) fn candidate(
         label: label.into(),
         action: action.into(),
         note: note.map(Into::into),
+        resolution: None,
     }
 }
 
@@ -36,46 +36,8 @@ pub(crate) fn unavailable_candidate(
             reason: reason.into(),
         },
         note: note.map(Into::into),
+        resolution: None,
     }
-}
-
-pub(crate) fn event_effect_summary(effects: &[EventEffect]) -> Option<String> {
-    if effects.is_empty() {
-        return None;
-    }
-    let effects = effects
-        .iter()
-        .map(|effect| match effect {
-            EventEffect::GainGold(amount) => format!("gain {amount} gold"),
-            EventEffect::LoseGold(amount) => format!("lose {amount} gold"),
-            EventEffect::LoseHp(amount) => format!("lose {amount} hp"),
-            EventEffect::LoseMaxHp(amount) => format!("lose {amount} max hp"),
-            EventEffect::Heal(amount) => format!("heal {amount}"),
-            EventEffect::GainMaxHp(amount) => format!("gain {amount} max hp"),
-            EventEffect::ObtainRelic { count, kind } => format!("obtain {count} {kind:?} relic"),
-            EventEffect::ObtainPotion { count } => format!("obtain {count} potion"),
-            EventEffect::ObtainCard { count, kind } => format!("obtain {count} {kind:?} card"),
-            EventEffect::ObtainColorlessCard { count, kind } => {
-                format!("obtain {count} {kind:?} colorless")
-            }
-            EventEffect::ObtainCurse { count, kind } => format!("obtain {count} {kind:?} curse"),
-            EventEffect::RemoveCard { count, kind, .. } => format!("remove {count} {kind:?} card"),
-            EventEffect::UpgradeCard { count } => format!("upgrade {count} card"),
-            EventEffect::TransformCard { count } => format!("transform {count} card"),
-            EventEffect::DuplicateCard { count } => format!("duplicate {count} card"),
-            EventEffect::LoseRelic {
-                specific: Some(relic),
-                ..
-            } => format!("lose relic {relic:?}"),
-            EventEffect::LoseRelic { specific: None, .. } => "lose relic".to_string(),
-            EventEffect::LoseStarterRelic {
-                specific: Some(relic),
-            } => format!("lose starter relic {relic:?}"),
-            EventEffect::LoseStarterRelic { specific: None } => "lose starter relic".to_string(),
-            EventEffect::StartCombat => "start combat".to_string(),
-        })
-        .collect::<Vec<_>>();
-    Some(effects.join(", "))
 }
 
 pub(crate) fn reward_item_label(item: &RewardItem) -> String {

@@ -60,6 +60,7 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
             ),
         );
     }
+    render_candidate_resolution_details(session, &mut out);
 
     match &session.engine_state {
         EngineState::MapNavigation => render_map_state(session, &mut out),
@@ -118,6 +119,30 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
     }
 
     out
+}
+
+fn render_candidate_resolution_details(session: &RunControlSession, out: &mut String) {
+    let view = super::view_model::build_run_control_view_model(session);
+    if view.candidates.is_empty() {
+        return;
+    }
+    push_line(out, "candidates:");
+    for candidate in view.candidates {
+        push_line(
+            out,
+            format!(
+                "candidate[{}] command={} label={}",
+                candidate.id,
+                candidate.action.command_hint(),
+                candidate.label
+            ),
+        );
+        if let Some(resolution) = candidate.resolution.as_ref() {
+            for line in resolution.detail_lines() {
+                push_line(out, format!("  {line}"));
+            }
+        }
+    }
 }
 
 pub fn render_run_control_raw(session: &RunControlSession) -> String {
@@ -348,7 +373,10 @@ mod tests {
 
     #[test]
     fn neow_bonus_main_panel_does_not_present_map_as_current_action() {
-        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut session = RunControlSession::new(RunControlConfig {
+            seed: 521,
+            ..RunControlConfig::default()
+        });
         session
             .apply_command(crate::eval::run_control::commands::RunControlCommand::DefaultCandidate)
             .expect("Neow intro should advance");
@@ -357,5 +385,28 @@ mod tests {
         assert!(rendered.contains("Neow Bonus"));
         assert!(!rendered.contains("Route note:"));
         assert!(!rendered.contains("go <x>"));
+        assert!(!rendered.contains("known:"));
+        assert!(!rendered.contains("partial:"));
+        assert!(rendered.contains("gain 100 gold"));
+        assert!(rendered.contains("random colorless card outcome"));
+        assert!(rendered.contains("random relic outcome"));
+    }
+
+    #[test]
+    fn details_view_exposes_structured_candidate_resolution() {
+        let mut session = RunControlSession::new(RunControlConfig {
+            seed: 521,
+            ..RunControlConfig::default()
+        });
+        session
+            .apply_command(crate::eval::run_control::commands::RunControlCommand::DefaultCandidate)
+            .expect("Neow intro should advance");
+        let rendered = render_run_control_details(&session);
+
+        assert!(rendered.contains("candidates:"));
+        assert!(rendered.contains("resolution: Partial"));
+        assert!(rendered.contains("known_effects:"));
+        assert!(rendered.contains("unresolved_effects:"));
+        assert!(rendered.contains("distribution known, result hidden"));
     }
 }

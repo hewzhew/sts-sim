@@ -1,6 +1,7 @@
 mod candidates;
 mod context;
 mod labels;
+mod resolution;
 
 use crate::sim::combat::{combat_terminal, stable_boundary};
 use crate::state::core::{ClientInput, EngineState};
@@ -12,6 +13,7 @@ use labels::pending_choice_label;
 pub(super) use labels::{
     boss_label, combat_card_label, deck_summary, monster_name, reward_card_label, room_type_label,
 };
+pub use resolution::CandidateResolution;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunControlViewModel {
@@ -42,6 +44,7 @@ pub struct DecisionCandidate {
     pub label: String,
     pub action: CandidateAction,
     pub note: Option<String>,
+    pub resolution: Option<CandidateResolution>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

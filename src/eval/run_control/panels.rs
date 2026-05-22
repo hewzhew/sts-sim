@@ -128,14 +128,20 @@ pub fn render_inspect_panel(session: &RunControlSession, id: &str) -> String {
         if let Some(note) = candidate.note.as_ref() {
             push_line(&mut out, format!("  note: {note}"));
         }
-        if let Some(card_detail) = inspect_card_for_candidate(session, id) {
+        if let Some(resolution) = candidate.resolution.as_ref() {
+            push_line(&mut out, "  resolution:");
+            for line in resolution.detail_lines() {
+                push_line(&mut out, format!("    {line}"));
+            }
+        }
+        if let Some(card_detail) = inspect_card_for_visible_candidate(session, id) {
             push_line(&mut out, "");
             out.push_str(&card_detail);
         }
         return out;
     }
 
-    if let Some(card_detail) = inspect_card_for_candidate(session, id) {
+    if let Some(card_detail) = inspect_card_reference(session, id) {
         return card_detail;
     }
 
@@ -321,40 +327,49 @@ fn reward_card_brief(id: crate::content::cards::CardId, upgrades: u8) -> String 
     )
 }
 
-fn inspect_card_for_candidate(session: &RunControlSession, id: &str) -> Option<String> {
+fn inspect_card_for_visible_candidate(session: &RunControlSession, id: &str) -> Option<String> {
     let idx = id.split('.').next()?.parse::<usize>().ok()?;
-    if let Some(combat) = session
-        .active_combat
-        .as_ref()
-        .map(|active| &active.combat_state)
-    {
-        if let Some(card) = combat.zones.hand.get(idx) {
-            return Some(card_detail(
+    match &session.engine_state {
+        EngineState::CombatPlayerTurn
+        | EngineState::CombatProcessing
+        | EngineState::PendingChoice(_) => {
+            let combat = session
+                .active_combat
+                .as_ref()
+                .map(|active| &active.combat_state)?;
+            let card = combat.zones.hand.get(idx)?;
+            Some(card_detail(
                 &combat_card_label(card),
                 card.id,
                 card.upgrades,
-            ));
+            ))
         }
-    }
-    if let Some(card) = session.run_state.master_deck.get(idx) {
-        return Some(card_detail(
-            &combat_card_label(card),
-            card.id,
-            card.upgrades,
-        ));
-    }
-    if let EngineState::RewardScreen(reward) = &session.engine_state {
-        if let Some(cards) = reward.pending_card_choice.as_ref() {
-            if let Some(card) = cards.get(idx) {
-                return Some(card_detail(
-                    &reward_card_label(card.id, card.upgrades),
-                    card.id,
-                    card.upgrades,
-                ));
-            }
+        EngineState::RewardScreen(reward) => {
+            let cards = reward.pending_card_choice.as_ref()?;
+            let card = cards.get(idx)?;
+            Some(card_detail(
+                &reward_card_label(card.id, card.upgrades),
+                card.id,
+                card.upgrades,
+            ))
         }
+        EngineState::RunPendingChoice(_) => inspect_deck_card(session, idx),
+        _ => None,
     }
-    None
+}
+
+fn inspect_card_reference(session: &RunControlSession, id: &str) -> Option<String> {
+    let idx = id.parse::<usize>().ok()?;
+    inspect_deck_card(session, idx)
+}
+
+fn inspect_deck_card(session: &RunControlSession, idx: usize) -> Option<String> {
+    let card = session.run_state.master_deck.get(idx)?;
+    Some(card_detail(
+        &combat_card_label(card),
+        card.id,
+        card.upgrades,
+    ))
 }
 
 fn card_detail(name: &str, id: crate::content::cards::CardId, upgrades: u8) -> String {
