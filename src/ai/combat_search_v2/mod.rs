@@ -16,6 +16,7 @@ use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
 use crate::state::core::{ClientInput, EngineState};
 
 mod baseline;
+mod diagnostics;
 mod frontier;
 mod report;
 mod search;
@@ -23,6 +24,7 @@ mod transition;
 mod types;
 mod value;
 
+use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
 use frontier::{
     is_resource_covered, push_frontier, remember_best_complete, remember_best_frontier,
     ResourceVector, SearchNode,

@@ -17,6 +17,7 @@ pub fn run_combat_search_v2_with_stepper(
     let started = Instant::now();
     let deadline = config.wall_time.map(|duration| started + duration);
     let mut stats = CombatSearchV2Stats::default();
+    let mut diagnostics = SearchDiagnosticsCollector::default();
     let initial_hp = combat.entities.player.current_hp;
     let mut exact_transpositions: HashMap<CombatExactStateKey, Vec<ResourceVector>> =
         HashMap::new();
@@ -102,6 +103,7 @@ pub fn run_combat_search_v2_with_stepper(
             stepper.legal_action_choices(&position),
             config.potion_policy,
         );
+        diagnostics.observe_legal_actions(legal.len());
         if legal.is_empty() {
             unresolved_leaf_count = unresolved_leaf_count.saturating_add(1);
             continue;
@@ -194,12 +196,23 @@ pub fn run_combat_search_v2_with_stepper(
 
     let sample_states = frontier
         .iter()
-        .take(8)
+        .take(FRONTIER_SAMPLE_LIMIT)
         .map(|entry| summarize_state(&entry.node.engine, &entry.node.combat))
-        .collect();
+        .collect::<Vec<_>>();
+    let diagnostics = diagnostics.finish(SearchDiagnosticsFinish {
+        exact_transpositions: &exact_transpositions,
+        dominance: &dominance,
+        frontier_remaining_states: frontier.len(),
+        frontier_sample_count: sample_states.len(),
+        stats: &stats,
+        proof_status,
+        unresolved_leaf_count,
+        max_actions_cut_count,
+        engine_step_limit_count,
+    });
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
-        schema_version: 1,
+        schema_version: 2,
         input_label: config.input_label,
         information_boundary: "engine_state_snapshot_truth_v0",
         search_policy: CombatSearchV2PolicyReport {
@@ -241,6 +254,7 @@ pub fn run_combat_search_v2_with_stepper(
             engine_step_limit_count,
             sample_states,
         },
+        diagnostics,
         stats,
         evidence_reliability: CombatSearchV2EvidenceReport {
             hidden_info_policy: "uses_only_the_supplied_engine_state; if that state contains hidden draw/rng truth, the report is engine-evidence rather than public-agent evidence",
