@@ -1,3 +1,4 @@
+mod auto_step;
 mod combat_search;
 mod combat_start;
 mod commands;
@@ -13,8 +14,8 @@ mod transition_report;
 mod view_model;
 
 pub use commands::{
-    parse_run_control_command, run_control_help, run_control_short_hint, RunControlCommand,
-    RunControlSearchCombatOptions,
+    parse_run_control_command, run_control_help, run_control_short_hint, RunControlAutoStepOptions,
+    RunControlCommand, RunControlSearchCombatOptions,
 };
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,

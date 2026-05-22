@@ -269,6 +269,9 @@ impl RunControlSession {
             RunControlCommand::SearchCombat(options) => {
                 super::combat_search::apply_search_combat(self, options)
             }
+            RunControlCommand::AutoStep(options) => {
+                super::auto_step::apply_guarded_auto_step(self, options)
+            }
             RunControlCommand::RewardAutomationStatus => Ok(RunControlCommandOutcome::message(
                 self.reward_automation.summary(),
             )),
@@ -833,6 +836,125 @@ mod tests {
         assert!(outcome
             .message
             .contains("optimality=not_claimed_budgeted_complete_win"));
+        assert!(outcome.action_result.is_some());
+        assert!(session.active_combat.is_none());
+        assert_eq!(
+            session
+                .last_combat_baseline()
+                .map(CombatBaselineOutcomeV1::terminal),
+            Some(crate::sim::combat::CombatTerminal::Win)
+        );
+    }
+
+    #[test]
+    fn run_control_auto_step_advances_routine_neow_intro_only() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+
+        let outcome = session
+            .apply_command(RunControlCommand::AutoStep(Default::default()))
+            .expect("auto-step should advance routine intro");
+
+        assert!(outcome.message.contains("routine: Proceed"));
+        assert!(outcome
+            .message
+            .contains("Reason: Neow bonus requires human choice"));
+        assert!(outcome.action_result.is_some());
+        assert!(matches!(session.engine_state, EngineState::EventRoom));
+        assert_eq!(
+            session
+                .run_state
+                .event_state
+                .as_ref()
+                .map(|event| event.current_screen),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn run_control_auto_step_stops_on_map_without_mutating_state() {
+        let mut session = test_session_after_neow_at_map();
+
+        let outcome = session
+            .apply_command(RunControlCommand::AutoStep(Default::default()))
+            .expect("auto-step should stop at map");
+
+        assert!(outcome.message.contains("Applied:\n  none"));
+        assert!(outcome
+            .message
+            .contains("Reason: map route requires human choice"));
+        assert!(outcome.action_result.is_none());
+        assert!(matches!(session.engine_state, EngineState::MapNavigation));
+    }
+
+    #[test]
+    fn run_control_auto_step_claims_low_risk_rewards_then_stops() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut rewards = crate::state::rewards::RewardState::new();
+        rewards.items = vec![
+            crate::state::rewards::RewardItem::Gold { amount: 19 },
+            crate::state::rewards::RewardItem::Potion {
+                potion_id: crate::content::potions::PotionId::EssenceOfSteel,
+            },
+            crate::state::rewards::RewardItem::Card {
+                cards: vec![crate::state::rewards::RewardCard::new(
+                    crate::content::cards::CardId::ShrugItOff,
+                    0,
+                )],
+            },
+        ];
+        session.engine_state = EngineState::RewardScreen(rewards);
+
+        let outcome = session
+            .apply_command(RunControlCommand::AutoStep(Default::default()))
+            .expect("auto-step should claim deterministic rewards");
+
+        assert!(outcome
+            .message
+            .contains("auto reward: 19 gold, Essence of Steel potion"));
+        assert!(outcome
+            .message
+            .contains("Reason: card reward requires human choice"));
+        assert_eq!(session.run_state.gold, 118);
+        assert_eq!(
+            session.run_state.potions[0]
+                .as_ref()
+                .map(|potion| potion.id),
+            Some(crate::content::potions::PotionId::EssenceOfSteel)
+        );
+        assert!(outcome.action_result.is_some());
+    }
+
+    #[test]
+    fn run_control_auto_step_solves_starter_combat_and_stops_at_reward_choice() {
+        let mut session = test_session_with_first_monster_room();
+        session
+            .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+            .expect("map input should enter combat");
+
+        let outcome = session
+            .apply_command(RunControlCommand::AutoStep(
+                crate::eval::run_control::RunControlAutoStepOptions {
+                    search: crate::eval::run_control::RunControlSearchCombatOptions {
+                        max_nodes: Some(2_000),
+                        wall_ms: Some(5_000),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            ))
+            .expect("auto-step should resolve starter combat");
+
+        assert!(outcome
+            .message
+            .contains("combat search: search-combat applied"));
+        assert!(
+            outcome
+                .message
+                .contains("Reason: remaining reward requires human choice")
+                || outcome
+                    .message
+                    .contains("Reason: card reward requires human choice")
+        );
         assert!(outcome.action_result.is_some());
         assert!(session.active_combat.is_none());
         assert_eq!(

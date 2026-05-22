@@ -49,6 +49,7 @@ pub enum RunControlCommand {
         case_id: String,
     },
     SearchCombat(RunControlSearchCombatOptions),
+    AutoStep(RunControlAutoStepOptions),
     RewardAutomationStatus,
     SetRewardAutomation {
         target: RewardAutomationTarget,
@@ -73,6 +74,12 @@ pub struct RunControlSearchCombatOptions {
     pub max_engine_steps_per_action: Option<usize>,
     pub wall_ms: Option<u64>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RunControlAutoStepOptions {
+    pub search: RunControlSearchCombatOptions,
+    pub max_operations: Option<usize>,
 }
 
 pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String> {
@@ -124,6 +131,7 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "sc" | "search-combat" | "solve-combat" | "auto-combat" => {
             parse_search_combat_command(&rest)
         }
+        "n" | "next" | "auto-step" | "autostep" => parse_auto_step_command(&rest),
         "auto-reward" => parse_auto_reward_command(&rest),
         "action" => Ok(RunControlCommand::ActionIndex(parse_usize_arg(
             rest.first(),
@@ -206,7 +214,8 @@ pub fn run_control_help() -> &'static str {
 Help:
   Core:
     main/state, deck, map, relics, potions, inspect <id>, case [path], d/details, r/raw, quit
-    <id> chooses a visible option; Enter chooses the single visible option when safe
+    n/next = guarded auto step; <id> chooses a visible option
+    Enter chooses the single visible option when safe
 
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
@@ -228,12 +237,13 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
+    n/next [max_nodes=N] [wall_ms=N] [potion=never|all] [max_ops=N]
     auto-reward
     auto-reward gold|potion|all on|off"
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "main | deck | map | relics | potions | inspect <id> | auto-reward | details | raw | help"
+    "main | n=auto-step | deck | map | relics | potions | inspect <id> | auto-reward | details | raw | help"
 }
 
 fn is_candidate_id(command: &str) -> bool {
@@ -304,6 +314,12 @@ fn parse_bench_add_command(rest: &[&str]) -> Result<RunControlCommand, String> {
 }
 
 fn parse_search_combat_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    Ok(RunControlCommand::SearchCombat(
+        parse_search_combat_options(rest)?,
+    ))
+}
+
+fn parse_search_combat_options(rest: &[&str]) -> Result<RunControlSearchCombatOptions, String> {
     let mut options = RunControlSearchCombatOptions::default();
     for token in rest {
         let (key, value) = token
@@ -330,7 +346,25 @@ fn parse_search_combat_command(rest: &[&str]) -> Result<RunControlCommand, Strin
             other => return Err(format!("unknown search-combat option '{other}'")),
         }
     }
-    Ok(RunControlCommand::SearchCombat(options))
+    Ok(options)
+}
+
+fn parse_auto_step_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    let mut options = RunControlAutoStepOptions::default();
+    let mut search_tokens = Vec::new();
+    for token in rest {
+        let Some((key, value)) = token.split_once('=') else {
+            return Err(format!("auto-step option must be key=value, got '{token}'"));
+        };
+        match key.to_ascii_lowercase().as_str() {
+            "max_ops" | "max_operations" | "max_steps" => {
+                options.max_operations = Some(parse_usize_value(value, "max_ops")?);
+            }
+            _ => search_tokens.push(*token),
+        }
+    }
+    options.search = parse_search_combat_options(&search_tokens)?;
+    Ok(RunControlCommand::AutoStep(options))
 }
 
 fn parse_auto_reward_command(rest: &[&str]) -> Result<RunControlCommand, String> {
@@ -482,6 +516,28 @@ mod tests {
         assert_eq!(
             parse_run_control_command("sc").expect("sc should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions::default())
+        );
+    }
+
+    #[test]
+    fn run_control_parser_accepts_auto_step_options() {
+        assert_eq!(
+            parse_run_control_command("n").expect("n should parse"),
+            RunControlCommand::AutoStep(RunControlAutoStepOptions::default())
+        );
+        assert_eq!(
+            parse_run_control_command("auto-step max_nodes=123 wall_ms=50 max_ops=9")
+                .expect("auto-step should parse"),
+            RunControlCommand::AutoStep(RunControlAutoStepOptions {
+                search: RunControlSearchCombatOptions {
+                    max_nodes: Some(123),
+                    max_actions_per_line: None,
+                    max_engine_steps_per_action: None,
+                    wall_ms: Some(50),
+                    potion_policy: None,
+                },
+                max_operations: Some(9),
+            })
         );
     }
 
