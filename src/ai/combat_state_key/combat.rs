@@ -2,6 +2,7 @@ mod cards;
 mod engine;
 mod meta;
 mod monster;
+mod pending_choice;
 mod player;
 mod potions;
 mod powers;
