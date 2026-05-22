@@ -6,6 +6,7 @@ mod panels;
 pub mod registry;
 mod render;
 mod session;
+mod transition_report;
 mod view_model;
 
 pub use commands::{

@@ -26,6 +26,9 @@ use super::render::{
     render_combat_actions, render_run_control_details, render_run_control_raw,
     render_run_control_state,
 };
+use super::transition_report::{
+    render_transition_report, transition_action_for_input, RunApplyStatus, RunVisibleSnapshot,
+};
 
 const MAX_STABLE_ADVANCE_TICKS: usize = 2_000;
 
@@ -355,6 +358,8 @@ impl RunControlSession {
     fn apply_input(&mut self, input: ClientInput) -> Result<RunControlCommandOutcome, String> {
         self.ensure_combat_started_if_needed()?;
         self.validate_input_for_current_state(&input)?;
+        let before_snapshot = RunVisibleSnapshot::capture(self);
+        let action_report = transition_action_for_input(self, &input);
         self.observe_active_combat_started();
         let potion_observation = self.combat_outcomes.observe_input_before(
             self.active_combat
@@ -406,16 +411,19 @@ impl RunControlSession {
         self.decision_step = self.decision_step.saturating_add(1);
 
         let status = if tick.keep_running {
-            "ok".to_string()
+            RunApplyStatus::Running
         } else {
             match self.engine_state {
-                EngineState::GameOver(RunResult::Victory) => "game_over:victory".to_string(),
-                EngineState::GameOver(RunResult::Defeat) => "game_over:defeat".to_string(),
-                _ => "stopped".to_string(),
+                EngineState::GameOver(RunResult::Victory) => RunApplyStatus::Victory,
+                EngineState::GameOver(RunResult::Defeat) => RunApplyStatus::Defeat,
+                _ => RunApplyStatus::Stopped,
             }
         };
+        let after_snapshot = RunVisibleSnapshot::capture(self);
+        let report =
+            render_transition_report(action_report, &before_snapshot, &after_snapshot, status);
         Ok(RunControlCommandOutcome::message(format!(
-            "{status}\n{}",
+            "{report}\n{}",
             render_run_control_state(self)
         )))
     }
