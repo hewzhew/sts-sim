@@ -10,11 +10,12 @@ use super::session::RunControlSession;
 use super::view_model::{build_run_control_view_model, client_input_hint};
 mod types;
 
-pub(super) use types::{ActionResult, RunApplyStatus, RunVisibleSnapshot, TransitionAction};
-use types::{
-    ActionResultChange, CardSnapshot, CombatPlayerResult, CombatSnapshot, MonsterSnapshot,
-    PileCounts, PotionSnapshot, RelicSnapshot, RunEndResult, RunKey, ValueChange,
+pub use types::{
+    ActionResult, ActionResultChange, CardSnapshot, CombatPlayerResult, MonsterSnapshot,
+    PileCounts, RunApplyStatus, RunEndResult, RunKey, ValueChange,
 };
+use types::{CombatSnapshot, PotionSnapshot, RelicSnapshot};
+pub(super) use types::{RunVisibleSnapshot, TransitionAction};
 
 pub(super) fn transition_action_for_input(
     session: &RunControlSession,
@@ -30,7 +31,8 @@ pub(super) fn transition_action_for_input(
     TransitionAction { label }
 }
 
-pub(super) fn render_transition_report(
+#[cfg(test)]
+fn render_transition_report(
     action: TransitionAction,
     before: &RunVisibleSnapshot,
     after: &RunVisibleSnapshot,

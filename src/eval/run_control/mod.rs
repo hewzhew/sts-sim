@@ -28,3 +28,10 @@ pub use render::{
 pub use session::{
     canonical_player_class, RunControlCommandOutcome, RunControlConfig, RunControlSession,
 };
+pub use transition_report::{
+    ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,
+    CardSnapshot as RunActionCardSnapshotV1, CombatPlayerResult as RunActionCombatPlayerResultV1,
+    MonsterSnapshot as RunActionMonsterSnapshotV1, PileCounts as RunActionPileCountsV1,
+    RunApplyStatus as RunActionApplyStatusV1, RunEndResult as RunActionEndResultV1,
+    RunKey as RunActionKeyV1, ValueChange as RunActionValueChangeV1,
+};

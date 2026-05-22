@@ -27,7 +27,8 @@ use super::render::{
     render_run_control_state,
 };
 use super::transition_report::{
-    render_transition_report, transition_action_for_input, RunApplyStatus, RunVisibleSnapshot,
+    action_result_from_transition, render_action_result, transition_action_for_input, ActionResult,
+    RunApplyStatus, RunVisibleSnapshot,
 };
 
 const MAX_STABLE_ADVANCE_TICKS: usize = 2_000;
@@ -66,6 +67,7 @@ pub struct RunControlSession {
 pub struct RunControlCommandOutcome {
     pub should_quit: bool,
     pub message: String,
+    pub action_result: Option<ActionResult>,
 }
 
 impl RunControlCommandOutcome {
@@ -73,6 +75,7 @@ impl RunControlCommandOutcome {
         Self {
             should_quit: false,
             message: message.into(),
+            action_result: None,
         }
     }
 
@@ -80,6 +83,15 @@ impl RunControlCommandOutcome {
         Self {
             should_quit: true,
             message: message.into(),
+            action_result: None,
+        }
+    }
+
+    fn action(message: impl Into<String>, action_result: ActionResult) -> Self {
+        Self {
+            should_quit: false,
+            message: message.into(),
+            action_result: Some(action_result),
         }
     }
 }
@@ -420,12 +432,13 @@ impl RunControlSession {
             }
         };
         let after_snapshot = RunVisibleSnapshot::capture(self);
-        let report =
-            render_transition_report(action_report, &before_snapshot, &after_snapshot, status);
-        Ok(RunControlCommandOutcome::message(format!(
-            "{report}\n{}",
-            render_run_control_state(self)
-        )))
+        let action_result =
+            action_result_from_transition(action_report, &before_snapshot, &after_snapshot, status);
+        let report = render_action_result(&action_result);
+        Ok(RunControlCommandOutcome::action(
+            format!("{report}\n{}", render_run_control_state(self)),
+            action_result,
+        ))
     }
 
     fn validate_input_for_current_state(&self, input: &ClientInput) -> Result<(), String> {
@@ -731,6 +744,10 @@ mod tests {
             .expect("case command should save");
 
         assert!(outcome.message.contains("saved RunDecisionCaseV1"));
+        assert!(
+            outcome.action_result.is_none(),
+            "non-action commands should not fabricate action results"
+        );
         let payload = fs::read_to_string(&path).expect("decision case should exist");
         assert!(payload.contains("\"schema_name\": \"sts_simulator.run_decision_case\""));
         assert!(payload.contains("\"label_role\": \"diagnostic_not_teacher_label\""));
@@ -750,6 +767,18 @@ mod tests {
             .expect("single visible Neow intro action should execute");
 
         assert!(outcome.message.contains("Neow Bonus"));
+        let action_result = outcome
+            .action_result
+            .as_ref()
+            .expect("state-changing commands should return a structured action result");
+        assert!(action_result.changes.iter().any(|change| matches!(
+            change,
+            crate::eval::run_control::RunActionResultChangeV1::AdvancedTo { title }
+                if title == "Neow Bonus"
+        )));
+        let json = serde_json::to_string(action_result)
+            .expect("structured action result should be serializable");
+        assert!(json.contains("advanced_to"));
         assert_eq!(session.decision_step, 1);
         assert_eq!(
             session

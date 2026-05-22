@@ -5,7 +5,7 @@ use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(in crate::eval::run_control) enum RunApplyStatus {
+pub enum RunApplyStatus {
     Running,
     Victory,
     Defeat,
@@ -47,10 +47,10 @@ pub(in crate::eval::run_control) struct PotionSnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(in crate::eval::run_control) struct CardSnapshot {
-    pub(in crate::eval::run_control) id: CardId,
-    pub(in crate::eval::run_control) uuid: u32,
-    pub(in crate::eval::run_control) upgrades: u8,
+pub struct CardSnapshot {
+    pub id: CardId,
+    pub uuid: u32,
+    pub upgrades: u8,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -67,25 +67,25 @@ pub(in crate::eval::run_control) struct CombatSnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub(in crate::eval::run_control) struct MonsterSnapshot {
-    pub(in crate::eval::run_control) id: usize,
-    pub(in crate::eval::run_control) label: String,
-    pub(in crate::eval::run_control) hp: i32,
-    pub(in crate::eval::run_control) max_hp: i32,
-    pub(in crate::eval::run_control) block: i32,
-    pub(in crate::eval::run_control) alive: bool,
+pub struct MonsterSnapshot {
+    pub id: usize,
+    pub label: String,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub alive: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub(in crate::eval::run_control) struct ActionResult {
-    pub(in crate::eval::run_control) chosen_label: String,
-    pub(in crate::eval::run_control) status: RunApplyStatus,
-    pub(in crate::eval::run_control) changes: Vec<ActionResultChange>,
+pub struct ActionResult {
+    pub chosen_label: String,
+    pub status: RunApplyStatus,
+    pub changes: Vec<ActionResultChange>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(in crate::eval::run_control) enum ActionResultChange {
+pub enum ActionResultChange {
     HpChanged {
         before_current: i32,
         before_max: i32,
@@ -173,36 +173,36 @@ pub(in crate::eval::run_control) enum ActionResultChange {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(in crate::eval::run_control) struct ValueChange<T> {
-    pub(in crate::eval::run_control) before: T,
-    pub(in crate::eval::run_control) after: T,
+pub struct ValueChange<T> {
+    pub before: T,
+    pub after: T,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(in crate::eval::run_control) enum RunKey {
+pub enum RunKey {
     Ruby,
     Sapphire,
     Emerald,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(in crate::eval::run_control) enum RunEndResult {
+pub enum RunEndResult {
     Victory,
     Defeat,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub(in crate::eval::run_control) struct CombatPlayerResult {
-    pub(in crate::eval::run_control) hp: i32,
-    pub(in crate::eval::run_control) max_hp: i32,
-    pub(in crate::eval::run_control) block: i32,
-    pub(in crate::eval::run_control) energy: i32,
+pub struct CombatPlayerResult {
+    pub hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub energy: i32,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(in crate::eval::run_control) struct PileCounts {
-    pub(in crate::eval::run_control) hand: usize,
-    pub(in crate::eval::run_control) draw: usize,
-    pub(in crate::eval::run_control) discard: usize,
-    pub(in crate::eval::run_control) exhaust: usize,
+pub struct PileCounts {
+    pub hand: usize,
+    pub draw: usize,
+    pub discard: usize,
+    pub exhaust: usize,
 }
