@@ -229,7 +229,7 @@ fn candidate_section_title(session: &RunControlSession) -> &'static str {
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
         | EngineState::PendingChoice(_) => "Actions:",
-        EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => "Cards:",
+        EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => "Choices:",
         EngineState::MapNavigation => "Paths:",
         _ => "Available actions:",
     }

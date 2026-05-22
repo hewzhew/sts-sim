@@ -1,11 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-use crate::content::cards::CardId;
+use crate::content::cards::{get_card_definition, CardId};
+use crate::content::potions::{get_potion_definition, PotionId};
 use crate::content::relics::RelicId;
 use crate::state::events::{
     EventCardKind, EventEffect, EventOption, EventOptionTransition, EventRelicKind,
     EventSelectionKind,
 };
+use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext, RewardState};
+use crate::state::run::RunState;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct CandidateResolution {
@@ -36,15 +39,18 @@ pub enum KnownEffect {
     Heal(i32),
     GainMaxHp(i32),
     ObtainSpecificRelic { count: usize, relic: RelicId },
+    ObtainSpecificPotion { count: usize, potion: PotionId },
     ObtainSpecificCard { count: usize, card: CardId },
     ObtainSpecificColorlessCard { count: usize, card: CardId },
     ObtainSpecificCurse { count: usize, card: CardId },
+    ObtainKey(RunKey),
     RemoveCard { count: usize },
     UpgradeCard { count: usize },
     TransformCard { count: usize },
     DuplicateCard { count: usize },
     LoseSpecificRelic { relic: RelicId, starter_only: bool },
     LoseRelic { starter_only: bool },
+    NoVisibleChange { reason: String },
     StartCombat,
 }
 
@@ -69,6 +75,9 @@ pub enum UnresolvedEffect {
         pool: CardPoolBoundary,
         visibility: HiddenInfoVisibility,
     },
+    VisibleCardRewardChoices {
+        cards: Vec<VisibleCardChoice>,
+    },
     RandomCurse {
         count: usize,
         pool: CardPoolBoundary,
@@ -86,6 +95,12 @@ pub enum UnresolvedEffect {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum HiddenInfoVisibility {
     DistributionKnownResultHiddenUntilResolved,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct VisibleCardChoice {
+    pub card: CardId,
+    pub upgrades: u8,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -117,8 +132,16 @@ pub enum FollowupBoundary {
     EventScreenAdvance,
     EventComplete,
     RewardScreen,
+    RewardCardChoice,
     Selection(SelectionBoundary),
     CombatStart,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum RunKey {
+    Ruby,
+    Sapphire,
+    Emerald,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -132,6 +155,19 @@ pub enum SelectionBoundary {
 }
 
 impl CandidateResolution {
+    pub fn known(known_effects: Vec<KnownEffect>) -> Option<Self> {
+        if known_effects.is_empty() {
+            return None;
+        }
+        Some(Self {
+            status: ResolutionStatus::Known,
+            known_effects,
+            unresolved_effects: Vec::new(),
+            followup: None,
+            evidence: ResolutionEvidence::PublicScreenSemantics,
+        })
+    }
+
     pub fn from_event_option(option: &EventOption) -> Option<Self> {
         if option.ui.disabled {
             return None;
@@ -165,6 +201,65 @@ impl CandidateResolution {
             followup,
             evidence: ResolutionEvidence::PublicScreenSemantics,
         })
+    }
+
+    pub fn from_reward_card(card: &RewardCard) -> Self {
+        Self {
+            status: ResolutionStatus::Known,
+            known_effects: vec![KnownEffect::ObtainSpecificCard {
+                count: 1,
+                card: card.id,
+            }],
+            unresolved_effects: Vec::new(),
+            followup: None,
+            evidence: ResolutionEvidence::PublicScreenSemantics,
+        }
+    }
+
+    pub fn from_reward_item(
+        item: &RewardItem,
+        reward_state: &RewardState,
+        run_state: &RunState,
+    ) -> Option<Self> {
+        match item {
+            RewardItem::Gold { amount } => {
+                let amount = visible_reward_gold_amount(*amount, reward_state, run_state);
+                Self::known(vec![KnownEffect::GainGold(amount)])
+            }
+            RewardItem::StolenGold { amount } => Self::known(vec![KnownEffect::GainGold(*amount)]),
+            RewardItem::Relic { relic_id } => Self::known(vec![KnownEffect::ObtainSpecificRelic {
+                count: 1,
+                relic: *relic_id,
+            }]),
+            RewardItem::Potion { potion_id } => potion_reward_resolution(*potion_id, run_state),
+            RewardItem::Card { cards } => Some(Self {
+                status: ResolutionStatus::Partial,
+                known_effects: Vec::new(),
+                unresolved_effects: vec![UnresolvedEffect::VisibleCardRewardChoices {
+                    cards: cards
+                        .iter()
+                        .map(|card| VisibleCardChoice {
+                            card: card.id,
+                            upgrades: card.upgrades,
+                        })
+                        .collect(),
+                }],
+                followup: Some(FollowupBoundary::RewardCardChoice),
+                evidence: ResolutionEvidence::PublicScreenSemantics,
+            }),
+            RewardItem::EmeraldKey => Self::known(vec![KnownEffect::ObtainKey(RunKey::Emerald)]),
+            RewardItem::SapphireKey => Self::known(vec![KnownEffect::ObtainKey(RunKey::Sapphire)]),
+        }
+    }
+
+    pub fn from_boss_relic(relic: RelicId) -> Self {
+        Self {
+            status: ResolutionStatus::Known,
+            known_effects: vec![KnownEffect::ObtainSpecificRelic { count: 1, relic }],
+            unresolved_effects: Vec::new(),
+            followup: None,
+            evidence: ResolutionEvidence::PublicScreenSemantics,
+        }
     }
 
     pub fn main_note(&self) -> Option<String> {
@@ -226,15 +321,22 @@ impl KnownEffect {
             KnownEffect::ObtainSpecificRelic { count, relic } => {
                 format!("obtain {count} specific relic {}", relic_label(*relic))
             }
+            KnownEffect::ObtainSpecificPotion { count, potion } => {
+                format!("obtain {count} specific potion {}", potion_label(*potion))
+            }
             KnownEffect::ObtainSpecificCard { count, card } => {
-                format!("obtain {count} specific card {card:?}")
+                format!("obtain {count} specific card {}", card_label(*card, 0))
             }
             KnownEffect::ObtainSpecificColorlessCard { count, card } => {
-                format!("obtain {count} specific colorless card {card:?}")
+                format!(
+                    "obtain {count} specific colorless card {}",
+                    card_label(*card, 0)
+                )
             }
             KnownEffect::ObtainSpecificCurse { count, card } => {
-                format!("obtain {count} specific curse {card:?}")
+                format!("obtain {count} specific curse {}", card_label(*card, 0))
             }
+            KnownEffect::ObtainKey(key) => format!("obtain {} key", key.brief()),
             KnownEffect::RemoveCard { count } => format!("remove {count} card"),
             KnownEffect::UpgradeCard { count } => format!("upgrade {count} card"),
             KnownEffect::TransformCard { count } => format!("transform {count} card"),
@@ -256,6 +358,7 @@ impl KnownEffect {
                     "lose relic".to_string()
                 }
             }
+            KnownEffect::NoVisibleChange { reason } => format!("no visible change: {reason}"),
             KnownEffect::StartCombat => "starts combat".to_string(),
         }
     }
@@ -273,6 +376,9 @@ impl UnresolvedEffect {
             }
             UnresolvedEffect::CardRewardChoices { count, pool, .. } => {
                 format!("{count} {} choices", pool.brief())
+            }
+            UnresolvedEffect::VisibleCardRewardChoices { cards } => {
+                format!("{} visible card choices", cards.len())
             }
             UnresolvedEffect::RandomCurse { pool, .. } => {
                 format!("{} outcome", pool.brief())
@@ -308,6 +414,14 @@ impl UnresolvedEffect {
                     "{count} {} reward choices; distribution known, exact candidates hidden until reward screen",
                     pool.brief()
                 )
+            }
+            UnresolvedEffect::VisibleCardRewardChoices { cards } => {
+                let labels = cards
+                    .iter()
+                    .map(|choice| card_label(choice.card, choice.upgrades))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{} visible card reward choices: {labels}", cards.len())
             }
             UnresolvedEffect::RandomCurse { count, pool, .. } => {
                 format!(
@@ -359,6 +473,7 @@ impl FollowupBoundary {
     fn main_note(self) -> Option<String> {
         match self {
             FollowupBoundary::RewardScreen => Some("opens follow-up reward".to_string()),
+            FollowupBoundary::RewardCardChoice => Some("opens card choice".to_string()),
             FollowupBoundary::Selection(kind) => Some(format!("opens {} selection", kind.brief())),
             FollowupBoundary::CombatStart => Some("starts combat".to_string()),
             FollowupBoundary::EventScreenAdvance | FollowupBoundary::EventComplete => None,
@@ -372,8 +487,21 @@ impl FollowupBoundary {
             FollowupBoundary::RewardScreen => {
                 "reward screen; contents resolved by engine".to_string()
             }
+            FollowupBoundary::RewardCardChoice => {
+                "reward card choice; exact candidates are already visible".to_string()
+            }
             FollowupBoundary::Selection(kind) => format!("selection: {}", kind.brief()),
             FollowupBoundary::CombatStart => "combat start boundary".to_string(),
+        }
+    }
+}
+
+impl RunKey {
+    fn brief(self) -> &'static str {
+        match self {
+            RunKey::Ruby => "ruby",
+            RunKey::Sapphire => "sapphire",
+            RunKey::Emerald => "emerald",
         }
     }
 }
@@ -625,6 +753,54 @@ fn push_random_relic(
 
 fn relic_label(id: RelicId) -> String {
     debug_words(&format!("{id:?}"))
+}
+
+fn potion_label(id: PotionId) -> &'static str {
+    get_potion_definition(id).name
+}
+
+fn card_label(id: CardId, upgrades: u8) -> String {
+    let name = get_card_definition(id).name;
+    if upgrades == 0 {
+        name.to_string()
+    } else {
+        format!("{name}+{upgrades}")
+    }
+}
+
+fn visible_reward_gold_amount(
+    amount: i32,
+    reward_state: &RewardState,
+    run_state: &RunState,
+) -> i32 {
+    let golden_idol_bonus = reward_state.screen_context != RewardScreenContext::TreasureRoom
+        && run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::GoldenIdol);
+    if golden_idol_bonus {
+        amount + crate::content::relics::golden_idol::reward_gold_bonus(amount)
+    } else {
+        amount
+    }
+}
+
+fn potion_reward_resolution(potion: PotionId, run_state: &RunState) -> Option<CandidateResolution> {
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::Sozu)
+    {
+        return CandidateResolution::known(vec![KnownEffect::NoVisibleChange {
+            reason: "Sozu blocks potion rewards".to_string(),
+        }]);
+    }
+    if run_state.find_empty_potion_slot().is_none() {
+        return CandidateResolution::known(vec![KnownEffect::NoVisibleChange {
+            reason: "no empty potion slot".to_string(),
+        }]);
+    }
+    CandidateResolution::known(vec![KnownEffect::ObtainSpecificPotion { count: 1, potion }])
 }
 
 fn debug_words(raw: &str) -> String {

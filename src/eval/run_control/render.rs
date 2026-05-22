@@ -329,7 +329,11 @@ fn push_line(out: &mut String, line: impl AsRef<str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::relics::RelicId;
+    use crate::eval::run_control::commands::RunControlCommand;
     use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
+    use crate::state::core::EngineState;
+    use crate::state::rewards::BossRelicChoiceState;
 
     #[test]
     fn main_view_is_default_and_keeps_debug_fields_out_of_startup_panel() {
@@ -401,7 +405,7 @@ mod tests {
             ..RunControlConfig::default()
         });
         session
-            .apply_command(crate::eval::run_control::commands::RunControlCommand::DefaultCandidate)
+            .apply_command(RunControlCommand::DefaultCandidate)
             .expect("Neow intro should advance");
         let rendered = render_run_control_details(&session);
 
@@ -410,5 +414,45 @@ mod tests {
         assert!(rendered.contains("known_effects:"));
         assert!(rendered.contains("unresolved_effects:"));
         assert!(rendered.contains("distribution known, result hidden"));
+    }
+
+    #[test]
+    fn reward_screen_details_expose_visible_resolution_boundaries() {
+        let mut session = RunControlSession::new(RunControlConfig {
+            seed: 521,
+            ..RunControlConfig::default()
+        });
+        session
+            .apply_command(RunControlCommand::DefaultCandidate)
+            .expect("Neow intro should advance");
+        session
+            .apply_command(RunControlCommand::Candidate("0".to_string()))
+            .expect("Neow colorless option should open a card reward item");
+
+        let reward_item_details = render_run_control_details(&session);
+        assert!(reward_item_details.contains("visible card reward choices"));
+        assert!(reward_item_details.contains("Dramatic Entrance"));
+
+        session
+            .apply_command(RunControlCommand::Candidate("0".to_string()))
+            .expect("claiming card reward item should open pending card choice");
+        let card_choice_details = render_run_control_details(&session);
+        assert!(card_choice_details.contains("resolution: Known"));
+        assert!(card_choice_details.contains("obtain 1 specific card Dramatic Entrance"));
+    }
+
+    #[test]
+    fn boss_relic_details_expose_specific_relic_resolution() {
+        let mut session = RunControlSession::new(RunControlConfig {
+            seed: 521,
+            ..RunControlConfig::default()
+        });
+        session.engine_state =
+            EngineState::BossRelicSelect(BossRelicChoiceState::new(vec![RelicId::CoffeeDripper]));
+
+        let rendered = render_run_control_details(&session);
+
+        assert!(rendered.contains("resolution: Known"));
+        assert!(rendered.contains("obtain 1 specific relic Coffee Dripper"));
     }
 }

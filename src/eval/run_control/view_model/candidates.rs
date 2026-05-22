@@ -14,7 +14,7 @@ pub(super) fn decision_candidates(session: &RunControlSession) -> Vec<DecisionCa
     match &session.engine_state {
         EngineState::EventRoom => event_candidates(session),
         EngineState::MapNavigation => map_candidates(session),
-        EngineState::RewardScreen(reward) => reward_candidates(reward),
+        EngineState::RewardScreen(reward) => reward_candidates(session, reward),
         EngineState::TreasureRoom(_) => {
             vec![candidate(
                 "open",
@@ -140,18 +140,20 @@ fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         .collect()
 }
 
-fn reward_candidates(reward: &RewardState) -> Vec<DecisionCandidate> {
+fn reward_candidates(session: &RunControlSession, reward: &RewardState) -> Vec<DecisionCandidate> {
     if let Some(cards) = reward.pending_card_choice.as_ref() {
         let mut candidates = cards
             .iter()
             .enumerate()
             .map(|(idx, card)| {
-                candidate(
+                let mut candidate = candidate(
                     idx.to_string(),
                     reward_card_label(card.id, card.upgrades),
                     ClientInput::SelectCard(idx),
                     None::<String>,
-                )
+                );
+                candidate.resolution = Some(CandidateResolution::from_reward_card(card));
+                candidate
             })
             .collect::<Vec<_>>();
         candidates.push(candidate(
@@ -168,12 +170,15 @@ fn reward_candidates(reward: &RewardState) -> Vec<DecisionCandidate> {
         .iter()
         .enumerate()
         .map(|(idx, item)| {
-            candidate(
+            let mut candidate = candidate(
                 idx.to_string(),
                 reward_item_label(item),
                 ClientInput::ClaimReward(idx),
                 None::<String>,
-            )
+            );
+            candidate.resolution =
+                CandidateResolution::from_reward_item(item, reward, &session.run_state);
+            candidate
         })
         .collect::<Vec<_>>();
     if reward.skippable {
@@ -484,12 +489,14 @@ fn boss_relic_candidates(choice: &BossRelicChoiceState) -> Vec<DecisionCandidate
         .iter()
         .enumerate()
         .map(|(idx, relic)| {
-            candidate(
+            let mut candidate = candidate(
                 idx.to_string(),
                 format!("{relic:?}"),
                 ClientInput::SubmitRelicChoice(idx),
                 None::<String>,
-            )
+            );
+            candidate.resolution = Some(CandidateResolution::from_boss_relic(*relic));
+            candidate
         })
         .collect()
 }
