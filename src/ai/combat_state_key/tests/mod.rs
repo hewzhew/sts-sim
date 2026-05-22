@@ -1,6 +1,6 @@
 use super::{
-    combat_dominance_key, diagnostic_outcome_key, pending_choice::pending_choice_key,
-    stable_dominance_bucket_key, stable_outcome_key,
+    combat_dominance_key, combat_exact_state_key, diagnostic_outcome_key,
+    pending_choice::pending_choice_key, stable_dominance_bucket_key, stable_outcome_key,
 };
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;

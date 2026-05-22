@@ -18,6 +18,8 @@ pub fn run_combat_search_v2_with_stepper(
     let deadline = config.wall_time.map(|duration| started + duration);
     let mut stats = CombatSearchV2Stats::default();
     let initial_hp = combat.entities.player.current_hp;
+    let mut exact_transpositions: HashMap<CombatExactStateKey, Vec<ResourceVector>> =
+        HashMap::new();
     let mut dominance: HashMap<CombatDominanceKey, Vec<ResourceVector>> = HashMap::new();
     let mut frontier = BinaryHeap::new();
     let mut next_sequence_id = 0u64;
@@ -81,9 +83,15 @@ pub fn run_combat_search_v2_with_stepper(
             continue;
         }
 
-        let dominance_key = combat_dominance_key(&node.engine, &node.combat);
         let resource = node.resource_vector();
-        if is_dominated(&mut dominance, dominance_key, resource) {
+        let exact_key = combat_exact_state_key(&node.engine, &node.combat);
+        if is_resource_covered(&mut exact_transpositions, exact_key, resource) {
+            stats.transposition_prunes = stats.transposition_prunes.saturating_add(1);
+            continue;
+        }
+
+        let dominance_key = combat_dominance_key(&node.engine, &node.combat);
+        if is_resource_covered(&mut dominance, dominance_key, resource) {
             stats.dominance_prunes = stats.dominance_prunes.saturating_add(1);
             continue;
         }
@@ -199,8 +207,8 @@ pub fn run_combat_search_v2_with_stepper(
             terminal_policy: "whole_combat_terminal_only",
             expansion_order: "lexicographic_priority_enemy_progress_hp_resource_line_length",
             potion_policy: config.potion_policy.label(),
-            transposition_table: "not_separate_yet; dominance_bucket_key_includes_rng_and_runtime",
-            dominance_pruning: "same_abstraction_resource_dominance_hp_block_potions_cards_actions",
+            transposition_table: "exact_runtime_state_key_with_resource_coverage",
+            dominance_pruning: "dominance_bucket_excludes_player_hp_block_then_compares_resource_vector",
             rollout_value: "not_used_for_terminal_claims",
             llm_authority: "none",
         },

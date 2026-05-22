@@ -1,4 +1,5 @@
 use super::*;
+use std::hash::Hash;
 
 #[derive(Clone)]
 pub(super) struct SearchNode {
@@ -163,35 +164,28 @@ fn compare_node_terminal(left: &SearchNode, right: &SearchNode) -> Ordering {
         .cmp(&terminal_rank(terminal_label(&right.engine, &right.combat)))
 }
 
-pub(super) fn is_dominated(
-    dominance: &mut HashMap<CombatDominanceKey, Vec<ResourceVector>>,
-    key: CombatDominanceKey,
+pub(super) fn is_resource_covered<K: Eq + Hash>(
+    table: &mut HashMap<K, Vec<ResourceVector>>,
+    key: K,
     candidate: ResourceVector,
 ) -> bool {
-    let bucket = dominance.entry(key).or_default();
-    if bucket.iter().any(|existing| existing.dominates(candidate)) {
+    let bucket = table.entry(key).or_default();
+    if bucket.iter().any(|existing| existing.covers(candidate)) {
         return true;
     }
-    bucket.retain(|existing| !candidate.dominates(*existing));
+    bucket.retain(|existing| !candidate.covers(*existing));
     bucket.push(candidate);
     false
 }
 
 impl ResourceVector {
-    fn dominates(self, other: ResourceVector) -> bool {
-        let no_worse = self.hp >= other.hp
+    fn covers(self, other: ResourceVector) -> bool {
+        self.hp >= other.hp
             && self.block >= other.block
             && self.potions_used <= other.potions_used
             && self.potions_discarded <= other.potions_discarded
             && self.cards_played <= other.cards_played
-            && self.action_count <= other.action_count;
-        let strictly_better = self.hp > other.hp
-            || self.block > other.block
-            || self.potions_used < other.potions_used
-            || self.potions_discarded < other.potions_discarded
-            || self.cards_played < other.cards_played
-            || self.action_count < other.action_count;
-        no_worse && strictly_better
+            && self.action_count <= other.action_count
     }
 }
 

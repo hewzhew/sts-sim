@@ -1,3 +1,10 @@
+//! State-key boundaries for combat search.
+//!
+//! Exact keys are for duplicate runtime states; dominance keys intentionally
+//! remove player hp/block and compare them through a resource vector; stable
+//! outcome keys are only for stable frontiers and may ignore runtime noise.
+//! Do not use one key family in place of another.
+
 mod dominance;
 mod monster;
 mod pending_choice;
@@ -11,13 +18,22 @@ use crate::engine::core::is_smoke_escape_stable_boundary;
 use crate::runtime::combat::CombatState;
 use crate::state::EngineState;
 
-use dominance::combat_dominance_bucket_key;
+use dominance::{combat_dominance_bucket_key, combat_exact_runtime_key};
 use stable::build_stable_outcome_key;
-pub(crate) use types::{CombatDominanceKey, StableOutcomeKey};
+pub(crate) use types::{CombatDominanceKey, CombatExactStateKey, StableOutcomeKey};
 
-/// In-combat key for Combat Search V2 transposition and resource dominance.
-/// It keeps runtime details that affect future combat transitions, while
-/// leaving current hp/block to the searched resource vector.
+/// Exact in-combat key for Combat Search V2 transposition. It keeps player
+/// hp/block and runtime details that affect future combat transitions.
+pub(crate) fn combat_exact_state_key(
+    engine: &EngineState,
+    combat: &CombatState,
+) -> CombatExactStateKey {
+    combat_exact_runtime_key(engine, combat)
+}
+
+/// In-combat bucket for Combat Search V2 resource dominance. It keeps runtime
+/// details that affect future combat transitions, while leaving current
+/// hp/block to the searched resource vector.
 pub(crate) fn combat_dominance_key(
     engine: &EngineState,
     combat: &CombatState,

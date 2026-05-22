@@ -2,7 +2,9 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::time::Instant;
 
-use crate::ai::combat_state_key::{combat_dominance_key, CombatDominanceKey};
+use crate::ai::combat_state_key::{
+    combat_dominance_key, combat_exact_state_key, CombatDominanceKey, CombatExactStateKey,
+};
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::sim::combat::{
@@ -22,8 +24,8 @@ mod types;
 mod value;
 
 use frontier::{
-    is_dominated, push_frontier, remember_best_complete, remember_best_frontier, ResourceVector,
-    SearchNode,
+    is_resource_covered, push_frontier, remember_best_complete, remember_best_frontier,
+    ResourceVector, SearchNode,
 };
 use report::{summarize_state, trajectory_report};
 use transition::{filtered_legal_actions, terminal_label};

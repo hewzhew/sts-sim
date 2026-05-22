@@ -1,30 +1,62 @@
 use crate::runtime::combat::{CombatCard, CombatState, MonsterEntity, Power};
 use crate::state::core::{EngineState, PendingChoice};
 
-use super::types::CombatDominanceKey;
+use super::types::{
+    CombatDominanceKey, CombatDominancePlayerKey, CombatEntityPowersKey, CombatExactPlayerKey,
+    CombatExactStateKey, CombatRuntimeKey, CombatZonesKey,
+};
 
-/// Exact in-combat bucket used by Combat Search V2 for transposition and
-/// resource dominance pruning. This is stricter than `stable_outcome_key`:
-/// current HP/block are intentionally left out for dominance comparison, but
-/// card instances, queue, monster runtime, powers, potions, and RNG remain in.
+/// Exact in-combat runtime key used by Combat Search V2 transposition pruning.
+/// This is stricter than `stable_outcome_key`: player hp/block, card
+/// instances, queue, monster runtime, powers, potions, and RNG remain in.
+pub(crate) fn combat_exact_runtime_key(
+    engine: &EngineState,
+    combat: &CombatState,
+) -> CombatExactStateKey {
+    CombatExactStateKey {
+        common: combat_runtime_key(engine, combat),
+        player: player_exact_key(combat),
+    }
+}
+
+/// In-combat bucket used by Combat Search V2 resource dominance pruning. This
+/// is not an exact transposition key: current HP/block are intentionally left
+/// out because they are compared through `ResourceVector`, but card instances,
+/// queue, monster runtime, powers, potions, and RNG remain in.
 pub(crate) fn combat_dominance_bucket_key(
     engine: &EngineState,
     combat: &CombatState,
 ) -> CombatDominanceKey {
-    CombatDominanceKey(format!(
-        "engine:{}|turn:{}|phase:{:?}|energy:{}|player:{}|zones:{}|monsters:{}|powers:{}|potions:{}|queue:{}|rng:{:?}",
-        engine_key(engine),
-        combat.turn.turn_count,
-        combat.turn.current_phase,
-        combat.turn.energy,
-        player_non_hp_key(combat),
-        zones_key(combat),
-        monsters_key(combat),
-        powers_key(combat),
-        potions_key(combat),
-        queue_key(combat),
-        combat.rng.pool,
-    ))
+    CombatDominanceKey {
+        common: combat_runtime_key(engine, combat),
+        player: CombatDominancePlayerKey {
+            future_relevant: player_non_hp_key(combat),
+        },
+    }
+}
+
+fn combat_runtime_key(engine: &EngineState, combat: &CombatState) -> CombatRuntimeKey {
+    CombatRuntimeKey {
+        engine: engine_key(engine),
+        turn: turn_key(combat),
+        meta: meta_key(combat),
+        zones: zones_key(combat),
+        monsters: monsters_key(combat),
+        powers: powers_key(combat),
+        potions: potions_key(combat),
+        queue: queue_key(combat),
+        runtime: runtime_key(combat),
+        rng: format!("{:?}", combat.rng.pool),
+    }
+}
+
+fn player_exact_key(combat: &CombatState) -> CombatExactPlayerKey {
+    let player = &combat.entities.player;
+    CombatExactPlayerKey {
+        current_hp: player.current_hp,
+        block: player.block,
+        future_relevant: player_non_hp_key(combat),
+    }
 }
 
 fn engine_key(engine: &EngineState) -> String {
@@ -43,49 +75,52 @@ fn pending_choice_key(choice: &PendingChoice) -> String {
 fn player_non_hp_key(combat: &CombatState) -> String {
     let player = &combat.entities.player;
     format!(
-        "max_hp:{}|stance:{:?}|orbs:{:?}|relics:{}|energy_master:{}|gold:{}",
+        "max_hp:{}|stance:{:?}|orbs:{:?}|max_orbs:{}|relics:{:?}|relic_buses:{:?}|energy_master:{}|gold:{}",
         player.max_hp,
         player.stance,
         player.orbs,
-        player
-            .relics
-            .iter()
-            .map(|relic| format!(
-                "{:?}:{}:{}:{}",
-                relic.id, relic.counter, relic.used_up, relic.amount
-            ))
-            .collect::<Vec<_>>()
-            .join(","),
+        player.max_orbs,
+        player.relics,
+        player.relic_buses,
         player.energy_master,
         player.gold,
     )
 }
 
-fn zones_key(combat: &CombatState) -> String {
-    format!(
-        "hand:{}|draw:{}|discard:{}|exhaust:{}|limbo:{}|queued:{}",
-        zone_key(&combat.zones.hand),
-        zone_key(&combat.zones.draw_pile),
-        zone_key(&combat.zones.discard_pile),
-        zone_key(&combat.zones.exhaust_pile),
-        zone_key(&combat.zones.limbo),
-        combat
+fn turn_key(combat: &CombatState) -> String {
+    format!("{:?}", combat.turn)
+}
+
+fn meta_key(combat: &CombatState) -> String {
+    format!("{:?}", combat.meta)
+}
+
+fn zones_key(combat: &CombatState) -> CombatZonesKey {
+    CombatZonesKey {
+        card_uuid_counter: combat.zones.card_uuid_counter,
+        hand: zone_key(&combat.zones.hand),
+        draw: zone_key(&combat.zones.draw_pile),
+        discard: zone_key(&combat.zones.discard_pile),
+        exhaust: zone_key(&combat.zones.exhaust_pile),
+        limbo: zone_key(&combat.zones.limbo),
+        queued: combat
             .zones
             .queued_cards
             .iter()
-            .map(|queued| format!(
-                "{}:{}:{:?}",
-                card_key(&queued.card),
-                target_label(combat, queued.target),
-                queued.source
-            ))
-            .collect::<Vec<_>>()
-            .join(",")
-    )
+            .map(|queued| {
+                format!(
+                    "{}:{}:{:?}",
+                    card_key(&queued.card),
+                    target_label(combat, queued.target),
+                    queued.source
+                )
+            })
+            .collect(),
+    }
 }
 
-fn zone_key(cards: &[CombatCard]) -> String {
-    cards.iter().map(card_key).collect::<Vec<_>>().join(",")
+fn zone_key(cards: &[CombatCard]) -> Vec<String> {
+    cards.iter().map(card_key).collect()
 }
 
 fn card_key(card: &CombatCard) -> String {
@@ -114,7 +149,7 @@ fn target_label(combat: &CombatState, target: Option<usize>) -> String {
     }
 }
 
-fn monsters_key(combat: &CombatState) -> String {
+fn monsters_key(combat: &CombatState) -> Vec<String> {
     combat
         .entities
         .monsters
@@ -136,8 +171,7 @@ fn monsters_key(combat: &CombatState) -> String {
                 monster_runtime_key(monster),
             )
         })
-        .collect::<Vec<_>>()
-        .join("|")
+        .collect()
 }
 
 fn monster_runtime_key(monster: &MonsterEntity) -> String {
@@ -184,19 +218,21 @@ fn monster_runtime_key(monster: &MonsterEntity) -> String {
     )
 }
 
-fn powers_key(combat: &CombatState) -> String {
+fn powers_key(combat: &CombatState) -> Vec<CombatEntityPowersKey> {
     let mut entries = combat
         .entities
         .power_db
         .iter()
         .map(|(entity, powers)| {
-            let mut power_keys = powers.iter().map(power_key).collect::<Vec<_>>();
-            power_keys.sort();
-            format!("{entity}:{}", power_keys.join(","))
+            let powers = powers.iter().map(power_key).collect::<Vec<_>>();
+            CombatEntityPowersKey {
+                entity_id: *entity,
+                powers,
+            }
         })
         .collect::<Vec<_>>();
-    entries.sort();
-    entries.join("|")
+    entries.sort_by_key(|entry| entry.entity_id);
+    entries
 }
 
 fn power_key(power: &Power) -> String {
@@ -211,7 +247,7 @@ fn power_key(power: &Power) -> String {
     )
 }
 
-fn potions_key(combat: &CombatState) -> String {
+fn potions_key(combat: &CombatState) -> Vec<String> {
     combat
         .entities
         .potions
@@ -221,16 +257,18 @@ fn potions_key(combat: &CombatState) -> String {
             Some(potion) => format!("{index}:{:?}:{}", potion.id, potion.uuid),
             None => format!("{index}:empty"),
         })
-        .collect::<Vec<_>>()
-        .join(",")
+        .collect()
 }
 
-fn queue_key(combat: &CombatState) -> String {
+fn queue_key(combat: &CombatState) -> Vec<String> {
     combat
         .engine
         .action_queue
         .iter()
         .map(|action| format!("{action:?}"))
-        .collect::<Vec<_>>()
-        .join(",")
+        .collect()
+}
+
+fn runtime_key(combat: &CombatState) -> String {
+    format!("{:?}", combat.runtime)
 }

@@ -16,6 +16,10 @@ fn combat_dominance_key_separates_state_progress_from_resource_vector() {
         combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
         combat_dominance_key(&EngineState::CombatPlayerTurn, &resource_variant),
     );
+    assert_ne!(
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &baseline),
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &resource_variant),
+    );
 
     let mut max_hp_variant = baseline.clone();
     max_hp_variant.entities.player.max_hp += 1;
@@ -36,5 +40,19 @@ fn combat_dominance_key_separates_state_progress_from_resource_vector() {
     assert_ne!(
         combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
         combat_dominance_key(&EngineState::CombatPlayerTurn, &queue_variant),
+    );
+
+    let mut turn_counter_variant = baseline.clone();
+    turn_counter_variant.turn.counters.cards_played_this_turn = 1;
+    assert_ne!(
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &turn_counter_variant),
+    );
+
+    let mut uuid_counter_variant = baseline.clone();
+    uuid_counter_variant.zones.card_uuid_counter += 1;
+    assert_ne!(
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &uuid_counter_variant),
     );
 }
