@@ -32,10 +32,13 @@ Active binaries:
   - `capture-case <benchmark_dir> <case_id> [label]`: write the standard
     `captures/<case_id>.capture.json` and refresh `benchmark.json` with trust
     and expected fingerprints
-  - `search-combat [max_nodes=N] [wall_ms=N] [potion=never|all]`: run Combat
+  - `sc` / `search-combat [max_nodes=N] [wall_ms=N] [potion=never|all]`: run Combat
     Search V2 from the current active combat boundary, dry-run the selected
     complete winning trajectory, and apply it only if the dry-run still wins;
     budgeted wins are reported as no optimality claim
+  - reward screens auto-claim gold/stolen gold and only claim potion rewards
+    when an empty potion slot exists; use `auto-reward gold|potion|all on|off`
+    to inspect or change this convenience setting
   - `save-baseline-case <benchmark_dir> <case_id>`: write the last completed
     whole-combat `CombatBaselineOutcomeV1`; if the matching capture exists,
     refresh `benchmark.json`

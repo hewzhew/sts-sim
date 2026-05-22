@@ -26,6 +26,7 @@ use super::render::{
     render_combat_actions, render_run_control_details, render_run_control_raw,
     render_run_control_state,
 };
+use super::reward_auto::{set_reward_automation, RewardAutomationConfig};
 use super::transition_report::{
     action_result_from_transition, render_action_result, transition_action_for_input, ActionResult,
     RunApplyStatus, RunVisibleSnapshot,
@@ -39,6 +40,7 @@ pub struct RunControlConfig {
     pub ascension_level: u8,
     pub final_act: bool,
     pub player_class: &'static str,
+    pub reward_automation: RewardAutomationConfig,
 }
 
 impl Default for RunControlConfig {
@@ -48,6 +50,7 @@ impl Default for RunControlConfig {
             ascension_level: 0,
             final_act: false,
             player_class: "Ironclad",
+            reward_automation: RewardAutomationConfig::default(),
         }
     }
 }
@@ -58,6 +61,7 @@ pub struct RunControlSession {
     pub run_state: RunState,
     pub active_combat: Option<ActiveCombat>,
     pub decision_step: u64,
+    pub reward_automation: RewardAutomationConfig,
     combat_outcomes: CombatOutcomeTracker,
 }
 
@@ -112,6 +116,7 @@ impl RunControlSession {
             run_state,
             active_combat: None,
             decision_step: 0,
+            reward_automation: config.reward_automation,
             combat_outcomes: CombatOutcomeTracker::default(),
         }
     }
@@ -263,6 +268,15 @@ impl RunControlSession {
             }
             RunControlCommand::SearchCombat(options) => {
                 super::combat_search::apply_search_combat(self, options)
+            }
+            RunControlCommand::RewardAutomationStatus => Ok(RunControlCommandOutcome::message(
+                self.reward_automation.summary(),
+            )),
+            RunControlCommand::SetRewardAutomation { target, enabled } => {
+                set_reward_automation(&mut self.reward_automation, target, enabled);
+                Ok(RunControlCommandOutcome::message(
+                    self.reward_automation.summary(),
+                ))
             }
             RunControlCommand::ActionIndex(index) => {
                 let input = self.combat_action_by_index(index)?;
@@ -437,6 +451,9 @@ impl RunControlSession {
         }
         self.cleanup_inactive_combat();
         self.ensure_combat_started_if_needed()?;
+        let reward_automation = super::reward_auto::apply_reward_automation(self)?;
+        self.cleanup_inactive_combat();
+        self.ensure_combat_started_if_needed()?;
         self.observe_active_combat_started();
         self.decision_step = self.decision_step.saturating_add(1);
 
@@ -453,6 +470,11 @@ impl RunControlSession {
         let action_result =
             action_result_from_transition(action_report, &before_snapshot, &after_snapshot, status);
         let report = render_action_result(&action_result);
+        let report = if reward_automation.is_empty() {
+            report
+        } else {
+            format!("{}\n{report}", reward_automation.render())
+        };
         Ok(RunControlCommandOutcome::action(
             format!("{report}\n{}", render_run_control_state(self)),
             action_result,

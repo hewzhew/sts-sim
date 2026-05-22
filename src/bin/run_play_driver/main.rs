@@ -57,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ascension_level: args.ascension,
         final_act: args.final_act,
         player_class,
+        reward_automation: Default::default(),
     });
 
     println!("{}", render_run_control_state(&session));

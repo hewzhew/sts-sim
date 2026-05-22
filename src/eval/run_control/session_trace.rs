@@ -11,7 +11,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 2;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -48,6 +48,14 @@ pub struct SessionTraceRunConfigV1 {
     pub ascension_level: u8,
     pub player_class: String,
     pub final_act: bool,
+    pub reward_automation: SessionTraceRewardAutomationV1,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionTraceRewardAutomationV1 {
+    pub claim_gold: bool,
+    pub claim_potion_with_empty_slot: bool,
 }
 
 impl SessionTraceRunConfigV1 {
@@ -57,6 +65,12 @@ impl SessionTraceRunConfigV1 {
             ascension_level: session.run_state.ascension_level,
             player_class: session.run_state.player_class.to_string(),
             final_act: session.run_state.is_final_act_available,
+            reward_automation: SessionTraceRewardAutomationV1 {
+                claim_gold: session.reward_automation.claim_gold,
+                claim_potion_with_empty_slot: session
+                    .reward_automation
+                    .claim_potion_with_empty_slot,
+            },
         }
     }
 }

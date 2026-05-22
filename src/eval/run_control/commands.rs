@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use crate::state::core::{CampfireChoice, ClientInput};
 
+use super::reward_auto::{parse_on_off, parse_reward_automation_target, RewardAutomationTarget};
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum RunControlCommand {
     Noop,
@@ -47,6 +49,11 @@ pub enum RunControlCommand {
         case_id: String,
     },
     SearchCombat(RunControlSearchCombatOptions),
+    RewardAutomationStatus,
+    SetRewardAutomation {
+        target: RewardAutomationTarget,
+        enabled: bool,
+    },
     ActionIndex(usize),
     PlayCard {
         card_index: usize,
@@ -114,7 +121,10 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "save-baseline" => parse_save_baseline_command(&rest),
         "save-baseline-case" => parse_save_baseline_case_command(&rest),
         "bench-add" => parse_bench_add_command(&rest),
-        "search-combat" | "solve-combat" | "auto-combat" => parse_search_combat_command(&rest),
+        "sc" | "search-combat" | "solve-combat" | "auto-combat" => {
+            parse_search_combat_command(&rest)
+        }
+        "auto-reward" => parse_auto_reward_command(&rest),
         "action" => Ok(RunControlCommand::ActionIndex(parse_usize_arg(
             rest.first(),
             "action index",
@@ -201,7 +211,7 @@ Help:
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
     draw, discard, exhaust, actions, action <idx>
-    search-combat [max_nodes=N] [wall_ms=N] [potion=never|all]
+    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all]
 
   Map/Event/Reward:
     go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
@@ -215,11 +225,15 @@ Help:
     capture-case <benchmark_dir> <case_id> [label]
     save-baseline <path> [case_id]
     save-baseline-case <benchmark_dir> <case_id>
-    bench-add <benchmark_dir> <case_id>"
+    bench-add <benchmark_dir> <case_id>
+
+  Automation:
+    auto-reward
+    auto-reward gold|potion|all on|off"
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "main | deck | map | relics | potions | inspect <id> | details | raw | help"
+    "main | deck | map | relics | potions | inspect <id> | auto-reward | details | raw | help"
 }
 
 fn is_candidate_id(command: &str) -> bool {
@@ -317,6 +331,17 @@ fn parse_search_combat_command(rest: &[&str]) -> Result<RunControlCommand, Strin
         }
     }
     Ok(RunControlCommand::SearchCombat(options))
+}
+
+fn parse_auto_reward_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    match rest {
+        [] | ["status"] => Ok(RunControlCommand::RewardAutomationStatus),
+        [target, enabled] => Ok(RunControlCommand::SetRewardAutomation {
+            target: parse_reward_automation_target(target)?,
+            enabled: parse_on_off(enabled)?,
+        }),
+        _ => Err("auto-reward expects no args or: auto-reward gold|potion|all on|off".to_string()),
+    }
 }
 
 fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
@@ -453,6 +478,26 @@ mod tests {
                 wall_ms: Some(50),
                 potion_policy: Some(CombatSearchV2PotionPolicy::All),
             })
+        );
+        assert_eq!(
+            parse_run_control_command("sc").expect("sc should parse"),
+            RunControlCommand::SearchCombat(RunControlSearchCombatOptions::default())
+        );
+    }
+
+    #[test]
+    fn run_control_parser_accepts_auto_reward_settings() {
+        assert_eq!(
+            parse_run_control_command("auto-reward").expect("auto-reward should parse"),
+            RunControlCommand::RewardAutomationStatus
+        );
+        assert_eq!(
+            parse_run_control_command("auto-reward potion off")
+                .expect("auto-reward setting should parse"),
+            RunControlCommand::SetRewardAutomation {
+                target: RewardAutomationTarget::Potion,
+                enabled: false,
+            }
         );
     }
 
