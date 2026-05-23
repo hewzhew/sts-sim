@@ -179,7 +179,7 @@ pub fn handle_obtain_potion(state: &mut CombatState) {
     if let Some(slot) = state.entities.potions.iter().position(|p| p.is_none()) {
         state.entities.potions[slot] = Some(crate::content::potions::Potion::new(
             potion_id,
-            40000 + slot as u32,
+            generated_combat_potion_uuid(state, slot),
         ));
     }
 }
@@ -208,7 +208,71 @@ pub fn obtain_specific_potion_if_allowed(
     };
     state.entities.potions[slot] = Some(crate::content::potions::Potion::new(
         potion_id,
-        40000 + slot as u32,
+        generated_combat_potion_uuid(state, slot),
     ));
     true
+}
+
+fn generated_combat_potion_uuid(state: &CombatState, slot: usize) -> u32 {
+    40_000u32
+        .saturating_add(state.rng.potion_rng.counter.saturating_mul(10))
+        .saturating_add(slot as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::potions::{Potion, PotionClass, PotionId};
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn combat_entropic_brew_can_refill_own_full_slot_with_new_entropic_instance() {
+        let seed = first_seed_for_first_generated_entropic(true);
+        let mut state = crate::test_support::blank_test_combat();
+        state.rng.potion_rng = StsRng::new(seed);
+        state.entities.potions = vec![
+            Some(Potion::new(PotionId::EntropicBrew, 101)),
+            Some(Potion::new(PotionId::FirePotion, 102)),
+            Some(Potion::new(PotionId::BlockPotion, 103)),
+        ];
+
+        handle_use_potion(0, None, &mut state);
+
+        assert!(
+            state.entities.potions[0].is_none(),
+            "PotionPopUp destroys the used Entropic Brew slot after use() queues ObtainPotionAction"
+        );
+        while let Some(action) = state.pop_next_action() {
+            crate::engine::action_handlers::execute_action(action, &mut state);
+        }
+
+        let replacement = state.entities.potions[0]
+            .as_ref()
+            .expect("first ObtainPotionAction should refill the consumed slot");
+        assert_eq!(replacement.id, PotionId::EntropicBrew);
+        assert_ne!(
+            replacement.uuid, 101,
+            "same-id Entropic replacement must still be distinguishable as a new potion instance"
+        );
+        assert_eq!(
+            state
+                .entities
+                .potions
+                .iter()
+                .filter(|slot| slot.is_some())
+                .count(),
+            3,
+            "remaining generated potions should fail because all slots are full again"
+        );
+    }
+
+    fn first_seed_for_first_generated_entropic(limited: bool) -> u64 {
+        (1..100_000)
+            .find(|seed| {
+                let mut rng = StsRng::new(*seed);
+                crate::content::potions::random_potion(&mut rng, PotionClass::Ironclad, limited)
+                    == PotionId::EntropicBrew
+            })
+            .expect("test fixture should find an Entropic Brew replacement seed")
+    }
 }

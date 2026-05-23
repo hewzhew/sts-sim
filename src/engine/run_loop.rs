@@ -421,8 +421,12 @@ fn handle_run_level_potion_input(
                     apply_run_level_on_use_potion_relics(run_state);
                     run_state.remove_potion_at_with_source(*potion_index, source);
                     for potion_id in generated {
+                        let slot_hint = run_state.find_empty_potion_slot().unwrap_or(0);
                         run_state.obtain_potion_with_source(
-                            crate::content::potions::Potion::new(potion_id, 0),
+                            crate::content::potions::Potion::new(
+                                potion_id,
+                                generated_run_level_potion_uuid(run_state, slot_hint),
+                            ),
                             source,
                         );
                     }
@@ -433,6 +437,12 @@ fn handle_run_level_potion_input(
         }
         _ => false,
     }
+}
+
+fn generated_run_level_potion_uuid(run_state: &RunState, slot: usize) -> u32 {
+    60_000u32
+        .saturating_add(run_state.rng_pool.potion_rng.counter.saturating_mul(10))
+        .saturating_add(slot as u32)
 }
 
 fn apply_combat_meta_change(run_state: &mut RunState, change: crate::runtime::combat::MetaChange) {
@@ -2419,6 +2429,90 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn run_level_entropic_brew_can_refill_own_full_slot_with_new_entropic_instance() {
+        let seed = first_seed_for_first_generated_entropic(false);
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.rng_pool.potion_rng = StsRng::new(seed);
+        run_state.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                crate::content::potions::PotionId::EntropicBrew,
+                101,
+            )),
+            Some(crate::content::potions::Potion::new(
+                crate::content::potions::PotionId::FirePotion,
+                102,
+            )),
+            Some(crate::content::potions::Potion::new(
+                crate::content::potions::PotionId::BlockPotion,
+                103,
+            )),
+        ];
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            }),
+        ));
+
+        let replacement = run_state.potions[0]
+            .as_ref()
+            .expect("first ObtainPotionEffect should refill the consumed slot");
+        assert_eq!(
+            replacement.id,
+            crate::content::potions::PotionId::EntropicBrew
+        );
+        assert_ne!(
+            replacement.uuid, 101,
+            "same-id Entropic replacement must still be distinguishable as a new potion instance"
+        );
+        assert_eq!(
+            run_state
+                .potions
+                .iter()
+                .filter(|slot| slot.is_some())
+                .count(),
+            3,
+            "remaining generated potion effects should fail because all slots are full again"
+        );
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::PotionLost {
+                potion_id: crate::content::potions::PotionId::EntropicBrew,
+                slot: 0,
+                source: DomainEventSource::Potion(crate::content::potions::PotionId::EntropicBrew),
+            }
+        )));
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::PotionObtained {
+                potion_id: crate::content::potions::PotionId::EntropicBrew,
+                slot: 0,
+                source: DomainEventSource::Potion(crate::content::potions::PotionId::EntropicBrew),
+            }
+        )));
+    }
+
+    fn first_seed_for_first_generated_entropic(limited: bool) -> u64 {
+        (1..100_000)
+            .find(|seed| {
+                let mut rng = StsRng::new(*seed);
+                crate::content::potions::random_potion(
+                    &mut rng,
+                    crate::content::potions::PotionClass::Ironclad,
+                    limited,
+                ) == crate::content::potions::PotionId::EntropicBrew
+            })
+            .expect("test fixture should find an Entropic Brew replacement seed")
     }
 
     #[test]

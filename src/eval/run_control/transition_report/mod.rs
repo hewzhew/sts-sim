@@ -748,6 +748,51 @@ mod tests {
     }
 
     #[test]
+    fn action_result_detects_same_id_potion_replacement_by_uuid() {
+        let before = RunVisibleSnapshot {
+            title: "Combat".to_string(),
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            act: 1,
+            floor: 1,
+            keys: [false; 3],
+            relics: Vec::new(),
+            potions: vec![Some(PotionSnapshot {
+                id: PotionId::EntropicBrew,
+                uuid: 101,
+            })],
+            deck: Vec::new(),
+            combat: None,
+        };
+        let after = RunVisibleSnapshot {
+            potions: vec![Some(PotionSnapshot {
+                id: PotionId::EntropicBrew,
+                uuid: 40_010,
+            })],
+            ..before.clone()
+        };
+
+        let result = action_result_from_transition(
+            TransitionAction {
+                label: "Use Entropic Brew".to_string(),
+            },
+            &before,
+            &after,
+            RunApplyStatus::Running,
+        );
+
+        assert!(result.changes.iter().any(|change| matches!(
+            change,
+            ActionResultChange::PotionChanged {
+                slot: 0,
+                before: PotionId::EntropicBrew,
+                after: PotionId::EntropicBrew,
+            }
+        )));
+    }
+
+    #[test]
     fn transition_report_captures_neow_gold_delta() {
         let mut session = RunControlSession::new(RunControlConfig {
             seed: 521,
