@@ -11,6 +11,8 @@ mod decision_surface_tests;
 mod input_gate;
 pub mod outcome;
 mod panels;
+#[cfg(test)]
+mod pending_choice_card_contract_tests;
 pub mod registry;
 mod render;
 mod reward_auto;
