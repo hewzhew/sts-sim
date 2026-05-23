@@ -18,6 +18,7 @@ use crate::eval::fingerprint::{
 };
 use crate::runtime::combat::Intent;
 use crate::sim::combat::{combat_terminal, stable_boundary, CombatPosition, CombatTerminal};
+use crate::sim::combat_identity::validate_combat_card_identity_for_capture;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
@@ -178,6 +179,7 @@ pub fn capture_combat_position_with_provenance_v1(
             "CombatCaptureV1 requires an active stable combat decision boundary".to_string(),
         );
     }
+    validate_combat_card_identity_for_capture(&position.combat)?;
 
     let integrity = integrity_for_position(&position);
     let fingerprints = combat_state_fingerprint_v1(position);
@@ -250,6 +252,7 @@ pub fn validate_combat_capture_v1(capture: &CombatCaptureV1) -> Result<(), Strin
             "combat capture position is not an active stable combat decision boundary".to_string(),
         );
     }
+    validate_combat_card_identity_for_capture(&capture.position.combat)?;
 
     let expected = integrity_for_position(&capture.position);
     if capture.integrity != expected {
@@ -505,6 +508,46 @@ mod tests {
             .expect_err("tampered state fingerprint should be rejected");
 
         assert!(err.contains("state fingerprints"));
+    }
+
+    #[test]
+    fn combat_capture_validation_rejects_card_uuid_identity_conflict() {
+        let mut position = jaw_worm_position();
+        let uuid = position.combat.zones.hand[0].uuid;
+        position
+            .combat
+            .zones
+            .discard_pile
+            .push(crate::runtime::combat::CombatCard::new(
+                crate::content::cards::CardId::Slimed,
+                uuid,
+            ));
+
+        let err = capture_combat_position_v1(None, &position)
+            .expect_err("capture should reject same uuid mapping to different card ids");
+
+        assert!(err.contains("card identity conflict"));
+        assert!(err.contains("active uuid"));
+    }
+
+    #[test]
+    fn combat_capture_validation_rejects_stale_card_uuid_counter() {
+        let mut position = jaw_worm_position();
+        let max_uuid = position
+            .combat
+            .meta
+            .master_deck_snapshot
+            .iter()
+            .map(|card| card.uuid)
+            .max()
+            .expect("test deck should contain cards");
+        position.combat.zones.card_uuid_counter = max_uuid - 1;
+
+        let err = capture_combat_position_v1(None, &position)
+            .expect_err("capture should reject stale future card uuid counter");
+
+        assert!(err.contains("card_uuid_counter"));
+        assert!(err.contains("not fresh"));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::{BTreeMap, BTreeSet};
+use crate::sim::combat_identity::{audit_combat_card_identity, CombatCardIdentityGroup};
 
 const SAMPLE_LIMIT: usize = 8;
 
@@ -10,13 +10,6 @@ pub(super) struct CardIdentitySummary {
     action_payload_placeholder_cards: usize,
     duplicate_groups: Vec<CardIdentityGroupSummary>,
     conflict_groups: Vec<CardIdentityGroupSummary>,
-}
-
-#[derive(Clone, Debug)]
-struct CardIdentityOccurrence {
-    location: String,
-    card_label: String,
-    card_id_label: String,
 }
 
 #[derive(Clone, Debug)]
@@ -49,142 +42,32 @@ struct CardIdentityObservedGroup {
 }
 
 pub(super) fn summarize_card_identity(combat: &CombatState) -> CardIdentitySummary {
-    let mut active_by_uuid: BTreeMap<u32, Vec<CardIdentityOccurrence>> = BTreeMap::new();
-    collect_active_cards("hand", &combat.zones.hand, &mut active_by_uuid);
-    collect_active_cards("draw", &combat.zones.draw_pile, &mut active_by_uuid);
-    collect_active_cards("discard", &combat.zones.discard_pile, &mut active_by_uuid);
-    collect_active_cards("exhaust", &combat.zones.exhaust_pile, &mut active_by_uuid);
-    collect_active_cards("limbo", &combat.zones.limbo, &mut active_by_uuid);
-    for (idx, queued) in combat.zones.queued_cards.iter().enumerate() {
-        push_card_occurrence(&mut active_by_uuid, format!("queued[{idx}]"), &queued.card);
-    }
-
-    let mut duplicate_groups = Vec::new();
-    let mut conflict_groups = Vec::new();
-    for (uuid, occurrences) in active_by_uuid {
-        if occurrences.len() > 1 {
-            duplicate_groups.push(group_summary(uuid, &occurrences));
-        }
-        let distinct_ids = occurrences
-            .iter()
-            .map(|occurrence| occurrence.card_id_label.as_str())
-            .collect::<BTreeSet<_>>();
-        if distinct_ids.len() > 1 {
-            conflict_groups.push(group_summary(uuid, &occurrences));
-        }
-    }
-
-    let action_payload_cards = action_payload_cards(&combat.engine.action_queue);
-    let action_payload_placeholder_cards = action_payload_cards
-        .iter()
-        .filter(|card| card.uuid == 0)
-        .count();
+    let audit = audit_combat_card_identity(combat);
 
     CardIdentitySummary {
-        active_cards: active_card_count(combat),
-        action_payload_cards: action_payload_cards.len(),
-        action_payload_placeholder_cards,
-        duplicate_groups,
-        conflict_groups,
+        active_cards: audit.active_cards,
+        action_payload_cards: audit.action_payload_cards,
+        action_payload_placeholder_cards: audit.action_payload_placeholder_cards,
+        duplicate_groups: audit
+            .duplicate_active_uuid_groups
+            .iter()
+            .map(group_summary)
+            .collect(),
+        conflict_groups: audit
+            .uuid_card_id_conflict_groups
+            .iter()
+            .map(group_summary)
+            .collect(),
     }
 }
 
-fn collect_active_cards(
-    zone: &str,
-    cards: &[crate::runtime::combat::CombatCard],
-    by_uuid: &mut BTreeMap<u32, Vec<CardIdentityOccurrence>>,
-) {
-    for (idx, card) in cards.iter().enumerate() {
-        push_card_occurrence(by_uuid, format!("{zone}[{idx}]"), card);
-    }
-}
-
-fn push_card_occurrence(
-    by_uuid: &mut BTreeMap<u32, Vec<CardIdentityOccurrence>>,
-    location: String,
-    card: &crate::runtime::combat::CombatCard,
-) {
-    by_uuid
-        .entry(card.uuid)
-        .or_default()
-        .push(CardIdentityOccurrence {
-            location: format!("{location}:{}", card_label(card)),
-            card_label: card_label(card),
-            card_id_label: crate::content::cards::java_id(card.id).to_string(),
-        });
-}
-
-fn active_card_count(combat: &CombatState) -> usize {
-    combat.zones.hand.len()
-        + combat.zones.draw_pile.len()
-        + combat.zones.discard_pile.len()
-        + combat.zones.exhaust_pile.len()
-        + combat.zones.limbo.len()
-        + combat.zones.queued_cards.len()
-}
-
-fn action_payload_cards(
-    queue: &std::collections::VecDeque<crate::runtime::action::Action>,
-) -> Vec<&crate::runtime::combat::CombatCard> {
-    let mut cards = Vec::new();
-    for action in queue {
-        collect_action_payload_cards(action, &mut cards);
-    }
-    cards
-}
-
-fn collect_action_payload_cards<'a>(
-    action: &'a crate::runtime::action::Action,
-    cards: &mut Vec<&'a crate::runtime::combat::CombatCard>,
-) {
-    use crate::runtime::action::Action;
-    use crate::runtime::combat::PowerPayload;
-
-    match action {
-        Action::AttackDamageRandomEnemyCard { card }
-        | Action::PlayCardDirect { card, .. }
-        | Action::MakeCopyInHand { original: card, .. }
-        | Action::MakeConstructedCopyInHand { original: card, .. }
-        | Action::MakeCopyInDrawPile { original: card, .. }
-        | Action::MakeCopyInDiscard { original: card, .. }
-        | Action::UseCardAfterUseHooks { card } => cards.push(card),
-        Action::EnqueueCardPlay { item, .. } => cards.push(&item.card),
-        Action::ApplyPowerWithPayload { payload, .. } => {
-            if let PowerPayload::Card(card) = payload {
-                cards.push(card);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn group_summary(uuid: u32, occurrences: &[CardIdentityOccurrence]) -> CardIdentityGroupSummary {
+fn group_summary(group: &CombatCardIdentityGroup) -> CardIdentityGroupSummary {
     CardIdentityGroupSummary {
-        uuid,
-        occurrence_count: occurrences.len(),
-        distinct_card_labels: occurrences
-            .iter()
-            .map(|occurrence| occurrence.card_label.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect(),
-        locations: occurrences
-            .iter()
-            .map(|occurrence| occurrence.location.clone())
-            .collect(),
+        uuid: group.uuid,
+        occurrence_count: group.occurrence_count,
+        distinct_card_labels: group.distinct_card_labels.clone(),
+        locations: group.locations.clone(),
     }
-}
-
-fn card_label(card: &crate::runtime::combat::CombatCard) -> String {
-    format!(
-        "{}+{}#{} cost:{} misc:{} free:{}",
-        crate::content::cards::java_id(card.id),
-        card.upgrades,
-        card.uuid,
-        card.cost_for_turn_java(),
-        card.misc_value,
-        card.free_to_play_once
-    )
 }
 
 impl CardIdentityDiagnosticsCollector {
