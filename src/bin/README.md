@@ -6,6 +6,13 @@ not grow new long-lived binaries here.
 
 Active binaries:
 
+- `artifact_doctor`
+  - read-only audit over benchmark artifact directories
+  - `--root <path>` scans for `benchmark.json` suites, registered captures,
+    baselines, and search evidence links
+  - `--output <path>` writes compact `ArtifactAuditReportV1` JSON with stable
+    `check_id` plus artifact content hashes; stdout remains a short summary
+  - no replay, no search execution, no artifact mutation, and no Markdown log
 - `combat_search_v2_driver`
   - `--start-spec <path>`: single whole-combat search report
   - `--combat-snapshot <path>`: single search report from an exact
