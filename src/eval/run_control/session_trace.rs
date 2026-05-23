@@ -168,6 +168,7 @@ pub struct SessionTraceArtifactRefV1 {
     pub artifact_kind: SessionTraceArtifactKind,
     pub capture_path: Option<String>,
     pub baseline_path: Option<String>,
+    pub search_evidence_path: Option<String>,
     pub benchmark_manifest_path: Option<String>,
 }
 
@@ -176,6 +177,7 @@ pub struct SessionTraceArtifactRefV1 {
 pub enum SessionTraceArtifactKind {
     CombatCaptureCase,
     CombatBaselineCase,
+    CombatSearchEvidence,
 }
 
 #[derive(Clone, Debug)]
@@ -278,6 +280,7 @@ impl SessionTraceRecorder {
                         .baseline_path
                         .exists()
                         .then(|| path_string(&paths.baseline_path)),
+                    search_evidence_path: None,
                     benchmark_manifest_path: Some(path_string(&paths.benchmark_manifest)),
                 })
             }
@@ -293,6 +296,7 @@ impl SessionTraceRecorder {
                         .baseline_path
                         .exists()
                         .then(|| path_string(&paths.baseline_path)),
+                    search_evidence_path: None,
                     benchmark_manifest_path: Some(path_string(&paths.benchmark_manifest)),
                 })
             }
@@ -307,6 +311,7 @@ impl SessionTraceRecorder {
                         .exists()
                         .then(|| path_string(&paths.capture_path)),
                     baseline_path: Some(path_string(&paths.baseline_path)),
+                    search_evidence_path: None,
                     benchmark_manifest_path: paths
                         .benchmark_manifest
                         .exists()
@@ -325,6 +330,7 @@ impl SessionTraceRecorder {
                             .exists()
                             .then(|| path_string(&paths.capture_path)),
                         baseline_path: Some(path_string(&paths.baseline_path)),
+                        search_evidence_path: None,
                         benchmark_manifest_path: paths
                             .benchmark_manifest
                             .exists()
@@ -340,6 +346,24 @@ impl SessionTraceRecorder {
         self.trace.artifact_refs.push(artifact);
         self.save()?;
         Ok(true)
+    }
+
+    pub fn record_search_evidence_artifact(
+        &mut self,
+        raw_command_line: impl Into<String>,
+        session: &RunControlSession,
+        path: &Path,
+    ) -> Result<(), String> {
+        self.trace.artifact_refs.push(SessionTraceArtifactRefV1 {
+            raw_command_line: raw_command_line.into(),
+            decision_step: session.decision_step,
+            artifact_kind: SessionTraceArtifactKind::CombatSearchEvidence,
+            capture_path: None,
+            baseline_path: None,
+            search_evidence_path: Some(path_string(path)),
+            benchmark_manifest_path: None,
+        });
+        self.save()
     }
 
     pub fn trace(&self) -> &SessionTraceV1 {
@@ -649,6 +673,32 @@ mod tests {
         assert!(recorder.trace().artifact_refs[0]
             .benchmark_manifest_path
             .is_some());
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn recorder_records_search_evidence_artifact_ref() {
+        let session = test_session_after_neow_at_map();
+        let path = unique_temp_dir("session_trace_search_evidence").join("trace.json");
+        let evidence_path = path.parent().unwrap().join("search.json");
+        fs::create_dir_all(path.parent().unwrap()).expect("temp dir should be created");
+        fs::write(&evidence_path, "{}").expect("evidence placeholder should be written");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+
+        recorder
+            .record_search_evidence_artifact("sc save=case", &session, &evidence_path)
+            .expect("search evidence artifact ref should save");
+
+        assert_eq!(recorder.trace().artifact_refs.len(), 1);
+        assert_eq!(
+            recorder.trace().artifact_refs[0].artifact_kind,
+            SessionTraceArtifactKind::CombatSearchEvidence
+        );
+        assert!(recorder.trace().artifact_refs[0]
+            .search_evidence_path
+            .as_ref()
+            .is_some_and(|path| path.ends_with("search.json")));
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

@@ -79,6 +79,7 @@ pub struct RunControlCommandOutcome {
     pub should_quit: bool,
     pub message: String,
     pub action_result: Option<ActionResult>,
+    pub search_evidence_path: Option<PathBuf>,
 }
 
 impl RunControlCommandOutcome {
@@ -87,6 +88,7 @@ impl RunControlCommandOutcome {
             should_quit: false,
             message: message.into(),
             action_result: None,
+            search_evidence_path: None,
         }
     }
 
@@ -95,6 +97,7 @@ impl RunControlCommandOutcome {
             should_quit: true,
             message: message.into(),
             action_result: None,
+            search_evidence_path: None,
         }
     }
 
@@ -106,6 +109,7 @@ impl RunControlCommandOutcome {
             should_quit: false,
             message: message.into(),
             action_result: Some(action_result),
+            search_evidence_path: None,
         }
     }
 }

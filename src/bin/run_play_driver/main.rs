@@ -142,6 +142,9 @@ fn execute_line(
         } else {
             recorder.record_artifact_command(trimmed, session, &command)?;
         }
+        if let Some(path) = outcome.search_evidence_path.as_ref() {
+            recorder.record_search_evidence_artifact(trimmed, session, path)?;
+        }
     }
     Ok(outcome.should_quit)
 }

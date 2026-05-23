@@ -33,12 +33,14 @@ pub(super) fn apply_search_combat(
         .as_ref()
         .filter(|trajectory| trajectory.terminal == SearchTerminalLabel::Win)
     else {
-        return Ok(RunControlCommandOutcome::message(format!(
+        let mut outcome = RunControlCommandOutcome::message(format!(
             "{}{}\n\n{}",
             render_search_rejection(&report),
             render_saved_evidence_note(saved_evidence.as_deref()),
             super::render::render_run_control_state(session)
-        )));
+        ));
+        outcome.search_evidence_path = saved_evidence;
+        return Ok(outcome);
     };
 
     verify_trajectory_replays_to_win(&start, &trajectory.actions, &config)?;
@@ -74,7 +76,9 @@ pub(super) fn apply_search_combat(
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
-    Ok(RunControlCommandOutcome::action(message, action_result))
+    let mut outcome = RunControlCommandOutcome::action(message, action_result);
+    outcome.search_evidence_path = saved_evidence;
+    Ok(outcome)
 }
 
 fn save_search_evidence_if_requested(
