@@ -88,6 +88,9 @@ pub fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> Vec<Cli
                     moves.push(ClientInput::Cancel);
                 }
             }
+            PendingChoice::ScrySelect { card_uuids, .. } => {
+                extend_scry_moves(&mut moves, card_uuids.len());
+            }
             PendingChoice::CardRewardSelect {
                 cards, can_skip, ..
             } => {
@@ -111,9 +114,6 @@ pub fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> Vec<Cli
             PendingChoice::StanceChoice => {
                 moves.push(ClientInput::SubmitDiscoverChoice(0));
                 moves.push(ClientInput::SubmitDiscoverChoice(1));
-            }
-            _ => {
-                moves.push(ClientInput::Proceed);
             }
         },
         _ => {
@@ -199,6 +199,39 @@ fn extend_grid_select_moves(
 
     for selection in generate_ranked_combinations(&combo_pool, min_select, max_select, 16) {
         push_unique_grid_select(moves, selection);
+    }
+}
+
+fn extend_scry_moves(moves: &mut Vec<ClientInput>, candidate_count: usize) {
+    moves.push(ClientInput::SubmitScryDiscard(Vec::new()));
+    for target_size in 1..=candidate_count {
+        let mut selected = Vec::with_capacity(target_size);
+        collect_scry_index_combinations(moves, candidate_count, target_size, 0, &mut selected);
+    }
+}
+
+fn collect_scry_index_combinations(
+    moves: &mut Vec<ClientInput>,
+    candidate_count: usize,
+    target_size: usize,
+    start: usize,
+    selected: &mut Vec<usize>,
+) {
+    if selected.len() == target_size {
+        moves.push(ClientInput::SubmitScryDiscard(selected.clone()));
+        return;
+    }
+
+    let remaining_needed = target_size - selected.len();
+    if candidate_count.saturating_sub(start) < remaining_needed {
+        return;
+    }
+
+    let max_start = candidate_count.saturating_sub(remaining_needed);
+    for idx in start..=max_start {
+        selected.push(idx);
+        collect_scry_index_combinations(moves, candidate_count, target_size, idx + 1, selected);
+        selected.pop();
     }
 }
 
@@ -533,6 +566,114 @@ mod tests {
                 != crate::state::selection::EngineDiagnosticSeverity::Error),
             "empty Warcry with no card to put back should not emit an engine error: {diagnostics:?}"
         );
+    }
+
+    #[test]
+    fn pending_scry_legal_moves_cover_keep_and_all_discard_subsets() {
+        let mut combat = build_fixture_combat();
+        combat.zones.draw_pile = vec![
+            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 10),
+            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Defend, 20),
+        ];
+        let engine = EngineState::PendingChoice(PendingChoice::ScrySelect {
+            cards: vec![
+                crate::content::cards::CardId::Strike,
+                crate::content::cards::CardId::Defend,
+            ],
+            card_uuids: vec![10, 20],
+        });
+
+        let inputs = engine_local_moves(&engine, &combat);
+
+        assert_eq!(
+            inputs,
+            vec![
+                ClientInput::SubmitScryDiscard(vec![]),
+                ClientInput::SubmitScryDiscard(vec![0]),
+                ClientInput::SubmitScryDiscard(vec![1]),
+                ClientInput::SubmitScryDiscard(vec![0, 1]),
+            ]
+        );
+        assert!(
+            !inputs.contains(&ClientInput::Proceed),
+            "pending Scry must not fall back to a fake proceed action"
+        );
+    }
+
+    #[test]
+    fn pending_choice_legal_moves_never_use_fake_proceed_fallback() {
+        let mut combat = build_fixture_combat();
+        combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Strike,
+            10,
+        )];
+        combat.zones.discard_pile = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Defend,
+            20,
+        )];
+        combat.zones.draw_pile = vec![
+            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 30),
+            crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Defend, 40),
+        ];
+        let choices = vec![
+            PendingChoice::HandSelect {
+                candidate_uuids: vec![10],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: crate::state::HandSelectReason::Discard,
+            },
+            PendingChoice::GridSelect {
+                source_pile: crate::state::PileType::Discard,
+                candidate_uuids: vec![20],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: crate::state::GridSelectReason::MoveToDrawPile,
+            },
+            PendingChoice::DiscoverySelect(crate::state::DiscoveryChoiceState {
+                cards: vec![crate::content::cards::CardId::Strike],
+                colorless: false,
+                card_type: None,
+                amount: 1,
+                can_skip: true,
+            }),
+            PendingChoice::ScrySelect {
+                cards: vec![
+                    crate::content::cards::CardId::Strike,
+                    crate::content::cards::CardId::Defend,
+                ],
+                card_uuids: vec![30, 40],
+            },
+            PendingChoice::CardRewardSelect {
+                cards: vec![crate::content::cards::CardId::ShrugItOff],
+                destination: crate::runtime::action::CardDestination::Hand,
+                can_skip: true,
+            },
+            PendingChoice::ForeignInfluenceSelect {
+                cards: vec![crate::content::cards::CardId::Headbutt],
+                upgraded: false,
+            },
+            PendingChoice::ChooseOneSelect {
+                choices: vec![crate::state::ChooseOneCardChoice {
+                    card_id: crate::content::cards::CardId::InfernalBlade,
+                    upgrades: 0,
+                }],
+            },
+            PendingChoice::StanceChoice,
+        ];
+
+        for choice in choices {
+            let inputs = engine_local_moves(&EngineState::PendingChoice(choice.clone()), &combat);
+            assert!(
+                !inputs.is_empty(),
+                "pending choice {choice:?} should expose at least one legal input"
+            );
+            assert!(
+                !inputs.contains(&ClientInput::Proceed),
+                "pending choice {choice:?} must not fall back to fake proceed: {inputs:?}"
+            );
+        }
     }
 
     #[test]

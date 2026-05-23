@@ -469,6 +469,22 @@ fn pending_choice_input_label(
             .get(*idx)
             .map(|card| format!("Choose {}", reward_card_label(*card, 0)))
             .unwrap_or_else(|| format!("Choose {idx}")),
+        (PendingChoice::ScrySelect { cards, .. }, ClientInput::SubmitScryDiscard(indices)) => {
+            if indices.is_empty() {
+                "Keep all".to_string()
+            } else {
+                let selected = indices
+                    .iter()
+                    .map(|idx| {
+                        cards
+                            .get(*idx)
+                            .map(|card| reward_card_label(*card, 0))
+                            .unwrap_or_else(|| format!("card {idx}"))
+                    })
+                    .collect::<Vec<_>>();
+                format!("Discard {}", selected.join(", "))
+            }
+        }
         (PendingChoice::CardRewardSelect { cards, .. }, ClientInput::SubmitDiscoverChoice(idx)) => {
             cards
                 .get(*idx)

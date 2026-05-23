@@ -1367,6 +1367,64 @@ mod tests {
     }
 
     #[test]
+    fn map_boss_room_starts_boss_combat_and_uses_boss_reward_rules() {
+        let mut run_state = run_state_with_first_room(RoomType::MonsterRoomBoss);
+        let mut engine_state = EngineState::MapNavigation;
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+
+        assert!(matches!(engine_state, EngineState::CombatPlayerTurn));
+        let combat = combat_state
+            .as_mut()
+            .expect("boss room should start combat");
+        assert!(
+            combat.meta.is_boss_fight,
+            "boss-room combat must carry boss metadata into reward generation"
+        );
+        for monster in &mut combat.entities.monsters {
+            monster.current_hp = 0;
+            monster.is_dying = true;
+        }
+        engine_state = EngineState::CombatProcessing;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            None
+        ));
+
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("act 1 boss combat should open its reward screen, got {engine_state:?}");
+        };
+        let cards = rewards
+            .items
+            .iter()
+            .find_map(|item| match item {
+                RewardItem::Card { cards } => Some(cards),
+                _ => None,
+            })
+            .expect("boss combat should append a card reward row");
+        assert!(
+            cards.iter().all(|card| {
+                crate::content::cards::get_card_definition(card.id).rarity
+                    == crate::content::cards::CardRarity::Rare
+            }),
+            "boss combat reward cards must use Java's boss rare override: {cards:?}"
+        );
+        assert!(
+            run_state.pending_boss_reward,
+            "act 1/2 boss reward screen must be followed by boss relic selection"
+        );
+    }
+
+    #[test]
     fn act3_a20_first_boss_starts_second_boss_without_reward_or_victory() {
         use crate::content::monsters::factory::EncounterId;
         use crate::content::monsters::EnemyId;

@@ -93,6 +93,23 @@ fn decision_surface_pending_choice_hints_do_not_offer_end_turn() {
 }
 
 #[test]
+fn decision_surface_scry_exposes_keep_and_discard_choices() {
+    let session = pending_scry_session();
+    let surface = build_decision_surface(&session);
+
+    assert_eq!(surface.candidate_section_title, "Selections:");
+    assert!(surface.view.candidates.iter().any(|candidate| {
+        candidate.label == "Keep all"
+            && candidate.action.executable_input() == Some(ClientInput::SubmitScryDiscard(vec![]))
+    }));
+    assert!(surface.view.candidates.iter().any(|candidate| {
+        candidate.label == "Discard Strike, Defend"
+            && candidate.action.executable_input()
+                == Some(ClientInput::SubmitScryDiscard(vec![0, 1]))
+    }));
+}
+
+#[test]
 fn decision_surface_contextual_numeric_aliases_are_screen_scoped() {
     let shop = test_session_at_shop();
     let shop_surface = build_decision_surface(&shop);
@@ -174,6 +191,7 @@ fn pending_choice_contract_sessions() -> Vec<RunControlSession> {
         pending_grid_session(),
         pending_hand_session(),
         pending_discovery_session(),
+        pending_scry_session(),
         pending_card_reward_session(),
         pending_foreign_influence_session(),
         pending_choose_one_session(),
@@ -223,6 +241,19 @@ fn pending_discovery_session() -> RunControlSession {
         can_skip: true,
     });
     pending_session(choice, crate::test_support::blank_test_combat())
+}
+
+fn pending_scry_session() -> RunControlSession {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.zones.draw_pile = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::Defend, 20),
+    ];
+    let choice = PendingChoice::ScrySelect {
+        cards: vec![CardId::Strike, CardId::Defend],
+        card_uuids: vec![10, 20],
+    };
+    pending_session(choice, combat)
 }
 
 fn pending_card_reward_session() -> RunControlSession {
