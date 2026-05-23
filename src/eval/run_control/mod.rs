@@ -6,6 +6,8 @@ mod combat_start;
 mod commands;
 mod decision_case;
 mod decision_surface;
+#[cfg(test)]
+mod decision_surface_tests;
 mod input_gate;
 pub mod outcome;
 mod panels;
