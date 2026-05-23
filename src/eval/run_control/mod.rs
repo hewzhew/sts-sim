@@ -34,6 +34,10 @@ pub use render::{
     render_run_control_state,
 };
 pub use reward_auto::{RewardAutomationConfig, RewardAutomationTarget};
+pub use search_evidence::{
+    load_combat_search_evidence_v1, validate_combat_search_evidence_v1,
+    COMBAT_SEARCH_EVIDENCE_SCHEMA_NAME, COMBAT_SEARCH_EVIDENCE_SCHEMA_VERSION,
+};
 pub use session::{
     canonical_player_class, RunControlCommandOutcome, RunControlConfig, RunControlSession,
 };

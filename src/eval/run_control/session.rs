@@ -714,6 +714,8 @@ mod tests {
         assert!(payload.contains("\"capture_path\":"));
         assert!(payload.contains("first_fight.capture.json"));
         assert!(payload.contains("\"schema_name\": \"CombatSearchV2Report\""));
+        crate::eval::run_control::load_combat_search_evidence_v1(&evidence_path)
+            .expect("search evidence should validate");
 
         let _ = fs::remove_dir_all(root);
     }
