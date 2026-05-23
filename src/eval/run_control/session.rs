@@ -282,21 +282,22 @@ impl RunControlSession {
     }
 
     fn apply_default_candidate(&mut self) -> Result<RunControlCommandOutcome, String> {
-        let view = crate::eval::run_control::view_model::build_run_control_view_model(self);
-        if view.candidates.len() != 1 {
+        let surface = super::decision_surface::build_decision_surface(self);
+        if surface.view.candidates.len() != 1 {
             return Err(
                 "Enter only executes when exactly one visible action is available; choose an id"
                     .to_string(),
             );
         }
-        let id = view.candidates[0].id.clone();
+        let id = surface.view.candidates[0].id.clone();
         self.apply_visible_candidate(&id)
     }
 
     fn apply_visible_candidate(&mut self, id: &str) -> Result<RunControlCommandOutcome, String> {
-        let view = crate::eval::run_control::view_model::build_run_control_view_model(self);
-        let candidate = resolve_visible_candidate_alias(&view.candidates, &self.engine_state, id)
-            .ok_or_else(|| format!("no visible candidate '{id}'"))?;
+        let surface = super::decision_surface::build_decision_surface(self);
+        let candidate =
+            super::decision_surface::resolve_surface_candidate(&surface, &self.engine_state, id)
+                .ok_or_else(|| format!("no visible candidate '{id}'"))?;
         match candidate.action.executable_input() {
             Some(input) => self.apply_input(input),
             None => Err(format!(
@@ -542,49 +543,6 @@ impl RunControlSession {
     }
 }
 
-fn resolve_visible_candidate_alias<'a>(
-    candidates: &'a [crate::eval::run_control::view_model::DecisionCandidate],
-    engine_state: &EngineState,
-    raw_id: &str,
-) -> Option<&'a crate::eval::run_control::view_model::DecisionCandidate> {
-    if let Some(candidate) = candidates.iter().find(|candidate| candidate.id == raw_id) {
-        return Some(candidate);
-    }
-
-    let id = raw_id.trim().to_ascii_lowercase();
-    if let Some(candidate) = candidates.iter().find(|candidate| candidate.id == id) {
-        return Some(candidate);
-    }
-    if id.chars().all(|ch| ch.is_ascii_digit()) && !id.is_empty() {
-        let structured = match engine_state {
-            EngineState::Shop(_) => Some(format!("card-{id}")),
-            EngineState::Campfire => Some(format!("smith-{id}")),
-            _ => None,
-        };
-        if let Some(structured) = structured {
-            if let Some(candidate) = candidates
-                .iter()
-                .find(|candidate| candidate.id == structured)
-            {
-                return Some(candidate);
-            }
-        }
-    }
-
-    match id.as_str() {
-        "leave" | "skip" => candidates.iter().find(|candidate| {
-            let label = candidate
-                .label
-                .trim_start()
-                .to_ascii_lowercase()
-                .trim_end_matches(['.', '!', '?'])
-                .to_string();
-            label.starts_with(&id)
-        }),
-        _ => None,
-    }
-}
-
 pub fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
     match raw.to_ascii_lowercase().as_str() {
         "ironclad" | "red" => Ok("Ironclad"),
@@ -599,6 +557,7 @@ pub fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
 mod tests {
     use super::*;
     use crate::content::monsters::factory::EncounterId;
+    use crate::eval::run_control::decision_surface;
     use crate::eval::run_control::registry::BenchmarkCasePaths;
     use crate::eval::run_control::CombatBaselineOutcomeV1;
     use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
@@ -1172,12 +1131,16 @@ mod tests {
         ];
 
         assert_eq!(
-            resolve_visible_candidate_alias(&candidates, &EngineState::EventRoom, "leave")
-                .map(|candidate| candidate.id.as_str()),
+            decision_surface::resolve_candidate_alias(
+                &candidates,
+                &EngineState::EventRoom,
+                "leave"
+            )
+            .map(|candidate| candidate.id.as_str()),
             Some("0")
         );
         assert_eq!(
-            resolve_visible_candidate_alias(
+            decision_surface::resolve_candidate_alias(
                 &candidates,
                 &EngineState::RewardScreen(Default::default()),
                 "skip"

@@ -5,6 +5,7 @@ mod combat_search;
 mod combat_start;
 mod commands;
 mod decision_case;
+mod decision_surface;
 mod input_gate;
 pub mod outcome;
 mod panels;
@@ -26,6 +27,7 @@ pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
     RUN_DECISION_CASE_SCHEMA_NAME, RUN_DECISION_CASE_SCHEMA_VERSION,
 };
+pub use decision_surface::{build_decision_surface, DecisionSurface};
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,
     COMBAT_BASELINE_OUTCOME_SCHEMA_NAME, COMBAT_BASELINE_OUTCOME_SCHEMA_VERSION,

@@ -17,7 +17,8 @@ impl RunControlSession {
         Err(format!(
             "input `{}` is not valid on the current screen: {}",
             crate::eval::run_control::view_model::client_input_hint(input),
-            crate::eval::run_control::view_model::build_run_control_view_model(self)
+            crate::eval::run_control::decision_surface::build_decision_surface(self)
+                .view
                 .header
                 .title
         ))
@@ -61,11 +62,8 @@ impl RunControlSession {
     }
 
     fn visible_candidate_allows_input(&self, input: &ClientInput) -> bool {
-        crate::eval::run_control::view_model::build_run_control_view_model(self)
-            .candidates
-            .iter()
-            .filter_map(|candidate| candidate.action.executable_input())
-            .any(|candidate_input| &candidate_input == input)
+        let surface = crate::eval::run_control::decision_surface::build_decision_surface(self);
+        crate::eval::run_control::decision_surface::surface_allows_visible_input(&surface, input)
     }
 
     fn current_screen_allows_extra_input(&self, input: &ClientInput) -> bool {

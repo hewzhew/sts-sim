@@ -3,11 +3,9 @@ use crate::content::potions::get_potion_definition;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::EngineState;
 
+use super::decision_surface::{build_decision_surface, DecisionSurface};
 use super::session::RunControlSession;
-use super::view_model::{
-    build_run_control_view_model, combat_card_label, deck_summary, reward_card_label,
-    DecisionCandidate,
-};
+use super::view_model::{combat_card_label, deck_summary, reward_card_label};
 
 mod combat;
 mod map;
@@ -16,19 +14,16 @@ pub use combat::{render_combat_zone_panel, CombatZonePanel};
 pub use map::render_map_panel;
 
 pub fn render_run_control_main(session: &RunControlSession) -> String {
-    let view = build_run_control_view_model(session);
+    let surface = build_decision_surface(session);
     let mut out = String::new();
-    push_header(&mut out, session);
-    push_line(&mut out, view.decision.label);
+    push_header(&mut out, &surface);
+    push_line(&mut out, surface.view.decision.label.clone());
     push_visible_screen(session, &mut out);
     push_line(&mut out, "");
-    push_candidates(session, &view.candidates, &mut out);
+    push_candidates(&surface, &mut out);
     push_line(&mut out, "");
-    push_line(
-        &mut out,
-        format!("Inspect: {}", inspectable_panels(session)),
-    );
-    push_line(&mut out, format!("Command: {}", main_command_hint(session)));
+    push_line(&mut out, format!("Inspect: {}", surface.inspectable_panels));
+    push_line(&mut out, format!("Command: {}", surface.command_hint));
     out
 }
 
@@ -116,9 +111,14 @@ pub fn render_potions_panel(session: &RunControlSession) -> String {
 }
 
 pub fn render_inspect_panel(session: &RunControlSession, id: &str) -> String {
-    let view = build_run_control_view_model(session);
+    let surface = build_decision_surface(session);
     let mut out = String::new();
-    if let Some(candidate) = view.candidates.iter().find(|candidate| candidate.id == id) {
+    if let Some(candidate) = surface
+        .view
+        .candidates
+        .iter()
+        .find(|candidate| candidate.id == id)
+    {
         push_line(&mut out, format!("Candidate {}:", candidate.id));
         push_line(&mut out, format!("  {}", candidate.label));
         push_line(
@@ -148,17 +148,19 @@ pub fn render_inspect_panel(session: &RunControlSession, id: &str) -> String {
     format!("Nothing visible with id '{id}'. Use main/deck/map or inspect a visible candidate id.")
 }
 
-fn push_header(out: &mut String, session: &RunControlSession) {
-    let view = build_run_control_view_model(session);
+fn push_header(out: &mut String, surface: &DecisionSurface) {
     push_line(
         out,
         "================================================================================",
     );
     push_line(
         out,
-        format!("{} | {}", view.header.location, view.header.title),
+        format!(
+            "{} | {}",
+            surface.view.header.location, surface.view.header.title
+        ),
     );
-    push_line(out, view.header.config);
+    push_line(out, surface.view.header.config.clone());
     push_line(
         out,
         "--------------------------------------------------------------------------------",
@@ -193,17 +195,13 @@ fn push_visible_screen(session: &RunControlSession, out: &mut String) {
     }
 }
 
-fn push_candidates(
-    session: &RunControlSession,
-    candidates: &[DecisionCandidate],
-    out: &mut String,
-) {
-    push_line(out, candidate_section_title(session));
-    if candidates.is_empty() {
+fn push_candidates(surface: &DecisionSurface, out: &mut String) {
+    push_line(out, surface.candidate_section_title);
+    if surface.view.candidates.is_empty() {
         push_line(out, "  none");
         return;
     }
-    for candidate in candidates {
+    for candidate in &surface.view.candidates {
         push_line(out, format!("  {} | {}", candidate.id, candidate.label));
         if let Some(note) = candidate
             .note
@@ -212,25 +210,6 @@ fn push_candidates(
         {
             push_line(out, format!("      {note}"));
         }
-    }
-}
-
-fn candidate_section_title(session: &RunControlSession) -> &'static str {
-    match &session.engine_state {
-        EngineState::EventRoom => {
-            if session.run_state.event_state.as_ref().is_some_and(|event| {
-                event.id == crate::state::events::EventId::Neow && event.current_screen > 0
-            }) {
-                "Options:"
-            } else {
-                "Available action:"
-            }
-        }
-        EngineState::PendingChoice(_) => "Selections:",
-        EngineState::CombatPlayerTurn | EngineState::CombatProcessing => "Actions:",
-        EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => "Choices:",
-        EngineState::MapNavigation => "Paths:",
-        _ => "Available actions:",
     }
 }
 
@@ -243,59 +222,6 @@ pub(super) fn debug_words(raw: &str) -> String {
         out.push(ch);
     }
     out
-}
-
-fn inspectable_panels(session: &RunControlSession) -> &'static str {
-    match session.engine_state {
-        EngineState::CombatPlayerTurn
-        | EngineState::CombatProcessing
-        | EngineState::PendingChoice(_) => {
-            "deck | draw | discard | exhaust | relics | potions | inspect <id> | details | raw"
-        }
-        _ => "deck | map | relics | potions | inspect <id> | details | raw",
-    }
-}
-
-fn main_command_hint(session: &RunControlSession) -> String {
-    let view = build_run_control_view_model(session);
-    let first = view.candidates.first();
-    let primary = match first {
-        Some(candidate) if view.candidates.len() == 1 => {
-            format!("Enter/{}: {}", candidate.id, candidate.label)
-        }
-        Some(_) => state_command_hint(session),
-        None => "type a command".to_string(),
-    };
-    let views = match session.engine_state {
-        EngineState::CombatPlayerTurn
-        | EngineState::CombatProcessing
-        | EngineState::PendingChoice(_) => {
-            "draw | discard | exhaust | potions | relics | case | raw | help | q"
-        }
-        _ => "deck | map | relics | potions | case | raw | help | q",
-    };
-    let baseline = if session.last_completed_manual_combat_matches_capture_case() {
-        " | baseline"
-    } else {
-        ""
-    };
-    format!("{primary} | {views}{baseline}")
-}
-
-fn state_command_hint(session: &RunControlSession) -> String {
-    match session.engine_state {
-        EngineState::Shop(_) => {
-            "card-2 or card 2 | relic-1 or relic 1 | potion-0 or potion 0 | leave".to_string()
-        }
-        EngineState::Campfire => "rest | smith-<deck_idx> or smith <deck_idx> | recall".to_string(),
-        EngineState::MapNavigation => "type a path id, e.g. 0 or 5".to_string(),
-        EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
-        EngineState::PendingChoice(_) => "type visible selection id".to_string(),
-        EngineState::CombatPlayerTurn | EngineState::CombatProcessing => {
-            "cap <case_id> | n | visible action id | end".to_string()
-        }
-        _ => "type visible id".to_string(),
-    }
 }
 
 pub(super) fn card_line(card: &CombatCard, runtime_cost: bool) -> String {
