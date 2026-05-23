@@ -11,6 +11,7 @@ pub struct CombatSearchV2Config {
     pub wall_time: Option<Duration>,
     pub input_label: Option<String>,
     pub potion_policy: CombatSearchV2PotionPolicy,
+    pub max_potions_used: Option<u32>,
 }
 
 impl Default for CombatSearchV2Config {
@@ -22,6 +23,7 @@ impl Default for CombatSearchV2Config {
             wall_time: None,
             input_label: None,
             potion_policy: CombatSearchV2PotionPolicy::Never,
+            max_potions_used: None,
         }
     }
 }
@@ -78,6 +80,7 @@ pub struct CombatSearchV2BudgetReport {
     pub max_actions_per_line: usize,
     pub max_engine_steps_per_action: usize,
     pub wall_time_ms: Option<u128>,
+    pub max_potions_used: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -95,6 +98,7 @@ pub struct CombatSearchV2FrontierReport {
     pub unresolved_leaf_count: u64,
     pub max_actions_cut_count: u64,
     pub engine_step_limit_count: u64,
+    pub potion_budget_cut_count: u64,
     pub sample_states: Vec<CombatSearchV2StateSummary>,
 }
 
@@ -168,6 +172,7 @@ pub struct CombatSearchV2DiagnosticsPruning {
     pub unresolved_leaf_count: u64,
     pub max_actions_cut_count: u64,
     pub engine_step_limit_count: u64,
+    pub potion_budget_cut_count: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]

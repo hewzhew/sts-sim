@@ -46,6 +46,9 @@ struct Args {
     potion_policy: Option<CliPotionPolicy>,
 
     #[arg(long)]
+    max_potions_used: Option<u32>,
+
+    #[arg(long)]
     validate_only: bool,
 
     #[arg(long)]
@@ -81,6 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_engine_steps_per_action: args.max_engine_steps_per_action,
         wall_ms: args.wall_ms,
         potion_policy: args.potion_policy.map(Into::into),
+        max_potions_used: args.max_potions_used,
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
         let loaded = load_combat_search_v2_benchmark(path)?;

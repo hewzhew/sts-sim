@@ -43,6 +43,7 @@ pub fn run_combat_search_v2_with_stepper(
     let mut unresolved_leaf_count = 0u64;
     let mut max_actions_cut_count = 0u64;
     let mut engine_step_limit_count = 0u64;
+    let mut potion_budget_cut_count = 0u64;
     let mut exhausted = false;
 
     while let Some(entry) = frontier.pop() {
@@ -111,6 +112,13 @@ pub fn run_combat_search_v2_with_stepper(
         }
 
         for (action_id, choice) in legal.into_iter().enumerate() {
+            if config
+                .max_potions_used
+                .is_some_and(|max| node.potions_used >= max && is_use_potion_input(&choice.input))
+            {
+                potion_budget_cut_count = potion_budget_cut_count.saturating_add(1);
+                continue;
+            }
             if deadline.is_some_and(|limit| Instant::now() >= limit) {
                 stats.deadline_hit = true;
                 exhausted = true;
@@ -211,6 +219,7 @@ pub fn run_combat_search_v2_with_stepper(
         unresolved_leaf_count,
         max_actions_cut_count,
         engine_step_limit_count,
+        potion_budget_cut_count,
     });
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
@@ -220,7 +229,8 @@ pub fn run_combat_search_v2_with_stepper(
         search_policy: CombatSearchV2PolicyReport {
             kind: "best_first_atomic_action_graph_search_v2",
             terminal_policy: "whole_combat_terminal_only",
-            expansion_order: "lexicographic_priority_enemy_progress_hp_resource_line_length",
+            expansion_order:
+                "lexicographic_priority_enemy_progress_hp_next_draw_resource_line_length",
             potion_policy: config.potion_policy.label(),
             transposition_table: "exact_runtime_state_key_with_resource_coverage",
             dominance_pruning: "dominance_bucket_excludes_player_hp_block_then_compares_resource_vector",
@@ -232,6 +242,7 @@ pub fn run_combat_search_v2_with_stepper(
             max_actions_per_line: config.max_actions_per_line,
             max_engine_steps_per_action: config.max_engine_steps_per_action,
             wall_time_ms: config.wall_time.map(|duration| duration.as_millis()),
+            max_potions_used: config.max_potions_used,
         },
         outcome: CombatSearchV2OutcomeReport {
             terminal: top_terminal,
@@ -254,6 +265,7 @@ pub fn run_combat_search_v2_with_stepper(
             unresolved_leaf_count,
             max_actions_cut_count,
             engine_step_limit_count,
+            potion_budget_cut_count,
             sample_states,
         },
         diagnostics,
@@ -275,5 +287,96 @@ pub fn run_combat_search_v2_with_stepper(
                 "default_potion_policy_disables_potions_until_a_real_potion_option_planner_exists",
             ],
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    #[derive(Clone, Copy)]
+    struct PotionWinStepper;
+
+    impl CombatStepper for PotionWinStepper {
+        fn legal_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+            vec![
+                ClientInput::UsePotion {
+                    potion_index: 0,
+                    target: None,
+                },
+                ClientInput::EndTurn,
+            ]
+        }
+
+        fn apply_to_stable(
+            &self,
+            position: &CombatPosition,
+            input: ClientInput,
+            _limits: CombatStepLimits,
+        ) -> crate::sim::combat::CombatStepResult {
+            let engine = if matches!(input, ClientInput::UsePotion { .. }) {
+                EngineState::GameOver(crate::state::core::RunResult::Victory)
+            } else {
+                position.engine.clone()
+            };
+            let position = CombatPosition::new(engine, position.combat.clone());
+            crate::sim::combat::CombatStepResult {
+                terminal: combat_terminal(&position.engine, &position.combat),
+                alive: true,
+                truncated: false,
+                timed_out: false,
+                engine_steps: 1,
+                position,
+            }
+        }
+
+        fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+            combat_terminal(&position.engine, &position.combat)
+        }
+    }
+
+    #[test]
+    fn max_potions_used_cuts_potion_branches_without_disabling_policy_all() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        let mut config = CombatSearchV2Config {
+            potion_policy: CombatSearchV2PotionPolicy::All,
+            max_potions_used: Some(0),
+            max_nodes: 8,
+            ..CombatSearchV2Config::default()
+        };
+
+        let blocked = run_combat_search_v2_with_stepper(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            config.clone(),
+            &PotionWinStepper,
+        );
+
+        assert!(!blocked.outcome.complete_trajectory_found);
+        assert!(blocked.frontier.potion_budget_cut_count > 0);
+        assert!(blocked
+            .diagnostics
+            .diagnosis
+            .contains(&"potion_budget_cutoffs"));
+
+        config.max_potions_used = Some(1);
+        let allowed = run_combat_search_v2_with_stepper(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            config,
+            &PotionWinStepper,
+        );
+
+        assert!(allowed.outcome.complete_trajectory_found);
+        assert_eq!(
+            allowed
+                .best_complete_trajectory
+                .as_ref()
+                .map(|trajectory| trajectory.potions_used),
+            Some(1)
+        );
     }
 }

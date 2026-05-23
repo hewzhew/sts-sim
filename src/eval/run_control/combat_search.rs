@@ -168,6 +168,7 @@ fn search_config(
         wall_time: options.wall_ms.map(std::time::Duration::from_millis),
         input_label: Some(format!("run_play_driver:search_combat:step{decision_step}")),
         potion_policy: options.potion_policy.unwrap_or(defaults.potion_policy),
+        max_potions_used: options.max_potions_used.or(defaults.max_potions_used),
     }
 }
 

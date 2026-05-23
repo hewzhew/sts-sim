@@ -20,6 +20,7 @@ pub struct CombatSearchV2RunOptions {
     pub max_engine_steps_per_action: Option<usize>,
     pub wall_ms: Option<u64>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
+    pub max_potions_used: Option<u32>,
 }
 
 impl CombatSearchV2RunOptions {
@@ -36,6 +37,7 @@ impl CombatSearchV2RunOptions {
             wall_time: self.wall_ms.map(Duration::from_millis),
             input_label: Some(input_label),
             potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
+            max_potions_used: self.max_potions_used.or(defaults.max_potions_used),
         }
     }
 }

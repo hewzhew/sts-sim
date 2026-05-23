@@ -81,6 +81,7 @@ pub struct RunControlSearchCombatOptions {
     pub max_engine_steps_per_action: Option<usize>,
     pub wall_ms: Option<u64>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
+    pub max_potions_used: Option<u32>,
     pub evidence: Option<RunControlSearchEvidenceTarget>,
 }
 
@@ -247,7 +248,7 @@ Help:
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
     draw, discard, exhaust, actions, action <idx>
-    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all] [save=case|path]
+    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all] [max_potions=N] [save=case|path]
 
   Map/Event/Reward:
     go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
@@ -267,7 +268,7 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
-    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all] [save=case|path] [max_ops=N]
+    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all] [max_potions=N] [save=case|path] [max_ops=N]
     auto-reward
     auto-reward gold|potion|all on|off"
 }
@@ -405,6 +406,9 @@ fn parse_search_combat_options(rest: &[&str]) -> Result<RunControlSearchCombatOp
             "potion" | "potion_policy" => {
                 options.potion_policy = Some(parse_potion_policy(value)?);
             }
+            "max_potions" | "max_potions_used" | "potions_used" => {
+                options.max_potions_used = Some(parse_u32_value(value, "max_potions_used")?);
+            }
             "save" | "evidence" | "output" | "out" => {
                 options.evidence = Some(parse_search_evidence_target(value));
             }
@@ -485,6 +489,12 @@ fn parse_usize_value(value: &str, name: &str) -> Result<usize, String> {
 fn parse_u64_value(value: &str, name: &str) -> Result<u64, String> {
     value
         .parse::<u64>()
+        .map_err(|_| format!("invalid {name} '{value}'"))
+}
+
+fn parse_u32_value(value: &str, name: &str) -> Result<u32, String> {
+    value
+        .parse::<u32>()
         .map_err(|_| format!("invalid {name} '{value}'"))
 }
 
@@ -592,14 +602,17 @@ mod tests {
     #[test]
     fn run_control_parser_accepts_search_combat_options() {
         assert_eq!(
-            parse_run_control_command("search-combat max_nodes=123 wall_ms=50 potion=all")
-                .expect("search-combat should parse"),
+            parse_run_control_command(
+                "search-combat max_nodes=123 wall_ms=50 potion=all max_potions=1",
+            )
+            .expect("search-combat should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
                 max_nodes: Some(123),
                 max_actions_per_line: None,
                 max_engine_steps_per_action: None,
                 wall_ms: Some(50),
                 potion_policy: Some(CombatSearchV2PotionPolicy::All),
+                max_potions_used: Some(1),
                 evidence: None,
             })
         );
@@ -637,6 +650,7 @@ mod tests {
                     max_engine_steps_per_action: None,
                     wall_ms: Some(50),
                     potion_policy: None,
+                    max_potions_used: None,
                     evidence: None,
                 },
                 max_operations: Some(9),

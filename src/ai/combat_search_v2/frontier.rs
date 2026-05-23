@@ -1,6 +1,8 @@
 use super::*;
 use std::hash::Hash;
 
+const BASE_TURN_DRAW_COUNT: i32 = 5;
+
 #[derive(Clone)]
 pub(super) struct SearchNode {
     pub(super) engine: EngineState,
@@ -20,6 +22,10 @@ struct NodePriority {
     survival_margin: i32,
     player_hp: i32,
     player_block: i32,
+    next_draw_damage: i32,
+    next_draw_block: i32,
+    next_draw_playable_cards: i32,
+    next_draw_low_cost: i32,
     potion_conservation: i32,
     shorter_line: i32,
 }
@@ -33,6 +39,13 @@ impl Ord for NodePriority {
             .then_with(|| self.survival_margin.cmp(&other.survival_margin))
             .then_with(|| self.player_hp.cmp(&other.player_hp))
             .then_with(|| self.player_block.cmp(&other.player_block))
+            .then_with(|| self.next_draw_damage.cmp(&other.next_draw_damage))
+            .then_with(|| self.next_draw_block.cmp(&other.next_draw_block))
+            .then_with(|| {
+                self.next_draw_playable_cards
+                    .cmp(&other.next_draw_playable_cards)
+            })
+            .then_with(|| self.next_draw_low_cost.cmp(&other.next_draw_low_cost))
             .then_with(|| self.potion_conservation.cmp(&other.potion_conservation))
             .then_with(|| self.shorter_line.cmp(&other.shorter_line))
     }
@@ -103,6 +116,7 @@ fn priority_for_node(node: &SearchNode) -> NodePriority {
         SearchTerminalLabel::Unresolved => 2,
         SearchTerminalLabel::Loss => 1,
     };
+    let next_draw = next_draw_quality(&node.combat);
     NodePriority {
         terminal_rank,
         fewer_living_enemies: -(living_enemy_count(&node.combat) as i32),
@@ -110,9 +124,47 @@ fn priority_for_node(node: &SearchNode) -> NodePriority {
         survival_margin: survival_margin(&node.combat),
         player_hp: node.combat.entities.player.current_hp,
         player_block: node.combat.entities.player.block,
+        next_draw_damage: next_draw.damage,
+        next_draw_block: next_draw.block,
+        next_draw_playable_cards: next_draw.playable_cards,
+        next_draw_low_cost: next_draw.low_cost,
         potion_conservation: -((node.potions_used + node.potions_discarded) as i32),
         shorter_line: -(node.actions.len() as i32),
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct DrawQuality {
+    damage: i32,
+    block: i32,
+    playable_cards: i32,
+    low_cost: i32,
+}
+
+fn next_draw_quality(combat: &CombatState) -> DrawQuality {
+    let draw_count = (BASE_TURN_DRAW_COUNT + combat.turn.turn_start_draw_modifier)
+        .max(0)
+        .min(combat.zones.draw_pile.len() as i32) as usize;
+    combat.zones.draw_pile.iter().take(draw_count).fold(
+        DrawQuality::default(),
+        |mut quality, card| {
+            let def = crate::content::cards::get_card_definition(card.id);
+            let cost = card.cost_for_turn_java();
+            if cost >= 0 && cost <= combat.turn.energy as i32 {
+                quality.playable_cards += 1;
+            }
+            quality.low_cost -= cost.max(0);
+            quality.damage += card
+                .base_damage_override
+                .unwrap_or(def.base_damage + def.upgrade_damage * card.upgrades as i32)
+                .max(0);
+            quality.block += card
+                .base_block_override
+                .unwrap_or(def.base_block + def.upgrade_block * card.upgrades as i32)
+                .max(0);
+            quality
+        },
+    )
 }
 
 pub(super) fn remember_best_complete(best: &mut Option<SearchNode>, candidate: SearchNode) {
@@ -225,6 +277,51 @@ impl SearchNode {
             potions_discarded: self.potions_discarded,
             cards_played: self.cards_played,
             action_count: self.actions.len(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::runtime::combat::CombatCard;
+    use crate::test_support::blank_test_combat;
+
+    #[test]
+    fn frontier_priority_prefers_stronger_visible_next_draw_when_state_ties() {
+        let mut strike = test_node();
+        strike.combat.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 11)];
+
+        let mut carnage = test_node();
+        carnage.combat.zones.draw_pile = vec![CombatCard::new(CardId::Carnage, 12)];
+
+        assert!(priority_for_node(&carnage) > priority_for_node(&strike));
+    }
+
+    #[test]
+    fn next_draw_quality_uses_turn_start_draw_modifier() {
+        let mut combat = blank_test_combat();
+        combat.turn.turn_start_draw_modifier = -4;
+        combat.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 11),
+            CombatCard::new(CardId::Carnage, 12),
+        ];
+
+        let quality = next_draw_quality(&combat);
+
+        assert_eq!(quality.damage, 6);
+    }
+
+    fn test_node() -> SearchNode {
+        SearchNode {
+            engine: EngineState::CombatPlayerTurn,
+            combat: blank_test_combat(),
+            actions: Vec::new(),
+            initial_hp: 80,
+            potions_used: 0,
+            potions_discarded: 0,
+            cards_played: 0,
         }
     }
 }

@@ -21,6 +21,7 @@ pub(super) struct SearchDiagnosticsFinish<'a> {
     pub(super) unresolved_leaf_count: u64,
     pub(super) max_actions_cut_count: u64,
     pub(super) engine_step_limit_count: u64,
+    pub(super) potion_budget_cut_count: u64,
 }
 
 impl SearchDiagnosticsCollector {
@@ -64,6 +65,7 @@ impl SearchDiagnosticsCollector {
             unresolved_leaf_count: input.unresolved_leaf_count,
             max_actions_cut_count: input.max_actions_cut_count,
             engine_step_limit_count: input.engine_step_limit_count,
+            potion_budget_cut_count: input.potion_budget_cut_count,
         };
         let frontier = CombatSearchV2DiagnosticsFrontier {
             remaining_states: input.frontier_remaining_states,
@@ -155,6 +157,9 @@ fn diagnosis_tags(
     if pruning.engine_step_limit_count > 0 {
         tags.push("engine_step_limit_truncated_children");
     }
+    if pruning.potion_budget_cut_count > 0 {
+        tags.push("potion_budget_cutoffs");
+    }
     if pruning.max_actions_cut_count > 0 {
         tags.push("max_actions_per_line_cutoffs");
     }
@@ -210,6 +215,7 @@ mod tests {
             unresolved_leaf_count: 1,
             max_actions_cut_count: 0,
             engine_step_limit_count: 0,
+            potion_budget_cut_count: 0,
         };
 
         let tags = diagnosis_tags(

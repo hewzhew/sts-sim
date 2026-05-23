@@ -34,7 +34,7 @@ use frontier::{
     ResourceVector, SearchNode,
 };
 use report::{summarize_state, trajectory_report};
-use transition::{filtered_legal_actions, terminal_label};
+use transition::{filtered_legal_actions, is_use_potion_input, terminal_label};
 use value::{
     living_enemy_count, survival_margin, terminal_rank, total_living_enemy_hp,
     visible_incoming_damage,

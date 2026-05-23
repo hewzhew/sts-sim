@@ -13,11 +13,15 @@ pub(super) fn filtered_legal_actions(
     }
 }
 
-fn is_potion_input(input: &ClientInput) -> bool {
+pub(super) fn is_potion_input(input: &ClientInput) -> bool {
     matches!(
         input,
         ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
     )
+}
+
+pub(super) fn is_use_potion_input(input: &ClientInput) -> bool {
+    matches!(input, ClientInput::UsePotion { .. })
 }
 
 pub(super) fn terminal_label(engine: &EngineState, combat: &CombatState) -> SearchTerminalLabel {
