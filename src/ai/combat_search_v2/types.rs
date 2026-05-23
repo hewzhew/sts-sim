@@ -112,6 +112,7 @@ pub struct CombatSearchV2DiagnosticsReport {
     pub tables: CombatSearchV2DiagnosticsTables,
     pub branching: CombatSearchV2DiagnosticsBranching,
     pub expansion: CombatSearchV2DiagnosticsExpansion,
+    pub ordering: CombatSearchV2DiagnosticsOrdering,
     pub pruning: CombatSearchV2DiagnosticsPruning,
     pub frontier: CombatSearchV2DiagnosticsFrontier,
     pub diagnosis: Vec<&'static str>,
@@ -164,6 +165,38 @@ pub struct CombatSearchV2DiagnosticsActionGroupSample {
     pub kind: String,
     pub group_key: String,
     pub atomic_actions: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsOrdering {
+    pub ordering_policy: &'static str,
+    pub behavioral_effect: &'static str,
+    pub states_observed: u64,
+    pub states_reordered: u64,
+    pub reordered_state_ratio: f64,
+    pub total_actions_observed: u64,
+    pub max_position_shift: usize,
+    pub avg_position_shift: f64,
+    pub action_role_counts: Vec<CombatSearchV2DiagnosticsActionRoleCount>,
+    pub largest_reorders: Vec<CombatSearchV2DiagnosticsOrderingSample>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsActionRoleCount {
+    pub role: String,
+    pub actions: u64,
+    pub first_actions: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsOrderingSample {
+    pub observed_at_state_query: u64,
+    pub action_count: usize,
+    pub max_position_shift: usize,
+    pub first_role: String,
+    pub first_original_action_id: usize,
+    pub first_action_key: String,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -9,6 +9,7 @@ pub(super) struct SearchDiagnosticsCollector {
     legal_actions_total: u64,
     legal_actions_max: usize,
     expansion: ActionExpansionDiagnosticsCollector,
+    ordering: ActionOrderingDiagnosticsCollector,
 }
 
 pub(super) struct SearchDiagnosticsFinish<'a> {
@@ -34,6 +35,10 @@ impl SearchDiagnosticsCollector {
         self.legal_actions_total = self.legal_actions_total.saturating_add(action_count as u64);
         self.legal_actions_max = self.legal_actions_max.max(action_count);
         self.expansion.observe(expansion);
+    }
+
+    pub(super) fn observe_action_ordering(&mut self, ordering: &ActionOrderingSummary) {
+        self.ordering.observe(ordering);
     }
 
     pub(super) fn finish(
@@ -73,21 +78,24 @@ impl SearchDiagnosticsCollector {
             sampled_states: input.frontier_sample_count,
         };
         let expansion = self.expansion.finish();
+        let ordering = self.ordering.finish();
         let diagnosis = diagnosis_tags(
             input.proof_status,
             input.stats,
             &branching,
             &expansion,
+            &ordering,
             &pruning,
             frontier.remaining_states,
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 2,
+            schema_version: 3,
             mode: "summary",
             tables,
             branching,
             expansion,
+            ordering,
             pruning,
             frontier,
             diagnosis,
@@ -112,6 +120,7 @@ fn diagnosis_tags(
     stats: &CombatSearchV2Stats,
     branching: &CombatSearchV2DiagnosticsBranching,
     expansion: &CombatSearchV2DiagnosticsExpansion,
+    ordering: &CombatSearchV2DiagnosticsOrdering,
     pruning: &CombatSearchV2DiagnosticsPruning,
     frontier_remaining_states: usize,
 ) -> Vec<&'static str> {
@@ -175,6 +184,12 @@ fn diagnosis_tags(
     if expansion.max_group_size > 1 {
         tags.push("action_fanout_groups_observed");
     }
+    if ordering.states_observed > 0 {
+        tags.push("action_ordering_diagnostics_active");
+    }
+    if ordering.states_reordered > 0 {
+        tags.push("action_ordering_reordered_legal_actions");
+    }
     if frontier_remaining_states > 0 {
         tags.push("frontier_remaining");
     }
@@ -235,6 +250,19 @@ mod tests {
                 largest_groups: Vec::new(),
                 notes: Vec::new(),
             },
+            &CombatSearchV2DiagnosticsOrdering {
+                ordering_policy: "semantic_role_ordering_for_combat_player_turn_only",
+                behavioral_effect: "child_generation_order_only_no_prune_no_merge",
+                states_observed: 1,
+                states_reordered: 1,
+                reordered_state_ratio: 1.0,
+                total_actions_observed: 2,
+                max_position_shift: 1,
+                avg_position_shift: 1.0,
+                action_role_counts: Vec::new(),
+                largest_reorders: Vec::new(),
+                notes: Vec::new(),
+            },
             &pruning,
             4,
         );
@@ -246,6 +274,8 @@ mod tests {
         assert!(tags.contains(&"unresolved_leaf_states"));
         assert!(tags.contains(&"no_legal_actions_observed"));
         assert!(tags.contains(&"action_expansion_diagnostics_active"));
+        assert!(tags.contains(&"action_ordering_diagnostics_active"));
+        assert!(tags.contains(&"action_ordering_reordered_legal_actions"));
         assert!(tags.contains(&"frontier_remaining"));
     }
 }

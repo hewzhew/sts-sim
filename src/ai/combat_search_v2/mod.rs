@@ -27,7 +27,9 @@ mod transition;
 mod types;
 mod value;
 
-use action_ordering::order_action_choices;
+use action_ordering::{
+    order_action_choices, ActionOrderingDiagnosticsCollector, ActionOrderingSummary,
+};
 use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
 use expansion::{
     summarize_action_expansion, ActionExpansionDiagnosticsCollector, ActionExpansionSummary,

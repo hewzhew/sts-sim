@@ -113,8 +113,9 @@ pub fn run_combat_search_v2_with_stepper(
             continue;
         }
         let ordered = order_action_choices(&node.engine, &node.combat, legal);
+        diagnostics.observe_action_ordering(&ordered.summary);
 
-        for ordered_choice in ordered {
+        for ordered_choice in ordered.choices {
             let action_id = ordered_choice.original_action_id;
             let choice = ordered_choice.choice;
             let potion_tactical_priority =
