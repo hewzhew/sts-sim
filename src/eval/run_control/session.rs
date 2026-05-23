@@ -288,10 +288,7 @@ impl RunControlSession {
 
     fn apply_visible_candidate(&mut self, id: &str) -> Result<RunControlCommandOutcome, String> {
         let view = crate::eval::run_control::view_model::build_run_control_view_model(self);
-        let candidate = view
-            .candidates
-            .iter()
-            .find(|candidate| candidate.id == id)
+        let candidate = resolve_visible_candidate_alias(&view.candidates, &self.engine_state, id)
             .ok_or_else(|| format!("no visible candidate '{id}'"))?;
         match candidate.action.executable_input() {
             Some(input) => self.apply_input(input),
@@ -529,6 +526,49 @@ impl RunControlSession {
                 )
             })
             .unwrap_or((self.run_state.current_hp, self.run_state.max_hp))
+    }
+}
+
+fn resolve_visible_candidate_alias<'a>(
+    candidates: &'a [crate::eval::run_control::view_model::DecisionCandidate],
+    engine_state: &EngineState,
+    raw_id: &str,
+) -> Option<&'a crate::eval::run_control::view_model::DecisionCandidate> {
+    if let Some(candidate) = candidates.iter().find(|candidate| candidate.id == raw_id) {
+        return Some(candidate);
+    }
+
+    let id = raw_id.trim().to_ascii_lowercase();
+    if let Some(candidate) = candidates.iter().find(|candidate| candidate.id == id) {
+        return Some(candidate);
+    }
+    if id.chars().all(|ch| ch.is_ascii_digit()) && !id.is_empty() {
+        let structured = match engine_state {
+            EngineState::Shop(_) => Some(format!("card-{id}")),
+            EngineState::Campfire => Some(format!("smith-{id}")),
+            _ => None,
+        };
+        if let Some(structured) = structured {
+            if let Some(candidate) = candidates
+                .iter()
+                .find(|candidate| candidate.id == structured)
+            {
+                return Some(candidate);
+            }
+        }
+    }
+
+    match id.as_str() {
+        "leave" | "skip" => candidates.iter().find(|candidate| {
+            let label = candidate
+                .label
+                .trim_start()
+                .to_ascii_lowercase()
+                .trim_end_matches(['.', '!', '?'])
+                .to_string();
+            label.starts_with(&id)
+        }),
+        _ => None,
     }
 }
 
@@ -1064,6 +1104,13 @@ mod tests {
             .expect("card <idx> should buy in shop");
         assert!(outcome.message.contains("Added card: Shrug It Off"));
         assert_eq!(session.run_state.gold, 50);
+
+        let mut session = test_session_at_shop();
+        let outcome = session
+            .apply_command(RunControlCommand::Candidate("1".to_string()))
+            .expect("bare numeric shop id should fall back to card-<idx>");
+        assert!(outcome.message.contains("Added card: Shrug It Off"));
+        assert_eq!(session.run_state.gold, 50);
     }
 
     #[test]
@@ -1076,6 +1123,55 @@ mod tests {
 
         assert!(outcome.message.contains("Chose: Leave shop"));
         assert!(!matches!(session.engine_state, EngineState::Shop(_)));
+    }
+
+    #[test]
+    fn run_control_campfire_accepts_bare_smith_index_alias() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::Campfire;
+
+        let outcome = session
+            .apply_command(RunControlCommand::Candidate("8".to_string()))
+            .expect("bare numeric campfire id should fall back to smith-<idx>");
+
+        assert!(outcome.message.contains("Chose: Smith Defend"));
+    }
+
+    #[test]
+    fn visible_candidate_alias_resolves_label_leave_and_skip() {
+        use crate::eval::run_control::view_model::{CandidateAction, DecisionCandidate};
+
+        let candidates = vec![
+            DecisionCandidate {
+                id: "0".to_string(),
+                label: "Leave.".to_string(),
+                action: CandidateAction::Input(ClientInput::EventChoice(0)),
+                note: None,
+                resolution: None,
+            },
+            DecisionCandidate {
+                id: "1".to_string(),
+                label: "Skip card reward".to_string(),
+                action: CandidateAction::Input(ClientInput::Proceed),
+                note: None,
+                resolution: None,
+            },
+        ];
+
+        assert_eq!(
+            resolve_visible_candidate_alias(&candidates, &EngineState::EventRoom, "leave")
+                .map(|candidate| candidate.id.as_str()),
+            Some("0")
+        );
+        assert_eq!(
+            resolve_visible_candidate_alias(
+                &candidates,
+                &EngineState::RewardScreen(Default::default()),
+                "skip"
+            )
+            .map(|candidate| candidate.id.as_str()),
+            Some("1")
+        );
     }
 
     #[test]

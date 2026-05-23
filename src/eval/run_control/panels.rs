@@ -285,8 +285,10 @@ fn main_command_hint(session: &RunControlSession) -> String {
 
 fn state_command_hint(session: &RunControlSession) -> String {
     match session.engine_state {
-        EngineState::Shop(_) => "type visible id: card-2 / relic-1 / potion-0 / leave".to_string(),
-        EngineState::Campfire => "rest | smith-<deck_idx> | recall".to_string(),
+        EngineState::Shop(_) => {
+            "card-2 or card 2 | relic-1 or relic 1 | potion-0 or potion 0 | leave".to_string()
+        }
+        EngineState::Campfire => "rest | smith-<deck_idx> or smith <deck_idx> | recall".to_string(),
         EngineState::MapNavigation => "type a path id, e.g. 0 or 5".to_string(),
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
         EngineState::CombatPlayerTurn

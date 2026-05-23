@@ -254,7 +254,8 @@ Help:
     hand-select <uuid...>, grid-select <uuid...>, choose <idx>, open, relic <idx>
 
   Shop/Campfire:
-    buy card|relic|potion <idx>, purge <deck_idx>, rest, smith <deck_idx>, dig, lift, recall, toke <deck_idx>
+    card <idx>, relic <idx>, potion <idx>, buy card|relic|potion <idx>, purge <deck_idx>
+    rest, smith <deck_idx>, dig, lift, recall, toke <deck_idx>
 
   Combat Capture / Benchmark:
     cap <case_id> [label] = capture current combat under tools/artifacts/benchmarks/seed<seed>_act<act>
@@ -284,8 +285,10 @@ fn is_structured_candidate_id(command: &str) -> bool {
     let Some((prefix, suffix)) = command.split_once('-') else {
         return false;
     };
-    matches!(prefix, "card" | "relic" | "potion" | "smith")
-        && !suffix.is_empty()
+    matches!(
+        prefix.to_ascii_lowercase().as_str(),
+        "card" | "relic" | "potion" | "smith"
+    ) && !suffix.is_empty()
         && suffix.chars().all(|ch| ch.is_ascii_digit())
 }
 
@@ -662,6 +665,11 @@ mod tests {
         assert_eq!(
             parse_run_control_command("card-2").expect("shop card id should parse"),
             RunControlCommand::Candidate("card-2".to_string())
+        );
+        assert_eq!(
+            parse_run_control_command("Card-2")
+                .expect("case-insensitive shop card id should parse"),
+            RunControlCommand::Candidate("Card-2".to_string())
         );
         assert_eq!(
             parse_run_control_command("relic-1").expect("shop relic id should parse"),
