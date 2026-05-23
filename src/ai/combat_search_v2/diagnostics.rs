@@ -12,6 +12,7 @@ pub(super) struct SearchDiagnosticsCollector {
     target_fanout: TargetFanoutDiagnosticsCollector,
     ordering: ActionOrderingDiagnosticsCollector,
     turn_branching: TurnBranchingDiagnosticsCollector,
+    turn_prefix: TurnPrefixDiagnosticsCollector,
 }
 
 pub(super) struct SearchDiagnosticsFinish<'a> {
@@ -49,6 +50,10 @@ impl SearchDiagnosticsCollector {
 
     pub(super) fn observe_turn_branching(&mut self, observation: &TurnBranchingStateObservation) {
         self.turn_branching.observe(observation);
+    }
+
+    pub(super) fn observe_turn_prefix(&mut self, summary: &TurnPrefixSummary) {
+        self.turn_prefix.observe(summary);
     }
 
     pub(super) fn finish(
@@ -91,6 +96,7 @@ impl SearchDiagnosticsCollector {
         let target_fanout = self.target_fanout.finish();
         let ordering = self.ordering.finish();
         let turn_branching = self.turn_branching.finish();
+        let turn_prefix = self.turn_prefix.finish();
         let diagnosis = diagnosis_tags(
             input.proof_status,
             input.stats,
@@ -99,12 +105,13 @@ impl SearchDiagnosticsCollector {
             &target_fanout,
             &ordering,
             &turn_branching,
+            &turn_prefix,
             &pruning,
             frontier.remaining_states,
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 5,
+            schema_version: 6,
             mode: "summary",
             tables,
             branching,
@@ -112,6 +119,7 @@ impl SearchDiagnosticsCollector {
             target_fanout,
             ordering,
             turn_branching,
+            turn_prefix,
             pruning,
             frontier,
             diagnosis,
@@ -139,6 +147,7 @@ fn diagnosis_tags(
     target_fanout: &CombatSearchV2DiagnosticsTargetFanout,
     ordering: &CombatSearchV2DiagnosticsOrdering,
     turn_branching: &CombatSearchV2DiagnosticsTurnBranching,
+    turn_prefix: &CombatSearchV2DiagnosticsTurnPrefix,
     pruning: &CombatSearchV2DiagnosticsPruning,
     frontier_remaining_states: usize,
 ) -> Vec<&'static str> {
@@ -228,6 +237,15 @@ fn diagnosis_tags(
     }
     if turn_branching.pending_choice_children > 0 {
         tags.push("pending_choice_children_observed");
+    }
+    if turn_prefix.states_observed > 0 {
+        tags.push("turn_prefix_diagnostics_active");
+    }
+    if turn_prefix.non_empty_prefix_states > 0 {
+        tags.push("non_empty_turn_prefix_observed");
+    }
+    if turn_prefix.max_prefix_length >= 3 {
+        tags.push("long_turn_prefix_observed");
     }
     if frontier_remaining_states > 0 {
         tags.push("frontier_remaining");
@@ -338,6 +356,24 @@ mod tests {
                 largest_turn_fanouts: Vec::new(),
                 notes: Vec::new(),
             },
+            &CombatSearchV2DiagnosticsTurnPrefix {
+                tracking_policy: "current_turn_prefix_summary_from_search_node",
+                behavioral_effect: "diagnostic_only_no_turn_prefix_prune_no_merge",
+                states_observed: 1,
+                non_empty_prefix_states: 1,
+                empty_prefix_states: 0,
+                avg_prefix_length: 3.0,
+                max_prefix_length: 3,
+                max_legal_actions_after_non_empty_prefix: 4,
+                total_cards_played_in_prefix: 3,
+                total_potions_used_in_prefix: 0,
+                total_potions_discarded_in_prefix: 0,
+                total_other_actions_in_prefix: 0,
+                prefix_length_counts: Vec::new(),
+                prefix_kind_counts: Vec::new(),
+                largest_prefix_fanouts: Vec::new(),
+                notes: Vec::new(),
+            },
             &pruning,
             4,
         );
@@ -357,6 +393,9 @@ mod tests {
         assert!(tags.contains(&"turn_branching_diagnostics_active"));
         assert!(tags.contains(&"same_turn_children_observed"));
         assert!(tags.contains(&"next_turn_children_observed"));
+        assert!(tags.contains(&"turn_prefix_diagnostics_active"));
+        assert!(tags.contains(&"non_empty_turn_prefix_observed"));
+        assert!(tags.contains(&"long_turn_prefix_observed"));
         assert!(tags.contains(&"frontier_remaining"));
     }
 }

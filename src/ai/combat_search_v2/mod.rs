@@ -26,6 +26,7 @@ mod search;
 mod target_fanout;
 mod transition;
 mod turn_branching;
+mod turn_prefix;
 mod types;
 mod value;
 
@@ -46,8 +47,12 @@ use target_fanout::{
 };
 use transition::{filtered_legal_actions, is_use_potion_input, terminal_label};
 use turn_branching::{
-    classify_turn_branch_transition, TurnBranchingDiagnosticsCollector,
+    classify_turn_branch_transition, TurnBranchTransition, TurnBranchingDiagnosticsCollector,
     TurnBranchingStateObservation,
+};
+use turn_prefix::{
+    advance_turn_prefix, summarize_turn_prefix, TurnPrefixDiagnosticsCollector, TurnPrefixState,
+    TurnPrefixSummary,
 };
 use value::{
     living_enemy_count, survival_margin, terminal_rank, total_living_enemy_hp,

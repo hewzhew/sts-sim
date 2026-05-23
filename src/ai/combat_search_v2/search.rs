@@ -28,6 +28,7 @@ pub fn run_combat_search_v2_with_stepper(
         engine: engine.clone(),
         combat: combat.clone(),
         actions: Vec::new(),
+        turn_prefix: TurnPrefixState::default(),
         initial_hp,
         potions_used: 0,
         potions_discarded: 0,
@@ -109,6 +110,8 @@ pub fn run_combat_search_v2_with_stepper(
         );
         let expansion = summarize_action_expansion(&node.engine, &node.combat, &legal);
         diagnostics.observe_legal_actions(&expansion);
+        let turn_prefix = summarize_turn_prefix(&node.turn_prefix, legal.len());
+        diagnostics.observe_turn_prefix(&turn_prefix);
         let target_fanout = summarize_target_fanout(&node.combat, &legal);
         diagnostics.observe_target_fanout(&target_fanout);
         if legal.is_empty() {
@@ -161,6 +164,7 @@ pub fn run_combat_search_v2_with_stepper(
                 &child.engine,
                 &child.combat,
             );
+            child.note_turn_prefix(&node.combat, &choice.input, turn_transition);
             child.note_input(&choice.input);
             child.note_potion_tactical_priority(potion_tactical_priority);
             child.note_turn_branch_priority(turn_transition.frontier_priority_hint());

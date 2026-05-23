@@ -163,6 +163,26 @@ impl TurnBranchTransition {
             (_, TurnBranchTransitionKind::Other) => 0,
         }
     }
+
+    pub(super) fn resets_turn_prefix(self) -> bool {
+        matches!(self.kind, TurnBranchTransitionKind::NextTurn)
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_same_turn_play_card() -> Self {
+        Self {
+            action_kind: TurnBranchActionKind::PlayCard,
+            kind: TurnBranchTransitionKind::SameTurn,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_next_turn_end_turn() -> Self {
+        Self {
+            action_kind: TurnBranchActionKind::EndTurn,
+            kind: TurnBranchTransitionKind::NextTurn,
+        }
+    }
 }
 
 impl TurnBranchingDiagnosticsCollector {

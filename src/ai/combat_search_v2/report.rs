@@ -15,6 +15,7 @@ pub fn trajectory_from_state(
         engine,
         combat,
         actions,
+        turn_prefix: TurnPrefixState::default(),
         initial_hp,
         potions_used,
         potions_discarded,

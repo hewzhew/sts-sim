@@ -8,6 +8,7 @@ pub(super) struct SearchNode {
     pub(super) engine: EngineState,
     pub(super) combat: CombatState,
     pub(super) actions: Vec<CombatSearchV2ActionTrace>,
+    pub(super) turn_prefix: TurnPrefixState,
     pub(super) initial_hp: i32,
     pub(super) potions_used: u32,
     pub(super) potions_discarded: u32,
@@ -258,6 +259,7 @@ impl SearchNode {
             engine,
             combat,
             actions: self.actions.clone(),
+            turn_prefix: self.turn_prefix.clone(),
             initial_hp: self.initial_hp,
             potions_used: self.potions_used,
             potions_discarded: self.potions_discarded,
@@ -290,6 +292,15 @@ impl SearchNode {
 
     pub(super) fn note_turn_branch_priority(&mut self, priority: i32) {
         self.last_turn_branch_priority = priority;
+    }
+
+    pub(super) fn note_turn_prefix(
+        &mut self,
+        parent_combat: &CombatState,
+        input: &ClientInput,
+        transition: TurnBranchTransition,
+    ) {
+        self.turn_prefix = advance_turn_prefix(&self.turn_prefix, parent_combat, input, transition);
     }
 
     pub(super) fn resource_vector(&self) -> ResourceVector {
@@ -361,6 +372,7 @@ mod tests {
             engine: EngineState::CombatPlayerTurn,
             combat: blank_test_combat(),
             actions: Vec::new(),
+            turn_prefix: TurnPrefixState::default(),
             initial_hp: 80,
             potions_used: 0,
             potions_discarded: 0,
