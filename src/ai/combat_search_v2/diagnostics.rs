@@ -15,6 +15,7 @@ pub(super) struct SearchDiagnosticsCollector {
     turn_branching: TurnBranchingDiagnosticsCollector,
     turn_prefix: TurnPrefixDiagnosticsCollector,
     turn_sequence: TurnSequenceDiagnosticsCollector,
+    card_identity: CardIdentityDiagnosticsCollector,
     turn_local_dominance: TurnLocalDominanceDiagnosticsCollector,
 }
 
@@ -65,6 +66,10 @@ impl SearchDiagnosticsCollector {
 
     pub(super) fn observe_turn_sequence(&mut self, summary: &TurnSequenceSummary) {
         self.turn_sequence.observe(summary);
+    }
+
+    pub(super) fn observe_card_identity(&mut self, summary: &CardIdentitySummary) {
+        self.card_identity.observe(summary);
     }
 
     pub(super) fn observe_turn_local_dominance(
@@ -118,6 +123,7 @@ impl SearchDiagnosticsCollector {
         let turn_branching = self.turn_branching.finish();
         let turn_prefix = self.turn_prefix.finish();
         let turn_sequence = self.turn_sequence.finish();
+        let card_identity = self.card_identity.finish();
         let turn_local_dominance = self.turn_local_dominance.finish();
         let diagnosis = diagnosis_tags(
             input.proof_status,
@@ -130,13 +136,14 @@ impl SearchDiagnosticsCollector {
             &turn_branching,
             &turn_prefix,
             &turn_sequence,
+            &card_identity,
             &turn_local_dominance,
             &pruning,
             frontier.remaining_states,
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 9,
+            schema_version: 10,
             mode: "summary",
             tables,
             branching,
@@ -147,6 +154,7 @@ impl SearchDiagnosticsCollector {
             turn_branching,
             turn_prefix,
             turn_sequence,
+            card_identity,
             turn_local_dominance,
             pruning,
             frontier,
@@ -178,6 +186,7 @@ fn diagnosis_tags(
     turn_branching: &CombatSearchV2DiagnosticsTurnBranching,
     turn_prefix: &CombatSearchV2DiagnosticsTurnPrefix,
     turn_sequence: &CombatSearchV2DiagnosticsTurnSequence,
+    card_identity: &CombatSearchV2DiagnosticsCardIdentity,
     turn_local_dominance: &CombatSearchV2DiagnosticsTurnLocalDominance,
     pruning: &CombatSearchV2DiagnosticsPruning,
     frontier_remaining_states: usize,
@@ -299,6 +308,18 @@ fn diagnosis_tags(
     }
     if turn_sequence.order_sensitive_groups > 0 {
         tags.push("turn_sequence_order_sensitive_groups_observed");
+    }
+    if card_identity.states_observed > 0 {
+        tags.push("card_identity_diagnostics_active");
+    }
+    if card_identity.states_with_duplicate_active_uuid > 0 {
+        tags.push("duplicate_active_card_uuid_observed");
+    }
+    if card_identity.states_with_uuid_card_id_conflict > 0 {
+        tags.push("card_uuid_id_conflict_observed");
+    }
+    if card_identity.action_payload_placeholder_cards > 0 {
+        tags.push("card_payload_placeholders_observed");
     }
     if turn_local_dominance.parent_states_observed > 0 {
         tags.push("turn_local_dominance_diagnostics_active");
@@ -466,6 +487,22 @@ mod tests {
                 largest_groups: Vec::new(),
                 notes: Vec::new(),
             },
+            &CombatSearchV2DiagnosticsCardIdentity {
+                audit_policy: "active_combat_card_uuid_scan_plus_action_payload_placeholder_count",
+                behavioral_effect: "diagnostic_only_no_search_ordering_no_prune_no_merge",
+                states_observed: 1,
+                active_cards_observed: 3,
+                action_payload_cards_observed: 1,
+                action_payload_placeholder_cards: 1,
+                states_with_duplicate_active_uuid: 1,
+                duplicate_active_uuid_observations: 1,
+                states_with_uuid_card_id_conflict: 1,
+                uuid_card_id_conflict_observations: 1,
+                max_duplicate_group_size: 2,
+                largest_duplicate_groups: Vec::new(),
+                largest_conflict_groups: Vec::new(),
+                notes: Vec::new(),
+            },
             &CombatSearchV2DiagnosticsTurnLocalDominance {
                 pruning_policy: "same_parent_same_turn_dominance_key_resource_coverage",
                 behavioral_effect:
@@ -512,6 +549,10 @@ mod tests {
         assert!(tags.contains(&"turn_sequence_order_variants_observed"));
         assert!(tags.contains(&"turn_sequence_same_effect_candidates_observed"));
         assert!(tags.contains(&"turn_sequence_order_sensitive_groups_observed"));
+        assert!(tags.contains(&"card_identity_diagnostics_active"));
+        assert!(tags.contains(&"duplicate_active_card_uuid_observed"));
+        assert!(tags.contains(&"card_uuid_id_conflict_observed"));
+        assert!(tags.contains(&"card_payload_placeholders_observed"));
         assert!(tags.contains(&"turn_local_dominance_diagnostics_active"));
         assert!(tags.contains(&"turn_local_dominance_pruned_children"));
         assert!(tags.contains(&"frontier_remaining"));

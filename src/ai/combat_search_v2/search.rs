@@ -114,6 +114,8 @@ pub fn run_combat_search_v2_with_stepper(
         diagnostics.observe_turn_prefix(&turn_prefix);
         let turn_sequence = summarize_turn_sequence(&node, legal.len());
         diagnostics.observe_turn_sequence(&turn_sequence);
+        let card_identity = summarize_card_identity(&node.combat);
+        diagnostics.observe_card_identity(&card_identity);
         let target_fanout = summarize_target_fanout(&node.combat, &legal);
         diagnostics.observe_target_fanout(&target_fanout);
         if legal.is_empty() {
@@ -265,6 +267,20 @@ pub fn run_combat_search_v2_with_stepper(
         engine_step_limit_count,
         potion_budget_cut_count,
     });
+    let invalid_card_identity_observed =
+        diagnostics.card_identity.states_with_uuid_card_id_conflict > 0;
+    let mut evidence_warnings = vec![
+        "unresolved_cannot_be_claimed_better_than_a_complete_baseline",
+        "no_stepwise_human_action_agreement_objective",
+        "no_llm_control_path",
+        "combat_only_runner_does_not_validate_out_of_combat_strategy_quality",
+        "default_potion_policy_disables_potions_until_a_real_potion_option_planner_exists",
+    ];
+    if invalid_card_identity_observed {
+        evidence_warnings.push(
+            "duplicate_active_card_uuid_with_conflicting_card_ids_observed_input_or_rollout_state_invalid_until_investigated",
+        );
+    }
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
         schema_version: 2,
@@ -319,18 +335,14 @@ pub fn run_combat_search_v2_with_stepper(
             hidden_info_policy: "uses_only_the_supplied_engine_state; if that state contains hidden draw/rng truth, the report is engine-evidence rather than public-agent evidence",
             random_policy: "rng state is part of the transposition key; belief particles are not implemented in this first runner",
             estimate_policy: "unresolved frontier summaries are estimates/partial evidence and are never reported as terminal outcomes",
-            reliability: if exhaustive {
+            reliability: if invalid_card_identity_observed {
+                "invalid_input_or_rollout_state_duplicate_card_uuid_conflict_observed"
+            } else if exhaustive {
                 "exact_under_supplied_state_and_engine_semantics"
             } else {
                 "partial_budgeted_evidence"
             },
-            warnings: vec![
-                "unresolved_cannot_be_claimed_better_than_a_complete_baseline",
-                "no_stepwise_human_action_agreement_objective",
-                "no_llm_control_path",
-                "combat_only_runner_does_not_validate_out_of_combat_strategy_quality",
-                "default_potion_policy_disables_potions_until_a_real_potion_option_planner_exists",
-            ],
+            warnings: evidence_warnings,
         },
     }
 }

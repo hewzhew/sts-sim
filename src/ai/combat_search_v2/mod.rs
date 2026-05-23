@@ -18,6 +18,7 @@ use crate::state::core::{ClientInput, EngineState};
 mod action_equivalence;
 mod action_ordering;
 mod baseline;
+mod card_identity;
 mod diagnostics;
 mod expansion;
 mod frontier;
@@ -39,6 +40,9 @@ use action_equivalence::{
 use action_ordering::{
     order_indexed_action_choices, ActionOrderingDiagnosticsCollector, ActionOrderingSummary,
     IndexedActionChoice,
+};
+use card_identity::{
+    summarize_card_identity, CardIdentityDiagnosticsCollector, CardIdentitySummary,
 };
 use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
 use expansion::{

@@ -27,6 +27,16 @@ pub(super) fn apply_search_combat(
     let report = run_combat_search_v2(&start.engine, &start.combat, config.clone());
     let saved_evidence =
         save_search_evidence_if_requested(session, options.evidence.as_ref(), &report)?;
+    if search_report_has_invalid_card_identity(&report) {
+        let mut outcome = RunControlCommandOutcome::message(format!(
+            "{}{}\n\n{}",
+            render_search_rejection(&report),
+            render_saved_evidence_note(saved_evidence.as_deref()),
+            super::render::render_run_control_state(session)
+        ));
+        outcome.search_evidence_path = saved_evidence;
+        return Ok(outcome);
+    }
     let Some(trajectory) = report
         .best_complete_trajectory
         .as_ref()
@@ -122,6 +132,14 @@ fn save_search_evidence_if_requested(
         report,
     )?;
     Ok(Some(path))
+}
+
+fn search_report_has_invalid_card_identity(report: &CombatSearchV2Report) -> bool {
+    report
+        .diagnostics
+        .card_identity
+        .states_with_uuid_card_id_conflict
+        > 0
 }
 
 fn next_available_evidence_path(path: &std::path::Path) -> std::path::PathBuf {
@@ -221,13 +239,14 @@ fn verify_trajectory_replays_to_win(
 
 fn render_search_rejection(report: &CombatSearchV2Report) -> String {
     format!(
-        "Search combat did not modify state.\n  terminal_report={:?}\n  proof_status={:?}\n  complete_trajectory_found={}\n  terminal_wins={}\n  nodes_expanded={}\n  nodes_generated={}\n  reason={}",
+        "Search combat did not modify state.\n  terminal_report={:?}\n  proof_status={:?}\n  complete_trajectory_found={}\n  terminal_wins={}\n  nodes_expanded={}\n  nodes_generated={}\n  reliability={}\n  reason={}",
         report.outcome.terminal,
         report.outcome.proof_status,
         report.outcome.complete_trajectory_found,
         report.stats.terminal_wins,
         report.stats.nodes_expanded,
         report.stats.nodes_generated,
+        report.evidence_reliability.reliability,
         report.outcome.reason
     )
 }

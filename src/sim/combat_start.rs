@@ -26,6 +26,14 @@ pub fn build_natural_combat_start(
         run_state.ascension_level,
     );
 
+    let combat_card_uuid_counter = run_state
+        .master_deck
+        .iter()
+        .map(|card| card.uuid)
+        .max()
+        .unwrap_or(0)
+        .max(9999);
+
     let mut combat = CombatState {
         meta: CombatMeta {
             ascension_level: run_state.ascension_level,
@@ -43,7 +51,7 @@ pub fn build_natural_combat_start(
             exhaust_pile: Vec::new(),
             limbo: Vec::new(),
             queued_cards: VecDeque::new(),
-            card_uuid_counter: 9999,
+            card_uuid_counter: combat_card_uuid_counter,
         },
         entities: EntityState {
             player,
@@ -251,8 +259,10 @@ fn normalize_identifier(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::build_natural_combat_start;
+    use crate::content::cards::CardId;
     use crate::content::monsters::factory::EncounterId;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::combat::CombatCard;
     use crate::runtime::combat::OrbId;
     use crate::state::map::node::RoomType;
     use crate::state::run::RunState;
@@ -312,5 +322,57 @@ mod tests {
         );
         assert_eq!(combat.entities.player.orbs.len(), 1);
         assert_eq!(combat.entities.player.orbs[0].id, OrbId::Empty);
+    }
+
+    #[test]
+    fn natural_combat_start_card_uuid_counter_starts_above_master_deck_uuids() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.master_deck
+            .push(CombatCard::new(CardId::Armaments, 10000));
+
+        let (_engine_state, mut combat) =
+            build_natural_combat_start(&mut run, EncounterId::JawWorm, RoomType::MonsterRoom)
+                .expect("combat should initialize");
+
+        assert_eq!(combat.zones.card_uuid_counter, 10000);
+        assert_eq!(combat.next_card_uuid(), 10001);
+    }
+
+    #[test]
+    fn natural_combat_start_generated_cards_do_not_reuse_master_deck_uuids() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.master_deck
+            .push(CombatCard::new(CardId::Armaments, 10000));
+
+        let (_engine_state, mut combat) =
+            build_natural_combat_start(&mut run, EncounterId::JawWorm, RoomType::MonsterRoom)
+                .expect("combat should initialize");
+
+        crate::engine::action_handlers::cards::handle_make_temp_card_in_discard(
+            CardId::Slimed,
+            1,
+            false,
+            &mut combat,
+        );
+
+        let slimed_uuid = combat
+            .zones
+            .discard_pile
+            .iter()
+            .find(|card| card.id == CardId::Slimed)
+            .map(|card| card.uuid);
+
+        assert_eq!(slimed_uuid, Some(10001));
+        assert_eq!(
+            combat
+                .zones
+                .draw_pile
+                .iter()
+                .chain(combat.zones.hand.iter())
+                .chain(combat.zones.discard_pile.iter())
+                .filter(|card| card.uuid == 10000)
+                .count(),
+            1
+        );
     }
 }
