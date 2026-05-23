@@ -23,8 +23,10 @@ impl PotionGateDecision {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PotionGateReason {
     DirectDamageCanKill,
-    VisibleIncomingHpLoss,
-    NoVisibleHandLethal,
+    VisibleIncomingLethal,
+    VisibleIncomingUncoveredByHandBlock,
+    VisibleIncomingFullyBlockable,
+    HighStakesNoVisibleHandLethal,
     PlayerWounded,
     InvalidPotionAction,
     PotionSlotMissing,

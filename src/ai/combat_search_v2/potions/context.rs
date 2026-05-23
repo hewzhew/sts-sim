@@ -8,12 +8,15 @@ pub(super) struct PotionPlanningContext {
     pub(super) player_max_hp: i32,
     pub(super) hp_after_visible_attack: i32,
     pub(super) visible_hp_loss: bool,
+    pub(super) visible_uncovered_damage_after_hand_block: i32,
+    pub(super) visible_attack_is_lethal: bool,
     pub(super) hand_damage_upper_bound: i32,
     pub(super) hand_block_upper_bound: i32,
     pub(super) has_visible_lethal: bool,
     pub(super) living_enemy_count: usize,
     pub(super) lowest_enemy_hp_with_block: Option<i32>,
     pub(super) total_enemy_hp_with_block: i32,
+    pub(super) high_stakes_combat: bool,
 }
 
 impl PotionPlanningContext {
@@ -27,10 +30,14 @@ impl PotionPlanningContext {
             player_current_hp - (visible_incoming_damage - player_block).max(0);
         let hand_damage_upper_bound = playable_hand_damage(combat);
         let hand_block_upper_bound = playable_hand_block(combat);
+        let visible_uncovered_damage_after_hand_block =
+            (visible_incoming_damage - player_block - hand_block_upper_bound).max(0);
+        let visible_attack_is_lethal = hp_after_visible_attack <= 0;
         let living_enemy_hp = living_enemy_hp_with_block(combat);
         let total_enemy_hp_with_block = living_enemy_hp.iter().sum();
         let lowest_enemy_hp_with_block = living_enemy_hp.iter().copied().min();
         let living_enemy_count = living_enemy_hp.len();
+        let high_stakes_combat = combat.meta.is_elite_fight || combat.meta.is_boss_fight;
 
         Self {
             visible_incoming_damage,
@@ -39,6 +46,8 @@ impl PotionPlanningContext {
             player_max_hp,
             hp_after_visible_attack,
             visible_hp_loss,
+            visible_uncovered_damage_after_hand_block,
+            visible_attack_is_lethal,
             hand_damage_upper_bound,
             hand_block_upper_bound,
             has_visible_lethal: hand_damage_upper_bound >= total_enemy_hp_with_block
@@ -46,6 +55,7 @@ impl PotionPlanningContext {
             living_enemy_count,
             lowest_enemy_hp_with_block,
             total_enemy_hp_with_block,
+            high_stakes_combat,
         }
     }
 
@@ -59,6 +69,10 @@ impl PotionPlanningContext {
 
     pub(super) fn lacks_visible_lethal(self) -> bool {
         !self.has_visible_lethal
+    }
+
+    pub(super) fn has_uncovered_visible_hp_loss(self) -> bool {
+        self.visible_uncovered_damage_after_hand_block > 0
     }
 }
 

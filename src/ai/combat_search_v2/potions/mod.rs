@@ -18,12 +18,9 @@ mod tests {
     use crate::test_support::{blank_test_combat, test_monster};
 
     #[test]
-    fn semantic_policy_keeps_attack_potion_when_hand_lacks_lethal() {
+    fn semantic_policy_keeps_attack_potion_when_visible_damage_is_uncovered() {
         let mut combat = blank_test_combat();
-        let mut monster = test_monster(EnemyId::JawWorm);
-        monster.current_hp = 65;
-        monster.max_hp = 65;
-        combat.entities.monsters = vec![monster];
+        combat.entities.monsters = vec![attacking_monster()];
         combat.zones.hand = vec![
             CombatCard::new(CardId::Strike, 1),
             CombatCard::new(CardId::Defend, 2),
@@ -63,7 +60,58 @@ mod tests {
                 },
             )
             .reason,
-            decision::PotionGateReason::NoVisibleHandLethal
+            decision::PotionGateReason::VisibleIncomingUncoveredByHandBlock
+        );
+    }
+
+    #[test]
+    fn semantic_policy_rejects_attack_potion_when_only_pressure_is_no_lethal() {
+        let mut combat = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.current_hp = 65;
+        monster.max_hp = 65;
+        combat.entities.monsters = vec![monster];
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 1)];
+        combat.entities.potions = vec![Some(Potion::new(PotionId::AttackPotion, 3))];
+
+        let decision = proposals::semantic_potion_gate_decision(
+            &combat,
+            &ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(!decision.allowed);
+        assert_eq!(
+            decision.reason,
+            decision::PotionGateReason::NoTacticalPressure
+        );
+    }
+
+    #[test]
+    fn semantic_policy_keeps_attack_potion_in_high_stakes_no_lethal_state() {
+        let mut combat = blank_test_combat();
+        combat.meta.is_elite_fight = true;
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.current_hp = 65;
+        monster.max_hp = 65;
+        combat.entities.monsters = vec![monster];
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 1)];
+        combat.entities.potions = vec![Some(Potion::new(PotionId::AttackPotion, 3))];
+
+        let decision = proposals::semantic_potion_gate_decision(
+            &combat,
+            &ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(decision.allowed);
+        assert_eq!(
+            decision.reason,
+            decision::PotionGateReason::HighStakesNoVisibleHandLethal
         );
     }
 
@@ -189,6 +237,32 @@ mod tests {
     }
 
     #[test]
+    fn semantic_policy_rejects_block_potion_when_hand_can_cover_visible_damage() {
+        let mut combat = blank_test_combat();
+        combat.entities.player.block = 0;
+        combat.entities.monsters = vec![attacking_monster()];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Defend, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+        combat.entities.potions = vec![Some(Potion::new(PotionId::BlockPotion, 3))];
+
+        let decision = proposals::semantic_potion_gate_decision(
+            &combat,
+            &ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(!decision.allowed);
+        assert_eq!(
+            decision.reason,
+            decision::PotionGateReason::VisibleIncomingFullyBlockable
+        );
+    }
+
+    #[test]
     fn semantic_policy_keeps_block_potion_with_visible_incoming_loss() {
         let mut combat = blank_test_combat();
         combat.entities.player.block = 0;
@@ -206,15 +280,38 @@ mod tests {
         assert!(decision.allowed);
         assert_eq!(
             decision.reason,
-            decision::PotionGateReason::VisibleIncomingHpLoss
+            decision::PotionGateReason::VisibleIncomingUncoveredByHandBlock
         );
     }
 
     #[test]
-    fn semantic_policy_keeps_blood_potion_when_wounded_and_no_visible_lethal() {
+    fn semantic_policy_keeps_block_potion_when_visible_attack_is_lethal() {
+        let mut combat = blank_test_combat();
+        combat.entities.player.current_hp = 5;
+        combat.entities.player.block = 0;
+        combat.entities.monsters = vec![attacking_monster()];
+        combat.entities.potions = vec![Some(Potion::new(PotionId::BlockPotion, 3))];
+
+        let decision = proposals::semantic_potion_gate_decision(
+            &combat,
+            &ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(decision.allowed);
+        assert_eq!(
+            decision.reason,
+            decision::PotionGateReason::VisibleIncomingLethal
+        );
+    }
+
+    #[test]
+    fn semantic_policy_keeps_blood_potion_when_wounded_and_visible_damage_is_uncovered() {
         let mut combat = blank_test_combat();
         combat.entities.player.current_hp = 40;
-        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        combat.entities.monsters = vec![attacking_monster()];
         combat.entities.potions = vec![Some(Potion::new(PotionId::BloodPotion, 3))];
 
         let decision = proposals::semantic_potion_gate_decision(
@@ -228,13 +325,14 @@ mod tests {
         assert!(decision.allowed);
         assert_eq!(
             decision.reason,
-            decision::PotionGateReason::NoVisibleHandLethal
+            decision::PotionGateReason::VisibleIncomingUncoveredByHandBlock
         );
     }
 
     #[test]
-    fn semantic_policy_keeps_fruit_juice_when_player_is_wounded() {
+    fn semantic_policy_keeps_fruit_juice_when_high_stakes_player_is_wounded() {
         let mut combat = blank_test_combat();
+        combat.meta.is_elite_fight = true;
         combat.entities.player.current_hp = 70;
         combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
         combat.entities.potions = vec![Some(Potion::new(PotionId::FruitJuice, 3))];
