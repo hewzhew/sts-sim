@@ -259,6 +259,8 @@ Help:
     rest, smith <deck_idx>, dig, lift, recall, toke <deck_idx>
 
   Combat Capture / Benchmark:
+    startup flag: --auto-capture-combat [--auto-capture-combat-root <benchmark_dir>]
+      automatically captures each new combat at the first stable player-turn boundary
     cap <case_id> [label] = capture current combat under tools/artifacts/benchmarks/seed<seed>_act<act>
     b/baseline = save last completed combat baseline for the last capture-case
     capture <path> [label]
