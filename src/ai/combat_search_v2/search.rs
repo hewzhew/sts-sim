@@ -33,6 +33,7 @@ pub fn run_combat_search_v2_with_stepper(
         potions_discarded: 0,
         cards_played: 0,
         potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
     };
     if terminal_label(&root.engine, &root.combat) == SearchTerminalLabel::Win {
         stats.nodes_to_first_win = Some(0);
@@ -114,6 +115,8 @@ pub fn run_combat_search_v2_with_stepper(
         }
         let ordered = order_action_choices(&node.engine, &node.combat, legal);
         diagnostics.observe_action_ordering(&ordered.summary);
+        let mut turn_branching =
+            TurnBranchingStateObservation::new(&node.combat, ordered.choices.len());
 
         for ordered_choice in ordered.choices {
             let action_id = ordered_choice.original_action_id;
@@ -149,8 +152,17 @@ pub fn run_combat_search_v2_with_stepper(
             }
 
             let mut child = node.clone_for_child(step.position.engine, step.position.combat);
+            let turn_transition = classify_turn_branch_transition(
+                &node.engine,
+                &node.combat,
+                &choice.input,
+                &child.engine,
+                &child.combat,
+            );
             child.note_input(&choice.input);
             child.note_potion_tactical_priority(potion_tactical_priority);
+            child.note_turn_branch_priority(turn_transition.frontier_priority_hint());
+            turn_branching.observe_child(turn_transition);
             child.actions.push(CombatSearchV2ActionTrace {
                 step_index: node.actions.len(),
                 action_id,
@@ -173,6 +185,7 @@ pub fn run_combat_search_v2_with_stepper(
                 remember_best_frontier(&mut best_frontier, &child);
             }
         }
+        diagnostics.observe_turn_branching(&turn_branching);
 
         if exhausted {
             break;
@@ -240,6 +253,7 @@ pub fn run_combat_search_v2_with_stepper(
             terminal_policy: "whole_combat_terminal_only",
             expansion_order:
                 "semantic_turn_action_ordering_then_lexicographic_priority_enemy_progress_hp_next_draw_resource_line_length",
+            turn_branching: "turn_transition_classification_with_late_frontier_tie_break",
             potion_policy: config.potion_policy.label(),
             transposition_table: "exact_runtime_state_key_with_resource_coverage",
             dominance_pruning: "dominance_bucket_excludes_player_hp_block_then_compares_resource_vector",

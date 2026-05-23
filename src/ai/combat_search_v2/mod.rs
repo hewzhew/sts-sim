@@ -24,6 +24,7 @@ mod potions;
 mod report;
 mod search;
 mod transition;
+mod turn_branching;
 mod types;
 mod value;
 
@@ -40,6 +41,10 @@ use frontier::{
 };
 use report::{summarize_state, trajectory_report};
 use transition::{filtered_legal_actions, is_use_potion_input, terminal_label};
+use turn_branching::{
+    classify_turn_branch_transition, TurnBranchingDiagnosticsCollector,
+    TurnBranchingStateObservation,
+};
 use value::{
     living_enemy_count, survival_margin, terminal_rank, total_living_enemy_hp,
     visible_incoming_damage,

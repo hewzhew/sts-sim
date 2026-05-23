@@ -20,6 +20,7 @@ pub fn trajectory_from_state(
         potions_discarded,
         cards_played,
         potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
     };
     trajectory_report(&node, estimated)
 }

@@ -13,6 +13,7 @@ pub(super) struct SearchNode {
     pub(super) potions_discarded: u32,
     pub(super) cards_played: u32,
     pub(super) potion_tactical_priority: i32,
+    pub(super) last_turn_branch_priority: i32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,6 +30,7 @@ struct NodePriority {
     next_draw_low_cost: i32,
     potion_tactical_priority: i32,
     potion_conservation: i32,
+    turn_branch_priority: i32,
     shorter_line: i32,
 }
 
@@ -53,6 +55,7 @@ impl Ord for NodePriority {
                     .cmp(&other.potion_tactical_priority)
             })
             .then_with(|| self.potion_conservation.cmp(&other.potion_conservation))
+            .then_with(|| self.turn_branch_priority.cmp(&other.turn_branch_priority))
             .then_with(|| self.shorter_line.cmp(&other.shorter_line))
     }
 }
@@ -136,6 +139,7 @@ fn priority_for_node(node: &SearchNode) -> NodePriority {
         next_draw_low_cost: next_draw.low_cost,
         potion_tactical_priority: node.potion_tactical_priority,
         potion_conservation: -((node.potions_used + node.potions_discarded) as i32),
+        turn_branch_priority: node.last_turn_branch_priority,
         shorter_line: -(node.actions.len() as i32),
     }
 }
@@ -259,6 +263,7 @@ impl SearchNode {
             potions_discarded: self.potions_discarded,
             cards_played: self.cards_played,
             potion_tactical_priority: self.potion_tactical_priority,
+            last_turn_branch_priority: self.last_turn_branch_priority,
         }
     }
 
@@ -281,6 +286,10 @@ impl SearchNode {
         if let Some(priority) = priority {
             self.potion_tactical_priority = self.potion_tactical_priority.max(priority);
         }
+    }
+
+    pub(super) fn note_turn_branch_priority(&mut self, priority: i32) {
+        self.last_turn_branch_priority = priority;
     }
 
     pub(super) fn resource_vector(&self) -> ResourceVector {
@@ -338,6 +347,15 @@ mod tests {
         assert!(priority_for_node(&lethal) > priority_for_node(&sustain));
     }
 
+    #[test]
+    fn frontier_priority_uses_turn_branch_hint_as_late_tie_break() {
+        let neutral = test_node();
+        let mut same_turn = test_node();
+        same_turn.last_turn_branch_priority = 12;
+
+        assert!(priority_for_node(&same_turn) > priority_for_node(&neutral));
+    }
+
     fn test_node() -> SearchNode {
         SearchNode {
             engine: EngineState::CombatPlayerTurn,
@@ -348,6 +366,7 @@ mod tests {
             potions_discarded: 0,
             cards_played: 0,
             potion_tactical_priority: 0,
+            last_turn_branch_priority: 0,
         }
     }
 }

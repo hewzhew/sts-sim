@@ -10,6 +10,7 @@ pub(super) struct SearchDiagnosticsCollector {
     legal_actions_max: usize,
     expansion: ActionExpansionDiagnosticsCollector,
     ordering: ActionOrderingDiagnosticsCollector,
+    turn_branching: TurnBranchingDiagnosticsCollector,
 }
 
 pub(super) struct SearchDiagnosticsFinish<'a> {
@@ -39,6 +40,10 @@ impl SearchDiagnosticsCollector {
 
     pub(super) fn observe_action_ordering(&mut self, ordering: &ActionOrderingSummary) {
         self.ordering.observe(ordering);
+    }
+
+    pub(super) fn observe_turn_branching(&mut self, observation: &TurnBranchingStateObservation) {
+        self.turn_branching.observe(observation);
     }
 
     pub(super) fn finish(
@@ -79,23 +84,26 @@ impl SearchDiagnosticsCollector {
         };
         let expansion = self.expansion.finish();
         let ordering = self.ordering.finish();
+        let turn_branching = self.turn_branching.finish();
         let diagnosis = diagnosis_tags(
             input.proof_status,
             input.stats,
             &branching,
             &expansion,
             &ordering,
+            &turn_branching,
             &pruning,
             frontier.remaining_states,
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 3,
+            schema_version: 4,
             mode: "summary",
             tables,
             branching,
             expansion,
             ordering,
+            turn_branching,
             pruning,
             frontier,
             diagnosis,
@@ -121,6 +129,7 @@ fn diagnosis_tags(
     branching: &CombatSearchV2DiagnosticsBranching,
     expansion: &CombatSearchV2DiagnosticsExpansion,
     ordering: &CombatSearchV2DiagnosticsOrdering,
+    turn_branching: &CombatSearchV2DiagnosticsTurnBranching,
     pruning: &CombatSearchV2DiagnosticsPruning,
     frontier_remaining_states: usize,
 ) -> Vec<&'static str> {
@@ -189,6 +198,18 @@ fn diagnosis_tags(
     }
     if ordering.states_reordered > 0 {
         tags.push("action_ordering_reordered_legal_actions");
+    }
+    if turn_branching.states_observed > 0 {
+        tags.push("turn_branching_diagnostics_active");
+    }
+    if turn_branching.same_turn_children > 0 {
+        tags.push("same_turn_children_observed");
+    }
+    if turn_branching.next_turn_children > 0 {
+        tags.push("next_turn_children_observed");
+    }
+    if turn_branching.pending_choice_children > 0 {
+        tags.push("pending_choice_children_observed");
     }
     if frontier_remaining_states > 0 {
         tags.push("frontier_remaining");
@@ -263,6 +284,25 @@ mod tests {
                 largest_reorders: Vec::new(),
                 notes: Vec::new(),
             },
+            &CombatSearchV2DiagnosticsTurnBranching {
+                organization_policy: "turn_transition_classification_with_late_frontier_tie_break",
+                behavioral_effect: "diagnostic_summary_plus_priority_hint_no_prune_no_merge",
+                states_observed: 1,
+                total_legal_actions: 2,
+                total_generated_children: 2,
+                generated_children_per_state: 2.0,
+                same_turn_children: 1,
+                next_turn_children: 1,
+                pending_choice_children: 0,
+                terminal_children: 0,
+                other_children: 0,
+                end_turn_children: 1,
+                same_turn_child_ratio: 0.5,
+                next_turn_child_ratio: 0.5,
+                transition_counts: Vec::new(),
+                largest_turn_fanouts: Vec::new(),
+                notes: Vec::new(),
+            },
             &pruning,
             4,
         );
@@ -276,6 +316,9 @@ mod tests {
         assert!(tags.contains(&"action_expansion_diagnostics_active"));
         assert!(tags.contains(&"action_ordering_diagnostics_active"));
         assert!(tags.contains(&"action_ordering_reordered_legal_actions"));
+        assert!(tags.contains(&"turn_branching_diagnostics_active"));
+        assert!(tags.contains(&"same_turn_children_observed"));
+        assert!(tags.contains(&"next_turn_children_observed"));
         assert!(tags.contains(&"frontier_remaining"));
     }
 }
