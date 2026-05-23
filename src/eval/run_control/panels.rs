@@ -226,9 +226,8 @@ fn candidate_section_title(session: &RunControlSession) -> &'static str {
                 "Available action:"
             }
         }
-        EngineState::CombatPlayerTurn
-        | EngineState::CombatProcessing
-        | EngineState::PendingChoice(_) => "Actions:",
+        EngineState::PendingChoice(_) => "Selections:",
+        EngineState::CombatPlayerTurn | EngineState::CombatProcessing => "Actions:",
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => "Choices:",
         EngineState::MapNavigation => "Paths:",
         _ => "Available actions:",
@@ -291,9 +290,8 @@ fn state_command_hint(session: &RunControlSession) -> String {
         EngineState::Campfire => "rest | smith-<deck_idx> or smith <deck_idx> | recall".to_string(),
         EngineState::MapNavigation => "type a path id, e.g. 0 or 5".to_string(),
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
-        EngineState::CombatPlayerTurn
-        | EngineState::CombatProcessing
-        | EngineState::PendingChoice(_) => {
+        EngineState::PendingChoice(_) => "type visible selection id".to_string(),
+        EngineState::CombatPlayerTurn | EngineState::CombatProcessing => {
             "cap <case_id> | n | visible action id | end".to_string()
         }
         _ => "type visible id".to_string(),

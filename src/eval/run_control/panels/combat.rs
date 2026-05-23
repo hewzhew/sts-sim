@@ -1,6 +1,7 @@
 use crate::content::potions::get_potion_definition;
-use crate::runtime::combat::{CombatState, Intent};
+use crate::runtime::combat::{CombatCard, CombatState, Intent, Power};
 use crate::runtime::monster_move::MonsterMoveSpec;
+use crate::state::core::{EngineState, PendingChoice, PileType};
 
 use super::{card_line, debug_words, push_line};
 use crate::eval::run_control::session::RunControlSession;
@@ -42,19 +43,27 @@ pub(super) fn push_combat_screen(session: &RunControlSession, out: &mut String) 
             combat.entities.player.block
         ),
     );
+    push_power_line(out, "Player powers", combat_power_list(combat, 0));
     push_line(out, "Enemies:");
     for monster in &combat.entities.monsters {
         let intent = monster_intent_line(combat, monster.id);
+        let powers = combat_power_list(combat, monster.id);
+        let power_suffix = if powers.is_empty() {
+            String::new()
+        } else {
+            format!(" | powers: {}", powers.join(", "))
+        };
         push_line(
             out,
             format!(
-                "  slot {} | {} {}/{} | block {} | intent: {}",
+                "  slot {} | {} {}/{} | block {} | intent: {}{}",
                 monster.slot,
                 monster_name(monster.monster_type),
                 monster.current_hp,
                 monster.max_hp,
                 monster.block,
                 intent,
+                power_suffix,
             ),
         );
     }
@@ -63,10 +72,153 @@ pub(super) fn push_combat_screen(session: &RunControlSession, out: &mut String) 
     for (idx, card) in combat.zones.hand.iter().enumerate() {
         push_line(out, format!("  {idx} {}", card_line(card, true)));
     }
+    push_pending_choice_screen(session, combat, out);
     let potion_line = combat_potion_short_line(session);
     if !potion_line.is_empty() {
         push_line(out, "");
         push_line(out, potion_line);
+    }
+}
+
+fn push_pending_choice_screen(session: &RunControlSession, combat: &CombatState, out: &mut String) {
+    let EngineState::PendingChoice(choice) = &session.engine_state else {
+        return;
+    };
+    push_line(out, "");
+    match choice {
+        PendingChoice::GridSelect {
+            source_pile,
+            candidate_uuids,
+            min_cards,
+            max_cards,
+            can_cancel,
+            reason,
+        } => {
+            push_line(
+                out,
+                format!(
+                    "Pending selection: {:?} from {:?} | choose {}-{} | cancel={}",
+                    reason, source_pile, min_cards, max_cards, can_cancel
+                ),
+            );
+            push_selection_cards(
+                out,
+                grid_source_cards(combat, *source_pile),
+                candidate_uuids,
+            );
+        }
+        PendingChoice::HandSelect {
+            candidate_uuids,
+            min_cards,
+            max_cards,
+            can_cancel,
+            reason,
+        } => {
+            push_line(
+                out,
+                format!(
+                    "Pending hand selection: {:?} | choose {}-{} | cancel={}",
+                    reason, min_cards, max_cards, can_cancel
+                ),
+            );
+            push_selection_cards(out, &combat.zones.hand, candidate_uuids);
+        }
+        PendingChoice::DiscoverySelect(choice) => {
+            push_line(out, "Pending discovery:");
+            for (idx, card) in choice.cards.iter().enumerate() {
+                push_line(out, format!("  {idx} {}", reward_card_label(*card, 0)));
+            }
+        }
+        PendingChoice::CardRewardSelect { cards, .. } => {
+            push_line(out, "Pending card reward:");
+            for (idx, card) in cards.iter().enumerate() {
+                push_line(out, format!("  {idx} {}", reward_card_label(*card, 0)));
+            }
+        }
+        PendingChoice::ForeignInfluenceSelect { cards, upgraded } => {
+            push_line(out, "Pending Foreign Influence choice:");
+            for (idx, card) in cards.iter().enumerate() {
+                push_line(
+                    out,
+                    format!("  {idx} {}", reward_card_label(*card, u8::from(*upgraded))),
+                );
+            }
+        }
+        PendingChoice::ChooseOneSelect { choices } => {
+            push_line(out, "Pending choose-one:");
+            for (idx, choice) in choices.iter().enumerate() {
+                push_line(
+                    out,
+                    format!(
+                        "  {idx} {}",
+                        reward_card_label(choice.card_id, choice.upgrades)
+                    ),
+                );
+            }
+        }
+        PendingChoice::ScrySelect { cards, .. } => {
+            push_line(out, "Pending scry:");
+            for (idx, card) in cards.iter().enumerate() {
+                push_line(out, format!("  {idx} {}", reward_card_label(*card, 0)));
+            }
+        }
+        PendingChoice::StanceChoice => {
+            push_line(out, "Pending stance choice:");
+            push_line(out, "  0 Wrath");
+            push_line(out, "  1 Calm");
+        }
+    }
+}
+
+fn push_selection_cards(out: &mut String, cards: &[CombatCard], candidate_uuids: &[u32]) {
+    push_line(out, "Selection cards:");
+    for (idx, uuid) in candidate_uuids.iter().enumerate() {
+        let label = cards
+            .iter()
+            .find(|card| card.uuid == *uuid)
+            .map(|card| card_line(card, true))
+            .unwrap_or_else(|| format!("card uuid {uuid}"));
+        push_line(out, format!("  {idx} {label} | uuid {uuid}"));
+    }
+}
+
+fn grid_source_cards(combat: &CombatState, source_pile: PileType) -> &[CombatCard] {
+    match source_pile {
+        PileType::Draw => &combat.zones.draw_pile,
+        PileType::Discard => &combat.zones.discard_pile,
+        PileType::Exhaust => &combat.zones.exhaust_pile,
+        PileType::Hand => &combat.zones.hand,
+        PileType::Limbo => &combat.zones.limbo,
+        PileType::MasterDeck => &combat.meta.master_deck_snapshot,
+    }
+}
+
+fn combat_power_list(combat: &CombatState, entity_id: usize) -> Vec<String> {
+    combat
+        .entities
+        .power_db
+        .get(&entity_id)
+        .into_iter()
+        .flatten()
+        .map(power_label)
+        .collect()
+}
+
+fn push_power_line(out: &mut String, label: &str, powers: Vec<String>) {
+    if !powers.is_empty() {
+        push_line(out, format!("{label}: {}", powers.join(", ")));
+    }
+}
+
+fn power_label(power: &Power) -> String {
+    if power.amount == -1 {
+        debug_words(&format!("{:?}", power.power_type))
+    } else {
+        format!(
+            "{} {}",
+            debug_words(&format!("{:?}", power.power_type)),
+            power.amount
+        )
     }
 }
 
@@ -305,7 +457,14 @@ fn combat_potion_short_line(session: &RunControlSession) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::cards::CardId;
+    use crate::runtime::combat::CombatCard;
     use crate::runtime::monster_move::{AttackSpec, BuffSpec, DamageKind};
+    use crate::state::core::{
+        ActiveCombat, CombatContext, EngineState, GridSelectReason, PendingChoice,
+        RoomCombatContext,
+    };
+    use crate::state::map::node::RoomType;
 
     #[test]
     fn combat_intent_label_does_not_leak_move_spec_debug() {
@@ -327,5 +486,38 @@ mod tests {
         assert_eq!(rendered, "attack 8x2 (16), buff Strength +3");
         assert!(!rendered.contains("AttackSpec"));
         assert!(!rendered.contains("BuffSpec"));
+    }
+
+    #[test]
+    fn combat_screen_renders_pending_grid_select_cards() {
+        let mut session = RunControlSession::new(Default::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.zones.discard_pile = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::Defend, 20),
+        ];
+        let choice = PendingChoice::GridSelect {
+            source_pile: crate::state::core::PileType::Discard,
+            candidate_uuids: vec![10, 20],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: GridSelectReason::MoveToDrawPile,
+        };
+        session.engine_state = EngineState::PendingChoice(choice.clone());
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::PendingChoice(choice),
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        let rendered = crate::eval::run_control::render_run_control_state(&session);
+
+        assert!(rendered.contains("Pending selection: MoveToDrawPile from Discard"));
+        assert!(rendered.contains("0 Strike"));
+        assert!(rendered.contains("1 Defend"));
+        assert!(rendered.contains("0 | Put on top of draw pile: Strike"));
     }
 }

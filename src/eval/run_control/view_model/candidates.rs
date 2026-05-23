@@ -1,6 +1,7 @@
 use crate::content::potions::get_potion_definition;
+use crate::runtime::combat::CombatCard;
 use crate::sim::combat_legal_actions::get_legal_moves;
-use crate::state::core::{CampfireChoice, ClientInput, EngineState};
+use crate::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice, PileType};
 use crate::state::events::{EventOption, EventOptionTransition};
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
 use std::collections::BTreeMap;
@@ -351,6 +352,9 @@ fn combat_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     let Ok(position) = session.current_combat_position_for_actions() else {
         return Vec::new();
     };
+    if let EngineState::PendingChoice(choice) = &position.engine {
+        return pending_choice_candidates(choice, &position.combat);
+    }
     let legal_moves = get_legal_moves(&position.engine, &position.combat);
     let mut playable: BTreeMap<usize, Vec<Option<usize>>> = BTreeMap::new();
     let mut end_turn = false;
@@ -418,6 +422,146 @@ fn combat_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         ));
     }
     candidates
+}
+
+fn pending_choice_candidates(
+    choice: &PendingChoice,
+    combat: &crate::runtime::combat::CombatState,
+) -> Vec<DecisionCandidate> {
+    let legal_moves = get_legal_moves(&EngineState::PendingChoice(choice.clone()), combat);
+    legal_moves
+        .into_iter()
+        .enumerate()
+        .map(|(idx, input)| {
+            let label = pending_choice_input_label(choice, combat, &input);
+            candidate(idx.to_string(), label, input, None::<String>)
+        })
+        .collect()
+}
+
+fn pending_choice_input_label(
+    choice: &PendingChoice,
+    combat: &crate::runtime::combat::CombatState,
+    input: &ClientInput,
+) -> String {
+    match (choice, input) {
+        (
+            PendingChoice::GridSelect {
+                source_pile,
+                reason,
+                ..
+            },
+            ClientInput::SubmitGridSelect(uuids),
+        ) => format!(
+            "{} {}",
+            grid_reason_verb(*reason),
+            selected_card_labels(grid_source_cards(combat, *source_pile), uuids).join(", ")
+        ),
+        (PendingChoice::HandSelect { reason, .. }, ClientInput::SubmitHandSelect(uuids)) => {
+            format!(
+                "{} {}",
+                hand_reason_verb(*reason),
+                selected_card_labels(&combat.zones.hand, uuids).join(", ")
+            )
+        }
+        (PendingChoice::DiscoverySelect(choice), ClientInput::SubmitDiscoverChoice(idx)) => choice
+            .cards
+            .get(*idx)
+            .map(|card| format!("Choose {}", reward_card_label(*card, 0)))
+            .unwrap_or_else(|| format!("Choose {idx}")),
+        (PendingChoice::CardRewardSelect { cards, .. }, ClientInput::SubmitDiscoverChoice(idx)) => {
+            cards
+                .get(*idx)
+                .map(|card| format!("Choose {}", reward_card_label(*card, 0)))
+                .unwrap_or_else(|| format!("Choose {idx}"))
+        }
+        (
+            PendingChoice::ForeignInfluenceSelect { cards, upgraded },
+            ClientInput::SubmitDiscoverChoice(idx),
+        ) => cards
+            .get(*idx)
+            .map(|card| format!("Choose {}", reward_card_label(*card, u8::from(*upgraded))))
+            .unwrap_or_else(|| format!("Choose {idx}")),
+        (PendingChoice::ChooseOneSelect { choices }, ClientInput::SubmitDiscoverChoice(idx)) => {
+            choices
+                .get(*idx)
+                .map(|choice| {
+                    format!(
+                        "Choose {}",
+                        reward_card_label(choice.card_id, choice.upgrades)
+                    )
+                })
+                .unwrap_or_else(|| format!("Choose {idx}"))
+        }
+        (PendingChoice::StanceChoice, ClientInput::SubmitDiscoverChoice(0)) => {
+            "Choose Wrath".to_string()
+        }
+        (PendingChoice::StanceChoice, ClientInput::SubmitDiscoverChoice(1)) => {
+            "Choose Calm".to_string()
+        }
+        (_, ClientInput::Cancel) => "Cancel".to_string(),
+        (_, other) => crate::eval::run_control::view_model::client_input_hint(other),
+    }
+}
+
+fn selected_card_labels(cards: &[CombatCard], uuids: &[u32]) -> Vec<String> {
+    if uuids.is_empty() {
+        return vec!["nothing".to_string()];
+    }
+    uuids
+        .iter()
+        .map(|uuid| {
+            cards
+                .iter()
+                .find(|card| card.uuid == *uuid)
+                .map(combat_card_label)
+                .unwrap_or_else(|| format!("card uuid {uuid}"))
+        })
+        .collect()
+}
+
+fn grid_source_cards(
+    combat: &crate::runtime::combat::CombatState,
+    source_pile: PileType,
+) -> &[CombatCard] {
+    match source_pile {
+        PileType::Draw => &combat.zones.draw_pile,
+        PileType::Discard => &combat.zones.discard_pile,
+        PileType::Exhaust => &combat.zones.exhaust_pile,
+        PileType::Hand => &combat.zones.hand,
+        PileType::Limbo => &combat.zones.limbo,
+        PileType::MasterDeck => &combat.meta.master_deck_snapshot,
+    }
+}
+
+fn grid_reason_verb(reason: crate::state::GridSelectReason) -> &'static str {
+    match reason {
+        crate::state::GridSelectReason::MoveToDrawPile => "Put on top of draw pile:",
+        crate::state::GridSelectReason::Exhume { .. } => "Exhume:",
+        crate::state::GridSelectReason::DrawPileToHand => "Add to hand:",
+        crate::state::GridSelectReason::SkillFromDeckToHand => "Add skill to hand:",
+        crate::state::GridSelectReason::AttackFromDeckToHand => "Add attack to hand:",
+        crate::state::GridSelectReason::DiscardToHand => "Return to hand:",
+        crate::state::GridSelectReason::DiscardToHandNoCostChange => "Return to hand:",
+        crate::state::GridSelectReason::DiscardToHandRetain => "Return to hand and retain:",
+        crate::state::GridSelectReason::Omniscience { .. } => "Choose for Omniscience:",
+    }
+}
+
+fn hand_reason_verb(reason: crate::state::HandSelectReason) -> &'static str {
+    match reason {
+        crate::state::HandSelectReason::Exhaust => "Exhaust:",
+        crate::state::HandSelectReason::Discard => "Discard:",
+        crate::state::HandSelectReason::Retain => "Retain:",
+        crate::state::HandSelectReason::PutOnDrawPile => "Put on top of draw pile:",
+        crate::state::HandSelectReason::PutToBottomOfDraw => "Put on bottom of draw pile:",
+        crate::state::HandSelectReason::Setup => "Set up:",
+        crate::state::HandSelectReason::Copy { .. } => "Copy:",
+        crate::state::HandSelectReason::Nightmare { .. } => "Nightmare:",
+        crate::state::HandSelectReason::Upgrade => "Upgrade:",
+        crate::state::HandSelectReason::GamblingChip => "Discard for Gambling Chip:",
+        crate::state::HandSelectReason::Recycle => "Recycle:",
+    }
 }
 
 fn combat_target_slot(
@@ -503,4 +647,57 @@ fn boss_relic_candidates(choice: &BossRelicChoiceState) -> Vec<DecisionCandidate
             candidate
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::{
+        ActiveCombat, CombatContext, GridSelectReason, PendingChoice, RoomCombatContext,
+    };
+    use crate::state::map::node::RoomType;
+
+    #[test]
+    fn pending_grid_select_candidates_are_visible_and_executable() {
+        let mut session = RunControlSession::new(Default::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.zones.discard_pile = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::Defend, 20),
+        ];
+        let choice = PendingChoice::GridSelect {
+            source_pile: PileType::Discard,
+            candidate_uuids: vec![10, 20],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: GridSelectReason::MoveToDrawPile,
+        };
+        session.engine_state = EngineState::PendingChoice(choice.clone());
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::PendingChoice(choice),
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        let candidates = decision_candidates(&session);
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].id, "0");
+        assert!(candidates[0]
+            .label
+            .contains("Put on top of draw pile: Strike"));
+        assert_eq!(
+            candidates[0].action.executable_input(),
+            Some(ClientInput::SubmitGridSelect(vec![10]))
+        );
+        assert_eq!(
+            candidates[1].action.executable_input(),
+            Some(ClientInput::SubmitGridSelect(vec![20]))
+        );
+    }
 }
