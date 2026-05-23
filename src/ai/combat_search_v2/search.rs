@@ -109,6 +109,8 @@ pub fn run_combat_search_v2_with_stepper(
         );
         let expansion = summarize_action_expansion(&node.engine, &node.combat, &legal);
         diagnostics.observe_legal_actions(&expansion);
+        let target_fanout = summarize_target_fanout(&node.combat, &legal);
+        diagnostics.observe_target_fanout(&target_fanout);
         if legal.is_empty() {
             unresolved_leaf_count = unresolved_leaf_count.saturating_add(1);
             continue;

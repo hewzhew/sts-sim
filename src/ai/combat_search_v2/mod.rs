@@ -23,6 +23,7 @@ mod frontier;
 mod potions;
 mod report;
 mod search;
+mod target_fanout;
 mod transition;
 mod turn_branching;
 mod types;
@@ -40,6 +41,9 @@ use frontier::{
     ResourceVector, SearchNode,
 };
 use report::{summarize_state, trajectory_report};
+use target_fanout::{
+    summarize_target_fanout, TargetFanoutDiagnosticsCollector, TargetFanoutSummary,
+};
 use transition::{filtered_legal_actions, is_use_potion_input, terminal_label};
 use turn_branching::{
     classify_turn_branch_transition, TurnBranchingDiagnosticsCollector,

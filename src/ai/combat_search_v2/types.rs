@@ -113,6 +113,7 @@ pub struct CombatSearchV2DiagnosticsReport {
     pub tables: CombatSearchV2DiagnosticsTables,
     pub branching: CombatSearchV2DiagnosticsBranching,
     pub expansion: CombatSearchV2DiagnosticsExpansion,
+    pub target_fanout: CombatSearchV2DiagnosticsTargetFanout,
     pub ordering: CombatSearchV2DiagnosticsOrdering,
     pub turn_branching: CombatSearchV2DiagnosticsTurnBranching,
     pub pruning: CombatSearchV2DiagnosticsPruning,
@@ -167,6 +168,49 @@ pub struct CombatSearchV2DiagnosticsActionGroupSample {
     pub kind: String,
     pub group_key: String,
     pub atomic_actions: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsTargetFanout {
+    pub grouping_policy: &'static str,
+    pub behavioral_effect: &'static str,
+    pub states_observed: u64,
+    pub targeted_actions_total: u64,
+    pub target_fanout_groups_total: u64,
+    pub multi_target_fanout_groups: u64,
+    pub avg_targets_per_group: f64,
+    pub max_targets_per_group: usize,
+    pub lethal_target_groups: u64,
+    pub unique_lethal_target_groups: u64,
+    pub uniform_damage_groups: u64,
+    pub max_target_hp_span: i32,
+    pub group_kind_counts: Vec<CombatSearchV2DiagnosticsTargetFanoutKindCount>,
+    pub largest_target_fanouts: Vec<CombatSearchV2DiagnosticsTargetFanoutSample>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsTargetFanoutKindCount {
+    pub kind: String,
+    pub groups: u64,
+    pub actions: u64,
+    pub multi_target_groups: u64,
+    pub lethal_target_groups: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsTargetFanoutSample {
+    pub observed_at_state_query: u64,
+    pub kind: String,
+    pub source_key: String,
+    pub target_count: usize,
+    pub lethal_targets: usize,
+    pub min_target_hp_with_block: i32,
+    pub max_target_hp_with_block: i32,
+    pub target_hp_span: i32,
+    pub min_damage_hint: i32,
+    pub max_damage_hint: i32,
+    pub first_action_key: String,
 }
 
 #[derive(Clone, Debug, Serialize)]

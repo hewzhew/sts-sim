@@ -9,6 +9,7 @@ pub(super) struct SearchDiagnosticsCollector {
     legal_actions_total: u64,
     legal_actions_max: usize,
     expansion: ActionExpansionDiagnosticsCollector,
+    target_fanout: TargetFanoutDiagnosticsCollector,
     ordering: ActionOrderingDiagnosticsCollector,
     turn_branching: TurnBranchingDiagnosticsCollector,
 }
@@ -40,6 +41,10 @@ impl SearchDiagnosticsCollector {
 
     pub(super) fn observe_action_ordering(&mut self, ordering: &ActionOrderingSummary) {
         self.ordering.observe(ordering);
+    }
+
+    pub(super) fn observe_target_fanout(&mut self, target_fanout: &TargetFanoutSummary) {
+        self.target_fanout.observe(target_fanout);
     }
 
     pub(super) fn observe_turn_branching(&mut self, observation: &TurnBranchingStateObservation) {
@@ -83,6 +88,7 @@ impl SearchDiagnosticsCollector {
             sampled_states: input.frontier_sample_count,
         };
         let expansion = self.expansion.finish();
+        let target_fanout = self.target_fanout.finish();
         let ordering = self.ordering.finish();
         let turn_branching = self.turn_branching.finish();
         let diagnosis = diagnosis_tags(
@@ -90,6 +96,7 @@ impl SearchDiagnosticsCollector {
             input.stats,
             &branching,
             &expansion,
+            &target_fanout,
             &ordering,
             &turn_branching,
             &pruning,
@@ -97,11 +104,12 @@ impl SearchDiagnosticsCollector {
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 4,
+            schema_version: 5,
             mode: "summary",
             tables,
             branching,
             expansion,
+            target_fanout,
             ordering,
             turn_branching,
             pruning,
@@ -128,6 +136,7 @@ fn diagnosis_tags(
     stats: &CombatSearchV2Stats,
     branching: &CombatSearchV2DiagnosticsBranching,
     expansion: &CombatSearchV2DiagnosticsExpansion,
+    target_fanout: &CombatSearchV2DiagnosticsTargetFanout,
     ordering: &CombatSearchV2DiagnosticsOrdering,
     turn_branching: &CombatSearchV2DiagnosticsTurnBranching,
     pruning: &CombatSearchV2DiagnosticsPruning,
@@ -192,6 +201,15 @@ fn diagnosis_tags(
     }
     if expansion.max_group_size > 1 {
         tags.push("action_fanout_groups_observed");
+    }
+    if target_fanout.states_observed > 0 {
+        tags.push("target_fanout_diagnostics_active");
+    }
+    if target_fanout.multi_target_fanout_groups > 0 {
+        tags.push("multi_target_fanout_observed");
+    }
+    if target_fanout.lethal_target_groups > 0 {
+        tags.push("lethal_target_fanout_observed");
     }
     if ordering.states_observed > 0 {
         tags.push("action_ordering_diagnostics_active");
@@ -271,6 +289,23 @@ mod tests {
                 largest_groups: Vec::new(),
                 notes: Vec::new(),
             },
+            &CombatSearchV2DiagnosticsTargetFanout {
+                grouping_policy: "targeted_card_and_potion_actions_grouped_by_source",
+                behavioral_effect: "diagnostic_only_no_target_prune_no_merge",
+                states_observed: 1,
+                targeted_actions_total: 2,
+                target_fanout_groups_total: 1,
+                multi_target_fanout_groups: 1,
+                avg_targets_per_group: 2.0,
+                max_targets_per_group: 2,
+                lethal_target_groups: 1,
+                unique_lethal_target_groups: 1,
+                uniform_damage_groups: 1,
+                max_target_hp_span: 10,
+                group_kind_counts: Vec::new(),
+                largest_target_fanouts: Vec::new(),
+                notes: Vec::new(),
+            },
             &CombatSearchV2DiagnosticsOrdering {
                 ordering_policy: "semantic_role_ordering_for_combat_player_turn_only",
                 behavioral_effect: "child_generation_order_only_no_prune_no_merge",
@@ -314,6 +349,9 @@ mod tests {
         assert!(tags.contains(&"unresolved_leaf_states"));
         assert!(tags.contains(&"no_legal_actions_observed"));
         assert!(tags.contains(&"action_expansion_diagnostics_active"));
+        assert!(tags.contains(&"target_fanout_diagnostics_active"));
+        assert!(tags.contains(&"multi_target_fanout_observed"));
+        assert!(tags.contains(&"lethal_target_fanout_observed"));
         assert!(tags.contains(&"action_ordering_diagnostics_active"));
         assert!(tags.contains(&"action_ordering_reordered_legal_actions"));
         assert!(tags.contains(&"turn_branching_diagnostics_active"));
