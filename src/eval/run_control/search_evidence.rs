@@ -14,6 +14,7 @@ pub struct CombatSearchEvidenceContextV1 {
     pub decision_step: u64,
     pub capture_case_id: Option<String>,
     pub capture_root: Option<String>,
+    pub capture_path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -21,6 +22,7 @@ pub struct CombatSearchEvidenceV1<'a> {
     pub schema_name: &'static str,
     pub schema_version: u32,
     pub artifact_kind: &'static str,
+    pub saved_at_unix_ms: u128,
     pub label_role: &'static str,
     pub trainable_as_action_label: bool,
     pub policy_quality_claim: bool,
@@ -37,6 +39,7 @@ pub fn save_combat_search_evidence_v1(
         schema_name: COMBAT_SEARCH_EVIDENCE_SCHEMA_NAME,
         schema_version: COMBAT_SEARCH_EVIDENCE_SCHEMA_VERSION,
         artifact_kind: "combat_search_evidence",
+        saved_at_unix_ms: unix_ms_now(),
         label_role: "search_evidence_not_human_baseline",
         trainable_as_action_label: false,
         policy_quality_claim: false,
@@ -51,4 +54,11 @@ pub fn save_combat_search_evidence_v1(
     }
     let payload = serde_json::to_string_pretty(&evidence).map_err(|err| err.to_string())?;
     fs::write(path, payload).map_err(|err| err.to_string())
+}
+
+fn unix_ms_now() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
 }

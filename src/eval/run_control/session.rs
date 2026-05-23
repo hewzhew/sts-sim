@@ -711,6 +711,8 @@ mod tests {
         assert!(payload.contains("\"schema_name\": \"CombatSearchEvidenceV1\""));
         assert!(payload.contains("\"label_role\": \"search_evidence_not_human_baseline\""));
         assert!(payload.contains("\"capture_case_id\": \"first_fight\""));
+        assert!(payload.contains("\"capture_path\":"));
+        assert!(payload.contains("first_fight.capture.json"));
         assert!(payload.contains("\"schema_name\": \"CombatSearchV2Report\""));
 
         let _ = fs::remove_dir_all(root);

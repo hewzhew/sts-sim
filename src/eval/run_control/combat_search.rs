@@ -10,6 +10,7 @@ use crate::sim::combat_action::CombatActionChoice;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
 use super::commands::{RunControlSearchCombatOptions, RunControlSearchEvidenceTarget};
+use super::registry::BenchmarkCasePaths;
 use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::transition_report::{
@@ -84,20 +85,25 @@ fn save_search_evidence_if_requested(
     let Some(target) = target else {
         return Ok(None);
     };
-    let (path, capture_case_id, capture_root) = match target {
-        RunControlSearchEvidenceTarget::Path(path) => (path.clone(), None, None),
+    let (path, capture_case_id, capture_root, capture_path) = match target {
+        RunControlSearchEvidenceTarget::Path(path) => {
+            (next_available_evidence_path(path), None, None, None)
+        }
         RunControlSearchEvidenceTarget::LastCaptureCase => {
             let case = session.active_capture_case().ok_or_else(|| {
                 "search evidence save=case requires the current combat to have a matching cap <case_id>"
                     .to_string()
             })?;
+            let paths = BenchmarkCasePaths::for_case(&case.root, &case.case_id);
+            let base_path = case.root.join("search_evidence").join(format!(
+                "{}.step{}.search.json",
+                case.case_id, session.decision_step
+            ));
             (
-                case.root.join("search_evidence").join(format!(
-                    "{}.step{}.search.json",
-                    case.case_id, session.decision_step
-                )),
+                next_available_evidence_path(&base_path),
                 Some(case.case_id.clone()),
                 Some(case.root.display().to_string()),
+                Some(paths.capture_path.display().to_string()),
             )
         }
     };
@@ -108,10 +114,33 @@ fn save_search_evidence_if_requested(
             decision_step: session.decision_step,
             capture_case_id,
             capture_root,
+            capture_path,
         },
         report,
     )?;
     Ok(Some(path))
+}
+
+fn next_available_evidence_path(path: &std::path::Path) -> std::path::PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("search_evidence");
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("json");
+    for idx in 2..10_000 {
+        let candidate = parent.join(format!("{stem}.{idx}.{ext}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    parent.join(format!("{stem}.overflow.{ext}"))
 }
 
 fn render_saved_evidence_note(path: Option<&std::path::Path>) -> String {
@@ -276,5 +305,38 @@ fn current_run_apply_status(session: &RunControlSession) -> RunApplyStatus {
         EngineState::GameOver(RunResult::Victory) => RunApplyStatus::Victory,
         EngineState::GameOver(RunResult::Defeat) => RunApplyStatus::Defeat,
         _ => RunApplyStatus::Running,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::next_available_evidence_path;
+
+    #[test]
+    fn search_evidence_path_does_not_overwrite_existing_file() {
+        let root = std::env::temp_dir().join(format!(
+            "sts_search_evidence_path_{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should be after unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("temp dir should be created");
+        let base = root.join("case.step1.search.json");
+        fs::write(&base, "{}").expect("base file should be written");
+
+        let next = next_available_evidence_path(&base);
+
+        assert_ne!(next, base);
+        assert_eq!(
+            next.file_name().and_then(|name| name.to_str()),
+            Some("case.step1.search.2.json")
+        );
+        assert!(!next.exists());
+
+        let _ = fs::remove_dir_all(root);
     }
 }
