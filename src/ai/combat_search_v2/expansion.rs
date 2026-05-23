@@ -405,7 +405,7 @@ mod tests {
             ),
             CombatActionChoice::from_input(&combat, ClientInput::EndTurn),
         ];
-        let filtered = filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never);
+        let filtered = filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never, &combat);
 
         let summary =
             summarize_action_expansion(&EngineState::CombatPlayerTurn, &combat, &filtered);

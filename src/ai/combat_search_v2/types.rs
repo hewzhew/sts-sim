@@ -34,6 +34,8 @@ pub enum CombatSearchV2PotionPolicy {
     Never,
     #[serde(alias = "all_legal_potion_actions")]
     All,
+    #[serde(alias = "semantic_budgeted_potion_actions")]
+    SemanticBudgeted,
 }
 
 impl CombatSearchV2PotionPolicy {
@@ -41,6 +43,7 @@ impl CombatSearchV2PotionPolicy {
         match self {
             CombatSearchV2PotionPolicy::Never => "never",
             CombatSearchV2PotionPolicy::All => "all_legal_potion_actions",
+            CombatSearchV2PotionPolicy::SemanticBudgeted => "semantic_budgeted_potion_actions",
         }
     }
 }

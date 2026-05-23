@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clap::{ArgGroup, Parser, ValueEnum};
+use clap::{ArgGroup, Parser};
 use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
@@ -42,8 +42,8 @@ struct Args {
     #[arg(long)]
     wall_ms: Option<u64>,
 
-    #[arg(long, value_enum)]
-    potion_policy: Option<CliPotionPolicy>,
+    #[arg(long, value_parser = parse_potion_policy)]
+    potion_policy: Option<CombatSearchV2PotionPolicy>,
 
     #[arg(long)]
     max_potions_used: Option<u32>,
@@ -53,21 +53,6 @@ struct Args {
 
     #[arg(long)]
     output: Option<PathBuf>,
-}
-
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum CliPotionPolicy {
-    Never,
-    All,
-}
-
-impl From<CliPotionPolicy> for CombatSearchV2PotionPolicy {
-    fn from(value: CliPotionPolicy) -> Self {
-        match value {
-            CliPotionPolicy::Never => CombatSearchV2PotionPolicy::Never,
-            CliPotionPolicy::All => CombatSearchV2PotionPolicy::All,
-        }
-    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -83,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_actions_per_line: args.max_actions_per_line,
         max_engine_steps_per_action: args.max_engine_steps_per_action,
         wall_ms: args.wall_ms,
-        potion_policy: args.potion_policy.map(Into::into),
+        potion_policy: args.potion_policy,
         max_potions_used: args.max_potions_used,
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
@@ -105,6 +90,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     write_or_print(args.output.as_ref(), &payload)?;
     Ok(())
+}
+
+fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "never" => Ok(CombatSearchV2PotionPolicy::Never),
+        "all" | "all_legal_potion_actions" => Ok(CombatSearchV2PotionPolicy::All),
+        "semantic"
+        | "semantic-budgeted"
+        | "semantic_budgeted"
+        | "semantic_budgeted_potion_actions" => Ok(CombatSearchV2PotionPolicy::SemanticBudgeted),
+        _ => Err(format!(
+            "invalid potion policy '{value}', expected never|all|semantic"
+        )),
+    }
 }
 
 fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Error>> {

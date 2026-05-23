@@ -1,13 +1,12 @@
 use crate::ai::combat_search_v2::{
-    run_combat_search_v2, CombatSearchV2ActionTrace, CombatSearchV2Config,
-    CombatSearchV2PotionPolicy, CombatSearchV2Report, SearchProofStatus, SearchTerminalLabel,
+    filter_combat_search_legal_actions, run_combat_search_v2, CombatSearchV2ActionTrace,
+    CombatSearchV2Config, CombatSearchV2Report, SearchProofStatus, SearchTerminalLabel,
 };
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
     EngineCombatStepper,
 };
-use crate::sim::combat_action::CombatActionChoice;
-use crate::state::core::{ClientInput, EngineState, RunResult};
+use crate::state::core::{EngineState, RunResult};
 
 use super::commands::{RunControlSearchCombatOptions, RunControlSearchEvidenceTarget};
 use super::registry::BenchmarkCasePaths;
@@ -180,9 +179,10 @@ fn verify_trajectory_replays_to_win(
     let stepper = EngineCombatStepper;
     let mut position = start.clone();
     for action in actions {
-        let choices = filtered_legal_choices(
+        let choices = filter_combat_search_legal_actions(
             stepper.legal_action_choices(&position),
             config.potion_policy,
+            &position.combat,
         );
         let Some(choice) = choices
             .iter()
@@ -217,26 +217,6 @@ fn verify_trajectory_replays_to_win(
             "search-combat dry-run did not finish as win; terminal={other:?}"
         )),
     }
-}
-
-fn filtered_legal_choices(
-    choices: Vec<CombatActionChoice>,
-    potion_policy: CombatSearchV2PotionPolicy,
-) -> Vec<CombatActionChoice> {
-    match potion_policy {
-        CombatSearchV2PotionPolicy::All => choices,
-        CombatSearchV2PotionPolicy::Never => choices
-            .into_iter()
-            .filter(|choice| !is_potion_input(&choice.input))
-            .collect(),
-    }
-}
-
-fn is_potion_input(input: &ClientInput) -> bool {
-    matches!(
-        input,
-        ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
-    )
 }
 
 fn render_search_rejection(report: &CombatSearchV2Report) -> String {

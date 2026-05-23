@@ -248,7 +248,7 @@ Help:
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
     draw, discard, exhaust, actions, action <idx>
-    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all] [max_potions=N] [save=case|path]
+    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [save=case|path]
 
   Map/Event/Reward:
     go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
@@ -268,7 +268,7 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
-    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all] [max_potions=N] [save=case|path] [max_ops=N]
+    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [save=case|path] [max_ops=N]
     auto-reward
     auto-reward gold|potion|all on|off"
 }
@@ -460,8 +460,11 @@ fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String
     match value.to_ascii_lowercase().as_str() {
         "never" => Ok(CombatSearchV2PotionPolicy::Never),
         "all" | "all_legal_potion_actions" => Ok(CombatSearchV2PotionPolicy::All),
+        "semantic" | "semantic_budgeted" | "semantic_budgeted_potion_actions" => {
+            Ok(CombatSearchV2PotionPolicy::SemanticBudgeted)
+        }
         _ => Err(format!(
-            "invalid potion policy '{value}', expected never|all"
+            "invalid potion policy '{value}', expected never|all|semantic"
         )),
     }
 }
@@ -603,7 +606,7 @@ mod tests {
     fn run_control_parser_accepts_search_combat_options() {
         assert_eq!(
             parse_run_control_command(
-                "search-combat max_nodes=123 wall_ms=50 potion=all max_potions=1",
+                "search-combat max_nodes=123 wall_ms=50 potion=semantic max_potions=1",
             )
             .expect("search-combat should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
@@ -611,7 +614,7 @@ mod tests {
                 max_actions_per_line: None,
                 max_engine_steps_per_action: None,
                 wall_ms: Some(50),
-                potion_policy: Some(CombatSearchV2PotionPolicy::All),
+                potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
                 max_potions_used: Some(1),
                 evidence: None,
             })

@@ -103,6 +103,7 @@ pub fn run_combat_search_v2_with_stepper(
         let legal = filtered_legal_actions(
             stepper.legal_action_choices(&position),
             config.potion_policy,
+            &node.combat,
         );
         let expansion = summarize_action_expansion(&node.engine, &node.combat, &legal);
         diagnostics.observe_legal_actions(&expansion);

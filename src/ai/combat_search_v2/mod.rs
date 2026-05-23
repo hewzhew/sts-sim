@@ -19,6 +19,7 @@ mod baseline;
 mod diagnostics;
 mod expansion;
 mod frontier;
+mod potions;
 mod report;
 mod search;
 mod transition;
@@ -47,3 +48,11 @@ pub use baseline::{
 pub use report::trajectory_from_state;
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use types::*;
+
+pub(crate) fn filter_combat_search_legal_actions(
+    choices: Vec<CombatActionChoice>,
+    potion_policy: CombatSearchV2PotionPolicy,
+    combat: &CombatState,
+) -> Vec<CombatActionChoice> {
+    transition::filtered_legal_actions(choices, potion_policy, combat)
+}

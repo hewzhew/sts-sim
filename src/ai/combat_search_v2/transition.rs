@@ -3,12 +3,20 @@ use super::*;
 pub(super) fn filtered_legal_actions(
     legal: Vec<CombatActionChoice>,
     potion_policy: CombatSearchV2PotionPolicy,
+    combat: &CombatState,
 ) -> Vec<CombatActionChoice> {
     match potion_policy {
         CombatSearchV2PotionPolicy::All => legal,
         CombatSearchV2PotionPolicy::Never => legal
             .into_iter()
             .filter(|choice| !is_potion_input(&choice.input))
+            .collect(),
+        CombatSearchV2PotionPolicy::SemanticBudgeted => legal
+            .into_iter()
+            .filter(|choice| {
+                !is_potion_input(&choice.input)
+                    || potions::semantic_potion_action_allowed(combat, &choice.input)
+            })
             .collect(),
     }
 }

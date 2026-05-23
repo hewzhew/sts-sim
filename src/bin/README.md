@@ -45,11 +45,13 @@ Active binaries:
     and expected fingerprints
   - `b` / `baseline`: after a `capture-case` and the matching combat finishes, save
     the last completed whole-combat baseline to that same case
-  - `sc` / `search-combat [max_nodes=N] [wall_ms=N] [potion=never|all] [max_potions=N]`:
+  - `sc` / `search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N]`:
     run Combat Search V2 from the current active combat boundary, dry-run the
     selected complete winning trajectory, and apply it only if the dry-run
-    still wins; budgeted wins are reported as no optimality claim
-  - `n` / `next` / `advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all]`:
+    still wins; budgeted wins are reported as no optimality claim. Use
+    `potion=semantic max_potions=N` for semantic resource-bounded potion probes,
+    or `potion=all max_potions=N` for a broader comparison.
+  - `n` / `next` / `advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all|semantic]`:
     advances routine or forced-safe screens, claims low-risk rewards, and uses
     combat search only when a complete winning trajectory is available, then
     stops at the next human strategic choice
