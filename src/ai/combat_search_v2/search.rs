@@ -118,7 +118,9 @@ pub fn run_combat_search_v2_with_stepper(
             unresolved_leaf_count = unresolved_leaf_count.saturating_add(1);
             continue;
         }
-        let ordered = order_action_choices(&node.engine, &node.combat, legal);
+        let equivalence = compress_equivalent_actions(&node.engine, &node.combat, legal);
+        diagnostics.observe_action_equivalence(&equivalence.summary);
+        let ordered = order_indexed_action_choices(&node.engine, &node.combat, equivalence.choices);
         diagnostics.observe_action_ordering(&ordered.summary);
         let mut turn_branching =
             TurnBranchingStateObservation::new(&node.combat, ordered.choices.len());
@@ -258,7 +260,7 @@ pub fn run_combat_search_v2_with_stepper(
             kind: "best_first_atomic_action_graph_search_v2",
             terminal_policy: "whole_combat_terminal_only",
             expansion_order:
-                "semantic_turn_action_ordering_then_lexicographic_priority_enemy_progress_hp_next_draw_resource_line_length",
+                "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_then_lexicographic_priority_enemy_progress_hp_next_draw_resource_line_length",
             turn_branching: "turn_transition_classification_with_late_frontier_tie_break",
             potion_policy: config.potion_policy.label(),
             transposition_table: "exact_runtime_state_key_with_resource_coverage",

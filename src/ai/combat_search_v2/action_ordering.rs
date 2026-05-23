@@ -19,10 +19,12 @@ const ROLE_END_TURN: i32 = 0;
 const ROLE_DISCARD_POTION: i32 = -20;
 
 #[derive(Clone, Debug)]
-pub(super) struct OrderedActionChoice {
+pub(super) struct IndexedActionChoice {
     pub(super) original_action_id: usize,
     pub(super) choice: CombatActionChoice,
 }
+
+pub(super) type OrderedActionChoice = IndexedActionChoice;
 
 #[derive(Clone, Debug)]
 pub(super) struct ActionOrderingResult {
@@ -100,18 +102,37 @@ struct ActionOrderingObservation {
     first_action_key: String,
 }
 
-pub(super) fn order_action_choices(
+#[cfg(test)]
+fn order_action_choices(
     engine: &EngineState,
     combat: &CombatState,
     choices: Vec<CombatActionChoice>,
 ) -> ActionOrderingResult {
+    order_indexed_action_choices(
+        engine,
+        combat,
+        choices
+            .into_iter()
+            .enumerate()
+            .map(|(original_action_id, choice)| IndexedActionChoice {
+                original_action_id,
+                choice,
+            })
+            .collect(),
+    )
+}
+
+pub(super) fn order_indexed_action_choices(
+    engine: &EngineState,
+    combat: &CombatState,
+    choices: Vec<IndexedActionChoice>,
+) -> ActionOrderingResult {
     let mut entries = choices
         .into_iter()
-        .enumerate()
-        .map(|(original_action_id, choice)| ActionOrderingEntry {
-            original_action_id,
-            priority: priority_for_input(engine, combat, &choice.input),
-            choice,
+        .map(|indexed| ActionOrderingEntry {
+            original_action_id: indexed.original_action_id,
+            priority: priority_for_input(engine, combat, &indexed.choice.input),
+            choice: indexed.choice,
         })
         .collect::<Vec<_>>();
 
@@ -127,7 +148,7 @@ pub(super) fn order_action_choices(
     let summary = summarize_ordering(&entries);
     let choices = entries
         .into_iter()
-        .map(|entry| OrderedActionChoice {
+        .map(|entry| IndexedActionChoice {
             original_action_id: entry.original_action_id,
             choice: entry.choice,
         })

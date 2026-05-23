@@ -15,6 +15,7 @@ use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
 use crate::state::core::{ClientInput, EngineState};
 
+mod action_equivalence;
 mod action_ordering;
 mod baseline;
 mod diagnostics;
@@ -30,8 +31,12 @@ mod turn_prefix;
 mod types;
 mod value;
 
+use action_equivalence::{
+    compress_equivalent_actions, ActionEquivalenceDiagnosticsCollector, ActionEquivalenceSummary,
+};
 use action_ordering::{
-    order_action_choices, ActionOrderingDiagnosticsCollector, ActionOrderingSummary,
+    order_indexed_action_choices, ActionOrderingDiagnosticsCollector, ActionOrderingSummary,
+    IndexedActionChoice,
 };
 use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
 use expansion::{
