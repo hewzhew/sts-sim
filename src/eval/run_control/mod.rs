@@ -1,4 +1,5 @@
 mod artifact_commands;
+mod auto_capture;
 mod auto_step;
 mod combat_search;
 mod combat_start;
@@ -16,6 +17,7 @@ mod session_trace;
 mod transition_report;
 mod view_model;
 
+pub use auto_capture::AutoCombatCaptureConfig;
 pub use commands::{
     parse_run_control_command, run_control_help, run_control_short_hint, RunControlAutoStepOptions,
     RunControlCommand, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,

@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use sts_simulator::eval::run_control::{
-    canonical_player_class, parse_run_control_command, render_run_control_state, RunControlConfig,
-    RunControlSession, SessionTraceRecorder,
+    canonical_player_class, parse_run_control_command, render_run_control_state,
+    AutoCombatCaptureConfig, RunControlConfig, RunControlSession, SessionTraceRecorder,
 };
 
 #[derive(Parser, Debug)]
@@ -28,6 +28,12 @@ struct Args {
 
     #[arg(long)]
     trace: Option<PathBuf>,
+
+    #[arg(long)]
+    auto_capture_combat: bool,
+
+    #[arg(long)]
+    auto_capture_combat_root: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -58,9 +64,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         final_act: args.final_act,
         player_class,
         reward_automation: Default::default(),
+        auto_capture: AutoCombatCaptureConfig {
+            enabled: args.auto_capture_combat,
+            root: args.auto_capture_combat_root.clone(),
+        },
     });
 
     println!("{}", render_run_control_state(&session));
+    if args.auto_capture_combat {
+        let root = args
+            .auto_capture_combat_root
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "tools/artifacts/benchmarks/seed<seed>_act<act>".to_string());
+        println!("auto combat capture enabled: {root}");
+    }
     let mut trace = args
         .trace
         .as_ref()

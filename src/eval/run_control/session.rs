@@ -6,6 +6,7 @@ use crate::sim::combat::CombatPosition;
 use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
 use crate::state::run::RunState;
 
+use super::auto_capture::{render_auto_capture_result, AutoCombatCaptureConfig};
 use super::combat_start::ensure_combat_started_if_needed;
 use super::commands::{run_control_help, RunControlCommand};
 use super::outcome::CombatOutcomeTracker;
@@ -32,6 +33,7 @@ pub struct RunControlConfig {
     pub final_act: bool,
     pub player_class: &'static str,
     pub reward_automation: RewardAutomationConfig,
+    pub auto_capture: AutoCombatCaptureConfig,
 }
 
 impl Default for RunControlConfig {
@@ -42,6 +44,7 @@ impl Default for RunControlConfig {
             final_act: false,
             player_class: "Ironclad",
             reward_automation: RewardAutomationConfig::default(),
+            auto_capture: AutoCombatCaptureConfig::default(),
         }
     }
 }
@@ -53,8 +56,10 @@ pub struct RunControlSession {
     pub active_combat: Option<ActiveCombat>,
     pub decision_step: u64,
     pub reward_automation: RewardAutomationConfig,
+    pub(in crate::eval::run_control) auto_capture: AutoCombatCaptureConfig,
     pub(super) combat_outcomes: CombatOutcomeTracker,
-    combat_sequence: u64,
+    pub(in crate::eval::run_control) combat_sequence: u64,
+    pub(in crate::eval::run_control) auto_capture_last_combat_sequence: Option<u64>,
     last_completed_combat_sequence: Option<u64>,
     last_completed_combat_source: Option<CombatCompletionSource>,
     current_combat_source: Option<CombatCompletionSource>,
@@ -130,8 +135,10 @@ impl RunControlSession {
             active_combat: None,
             decision_step: 0,
             reward_automation: config.reward_automation,
+            auto_capture: config.auto_capture,
             combat_outcomes: CombatOutcomeTracker::default(),
             combat_sequence: 0,
+            auto_capture_last_combat_sequence: None,
             last_completed_combat_sequence: None,
             last_completed_combat_source: None,
             current_combat_source: None,
@@ -399,6 +406,7 @@ impl RunControlSession {
         self.cleanup_inactive_combat();
         self.ensure_combat_started_if_needed()?;
         self.observe_active_combat_started();
+        let auto_capture = super::auto_capture::maybe_auto_capture_combat_start(self)?;
         self.decision_step = self.decision_step.saturating_add(1);
 
         let status = if tick.keep_running {
@@ -418,6 +426,11 @@ impl RunControlSession {
             report
         } else {
             format!("{}\n{report}", reward_automation.render())
+        };
+        let report = if let Some(auto_capture) = auto_capture.as_ref() {
+            format!("{report}\n{}", render_auto_capture_result(auto_capture))
+        } else {
+            report
         };
         Ok(RunControlCommandOutcome::action(
             format!("{report}\n{}", render_run_control_state(self)),
