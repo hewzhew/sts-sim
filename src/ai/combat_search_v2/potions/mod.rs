@@ -7,6 +7,13 @@ mod semantics;
 
 pub(super) use proposals::semantic_potion_action_allowed;
 
+pub(super) fn semantic_potion_tactical_priority(
+    combat: &CombatState,
+    input: &ClientInput,
+) -> Option<i32> {
+    proposals::semantic_potion_tactical_role(combat, input).map(|role| role.priority_rank())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,6 +69,17 @@ mod tests {
             .reason,
             decision::PotionGateReason::VisibleIncomingUncoveredByHandBlock
         );
+        assert_eq!(
+            proposals::semantic_potion_gate_decision(
+                &combat,
+                &ClientInput::UsePotion {
+                    potion_index: 0,
+                    target: None,
+                },
+            )
+            .role,
+            Some(decision::PotionTacticalRole::PreventUncoveredDamage)
+        );
     }
 
     #[test]
@@ -112,6 +130,10 @@ mod tests {
         assert_eq!(
             decision.reason,
             decision::PotionGateReason::HighStakesNoVisibleHandLethal
+        );
+        assert_eq!(
+            decision.role,
+            Some(decision::PotionTacticalRole::HighStakesResourceConversion)
         );
     }
 
@@ -175,6 +197,16 @@ mod tests {
             )
             .reason,
             decision::PotionGateReason::DirectDamageCanKill
+        );
+        assert_eq!(
+            proposals::semantic_potion_tactical_role(
+                &combat,
+                &ClientInput::UsePotion {
+                    potion_index: 0,
+                    target: Some(1),
+                },
+            ),
+            Some(decision::PotionTacticalRole::LethalDamage)
         );
     }
 
@@ -304,6 +336,10 @@ mod tests {
         assert_eq!(
             decision.reason,
             decision::PotionGateReason::VisibleIncomingLethal
+        );
+        assert_eq!(
+            decision.role,
+            Some(decision::PotionTacticalRole::PreventVisibleLethal)
         );
     }
 

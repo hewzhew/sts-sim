@@ -12,6 +12,7 @@ pub(super) struct SearchNode {
     pub(super) potions_used: u32,
     pub(super) potions_discarded: u32,
     pub(super) cards_played: u32,
+    pub(super) potion_tactical_priority: i32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -26,6 +27,7 @@ struct NodePriority {
     next_draw_block: i32,
     next_draw_playable_cards: i32,
     next_draw_low_cost: i32,
+    potion_tactical_priority: i32,
     potion_conservation: i32,
     shorter_line: i32,
 }
@@ -46,6 +48,10 @@ impl Ord for NodePriority {
                     .cmp(&other.next_draw_playable_cards)
             })
             .then_with(|| self.next_draw_low_cost.cmp(&other.next_draw_low_cost))
+            .then_with(|| {
+                self.potion_tactical_priority
+                    .cmp(&other.potion_tactical_priority)
+            })
             .then_with(|| self.potion_conservation.cmp(&other.potion_conservation))
             .then_with(|| self.shorter_line.cmp(&other.shorter_line))
     }
@@ -128,6 +134,7 @@ fn priority_for_node(node: &SearchNode) -> NodePriority {
         next_draw_block: next_draw.block,
         next_draw_playable_cards: next_draw.playable_cards,
         next_draw_low_cost: next_draw.low_cost,
+        potion_tactical_priority: node.potion_tactical_priority,
         potion_conservation: -((node.potions_used + node.potions_discarded) as i32),
         shorter_line: -(node.actions.len() as i32),
     }
@@ -251,6 +258,7 @@ impl SearchNode {
             potions_used: self.potions_used,
             potions_discarded: self.potions_discarded,
             cards_played: self.cards_played,
+            potion_tactical_priority: self.potion_tactical_priority,
         }
     }
 
@@ -266,6 +274,12 @@ impl SearchNode {
                 self.cards_played = self.cards_played.saturating_add(1);
             }
             _ => {}
+        }
+    }
+
+    pub(super) fn note_potion_tactical_priority(&mut self, priority: Option<i32>) {
+        if let Some(priority) = priority {
+            self.potion_tactical_priority = self.potion_tactical_priority.max(priority);
         }
     }
 
@@ -313,6 +327,17 @@ mod tests {
         assert_eq!(quality.damage, 6);
     }
 
+    #[test]
+    fn frontier_priority_prefers_higher_potion_tactical_role_when_state_ties() {
+        let mut sustain = test_node();
+        sustain.potion_tactical_priority = 10;
+
+        let mut lethal = test_node();
+        lethal.potion_tactical_priority = 50;
+
+        assert!(priority_for_node(&lethal) > priority_for_node(&sustain));
+    }
+
     fn test_node() -> SearchNode {
         SearchNode {
             engine: EngineState::CombatPlayerTurn,
@@ -322,6 +347,7 @@ mod tests {
             potions_used: 0,
             potions_discarded: 0,
             cards_played: 0,
+            potion_tactical_priority: 0,
         }
     }
 }

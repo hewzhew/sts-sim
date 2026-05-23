@@ -32,6 +32,7 @@ pub fn run_combat_search_v2_with_stepper(
         potions_used: 0,
         potions_discarded: 0,
         cards_played: 0,
+        potion_tactical_priority: 0,
     };
     if terminal_label(&root.engine, &root.combat) == SearchTerminalLabel::Win {
         stats.nodes_to_first_win = Some(0);
@@ -113,6 +114,8 @@ pub fn run_combat_search_v2_with_stepper(
         }
 
         for (action_id, choice) in legal.into_iter().enumerate() {
+            let potion_tactical_priority =
+                potions::semantic_potion_tactical_priority(&node.combat, &choice.input);
             if config
                 .max_potions_used
                 .is_some_and(|max| node.potions_used >= max && is_use_potion_input(&choice.input))
@@ -143,6 +146,7 @@ pub fn run_combat_search_v2_with_stepper(
 
             let mut child = node.clone_for_child(step.position.engine, step.position.combat);
             child.note_input(&choice.input);
+            child.note_potion_tactical_priority(potion_tactical_priority);
             child.actions.push(CombatSearchV2ActionTrace {
                 step_index: node.actions.len(),
                 action_id,
