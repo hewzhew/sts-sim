@@ -118,6 +118,7 @@ pub struct CombatSearchV2DiagnosticsReport {
     pub ordering: CombatSearchV2DiagnosticsOrdering,
     pub turn_branching: CombatSearchV2DiagnosticsTurnBranching,
     pub turn_prefix: CombatSearchV2DiagnosticsTurnPrefix,
+    pub turn_sequence: CombatSearchV2DiagnosticsTurnSequence,
     pub turn_local_dominance: CombatSearchV2DiagnosticsTurnLocalDominance,
     pub pruning: CombatSearchV2DiagnosticsPruning,
     pub frontier: CombatSearchV2DiagnosticsFrontier,
@@ -370,6 +371,38 @@ pub struct CombatSearchV2DiagnosticsTurnPrefixFanoutSample {
     pub legal_actions: usize,
     pub signature_preview: String,
     pub signature_truncated: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsTurnSequence {
+    pub grouping_policy: &'static str,
+    pub behavioral_effect: &'static str,
+    pub states_observed: u64,
+    pub non_empty_prefix_states: u64,
+    pub grouped_prefix_states: u64,
+    pub unordered_sequence_groups: usize,
+    pub groups_with_order_variants: usize,
+    pub same_effect_order_variant_groups: usize,
+    pub order_sensitive_groups: usize,
+    pub max_ordered_variants_per_group: usize,
+    pub max_effect_variants_per_group: usize,
+    pub max_prefix_length: usize,
+    pub max_legal_actions_after_prefix: usize,
+    pub largest_groups: Vec<CombatSearchV2DiagnosticsTurnSequenceGroupSample>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsTurnSequenceGroupSample {
+    pub group_class: String,
+    pub origin_key: String,
+    pub unordered_key_preview: String,
+    pub states: u64,
+    pub max_prefix_length: usize,
+    pub ordered_variants: usize,
+    pub effect_variants: usize,
+    pub max_legal_actions: usize,
+    pub ordered_samples: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

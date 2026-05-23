@@ -29,6 +29,7 @@ mod transition;
 mod turn_branching;
 mod turn_local_dominance;
 mod turn_prefix;
+mod turn_sequence;
 mod types;
 mod value;
 
@@ -62,6 +63,9 @@ use turn_local_dominance::{
 use turn_prefix::{
     advance_turn_prefix, summarize_turn_prefix, TurnPrefixDiagnosticsCollector, TurnPrefixState,
     TurnPrefixSummary,
+};
+use turn_sequence::{
+    summarize_turn_sequence, TurnSequenceDiagnosticsCollector, TurnSequenceSummary,
 };
 use value::{
     living_enemy_count, survival_margin, terminal_rank, total_living_enemy_hp,

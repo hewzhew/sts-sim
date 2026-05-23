@@ -112,6 +112,8 @@ pub fn run_combat_search_v2_with_stepper(
         diagnostics.observe_legal_actions(&expansion);
         let turn_prefix = summarize_turn_prefix(&node.turn_prefix, legal.len());
         diagnostics.observe_turn_prefix(&turn_prefix);
+        let turn_sequence = summarize_turn_sequence(&node, legal.len());
+        diagnostics.observe_turn_sequence(&turn_sequence);
         let target_fanout = summarize_target_fanout(&node.combat, &legal);
         diagnostics.observe_target_fanout(&target_fanout);
         if legal.is_empty() {

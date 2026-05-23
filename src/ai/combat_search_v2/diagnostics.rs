@@ -14,6 +14,7 @@ pub(super) struct SearchDiagnosticsCollector {
     ordering: ActionOrderingDiagnosticsCollector,
     turn_branching: TurnBranchingDiagnosticsCollector,
     turn_prefix: TurnPrefixDiagnosticsCollector,
+    turn_sequence: TurnSequenceDiagnosticsCollector,
     turn_local_dominance: TurnLocalDominanceDiagnosticsCollector,
 }
 
@@ -60,6 +61,10 @@ impl SearchDiagnosticsCollector {
 
     pub(super) fn observe_turn_prefix(&mut self, summary: &TurnPrefixSummary) {
         self.turn_prefix.observe(summary);
+    }
+
+    pub(super) fn observe_turn_sequence(&mut self, summary: &TurnSequenceSummary) {
+        self.turn_sequence.observe(summary);
     }
 
     pub(super) fn observe_turn_local_dominance(
@@ -112,6 +117,7 @@ impl SearchDiagnosticsCollector {
         let ordering = self.ordering.finish();
         let turn_branching = self.turn_branching.finish();
         let turn_prefix = self.turn_prefix.finish();
+        let turn_sequence = self.turn_sequence.finish();
         let turn_local_dominance = self.turn_local_dominance.finish();
         let diagnosis = diagnosis_tags(
             input.proof_status,
@@ -123,13 +129,14 @@ impl SearchDiagnosticsCollector {
             &ordering,
             &turn_branching,
             &turn_prefix,
+            &turn_sequence,
             &turn_local_dominance,
             &pruning,
             frontier.remaining_states,
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 8,
+            schema_version: 9,
             mode: "summary",
             tables,
             branching,
@@ -139,6 +146,7 @@ impl SearchDiagnosticsCollector {
             ordering,
             turn_branching,
             turn_prefix,
+            turn_sequence,
             turn_local_dominance,
             pruning,
             frontier,
@@ -169,6 +177,7 @@ fn diagnosis_tags(
     ordering: &CombatSearchV2DiagnosticsOrdering,
     turn_branching: &CombatSearchV2DiagnosticsTurnBranching,
     turn_prefix: &CombatSearchV2DiagnosticsTurnPrefix,
+    turn_sequence: &CombatSearchV2DiagnosticsTurnSequence,
     turn_local_dominance: &CombatSearchV2DiagnosticsTurnLocalDominance,
     pruning: &CombatSearchV2DiagnosticsPruning,
     frontier_remaining_states: usize,
@@ -278,6 +287,18 @@ fn diagnosis_tags(
     }
     if turn_prefix.max_prefix_length >= 3 {
         tags.push("long_turn_prefix_observed");
+    }
+    if turn_sequence.states_observed > 0 {
+        tags.push("turn_sequence_diagnostics_active");
+    }
+    if turn_sequence.groups_with_order_variants > 0 {
+        tags.push("turn_sequence_order_variants_observed");
+    }
+    if turn_sequence.same_effect_order_variant_groups > 0 {
+        tags.push("turn_sequence_same_effect_candidates_observed");
+    }
+    if turn_sequence.order_sensitive_groups > 0 {
+        tags.push("turn_sequence_order_sensitive_groups_observed");
     }
     if turn_local_dominance.parent_states_observed > 0 {
         tags.push("turn_local_dominance_diagnostics_active");
@@ -428,6 +449,23 @@ mod tests {
                 largest_prefix_fanouts: Vec::new(),
                 notes: Vec::new(),
             },
+            &CombatSearchV2DiagnosticsTurnSequence {
+                grouping_policy: "same_turn_origin_plus_unordered_prefix_tokens",
+                behavioral_effect: "diagnostic_only_no_sequence_prune_no_commutation_claim",
+                states_observed: 1,
+                non_empty_prefix_states: 1,
+                grouped_prefix_states: 1,
+                unordered_sequence_groups: 1,
+                groups_with_order_variants: 1,
+                same_effect_order_variant_groups: 1,
+                order_sensitive_groups: 1,
+                max_ordered_variants_per_group: 2,
+                max_effect_variants_per_group: 2,
+                max_prefix_length: 3,
+                max_legal_actions_after_prefix: 4,
+                largest_groups: Vec::new(),
+                notes: Vec::new(),
+            },
             &CombatSearchV2DiagnosticsTurnLocalDominance {
                 pruning_policy: "same_parent_same_turn_dominance_key_resource_coverage",
                 behavioral_effect:
@@ -470,6 +508,10 @@ mod tests {
         assert!(tags.contains(&"turn_prefix_diagnostics_active"));
         assert!(tags.contains(&"non_empty_turn_prefix_observed"));
         assert!(tags.contains(&"long_turn_prefix_observed"));
+        assert!(tags.contains(&"turn_sequence_diagnostics_active"));
+        assert!(tags.contains(&"turn_sequence_order_variants_observed"));
+        assert!(tags.contains(&"turn_sequence_same_effect_candidates_observed"));
+        assert!(tags.contains(&"turn_sequence_order_sensitive_groups_observed"));
         assert!(tags.contains(&"turn_local_dominance_diagnostics_active"));
         assert!(tags.contains(&"turn_local_dominance_pruned_children"));
         assert!(tags.contains(&"frontier_remaining"));

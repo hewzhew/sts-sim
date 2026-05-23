@@ -3,6 +3,7 @@ use super::*;
 use std::collections::BTreeMap;
 
 const PREFIX_PREVIEW_LIMIT: usize = 160;
+const PREFIX_TOKEN_LIMIT: usize = 12;
 const LARGEST_PREFIX_FANOUT_SAMPLE_LIMIT: usize = 8;
 
 #[derive(Clone, Debug, Default)]
@@ -12,6 +13,9 @@ pub(super) struct TurnPrefixState {
     potions_used: u16,
     potions_discarded: u16,
     other_actions: u16,
+    origin_key: Option<String>,
+    tokens: Vec<String>,
+    tokens_truncated: bool,
     signature_preview: String,
     signature_truncated: bool,
 }
@@ -88,6 +92,9 @@ pub(super) fn advance_turn_prefix(
     };
 
     let mut next = current.clone();
+    if next.prefix_length == 0 {
+        next.origin_key = Some(turn_origin_key(parent_combat));
+    }
     next.prefix_length = next.prefix_length.saturating_add(1);
     match input {
         ClientInput::PlayCard { .. } => next.cards_played = next.cards_played.saturating_add(1),
@@ -277,6 +284,12 @@ impl TurnPrefixState {
     }
 
     fn push_token(&mut self, token: &str) {
+        if self.tokens.len() < PREFIX_TOKEN_LIMIT {
+            self.tokens.push(token.to_string());
+        } else {
+            self.tokens_truncated = true;
+        }
+
         if self.signature_truncated {
             return;
         }
@@ -294,6 +307,57 @@ impl TurnPrefixState {
         }
         self.signature_preview.push_str(token);
     }
+
+    pub(super) fn prefix_length(&self) -> usize {
+        self.prefix_length as usize
+    }
+
+    pub(super) fn origin_key(&self) -> Option<&str> {
+        self.origin_key.as_deref()
+    }
+
+    pub(super) fn ordered_sequence_key(&self) -> Option<String> {
+        if self.prefix_length == 0 {
+            return None;
+        }
+        Some(token_sequence_key(&self.tokens, self.tokens_truncated))
+    }
+
+    pub(super) fn unordered_sequence_key(&self) -> Option<String> {
+        if self.prefix_length == 0 {
+            return None;
+        }
+        let mut tokens = self.tokens.clone();
+        tokens.sort();
+        Some(token_sequence_key(&tokens, self.tokens_truncated))
+    }
+}
+
+fn token_sequence_key(tokens: &[String], truncated: bool) -> String {
+    let mut key = tokens.join(">");
+    if truncated {
+        if !key.is_empty() {
+            key.push('>');
+        }
+        key.push_str("...");
+    }
+    key
+}
+
+fn turn_origin_key(parent_combat: &CombatState) -> String {
+    stable_debug_hash(&combat_dominance_key(
+        &EngineState::CombatPlayerTurn,
+        parent_combat,
+    ))
+}
+
+fn stable_debug_hash<T: std::fmt::Debug>(value: &T) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in format!("{value:?}").bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
 
 fn rounded_ratio(numerator: u64, denominator: u64) -> f64 {
