@@ -112,8 +112,11 @@ pub fn run_combat_search_v2_with_stepper(
             unresolved_leaf_count = unresolved_leaf_count.saturating_add(1);
             continue;
         }
+        let ordered = order_action_choices(&node.engine, &node.combat, legal);
 
-        for (action_id, choice) in legal.into_iter().enumerate() {
+        for ordered_choice in ordered {
+            let action_id = ordered_choice.original_action_id;
+            let choice = ordered_choice.choice;
             let potion_tactical_priority =
                 potions::semantic_potion_tactical_priority(&node.combat, &choice.input);
             if config
@@ -235,7 +238,7 @@ pub fn run_combat_search_v2_with_stepper(
             kind: "best_first_atomic_action_graph_search_v2",
             terminal_policy: "whole_combat_terminal_only",
             expansion_order:
-                "lexicographic_priority_enemy_progress_hp_next_draw_resource_line_length",
+                "semantic_turn_action_ordering_then_lexicographic_priority_enemy_progress_hp_next_draw_resource_line_length",
             potion_policy: config.potion_policy.label(),
             transposition_table: "exact_runtime_state_key_with_resource_coverage",
             dominance_pruning: "dominance_bucket_excludes_player_hp_block_then_compares_resource_vector",
@@ -342,6 +345,47 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy)]
+    struct ReversePotionWinStepper;
+
+    impl CombatStepper for ReversePotionWinStepper {
+        fn legal_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+            vec![
+                ClientInput::EndTurn,
+                ClientInput::UsePotion {
+                    potion_index: 0,
+                    target: None,
+                },
+            ]
+        }
+
+        fn apply_to_stable(
+            &self,
+            position: &CombatPosition,
+            input: ClientInput,
+            _limits: CombatStepLimits,
+        ) -> crate::sim::combat::CombatStepResult {
+            let engine = if matches!(input, ClientInput::UsePotion { .. }) {
+                EngineState::GameOver(crate::state::core::RunResult::Victory)
+            } else {
+                position.engine.clone()
+            };
+            let position = CombatPosition::new(engine, position.combat.clone());
+            crate::sim::combat::CombatStepResult {
+                terminal: combat_terminal(&position.engine, &position.combat),
+                alive: true,
+                truncated: false,
+                timed_out: false,
+                engine_steps: 1,
+                position,
+            }
+        }
+
+        fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+            combat_terminal(&position.engine, &position.combat)
+        }
+    }
+
     #[test]
     fn max_potions_used_cuts_potion_branches_without_disabling_policy_all() {
         let mut combat = blank_test_combat();
@@ -383,5 +427,31 @@ mod tests {
                 .map(|trajectory| trajectory.potions_used),
             Some(1)
         );
+    }
+
+    #[test]
+    fn action_ordering_preserves_original_action_id_in_trace() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        let config = CombatSearchV2Config {
+            potion_policy: CombatSearchV2PotionPolicy::All,
+            max_nodes: 8,
+            ..CombatSearchV2Config::default()
+        };
+
+        let report = run_combat_search_v2_with_stepper(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            config,
+            &ReversePotionWinStepper,
+        );
+
+        let first_action_id = report
+            .best_complete_trajectory
+            .as_ref()
+            .and_then(|trajectory| trajectory.actions.first())
+            .map(|action| action.action_id);
+
+        assert_eq!(first_action_id, Some(1));
     }
 }

@@ -15,6 +15,7 @@ use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
 use crate::state::core::{ClientInput, EngineState};
 
+mod action_ordering;
 mod baseline;
 mod diagnostics;
 mod expansion;
@@ -26,6 +27,7 @@ mod transition;
 mod types;
 mod value;
 
+use action_ordering::order_action_choices;
 use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
 use expansion::{
     summarize_action_expansion, ActionExpansionDiagnosticsCollector, ActionExpansionSummary,
