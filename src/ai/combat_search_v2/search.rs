@@ -124,6 +124,11 @@ pub fn run_combat_search_v2_with_stepper(
         diagnostics.observe_action_ordering(&ordered.summary);
         let mut turn_branching =
             TurnBranchingStateObservation::new(&node.combat, ordered.choices.len());
+        let mut turn_local_dominance = TurnLocalDominanceStateObservation::new(
+            &node.engine,
+            &node.combat,
+            ordered.choices.len(),
+        );
 
         for ordered_choice in ordered.choices {
             let action_id = ordered_choice.original_action_id;
@@ -180,6 +185,12 @@ pub fn run_combat_search_v2_with_stepper(
             });
             stats.nodes_generated = stats.nodes_generated.saturating_add(1);
 
+            if !step.truncated && turn_local_dominance.observe_child(&child) {
+                stats.turn_local_dominance_prunes =
+                    stats.turn_local_dominance_prunes.saturating_add(1);
+                continue;
+            }
+
             if stats.nodes_to_first_win.is_none()
                 && terminal_label(&child.engine, &child.combat) == SearchTerminalLabel::Win
             {
@@ -194,6 +205,7 @@ pub fn run_combat_search_v2_with_stepper(
             }
         }
         diagnostics.observe_turn_branching(&turn_branching);
+        diagnostics.observe_turn_local_dominance(&turn_local_dominance);
 
         if exhausted {
             break;
@@ -264,7 +276,7 @@ pub fn run_combat_search_v2_with_stepper(
             turn_branching: "turn_transition_classification_with_late_frontier_tie_break",
             potion_policy: config.potion_policy.label(),
             transposition_table: "exact_runtime_state_key_with_resource_coverage",
-            dominance_pruning: "dominance_bucket_excludes_player_hp_block_then_compares_resource_vector",
+            dominance_pruning: "global_dominance_bucket_resource_vector_plus_same_parent_same_turn_sibling_coverage",
             rollout_value: "not_used_for_terminal_claims",
             llm_authority: "none",
         },

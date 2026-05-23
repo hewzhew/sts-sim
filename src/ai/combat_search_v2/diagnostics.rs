@@ -14,6 +14,7 @@ pub(super) struct SearchDiagnosticsCollector {
     ordering: ActionOrderingDiagnosticsCollector,
     turn_branching: TurnBranchingDiagnosticsCollector,
     turn_prefix: TurnPrefixDiagnosticsCollector,
+    turn_local_dominance: TurnLocalDominanceDiagnosticsCollector,
 }
 
 pub(super) struct SearchDiagnosticsFinish<'a> {
@@ -61,6 +62,13 @@ impl SearchDiagnosticsCollector {
         self.turn_prefix.observe(summary);
     }
 
+    pub(super) fn observe_turn_local_dominance(
+        &mut self,
+        observation: &TurnLocalDominanceStateObservation,
+    ) {
+        self.turn_local_dominance.observe(observation);
+    }
+
     pub(super) fn finish(
         &self,
         input: SearchDiagnosticsFinish<'_>,
@@ -85,6 +93,7 @@ impl SearchDiagnosticsCollector {
         let pruning = CombatSearchV2DiagnosticsPruning {
             transposition_prunes: input.stats.transposition_prunes,
             dominance_prunes: input.stats.dominance_prunes,
+            turn_local_dominance_prunes: input.stats.turn_local_dominance_prunes,
             terminal_wins: input.stats.terminal_wins,
             terminal_losses: input.stats.terminal_losses,
             unresolved_leaf_count: input.unresolved_leaf_count,
@@ -103,6 +112,7 @@ impl SearchDiagnosticsCollector {
         let ordering = self.ordering.finish();
         let turn_branching = self.turn_branching.finish();
         let turn_prefix = self.turn_prefix.finish();
+        let turn_local_dominance = self.turn_local_dominance.finish();
         let diagnosis = diagnosis_tags(
             input.proof_status,
             input.stats,
@@ -113,12 +123,13 @@ impl SearchDiagnosticsCollector {
             &ordering,
             &turn_branching,
             &turn_prefix,
+            &turn_local_dominance,
             &pruning,
             frontier.remaining_states,
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 7,
+            schema_version: 8,
             mode: "summary",
             tables,
             branching,
@@ -128,6 +139,7 @@ impl SearchDiagnosticsCollector {
             ordering,
             turn_branching,
             turn_prefix,
+            turn_local_dominance,
             pruning,
             frontier,
             diagnosis,
@@ -157,6 +169,7 @@ fn diagnosis_tags(
     ordering: &CombatSearchV2DiagnosticsOrdering,
     turn_branching: &CombatSearchV2DiagnosticsTurnBranching,
     turn_prefix: &CombatSearchV2DiagnosticsTurnPrefix,
+    turn_local_dominance: &CombatSearchV2DiagnosticsTurnLocalDominance,
     pruning: &CombatSearchV2DiagnosticsPruning,
     frontier_remaining_states: usize,
 ) -> Vec<&'static str> {
@@ -204,6 +217,9 @@ fn diagnosis_tags(
     }
     if pruning.potion_budget_cut_count > 0 {
         tags.push("potion_budget_cutoffs");
+    }
+    if pruning.turn_local_dominance_prunes > 0 {
+        tags.push("turn_local_dominance_pruning_active");
     }
     if pruning.max_actions_cut_count > 0 {
         tags.push("max_actions_per_line_cutoffs");
@@ -263,6 +279,12 @@ fn diagnosis_tags(
     if turn_prefix.max_prefix_length >= 3 {
         tags.push("long_turn_prefix_observed");
     }
+    if turn_local_dominance.parent_states_observed > 0 {
+        tags.push("turn_local_dominance_diagnostics_active");
+    }
+    if turn_local_dominance.pruned_child_states > 0 {
+        tags.push("turn_local_dominance_pruned_children");
+    }
     if frontier_remaining_states > 0 {
         tags.push("frontier_remaining");
     }
@@ -298,6 +320,7 @@ mod tests {
         let pruning = CombatSearchV2DiagnosticsPruning {
             transposition_prunes: 2,
             dominance_prunes: 0,
+            turn_local_dominance_prunes: 1,
             terminal_wins: 1,
             terminal_losses: 0,
             unresolved_leaf_count: 1,
@@ -405,6 +428,22 @@ mod tests {
                 largest_prefix_fanouts: Vec::new(),
                 notes: Vec::new(),
             },
+            &CombatSearchV2DiagnosticsTurnLocalDominance {
+                pruning_policy: "same_parent_same_turn_dominance_key_resource_coverage",
+                behavioral_effect:
+                    "safe_sibling_child_prune_only_no_cross_parent_no_next_turn_no_terminal_prune",
+                parent_states_observed: 1,
+                enabled_parent_states: 1,
+                eligible_child_states: 2,
+                accepted_child_states: 1,
+                pruned_child_states: 1,
+                prune_ratio: 0.5,
+                max_parent_dominance_buckets: 1,
+                max_parent_resource_vectors: 1,
+                max_bucket_width: 1,
+                largest_parent_samples: Vec::new(),
+                notes: Vec::new(),
+            },
             &pruning,
             4,
         );
@@ -413,6 +452,7 @@ mod tests {
         assert!(tags.contains(&"terminal_wins_found"));
         assert!(tags.contains(&"transposition_pruning_active"));
         assert!(tags.contains(&"dominance_pruning_inactive"));
+        assert!(tags.contains(&"turn_local_dominance_pruning_active"));
         assert!(tags.contains(&"unresolved_leaf_states"));
         assert!(tags.contains(&"no_legal_actions_observed"));
         assert!(tags.contains(&"action_expansion_diagnostics_active"));
@@ -430,6 +470,8 @@ mod tests {
         assert!(tags.contains(&"turn_prefix_diagnostics_active"));
         assert!(tags.contains(&"non_empty_turn_prefix_observed"));
         assert!(tags.contains(&"long_turn_prefix_observed"));
+        assert!(tags.contains(&"turn_local_dominance_diagnostics_active"));
+        assert!(tags.contains(&"turn_local_dominance_pruned_children"));
         assert!(tags.contains(&"frontier_remaining"));
     }
 }

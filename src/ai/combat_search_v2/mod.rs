@@ -27,6 +27,7 @@ mod search;
 mod target_fanout;
 mod transition;
 mod turn_branching;
+mod turn_local_dominance;
 mod turn_prefix;
 mod types;
 mod value;
@@ -54,6 +55,9 @@ use transition::{filtered_legal_actions, is_use_potion_input, terminal_label};
 use turn_branching::{
     classify_turn_branch_transition, TurnBranchTransition, TurnBranchingDiagnosticsCollector,
     TurnBranchingStateObservation,
+};
+use turn_local_dominance::{
+    TurnLocalDominanceDiagnosticsCollector, TurnLocalDominanceStateObservation,
 };
 use turn_prefix::{
     advance_turn_prefix, summarize_turn_prefix, TurnPrefixDiagnosticsCollector, TurnPrefixState,

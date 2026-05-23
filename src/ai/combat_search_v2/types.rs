@@ -118,6 +118,7 @@ pub struct CombatSearchV2DiagnosticsReport {
     pub ordering: CombatSearchV2DiagnosticsOrdering,
     pub turn_branching: CombatSearchV2DiagnosticsTurnBranching,
     pub turn_prefix: CombatSearchV2DiagnosticsTurnPrefix,
+    pub turn_local_dominance: CombatSearchV2DiagnosticsTurnLocalDominance,
     pub pruning: CombatSearchV2DiagnosticsPruning,
     pub frontier: CombatSearchV2DiagnosticsFrontier,
     pub diagnosis: Vec<&'static str>,
@@ -372,9 +373,40 @@ pub struct CombatSearchV2DiagnosticsTurnPrefixFanoutSample {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsTurnLocalDominance {
+    pub pruning_policy: &'static str,
+    pub behavioral_effect: &'static str,
+    pub parent_states_observed: u64,
+    pub enabled_parent_states: u64,
+    pub eligible_child_states: u64,
+    pub accepted_child_states: u64,
+    pub pruned_child_states: u64,
+    pub prune_ratio: f64,
+    pub max_parent_dominance_buckets: usize,
+    pub max_parent_resource_vectors: usize,
+    pub max_bucket_width: usize,
+    pub largest_parent_samples: Vec<CombatSearchV2DiagnosticsTurnLocalDominanceSample>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsTurnLocalDominanceSample {
+    pub observed_at_parent_state: u64,
+    pub parent_turn_count: u32,
+    pub legal_actions: usize,
+    pub eligible_child_states: usize,
+    pub accepted_child_states: usize,
+    pub pruned_child_states: usize,
+    pub dominance_buckets: usize,
+    pub resource_vectors: usize,
+    pub max_bucket_width: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2DiagnosticsPruning {
     pub transposition_prunes: u64,
     pub dominance_prunes: u64,
+    pub turn_local_dominance_prunes: u64,
     pub terminal_wins: u64,
     pub terminal_losses: u64,
     pub unresolved_leaf_count: u64,
@@ -398,6 +430,7 @@ pub struct CombatSearchV2Stats {
     pub terminal_wins: u64,
     pub terminal_losses: u64,
     pub dominance_prunes: u64,
+    pub turn_local_dominance_prunes: u64,
     pub transposition_prunes: u64,
     pub deadline_hit: bool,
     pub node_budget_hit: bool,
