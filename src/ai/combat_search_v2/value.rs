@@ -1,11 +1,10 @@
 use super::action_effects::state_sustained_mitigation_score;
+use super::card_pile_value::{card_pile_value_report, hand_value, next_draw_value};
 use super::enemy_phase_value::enemy_phase_value;
 use super::*;
-use crate::runtime::combat::CombatCard;
 
 pub(super) const COMBAT_SEARCH_FRONTIER_VALUE_POLICY: &str =
     "frontier_value_v1_visible_pressure_split_phase_enemy_progress_hand_next_draw_resources_no_terminal_claim";
-const BASE_TURN_DRAW_COUNT: i32 = 5;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct CombatSearchStateValueV1 {
@@ -37,14 +36,6 @@ pub(super) struct CombatSearchRolloutValueV1 {
     pub(super) potion_conservation: i32,
     pub(super) faster_turns: i32,
     pub(super) fewer_cards_played: i32,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct CardPileValueV1 {
-    damage: i32,
-    block: i32,
-    playable_cards: i32,
-    low_cost: i32,
 }
 
 impl Ord for CombatSearchStateValueV1 {
@@ -144,8 +135,8 @@ pub(super) fn survival_margin(combat: &CombatState) -> i32 {
 }
 
 pub(super) fn combat_search_state_value(node: &SearchNode) -> CombatSearchStateValueV1 {
-    let hand = hand_quality(&node.combat);
-    let next_draw = next_draw_quality(&node.combat);
+    let hand = hand_value(&node.combat);
+    let next_draw = next_draw_value(&node.combat);
     let enemy_phase = enemy_phase_value(&node.combat);
     CombatSearchStateValueV1 {
         fewer_living_enemies: -(living_enemy_count(&node.combat) as i32),
@@ -183,8 +174,8 @@ pub(super) fn rollout_priority_value(estimate: RolloutNodeEstimate) -> CombatSea
 pub(super) fn combat_search_frontier_value_report(
     node: &SearchNode,
 ) -> CombatSearchV2FrontierValueReport {
-    let hand = hand_quality(&node.combat);
-    let next_draw = next_draw_quality(&node.combat);
+    let hand = hand_value(&node.combat);
+    let next_draw = next_draw_value(&node.combat);
     let enemy_phase = enemy_phase_value(&node.combat);
     CombatSearchV2FrontierValueReport {
         policy: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
@@ -209,77 +200,14 @@ pub(super) fn combat_search_frontier_value_report(
     }
 }
 
-fn hand_quality(combat: &CombatState) -> CardPileValueV1 {
-    card_pile_quality(combat.zones.hand.iter(), combat.turn.energy as i32)
-}
-
-fn next_draw_quality(combat: &CombatState) -> CardPileValueV1 {
-    let draw_count = (BASE_TURN_DRAW_COUNT + combat.turn.turn_start_draw_modifier)
-        .max(0)
-        .min(combat.zones.draw_pile.len() as i32) as usize;
-    card_pile_quality(
-        combat.zones.draw_pile.iter().take(draw_count),
-        combat.entities.player.energy_master as i32,
-    )
-}
-
-fn card_pile_quality<'a>(
-    cards: impl Iterator<Item = &'a CombatCard>,
-    playable_energy: i32,
-) -> CardPileValueV1 {
-    cards.fold(CardPileValueV1::default(), |mut quality, card| {
-        let def = crate::content::cards::get_card_definition(card.id);
-        let cost = card.cost_for_turn_java();
-        if cost >= 0 && cost <= playable_energy {
-            quality.playable_cards += 1;
-        }
-        quality.low_cost -= cost.max(0);
-        quality.damage += card
-            .base_damage_override
-            .unwrap_or(def.base_damage + def.upgrade_damage * card.upgrades as i32)
-            .max(0);
-        quality.block += card
-            .base_block_override
-            .unwrap_or(def.base_block + def.upgrade_block * card.upgrades as i32)
-            .max(0);
-        quality
-    })
-}
-
-fn card_pile_value_report(value: CardPileValueV1) -> CombatSearchV2CardPileValueReport {
-    CombatSearchV2CardPileValueReport {
-        damage: value.damage,
-        block: value.block,
-        playable_cards: value.playable_cards,
-        low_cost: value.low_cost,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
     use crate::content::powers::PowerId;
-    use crate::runtime::combat::{Power, PowerPayload};
+    use crate::runtime::combat::{CombatCard, Power, PowerPayload};
     use crate::test_support::blank_test_combat;
-
-    #[test]
-    fn next_draw_quality_uses_turn_start_draw_modifier_and_next_turn_energy() {
-        let mut combat = blank_test_combat();
-        combat.turn.energy = 0;
-        combat.entities.player.energy_master = 3;
-        combat.turn.turn_start_draw_modifier = -4;
-        combat.zones.draw_pile = vec![
-            CombatCard::new(CardId::Strike, 11),
-            CombatCard::new(CardId::Carnage, 12),
-        ];
-
-        let quality = next_draw_quality(&combat);
-
-        assert_eq!(quality.damage, 6);
-        assert_eq!(quality.playable_cards, 1);
-    }
 
     #[test]
     fn state_value_prefers_survival_before_future_draw_quality() {

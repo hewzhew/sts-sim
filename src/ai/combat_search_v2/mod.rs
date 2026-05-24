@@ -20,6 +20,7 @@ mod action_equivalence;
 mod action_ordering;
 mod baseline;
 mod card_identity;
+mod card_pile_value;
 mod diagnostics;
 mod enemy_phase_value;
 mod expansion;
