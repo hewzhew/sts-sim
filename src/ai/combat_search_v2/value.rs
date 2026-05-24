@@ -1,7 +1,9 @@
 use super::action_effects::state_sustained_mitigation_score;
-use super::card_pile_value::{card_pile_value_report, hand_value, next_draw_value};
-use super::enemy_phase_value::enemy_phase_value;
-use super::pressure_value::combat_pressure_value;
+use super::card_pile_value::{
+    card_pile_value_report, hand_value, next_draw_value, CardPileValueV1,
+};
+use super::enemy_phase_value::{enemy_phase_value, EnemyPhaseValueV1};
+use super::pressure_value::{combat_pressure_value, CombatPressureValueV1};
 use super::*;
 
 pub(super) const COMBAT_SEARCH_FRONTIER_VALUE_POLICY: &str =
@@ -27,6 +29,16 @@ pub(super) struct CombatSearchStateValueV1 {
     pub(super) next_draw_block: i32,
     pub(super) next_draw_playable_cards: i32,
     pub(super) next_draw_low_cost: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CombatSearchCoreValueFactsV1 {
+    living_enemy_count: usize,
+    enemy_phase: EnemyPhaseValueV1,
+    pressure: CombatPressureValueV1,
+    sustained_mitigation: i32,
+    hand: CardPileValueV1,
+    next_draw: CardPileValueV1,
 }
 
 impl Ord for CombatSearchStateValueV1 {
@@ -69,66 +81,71 @@ impl PartialOrd for CombatSearchStateValueV1 {
 }
 
 pub(super) fn combat_search_state_value(node: &SearchNode) -> CombatSearchStateValueV1 {
-    let hand = hand_value(&node.combat);
-    let next_draw = next_draw_value(&node.combat);
-    let enemy_phase = enemy_phase_value(&node.combat);
-    let pressure = combat_pressure_value(&node.combat);
+    let facts = combat_search_core_value_facts(&node.combat);
     CombatSearchStateValueV1 {
-        fewer_living_enemies: -(living_enemy_count(&node.combat) as i32),
-        phase_adjusted_enemy_effort_progress: -enemy_phase.phase_adjusted_living_enemy_effort,
-        enemy_effort_progress: -enemy_phase.raw_living_enemy_effort,
-        enemy_hp_progress: -enemy_phase.raw_living_enemy_hp,
-        split_debt_hp: -enemy_phase.split_debt_hp,
-        guardian_defensive_block: -enemy_phase.guardian_defensive_block,
-        survival_margin: pressure.survival_margin,
-        sustained_mitigation: state_sustained_mitigation_score(&node.combat),
+        fewer_living_enemies: -(facts.living_enemy_count as i32),
+        phase_adjusted_enemy_effort_progress: -facts.enemy_phase.phase_adjusted_living_enemy_effort,
+        enemy_effort_progress: -facts.enemy_phase.raw_living_enemy_effort,
+        enemy_hp_progress: -facts.enemy_phase.raw_living_enemy_hp,
+        split_debt_hp: -facts.enemy_phase.split_debt_hp,
+        guardian_defensive_block: -facts.enemy_phase.guardian_defensive_block,
+        survival_margin: facts.pressure.survival_margin,
+        sustained_mitigation: facts.sustained_mitigation,
         player_hp: node.combat.entities.player.current_hp,
         player_block: node.combat.entities.player.block,
-        hand_damage: hand.damage,
-        hand_block: hand.block,
-        hand_playable_cards: hand.playable_cards,
-        hand_low_cost: hand.low_cost,
-        next_draw_damage: next_draw.damage,
-        next_draw_block: next_draw.block,
-        next_draw_playable_cards: next_draw.playable_cards,
-        next_draw_low_cost: next_draw.low_cost,
+        hand_damage: facts.hand.damage,
+        hand_block: facts.hand.block,
+        hand_playable_cards: facts.hand.playable_cards,
+        hand_low_cost: facts.hand.low_cost,
+        next_draw_damage: facts.next_draw.damage,
+        next_draw_block: facts.next_draw.block,
+        next_draw_playable_cards: facts.next_draw.playable_cards,
+        next_draw_low_cost: facts.next_draw.low_cost,
     }
 }
 
 pub(super) fn combat_search_frontier_value_report(
     node: &SearchNode,
 ) -> CombatSearchV2FrontierValueReport {
-    let hand = hand_value(&node.combat);
-    let next_draw = next_draw_value(&node.combat);
-    let enemy_phase = enemy_phase_value(&node.combat);
+    let facts = combat_search_core_value_facts(&node.combat);
     let enemy_mechanics = enemy_mechanics_profile(&node.combat);
-    let pressure = combat_pressure_value(&node.combat);
     CombatSearchV2FrontierValueReport {
         policy: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
         terminal: terminal_label(&node.engine, &node.combat),
         player_hp: node.combat.entities.player.current_hp,
         player_block: node.combat.entities.player.block,
-        visible_incoming_damage: pressure.visible_incoming_damage,
-        survival_margin: pressure.survival_margin,
-        living_enemy_count: living_enemy_count(&node.combat),
-        total_enemy_hp: enemy_phase.raw_living_enemy_hp,
-        total_enemy_block: enemy_phase.raw_living_enemy_block,
-        total_enemy_effort: enemy_phase.raw_living_enemy_effort,
-        phase_adjusted_enemy_hp: enemy_phase.phase_adjusted_living_enemy_hp,
-        phase_adjusted_enemy_effort: enemy_phase.phase_adjusted_living_enemy_effort,
-        split_pending_count: enemy_phase.split_pending_count,
-        split_debt_hp: enemy_phase.split_debt_hp,
-        guardian_defensive_count: enemy_phase.guardian_defensive_count,
-        guardian_defensive_block: enemy_phase.guardian_defensive_block,
-        sustained_mitigation: state_sustained_mitigation_score(&node.combat),
-        hand: card_pile_value_report(hand),
-        next_draw: card_pile_value_report(next_draw),
+        visible_incoming_damage: facts.pressure.visible_incoming_damage,
+        survival_margin: facts.pressure.survival_margin,
+        living_enemy_count: facts.living_enemy_count,
+        total_enemy_hp: facts.enemy_phase.raw_living_enemy_hp,
+        total_enemy_block: facts.enemy_phase.raw_living_enemy_block,
+        total_enemy_effort: facts.enemy_phase.raw_living_enemy_effort,
+        phase_adjusted_enemy_hp: facts.enemy_phase.phase_adjusted_living_enemy_hp,
+        phase_adjusted_enemy_effort: facts.enemy_phase.phase_adjusted_living_enemy_effort,
+        split_pending_count: facts.enemy_phase.split_pending_count,
+        split_debt_hp: facts.enemy_phase.split_debt_hp,
+        guardian_defensive_count: facts.enemy_phase.guardian_defensive_count,
+        guardian_defensive_block: facts.enemy_phase.guardian_defensive_block,
+        sustained_mitigation: facts.sustained_mitigation,
+        hand: card_pile_value_report(facts.hand),
+        next_draw: card_pile_value_report(facts.next_draw),
         enemy_mechanics: enemy_mechanics_profile_report(enemy_mechanics),
         potions_used: node.potions_used,
         potions_discarded: node.potions_discarded,
         cards_played: node.cards_played,
         actions_taken: node.actions.len(),
         estimated: true,
+    }
+}
+
+fn combat_search_core_value_facts(combat: &CombatState) -> CombatSearchCoreValueFactsV1 {
+    CombatSearchCoreValueFactsV1 {
+        living_enemy_count: living_enemy_count(combat),
+        enemy_phase: enemy_phase_value(combat),
+        pressure: combat_pressure_value(combat),
+        sustained_mitigation: state_sustained_mitigation_score(combat),
+        hand: hand_value(combat),
+        next_draw: next_draw_value(combat),
     }
 }
 
@@ -208,6 +225,35 @@ mod tests {
         defensive.combat.entities.monsters = vec![defensive_guardian];
 
         assert!(combat_search_state_value(&open) > combat_search_state_value(&defensive));
+    }
+
+    #[test]
+    fn core_value_facts_feed_state_value_and_report() {
+        let mut node = test_node();
+        let mut guardian = crate::test_support::test_monster(EnemyId::TheGuardian);
+        guardian.id = 20;
+        guardian.current_hp = 180;
+        guardian.max_hp = 240;
+        guardian.block = 20;
+        guardian.guardian.is_open = false;
+        node.combat.entities.monsters = vec![guardian];
+
+        let facts = combat_search_core_value_facts(&node.combat);
+        let state_value = combat_search_state_value(&node);
+        let report = combat_search_frontier_value_report(&node);
+
+        assert_eq!(
+            state_value.phase_adjusted_enemy_effort_progress,
+            -facts.enemy_phase.phase_adjusted_living_enemy_effort
+        );
+        assert_eq!(
+            report.phase_adjusted_enemy_effort,
+            facts.enemy_phase.phase_adjusted_living_enemy_effort
+        );
+        assert_eq!(
+            report.guardian_defensive_block,
+            facts.enemy_phase.guardian_defensive_block
+        );
     }
 
     fn test_node() -> SearchNode {
