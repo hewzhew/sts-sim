@@ -19,6 +19,7 @@ struct RolloutActionProbeScore {
     mechanics_stability: i32,
     pending_choice_fanout: i32,
     ordered_preference: i32,
+    nonterminal_upgrade_eligible: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -143,6 +144,7 @@ fn probe_action_score(
         mechanics_stability: -mechanics_pressure,
         pending_choice_fanout: -(phase_profile.pending_choice.estimated_action_fanout as i32),
         ordered_preference: -(ordered_index as i32),
+        nonterminal_upgrade_eligible: !matches!(choice.choice.input, ClientInput::EndTurn),
     })
 }
 
@@ -158,6 +160,9 @@ fn probe_upgrade_reason(
         return None;
     }
     if !allow_nonterminal_upgrade {
+        return None;
+    }
+    if !candidate.nonterminal_upgrade_eligible {
         return None;
     }
     if candidate.final_hp < fallback.final_hp

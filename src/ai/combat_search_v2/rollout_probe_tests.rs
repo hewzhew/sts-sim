@@ -171,6 +171,16 @@ fn probe_upgrade_reason_rejects_block_only_survival_value_without_visible_hp_los
 }
 
 #[test]
+fn probe_upgrade_reason_rejects_nonterminal_end_turn_phase_upgrade() {
+    let fallback = score_with_survival(30, 5, 0);
+    let mut candidate = fallback;
+    candidate.split_debt_stability = 10;
+    candidate.nonterminal_upgrade_eligible = false;
+
+    assert_eq!(probe_upgrade_reason(candidate, fallback, true), None);
+}
+
+#[test]
 fn probe_upgrade_reason_accepts_reduced_visible_hp_loss() {
     let fallback = score_with_survival(30, 5, 6);
     let candidate = score_with_survival(30, 10, 1);
@@ -262,5 +272,6 @@ fn score_with_survival(
         mechanics_stability: 0,
         pending_choice_fanout: 0,
         ordered_preference: 0,
+        nonterminal_upgrade_eligible: true,
     }
 }
