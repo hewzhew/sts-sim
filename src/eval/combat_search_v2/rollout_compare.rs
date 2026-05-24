@@ -1,14 +1,18 @@
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
-    compare_outcome_metrics, CombatSearchV2ActionTrace, CombatSearchV2OutcomeMetrics,
-    CombatSearchV2RolloutPolicy, CombatSearchV2TrajectoryReport, SearchProofStatus,
-    SearchTerminalLabel,
+    compare_outcome_metrics, CombatSearchV2OutcomeMetrics, CombatSearchV2RolloutPolicy,
+    CombatSearchV2TrajectoryReport, SearchProofStatus, SearchTerminalLabel,
 };
 
 use super::benchmark::{
     run_combat_search_v2_benchmark, CombatSearchV2BenchmarkCaseReport,
-    CombatSearchV2BenchmarkReport,
+    CombatSearchV2BenchmarkReport, CombatSearchV2LoadedBenchmarkCase,
+};
+use super::rollout_compare_attribution::{
+    first_action_diff, CombatSearchV2RolloutPolicyFirstActionDiff,
 };
 use super::{CombatSearchV2LoadedBenchmark, CombatSearchV2RunOptions};
 
@@ -36,6 +40,9 @@ pub struct CombatSearchV2RolloutPolicyComparisonSummary {
     pub both_inconclusive: usize,
     pub first_action_diff_cases: usize,
     pub right_minus_left_final_hp_total: i32,
+    pub first_diff_action_index_histogram: BTreeMap<String, usize>,
+    pub right_better_right_role_histogram: BTreeMap<String, usize>,
+    pub left_better_right_role_histogram: BTreeMap<String, usize>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -81,17 +88,6 @@ pub struct CombatSearchV2RolloutPolicyComparisonRun {
     pub node_budget_hit: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct CombatSearchV2RolloutPolicyFirstActionDiff {
-    pub action_index: usize,
-    pub left_action_id: Option<usize>,
-    pub left_action_key: Option<String>,
-    pub left_action_debug: Option<String>,
-    pub right_action_id: Option<usize>,
-    pub right_action_key: Option<String>,
-    pub right_action_debug: Option<String>,
-}
-
 pub fn compare_combat_search_v2_rollout_policies(
     loaded: &CombatSearchV2LoadedBenchmark,
     options: CombatSearchV2RunOptions,
@@ -102,34 +98,38 @@ pub fn compare_combat_search_v2_rollout_policies(
     left_options.rollout_policy = Some(left_policy);
     let left = run_combat_search_v2_benchmark(loaded, left_options);
 
-    let mut right_options = options;
+    let mut right_options = options.clone();
     right_options.rollout_policy = Some(right_policy);
     let right = run_combat_search_v2_benchmark(loaded, right_options);
 
-    build_comparison_report(
-        loaded.name.clone(),
-        left_policy,
-        right_policy,
-        &left,
-        &right,
-    )
+    build_comparison_report(loaded, &options, left_policy, right_policy, &left, &right)
 }
 
 fn build_comparison_report(
-    benchmark_name: String,
+    loaded: &CombatSearchV2LoadedBenchmark,
+    options: &CombatSearchV2RunOptions,
     left_policy: CombatSearchV2RolloutPolicy,
     right_policy: CombatSearchV2RolloutPolicy,
     left: &CombatSearchV2BenchmarkReport,
     right: &CombatSearchV2BenchmarkReport,
 ) -> CombatSearchV2RolloutPolicyComparisonReport {
     let mut summary = CombatSearchV2RolloutPolicyComparisonSummary::default();
-    let cases = left
+    let cases = loaded
         .cases
         .iter()
+        .zip(left.cases.iter())
         .zip(right.cases.iter())
-        .map(|(left_case, right_case)| {
+        .map(|((loaded_case, left_case), right_case)| {
+            debug_assert_eq!(loaded_case.id, left_case.id);
             debug_assert_eq!(left_case.id, right_case.id);
-            let case = compare_case(left_policy, right_policy, left_case, right_case);
+            let case = compare_case(
+                loaded_case,
+                options,
+                left_policy,
+                right_policy,
+                left_case,
+                right_case,
+            );
             observe_case(&mut summary, &case);
             case
         })
@@ -137,8 +137,8 @@ fn build_comparison_report(
 
     CombatSearchV2RolloutPolicyComparisonReport {
         schema_name: "CombatSearchV2RolloutPolicyComparisonReport",
-        schema_version: 1,
-        benchmark_name,
+        schema_version: 2,
+        benchmark_name: loaded.name.clone(),
         case_count: cases.len(),
         left_policy: left_policy.label(),
         right_policy: right_policy.label(),
@@ -147,12 +147,15 @@ fn build_comparison_report(
             "comparison uses best complete trajectories, not proof of optimality",
             "first_action_diff identifies where selected best complete trajectories diverge",
             "rollout policy affects frontier priority; action diffs are consequences, not direct rollout action labels",
+            "first_action_diff context is reconstructed by exact replay of the common prefix and is diagnostic only",
         ],
         cases,
     }
 }
 
 fn compare_case(
+    loaded: &CombatSearchV2LoadedBenchmarkCase,
+    options: &CombatSearchV2RunOptions,
     left_policy: CombatSearchV2RolloutPolicy,
     right_policy: CombatSearchV2RolloutPolicy,
     left: &CombatSearchV2BenchmarkCaseReport,
@@ -183,6 +186,8 @@ fn compare_case(
         left: summarize_run(left_policy, left),
         right: summarize_run(right_policy, right),
         first_action_diff: first_action_diff(
+            loaded,
+            options,
             left_trajectory.map(|trajectory| trajectory.actions.as_slice()),
             right_trajectory.map(|trajectory| trajectory.actions.as_slice()),
         ),
@@ -238,35 +243,6 @@ fn summarize_run(
     }
 }
 
-fn first_action_diff(
-    left: Option<&[CombatSearchV2ActionTrace]>,
-    right: Option<&[CombatSearchV2ActionTrace]>,
-) -> Option<CombatSearchV2RolloutPolicyFirstActionDiff> {
-    let left = left.unwrap_or(&[]);
-    let right = right.unwrap_or(&[]);
-    let max_len = left.len().max(right.len());
-    for action_index in 0..max_len {
-        let left_action = left.get(action_index);
-        let right_action = right.get(action_index);
-        if left_action.map(action_identity) != right_action.map(action_identity) {
-            return Some(CombatSearchV2RolloutPolicyFirstActionDiff {
-                action_index,
-                left_action_id: left_action.map(|action| action.action_id),
-                left_action_key: left_action.map(|action| action.action_key.clone()),
-                left_action_debug: left_action.map(|action| action.action_debug.clone()),
-                right_action_id: right_action.map(|action| action.action_id),
-                right_action_key: right_action.map(|action| action.action_key.clone()),
-                right_action_debug: right_action.map(|action| action.action_debug.clone()),
-            });
-        }
-    }
-    None
-}
-
-fn action_identity(action: &CombatSearchV2ActionTrace) -> (&str, usize) {
-    (action.action_key.as_str(), action.action_id)
-}
-
 fn observe_case(
     summary: &mut CombatSearchV2RolloutPolicyComparisonSummary,
     case: &CombatSearchV2RolloutPolicyComparisonCase,
@@ -292,6 +268,32 @@ fn observe_case(
     if case.first_action_diff.is_some() {
         summary.first_action_diff_cases += 1;
     }
+    if let Some(diff) = case.first_action_diff.as_ref() {
+        increment_histogram(
+            &mut summary.first_diff_action_index_histogram,
+            diff.action_index.to_string(),
+        );
+        match case.verdict {
+            CombatSearchV2RolloutPolicyComparisonVerdict::RightBetter
+            | CombatSearchV2RolloutPolicyComparisonVerdict::RightOnlyComplete => {
+                if let Some(role) = diff.right_action_role {
+                    increment_histogram(&mut summary.right_better_right_role_histogram, role);
+                }
+            }
+            CombatSearchV2RolloutPolicyComparisonVerdict::LeftBetter
+            | CombatSearchV2RolloutPolicyComparisonVerdict::LeftOnlyComplete => {
+                if let Some(role) = diff.right_action_role {
+                    increment_histogram(&mut summary.left_better_right_role_histogram, role);
+                }
+            }
+            CombatSearchV2RolloutPolicyComparisonVerdict::Tied
+            | CombatSearchV2RolloutPolicyComparisonVerdict::BothInconclusive => {}
+        }
+    }
+}
+
+fn increment_histogram(histogram: &mut BTreeMap<String, usize>, key: impl Into<String>) {
+    *histogram.entry(key.into()).or_default() += 1;
 }
 
 fn delta_i32(left: Option<i32>, right: Option<i32>) -> Option<i32> {

@@ -122,6 +122,23 @@ pub use report::trajectory_from_state;
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use types::*;
 
+pub(crate) fn combat_search_action_ordering_role_label_for_state(
+    engine: &EngineState,
+    combat: &CombatState,
+    input: &ClientInput,
+) -> &'static str {
+    action_priority::priority_for_input(engine, combat, input)
+        .role
+        .label()
+}
+
+pub(crate) fn combat_search_phase_profile_report_for_state(
+    engine: &EngineState,
+    combat: &CombatState,
+) -> CombatSearchV2PhaseProfileReport {
+    combat_search_phase_profile_report(combat_search_phase_profile(engine, combat))
+}
+
 pub(crate) fn filter_combat_search_legal_actions(
     choices: Vec<CombatActionChoice>,
     potion_policy: CombatSearchV2PotionPolicy,

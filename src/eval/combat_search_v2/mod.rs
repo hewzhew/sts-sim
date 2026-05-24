@@ -1,6 +1,7 @@
 mod benchmark;
 mod benchmark_gate;
 mod rollout_compare;
+mod rollout_compare_attribution;
 mod start;
 
 pub use benchmark::{
@@ -23,7 +24,9 @@ pub use rollout_compare::{
     compare_combat_search_v2_rollout_policies, CombatSearchV2RolloutPolicyComparisonCase,
     CombatSearchV2RolloutPolicyComparisonReport, CombatSearchV2RolloutPolicyComparisonRun,
     CombatSearchV2RolloutPolicyComparisonSummary, CombatSearchV2RolloutPolicyComparisonVerdict,
-    CombatSearchV2RolloutPolicyFirstActionDiff,
+};
+pub use rollout_compare_attribution::{
+    CombatSearchV2RolloutPolicyFirstActionDiff, CombatSearchV2RolloutPolicyFirstDiffContext,
 };
 pub use start::{
     load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_v2_loaded_start,

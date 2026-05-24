@@ -1,31 +1,4 @@
 use super::*;
-use crate::state::core::ClientInput;
-
-#[test]
-fn first_action_diff_finds_first_key_change() {
-    let left = vec![
-        trace(0, "combat/end_turn"),
-        trace(
-            1,
-            "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0",
-        ),
-    ];
-    let right = vec![
-        trace(0, "combat/end_turn"),
-        trace(
-            1,
-            "combat/play_card/hand:1/card:Bash+0#2/target:monster_slot:0",
-        ),
-    ];
-
-    let diff = first_action_diff(Some(&left), Some(&right)).expect("diff should exist");
-
-    assert_eq!(diff.action_index, 1);
-    assert_eq!(diff.left_action_id, Some(1));
-    assert_eq!(diff.right_action_id, Some(1));
-    assert!(diff.left_action_key.unwrap().contains("Strike_R"));
-    assert!(diff.right_action_key.unwrap().contains("Bash"));
-}
 
 #[test]
 fn comparison_summary_counts_verdicts_and_hp_delta() {
@@ -46,9 +19,12 @@ fn comparison_summary_counts_verdicts_and_hp_delta() {
                 left_action_id: None,
                 left_action_key: None,
                 left_action_debug: None,
+                left_action_role: Some("end_turn"),
                 right_action_id: None,
                 right_action_key: None,
                 right_action_debug: None,
+                right_action_role: Some("damage_progress"),
+                context: None,
             }),
         },
     );
@@ -57,16 +33,13 @@ fn comparison_summary_counts_verdicts_and_hp_delta() {
     assert_eq!(summary.right_better, 1);
     assert_eq!(summary.right_minus_left_final_hp_total, 3);
     assert_eq!(summary.first_action_diff_cases, 1);
-}
-
-fn trace(action_id: usize, action_key: &str) -> CombatSearchV2ActionTrace {
-    CombatSearchV2ActionTrace {
-        step_index: action_id,
-        action_id,
-        action_key: action_key.to_string(),
-        action_debug: action_key.to_string(),
-        input: ClientInput::EndTurn,
-    }
+    assert_eq!(summary.first_diff_action_index_histogram.get("0"), Some(&1));
+    assert_eq!(
+        summary
+            .right_better_right_role_histogram
+            .get("damage_progress"),
+        Some(&1)
+    );
 }
 
 fn run_summary(final_hp: i32) -> CombatSearchV2RolloutPolicyComparisonRun {
