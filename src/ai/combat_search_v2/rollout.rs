@@ -18,6 +18,8 @@ pub(super) struct RolloutNodeEstimate {
     pub(super) survival_margin: i32,
     pub(super) actions_simulated: usize,
     pub(super) truncated: bool,
+    pub(super) stop_reason: RolloutStopReason,
+    pub(super) last_action_reason: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -32,6 +34,17 @@ pub(super) struct RolloutCache {
     terminal_wins: u64,
     terminal_losses: u64,
     cache: HashMap<CombatExactStateKey, RolloutNodeEstimate>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RolloutStopReason {
+    NotEvaluated,
+    TerminalState,
+    MaxActions,
+    Deadline,
+    NoLegalActions,
+    PolicyDeclined,
+    EngineStepLimit,
 }
 
 impl RolloutNodeEstimate {
@@ -50,10 +63,17 @@ impl RolloutNodeEstimate {
             survival_margin: 0,
             actions_simulated: 0,
             truncated: false,
+            stop_reason: RolloutStopReason::NotEvaluated,
+            last_action_reason: None,
         }
     }
 
-    fn from_node(node: &SearchNode, actions_simulated: usize, truncated: bool) -> Self {
+    fn from_node(
+        node: &SearchNode,
+        actions_simulated: usize,
+        stop_reason: RolloutStopReason,
+        last_action_reason: Option<&'static str>,
+    ) -> Self {
         Self {
             evaluated: true,
             terminal: terminal_label(&node.engine, &node.combat),
@@ -67,7 +87,9 @@ impl RolloutNodeEstimate {
             total_enemy_hp: total_living_enemy_hp(&node.combat),
             survival_margin: survival_margin(&node.combat),
             actions_simulated,
-            truncated,
+            truncated: stop_reason.is_truncated(),
+            stop_reason,
+            last_action_reason,
         }
     }
 
@@ -111,7 +133,30 @@ impl RolloutNodeEstimate {
                 survival_margin: self.survival_margin,
                 actions_simulated: self.actions_simulated,
                 truncated: self.truncated,
+                stop_reason: self.stop_reason.label(),
+                last_action_reason: self.last_action_reason,
             })
+    }
+}
+
+impl RolloutStopReason {
+    fn label(self) -> &'static str {
+        match self {
+            RolloutStopReason::NotEvaluated => "not_evaluated",
+            RolloutStopReason::TerminalState => "terminal_state",
+            RolloutStopReason::MaxActions => "max_actions",
+            RolloutStopReason::Deadline => "deadline",
+            RolloutStopReason::NoLegalActions => "no_legal_actions",
+            RolloutStopReason::PolicyDeclined => "policy_declined",
+            RolloutStopReason::EngineStepLimit => "engine_step_limit",
+        }
+    }
+
+    fn is_truncated(self) -> bool {
+        !matches!(
+            self,
+            RolloutStopReason::NotEvaluated | RolloutStopReason::TerminalState
+        )
     }
 }
 
@@ -207,39 +252,63 @@ fn conservative_no_potion_rollout(
     deadline: Option<Instant>,
 ) -> RolloutNodeEstimate {
     let mut rollout = node.clone_for_rollout();
+    let mut last_action_reason = None;
     for actions_simulated in 0..=max_actions {
         if terminal_label(&rollout.engine, &rollout.combat) != SearchTerminalLabel::Unresolved {
-            return RolloutNodeEstimate::from_node(&rollout, actions_simulated, false);
+            return RolloutNodeEstimate::from_node(
+                &rollout,
+                actions_simulated,
+                RolloutStopReason::TerminalState,
+                last_action_reason,
+            );
         }
         if actions_simulated == max_actions {
-            return RolloutNodeEstimate::from_node(&rollout, actions_simulated, true);
+            return RolloutNodeEstimate::from_node(
+                &rollout,
+                actions_simulated,
+                RolloutStopReason::MaxActions,
+                last_action_reason,
+            );
         }
         if deadline.is_some_and(|limit| Instant::now() >= limit) {
-            return RolloutNodeEstimate::from_node(&rollout, actions_simulated, true);
+            return RolloutNodeEstimate::from_node(
+                &rollout,
+                actions_simulated,
+                RolloutStopReason::Deadline,
+                last_action_reason,
+            );
         }
 
         let position = CombatPosition::new(rollout.engine.clone(), rollout.combat.clone());
-        let legal = filtered_legal_actions(
+        let legal = filtered_rollout_legal_actions(
+            CombatSearchV2RolloutPolicy::ConservativeNoPotion,
             stepper.legal_action_choices(&position),
-            CombatSearchV2PotionPolicy::Never,
             &rollout.combat,
         );
         if legal.is_empty() {
-            return RolloutNodeEstimate::from_node(&rollout, actions_simulated, true);
+            return RolloutNodeEstimate::from_node(
+                &rollout,
+                actions_simulated,
+                RolloutStopReason::NoLegalActions,
+                last_action_reason,
+            );
         }
 
-        let choices = legal
-            .into_iter()
-            .enumerate()
-            .map(|(original_action_id, choice)| IndexedActionChoice {
-                original_action_id,
-                choice,
-            })
-            .collect();
-        let ordered = order_indexed_action_choices(&rollout.engine, &rollout.combat, choices);
-        let Some(choice) = ordered.choices.into_iter().next() else {
-            return RolloutNodeEstimate::from_node(&rollout, actions_simulated, true);
+        let Some(selection) = choose_rollout_action(
+            CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            &rollout.engine,
+            &rollout.combat,
+            legal,
+        ) else {
+            return RolloutNodeEstimate::from_node(
+                &rollout,
+                actions_simulated,
+                RolloutStopReason::PolicyDeclined,
+                last_action_reason,
+            );
         };
+        last_action_reason = Some(selection.reason);
+        let choice = selection.choice;
 
         let step = stepper.apply_to_stable(
             &position,
@@ -261,11 +330,21 @@ fn conservative_no_potion_rollout(
         rollout = child;
 
         if step.truncated {
-            return RolloutNodeEstimate::from_node(&rollout, actions_simulated + 1, true);
+            return RolloutNodeEstimate::from_node(
+                &rollout,
+                actions_simulated + 1,
+                RolloutStopReason::EngineStepLimit,
+                last_action_reason,
+            );
         }
     }
 
-    RolloutNodeEstimate::from_node(&rollout, max_actions, true)
+    RolloutNodeEstimate::from_node(
+        &rollout,
+        max_actions,
+        RolloutStopReason::MaxActions,
+        last_action_reason,
+    )
 }
 
 impl SearchNode {

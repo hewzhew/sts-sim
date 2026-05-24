@@ -115,6 +115,8 @@ pub fn run_combat_search_v2_with_stepper(
             config.potion_policy,
             &node.combat,
         );
+        let pending_choice = summarize_pending_choice(&node.engine);
+        diagnostics.observe_pending_choice(pending_choice.as_ref());
         let expansion = summarize_action_expansion(&node.engine, &node.combat, &legal);
         diagnostics.observe_legal_actions(&expansion);
         let turn_prefix = summarize_turn_prefix(&node.turn_prefix, legal.len());

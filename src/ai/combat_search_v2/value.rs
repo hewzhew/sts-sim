@@ -92,6 +92,7 @@ pub(super) fn combat_search_frontier_value_report(
     let hand = hand_value(&node.combat);
     let next_draw = next_draw_value(&node.combat);
     let enemy_phase = enemy_phase_value(&node.combat);
+    let enemy_mechanics = enemy_mechanics_profile(&node.combat);
     let pressure = combat_pressure_value(&node.combat);
     CombatSearchV2FrontierValueReport {
         policy: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
@@ -108,6 +109,7 @@ pub(super) fn combat_search_frontier_value_report(
         sustained_mitigation: state_sustained_mitigation_score(&node.combat),
         hand: card_pile_value_report(hand),
         next_draw: card_pile_value_report(next_draw),
+        enemy_mechanics: enemy_mechanics_profile_report(enemy_mechanics),
         potions_used: node.potions_used,
         potions_discarded: node.potions_discarded,
         cards_played: node.cards_played,

@@ -22,14 +22,17 @@ mod baseline;
 mod card_identity;
 mod card_pile_value;
 mod diagnostics;
+mod enemy_mechanics_profile;
 mod enemy_phase_value;
 mod expansion;
 mod frontier;
 mod outcome_score;
+mod pending_choice_profile;
 mod potions;
 mod pressure_value;
 mod report;
 mod rollout;
+mod rollout_policy;
 mod rollout_value;
 mod search;
 mod target_fanout;
@@ -53,6 +56,7 @@ use card_identity::{
     summarize_card_identity, CardIdentityDiagnosticsCollector, CardIdentitySummary,
 };
 use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
+use enemy_mechanics_profile::{enemy_mechanics_profile, enemy_mechanics_profile_report};
 use expansion::{
     summarize_action_expansion, ActionExpansionDiagnosticsCollector, ActionExpansionSummary,
 };
@@ -61,9 +65,13 @@ use frontier::{
     ResourceVector, SearchNode,
 };
 use outcome_score::CombatOutcomeScore;
+use pending_choice_profile::{
+    summarize_pending_choice, PendingChoiceDiagnosticsCollector, PendingChoiceProfile,
+};
 use pressure_value::{survival_margin, visible_incoming_damage};
 use report::{summarize_state, trajectory_report};
 use rollout::{RolloutCache, RolloutNodeEstimate};
+use rollout_policy::{choose_rollout_action, filtered_rollout_legal_actions};
 use target_fanout::{
     summarize_target_fanout, TargetFanoutDiagnosticsCollector, TargetFanoutSummary,
 };

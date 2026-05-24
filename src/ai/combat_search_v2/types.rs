@@ -155,6 +155,7 @@ pub struct CombatSearchV2FrontierValueReport {
     pub sustained_mitigation: i32,
     pub hand: CombatSearchV2CardPileValueReport,
     pub next_draw: CombatSearchV2CardPileValueReport,
+    pub enemy_mechanics: CombatSearchV2EnemyMechanicsReport,
     pub potions_used: u32,
     pub potions_discarded: u32,
     pub cards_played: u32,
@@ -168,6 +169,24 @@ pub struct CombatSearchV2CardPileValueReport {
     pub block: i32,
     pub playable_cards: i32,
     pub low_cost: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2EnemyMechanicsReport {
+    pub profiling_policy: &'static str,
+    pub tracked_monsters: usize,
+    pub split_pending_count: usize,
+    pub guardian_open_count: usize,
+    pub guardian_defensive_count: usize,
+    pub guardian_mode_shift_pending_count: usize,
+    pub guardian_min_mode_shift_remaining: Option<i32>,
+    pub lagavulin_sleeping_count: usize,
+    pub lagavulin_waking_count: usize,
+    pub gremlin_nob_enrage_count: usize,
+    pub gremlin_nob_anger_amount_total: i32,
+    pub sentry_dazed_pressure_count: usize,
+    pub hexaghost_opening_pressure_count: usize,
+    pub notes: Vec<&'static str>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -201,6 +220,8 @@ pub struct CombatSearchV2RolloutEstimateReport {
     pub survival_margin: i32,
     pub actions_simulated: usize,
     pub truncated: bool,
+    pub stop_reason: &'static str,
+    pub last_action_reason: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -214,6 +235,7 @@ pub struct CombatSearchV2DiagnosticsReport {
     pub equivalence: CombatSearchV2DiagnosticsEquivalence,
     pub ordering: CombatSearchV2DiagnosticsOrdering,
     pub turn_branching: CombatSearchV2DiagnosticsTurnBranching,
+    pub pending_choice: CombatSearchV2DiagnosticsPendingChoice,
     pub turn_prefix: CombatSearchV2DiagnosticsTurnPrefix,
     pub turn_sequence: CombatSearchV2DiagnosticsTurnSequence,
     pub card_identity: CombatSearchV2DiagnosticsCardIdentity,
@@ -441,6 +463,40 @@ pub struct CombatSearchV2DiagnosticsTurnFanoutSample {
     pub pending_choice_children: usize,
     pub terminal_children: usize,
     pub end_turn_children: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsPendingChoice {
+    pub profiling_policy: &'static str,
+    pub behavioral_effect: &'static str,
+    pub states_observed: u64,
+    pub pending_choice_states: u64,
+    pub high_fanout_states: u64,
+    pub max_candidate_count: usize,
+    pub kind_counts: Vec<CombatSearchV2DiagnosticsPendingChoiceKindCount>,
+    pub largest_pending_choices: Vec<CombatSearchV2DiagnosticsPendingChoiceSample>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsPendingChoiceKindCount {
+    pub kind: String,
+    pub states: u64,
+    pub max_candidate_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsPendingChoiceSample {
+    pub observed_at_state_query: u64,
+    pub kind: String,
+    pub reason: Option<String>,
+    pub source_pile: Option<String>,
+    pub candidate_count: usize,
+    pub min_cards: usize,
+    pub max_cards: usize,
+    pub can_cancel: bool,
+    pub fanout_class: &'static str,
+    pub search_risk: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -13,6 +13,7 @@ pub(super) struct SearchDiagnosticsCollector {
     equivalence: ActionEquivalenceDiagnosticsCollector,
     ordering: ActionOrderingDiagnosticsCollector,
     turn_branching: TurnBranchingDiagnosticsCollector,
+    pending_choice: PendingChoiceDiagnosticsCollector,
     turn_prefix: TurnPrefixDiagnosticsCollector,
     turn_sequence: TurnSequenceDiagnosticsCollector,
     card_identity: CardIdentityDiagnosticsCollector,
@@ -58,6 +59,10 @@ impl SearchDiagnosticsCollector {
 
     pub(super) fn observe_turn_branching(&mut self, observation: &TurnBranchingStateObservation) {
         self.turn_branching.observe(observation);
+    }
+
+    pub(super) fn observe_pending_choice(&mut self, profile: Option<&PendingChoiceProfile>) {
+        self.pending_choice.observe(profile);
     }
 
     pub(super) fn observe_turn_prefix(&mut self, summary: &TurnPrefixSummary) {
@@ -121,6 +126,7 @@ impl SearchDiagnosticsCollector {
         let equivalence = self.equivalence.finish();
         let ordering = self.ordering.finish();
         let turn_branching = self.turn_branching.finish();
+        let pending_choice = self.pending_choice.finish();
         let turn_prefix = self.turn_prefix.finish();
         let turn_sequence = self.turn_sequence.finish();
         let card_identity = self.card_identity.finish();
@@ -134,6 +140,7 @@ impl SearchDiagnosticsCollector {
             &equivalence,
             &ordering,
             &turn_branching,
+            &pending_choice,
             &turn_prefix,
             &turn_sequence,
             &card_identity,
@@ -152,6 +159,7 @@ impl SearchDiagnosticsCollector {
             equivalence,
             ordering,
             turn_branching,
+            pending_choice,
             turn_prefix,
             turn_sequence,
             card_identity,
@@ -184,6 +192,7 @@ fn diagnosis_tags(
     equivalence: &CombatSearchV2DiagnosticsEquivalence,
     ordering: &CombatSearchV2DiagnosticsOrdering,
     turn_branching: &CombatSearchV2DiagnosticsTurnBranching,
+    pending_choice: &CombatSearchV2DiagnosticsPendingChoice,
     turn_prefix: &CombatSearchV2DiagnosticsTurnPrefix,
     turn_sequence: &CombatSearchV2DiagnosticsTurnSequence,
     card_identity: &CombatSearchV2DiagnosticsCardIdentity,
@@ -287,6 +296,15 @@ fn diagnosis_tags(
     }
     if turn_branching.pending_choice_children > 0 {
         tags.push("pending_choice_children_observed");
+    }
+    if pending_choice.states_observed > 0 {
+        tags.push("pending_choice_profile_diagnostics_active");
+    }
+    if pending_choice.pending_choice_states > 0 {
+        tags.push("pending_choice_states_observed");
+    }
+    if pending_choice.high_fanout_states > 0 {
+        tags.push("high_fanout_pending_choices_observed");
     }
     if turn_prefix.states_observed > 0 {
         tags.push("turn_prefix_diagnostics_active");
@@ -454,6 +472,17 @@ mod tests {
                 largest_turn_fanouts: Vec::new(),
                 notes: Vec::new(),
             },
+            &CombatSearchV2DiagnosticsPendingChoice {
+                profiling_policy: "typed_pending_choice_profile_no_prune_no_auto_resolution",
+                behavioral_effect: "diagnostic_only_search_expansion_unchanged",
+                states_observed: 1,
+                pending_choice_states: 1,
+                high_fanout_states: 1,
+                max_candidate_count: 12,
+                kind_counts: Vec::new(),
+                largest_pending_choices: Vec::new(),
+                notes: Vec::new(),
+            },
             &CombatSearchV2DiagnosticsTurnPrefix {
                 tracking_policy: "current_turn_prefix_summary_from_search_node",
                 behavioral_effect: "diagnostic_only_no_turn_prefix_prune_no_merge",
@@ -544,6 +573,9 @@ mod tests {
         assert!(tags.contains(&"turn_branching_diagnostics_active"));
         assert!(tags.contains(&"same_turn_children_observed"));
         assert!(tags.contains(&"next_turn_children_observed"));
+        assert!(tags.contains(&"pending_choice_profile_diagnostics_active"));
+        assert!(tags.contains(&"pending_choice_states_observed"));
+        assert!(tags.contains(&"high_fanout_pending_choices_observed"));
         assert!(tags.contains(&"turn_prefix_diagnostics_active"));
         assert!(tags.contains(&"non_empty_turn_prefix_observed"));
         assert!(tags.contains(&"long_turn_prefix_observed"));
