@@ -298,7 +298,8 @@ pub fn run_combat_search_v2_with_stepper(
             kind: "best_first_atomic_action_graph_search_v2",
             terminal_policy: "whole_combat_terminal_only",
             expansion_order:
-                "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_then_frontier_priority_enemy_progress_survival_sustained_mitigation_hp_next_draw_resource_line_length",
+                "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_then_frontier_value_v1",
+            frontier_value: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
             turn_branching: "turn_transition_classification_with_late_frontier_tie_break",
             potion_policy: config.potion_policy.label(),
             transposition_table: "exact_runtime_state_key_with_resource_coverage",
@@ -337,6 +338,9 @@ pub fn run_combat_search_v2_with_stepper(
             max_actions_cut_count,
             engine_step_limit_count,
             potion_budget_cut_count,
+            best_estimated_value: best_frontier
+                .as_ref()
+                .map(combat_search_frontier_value_report),
             sample_states,
         },
         rollout: rollout_cache.finish(best_frontier.as_ref()),

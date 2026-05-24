@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai::combat_search_v2::{
     compare_outcome_metrics, run_combat_search_v2, CombatSearchV2DiagnosticsReport,
-    CombatSearchV2OutcomeMetrics, CombatSearchV2OutcomeReport, CombatSearchV2Report,
-    CombatSearchV2Stats, CombatSearchV2TrajectoryReport, SearchProofStatus, SearchTerminalLabel,
-    WHOLE_COMBAT_OUTCOME_CRITERIA,
+    CombatSearchV2FrontierValueReport, CombatSearchV2OutcomeMetrics, CombatSearchV2OutcomeReport,
+    CombatSearchV2Report, CombatSearchV2Stats, CombatSearchV2TrajectoryReport, SearchProofStatus,
+    SearchTerminalLabel, WHOLE_COMBAT_OUTCOME_CRITERIA,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::fingerprint::StateFingerprintV1;
@@ -163,6 +163,7 @@ pub struct CombatSearchV2BenchmarkCaseReport {
     pub input_fingerprints: Option<CombatSearchV2InputFingerprintReport>,
     pub outcome: CombatSearchV2OutcomeReport,
     pub best_complete_trajectory: Option<CombatSearchV2TrajectoryReport>,
+    pub best_frontier_value: Option<CombatSearchV2FrontierValueReport>,
     pub diagnostics: CombatSearchV2DiagnosticsReport,
     pub stats: CombatSearchV2Stats,
     pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
@@ -350,6 +351,7 @@ fn run_combat_search_v2_benchmark_case(
             .map(CombatSearchV2InputFingerprintReport::from),
         outcome: search_report.outcome.clone(),
         best_complete_trajectory: search_report.best_complete_trajectory.clone(),
+        best_frontier_value: search_report.frontier.best_estimated_value.clone(),
         diagnostics: search_report.diagnostics.clone(),
         stats: search_report.stats.clone(),
         baseline: case.baseline.clone(),

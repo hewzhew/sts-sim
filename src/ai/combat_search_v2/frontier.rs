@@ -1,8 +1,9 @@
-use super::action_effects::state_sustained_mitigation_score;
+use super::value::{
+    combat_search_state_value, rollout_priority_value, CombatSearchRolloutValueV1,
+    CombatSearchStateValueV1,
+};
 use super::*;
 use std::hash::Hash;
-
-const BASE_TURN_DRAW_COUNT: i32 = 5;
 
 #[derive(Clone)]
 pub(super) struct SearchNode {
@@ -22,24 +23,8 @@ pub(super) struct SearchNode {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NodePriority {
     terminal_rank: i32,
-    rollout_evaluated: i32,
-    rollout_terminal_rank: i32,
-    rollout_final_hp: i32,
-    rollout_enemy_progress: i32,
-    rollout_survival_margin: i32,
-    rollout_potion_conservation: i32,
-    rollout_faster_turns: i32,
-    rollout_fewer_cards_played: i32,
-    fewer_living_enemies: i32,
-    enemy_progress: i32,
-    survival_margin: i32,
-    sustained_mitigation: i32,
-    player_hp: i32,
-    player_block: i32,
-    next_draw_damage: i32,
-    next_draw_block: i32,
-    next_draw_playable_cards: i32,
-    next_draw_low_cost: i32,
+    rollout_value: CombatSearchRolloutValueV1,
+    state_value: CombatSearchStateValueV1,
     potion_tactical_priority: i32,
     potion_conservation: i32,
     turn_branch_priority: i32,
@@ -50,39 +35,8 @@ impl Ord for NodePriority {
     fn cmp(&self, other: &Self) -> Ordering {
         self.terminal_rank
             .cmp(&other.terminal_rank)
-            .then_with(|| self.rollout_evaluated.cmp(&other.rollout_evaluated))
-            .then_with(|| self.rollout_terminal_rank.cmp(&other.rollout_terminal_rank))
-            .then_with(|| self.rollout_final_hp.cmp(&other.rollout_final_hp))
-            .then_with(|| {
-                self.rollout_enemy_progress
-                    .cmp(&other.rollout_enemy_progress)
-            })
-            .then_with(|| {
-                self.rollout_survival_margin
-                    .cmp(&other.rollout_survival_margin)
-            })
-            .then_with(|| {
-                self.rollout_potion_conservation
-                    .cmp(&other.rollout_potion_conservation)
-            })
-            .then_with(|| self.rollout_faster_turns.cmp(&other.rollout_faster_turns))
-            .then_with(|| {
-                self.rollout_fewer_cards_played
-                    .cmp(&other.rollout_fewer_cards_played)
-            })
-            .then_with(|| self.fewer_living_enemies.cmp(&other.fewer_living_enemies))
-            .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
-            .then_with(|| self.survival_margin.cmp(&other.survival_margin))
-            .then_with(|| self.sustained_mitigation.cmp(&other.sustained_mitigation))
-            .then_with(|| self.player_hp.cmp(&other.player_hp))
-            .then_with(|| self.player_block.cmp(&other.player_block))
-            .then_with(|| self.next_draw_damage.cmp(&other.next_draw_damage))
-            .then_with(|| self.next_draw_block.cmp(&other.next_draw_block))
-            .then_with(|| {
-                self.next_draw_playable_cards
-                    .cmp(&other.next_draw_playable_cards)
-            })
-            .then_with(|| self.next_draw_low_cost.cmp(&other.next_draw_low_cost))
+            .then_with(|| self.rollout_value.cmp(&other.rollout_value))
+            .then_with(|| self.state_value.cmp(&other.state_value))
             .then_with(|| {
                 self.potion_tactical_priority
                     .cmp(&other.potion_tactical_priority)
@@ -158,67 +112,15 @@ fn priority_for_node(node: &SearchNode) -> NodePriority {
         SearchTerminalLabel::Unresolved => 2,
         SearchTerminalLabel::Loss => 1,
     };
-    let next_draw = next_draw_quality(&node.combat);
-    let rollout = node.rollout_estimate;
     NodePriority {
         terminal_rank,
-        rollout_evaluated: i32::from(rollout.evaluated),
-        rollout_terminal_rank: rollout.priority_terminal_rank(),
-        rollout_final_hp: rollout.final_hp,
-        rollout_enemy_progress: rollout.enemy_progress(),
-        rollout_survival_margin: rollout.survival_margin,
-        rollout_potion_conservation: rollout.potion_conservation(),
-        rollout_faster_turns: rollout.faster_turns(),
-        rollout_fewer_cards_played: rollout.fewer_cards_played(),
-        fewer_living_enemies: -(living_enemy_count(&node.combat) as i32),
-        enemy_progress: -total_living_enemy_hp(&node.combat),
-        survival_margin: survival_margin(&node.combat),
-        sustained_mitigation: state_sustained_mitigation_score(&node.combat),
-        player_hp: node.combat.entities.player.current_hp,
-        player_block: node.combat.entities.player.block,
-        next_draw_damage: next_draw.damage,
-        next_draw_block: next_draw.block,
-        next_draw_playable_cards: next_draw.playable_cards,
-        next_draw_low_cost: next_draw.low_cost,
+        rollout_value: rollout_priority_value(node.rollout_estimate),
+        state_value: combat_search_state_value(node),
         potion_tactical_priority: node.potion_tactical_priority,
         potion_conservation: -((node.potions_used + node.potions_discarded) as i32),
         turn_branch_priority: node.last_turn_branch_priority,
         shorter_line: -(node.actions.len() as i32),
     }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct DrawQuality {
-    damage: i32,
-    block: i32,
-    playable_cards: i32,
-    low_cost: i32,
-}
-
-fn next_draw_quality(combat: &CombatState) -> DrawQuality {
-    let draw_count = (BASE_TURN_DRAW_COUNT + combat.turn.turn_start_draw_modifier)
-        .max(0)
-        .min(combat.zones.draw_pile.len() as i32) as usize;
-    combat.zones.draw_pile.iter().take(draw_count).fold(
-        DrawQuality::default(),
-        |mut quality, card| {
-            let def = crate::content::cards::get_card_definition(card.id);
-            let cost = card.cost_for_turn_java();
-            if cost >= 0 && cost <= combat.turn.energy as i32 {
-                quality.playable_cards += 1;
-            }
-            quality.low_cost -= cost.max(0);
-            quality.damage += card
-                .base_damage_override
-                .unwrap_or(def.base_damage + def.upgrade_damage * card.upgrades as i32)
-                .max(0);
-            quality.block += card
-                .base_block_override
-                .unwrap_or(def.base_block + def.upgrade_block * card.upgrades as i32)
-                .max(0);
-            quality
-        },
-    )
 }
 
 pub(super) fn remember_best_complete(best: &mut Option<SearchNode>, candidate: SearchNode) {
@@ -352,20 +254,6 @@ mod tests {
         carnage.combat.zones.draw_pile = vec![CombatCard::new(CardId::Carnage, 12)];
 
         assert!(priority_for_node(&carnage) > priority_for_node(&strike));
-    }
-
-    #[test]
-    fn next_draw_quality_uses_turn_start_draw_modifier() {
-        let mut combat = blank_test_combat();
-        combat.turn.turn_start_draw_modifier = -4;
-        combat.zones.draw_pile = vec![
-            CombatCard::new(CardId::Strike, 11),
-            CombatCard::new(CardId::Carnage, 12),
-        ];
-
-        let quality = next_draw_quality(&combat);
-
-        assert_eq!(quality.damage, 6);
     }
 
     #[test]

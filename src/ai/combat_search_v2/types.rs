@@ -99,6 +99,7 @@ pub struct CombatSearchV2PolicyReport {
     pub kind: &'static str,
     pub terminal_policy: &'static str,
     pub expansion_order: &'static str,
+    pub frontier_value: &'static str,
     pub turn_branching: &'static str,
     pub potion_policy: &'static str,
     pub transposition_table: &'static str,
@@ -134,7 +135,36 @@ pub struct CombatSearchV2FrontierReport {
     pub max_actions_cut_count: u64,
     pub engine_step_limit_count: u64,
     pub potion_budget_cut_count: u64,
+    pub best_estimated_value: Option<CombatSearchV2FrontierValueReport>,
     pub sample_states: Vec<CombatSearchV2StateSummary>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2FrontierValueReport {
+    pub policy: &'static str,
+    pub terminal: SearchTerminalLabel,
+    pub player_hp: i32,
+    pub player_block: i32,
+    pub visible_incoming_damage: i32,
+    pub survival_margin: i32,
+    pub living_enemy_count: usize,
+    pub total_enemy_hp: i32,
+    pub sustained_mitigation: i32,
+    pub hand: CombatSearchV2CardPileValueReport,
+    pub next_draw: CombatSearchV2CardPileValueReport,
+    pub potions_used: u32,
+    pub potions_discarded: u32,
+    pub cards_played: u32,
+    pub actions_taken: usize,
+    pub estimated: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2CardPileValueReport {
+    pub damage: i32,
+    pub block: i32,
+    pub playable_cards: i32,
+    pub low_cost: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]

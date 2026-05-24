@@ -77,8 +77,8 @@ use turn_sequence::{
     summarize_turn_sequence, TurnSequenceDiagnosticsCollector, TurnSequenceSummary,
 };
 use value::{
-    living_enemy_count, survival_margin, terminal_rank, total_living_enemy_hp,
-    visible_incoming_damage,
+    combat_search_frontier_value_report, living_enemy_count, survival_margin, terminal_rank,
+    total_living_enemy_hp, visible_incoming_damage, COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
 };
 
 pub use baseline::{
