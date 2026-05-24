@@ -133,9 +133,17 @@ pub struct CombatSearchV2BenchmarkReport {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct CombatSearchV2BenchmarkSummary {
+    pub outcome_count_policy: &'static str,
     pub wins: usize,
     pub losses: usize,
     pub unresolved: usize,
+    pub proof_wins: usize,
+    pub proof_losses: usize,
+    pub proof_unresolved: usize,
+    pub best_complete_wins: usize,
+    pub best_complete_losses: usize,
+    pub best_complete_unresolved: usize,
+    pub best_complete_missing: usize,
     pub exhaustive: usize,
     pub complete_trajectory_found: usize,
     pub budget_exhausted: usize,
@@ -422,19 +430,25 @@ fn validate_benchmark_case_artifact(
 fn summarize_benchmark_cases(
     cases: &[CombatSearchV2BenchmarkCaseReport],
 ) -> CombatSearchV2BenchmarkSummary {
-    let mut summary = CombatSearchV2BenchmarkSummary::default();
+    let mut summary = CombatSearchV2BenchmarkSummary {
+        outcome_count_policy:
+            "wins/losses/unresolved count best_complete_candidate; proof_* counts strict proof outcome",
+        ..CombatSearchV2BenchmarkSummary::default()
+    };
     for case in cases {
-        match case.outcome.terminal {
-            SearchTerminalLabel::Win => summary.wins += 1,
-            SearchTerminalLabel::Loss => summary.losses += 1,
-            SearchTerminalLabel::Unresolved => summary.unresolved += 1,
-        }
+        summarize_proof_terminal(&mut summary, case.outcome.terminal);
         if case.outcome.exhaustive {
             summary.exhaustive += 1;
         }
         if case.outcome.complete_trajectory_found {
             summary.complete_trajectory_found += 1;
         }
+        summarize_best_complete_terminal(
+            &mut summary,
+            case.best_complete_trajectory
+                .as_ref()
+                .map(|trajectory| trajectory.terminal),
+        );
         match case.outcome.proof_status {
             SearchProofStatus::BudgetExhausted => summary.budget_exhausted += 1,
             SearchProofStatus::DeadlineHit => summary.deadline_hit += 1,
@@ -461,6 +475,41 @@ fn summarize_benchmark_cases(
         }
     }
     summary
+}
+
+fn summarize_proof_terminal(
+    summary: &mut CombatSearchV2BenchmarkSummary,
+    terminal: SearchTerminalLabel,
+) {
+    match terminal {
+        SearchTerminalLabel::Win => summary.proof_wins += 1,
+        SearchTerminalLabel::Loss => summary.proof_losses += 1,
+        SearchTerminalLabel::Unresolved => summary.proof_unresolved += 1,
+    }
+}
+
+fn summarize_best_complete_terminal(
+    summary: &mut CombatSearchV2BenchmarkSummary,
+    terminal: Option<SearchTerminalLabel>,
+) {
+    match terminal {
+        Some(SearchTerminalLabel::Win) => {
+            summary.wins += 1;
+            summary.best_complete_wins += 1;
+        }
+        Some(SearchTerminalLabel::Loss) => {
+            summary.losses += 1;
+            summary.best_complete_losses += 1;
+        }
+        Some(SearchTerminalLabel::Unresolved) => {
+            summary.unresolved += 1;
+            summary.best_complete_unresolved += 1;
+        }
+        None => {
+            summary.unresolved += 1;
+            summary.best_complete_missing += 1;
+        }
+    }
 }
 
 fn compare_search_to_baseline_outcome(
@@ -963,6 +1012,30 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn benchmark_summary_separates_proof_outcome_from_best_complete_candidate() {
+        let mut summary = CombatSearchV2BenchmarkSummary::default();
+
+        summarize_proof_terminal(&mut summary, SearchTerminalLabel::Unresolved);
+        summarize_best_complete_terminal(&mut summary, Some(SearchTerminalLabel::Win));
+
+        assert_eq!(summary.proof_unresolved, 1);
+        assert_eq!(summary.proof_wins, 0);
+        assert_eq!(summary.wins, 1);
+        assert_eq!(summary.best_complete_wins, 1);
+        assert_eq!(summary.unresolved, 0);
+    }
+
+    #[test]
+    fn benchmark_summary_counts_missing_complete_candidate_as_unresolved_candidate() {
+        let mut summary = CombatSearchV2BenchmarkSummary::default();
+
+        summarize_best_complete_terminal(&mut summary, None);
+
+        assert_eq!(summary.unresolved, 1);
+        assert_eq!(summary.best_complete_missing, 1);
     }
 
     fn unique_temp_dir(label: &str) -> PathBuf {
