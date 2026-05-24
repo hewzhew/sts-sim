@@ -23,6 +23,12 @@ pub(super) struct TurnSequenceEffectFingerprint {
     dominance_key: String,
     dominance_engine_key: String,
     dominance_turn_key: String,
+    turn_draw_modifier_key: String,
+    turn_action_counter_key: String,
+    turn_played_card_history_key: String,
+    turn_discard_counter_key: String,
+    turn_orb_history_key: String,
+    turn_combat_flag_key: String,
     dominance_meta_key: String,
     dominance_zones_key: String,
     dominance_monsters_key: String,
@@ -56,6 +62,12 @@ pub(super) struct TurnSequenceEffectAggregate {
     dominance_keys: BTreeSet<String>,
     dominance_engine_keys: BTreeSet<String>,
     dominance_turn_keys: BTreeSet<String>,
+    turn_draw_modifier_keys: BTreeSet<String>,
+    turn_action_counter_keys: BTreeSet<String>,
+    turn_played_card_history_keys: BTreeSet<String>,
+    turn_discard_counter_keys: BTreeSet<String>,
+    turn_orb_history_keys: BTreeSet<String>,
+    turn_combat_flag_keys: BTreeSet<String>,
     dominance_meta_keys: BTreeSet<String>,
     dominance_zones_keys: BTreeSet<String>,
     dominance_monsters_keys: BTreeSet<String>,
@@ -104,6 +116,32 @@ pub(super) fn effect_fingerprint(
         dominance_key: stable_debug_hash(&dominance),
         dominance_engine_key: stable_debug_hash(&dominance.common.engine),
         dominance_turn_key: stable_debug_hash(&dominance.common.turn),
+        turn_draw_modifier_key: stable_debug_hash(&node.combat.turn.turn_start_draw_modifier),
+        turn_action_counter_key: stable_debug_hash(&(
+            node.combat.turn.counters.cards_played_this_turn,
+            node.combat.turn.counters.attacks_played_this_turn,
+        )),
+        turn_played_card_history_key: stable_debug_hash(&(
+            &node.combat.turn.counters.card_ids_played_this_turn,
+            &node.combat.turn.counters.card_ids_played_this_combat,
+        )),
+        turn_discard_counter_key: stable_debug_hash(
+            &node.combat.turn.counters.cards_discarded_this_turn,
+        ),
+        turn_orb_history_key: stable_debug_hash(&(
+            &node.combat.turn.counters.orbs_channeled_this_turn,
+            &node.combat.turn.counters.orbs_channeled_this_combat,
+            node.combat.turn.counters.mantra_gained_this_combat,
+        )),
+        turn_combat_flag_key: stable_debug_hash(&(
+            node.combat.turn.counters.times_damaged_this_combat,
+            node.combat.turn.counters.victory_triggered,
+            node.combat.turn.counters.discovery_cost_for_turn,
+            node.combat.turn.counters.early_end_turn_pending,
+            node.combat.turn.counters.skip_monster_turn_pending,
+            node.combat.turn.counters.player_escaping,
+            node.combat.turn.counters.escape_pending_reward,
+        )),
         dominance_meta_key: stable_debug_hash(&dominance.common.meta),
         dominance_zones_key: stable_debug_hash(&dominance.common.zones),
         dominance_monsters_key: stable_debug_hash(&dominance.common.monsters),
@@ -143,6 +181,12 @@ pub(super) fn effect_key(fingerprint: &TurnSequenceEffectFingerprint) -> String 
         fingerprint.dominance_key.as_str(),
         fingerprint.dominance_engine_key.as_str(),
         fingerprint.dominance_turn_key.as_str(),
+        fingerprint.turn_draw_modifier_key.as_str(),
+        fingerprint.turn_action_counter_key.as_str(),
+        fingerprint.turn_played_card_history_key.as_str(),
+        fingerprint.turn_discard_counter_key.as_str(),
+        fingerprint.turn_orb_history_key.as_str(),
+        fingerprint.turn_combat_flag_key.as_str(),
         fingerprint.dominance_meta_key.as_str(),
         fingerprint.dominance_zones_key.as_str(),
         fingerprint.dominance_monsters_key.as_str(),
@@ -193,6 +237,18 @@ impl TurnSequenceEffectAggregate {
             .insert(fingerprint.dominance_engine_key.clone());
         self.dominance_turn_keys
             .insert(fingerprint.dominance_turn_key.clone());
+        self.turn_draw_modifier_keys
+            .insert(fingerprint.turn_draw_modifier_key.clone());
+        self.turn_action_counter_keys
+            .insert(fingerprint.turn_action_counter_key.clone());
+        self.turn_played_card_history_keys
+            .insert(fingerprint.turn_played_card_history_key.clone());
+        self.turn_discard_counter_keys
+            .insert(fingerprint.turn_discard_counter_key.clone());
+        self.turn_orb_history_keys
+            .insert(fingerprint.turn_orb_history_key.clone());
+        self.turn_combat_flag_keys
+            .insert(fingerprint.turn_combat_flag_key.clone());
         self.dominance_meta_keys
             .insert(fingerprint.dominance_meta_key.clone());
         self.dominance_zones_keys
@@ -296,6 +352,48 @@ impl TurnSequenceEffectAggregate {
             );
         }
         if self.dominance_turn_keys.len() > 1 {
+            if self.turn_draw_modifier_keys.len() > 1 {
+                return divergence(
+                    StateDivergenceKind::TurnDrawModifierDelta,
+                    Some("combat.turn.turn_start_draw_modifier"),
+                    StateAbstractionRevealGate::NextDraw,
+                );
+            }
+            if self.turn_action_counter_keys.len() > 1 {
+                return divergence(
+                    StateDivergenceKind::TurnActionCounterDelta,
+                    Some("combat.turn.counters.cards_or_attacks_played_this_turn"),
+                    StateAbstractionRevealGate::NextLegalActionGeneration,
+                );
+            }
+            if self.turn_played_card_history_keys.len() > 1 {
+                return divergence(
+                    StateDivergenceKind::TurnPlayedCardHistoryDelta,
+                    Some("combat.turn.counters.card_ids_played"),
+                    StateAbstractionRevealGate::NextLegalActionGeneration,
+                );
+            }
+            if self.turn_discard_counter_keys.len() > 1 {
+                return divergence(
+                    StateDivergenceKind::TurnDiscardCounterDelta,
+                    Some("combat.turn.counters.cards_discarded_this_turn"),
+                    StateAbstractionRevealGate::NextLegalActionGeneration,
+                );
+            }
+            if self.turn_orb_history_keys.len() > 1 {
+                return divergence(
+                    StateDivergenceKind::TurnOrbHistoryDelta,
+                    Some("combat.turn.counters.orb_or_mantra_history"),
+                    StateAbstractionRevealGate::NextLegalActionGeneration,
+                );
+            }
+            if self.turn_combat_flag_keys.len() > 1 {
+                return divergence(
+                    StateDivergenceKind::TurnCombatFlagDelta,
+                    Some("combat.turn.counters.combat_flags"),
+                    StateAbstractionRevealGate::Unknown,
+                );
+            }
             return divergence(
                 StateDivergenceKind::TurnRuntimeDelta,
                 Some("combat.turn"),
