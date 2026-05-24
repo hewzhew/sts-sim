@@ -15,6 +15,7 @@ const ROLE_TACTICAL_POTION_BASE: i32 = 60;
 const ROLE_PREVENT_HP_LOSS: i32 = 85;
 const ROLE_DEFERRED_SETUP: i32 = 75;
 const ROLE_DAMAGE_PROGRESS: i32 = 60;
+const ROLE_REACTIVE_RISK_PREVENT_HP_LOSS: i32 = 55;
 const ROLE_BLOCK: i32 = 45;
 const ROLE_UTILITY_PLAY: i32 = 35;
 const ROLE_END_TURN: i32 = 0;
@@ -68,6 +69,7 @@ struct ActionOrderingPriority {
     role_rank: i32,
     potion_tactical_rank: i32,
     mitigation: i32,
+    enemy_scaling_risk: i32,
     target_progress: i32,
     block: i32,
     damage: i32,
@@ -83,6 +85,7 @@ enum ActionOrderingRole {
     PreventHpLoss,
     DeferredSetup,
     DamageProgress,
+    ReactiveRiskPreventHpLoss,
     Block,
     UtilityPlay,
     EndTurn,
@@ -218,7 +221,8 @@ fn priority_for_play_card(
     let block = evaluated.base_block_mut.max(0);
     let target_progress = target_progress_hint(combat, target_kind, target, damage);
     let effects = summarize_play_card_effects(combat, card, target);
-    let mitigation = effects.mitigation_ordering_score();
+    let mitigation = effects.net_mitigation_ordering_score().max(0);
+    let enemy_scaling_risk = effects.enemy_scaling_risk_score();
     let visible_damage = visible_incoming_damage(combat);
     let current_block = combat.entities.player.block;
     let current_hp = combat.entities.player.current_hp;
@@ -242,10 +246,15 @@ fn priority_for_play_card(
         )
     } else if def.card_type == CardType::Power {
         (ActionOrderingRole::DeferredSetup, ROLE_DEFERRED_SETUP)
-    } else if prevents_hp_loss {
+    } else if prevents_hp_loss && enemy_scaling_risk == 0 {
         (ActionOrderingRole::PreventHpLoss, ROLE_PREVENT_HP_LOSS)
     } else if target_progress > 0 {
         (ActionOrderingRole::DamageProgress, ROLE_DAMAGE_PROGRESS)
+    } else if prevents_hp_loss {
+        (
+            ActionOrderingRole::ReactiveRiskPreventHpLoss,
+            ROLE_REACTIVE_RISK_PREVENT_HP_LOSS,
+        )
     } else if block > 0 {
         (ActionOrderingRole::Block, ROLE_BLOCK)
     } else {
@@ -256,6 +265,7 @@ fn priority_for_play_card(
         role,
         role_rank,
         mitigation,
+        enemy_scaling_risk: -enemy_scaling_risk,
         target_progress,
         block,
         damage,
@@ -330,6 +340,7 @@ impl ActionOrderingPriority {
             role_rank: ROLE_END_TURN,
             potion_tactical_rank: 0,
             mitigation: 0,
+            enemy_scaling_risk: 0,
             target_progress: 0,
             block: 0,
             damage: 0,
@@ -400,7 +411,8 @@ impl ActionOrderingDiagnosticsCollector {
 
     pub(super) fn finish(&self) -> CombatSearchV2DiagnosticsOrdering {
         CombatSearchV2DiagnosticsOrdering {
-            ordering_policy: "semantic_role_ordering_for_combat_player_turn_only",
+            ordering_policy:
+                "semantic_role_ordering_for_combat_player_turn_with_reactive_power_risk",
             behavioral_effect: "child_generation_order_only_no_prune_no_merge",
             states_observed: self.states_observed,
             states_reordered: self.states_reordered,
@@ -415,6 +427,7 @@ impl ActionOrderingDiagnosticsCollector {
                 "original action ids are preserved in action traces after ordering",
                 "a reorder sample is kept only when action order changed",
                 "ordering does not remove legal actions or prove action equivalence",
+                "reactive power risk is derived from simulator power hooks, not monster-name policy",
             ],
         }
     }
@@ -481,6 +494,7 @@ impl ActionOrderingRole {
             ActionOrderingRole::PreventHpLoss => "prevent_hp_loss",
             ActionOrderingRole::DeferredSetup => "deferred_setup",
             ActionOrderingRole::DamageProgress => "damage_progress",
+            ActionOrderingRole::ReactiveRiskPreventHpLoss => "reactive_risk_prevent_hp_loss",
             ActionOrderingRole::Block => "block",
             ActionOrderingRole::UtilityPlay => "utility_play",
             ActionOrderingRole::EndTurn => "end_turn",
@@ -496,6 +510,7 @@ impl Ord for ActionOrderingPriority {
             .cmp(&other.role_rank)
             .then_with(|| self.potion_tactical_rank.cmp(&other.potion_tactical_rank))
             .then_with(|| self.mitigation.cmp(&other.mitigation))
+            .then_with(|| self.enemy_scaling_risk.cmp(&other.enemy_scaling_risk))
             .then_with(|| self.target_progress.cmp(&other.target_progress))
             .then_with(|| self.block.cmp(&other.block))
             .then_with(|| self.damage.cmp(&other.damage))
@@ -514,7 +529,8 @@ mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
-    use crate::runtime::combat::CombatCard;
+    use crate::content::powers::PowerId;
+    use crate::runtime::combat::{CombatCard, Power, PowerPayload};
     use crate::test_support::{blank_test_combat, test_monster};
 
     #[test]
@@ -655,6 +671,63 @@ mod tests {
         assert_eq!(
             ordered.summary.first_role,
             Some(ActionOrderingRole::SustainedMitigation)
+        );
+    }
+
+    #[test]
+    fn reactive_enemy_scaling_risk_orders_damage_before_nonlethal_skill_block() {
+        let mut combat = blank_test_combat();
+        combat.entities.player.current_hp = 80;
+        let mut nob = test_monster(EnemyId::GremlinNob);
+        nob.id = 1;
+        nob.current_hp = 83;
+        nob.max_hp = 83;
+        nob.set_planned_move_id(1);
+        combat.entities.monsters = vec![nob];
+        combat.entities.power_db.insert(
+            1,
+            vec![Power {
+                power_type: PowerId::Anger,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Defend, 10),
+            CombatCard::new(CardId::Strike, 11),
+        ];
+        let choices = vec![
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: None,
+                },
+            ),
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 1,
+                    target: Some(1),
+                },
+            ),
+        ];
+
+        let ordered = order_action_choices(&EngineState::CombatPlayerTurn, &combat, choices);
+
+        assert!(matches!(
+            ordered.choices[0].choice.input,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1)
+            }
+        ));
+        assert_eq!(
+            ordered.summary.first_role,
+            Some(ActionOrderingRole::DamageProgress)
         );
     }
 

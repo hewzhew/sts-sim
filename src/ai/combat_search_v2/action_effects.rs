@@ -1,4 +1,5 @@
 use super::*;
+use crate::content::powers::store::powers_snapshot_for;
 use crate::content::powers::PowerId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::CombatCard;
@@ -10,6 +11,8 @@ pub(super) struct PlayCardEffectSummary {
     pub(super) persistent_enemy_strength_down: i32,
     pub(super) temporary_enemy_strength_down: i32,
     pub(super) visible_attack_mitigation_hint: i32,
+    pub(super) enemy_strength_gain: i32,
+    pub(super) visible_attack_pressure_hint: i32,
     pub(super) enemy_weak: i32,
     pub(super) enemy_vulnerable: i32,
 }
@@ -19,6 +22,16 @@ impl PlayCardEffectSummary {
         self.persistent_enemy_strength_down
             .saturating_add(self.temporary_enemy_strength_down)
             .saturating_add(self.visible_attack_mitigation_hint)
+    }
+
+    pub(super) fn enemy_scaling_risk_score(self) -> i32 {
+        self.enemy_strength_gain
+            .saturating_add(self.visible_attack_pressure_hint)
+    }
+
+    pub(super) fn net_mitigation_ordering_score(self) -> i32 {
+        self.mitigation_ordering_score()
+            .saturating_sub(self.enemy_scaling_risk_score())
     }
 }
 
@@ -41,6 +54,7 @@ pub(super) fn summarize_play_card_effects(
     for info in actions {
         observe_power_action(&mut raw, info.action);
     }
+    observe_card_play_reactive_power_actions(combat, card, &mut raw);
 
     summarize_power_effects(combat, raw)
 }
@@ -64,6 +78,7 @@ pub(super) fn state_sustained_mitigation_score(combat: &CombatState) -> i32 {
 #[derive(Default)]
 struct RawPowerEffects {
     enemy_strength_down_by_target: BTreeMap<usize, i32>,
+    enemy_strength_gain_by_target: BTreeMap<usize, i32>,
     shackled_targets: BTreeSet<usize>,
     enemy_weak: i32,
     enemy_vulnerable: i32,
@@ -98,6 +113,9 @@ fn observe_apply_power(raw: &mut RawPowerEffects, target: usize, power_id: Power
         PowerId::Strength if amount < 0 => {
             *raw.enemy_strength_down_by_target.entry(target).or_default() += -amount;
         }
+        PowerId::Strength if amount > 0 => {
+            *raw.enemy_strength_gain_by_target.entry(target).or_default() += amount;
+        }
         PowerId::Shackled if amount > 0 => {
             raw.shackled_targets.insert(target);
         }
@@ -108,6 +126,30 @@ fn observe_apply_power(raw: &mut RawPowerEffects, target: usize, power_id: Power
             raw.enemy_vulnerable = raw.enemy_vulnerable.saturating_add(amount);
         }
         _ => {}
+    }
+}
+
+fn observe_card_play_reactive_power_actions(
+    combat: &CombatState,
+    card: &CombatCard,
+    raw: &mut RawPowerEffects,
+) {
+    let trigger_owners = std::iter::once(0usize)
+        .chain(combat.entities.monsters.iter().map(|monster| monster.id))
+        .collect::<Vec<_>>();
+    for owner in trigger_owners {
+        for power in powers_snapshot_for(combat, owner) {
+            let actions = crate::content::powers::resolve_power_on_card_played(
+                power.power_type,
+                combat,
+                owner,
+                card,
+                power.amount,
+            );
+            for action in actions {
+                observe_power_action(raw, action);
+            }
+        }
     }
 }
 
@@ -137,6 +179,16 @@ fn summarize_power_effects(combat: &CombatState, raw: RawPowerEffects) -> PlayCa
                 visible_strength_down_mitigation_hint(combat, target, amount),
             );
     }
+    for (target, amount) in raw.enemy_strength_gain_by_target {
+        if !is_living_monster_id(combat, target) {
+            continue;
+        }
+        let weighted_amount = amount.saturating_mul(monster_attack_relevance(combat, target));
+        summary.enemy_strength_gain = summary.enemy_strength_gain.saturating_add(weighted_amount);
+        summary.visible_attack_pressure_hint = summary
+            .visible_attack_pressure_hint
+            .saturating_add(visible_strength_gain_pressure_hint(combat, target, amount));
+    }
 
     summary
 }
@@ -160,6 +212,28 @@ fn visible_strength_down_mitigation_hint(
     };
     let per_hit = strength_down.min(damage_per_hit).max(0);
     per_hit.saturating_mul(preview.hits.max(1) as i32)
+}
+
+fn visible_strength_gain_pressure_hint(
+    combat: &CombatState,
+    target: usize,
+    strength_gain: i32,
+) -> i32 {
+    let Some(monster) = combat
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.id == target && monster.is_alive_for_action())
+    else {
+        return 0;
+    };
+    let preview = project_monster_move_preview_in_combat(combat, monster);
+    if preview.damage_per_hit.is_none() {
+        return 0;
+    }
+    strength_gain
+        .max(0)
+        .saturating_mul(preview.hits.max(1) as i32)
 }
 
 fn monster_attack_relevance(combat: &CombatState, target: usize) -> i32 {
@@ -229,5 +303,34 @@ mod tests {
         );
 
         assert_eq!(state_sustained_mitigation_score(&combat), 3);
+    }
+
+    #[test]
+    fn anger_power_reports_enemy_strength_gain_for_skill_without_monster_special_case() {
+        let mut combat = blank_test_combat();
+        let mut nob = test_monster(EnemyId::GremlinNob);
+        nob.id = 1;
+        combat.entities.monsters = vec![nob];
+        combat.entities.power_db.insert(
+            1,
+            vec![Power {
+                power_type: PowerId::Anger,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        let defend = CombatCard::new(CardId::Defend, 10);
+        let strike = CombatCard::new(CardId::Strike, 11);
+
+        let defend_summary = summarize_play_card_effects(&combat, &defend, None);
+        let strike_summary = summarize_play_card_effects(&combat, &strike, Some(1));
+
+        assert!(defend_summary.enemy_strength_gain > 0);
+        assert!(defend_summary.enemy_scaling_risk_score() > 0);
+        assert_eq!(strike_summary.enemy_strength_gain, 0);
     }
 }
