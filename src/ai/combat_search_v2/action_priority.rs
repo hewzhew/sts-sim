@@ -16,6 +16,10 @@ const ROLE_REACTIVE_RISK_PREVENT_HP_LOSS: i32 = 55;
 const ROLE_BLOCK: i32 = 45;
 const ROLE_UTILITY_PLAY: i32 = 35;
 const ROLE_END_TURN: i32 = 0;
+const ROLE_PENDING_VALUE_SELECTION: i32 = 70;
+const ROLE_PENDING_REMOVAL_SELECTION: i32 = 65;
+const ROLE_PENDING_NEUTRAL_SELECTION: i32 = 20;
+const ROLE_PENDING_CANCEL: i32 = -10;
 const ROLE_DISCARD_POTION: i32 = -20;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,6 +33,9 @@ pub(super) struct ActionOrderingPriority {
     block: i32,
     damage: i32,
     cheaper_cost: i32,
+    pending_choice_primary: i32,
+    pending_choice_secondary: i32,
+    pending_choice_selected_count: i32,
     pub(super) effects: PlayCardEffectDiagnostics,
 }
 
@@ -45,6 +52,10 @@ pub(super) enum ActionOrderingRole {
     Block,
     UtilityPlay,
     EndTurn,
+    PendingChoiceValueSelection,
+    PendingChoiceRemovalSelection,
+    PendingChoiceNeutralSelection,
+    PendingChoiceCancel,
     DiscardPotion,
     Neutral,
 }
@@ -54,6 +65,18 @@ pub(super) fn priority_for_input(
     combat: &CombatState,
     input: &ClientInput,
 ) -> ActionOrderingPriority {
+    if let Some(hint) = pending_choice_ordering_hint(engine, combat, input) {
+        let (role, role_rank) = pending_choice_role_rank(hint.role);
+        return ActionOrderingPriority {
+            role,
+            role_rank,
+            pending_choice_primary: hint.primary,
+            pending_choice_secondary: hint.secondary,
+            pending_choice_selected_count: hint.selected_count_tiebreak,
+            ..ActionOrderingPriority::neutral(role)
+        };
+    }
+
     if !matches!(engine, EngineState::CombatPlayerTurn) {
         return ActionOrderingPriority::neutral(ActionOrderingRole::Neutral);
     }
@@ -238,7 +261,30 @@ impl ActionOrderingPriority {
             block: 0,
             damage: 0,
             cheaper_cost: 0,
+            pending_choice_primary: 0,
+            pending_choice_secondary: 0,
+            pending_choice_selected_count: 0,
             effects: PlayCardEffectDiagnostics::default(),
+        }
+    }
+}
+
+fn pending_choice_role_rank(role: PendingChoiceOrderingRole) -> (ActionOrderingRole, i32) {
+    match role {
+        PendingChoiceOrderingRole::ValueSelection => (
+            ActionOrderingRole::PendingChoiceValueSelection,
+            ROLE_PENDING_VALUE_SELECTION,
+        ),
+        PendingChoiceOrderingRole::RemovalSelection => (
+            ActionOrderingRole::PendingChoiceRemovalSelection,
+            ROLE_PENDING_REMOVAL_SELECTION,
+        ),
+        PendingChoiceOrderingRole::NeutralSelection => (
+            ActionOrderingRole::PendingChoiceNeutralSelection,
+            ROLE_PENDING_NEUTRAL_SELECTION,
+        ),
+        PendingChoiceOrderingRole::Cancel => {
+            (ActionOrderingRole::PendingChoiceCancel, ROLE_PENDING_CANCEL)
         }
     }
 }
@@ -257,6 +303,10 @@ impl ActionOrderingRole {
             ActionOrderingRole::Block => "block",
             ActionOrderingRole::UtilityPlay => "utility_play",
             ActionOrderingRole::EndTurn => "end_turn",
+            ActionOrderingRole::PendingChoiceValueSelection => "pending_choice_value_selection",
+            ActionOrderingRole::PendingChoiceRemovalSelection => "pending_choice_removal_selection",
+            ActionOrderingRole::PendingChoiceNeutralSelection => "pending_choice_neutral_selection",
+            ActionOrderingRole::PendingChoiceCancel => "pending_choice_cancel",
             ActionOrderingRole::DiscardPotion => "discard_potion",
             ActionOrderingRole::Neutral => "neutral",
         }
@@ -274,6 +324,18 @@ impl Ord for ActionOrderingPriority {
             .then_with(|| self.block.cmp(&other.block))
             .then_with(|| self.damage.cmp(&other.damage))
             .then_with(|| self.cheaper_cost.cmp(&other.cheaper_cost))
+            .then_with(|| {
+                self.pending_choice_primary
+                    .cmp(&other.pending_choice_primary)
+            })
+            .then_with(|| {
+                self.pending_choice_secondary
+                    .cmp(&other.pending_choice_secondary)
+            })
+            .then_with(|| {
+                self.pending_choice_selected_count
+                    .cmp(&other.pending_choice_selected_count)
+            })
     }
 }
 
@@ -323,5 +385,28 @@ mod tests {
         );
 
         assert_eq!(priority.role, ActionOrderingRole::LethalCard);
+    }
+
+    #[test]
+    fn pending_choice_priority_uses_structured_selection_role() {
+        let mut combat = blank_test_combat();
+        combat.zones.discard_pile = vec![CombatCard::new(CardId::Carnage, 20)];
+        let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+            source_pile: crate::state::core::PileType::Discard,
+            candidate_uuids: vec![20],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: crate::state::core::GridSelectReason::MoveToDrawPile,
+        });
+
+        let priority =
+            priority_for_input(&engine, &combat, &ClientInput::SubmitGridSelect(vec![20]));
+
+        assert_eq!(
+            priority.role,
+            ActionOrderingRole::PendingChoiceValueSelection
+        );
+        assert!(priority.pending_choice_primary > 0);
     }
 }

@@ -120,7 +120,7 @@ pub(super) fn order_indexed_action_choices(
         })
         .collect::<Vec<_>>();
 
-    if matches!(engine, EngineState::CombatPlayerTurn) {
+    if action_ordering_enabled(engine) {
         entries.sort_by(|left, right| {
             right
                 .priority
@@ -139,6 +139,13 @@ pub(super) fn order_indexed_action_choices(
         .collect();
 
     ActionOrderingResult { choices, summary }
+}
+
+fn action_ordering_enabled(engine: &EngineState) -> bool {
+    matches!(
+        engine,
+        EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+    )
 }
 
 fn summarize_ordering(entries: &[ActionOrderingEntry]) -> ActionOrderingSummary {
@@ -226,7 +233,7 @@ impl ActionOrderingDiagnosticsCollector {
     pub(super) fn finish(&self) -> CombatSearchV2DiagnosticsOrdering {
         CombatSearchV2DiagnosticsOrdering {
             ordering_policy:
-                "semantic_role_ordering_for_combat_player_turn_with_reactive_power_risk",
+                "semantic_role_ordering_for_player_turn_and_pending_choice_boundaries",
             behavioral_effect: "child_generation_order_only_no_prune_no_merge",
             states_observed: self.states_observed,
             states_reordered: self.states_reordered,
@@ -244,6 +251,7 @@ impl ActionOrderingDiagnosticsCollector {
                 "a reorder sample is kept only when action order changed",
                 "ordering does not remove legal actions or prove action equivalence",
                 "reactive power risk is derived from simulator power hooks, not monster-name policy",
+                "pending choice ordering uses typed selection facts and never drops alternatives",
             ],
         }
     }
@@ -571,6 +579,36 @@ mod tests {
         assert_eq!(ordered.choices[0].original_action_id, 0);
         assert_eq!(ordered.choices[1].original_action_id, 1);
         assert_eq!(ordered.summary.max_position_shift, 0);
+    }
+
+    #[test]
+    fn pending_choice_actions_are_ordered_without_losing_original_ids() {
+        let mut combat = blank_test_combat();
+        combat.zones.discard_pile = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::Carnage, 20),
+        ];
+        let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+            source_pile: crate::state::core::PileType::Discard,
+            candidate_uuids: vec![10, 20],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: crate::state::core::GridSelectReason::MoveToDrawPile,
+        });
+        let choices = vec![
+            CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![10])),
+            CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![20])),
+        ];
+
+        let ordered = order_action_choices(&engine, &combat, choices);
+
+        assert_eq!(ordered.choices[0].original_action_id, 1);
+        assert_eq!(
+            ordered.summary.first_role,
+            Some(ActionOrderingRole::PendingChoiceValueSelection)
+        );
+        assert_eq!(ordered.summary.max_position_shift, 1);
     }
 
     #[test]
