@@ -306,7 +306,7 @@ pub fn run_combat_search_v2_with_stepper(
             potion_policy: config.potion_policy.label(),
             transposition_table: "exact_runtime_state_key_with_resource_coverage",
             dominance_pruning: "global_dominance_bucket_resource_vector_plus_same_parent_same_turn_sibling_coverage",
-            rollout_value: "conservative_no_potion_estimate_used_for_frontier_priority_only_not_terminal_claims",
+            rollout_value: "conservative_no_potion_estimate_with_phase_adjusted_enemy_effort_used_for_frontier_priority_only_not_terminal_claims",
             llm_authority: "none",
         },
         budget: CombatSearchV2BudgetReport {

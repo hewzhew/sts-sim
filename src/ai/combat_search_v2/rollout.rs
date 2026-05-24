@@ -1,3 +1,4 @@
+use super::enemy_phase_value::enemy_phase_value;
 use super::*;
 
 pub(super) const DEFAULT_ROLLOUT_MAX_EVALUATIONS: usize = 384;
@@ -15,6 +16,8 @@ pub(super) struct RolloutNodeEstimate {
     pub(super) cards_played: u32,
     pub(super) living_enemy_count: usize,
     pub(super) total_enemy_hp: i32,
+    pub(super) total_enemy_block: i32,
+    pub(super) phase_adjusted_enemy_effort: i32,
     pub(super) survival_margin: i32,
     pub(super) actions_simulated: usize,
     pub(super) truncated: bool,
@@ -60,6 +63,8 @@ impl RolloutNodeEstimate {
             cards_played: 0,
             living_enemy_count: 0,
             total_enemy_hp: 0,
+            total_enemy_block: 0,
+            phase_adjusted_enemy_effort: 0,
             survival_margin: 0,
             actions_simulated: 0,
             truncated: false,
@@ -74,6 +79,7 @@ impl RolloutNodeEstimate {
         stop_reason: RolloutStopReason,
         last_action_reason: Option<&'static str>,
     ) -> Self {
+        let enemy_phase = enemy_phase_value(&node.combat);
         Self {
             evaluated: true,
             terminal: terminal_label(&node.engine, &node.combat),
@@ -84,7 +90,9 @@ impl RolloutNodeEstimate {
             potions_discarded: node.potions_discarded,
             cards_played: node.cards_played,
             living_enemy_count: living_enemy_count(&node.combat),
-            total_enemy_hp: total_living_enemy_hp(&node.combat),
+            total_enemy_hp: enemy_phase.raw_living_enemy_hp,
+            total_enemy_block: enemy_phase.raw_living_enemy_block,
+            phase_adjusted_enemy_effort: enemy_phase.phase_adjusted_living_enemy_effort,
             survival_margin: survival_margin(&node.combat),
             actions_simulated,
             truncated: stop_reason.is_truncated(),
@@ -102,7 +110,7 @@ impl RolloutNodeEstimate {
     }
 
     pub(super) fn enemy_progress(self) -> i32 {
-        -(self.total_enemy_hp)
+        -(self.phase_adjusted_enemy_effort)
     }
 
     pub(super) fn potion_conservation(self) -> i32 {
@@ -130,6 +138,8 @@ impl RolloutNodeEstimate {
                 cards_played: self.cards_played,
                 living_enemy_count: self.living_enemy_count,
                 total_enemy_hp: self.total_enemy_hp,
+                total_enemy_block: self.total_enemy_block,
+                phase_adjusted_enemy_effort: self.phase_adjusted_enemy_effort,
                 survival_margin: self.survival_margin,
                 actions_simulated: self.actions_simulated,
                 truncated: self.truncated,
@@ -239,6 +249,7 @@ impl RolloutCache {
                 "rollout estimates are not terminal proof",
                 "conservative_no_potion uses only legal simulator actions and disables potion actions",
                 "rollout cache is keyed by exact combat runtime state",
+                "unresolved rollout priority uses phase-adjusted enemy effort from enemy_phase_value",
             ],
         }
     }
@@ -447,5 +458,37 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(cache.evaluations, 1);
         assert_eq!(cache.cache_hits, 1);
+    }
+
+    #[test]
+    fn rollout_estimate_records_phase_adjusted_enemy_effort() {
+        let mut combat = blank_test_combat();
+        let mut guardian = test_monster(EnemyId::TheGuardian);
+        guardian.id = 1;
+        guardian.current_hp = 180;
+        guardian.max_hp = 240;
+        guardian.block = 20;
+        guardian.guardian.is_open = false;
+        combat.entities.monsters = vec![guardian];
+        let node = SearchNode {
+            engine: EngineState::CombatPlayerTurn,
+            combat,
+            actions: Vec::new(),
+            turn_prefix: TurnPrefixState::default(),
+            initial_hp: 80,
+            potions_used: 0,
+            potions_discarded: 0,
+            cards_played: 0,
+            potion_tactical_priority: 0,
+            last_turn_branch_priority: 0,
+            rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        };
+
+        let estimate =
+            RolloutNodeEstimate::from_node(&node, 0, RolloutStopReason::MaxActions, None);
+
+        assert_eq!(estimate.total_enemy_hp, 180);
+        assert_eq!(estimate.total_enemy_block, 20);
+        assert_eq!(estimate.phase_adjusted_enemy_effort, 200);
     }
 }

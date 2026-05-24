@@ -5,14 +5,16 @@ use super::pressure_value::combat_pressure_value;
 use super::*;
 
 pub(super) const COMBAT_SEARCH_FRONTIER_VALUE_POLICY: &str =
-    "frontier_value_v1_visible_pressure_split_phase_enemy_progress_hand_next_draw_resources_no_terminal_claim";
+    "frontier_value_v2_visible_pressure_phase_adjusted_enemy_effort_hand_next_draw_resources_no_terminal_claim";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct CombatSearchStateValueV1 {
     pub(super) fewer_living_enemies: i32,
-    pub(super) phase_adjusted_enemy_progress: i32,
-    pub(super) enemy_progress: i32,
+    pub(super) phase_adjusted_enemy_effort_progress: i32,
+    pub(super) enemy_effort_progress: i32,
+    pub(super) enemy_hp_progress: i32,
     pub(super) split_debt_hp: i32,
+    pub(super) guardian_defensive_block: i32,
     pub(super) survival_margin: i32,
     pub(super) sustained_mitigation: i32,
     pub(super) player_hp: i32,
@@ -32,11 +34,16 @@ impl Ord for CombatSearchStateValueV1 {
         self.fewer_living_enemies
             .cmp(&other.fewer_living_enemies)
             .then_with(|| {
-                self.phase_adjusted_enemy_progress
-                    .cmp(&other.phase_adjusted_enemy_progress)
+                self.phase_adjusted_enemy_effort_progress
+                    .cmp(&other.phase_adjusted_enemy_effort_progress)
             })
-            .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
+            .then_with(|| self.enemy_effort_progress.cmp(&other.enemy_effort_progress))
+            .then_with(|| self.enemy_hp_progress.cmp(&other.enemy_hp_progress))
             .then_with(|| self.split_debt_hp.cmp(&other.split_debt_hp))
+            .then_with(|| {
+                self.guardian_defensive_block
+                    .cmp(&other.guardian_defensive_block)
+            })
             .then_with(|| self.survival_margin.cmp(&other.survival_margin))
             .then_with(|| self.sustained_mitigation.cmp(&other.sustained_mitigation))
             .then_with(|| self.player_hp.cmp(&other.player_hp))
@@ -68,9 +75,11 @@ pub(super) fn combat_search_state_value(node: &SearchNode) -> CombatSearchStateV
     let pressure = combat_pressure_value(&node.combat);
     CombatSearchStateValueV1 {
         fewer_living_enemies: -(living_enemy_count(&node.combat) as i32),
-        phase_adjusted_enemy_progress: -enemy_phase.phase_adjusted_living_enemy_hp,
-        enemy_progress: -enemy_phase.raw_living_enemy_hp,
+        phase_adjusted_enemy_effort_progress: -enemy_phase.phase_adjusted_living_enemy_effort,
+        enemy_effort_progress: -enemy_phase.raw_living_enemy_effort,
+        enemy_hp_progress: -enemy_phase.raw_living_enemy_hp,
         split_debt_hp: -enemy_phase.split_debt_hp,
+        guardian_defensive_block: -enemy_phase.guardian_defensive_block,
         survival_margin: pressure.survival_margin,
         sustained_mitigation: state_sustained_mitigation_score(&node.combat),
         player_hp: node.combat.entities.player.current_hp,
@@ -103,9 +112,14 @@ pub(super) fn combat_search_frontier_value_report(
         survival_margin: pressure.survival_margin,
         living_enemy_count: living_enemy_count(&node.combat),
         total_enemy_hp: enemy_phase.raw_living_enemy_hp,
+        total_enemy_block: enemy_phase.raw_living_enemy_block,
+        total_enemy_effort: enemy_phase.raw_living_enemy_effort,
         phase_adjusted_enemy_hp: enemy_phase.phase_adjusted_living_enemy_hp,
+        phase_adjusted_enemy_effort: enemy_phase.phase_adjusted_living_enemy_effort,
         split_pending_count: enemy_phase.split_pending_count,
         split_debt_hp: enemy_phase.split_debt_hp,
+        guardian_defensive_count: enemy_phase.guardian_defensive_count,
+        guardian_defensive_block: enemy_phase.guardian_defensive_block,
         sustained_mitigation: state_sustained_mitigation_score(&node.combat),
         hand: card_pile_value_report(hand),
         next_draw: card_pile_value_report(next_draw),
@@ -172,6 +186,28 @@ mod tests {
         assert!(
             combat_search_state_value(&raw_progress) > combat_search_state_value(&split_pending)
         );
+    }
+
+    #[test]
+    fn state_value_accounts_for_post_phase_enemy_block() {
+        let mut open = test_node();
+        let mut open_guardian = crate::test_support::test_monster(EnemyId::TheGuardian);
+        open_guardian.id = 20;
+        open_guardian.current_hp = 180;
+        open_guardian.max_hp = 240;
+        open_guardian.guardian.is_open = true;
+        open.combat.entities.monsters = vec![open_guardian];
+
+        let mut defensive = test_node();
+        let mut defensive_guardian = crate::test_support::test_monster(EnemyId::TheGuardian);
+        defensive_guardian.id = 20;
+        defensive_guardian.current_hp = 180;
+        defensive_guardian.max_hp = 240;
+        defensive_guardian.block = 20;
+        defensive_guardian.guardian.is_open = false;
+        defensive.combat.entities.monsters = vec![defensive_guardian];
+
+        assert!(combat_search_state_value(&open) > combat_search_state_value(&defensive));
     }
 
     fn test_node() -> SearchNode {
