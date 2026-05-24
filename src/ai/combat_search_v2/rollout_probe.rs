@@ -14,9 +14,17 @@ struct RolloutActionProbeScore {
     survival_margin: i32,
     living_enemy_progress: i32,
     phase_adjusted_enemy_progress: i32,
+    split_debt_stability: i32,
     mechanics_stability: i32,
     pending_choice_fanout: i32,
     ordered_preference: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+struct RolloutPhaseProbeScore {
+    split_debt_stability: i32,
+    mechanics_stability: i32,
+    pending_choice_fanout: i32,
 }
 
 impl Ord for RolloutActionProbeScore {
@@ -48,9 +56,10 @@ pub(super) fn choose_by_one_step_probe(
     config: &CombatSearchV2Config,
     deadline: Option<Instant>,
     ordered: &[IndexedActionChoice],
-) -> Option<IndexedActionChoice> {
+    allow_nonterminal_upgrade: bool,
+) -> Option<(IndexedActionChoice, &'static str)> {
     let fallback_score = probe_action_score(node, stepper, config, deadline, ordered.first()?, 0)?;
-    let mut best: Option<(RolloutActionProbeScore, IndexedActionChoice)> = None;
+    let mut best: Option<(RolloutActionProbeScore, IndexedActionChoice, &'static str)> = None;
     for (ordered_index, choice) in ordered
         .iter()
         .take(super::rollout_policy::CONSERVATIVE_ROLLOUT_PROBE_ACTION_LIMIT)
@@ -61,16 +70,20 @@ pub(super) fn choose_by_one_step_probe(
         else {
             continue;
         };
+        let Some(reason) = probe_upgrade_reason(score, fallback_score, allow_nonterminal_upgrade)
+        else {
+            continue;
+        };
         let replace = best
             .as_ref()
-            .map(|(best_score, _)| score > *best_score)
+            .map(|(best_score, _, _)| score > *best_score)
             .unwrap_or(true);
         if replace {
-            best = Some((score, choice.clone()));
+            best = Some((score, choice.clone(), reason));
         }
     }
-    let (best_score, best_choice) = best?;
-    (best_score.terminal_rank > fallback_score.terminal_rank).then_some(best_choice)
+    let (_, best_choice, reason) = best?;
+    Some((best_choice, reason))
 }
 
 fn probe_action_score(
@@ -122,8 +135,56 @@ fn probe_action_score(
         phase_adjusted_enemy_progress: -phase_profile
             .enemy_phase
             .phase_adjusted_living_enemy_effort,
+        split_debt_stability: -phase_profile.enemy_phase.split_debt_hp,
         mechanics_stability: -mechanics_pressure,
         pending_choice_fanout: -(phase_profile.pending_choice.estimated_action_fanout as i32),
         ordered_preference: -(ordered_index as i32),
     })
 }
+
+fn probe_upgrade_reason(
+    candidate: RolloutActionProbeScore,
+    fallback: RolloutActionProbeScore,
+    allow_nonterminal_upgrade: bool,
+) -> Option<&'static str> {
+    if candidate.terminal_rank > fallback.terminal_rank {
+        return Some(super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PROBE);
+    }
+    if candidate.terminal_rank < fallback.terminal_rank {
+        return None;
+    }
+    if !allow_nonterminal_upgrade {
+        return None;
+    }
+    if candidate.final_hp < fallback.final_hp
+        || candidate.survival_margin < fallback.survival_margin
+    {
+        return None;
+    }
+    if candidate.final_hp > fallback.final_hp
+        || candidate.survival_margin > fallback.survival_margin
+    {
+        return Some(
+            super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE,
+        );
+    }
+    if candidate.phase_score() > fallback.phase_score() {
+        Some(super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PHASE_VALUE)
+    } else {
+        None
+    }
+}
+
+impl RolloutActionProbeScore {
+    fn phase_score(self) -> RolloutPhaseProbeScore {
+        RolloutPhaseProbeScore {
+            split_debt_stability: self.split_debt_stability,
+            mechanics_stability: self.mechanics_stability,
+            pending_choice_fanout: self.pending_choice_fanout,
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "rollout_probe_tests.rs"]
+mod tests;

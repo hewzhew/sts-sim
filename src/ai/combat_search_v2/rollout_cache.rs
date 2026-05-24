@@ -72,6 +72,15 @@ impl RolloutCache {
                     deadline,
                 )
             }
+            CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => {
+                rollout::phase_aware_no_potion_rollout(
+                    node,
+                    stepper,
+                    config,
+                    self.max_actions,
+                    deadline,
+                )
+            }
         };
         if estimate.truncated {
             self.truncated = self.truncated.saturating_add(1);

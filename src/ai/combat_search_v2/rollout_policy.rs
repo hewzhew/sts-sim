@@ -9,6 +9,10 @@ pub(super) const ROLLOUT_ACTION_REASON_CONSERVATIVE_ORDERING_FIRST: &str =
     "conservative_policy_selected_first_semantic_ordered_no_potion_action";
 pub(super) const ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PROBE: &str =
     "conservative_policy_selected_bounded_one_step_probe_no_potion_action";
+pub(super) const ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE: &str =
+    "conservative_policy_selected_bounded_one_step_survival_value_no_potion_action";
+pub(super) const ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PHASE_VALUE: &str =
+    "conservative_policy_selected_bounded_one_step_phase_value_no_potion_action";
 
 pub(super) const CONSERVATIVE_ROLLOUT_PROBE_ACTION_LIMIT: usize = 6;
 
@@ -25,7 +29,8 @@ pub(super) fn filtered_rollout_legal_actions(
 ) -> Vec<CombatActionChoice> {
     match policy {
         CombatSearchV2RolloutPolicy::Disabled => Vec::new(),
-        CombatSearchV2RolloutPolicy::ConservativeNoPotion => {
+        CombatSearchV2RolloutPolicy::ConservativeNoPotion
+        | CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => {
             filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never, combat)
         }
     }
@@ -44,12 +49,16 @@ pub(super) fn choose_rollout_action(
     match policy {
         CombatSearchV2RolloutPolicy::Disabled => None,
         CombatSearchV2RolloutPolicy::ConservativeNoPotion => choose_conservative_no_potion_action(
-            node, stepper, config, deadline, engine, combat, legal,
+            false, node, stepper, config, deadline, engine, combat, legal,
+        ),
+        CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => choose_conservative_no_potion_action(
+            true, node, stepper, config, deadline, engine, combat, legal,
         ),
     }
 }
 
 fn choose_conservative_no_potion_action(
+    allow_nonterminal_probe_upgrade: bool,
     node: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
@@ -74,12 +83,16 @@ fn choose_conservative_no_potion_action(
             reason: ROLLOUT_ACTION_REASON_CONSERVATIVE_ORDERING_FIRST,
         });
     }
-    let probed = choose_by_one_step_probe(node, stepper, config, deadline, &ordered.choices);
+    let probed = choose_by_one_step_probe(
+        node,
+        stepper,
+        config,
+        deadline,
+        &ordered.choices,
+        allow_nonterminal_probe_upgrade,
+    );
     Some(match probed {
-        Some(choice) => RolloutPolicySelection {
-            choice,
-            reason: ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PROBE,
-        },
+        Some((choice, reason)) => RolloutPolicySelection { choice, reason },
         None => RolloutPolicySelection {
             choice: fallback,
             reason: ROLLOUT_ACTION_REASON_CONSERVATIVE_ORDERING_FIRST,

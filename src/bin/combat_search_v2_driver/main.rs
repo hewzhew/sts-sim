@@ -132,8 +132,11 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
         "conservative" | "conservative-no-potion" | "conservative_no_potion" | "no_potion" => {
             Ok(CombatSearchV2RolloutPolicy::ConservativeNoPotion)
         }
+        "phase-aware" | "phase_aware" | "phase-aware-no-potion" | "phase_aware_no_potion" => {
+            Ok(CombatSearchV2RolloutPolicy::PhaseAwareNoPotion)
+        }
         _ => Err(format!(
-            "invalid rollout policy '{value}', expected disabled|conservative_no_potion"
+            "invalid rollout policy '{value}', expected disabled|conservative_no_potion|phase_aware_no_potion"
         )),
     }
 }

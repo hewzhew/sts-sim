@@ -13,6 +13,41 @@ pub(super) fn conservative_no_potion_rollout(
     max_actions: usize,
     deadline: Option<Instant>,
 ) -> RolloutNodeEstimate {
+    no_potion_rollout(
+        CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        node,
+        stepper,
+        config,
+        max_actions,
+        deadline,
+    )
+}
+
+pub(super) fn phase_aware_no_potion_rollout(
+    node: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    max_actions: usize,
+    deadline: Option<Instant>,
+) -> RolloutNodeEstimate {
+    no_potion_rollout(
+        CombatSearchV2RolloutPolicy::PhaseAwareNoPotion,
+        node,
+        stepper,
+        config,
+        max_actions,
+        deadline,
+    )
+}
+
+fn no_potion_rollout(
+    policy: CombatSearchV2RolloutPolicy,
+    node: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    max_actions: usize,
+    deadline: Option<Instant>,
+) -> RolloutNodeEstimate {
     let mut rollout = node.clone_for_rollout();
     let mut last_action_reason = None;
     let mut pending_choice_progress = RolloutPendingChoiceProgress::default();
@@ -58,7 +93,7 @@ pub(super) fn conservative_no_potion_rollout(
 
         let position = CombatPosition::new(rollout.engine.clone(), rollout.combat.clone());
         let legal = filtered_rollout_legal_actions(
-            CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            policy,
             stepper.legal_action_choices(&position),
             &rollout.combat,
         );
@@ -73,7 +108,7 @@ pub(super) fn conservative_no_potion_rollout(
         }
 
         let Some(selection) = choose_rollout_action(
-            CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            policy,
             &rollout,
             stepper,
             config,

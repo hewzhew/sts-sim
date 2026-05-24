@@ -64,6 +64,7 @@ impl CombatSearchV2PotionPolicy {
 pub enum CombatSearchV2RolloutPolicy {
     Disabled,
     ConservativeNoPotion,
+    PhaseAwareNoPotion,
 }
 
 impl Default for CombatSearchV2RolloutPolicy {
@@ -77,6 +78,7 @@ impl CombatSearchV2RolloutPolicy {
         match self {
             CombatSearchV2RolloutPolicy::Disabled => "disabled",
             CombatSearchV2RolloutPolicy::ConservativeNoPotion => "conservative_no_potion",
+            CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => "phase_aware_no_potion",
         }
     }
 }

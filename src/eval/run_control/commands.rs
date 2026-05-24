@@ -251,7 +251,7 @@ Help:
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
     draw, discard, exhaust, actions, action <idx>
-    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path]
+    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path]
 
   Map/Event/Reward:
     go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
@@ -273,7 +273,7 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
-    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path] [max_ops=N]
+    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path] [max_ops=N]
     auto-reward
     auto-reward gold|potion|all on|off"
 }
@@ -491,8 +491,11 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
         "conservative" | "conservative_no_potion" | "conservative-no-potion" | "no_potion" => {
             Ok(CombatSearchV2RolloutPolicy::ConservativeNoPotion)
         }
+        "phase-aware" | "phase_aware" | "phase-aware-no-potion" | "phase_aware_no_potion" => {
+            Ok(CombatSearchV2RolloutPolicy::PhaseAwareNoPotion)
+        }
         _ => Err(format!(
-            "invalid rollout policy '{value}', expected disabled|conservative_no_potion"
+            "invalid rollout policy '{value}', expected disabled|conservative_no_potion|phase_aware_no_potion"
         )),
     }
 }
