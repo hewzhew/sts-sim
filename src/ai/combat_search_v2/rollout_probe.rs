@@ -12,6 +12,7 @@ struct RolloutActionProbeScore {
     terminal_rank: i32,
     final_hp: i32,
     survival_margin: i32,
+    visible_hp_loss: i32,
     living_enemy_progress: i32,
     phase_adjusted_enemy_progress: i32,
     split_debt_stability: i32,
@@ -127,10 +128,13 @@ fn probe_action_score(
                 .gremlin_nob_anger_amount_total
                 .max(0),
         );
+    let player_block = step.position.combat.entities.player.block;
+    let visible_hp_loss = (phase_profile.pressure.visible_incoming_damage - player_block).max(0);
     Some(RolloutActionProbeScore {
         terminal_rank: terminal_rank(terminal),
         final_hp: step.position.combat.entities.player.current_hp,
         survival_margin: phase_profile.pressure.survival_margin,
+        visible_hp_loss,
         living_enemy_progress: -(living_enemy_count(&step.position.combat) as i32),
         phase_adjusted_enemy_progress: -phase_profile
             .enemy_phase
@@ -161,8 +165,13 @@ fn probe_upgrade_reason(
     {
         return None;
     }
-    if candidate.final_hp > fallback.final_hp
-        || candidate.survival_margin > fallback.survival_margin
+    if candidate.final_hp > fallback.final_hp {
+        return Some(
+            super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE,
+        );
+    }
+    if candidate.survival_margin > fallback.survival_margin
+        && candidate.visible_hp_loss < fallback.visible_hp_loss
     {
         return Some(
             super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE,

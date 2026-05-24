@@ -150,9 +150,30 @@ fn one_step_probe_terminal_only_mode_rejects_nonterminal_phase_upgrade() {
 }
 
 #[test]
-fn probe_upgrade_reason_accepts_survival_value_without_phase_progress() {
-    let fallback = score_with_survival(30, 5);
-    let candidate = score_with_survival(31, 5);
+fn probe_upgrade_reason_accepts_hp_gain_as_survival_value() {
+    let fallback = score_with_survival(30, 5, 0);
+    let candidate = score_with_survival(31, 5, 0);
+
+    assert_eq!(
+        probe_upgrade_reason(candidate, fallback, true),
+        Some(
+            super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE
+        )
+    );
+}
+
+#[test]
+fn probe_upgrade_reason_rejects_block_only_survival_value_without_visible_hp_loss_reduction() {
+    let fallback = score_with_survival(30, 30, 0);
+    let candidate = score_with_survival(30, 35, 0);
+
+    assert_eq!(probe_upgrade_reason(candidate, fallback, true), None);
+}
+
+#[test]
+fn probe_upgrade_reason_accepts_reduced_visible_hp_loss() {
+    let fallback = score_with_survival(30, 5, 6);
+    let candidate = score_with_survival(30, 10, 1);
 
     assert_eq!(
         probe_upgrade_reason(candidate, fallback, true),
@@ -225,11 +246,16 @@ fn test_config() -> CombatSearchV2Config {
     }
 }
 
-fn score_with_survival(final_hp: i32, survival_margin: i32) -> RolloutActionProbeScore {
+fn score_with_survival(
+    final_hp: i32,
+    survival_margin: i32,
+    visible_hp_loss: i32,
+) -> RolloutActionProbeScore {
     RolloutActionProbeScore {
         terminal_rank: terminal_rank(SearchTerminalLabel::Unresolved),
         final_hp,
         survival_margin,
+        visible_hp_loss,
         living_enemy_progress: -1,
         phase_adjusted_enemy_progress: -30,
         split_debt_stability: 0,
