@@ -40,6 +40,7 @@ mod potions;
 mod pressure_value;
 mod report;
 mod rollout;
+mod rollout_pending_choice;
 mod rollout_policy;
 mod rollout_probe;
 mod rollout_value;

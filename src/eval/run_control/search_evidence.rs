@@ -8,6 +8,7 @@ use crate::ai::combat_search_v2::CombatSearchV2Report;
 
 pub const COMBAT_SEARCH_EVIDENCE_SCHEMA_NAME: &str = "CombatSearchEvidenceV1";
 pub const COMBAT_SEARCH_EVIDENCE_SCHEMA_VERSION: u32 = 1;
+pub const COMBAT_SEARCH_REPORT_SCHEMA_VERSION: u64 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CombatSearchEvidenceContextV1 {
@@ -130,7 +131,11 @@ fn validate_report(report: Option<&Value>) -> Result<(), String> {
         "CombatSearchV2Report",
         "report.schema_name",
     )?;
-    expect_u64(report.get("schema_version"), 2, "report.schema_version")?;
+    expect_u64(
+        report.get("schema_version"),
+        COMBAT_SEARCH_REPORT_SCHEMA_VERSION,
+        "report.schema_version",
+    )?;
     if !report.contains_key("outcome") {
         return Err("combat search evidence report.outcome is missing".to_string());
     }
@@ -208,7 +213,7 @@ mod tests {
             },
             "report": {
                 "schema_name": "CombatSearchV2Report",
-                "schema_version": 2,
+                "schema_version": 3,
                 "outcome": {},
                 "budget": {}
             }

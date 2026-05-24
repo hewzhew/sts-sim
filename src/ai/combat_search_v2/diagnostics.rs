@@ -181,7 +181,7 @@ impl SearchDiagnosticsCollector {
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 10,
+            schema_version: 11,
             mode: "summary",
             tables,
             branching,

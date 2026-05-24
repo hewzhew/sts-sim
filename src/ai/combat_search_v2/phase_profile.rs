@@ -89,7 +89,7 @@ impl CombatSearchPhaseProfileV1 {
 }
 
 impl PendingChoicePhaseKind {
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
             PendingChoicePhaseKind::HandSelect => "hand_select",
             PendingChoicePhaseKind::GridSelect => "grid_select",

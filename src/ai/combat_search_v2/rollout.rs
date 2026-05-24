@@ -1,3 +1,4 @@
+use super::rollout_pending_choice::RolloutPendingChoiceProgress;
 use super::*;
 
 pub(super) const DEFAULT_ROLLOUT_MAX_EVALUATIONS: usize = 384;
@@ -25,6 +26,12 @@ pub(super) struct RolloutNodeEstimate {
     pub(super) hexaghost_opening_pressure_count: usize,
     pub(super) high_fanout_pending_choice: bool,
     pub(super) pending_choice_estimated_action_fanout: usize,
+    pub(super) pending_choices_seen: usize,
+    pub(super) pending_choice_actions_simulated: usize,
+    pub(super) max_pending_choice_candidate_count: usize,
+    pub(super) max_pending_choice_estimated_action_fanout: usize,
+    pub(super) last_pending_choice_kind: Option<&'static str>,
+    pub(super) stopped_on_high_fanout_pending_choice: bool,
     pub(super) survival_margin: i32,
     pub(super) actions_simulated: usize,
     pub(super) truncated: bool,
@@ -43,6 +50,10 @@ pub(super) struct RolloutCache {
     truncated: u64,
     terminal_wins: u64,
     terminal_losses: u64,
+    rollouts_with_pending_choice: u64,
+    rollouts_stopped_on_high_fanout_pending_choice: u64,
+    pending_choice_actions_simulated: u64,
+    max_pending_choice_estimated_action_fanout: usize,
     cache: HashMap<CombatExactStateKey, RolloutNodeEstimate>,
 }
 
@@ -81,6 +92,12 @@ impl RolloutNodeEstimate {
             hexaghost_opening_pressure_count: 0,
             high_fanout_pending_choice: false,
             pending_choice_estimated_action_fanout: 0,
+            pending_choices_seen: 0,
+            pending_choice_actions_simulated: 0,
+            max_pending_choice_candidate_count: 0,
+            max_pending_choice_estimated_action_fanout: 0,
+            last_pending_choice_kind: None,
+            stopped_on_high_fanout_pending_choice: false,
             survival_margin: 0,
             actions_simulated: 0,
             truncated: false,
@@ -94,6 +111,7 @@ impl RolloutNodeEstimate {
         actions_simulated: usize,
         stop_reason: RolloutStopReason,
         last_action_reason: Option<&'static str>,
+        pending_choice_progress: RolloutPendingChoiceProgress,
     ) -> Self {
         let phase_profile = combat_search_phase_profile(&node.engine, &node.combat);
         Self {
@@ -127,6 +145,16 @@ impl RolloutNodeEstimate {
             pending_choice_estimated_action_fanout: phase_profile
                 .pending_choice
                 .estimated_action_fanout,
+            pending_choices_seen: pending_choice_progress.pending_choices_seen,
+            pending_choice_actions_simulated: pending_choice_progress
+                .pending_choice_actions_simulated,
+            max_pending_choice_candidate_count: pending_choice_progress
+                .max_pending_choice_candidate_count,
+            max_pending_choice_estimated_action_fanout: pending_choice_progress
+                .max_pending_choice_estimated_action_fanout,
+            last_pending_choice_kind: pending_choice_progress.last_pending_choice_kind_label(),
+            stopped_on_high_fanout_pending_choice: pending_choice_progress
+                .stopped_on_high_fanout_pending_choice,
             survival_margin: phase_profile.pressure.survival_margin,
             actions_simulated,
             truncated: stop_reason.is_truncated(),
@@ -182,6 +210,13 @@ impl RolloutNodeEstimate {
                 hexaghost_opening_pressure_count: self.hexaghost_opening_pressure_count,
                 high_fanout_pending_choice: self.high_fanout_pending_choice,
                 pending_choice_estimated_action_fanout: self.pending_choice_estimated_action_fanout,
+                pending_choices_seen: self.pending_choices_seen,
+                pending_choice_actions_simulated: self.pending_choice_actions_simulated,
+                max_pending_choice_candidate_count: self.max_pending_choice_candidate_count,
+                max_pending_choice_estimated_action_fanout: self
+                    .max_pending_choice_estimated_action_fanout,
+                last_pending_choice_kind: self.last_pending_choice_kind,
+                stopped_on_high_fanout_pending_choice: self.stopped_on_high_fanout_pending_choice,
                 survival_margin: self.survival_margin,
                 actions_simulated: self.actions_simulated,
                 truncated: self.truncated,
@@ -262,6 +297,20 @@ impl RolloutCache {
         if estimate.truncated {
             self.truncated = self.truncated.saturating_add(1);
         }
+        if estimate.pending_choices_seen > 0 {
+            self.rollouts_with_pending_choice = self.rollouts_with_pending_choice.saturating_add(1);
+        }
+        if estimate.stopped_on_high_fanout_pending_choice {
+            self.rollouts_stopped_on_high_fanout_pending_choice = self
+                .rollouts_stopped_on_high_fanout_pending_choice
+                .saturating_add(1);
+        }
+        self.pending_choice_actions_simulated = self
+            .pending_choice_actions_simulated
+            .saturating_add(estimate.pending_choice_actions_simulated as u64);
+        self.max_pending_choice_estimated_action_fanout = self
+            .max_pending_choice_estimated_action_fanout
+            .max(estimate.max_pending_choice_estimated_action_fanout);
         match estimate.terminal {
             SearchTerminalLabel::Win => self.terminal_wins = self.terminal_wins.saturating_add(1),
             SearchTerminalLabel::Loss => {
@@ -286,6 +335,12 @@ impl RolloutCache {
             truncated_rollouts: self.truncated,
             terminal_wins: self.terminal_wins,
             terminal_losses: self.terminal_losses,
+            rollouts_with_pending_choice: self.rollouts_with_pending_choice,
+            rollouts_stopped_on_high_fanout_pending_choice: self
+                .rollouts_stopped_on_high_fanout_pending_choice,
+            pending_choice_actions_simulated: self.pending_choice_actions_simulated,
+            max_pending_choice_estimated_action_fanout: self
+                .max_pending_choice_estimated_action_fanout,
             best_frontier_estimate: best_frontier
                 .and_then(|node| node.rollout_estimate.to_report()),
             notes: vec![
@@ -294,6 +349,7 @@ impl RolloutCache {
                 "rollout cache is keyed by exact combat runtime state",
                 "unresolved rollout priority uses phase-adjusted enemy effort from phase_profile",
                 "high-fanout pending choices stop rollout estimates instead of selecting an arbitrary branch",
+                "small pending choices may be followed by rollout, but their actions are still exact simulator inputs and never proof claims",
             ],
         }
     }
@@ -308,6 +364,7 @@ fn conservative_no_potion_rollout(
 ) -> RolloutNodeEstimate {
     let mut rollout = node.clone_for_rollout();
     let mut last_action_reason = None;
+    let mut pending_choice_progress = RolloutPendingChoiceProgress::default();
     for actions_simulated in 0..=max_actions {
         if terminal_label(&rollout.engine, &rollout.combat) != SearchTerminalLabel::Unresolved {
             return RolloutNodeEstimate::from_node(
@@ -315,6 +372,7 @@ fn conservative_no_potion_rollout(
                 actions_simulated,
                 RolloutStopReason::TerminalState,
                 last_action_reason,
+                pending_choice_progress,
             );
         }
         if actions_simulated == max_actions {
@@ -323,6 +381,7 @@ fn conservative_no_potion_rollout(
                 actions_simulated,
                 RolloutStopReason::MaxActions,
                 last_action_reason,
+                pending_choice_progress,
             );
         }
         if deadline.is_some_and(|limit| Instant::now() >= limit) {
@@ -331,15 +390,18 @@ fn conservative_no_potion_rollout(
                 actions_simulated,
                 RolloutStopReason::Deadline,
                 last_action_reason,
+                pending_choice_progress,
             );
         }
         let phase_profile = combat_search_phase_profile(&rollout.engine, &rollout.combat);
+        pending_choice_progress.observe_boundary(phase_profile.pending_choice);
         if phase_profile.pending_choice.high_fanout {
             return RolloutNodeEstimate::from_node(
                 &rollout,
                 actions_simulated,
                 RolloutStopReason::HighFanoutPendingChoice,
                 last_action_reason,
+                pending_choice_progress,
             );
         }
 
@@ -355,6 +417,7 @@ fn conservative_no_potion_rollout(
                 actions_simulated,
                 RolloutStopReason::NoLegalActions,
                 last_action_reason,
+                pending_choice_progress,
             );
         }
 
@@ -373,10 +436,12 @@ fn conservative_no_potion_rollout(
                 actions_simulated,
                 RolloutStopReason::PolicyDeclined,
                 last_action_reason,
+                pending_choice_progress,
             );
         };
         last_action_reason = Some(selection.reason);
         let choice = selection.choice;
+        pending_choice_progress.note_simulated_action(phase_profile.pending_choice);
 
         let step = stepper.apply_to_stable(
             &position,
@@ -403,6 +468,7 @@ fn conservative_no_potion_rollout(
                 actions_simulated + 1,
                 RolloutStopReason::EngineStepLimit,
                 last_action_reason,
+                pending_choice_progress,
             );
         }
     }
@@ -412,6 +478,7 @@ fn conservative_no_potion_rollout(
         max_actions,
         RolloutStopReason::MaxActions,
         last_action_reason,
+        pending_choice_progress,
     )
 }
 
@@ -444,6 +511,48 @@ mod tests {
             _limits: CombatStepLimits,
         ) -> crate::sim::combat::CombatStepResult {
             let engine = if matches!(input, ClientInput::EndTurn) {
+                EngineState::GameOver(crate::state::core::RunResult::Victory)
+            } else {
+                position.engine.clone()
+            };
+            let position = CombatPosition::new(engine, position.combat.clone());
+            crate::sim::combat::CombatStepResult {
+                terminal: combat_terminal(&position.engine, &position.combat),
+                alive: true,
+                truncated: false,
+                timed_out: false,
+                engine_steps: 1,
+                position,
+            }
+        }
+
+        fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+            combat_terminal(&position.engine, &position.combat)
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct PendingChoiceWinsStepper;
+
+    impl CombatStepper for PendingChoiceWinsStepper {
+        fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+            if matches!(position.engine, EngineState::PendingChoice(_)) {
+                vec![
+                    ClientInput::SubmitDiscoverChoice(0),
+                    ClientInput::SubmitDiscoverChoice(1),
+                ]
+            } else {
+                Vec::new()
+            }
+        }
+
+        fn apply_to_stable(
+            &self,
+            position: &CombatPosition,
+            input: ClientInput,
+            _limits: CombatStepLimits,
+        ) -> crate::sim::combat::CombatStepResult {
+            let engine = if matches!(input, ClientInput::SubmitDiscoverChoice(_)) {
                 EngineState::GameOver(crate::state::core::RunResult::Victory)
             } else {
                 position.engine.clone()
@@ -541,8 +650,13 @@ mod tests {
             rollout_estimate: RolloutNodeEstimate::unevaluated(),
         };
 
-        let estimate =
-            RolloutNodeEstimate::from_node(&node, 0, RolloutStopReason::MaxActions, None);
+        let estimate = RolloutNodeEstimate::from_node(
+            &node,
+            0,
+            RolloutStopReason::MaxActions,
+            None,
+            RolloutPendingChoiceProgress::default(),
+        );
 
         assert_eq!(estimate.total_enemy_hp, 180);
         assert_eq!(estimate.total_enemy_block, 20);
@@ -582,6 +696,45 @@ mod tests {
         );
         assert!(estimate.high_fanout_pending_choice);
         assert_eq!(estimate.pending_choice_estimated_action_fanout, 128);
+        assert_eq!(estimate.pending_choices_seen, 1);
+        assert_eq!(estimate.pending_choice_actions_simulated, 0);
+        assert_eq!(estimate.max_pending_choice_candidate_count, 7);
+        assert_eq!(estimate.max_pending_choice_estimated_action_fanout, 128);
+        assert_eq!(estimate.last_pending_choice_kind, Some("scry_select"));
+        assert!(estimate.stopped_on_high_fanout_pending_choice);
         assert_eq!(estimate.actions_simulated, 0);
+    }
+
+    #[test]
+    fn conservative_rollout_tracks_small_pending_choice_resolution() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        let node = SearchNode {
+            engine: EngineState::PendingChoice(crate::state::core::PendingChoice::StanceChoice),
+            combat,
+            actions: Vec::new(),
+            turn_prefix: TurnPrefixState::default(),
+            initial_hp: 80,
+            potions_used: 0,
+            potions_discarded: 0,
+            cards_played: 0,
+            potion_tactical_priority: 0,
+            last_turn_branch_priority: 0,
+            rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        };
+        let config = CombatSearchV2Config::default();
+
+        let estimate =
+            conservative_no_potion_rollout(&node, &PendingChoiceWinsStepper, &config, 4, None);
+
+        assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
+        assert!(!estimate.truncated);
+        assert_eq!(estimate.pending_choices_seen, 1);
+        assert_eq!(estimate.pending_choice_actions_simulated, 1);
+        assert_eq!(estimate.max_pending_choice_candidate_count, 2);
+        assert_eq!(estimate.max_pending_choice_estimated_action_fanout, 2);
+        assert_eq!(estimate.last_pending_choice_kind, Some("stance_choice"));
+        assert!(!estimate.stopped_on_high_fanout_pending_choice);
+        assert_eq!(estimate.actions_simulated, 1);
     }
 }

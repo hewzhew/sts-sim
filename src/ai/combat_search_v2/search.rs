@@ -300,7 +300,7 @@ pub fn run_combat_search_v2_with_stepper(
     }
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
-        schema_version: 2,
+        schema_version: 3,
         input_label: config.input_label,
         information_boundary: "engine_state_snapshot_truth_v0",
         search_policy: CombatSearchV2PolicyReport {
