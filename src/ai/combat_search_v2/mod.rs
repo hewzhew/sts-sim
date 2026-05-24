@@ -21,6 +21,7 @@ mod action_ordering;
 mod baseline;
 mod card_identity;
 mod diagnostics;
+mod enemy_phase_value;
 mod expansion;
 mod frontier;
 mod outcome_score;

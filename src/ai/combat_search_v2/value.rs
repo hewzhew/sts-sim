@@ -1,15 +1,18 @@
 use super::action_effects::state_sustained_mitigation_score;
+use super::enemy_phase_value::enemy_phase_value;
 use super::*;
 use crate::runtime::combat::CombatCard;
 
 pub(super) const COMBAT_SEARCH_FRONTIER_VALUE_POLICY: &str =
-    "frontier_value_v1_visible_pressure_enemy_progress_hand_next_draw_resources_no_terminal_claim";
+    "frontier_value_v1_visible_pressure_split_phase_enemy_progress_hand_next_draw_resources_no_terminal_claim";
 const BASE_TURN_DRAW_COUNT: i32 = 5;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct CombatSearchStateValueV1 {
     pub(super) fewer_living_enemies: i32,
+    pub(super) phase_adjusted_enemy_progress: i32,
     pub(super) enemy_progress: i32,
+    pub(super) split_debt_hp: i32,
     pub(super) survival_margin: i32,
     pub(super) sustained_mitigation: i32,
     pub(super) player_hp: i32,
@@ -48,7 +51,12 @@ impl Ord for CombatSearchStateValueV1 {
     fn cmp(&self, other: &Self) -> Ordering {
         self.fewer_living_enemies
             .cmp(&other.fewer_living_enemies)
+            .then_with(|| {
+                self.phase_adjusted_enemy_progress
+                    .cmp(&other.phase_adjusted_enemy_progress)
+            })
             .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
+            .then_with(|| self.split_debt_hp.cmp(&other.split_debt_hp))
             .then_with(|| self.survival_margin.cmp(&other.survival_margin))
             .then_with(|| self.sustained_mitigation.cmp(&other.sustained_mitigation))
             .then_with(|| self.player_hp.cmp(&other.player_hp))
@@ -138,9 +146,12 @@ pub(super) fn survival_margin(combat: &CombatState) -> i32 {
 pub(super) fn combat_search_state_value(node: &SearchNode) -> CombatSearchStateValueV1 {
     let hand = hand_quality(&node.combat);
     let next_draw = next_draw_quality(&node.combat);
+    let enemy_phase = enemy_phase_value(&node.combat);
     CombatSearchStateValueV1 {
         fewer_living_enemies: -(living_enemy_count(&node.combat) as i32),
-        enemy_progress: -total_living_enemy_hp(&node.combat),
+        phase_adjusted_enemy_progress: -enemy_phase.phase_adjusted_living_enemy_hp,
+        enemy_progress: -enemy_phase.raw_living_enemy_hp,
+        split_debt_hp: -enemy_phase.split_debt_hp,
         survival_margin: survival_margin(&node.combat),
         sustained_mitigation: state_sustained_mitigation_score(&node.combat),
         player_hp: node.combat.entities.player.current_hp,
@@ -174,6 +185,7 @@ pub(super) fn combat_search_frontier_value_report(
 ) -> CombatSearchV2FrontierValueReport {
     let hand = hand_quality(&node.combat);
     let next_draw = next_draw_quality(&node.combat);
+    let enemy_phase = enemy_phase_value(&node.combat);
     CombatSearchV2FrontierValueReport {
         policy: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
         terminal: terminal_label(&node.engine, &node.combat),
@@ -182,7 +194,10 @@ pub(super) fn combat_search_frontier_value_report(
         visible_incoming_damage: visible_incoming_damage(&node.combat),
         survival_margin: survival_margin(&node.combat),
         living_enemy_count: living_enemy_count(&node.combat),
-        total_enemy_hp: total_living_enemy_hp(&node.combat),
+        total_enemy_hp: enemy_phase.raw_living_enemy_hp,
+        phase_adjusted_enemy_hp: enemy_phase.phase_adjusted_living_enemy_hp,
+        split_pending_count: enemy_phase.split_pending_count,
+        split_debt_hp: enemy_phase.split_debt_hp,
         sustained_mitigation: state_sustained_mitigation_score(&node.combat),
         hand: card_pile_value_report(hand),
         next_draw: card_pile_value_report(next_draw),
@@ -244,6 +259,9 @@ fn card_pile_value_report(value: CardPileValueV1) -> CombatSearchV2CardPileValue
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::content::powers::PowerId;
+    use crate::runtime::combat::{Power, PowerPayload};
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -274,6 +292,40 @@ mod tests {
         flashy.combat.zones.draw_pile = vec![CombatCard::new(CardId::Carnage, 12)];
 
         assert!(combat_search_state_value(&safe) > combat_search_state_value(&flashy));
+    }
+
+    #[test]
+    fn state_value_accounts_for_pending_split_phase_debt() {
+        let mut raw_progress = test_node();
+        let mut raw_slime = crate::test_support::test_monster(EnemyId::AcidSlimeL);
+        raw_slime.id = 12;
+        raw_slime.current_hp = 32;
+        raw_slime.max_hp = 65;
+        raw_slime.set_planned_move_id(1);
+        raw_progress.combat.entities.monsters = vec![raw_slime];
+
+        let mut split_pending = test_node();
+        let mut split_slime = crate::test_support::test_monster(EnemyId::AcidSlimeL);
+        split_slime.id = 13;
+        split_slime.current_hp = 31;
+        split_slime.max_hp = 65;
+        split_slime.set_planned_move_id(3);
+        split_pending.combat.entities.monsters = vec![split_slime];
+        split_pending.combat.entities.power_db.insert(
+            13,
+            vec![Power {
+                power_type: PowerId::Split,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        assert!(
+            combat_search_state_value(&raw_progress) > combat_search_state_value(&split_pending)
+        );
     }
 
     fn test_node() -> SearchNode {
