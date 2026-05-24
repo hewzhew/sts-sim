@@ -28,6 +28,11 @@ fn audit_accepts_registered_capture_suite() {
             && check.status == ArtifactAuditStatus::Ok
             && check.artifact_hash.is_some()
     }));
+    assert!(report.checks.iter().any(|check| {
+        check.check_id == "case:root:jaw:search_input_load"
+            && check.status == ArtifactAuditStatus::Ok
+            && check.code == "search_input_load_ok"
+    }));
 
     let _ = fs::remove_dir_all(root);
 }

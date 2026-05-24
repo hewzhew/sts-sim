@@ -6,7 +6,7 @@ use blake2::{Blake2b512, Digest};
 
 use crate::eval::combat_capture::{load_combat_capture_v1, CombatCaptureV1};
 use crate::eval::combat_search_v2::{
-    load_combat_search_v2_benchmark, load_combat_search_v2_start,
+    load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
     CombatSearchV2BenchmarkBaselineSpec, CombatSearchV2BenchmarkCaseSpec,
     CombatSearchV2BenchmarkSpec,
 };
@@ -213,6 +213,7 @@ impl ArtifactAuditor {
                             "combat capture loads and validates",
                         );
                         self.audit_capture_expectations(suite_id, case, &path, &capture);
+                        self.audit_combat_snapshot_search_input(suite_id, case, &path);
                     }
                     Err(err) => self.push_check(
                         format!("case:{suite_id}:{}:capture_load", case.id),
@@ -243,6 +244,30 @@ impl ArtifactAuditor {
             let path = resolve_manifest_relative_path(suite_dir, path);
             suite_baseline_paths.insert(path.clone());
             self.baselines_referenced.insert(path);
+        }
+    }
+
+    fn audit_combat_snapshot_search_input(
+        &mut self,
+        suite_id: &str,
+        case: &CombatSearchV2BenchmarkCaseSpec,
+        path: &Path,
+    ) {
+        match load_combat_search_v2_snapshot(path) {
+            Ok(_) => self.push_check(
+                format!("case:{suite_id}:{}:search_input_load", case.id),
+                ArtifactAuditStatus::Ok,
+                Some(path.to_path_buf()),
+                "search_input_load_ok",
+                "combat snapshot loads through the combat search input boundary",
+            ),
+            Err(err) => self.push_check(
+                format!("case:{suite_id}:{}:search_input_load", case.id),
+                ArtifactAuditStatus::Error,
+                Some(path.to_path_buf()),
+                "search_input_load_failed",
+                err,
+            ),
         }
     }
 
