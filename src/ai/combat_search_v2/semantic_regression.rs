@@ -1,10 +1,18 @@
+//! Search-facing combat canaries.
+//!
+//! This is not a card/relic behavior dump. Keep cases here only when a broken
+//! engine transition would make Combat Search consume invalid legal actions,
+//! miss a stable boundary, or evaluate the wrong public combat state. Put
+//! single-card and single-relic semantics in content/engine tests instead.
+
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::potions::{Potion, PotionId};
 use crate::content::powers::{store, PowerId};
 use crate::runtime::combat::{CombatCard, CombatState, MonsterEntity, Power, PowerPayload};
 use crate::sim::combat::{
-    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
+    CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper, CombatTerminal,
+    EngineCombatStepper,
 };
 use crate::state::core::{ClientInput, EngineState, GridSelectReason, PendingChoice, PileType};
 use crate::test_support::{blank_test_combat, test_monster};
@@ -18,6 +26,25 @@ fn step_limits() -> CombatStepLimits {
 
 fn player_turn_position(combat: CombatState) -> CombatPosition {
     CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+}
+
+fn apply_from_player_turn(combat: CombatState, input: ClientInput) -> CombatStepResult {
+    apply(&player_turn_position(combat), input)
+}
+
+fn apply(position: &CombatPosition, input: ClientInput) -> CombatStepResult {
+    let stepper = EngineCombatStepper;
+    stepper.apply_to_stable(position, input, step_limits())
+}
+
+fn legal_actions(position: &CombatPosition) -> Vec<ClientInput> {
+    let stepper = EngineCombatStepper;
+    stepper.legal_actions(position)
+}
+
+fn assert_stable_player_turn(step: &CombatStepResult) {
+    assert!(!step.truncated);
+    assert_eq!(step.position.engine, EngineState::CombatPlayerTurn);
 }
 
 fn power(power_type: PowerId, amount: i32) -> Power {
@@ -40,6 +67,10 @@ fn monster(enemy_id: EnemyId, id: usize, slot: u8, hp: i32) -> MonsterEntity {
     monster
 }
 
+fn card_snapshots(cards: &[CombatCard]) -> Vec<(CardId, u32)> {
+    cards.iter().map(|card| (card.id, card.uuid)).collect()
+}
+
 #[test]
 fn stepper_dropkick_against_vulnerable_draws_and_refunds_energy() {
     let mut combat = blank_test_combat();
@@ -49,19 +80,16 @@ fn stepper_dropkick_against_vulnerable_draws_and_refunds_energy() {
     combat.zones.hand = vec![CombatCard::new(CardId::Dropkick, 100)];
     combat.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 101)];
 
-    let stepper = EngineCombatStepper;
-    let step = stepper.apply_to_stable(
-        &player_turn_position(combat),
+    let step = apply_from_player_turn(
+        combat,
         ClientInput::PlayCard {
             card_index: 0,
             target: Some(10),
         },
-        step_limits(),
     );
 
-    assert!(!step.truncated);
+    assert_stable_player_turn(&step);
     assert_eq!(step.terminal, CombatTerminal::Unresolved);
-    assert_eq!(step.position.engine, EngineState::CombatPlayerTurn);
     assert_eq!(
         step.position.combat.turn.energy, 1,
         "Dropkick should spend 1 energy then refund 1 when the target is Vulnerable"
@@ -71,13 +99,7 @@ fn stepper_dropkick_against_vulnerable_draws_and_refunds_energy() {
         "Dropkick damage should use the target's Vulnerable state at execution"
     );
     assert_eq!(
-        step.position
-            .combat
-            .zones
-            .hand
-            .iter()
-            .map(|card| (card.id, card.uuid))
-            .collect::<Vec<_>>(),
+        card_snapshots(&step.position.combat.zones.hand),
         vec![(CardId::Strike, 101)],
         "Dropkick should draw one card after the damage/effect action resolves"
     );
@@ -93,14 +115,12 @@ fn stepper_headbutt_grid_select_moves_selected_discard_card_to_draw_top() {
         CombatCard::new(CardId::Defend, 202),
     ];
 
-    let stepper = EngineCombatStepper;
-    let after_headbutt = stepper.apply_to_stable(
-        &player_turn_position(combat),
+    let after_headbutt = apply_from_player_turn(
+        combat,
         ClientInput::PlayCard {
             card_index: 0,
             target: Some(10),
         },
-        step_limits(),
     );
 
     assert!(!after_headbutt.truncated);
@@ -121,40 +141,24 @@ fn stepper_headbutt_grid_select_moves_selected_discard_card_to_draw_top() {
         other => panic!("Headbutt should suspend on a discard grid select, got {other:?}"),
     }
 
-    let legal = stepper.legal_actions(&after_headbutt.position);
+    let legal = legal_actions(&after_headbutt.position);
     assert!(legal.contains(&ClientInput::SubmitGridSelect(vec![202])));
     assert!(
         !legal.contains(&ClientInput::Proceed),
         "pending grid select must not expose fake Proceed to search"
     );
 
-    let after_select = stepper.apply_to_stable(
+    let after_select = apply(
         &after_headbutt.position,
         ClientInput::SubmitGridSelect(vec![202]),
-        step_limits(),
     );
 
-    assert!(!after_select.truncated);
-    assert_eq!(after_select.position.engine, EngineState::CombatPlayerTurn);
+    assert_stable_player_turn(&after_select);
     assert_eq!(
-        after_select
-            .position
-            .combat
-            .zones
-            .draw_pile
-            .iter()
-            .map(|card| (card.id, card.uuid))
-            .collect::<Vec<_>>(),
+        card_snapshots(&after_select.position.combat.zones.draw_pile),
         vec![(CardId::Defend, 202)]
     );
-    let discard = after_select
-        .position
-        .combat
-        .zones
-        .discard_pile
-        .iter()
-        .map(|card| (card.id, card.uuid))
-        .collect::<Vec<_>>();
+    let discard = card_snapshots(&after_select.position.combat.zones.discard_pile);
     assert!(discard.contains(&(CardId::Headbutt, 100)));
     assert!(discard.contains(&(CardId::Strike, 201)));
     assert!(
@@ -175,18 +179,15 @@ fn stepper_fruit_juice_consumes_slot_and_increases_hp_once() {
         None,
     ];
 
-    let stepper = EngineCombatStepper;
-    let step = stepper.apply_to_stable(
-        &player_turn_position(combat),
+    let step = apply_from_player_turn(
+        combat,
         ClientInput::UsePotion {
             potion_index: 0,
             target: None,
         },
-        step_limits(),
     );
 
-    assert!(!step.truncated);
-    assert_eq!(step.position.engine, EngineState::CombatPlayerTurn);
+    assert_stable_player_turn(&step);
     assert_eq!(step.position.combat.entities.player.current_hp, 18);
     assert_eq!(step.position.combat.entities.player.max_hp, 92);
     assert!(
@@ -215,9 +216,7 @@ fn stepper_legal_card_targets_exclude_zero_hp_dying_and_half_dead_monsters() {
     combat.entities.monsters = vec![zero_hp_leftover, dying_leftover, half_dead_leftover, alive];
     combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
 
-    let stepper = EngineCombatStepper;
-    let target_actions = stepper
-        .legal_actions(&player_turn_position(combat))
+    let target_actions = legal_actions(&player_turn_position(combat))
         .into_iter()
         .filter_map(|input| match input {
             ClientInput::PlayCard { card_index, target } => Some((card_index, target)),
