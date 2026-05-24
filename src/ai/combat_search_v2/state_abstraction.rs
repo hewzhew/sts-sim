@@ -128,11 +128,15 @@ pub struct StateAbstractionGateReport {
     pub registered_boundaries: Vec<StateAbstractionBoundarySpec>,
     pub case_count: usize,
     pub divergence_histogram: Vec<StateAbstractionHistogramEntry>,
+    pub divergence_group_histogram: Vec<StateAbstractionHistogramEntry>,
     pub divergence_path_histogram: Vec<StateAbstractionHistogramEntry>,
     pub latent_debt_histogram: Vec<StateAbstractionHistogramEntry>,
+    pub latent_debt_group_histogram: Vec<StateAbstractionHistogramEntry>,
     pub candidate_level_histogram: Vec<StateAbstractionHistogramEntry>,
+    pub candidate_level_group_histogram: Vec<StateAbstractionHistogramEntry>,
     pub recommended_consumer_histogram: Vec<StateAbstractionHistogramEntry>,
     pub reveal_gate_histogram: Vec<StateAbstractionHistogramEntry>,
+    pub reveal_gate_group_histogram: Vec<StateAbstractionHistogramEntry>,
     pub cases: Vec<StateAbstractionCaseReport>,
     pub notes: Vec<&'static str>,
 }
@@ -285,17 +289,45 @@ pub fn build_state_abstraction_gate_report(
         registered_boundaries: registered_boundary_specs(),
         case_count: cases.len(),
         divergence_histogram: histogram(cases.iter().map(|case| case.divergence_kind.label())),
+        divergence_group_histogram: group_histogram(cases.iter().flat_map(|case| {
+            case.turn_sequence_divergence_histogram
+                .iter()
+                .map(|entry| (entry.kind.label(), entry.groups))
+        })),
         divergence_path_histogram: histogram(
             cases
                 .iter()
                 .map(|case| case.first_divergence_path.unwrap_or("none")),
         ),
         latent_debt_histogram: histogram(cases.iter().map(|case| case.latent_debt_kind.label())),
+        latent_debt_group_histogram: group_histogram(cases.iter().flat_map(|case| {
+            case.turn_sequence_divergence_histogram.iter().map(|entry| {
+                let debt = latent_debt_kind(entry.kind);
+                (debt.label(), entry.groups)
+            })
+        })),
         candidate_level_histogram: histogram(cases.iter().map(|case| case.candidate_level.label())),
+        candidate_level_group_histogram: group_histogram(cases.iter().flat_map(|case| {
+            case.turn_sequence_divergence_histogram.iter().map(|entry| {
+                let debt = latent_debt_kind(entry.kind);
+                let level = candidate_level(
+                    entry.kind,
+                    debt,
+                    entry.first_divergence_path,
+                    entry.guessed_reveal_gate,
+                );
+                (level.label(), entry.groups)
+            })
+        })),
         recommended_consumer_histogram: histogram(
             cases.iter().map(|case| case.recommended_consumer.label()),
         ),
         reveal_gate_histogram: histogram(cases.iter().map(|case| case.guessed_reveal_gate.label())),
+        reveal_gate_group_histogram: group_histogram(cases.iter().flat_map(|case| {
+            case.turn_sequence_divergence_histogram
+                .iter()
+                .map(|entry| (entry.guessed_reveal_gate.label(), entry.groups))
+        })),
         cases,
         notes: vec![
             "exact simulator state remains authoritative",
@@ -464,6 +496,20 @@ fn histogram(keys: impl Iterator<Item = &'static str>) -> Vec<StateAbstractionHi
     for key in keys {
         *counts.entry(key).or_default() += 1;
     }
+    histogram_entries(counts)
+}
+
+fn group_histogram(
+    entries: impl Iterator<Item = (&'static str, usize)>,
+) -> Vec<StateAbstractionHistogramEntry> {
+    let mut counts = BTreeMap::<&'static str, usize>::new();
+    for (key, groups) in entries {
+        *counts.entry(key).or_default() += groups;
+    }
+    histogram_entries(counts)
+}
+
+fn histogram_entries(counts: BTreeMap<&'static str, usize>) -> Vec<StateAbstractionHistogramEntry> {
     let mut entries = counts
         .into_iter()
         .map(|(key, cases)| StateAbstractionHistogramEntry { key, cases })
@@ -710,5 +756,61 @@ mod tests {
             report.candidate_level,
             StateAbstractionCandidateLevel::ReportOnlyBlocked
         );
+    }
+
+    #[test]
+    fn gate_report_counts_candidate_groups_separately_from_cases() {
+        let reports = vec![
+            classify_state_abstraction_case(StateAbstractionCaseInput {
+                case_id: "case_a",
+                same_effect_turn_sequence_groups: 0,
+                order_sensitive_turn_sequence_groups: 3,
+                turn_sequence_divergence_histogram: vec![StateAbstractionDivergenceInput {
+                    kind: StateDivergenceKind::DiscardOrderDelta,
+                    first_divergence_path: Some("combat.zones.discard_pile"),
+                    guessed_reveal_gate: StateAbstractionRevealGate::NextShuffle,
+                    groups: 7,
+                }],
+            })
+            .expect("discard candidate should classify"),
+            classify_state_abstraction_case(StateAbstractionCaseInput {
+                case_id: "case_b",
+                same_effect_turn_sequence_groups: 0,
+                order_sensitive_turn_sequence_groups: 3,
+                turn_sequence_divergence_histogram: vec![StateAbstractionDivergenceInput {
+                    kind: StateDivergenceKind::TurnPlayedCardHistoryDelta,
+                    first_divergence_path: Some("combat.turn.counters.card_ids_played"),
+                    guessed_reveal_gate: StateAbstractionRevealGate::NextLegalActionGeneration,
+                    groups: 2,
+                }],
+            })
+            .expect("blocked candidate should classify"),
+        ];
+
+        let gate = build_state_abstraction_gate_report(reports);
+
+        assert_eq!(
+            histogram_count(&gate.candidate_level_histogram, "horizon_limited_candidate"),
+            1
+        );
+        assert_eq!(
+            histogram_count(
+                &gate.candidate_level_group_histogram,
+                "horizon_limited_candidate"
+            ),
+            7
+        );
+        assert_eq!(
+            histogram_count(&gate.candidate_level_group_histogram, "report_only_blocked"),
+            2
+        );
+    }
+
+    fn histogram_count(entries: &[StateAbstractionHistogramEntry], key: &str) -> usize {
+        entries
+            .iter()
+            .find(|entry| entry.key == key)
+            .map(|entry| entry.cases)
+            .unwrap_or(0)
     }
 }
