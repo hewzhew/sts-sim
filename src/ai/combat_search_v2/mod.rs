@@ -18,10 +18,12 @@ use crate::state::core::{ClientInput, EngineState};
 mod action_effects;
 mod action_equivalence;
 mod action_ordering;
+mod action_priority;
 mod baseline;
 mod card_identity;
 mod card_pile_value;
 mod diagnostics;
+mod diagnostics_tags;
 mod enemy_mechanics_profile;
 mod enemy_phase_value;
 mod expansion;
@@ -56,6 +58,7 @@ use card_identity::{
     summarize_card_identity, CardIdentityDiagnosticsCollector, CardIdentitySummary,
 };
 use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
+use diagnostics_tags::diagnosis_tags;
 use enemy_mechanics_profile::{enemy_mechanics_profile, enemy_mechanics_profile_report};
 use expansion::{
     summarize_action_expansion, ActionExpansionDiagnosticsCollector, ActionExpansionSummary,
