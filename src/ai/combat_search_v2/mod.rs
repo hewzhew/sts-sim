@@ -32,6 +32,7 @@ mod frontier;
 mod outcome_score;
 mod pending_choice_ordering;
 mod pending_choice_profile;
+mod phase_action_ordering;
 mod phase_profile;
 mod potions;
 mod pressure_value;

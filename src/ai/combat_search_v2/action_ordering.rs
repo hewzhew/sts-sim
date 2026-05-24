@@ -28,6 +28,7 @@ pub(super) struct ActionOrderingSummary {
     first_role: Option<ActionOrderingRole>,
     first_original_action_id: Option<usize>,
     first_action_key: Option<String>,
+    phase_signal_actions: usize,
     action_effect_samples: Vec<ActionOrderingActionEffectSummary>,
 }
 
@@ -41,6 +42,7 @@ pub(super) struct ActionOrderingDiagnosticsCollector {
     role_counts: BTreeMap<ActionOrderingRole, MutableOrderingRoleCount>,
     largest_reorders: Vec<ActionOrderingObservation>,
     action_effect_actions: u64,
+    phase_action_hint_actions: u64,
     action_effect_samples: Vec<ActionOrderingActionEffectObservation>,
 }
 
@@ -151,11 +153,15 @@ fn action_ordering_enabled(engine: &EngineState) -> bool {
 fn summarize_ordering(entries: &[ActionOrderingEntry]) -> ActionOrderingSummary {
     let mut role_counts = BTreeMap::new();
     let mut max_position_shift = 0usize;
+    let mut phase_signal_actions = 0usize;
     let mut action_effect_samples = Vec::new();
     for (ordered_index, entry) in entries.iter().enumerate() {
         *role_counts.entry(entry.priority.role).or_insert(0) += 1;
         max_position_shift =
             max_position_shift.max(entry.original_action_id.abs_diff(ordered_index));
+        if entry.priority.phase_hint.has_signal() {
+            phase_signal_actions += 1;
+        }
         if entry.priority.effects.has_reactive_signal() {
             action_effect_samples.push(ActionOrderingActionEffectSummary {
                 original_action_id: entry.original_action_id,
@@ -174,6 +180,7 @@ fn summarize_ordering(entries: &[ActionOrderingEntry]) -> ActionOrderingSummary 
         first_role: entries.first().map(|entry| entry.priority.role),
         first_original_action_id: entries.first().map(|entry| entry.original_action_id),
         first_action_key: entries.first().map(|entry| entry.choice.action_key.clone()),
+        phase_signal_actions,
         action_effect_samples,
     }
 }
@@ -191,6 +198,9 @@ impl ActionOrderingDiagnosticsCollector {
         if summary.max_position_shift > 0 {
             self.states_reordered = self.states_reordered.saturating_add(1);
         }
+        self.phase_action_hint_actions = self
+            .phase_action_hint_actions
+            .saturating_add(summary.phase_signal_actions as u64);
 
         for (role, count) in &summary.role_counts {
             let mutable = self.role_counts.entry(*role).or_default();
@@ -240,6 +250,7 @@ impl ActionOrderingDiagnosticsCollector {
             reordered_state_ratio: rounded_ratio(self.states_reordered, self.states_observed),
             total_actions_observed: self.total_actions_observed,
             action_effect_actions: self.action_effect_actions,
+            phase_action_hint_actions: self.phase_action_hint_actions,
             max_position_shift: self.max_position_shift,
             avg_position_shift: rounded_ratio(self.total_position_shift, self.states_observed),
             action_role_counts: self.action_role_counts(),
@@ -252,6 +263,7 @@ impl ActionOrderingDiagnosticsCollector {
                 "ordering does not remove legal actions or prove action equivalence",
                 "reactive power risk is derived from simulator power hooks, not monster-name policy",
                 "enemy phase transition hints only reorder children and never suppress phase-triggering actions",
+                "phase action hints reuse phase_profile and only add ordering tiebreaks",
                 "pending choice ordering uses typed selection facts and never drops alternatives",
             ],
         }
@@ -754,5 +766,32 @@ mod tests {
         );
         assert!(report.action_effect_samples[0].enemy_strength_gain > 0);
         assert!(report.action_effect_samples[0].reactive_risk_score > 0);
+    }
+
+    #[test]
+    fn ordering_collector_counts_phase_hint_actions() {
+        let mut combat = blank_test_combat();
+        let mut lagavulin = test_monster(EnemyId::Lagavulin);
+        lagavulin.id = 1;
+        lagavulin.lagavulin.is_out = false;
+        combat.entities.monsters = vec![lagavulin];
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+        let ordered = order_action_choices(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            vec![CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(1),
+                },
+            )],
+        );
+        let mut collector = ActionOrderingDiagnosticsCollector::default();
+
+        collector.observe(&ordered.summary);
+        let report = collector.finish();
+
+        assert_eq!(report.phase_action_hint_actions, 1);
     }
 }

@@ -359,6 +359,7 @@ mod tests {
             reordered_state_ratio: 0.0,
             total_actions_observed: 0,
             action_effect_actions: 0,
+            phase_action_hint_actions: 0,
             max_position_shift: 0,
             avg_position_shift: 0.0,
             action_role_counts: Vec::new(),

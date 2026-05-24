@@ -410,6 +410,7 @@ pub struct CombatSearchV2DiagnosticsOrdering {
     pub reordered_state_ratio: f64,
     pub total_actions_observed: u64,
     pub action_effect_actions: u64,
+    pub phase_action_hint_actions: u64,
     pub max_position_shift: usize,
     pub avg_position_shift: f64,
     pub action_role_counts: Vec<CombatSearchV2DiagnosticsActionRoleCount>,

@@ -1,4 +1,8 @@
 use super::action_effects::{summarize_play_card_effects, PlayCardEffectDiagnostics};
+use super::phase_action_ordering::{
+    phase_action_ordering_hint, PhaseActionOrderingFacts, PhaseActionOrderingHint,
+};
+use super::phase_profile::CombatSearchPhaseProfileV1;
 use super::*;
 use crate::content::cards::{self, CardTarget, CardType};
 use std::cmp::Ordering;
@@ -33,10 +37,13 @@ pub(super) struct ActionOrderingPriority {
     block: i32,
     damage: i32,
     cheaper_cost: i32,
+    phase_setup: i32,
+    phase_survival: i32,
     phase_transition_safety: i32,
     pending_choice_primary: i32,
     pending_choice_secondary: i32,
     pending_choice_selected_count: i32,
+    pub(super) phase_hint: PhaseActionOrderingHint,
     pub(super) effects: PlayCardEffectDiagnostics,
 }
 
@@ -84,7 +91,8 @@ pub(super) fn priority_for_input(
 
     match input {
         ClientInput::PlayCard { card_index, target } => {
-            priority_for_play_card(combat, *card_index, *target)
+            let phase_profile = combat_search_phase_profile(engine, combat);
+            priority_for_play_card(combat, *card_index, *target, phase_profile)
         }
         ClientInput::UsePotion { .. } => {
             let potion_rank =
@@ -118,6 +126,7 @@ fn priority_for_play_card(
     combat: &CombatState,
     card_index: usize,
     target: Option<usize>,
+    phase_profile: CombatSearchPhaseProfileV1,
 ) -> ActionOrderingPriority {
     let Some(card) = combat.zones.hand.get(card_index) else {
         return ActionOrderingPriority::neutral(ActionOrderingRole::Neutral);
@@ -140,6 +149,15 @@ fn priority_for_play_card(
     let phase_transition = enemy_phase_transition_hint_for_input(
         combat,
         &ClientInput::PlayCard { card_index, target },
+    );
+    let phase_hint = phase_action_ordering_hint(
+        phase_profile,
+        PhaseActionOrderingFacts {
+            card_type: def.card_type,
+            block,
+            mitigation,
+            phase_transition,
+        },
     );
     let visible_damage = visible_incoming_damage(combat);
     let current_block = combat.entities.player.block;
@@ -183,14 +201,17 @@ fn priority_for_play_card(
 
     ActionOrderingPriority {
         role,
-        role_rank,
+        role_rank: role_rank.saturating_add(phase_hint.role_rank_adjustment),
         mitigation,
         reactive_risk: -reactive_risk,
         target_progress,
         block,
         damage,
         cheaper_cost: -card.cost_for_turn_java().max(0),
-        phase_transition_safety: -phase_transition.ordering_risk_score(),
+        phase_setup: phase_hint.phase_setup,
+        phase_survival: phase_hint.phase_survival,
+        phase_transition_safety: phase_hint.phase_transition_safety,
+        phase_hint,
         effects: effect_diagnostics,
         ..ActionOrderingPriority::neutral(role)
     }
@@ -267,10 +288,13 @@ impl ActionOrderingPriority {
             block: 0,
             damage: 0,
             cheaper_cost: 0,
+            phase_setup: 0,
+            phase_survival: 0,
             phase_transition_safety: 0,
             pending_choice_primary: 0,
             pending_choice_secondary: 0,
             pending_choice_selected_count: 0,
+            phase_hint: PhaseActionOrderingHint::default(),
             effects: PlayCardEffectDiagnostics::default(),
         }
     }
@@ -327,6 +351,8 @@ impl Ord for ActionOrderingPriority {
             .then_with(|| self.potion_tactical_rank.cmp(&other.potion_tactical_rank))
             .then_with(|| self.mitigation.cmp(&other.mitigation))
             .then_with(|| self.reactive_risk.cmp(&other.reactive_risk))
+            .then_with(|| self.phase_setup.cmp(&other.phase_setup))
+            .then_with(|| self.phase_survival.cmp(&other.phase_survival))
             .then_with(|| {
                 self.phase_transition_safety
                     .cmp(&other.phase_transition_safety)
@@ -419,5 +445,28 @@ mod tests {
             ActionOrderingRole::PendingChoiceValueSelection
         );
         assert!(priority.pending_choice_primary > 0);
+    }
+
+    #[test]
+    fn sleeping_lagavulin_wake_damage_has_phase_penalty() {
+        let mut combat = blank_test_combat();
+        let mut lagavulin = test_monster(EnemyId::Lagavulin);
+        lagavulin.id = 1;
+        lagavulin.lagavulin.is_out = false;
+        combat.entities.monsters = vec![lagavulin];
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+
+        let priority = priority_for_input(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        );
+
+        assert!(priority.phase_hint.has_signal());
+        assert!(priority.phase_setup < 0);
+        assert!(priority.phase_transition_safety < 0);
     }
 }
