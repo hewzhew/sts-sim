@@ -144,6 +144,9 @@ pub(super) fn diagnosis_tags(
     if turn_sequence.order_sensitive_groups > 0 {
         tags.push("turn_sequence_order_sensitive_groups_observed");
     }
+    if turn_sequence.discard_order_shadow_audit.candidate_groups > 0 {
+        tags.push("discard_order_shadow_audit_candidates_observed");
+    }
     if card_identity.states_observed > 0 {
         tags.push("card_identity_diagnostics_active");
     }
@@ -172,6 +175,7 @@ pub(super) fn diagnosis_tags(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::combat_search_v2::state_abstraction::StateAbstractionRevealGate;
 
     #[test]
     fn tags_surface_budget_and_active_diagnostics() {
@@ -216,6 +220,7 @@ mod tests {
         turn_sequence.groups_with_order_variants = 1;
         turn_sequence.same_effect_order_variant_groups = 1;
         turn_sequence.order_sensitive_groups = 1;
+        turn_sequence.discard_order_shadow_audit.candidate_groups = 1;
         let mut card_identity = card_identity();
         card_identity.states_observed = 1;
         card_identity.states_with_duplicate_active_uuid = 1;
@@ -277,6 +282,7 @@ mod tests {
         assert!(tags.contains(&"turn_sequence_order_variants_observed"));
         assert!(tags.contains(&"turn_sequence_same_effect_candidates_observed"));
         assert!(tags.contains(&"turn_sequence_order_sensitive_groups_observed"));
+        assert!(tags.contains(&"discard_order_shadow_audit_candidates_observed"));
         assert!(tags.contains(&"card_identity_diagnostics_active"));
         assert!(tags.contains(&"duplicate_active_card_uuid_observed"));
         assert!(tags.contains(&"card_uuid_id_conflict_observed"));
@@ -442,6 +448,20 @@ mod tests {
             max_prefix_length: 0,
             max_legal_actions_after_prefix: 0,
             order_sensitive_divergence_histogram: Vec::new(),
+            discard_order_shadow_audit: CombatSearchV2DiagnosticsDiscardOrderShadowAudit {
+                audit_policy: "test",
+                behavioral_effect: "diagnostic_only",
+                candidate_groups: 0,
+                candidate_states: 0,
+                static_immediate_safe_groups: 0,
+                static_immediate_safe_states: 0,
+                exact_rollout_verified_groups: 0,
+                proof_pruning_enabled: false,
+                reveal_gate: StateAbstractionRevealGate::NextShuffle,
+                sample_limit: 0,
+                samples: Vec::new(),
+                notes: Vec::new(),
+            },
             largest_groups: Vec::new(),
             notes: Vec::new(),
         }

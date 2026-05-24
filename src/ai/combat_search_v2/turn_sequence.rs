@@ -1,3 +1,7 @@
+use super::discard_order_shadow_audit::{
+    is_static_discard_order_candidate, summarize_discard_order_shadow_audit,
+    DiscardOrderShadowAuditObservation,
+};
 use super::turn_sequence_effect::{
     effect_fingerprint, TurnSequenceDivergence, TurnSequenceEffectAggregate,
     TurnSequenceEffectFingerprint,
@@ -155,6 +159,7 @@ impl TurnSequenceDiagnosticsCollector {
             max_prefix_length: self.max_prefix_length,
             max_legal_actions_after_prefix: self.max_legal_actions_after_prefix,
             order_sensitive_divergence_histogram: divergence_histogram(divergence_counts),
+            discard_order_shadow_audit: self.discard_order_shadow_audit(),
             largest_groups: self.largest_group_samples(),
             notes: vec![
                 "groups are scoped by the first action's turn-origin dominance hash",
@@ -214,6 +219,40 @@ impl TurnSequenceDiagnosticsCollector {
                 }
             })
             .collect()
+    }
+
+    fn discard_order_shadow_audit(&self) -> CombatSearchV2DiagnosticsDiscardOrderShadowAudit {
+        let observations = self
+            .groups
+            .iter()
+            .filter_map(|(key, aggregate)| {
+                if aggregate.ordered_variants.len() <= 1 || aggregate.effect_variants.len() <= 1 {
+                    return None;
+                }
+
+                let divergence = aggregate.effect_components.classify();
+                if !is_static_discard_order_candidate(
+                    divergence.kind,
+                    divergence.first_divergence_path,
+                    divergence.guessed_reveal_gate,
+                ) {
+                    return None;
+                }
+
+                Some(DiscardOrderShadowAuditObservation {
+                    origin_key: key.origin_key.clone(),
+                    unordered_key_preview: preview(&key.unordered_key),
+                    states: aggregate.states,
+                    max_prefix_length: aggregate.max_prefix_length,
+                    ordered_variants: aggregate.ordered_variants.len(),
+                    effect_variants: aggregate.effect_variants.len(),
+                    max_legal_actions: aggregate.max_legal_actions,
+                    first_divergence_path: divergence.first_divergence_path,
+                    reveal_gate: divergence.guessed_reveal_gate,
+                })
+            })
+            .collect();
+        summarize_discard_order_shadow_audit(observations)
     }
 }
 

@@ -24,6 +24,7 @@ mod card_identity;
 mod card_pile_value;
 mod diagnostics;
 mod diagnostics_tags;
+mod discard_order_shadow_audit;
 mod enemy_mechanics_profile;
 mod enemy_phase_transition;
 mod enemy_phase_value;

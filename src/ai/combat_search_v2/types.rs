@@ -605,8 +605,38 @@ pub struct CombatSearchV2DiagnosticsTurnSequence {
     pub max_legal_actions_after_prefix: usize,
     pub order_sensitive_divergence_histogram:
         Vec<CombatSearchV2DiagnosticsTurnSequenceDivergenceCount>,
+    pub discard_order_shadow_audit: CombatSearchV2DiagnosticsDiscardOrderShadowAudit,
     pub largest_groups: Vec<CombatSearchV2DiagnosticsTurnSequenceGroupSample>,
     pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsDiscardOrderShadowAudit {
+    pub audit_policy: &'static str,
+    pub behavioral_effect: &'static str,
+    pub candidate_groups: usize,
+    pub candidate_states: u64,
+    pub static_immediate_safe_groups: usize,
+    pub static_immediate_safe_states: u64,
+    pub exact_rollout_verified_groups: usize,
+    pub proof_pruning_enabled: bool,
+    pub reveal_gate: StateAbstractionRevealGate,
+    pub sample_limit: usize,
+    pub samples: Vec<CombatSearchV2DiagnosticsDiscardOrderShadowAuditSample>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsDiscardOrderShadowAuditSample {
+    pub origin_key: String,
+    pub unordered_key_preview: String,
+    pub states: u64,
+    pub max_prefix_length: usize,
+    pub ordered_variants: usize,
+    pub effect_variants: usize,
+    pub max_legal_actions: usize,
+    pub first_divergence_path: Option<&'static str>,
+    pub reveal_gate: StateAbstractionRevealGate,
 }
 
 #[derive(Clone, Debug, Serialize)]
