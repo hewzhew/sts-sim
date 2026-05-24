@@ -1,6 +1,7 @@
 use super::action_effects::state_sustained_mitigation_score;
 use super::card_pile_value::{card_pile_value_report, hand_value, next_draw_value};
 use super::enemy_phase_value::enemy_phase_value;
+use super::pressure_value::combat_pressure_value;
 use super::*;
 
 pub(super) const COMBAT_SEARCH_FRONTIER_VALUE_POLICY: &str =
@@ -119,31 +120,17 @@ pub(super) fn living_enemy_count(combat: &CombatState) -> usize {
         .count()
 }
 
-pub(super) fn visible_incoming_damage(combat: &CombatState) -> i32 {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|monster| monster.is_alive_for_action())
-        .map(|monster| monster_preview_total_damage_in_combat(combat, monster))
-        .sum()
-}
-
-pub(super) fn survival_margin(combat: &CombatState) -> i32 {
-    combat.entities.player.current_hp + combat.entities.player.block
-        - visible_incoming_damage(combat)
-}
-
 pub(super) fn combat_search_state_value(node: &SearchNode) -> CombatSearchStateValueV1 {
     let hand = hand_value(&node.combat);
     let next_draw = next_draw_value(&node.combat);
     let enemy_phase = enemy_phase_value(&node.combat);
+    let pressure = combat_pressure_value(&node.combat);
     CombatSearchStateValueV1 {
         fewer_living_enemies: -(living_enemy_count(&node.combat) as i32),
         phase_adjusted_enemy_progress: -enemy_phase.phase_adjusted_living_enemy_hp,
         enemy_progress: -enemy_phase.raw_living_enemy_hp,
         split_debt_hp: -enemy_phase.split_debt_hp,
-        survival_margin: survival_margin(&node.combat),
+        survival_margin: pressure.survival_margin,
         sustained_mitigation: state_sustained_mitigation_score(&node.combat),
         player_hp: node.combat.entities.player.current_hp,
         player_block: node.combat.entities.player.block,
@@ -177,13 +164,14 @@ pub(super) fn combat_search_frontier_value_report(
     let hand = hand_value(&node.combat);
     let next_draw = next_draw_value(&node.combat);
     let enemy_phase = enemy_phase_value(&node.combat);
+    let pressure = combat_pressure_value(&node.combat);
     CombatSearchV2FrontierValueReport {
         policy: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
         terminal: terminal_label(&node.engine, &node.combat),
         player_hp: node.combat.entities.player.current_hp,
         player_block: node.combat.entities.player.block,
-        visible_incoming_damage: visible_incoming_damage(&node.combat),
-        survival_margin: survival_margin(&node.combat),
+        visible_incoming_damage: pressure.visible_incoming_damage,
+        survival_margin: pressure.survival_margin,
         living_enemy_count: living_enemy_count(&node.combat),
         total_enemy_hp: enemy_phase.raw_living_enemy_hp,
         phase_adjusted_enemy_hp: enemy_phase.phase_adjusted_living_enemy_hp,

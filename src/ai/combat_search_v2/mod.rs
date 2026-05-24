@@ -27,6 +27,7 @@ mod expansion;
 mod frontier;
 mod outcome_score;
 mod potions;
+mod pressure_value;
 mod report;
 mod rollout;
 mod search;
@@ -58,6 +59,7 @@ use frontier::{
     ResourceVector, SearchNode,
 };
 use outcome_score::CombatOutcomeScore;
+use pressure_value::{survival_margin, visible_incoming_damage};
 use report::{summarize_state, trajectory_report};
 use rollout::{RolloutCache, RolloutNodeEstimate};
 use target_fanout::{
@@ -79,8 +81,8 @@ use turn_sequence::{
     summarize_turn_sequence, TurnSequenceDiagnosticsCollector, TurnSequenceSummary,
 };
 use value::{
-    combat_search_frontier_value_report, living_enemy_count, survival_margin, terminal_rank,
-    total_living_enemy_hp, visible_incoming_damage, COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
+    combat_search_frontier_value_report, living_enemy_count, terminal_rank, total_living_enemy_hp,
+    COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
 };
 
 pub use baseline::{
