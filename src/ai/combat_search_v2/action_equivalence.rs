@@ -3,6 +3,8 @@ use crate::content::cards;
 use crate::state::core::{PendingChoice, PileType};
 use std::collections::BTreeMap;
 
+use super::state_abstraction::{boundary_spec, StateAbstractionBoundaryId};
+
 const LARGEST_EQUIVALENCE_GROUP_SAMPLE_LIMIT: usize = 8;
 
 #[derive(Clone, Debug)]
@@ -297,6 +299,7 @@ impl ActionEquivalenceDiagnosticsCollector {
                 "single-card pending grid/hand selections can merge runtime-identical source cards",
                 "multi-card pending selections stay atomic because selection order can affect resolution",
                 "card runtime fields and target or selection scope must match; card uuid is intentionally ignored",
+                "each equivalence kind is attached to an explicit StateAbstractionBoundarySpec",
                 "representative action traces keep the original legal action id",
                 "non-eligible actions stay atomic and order-sensitive",
             ],
@@ -331,6 +334,9 @@ impl ActionEquivalenceDiagnosticsCollector {
             .map(
                 |(kind, count)| CombatSearchV2DiagnosticsEquivalenceKindCount {
                     kind: kind.label().to_string(),
+                    boundary_id: kind.boundary_id(),
+                    soundness: boundary_spec(kind.boundary_id()).soundness,
+                    allowed_consumers: boundary_spec(kind.boundary_id()).allowed_consumers,
                     groups: count.groups,
                     actions_in: count.actions_in,
                     actions_removed: count.actions_removed,
@@ -346,6 +352,9 @@ impl ActionEquivalenceDiagnosticsCollector {
             .map(|sample| CombatSearchV2DiagnosticsEquivalenceGroupSample {
                 observed_at_state_query: sample.observed_at_state_query,
                 kind: sample.key.kind.label().to_string(),
+                boundary_id: sample.key.kind.boundary_id(),
+                soundness: boundary_spec(sample.key.kind.boundary_id()).soundness,
+                allowed_consumers: boundary_spec(sample.key.kind.boundary_id()).allowed_consumers,
                 equivalence_key: sample.key.signature.clone(),
                 representative_original_action_id: sample.representative_original_action_id,
                 removed_original_action_ids: sample.removed_original_action_ids.clone(),
@@ -380,6 +389,17 @@ impl ActionEquivalenceKind {
             ActionEquivalenceKind::StarterBasicPlayCard => "starter_basic_play_card",
             ActionEquivalenceKind::SingleCardPendingChoiceSelection => {
                 "single_card_pending_choice_selection"
+            }
+        }
+    }
+
+    fn boundary_id(self) -> StateAbstractionBoundaryId {
+        match self {
+            ActionEquivalenceKind::StarterBasicPlayCard => {
+                StateAbstractionBoundaryId::StarterBasicDuplicatePlayCardByTarget
+            }
+            ActionEquivalenceKind::SingleCardPendingChoiceSelection => {
+                StateAbstractionBoundaryId::PendingChoiceIdenticalRuntimeCard
             }
         }
     }

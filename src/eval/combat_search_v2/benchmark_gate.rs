@@ -1,5 +1,9 @@
 use serde::Serialize;
 
+use crate::ai::combat_search_v2::state_abstraction::{
+    build_state_abstraction_gate_report, classify_state_abstraction_case,
+    StateAbstractionCaseInput, StateAbstractionGateReport,
+};
 use crate::ai::combat_search_v2::{SearchProofStatus, SearchTerminalLabel};
 
 use super::benchmark::{
@@ -16,6 +20,7 @@ pub struct CombatSearchV2BenchmarkGateReport {
     pub policy: &'static str,
     pub requirements: CombatSearchV2BenchmarkGateRequirements,
     pub summary: CombatSearchV2BenchmarkGateSummary,
+    pub state_abstraction: StateAbstractionGateReport,
     pub priority_cases: Vec<CombatSearchV2BenchmarkGateCase>,
     pub notes: Vec<&'static str>,
 }
@@ -141,17 +146,27 @@ pub fn build_combat_search_v2_benchmark_gate_report(
     cases: &[CombatSearchV2BenchmarkCaseReport],
 ) -> CombatSearchV2BenchmarkGateReport {
     let mut gate_summary = CombatSearchV2BenchmarkGateSummary::default();
-    let mut priority_cases = cases
-        .iter()
-        .filter_map(|case| {
-            let gate_case = assess_case_facts(case_gate_facts(case));
-            accumulate_gate_summary(&mut gate_summary, &gate_case);
-            (gate_case.status != CombatSearchV2BenchmarkGateStatus::Pass).then_some(gate_case)
-        })
-        .collect::<Vec<_>>();
+    let mut priority_cases = Vec::new();
+    let mut state_abstraction_cases = Vec::new();
+    for case in cases {
+        let facts = case_gate_facts(case);
+        if let Some(abstraction_case) = classify_state_abstraction_case(StateAbstractionCaseInput {
+            case_id: facts.id,
+            same_effect_turn_sequence_groups: facts.same_effect_turn_sequence_groups,
+            order_sensitive_turn_sequence_groups: facts.order_sensitive_turn_sequence_groups,
+        }) {
+            state_abstraction_cases.push(abstraction_case);
+        }
+        let gate_case = assess_case_facts(facts);
+        accumulate_gate_summary(&mut gate_summary, &gate_case);
+        if gate_case.status != CombatSearchV2BenchmarkGateStatus::Pass {
+            priority_cases.push(gate_case);
+        }
+    }
 
     sort_priority_cases(&mut priority_cases);
     gate_summary.focus_counts = focus_counts(&priority_cases);
+    let state_abstraction = build_state_abstraction_gate_report(state_abstraction_cases);
     let status = if gate_summary.fail_cases > 0 {
         CombatSearchV2BenchmarkGateStatus::Fail
     } else if gate_summary.warn_cases > 0 {
@@ -174,6 +189,7 @@ pub fn build_combat_search_v2_benchmark_gate_report(
             treat_missing_baseline_as_warning: true,
         },
         summary: gate_summary,
+        state_abstraction,
         priority_cases,
         notes: gate_notes(summary),
     }

@@ -3,6 +3,10 @@ use std::time::Duration;
 use crate::state::core::ClientInput;
 use serde::{Deserialize, Serialize};
 
+use super::state_abstraction::{
+    StateAbstractionBoundaryId, StateAbstractionConsumer, StateAbstractionSoundnessLevel,
+};
+
 #[derive(Clone, Debug)]
 pub struct CombatSearchV2Config {
     pub max_nodes: usize,
@@ -385,6 +389,9 @@ pub struct CombatSearchV2DiagnosticsEquivalence {
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2DiagnosticsEquivalenceKindCount {
     pub kind: String,
+    pub boundary_id: StateAbstractionBoundaryId,
+    pub soundness: StateAbstractionSoundnessLevel,
+    pub allowed_consumers: Vec<StateAbstractionConsumer>,
     pub groups: u64,
     pub actions_in: u64,
     pub actions_removed: u64,
@@ -395,6 +402,9 @@ pub struct CombatSearchV2DiagnosticsEquivalenceKindCount {
 pub struct CombatSearchV2DiagnosticsEquivalenceGroupSample {
     pub observed_at_state_query: u64,
     pub kind: String,
+    pub boundary_id: StateAbstractionBoundaryId,
+    pub soundness: StateAbstractionSoundnessLevel,
+    pub allowed_consumers: Vec<StateAbstractionConsumer>,
     pub equivalence_key: String,
     pub representative_original_action_id: usize,
     pub removed_original_action_ids: Vec<usize>,

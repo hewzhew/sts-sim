@@ -43,6 +43,7 @@ mod rollout_value;
 mod search;
 #[cfg(test)]
 mod semantic_regression;
+pub mod state_abstraction;
 mod target_fanout;
 mod transition;
 mod turn_branching;
