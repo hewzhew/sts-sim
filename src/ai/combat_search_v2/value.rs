@@ -6,7 +6,7 @@ use super::phase_profile::CombatSearchPhaseProfileV1;
 use super::*;
 
 pub(super) const COMBAT_SEARCH_FRONTIER_VALUE_POLICY: &str =
-    "frontier_value_v2_visible_pressure_phase_adjusted_enemy_effort_hand_next_draw_resources_no_terminal_claim";
+    "frontier_value_v3_visible_pressure_phase_adjusted_enemy_effort_mechanics_pressure_hand_next_draw_resources_no_terminal_claim";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct CombatSearchStateValueV1 {
@@ -16,6 +16,11 @@ pub(super) struct CombatSearchStateValueV1 {
     pub(super) enemy_hp_progress: i32,
     pub(super) split_debt_hp: i32,
     pub(super) guardian_defensive_block: i32,
+    pub(super) guardian_mode_shift_pending: i32,
+    pub(super) lagavulin_waking_pressure: i32,
+    pub(super) gremlin_nob_enrage_pressure: i32,
+    pub(super) sentry_dazed_pressure: i32,
+    pub(super) hexaghost_opening_pressure: i32,
     pub(super) high_fanout_pending_choice: i32,
     pub(super) pending_choice_estimated_action_fanout: i32,
     pub(super) survival_margin: i32,
@@ -55,6 +60,23 @@ impl Ord for CombatSearchStateValueV1 {
             .then_with(|| {
                 self.guardian_defensive_block
                     .cmp(&other.guardian_defensive_block)
+            })
+            .then_with(|| {
+                self.guardian_mode_shift_pending
+                    .cmp(&other.guardian_mode_shift_pending)
+            })
+            .then_with(|| {
+                self.lagavulin_waking_pressure
+                    .cmp(&other.lagavulin_waking_pressure)
+            })
+            .then_with(|| {
+                self.gremlin_nob_enrage_pressure
+                    .cmp(&other.gremlin_nob_enrage_pressure)
+            })
+            .then_with(|| self.sentry_dazed_pressure.cmp(&other.sentry_dazed_pressure))
+            .then_with(|| {
+                self.hexaghost_opening_pressure
+                    .cmp(&other.hexaghost_opening_pressure)
             })
             .then_with(|| {
                 self.high_fanout_pending_choice
@@ -100,6 +122,24 @@ pub(super) fn combat_search_state_value(node: &SearchNode) -> CombatSearchStateV
         enemy_hp_progress: -facts.phase_profile.enemy_phase.raw_living_enemy_hp,
         split_debt_hp: -facts.phase_profile.enemy_phase.split_debt_hp,
         guardian_defensive_block: -facts.phase_profile.enemy_phase.guardian_defensive_block,
+        guardian_mode_shift_pending: -(facts
+            .phase_profile
+            .enemy_mechanics
+            .guardian_mode_shift_pending_count as i32),
+        lagavulin_waking_pressure: -(facts.phase_profile.enemy_mechanics.lagavulin_waking_count
+            as i32),
+        gremlin_nob_enrage_pressure: -facts
+            .phase_profile
+            .enemy_mechanics
+            .gremlin_nob_anger_amount_total,
+        sentry_dazed_pressure: -(facts
+            .phase_profile
+            .enemy_mechanics
+            .sentry_dazed_pressure_count as i32),
+        hexaghost_opening_pressure: -(facts
+            .phase_profile
+            .enemy_mechanics
+            .hexaghost_opening_pressure_count as i32),
         high_fanout_pending_choice: -i32::from(facts.phase_profile.pending_choice.high_fanout),
         pending_choice_estimated_action_fanout: -(facts
             .phase_profile
@@ -147,6 +187,23 @@ pub(super) fn combat_search_frontier_value_report(
         split_debt_hp: facts.phase_profile.enemy_phase.split_debt_hp,
         guardian_defensive_count: facts.phase_profile.enemy_phase.guardian_defensive_count,
         guardian_defensive_block: facts.phase_profile.enemy_phase.guardian_defensive_block,
+        guardian_mode_shift_pending_count: facts
+            .phase_profile
+            .enemy_mechanics
+            .guardian_mode_shift_pending_count,
+        lagavulin_waking_count: facts.phase_profile.enemy_mechanics.lagavulin_waking_count,
+        gremlin_nob_anger_amount_total: facts
+            .phase_profile
+            .enemy_mechanics
+            .gremlin_nob_anger_amount_total,
+        sentry_dazed_pressure_count: facts
+            .phase_profile
+            .enemy_mechanics
+            .sentry_dazed_pressure_count,
+        hexaghost_opening_pressure_count: facts
+            .phase_profile
+            .enemy_mechanics
+            .hexaghost_opening_pressure_count,
         phase_profile: combat_search_phase_profile_report(facts.phase_profile),
         sustained_mitigation: facts.sustained_mitigation,
         hand: card_pile_value_report(facts.hand),
@@ -252,6 +309,52 @@ mod tests {
     }
 
     #[test]
+    fn state_value_accounts_for_gremlin_nob_enrage_pressure() {
+        let mut calm = test_node();
+        let mut calm_nob = crate::test_support::test_monster(EnemyId::GremlinNob);
+        calm_nob.id = 30;
+        calm_nob.current_hp = 70;
+        calm_nob.max_hp = 85;
+        calm.combat.entities.monsters = vec![calm_nob];
+
+        let mut angry = calm.clone();
+        angry.combat.entities.power_db.insert(
+            30,
+            vec![Power {
+                power_type: PowerId::Anger,
+                instance_id: None,
+                amount: 3,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        assert!(combat_search_state_value(&calm) > combat_search_state_value(&angry));
+    }
+
+    #[test]
+    fn state_value_accounts_for_sentry_dazed_pressure() {
+        let mut attacking = test_node();
+        let mut sentry_attack = crate::test_support::test_monster(EnemyId::Sentry);
+        sentry_attack.id = 40;
+        sentry_attack.current_hp = 35;
+        sentry_attack.max_hp = 40;
+        sentry_attack.set_planned_move_id(1);
+        attacking.combat.entities.monsters = vec![sentry_attack];
+
+        let mut dazed = test_node();
+        let mut sentry_dazed = crate::test_support::test_monster(EnemyId::Sentry);
+        sentry_dazed.id = 40;
+        sentry_dazed.current_hp = 35;
+        sentry_dazed.max_hp = 40;
+        sentry_dazed.set_planned_move_id(3);
+        dazed.combat.entities.monsters = vec![sentry_dazed];
+
+        assert!(combat_search_state_value(&attacking) > combat_search_state_value(&dazed));
+    }
+
+    #[test]
     fn core_value_facts_feed_state_value_and_report() {
         let mut node = test_node();
         let mut guardian = crate::test_support::test_monster(EnemyId::TheGuardian);
@@ -287,6 +390,13 @@ mod tests {
         assert_eq!(
             report.phase_profile.guardian_defensive_count,
             facts.phase_profile.enemy_mechanics.guardian_defensive_count
+        );
+        assert_eq!(
+            report.guardian_mode_shift_pending_count,
+            facts
+                .phase_profile
+                .enemy_mechanics
+                .guardian_mode_shift_pending_count
         );
     }
 

@@ -18,6 +18,11 @@ pub(super) struct RolloutNodeEstimate {
     pub(super) total_enemy_block: i32,
     pub(super) phase_adjusted_enemy_effort: i32,
     pub(super) special_enemy_phase_count: usize,
+    pub(super) guardian_mode_shift_pending_count: usize,
+    pub(super) lagavulin_waking_count: usize,
+    pub(super) gremlin_nob_anger_amount_total: i32,
+    pub(super) sentry_dazed_pressure_count: usize,
+    pub(super) hexaghost_opening_pressure_count: usize,
     pub(super) high_fanout_pending_choice: bool,
     pub(super) pending_choice_estimated_action_fanout: usize,
     pub(super) survival_margin: i32,
@@ -69,6 +74,11 @@ impl RolloutNodeEstimate {
             total_enemy_block: 0,
             phase_adjusted_enemy_effort: 0,
             special_enemy_phase_count: 0,
+            guardian_mode_shift_pending_count: 0,
+            lagavulin_waking_count: 0,
+            gremlin_nob_anger_amount_total: 0,
+            sentry_dazed_pressure_count: 0,
+            hexaghost_opening_pressure_count: 0,
             high_fanout_pending_choice: false,
             pending_choice_estimated_action_fanout: 0,
             survival_margin: 0,
@@ -102,6 +112,17 @@ impl RolloutNodeEstimate {
                 .enemy_phase
                 .phase_adjusted_living_enemy_effort,
             special_enemy_phase_count: phase_profile.special_enemy_phase_count(),
+            guardian_mode_shift_pending_count: phase_profile
+                .enemy_mechanics
+                .guardian_mode_shift_pending_count,
+            lagavulin_waking_count: phase_profile.enemy_mechanics.lagavulin_waking_count,
+            gremlin_nob_anger_amount_total: phase_profile
+                .enemy_mechanics
+                .gremlin_nob_anger_amount_total,
+            sentry_dazed_pressure_count: phase_profile.enemy_mechanics.sentry_dazed_pressure_count,
+            hexaghost_opening_pressure_count: phase_profile
+                .enemy_mechanics
+                .hexaghost_opening_pressure_count,
             high_fanout_pending_choice: phase_profile.pending_choice.high_fanout,
             pending_choice_estimated_action_fanout: phase_profile
                 .pending_choice
@@ -154,6 +175,11 @@ impl RolloutNodeEstimate {
                 total_enemy_block: self.total_enemy_block,
                 phase_adjusted_enemy_effort: self.phase_adjusted_enemy_effort,
                 special_enemy_phase_count: self.special_enemy_phase_count,
+                guardian_mode_shift_pending_count: self.guardian_mode_shift_pending_count,
+                lagavulin_waking_count: self.lagavulin_waking_count,
+                gremlin_nob_anger_amount_total: self.gremlin_nob_anger_amount_total,
+                sentry_dazed_pressure_count: self.sentry_dazed_pressure_count,
+                hexaghost_opening_pressure_count: self.hexaghost_opening_pressure_count,
                 high_fanout_pending_choice: self.high_fanout_pending_choice,
                 pending_choice_estimated_action_fanout: self.pending_choice_estimated_action_fanout,
                 survival_margin: self.survival_margin,
