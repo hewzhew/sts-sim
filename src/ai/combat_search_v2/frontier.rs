@@ -1,3 +1,4 @@
+use super::action_effects::state_sustained_mitigation_score;
 use super::*;
 use std::hash::Hash;
 
@@ -23,6 +24,7 @@ struct NodePriority {
     fewer_living_enemies: i32,
     enemy_progress: i32,
     survival_margin: i32,
+    sustained_mitigation: i32,
     player_hp: i32,
     player_block: i32,
     next_draw_damage: i32,
@@ -42,6 +44,7 @@ impl Ord for NodePriority {
             .then_with(|| self.fewer_living_enemies.cmp(&other.fewer_living_enemies))
             .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
             .then_with(|| self.survival_margin.cmp(&other.survival_margin))
+            .then_with(|| self.sustained_mitigation.cmp(&other.sustained_mitigation))
             .then_with(|| self.player_hp.cmp(&other.player_hp))
             .then_with(|| self.player_block.cmp(&other.player_block))
             .then_with(|| self.next_draw_damage.cmp(&other.next_draw_damage))
@@ -132,6 +135,7 @@ fn priority_for_node(node: &SearchNode) -> NodePriority {
         fewer_living_enemies: -(living_enemy_count(&node.combat) as i32),
         enemy_progress: -total_living_enemy_hp(&node.combat),
         survival_margin: survival_margin(&node.combat),
+        sustained_mitigation: state_sustained_mitigation_score(&node.combat),
         player_hp: node.combat.entities.player.current_hp,
         player_block: node.combat.entities.player.block,
         next_draw_damage: next_draw.damage,
@@ -319,8 +323,11 @@ impl SearchNode {
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::content::powers::PowerId;
     use crate::runtime::combat::CombatCard;
-    use crate::test_support::blank_test_combat;
+    use crate::runtime::combat::{Power, PowerPayload};
+    use crate::test_support::{blank_test_combat, test_monster};
 
     #[test]
     fn frontier_priority_prefers_stronger_visible_next_draw_when_state_ties() {
@@ -365,6 +372,36 @@ mod tests {
         same_turn.last_turn_branch_priority = 12;
 
         assert!(priority_for_node(&same_turn) > priority_for_node(&neutral));
+    }
+
+    #[test]
+    fn frontier_priority_uses_sustained_mitigation_after_raw_enemy_progress() {
+        let mut better_progress = test_node();
+        let mut monster = test_monster(EnemyId::TheGuardian);
+        monster.id = 1;
+        monster.current_hp = 220;
+        monster.max_hp = 240;
+        better_progress.combat.entities.monsters = vec![monster.clone()];
+
+        let mut disarmed = test_node();
+        monster.current_hp = 240;
+        disarmed.combat.entities.monsters = vec![monster];
+        disarmed.combat.entities.power_db.insert(
+            1,
+            vec![Power {
+                power_type: PowerId::Strength,
+                instance_id: None,
+                amount: -3,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        assert!(priority_for_node(&better_progress) > priority_for_node(&disarmed));
+
+        better_progress.combat.entities.monsters[0].current_hp = 240;
+        assert!(priority_for_node(&disarmed) > priority_for_node(&better_progress));
     }
 
     fn test_node() -> SearchNode {

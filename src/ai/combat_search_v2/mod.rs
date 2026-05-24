@@ -15,6 +15,7 @@ use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
 use crate::state::core::{ClientInput, EngineState};
 
+mod action_effects;
 mod action_equivalence;
 mod action_ordering;
 mod baseline;

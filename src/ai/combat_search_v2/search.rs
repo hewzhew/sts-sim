@@ -290,7 +290,7 @@ pub fn run_combat_search_v2_with_stepper(
             kind: "best_first_atomic_action_graph_search_v2",
             terminal_policy: "whole_combat_terminal_only",
             expansion_order:
-                "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_then_lexicographic_priority_enemy_progress_hp_next_draw_resource_line_length",
+                "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_then_frontier_priority_enemy_progress_survival_sustained_mitigation_hp_next_draw_resource_line_length",
             turn_branching: "turn_transition_classification_with_late_frontier_tie_break",
             potion_policy: config.potion_policy.label(),
             transposition_table: "exact_runtime_state_key_with_resource_coverage",

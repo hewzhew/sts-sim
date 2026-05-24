@@ -1,3 +1,4 @@
+use super::action_effects::summarize_play_card_effects;
 use super::*;
 use crate::content::cards::{self, CardTarget, CardType};
 use std::cmp::Ordering;
@@ -9,6 +10,7 @@ const LARGEST_REORDER_SAMPLE_LIMIT: usize = 8;
 // They never merge, prune, or claim that two actions are equivalent.
 const ROLE_LETHAL_CARD: i32 = 130;
 const ROLE_PREVENT_VISIBLE_LETHAL: i32 = 120;
+const ROLE_SUSTAINED_MITIGATION: i32 = 95;
 const ROLE_TACTICAL_POTION_BASE: i32 = 60;
 const ROLE_PREVENT_HP_LOSS: i32 = 85;
 const ROLE_DEFERRED_SETUP: i32 = 75;
@@ -65,6 +67,7 @@ struct ActionOrderingPriority {
     role: ActionOrderingRole,
     role_rank: i32,
     potion_tactical_rank: i32,
+    mitigation: i32,
     target_progress: i32,
     block: i32,
     damage: i32,
@@ -75,6 +78,7 @@ struct ActionOrderingPriority {
 enum ActionOrderingRole {
     LethalCard,
     PreventVisibleLethal,
+    SustainedMitigation,
     TacticalPotion,
     PreventHpLoss,
     DeferredSetup,
@@ -213,11 +217,14 @@ fn priority_for_play_card(
     let damage = evaluated.base_damage_mut.max(0);
     let block = evaluated.base_block_mut.max(0);
     let target_progress = target_progress_hint(combat, target_kind, target, damage);
+    let effects = summarize_play_card_effects(combat, card, target);
+    let mitigation = effects.mitigation_ordering_score();
     let visible_damage = visible_incoming_damage(combat);
     let current_block = combat.entities.player.block;
     let current_hp = combat.entities.player.current_hp;
     let visible_loss_now = (visible_damage - current_block).max(0);
-    let visible_loss_after_block = (visible_damage - current_block - block).max(0);
+    let visible_loss_after_block =
+        (visible_damage - current_block - block - effects.visible_attack_mitigation_hint).max(0);
     let prevents_visible_lethal =
         visible_loss_now >= current_hp && visible_loss_after_block < current_hp;
     let prevents_hp_loss = visible_loss_after_block < visible_loss_now;
@@ -227,6 +234,11 @@ fn priority_for_play_card(
         (
             ActionOrderingRole::PreventVisibleLethal,
             ROLE_PREVENT_VISIBLE_LETHAL,
+        )
+    } else if mitigation > 0 {
+        (
+            ActionOrderingRole::SustainedMitigation,
+            ROLE_SUSTAINED_MITIGATION,
         )
     } else if def.card_type == CardType::Power {
         (ActionOrderingRole::DeferredSetup, ROLE_DEFERRED_SETUP)
@@ -243,6 +255,7 @@ fn priority_for_play_card(
     ActionOrderingPriority {
         role,
         role_rank,
+        mitigation,
         target_progress,
         block,
         damage,
@@ -316,6 +329,7 @@ impl ActionOrderingPriority {
             role,
             role_rank: ROLE_END_TURN,
             potion_tactical_rank: 0,
+            mitigation: 0,
             target_progress: 0,
             block: 0,
             damage: 0,
@@ -462,6 +476,7 @@ impl ActionOrderingRole {
         match self {
             ActionOrderingRole::LethalCard => "lethal_card",
             ActionOrderingRole::PreventVisibleLethal => "prevent_visible_lethal",
+            ActionOrderingRole::SustainedMitigation => "sustained_mitigation",
             ActionOrderingRole::TacticalPotion => "tactical_potion",
             ActionOrderingRole::PreventHpLoss => "prevent_hp_loss",
             ActionOrderingRole::DeferredSetup => "deferred_setup",
@@ -480,6 +495,7 @@ impl Ord for ActionOrderingPriority {
         self.role_rank
             .cmp(&other.role_rank)
             .then_with(|| self.potion_tactical_rank.cmp(&other.potion_tactical_rank))
+            .then_with(|| self.mitigation.cmp(&other.mitigation))
             .then_with(|| self.target_progress.cmp(&other.target_progress))
             .then_with(|| self.block.cmp(&other.block))
             .then_with(|| self.damage.cmp(&other.damage))
@@ -602,6 +618,44 @@ mod tests {
         let ordered = order_action_choices(&EngineState::CombatPlayerTurn, &combat, choices);
 
         assert_eq!(ordered.choices[0].original_action_id, 1);
+    }
+
+    #[test]
+    fn persistent_enemy_strength_down_is_ordered_before_plain_damage() {
+        let mut combat = blank_test_combat();
+        let mut monster = test_monster(EnemyId::Cultist);
+        monster.id = 1;
+        monster.current_hp = 50;
+        monster.max_hp = 50;
+        combat.entities.monsters = vec![monster];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::Disarm, 11),
+        ];
+        let choices = vec![
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(1),
+                },
+            ),
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 1,
+                    target: Some(1),
+                },
+            ),
+        ];
+
+        let ordered = order_action_choices(&EngineState::CombatPlayerTurn, &combat, choices);
+
+        assert_eq!(ordered.choices[0].original_action_id, 1);
+        assert_eq!(
+            ordered.summary.first_role,
+            Some(ActionOrderingRole::SustainedMitigation)
+        );
     }
 
     #[test]
