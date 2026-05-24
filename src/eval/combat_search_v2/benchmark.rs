@@ -145,6 +145,10 @@ pub struct CombatSearchV2BenchmarkSummary {
     pub search_tied: usize,
     pub baseline_better: usize,
     pub inconclusive: usize,
+    pub candidate_search_better: usize,
+    pub candidate_search_tied: usize,
+    pub candidate_baseline_better: usize,
+    pub candidate_inconclusive: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -164,6 +168,7 @@ pub struct CombatSearchV2BenchmarkCaseReport {
     pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
     pub baseline_path: Option<String>,
     pub baseline_comparison: Option<CombatSearchV2BaselineComparison>,
+    pub best_complete_candidate_comparison: Option<CombatSearchV2BaselineComparison>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -323,6 +328,10 @@ fn run_combat_search_v2_benchmark_case(
         .baseline
         .as_ref()
         .map(|baseline| compare_search_to_baseline_outcome(&search_report, baseline));
+    let best_complete_candidate_comparison = case
+        .baseline
+        .as_ref()
+        .map(|baseline| compare_best_complete_candidate_to_baseline(&search_report, baseline));
 
     CombatSearchV2BenchmarkCaseReport {
         id: case.id.clone(),
@@ -349,6 +358,7 @@ fn run_combat_search_v2_benchmark_case(
             .as_ref()
             .map(|path| path.display().to_string()),
         baseline_comparison,
+        best_complete_candidate_comparison,
     }
 }
 
@@ -437,6 +447,16 @@ fn summarize_benchmark_cases(
                 _ => summary.inconclusive += 1,
             }
         }
+        if let Some(comparison) = &case.best_complete_candidate_comparison {
+            match comparison.verdict {
+                CombatSearchV2BaselineVerdict::SearchBetter => summary.candidate_search_better += 1,
+                CombatSearchV2BaselineVerdict::SearchTied => summary.candidate_search_tied += 1,
+                CombatSearchV2BaselineVerdict::BaselineBetter => {
+                    summary.candidate_baseline_better += 1
+                }
+                _ => summary.candidate_inconclusive += 1,
+            }
+        }
     }
     summary
 }
@@ -492,6 +512,60 @@ fn compare_search_to_baseline_outcome(
         },
         basis: "whole_combat_outcome",
         reason: None,
+        criteria_order,
+        search_terminal: Some(search.terminal),
+        baseline_terminal: baseline.terminal,
+        search_final_hp: Some(search.final_hp),
+        baseline_final_hp: baseline.final_hp,
+        search_potions_used: Some(search.potions_used),
+        baseline_potions_used: baseline.potions_used,
+        search_turns: Some(search.turns),
+        baseline_turns: baseline.turns,
+        search_cards_played: Some(search.cards_played),
+        baseline_cards_played: baseline.cards_played,
+    }
+}
+
+fn compare_best_complete_candidate_to_baseline(
+    search_report: &CombatSearchV2Report,
+    baseline: &CombatSearchV2BaselineOutcomeSpec,
+) -> CombatSearchV2BaselineComparison {
+    let criteria_order = WHOLE_COMBAT_OUTCOME_CRITERIA.to_vec();
+    let Some(search) = search_report.best_complete_trajectory.as_ref() else {
+        return inconclusive_baseline_comparison(
+            baseline,
+            criteria_order,
+            "no_search_complete_trajectory",
+        );
+    };
+    if search.terminal == SearchTerminalLabel::Unresolved {
+        return inconclusive_baseline_comparison(
+            baseline,
+            criteria_order,
+            "search_best_complete_candidate_is_unresolved",
+        );
+    }
+
+    let ordering = compare_outcome_metrics(
+        CombatSearchV2OutcomeMetrics::from_trajectory(search),
+        CombatSearchV2OutcomeMetrics {
+            terminal: baseline.terminal,
+            final_hp: baseline.final_hp,
+            potions_used: baseline.potions_used,
+            turns: baseline.turns,
+            cards_played: baseline.cards_played,
+        },
+    );
+    CombatSearchV2BaselineComparison {
+        verdict: match ordering {
+            std::cmp::Ordering::Greater => CombatSearchV2BaselineVerdict::SearchBetter,
+            std::cmp::Ordering::Equal => CombatSearchV2BaselineVerdict::SearchTied,
+            std::cmp::Ordering::Less => CombatSearchV2BaselineVerdict::BaselineBetter,
+        },
+        basis: "best_complete_candidate_whole_combat_outcome_not_proof",
+        reason: Some(
+            "best complete trajectory compared as a candidate only; unresolved frontier remains unless proof_status is exhaustive",
+        ),
         criteria_order,
         search_terminal: Some(search.terminal),
         baseline_terminal: baseline.terminal,
