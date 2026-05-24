@@ -21,6 +21,17 @@ pub(super) struct TurnSequenceEffectFingerprint {
     pending_queue_key: String,
     rng_key: String,
     dominance_key: String,
+    dominance_engine_key: String,
+    dominance_turn_key: String,
+    dominance_meta_key: String,
+    dominance_zones_key: String,
+    dominance_monsters_key: String,
+    dominance_powers_key: String,
+    dominance_potions_key: String,
+    dominance_queue_key: String,
+    dominance_runtime_key: String,
+    dominance_rng_key: String,
+    dominance_player_key: String,
     resource_public_key: String,
     resource_cost_key: String,
 }
@@ -43,6 +54,17 @@ pub(super) struct TurnSequenceEffectAggregate {
     pending_queue_keys: BTreeSet<String>,
     rng_keys: BTreeSet<String>,
     dominance_keys: BTreeSet<String>,
+    dominance_engine_keys: BTreeSet<String>,
+    dominance_turn_keys: BTreeSet<String>,
+    dominance_meta_keys: BTreeSet<String>,
+    dominance_zones_keys: BTreeSet<String>,
+    dominance_monsters_keys: BTreeSet<String>,
+    dominance_powers_keys: BTreeSet<String>,
+    dominance_potions_keys: BTreeSet<String>,
+    dominance_queue_keys: BTreeSet<String>,
+    dominance_runtime_keys: BTreeSet<String>,
+    dominance_rng_keys: BTreeSet<String>,
+    dominance_player_keys: BTreeSet<String>,
     resource_public_keys: BTreeSet<String>,
     resource_cost_keys: BTreeSet<String>,
 }
@@ -59,6 +81,7 @@ pub(super) fn effect_fingerprint(
     legal_actions: usize,
 ) -> TurnSequenceEffectFingerprint {
     let resource = node.resource_vector().diagnostic_parts();
+    let dominance = combat_dominance_key(&node.engine, &node.combat);
     TurnSequenceEffectFingerprint {
         terminal_key: format!("{:?}", terminal_label(&node.engine, &node.combat)),
         legal_action_count_key: legal_actions.to_string(),
@@ -78,7 +101,18 @@ pub(super) fn effect_fingerprint(
             &node.combat.zones.queued_cards,
         )),
         rng_key: stable_debug_hash(&node.combat.rng),
-        dominance_key: stable_debug_hash(&combat_dominance_key(&node.engine, &node.combat)),
+        dominance_key: stable_debug_hash(&dominance),
+        dominance_engine_key: stable_debug_hash(&dominance.common.engine),
+        dominance_turn_key: stable_debug_hash(&dominance.common.turn),
+        dominance_meta_key: stable_debug_hash(&dominance.common.meta),
+        dominance_zones_key: stable_debug_hash(&dominance.common.zones),
+        dominance_monsters_key: stable_debug_hash(&dominance.common.monsters),
+        dominance_powers_key: stable_debug_hash(&dominance.common.powers),
+        dominance_potions_key: stable_debug_hash(&dominance.common.potions),
+        dominance_queue_key: stable_debug_hash(&dominance.common.queue),
+        dominance_runtime_key: stable_debug_hash(&dominance.common.runtime),
+        dominance_rng_key: stable_debug_hash(&dominance.common.rng),
+        dominance_player_key: stable_debug_hash(&dominance.player),
         resource_public_key: stable_debug_hash(&(resource.hp, resource.block)),
         resource_cost_key: stable_debug_hash(&(
             resource.potions_used,
@@ -107,6 +141,17 @@ pub(super) fn effect_key(fingerprint: &TurnSequenceEffectFingerprint) -> String 
         fingerprint.pending_queue_key.as_str(),
         fingerprint.rng_key.as_str(),
         fingerprint.dominance_key.as_str(),
+        fingerprint.dominance_engine_key.as_str(),
+        fingerprint.dominance_turn_key.as_str(),
+        fingerprint.dominance_meta_key.as_str(),
+        fingerprint.dominance_zones_key.as_str(),
+        fingerprint.dominance_monsters_key.as_str(),
+        fingerprint.dominance_powers_key.as_str(),
+        fingerprint.dominance_potions_key.as_str(),
+        fingerprint.dominance_queue_key.as_str(),
+        fingerprint.dominance_runtime_key.as_str(),
+        fingerprint.dominance_rng_key.as_str(),
+        fingerprint.dominance_player_key.as_str(),
         fingerprint.resource_public_key.as_str(),
         fingerprint.resource_cost_key.as_str(),
     ])
@@ -144,6 +189,28 @@ impl TurnSequenceEffectAggregate {
         self.rng_keys.insert(fingerprint.rng_key.clone());
         self.dominance_keys
             .insert(fingerprint.dominance_key.clone());
+        self.dominance_engine_keys
+            .insert(fingerprint.dominance_engine_key.clone());
+        self.dominance_turn_keys
+            .insert(fingerprint.dominance_turn_key.clone());
+        self.dominance_meta_keys
+            .insert(fingerprint.dominance_meta_key.clone());
+        self.dominance_zones_keys
+            .insert(fingerprint.dominance_zones_key.clone());
+        self.dominance_monsters_keys
+            .insert(fingerprint.dominance_monsters_key.clone());
+        self.dominance_powers_keys
+            .insert(fingerprint.dominance_powers_key.clone());
+        self.dominance_potions_keys
+            .insert(fingerprint.dominance_potions_key.clone());
+        self.dominance_queue_keys
+            .insert(fingerprint.dominance_queue_key.clone());
+        self.dominance_runtime_keys
+            .insert(fingerprint.dominance_runtime_key.clone());
+        self.dominance_rng_keys
+            .insert(fingerprint.dominance_rng_key.clone());
+        self.dominance_player_keys
+            .insert(fingerprint.dominance_player_key.clone());
         self.resource_public_keys
             .insert(fingerprint.resource_public_key.clone());
         self.resource_cost_keys
@@ -221,6 +288,76 @@ impl TurnSequenceEffectAggregate {
                 StateAbstractionRevealGate::NextRandomCall,
             );
         }
+        if self.dominance_rng_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::RngStateDelta,
+                Some("combat.dominance.common.rng"),
+                StateAbstractionRevealGate::NextRandomCall,
+            );
+        }
+        if self.dominance_turn_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::TurnRuntimeDelta,
+                Some("combat.turn"),
+                StateAbstractionRevealGate::NextLegalActionGeneration,
+            );
+        }
+        if self.dominance_monsters_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::MonsterRuntimeDelta,
+                Some("combat.monsters.runtime_or_turn_plan"),
+                StateAbstractionRevealGate::Unknown,
+            );
+        }
+        if self.dominance_powers_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::ImmediatePublicDelta,
+                Some("combat.powers"),
+                StateAbstractionRevealGate::NextLegalActionGeneration,
+            );
+        }
+        if self.dominance_runtime_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::CombatRuntimeHintDelta,
+                Some("combat.runtime_hints"),
+                StateAbstractionRevealGate::Unknown,
+            );
+        }
+        if self.dominance_potions_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::PotionStateDelta,
+                Some("combat.potions"),
+                StateAbstractionRevealGate::NextLegalActionGeneration,
+            );
+        }
+        if self.dominance_player_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::PlayerFutureDelta,
+                Some("combat.player.future_relevant"),
+                StateAbstractionRevealGate::Unknown,
+            );
+        }
+        if self.dominance_queue_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::PendingQueueDelta,
+                Some("combat.dominance.common.queue"),
+                StateAbstractionRevealGate::CurrentActionResolution,
+            );
+        }
+        if self.dominance_engine_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::EngineRuntimeDelta,
+                Some("combat.engine_state"),
+                StateAbstractionRevealGate::CurrentActionResolution,
+            );
+        }
+        if self.dominance_meta_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::CombatMetaDelta,
+                Some("combat.meta"),
+                StateAbstractionRevealGate::Unknown,
+            );
+        }
         if self.hand_identity_order_keys.len() > 1 {
             return divergence(
                 StateDivergenceKind::CardUuidDelta,
@@ -254,6 +391,13 @@ impl TurnSequenceEffectAggregate {
                 StateDivergenceKind::CardUuidDelta,
                 Some("combat.zones.limbo.uuid_order"),
                 StateAbstractionRevealGate::CurrentActionResolution,
+            );
+        }
+        if self.dominance_zones_keys.len() > 1 {
+            return divergence(
+                StateDivergenceKind::ZoneRuntimeDelta,
+                Some("combat.zones.runtime"),
+                StateAbstractionRevealGate::Unknown,
             );
         }
         if self.resource_cost_keys.len() > 1 {
