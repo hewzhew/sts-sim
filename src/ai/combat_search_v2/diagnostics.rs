@@ -69,8 +69,12 @@ impl SearchDiagnosticsCollector {
         self.turn_prefix.observe(summary);
     }
 
-    pub(super) fn observe_turn_sequence(&mut self, summary: &TurnSequenceSummary) {
-        self.turn_sequence.observe(summary);
+    pub(super) fn observe_turn_sequence(
+        &mut self,
+        summary: &TurnSequenceSummary,
+        node: &SearchNode,
+    ) {
+        self.turn_sequence.observe_with_node(summary, node);
     }
 
     pub(super) fn observe_card_identity(&mut self, summary: &CardIdentitySummary) {
@@ -82,6 +86,15 @@ impl SearchDiagnosticsCollector {
         observation: &TurnLocalDominanceStateObservation,
     ) {
         self.turn_local_dominance.observe(observation);
+    }
+
+    pub(super) fn run_discard_order_exact_shadow_audit(
+        &mut self,
+        stepper: &impl CombatStepper,
+        config: &CombatSearchV2Config,
+    ) {
+        self.turn_sequence
+            .run_discard_order_exact_shadow_audit(stepper, config);
     }
 
     pub(super) fn finish(

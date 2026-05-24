@@ -122,7 +122,7 @@ pub fn run_combat_search_v2_with_stepper(
         let turn_prefix = summarize_turn_prefix(&node.turn_prefix, legal.len());
         diagnostics.observe_turn_prefix(&turn_prefix);
         let turn_sequence = summarize_turn_sequence(&node, legal.len());
-        diagnostics.observe_turn_sequence(&turn_sequence);
+        diagnostics.observe_turn_sequence(&turn_sequence, &node);
         let card_identity = summarize_card_identity(&node.combat);
         diagnostics.observe_card_identity(&card_identity);
         let target_fanout = summarize_target_fanout(&node.combat, &legal);
@@ -227,6 +227,7 @@ pub fn run_combat_search_v2_with_stepper(
     }
 
     stats.elapsed_ms = started.elapsed().as_millis();
+    diagnostics.run_discard_order_exact_shadow_audit(stepper, &config);
     let exhaustive = !exhausted && frontier.is_empty();
     let proof_status = if stats.deadline_hit {
         SearchProofStatus::DeadlineHit

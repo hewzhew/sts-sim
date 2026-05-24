@@ -1,5 +1,6 @@
 use super::discard_order_shadow_audit::{
     is_static_discard_order_candidate, summarize_discard_order_shadow_audit,
+    DiscardOrderShadowAuditCollector, DiscardOrderShadowAuditKey,
     DiscardOrderShadowAuditObservation,
 };
 use super::turn_sequence_effect::{
@@ -47,6 +48,7 @@ pub(super) struct TurnSequenceDiagnosticsCollector {
     max_prefix_length: usize,
     max_legal_actions_after_prefix: usize,
     groups: BTreeMap<TurnSequenceGroupKey, TurnSequenceGroupAggregate>,
+    discard_order_shadow_audit: DiscardOrderShadowAuditCollector,
 }
 
 pub(super) fn summarize_turn_sequence(
@@ -79,7 +81,16 @@ pub(super) fn summarize_turn_sequence(
 }
 
 impl TurnSequenceDiagnosticsCollector {
+    #[cfg(test)]
     pub(super) fn observe(&mut self, summary: &TurnSequenceSummary) {
+        self.observe_inner(summary, None);
+    }
+
+    pub(super) fn observe_with_node(&mut self, summary: &TurnSequenceSummary, node: &SearchNode) {
+        self.observe_inner(summary, Some(node));
+    }
+
+    fn observe_inner(&mut self, summary: &TurnSequenceSummary, node: Option<&SearchNode>) {
         self.states_observed = self.states_observed.saturating_add(1);
         self.max_prefix_length = self.max_prefix_length.max(summary.prefix_length);
         if summary.prefix_length == 0 {
@@ -115,7 +126,29 @@ impl TurnSequenceDiagnosticsCollector {
         aggregate.effect_variants.insert(effect_key.clone());
         if let Some(effect_fingerprint) = summary.effect_fingerprint.as_ref() {
             aggregate.effect_components.observe(effect_fingerprint);
+            if let Some(node) = node {
+                self.discard_order_shadow_audit.observe_state(
+                    DiscardOrderShadowAuditKey {
+                        origin_key: origin_key.clone(),
+                        unordered_key: unordered_key.clone(),
+                    },
+                    ordered_key,
+                    effect_key,
+                    effect_fingerprint,
+                    node,
+                );
+            }
         }
+    }
+
+    pub(super) fn run_discard_order_exact_shadow_audit(
+        &mut self,
+        stepper: &impl CombatStepper,
+        config: &CombatSearchV2Config,
+    ) {
+        let candidate_keys = self.discard_order_shadow_audit_candidate_keys();
+        self.discard_order_shadow_audit
+            .run_one_step_exact_shadow_audit(stepper, config, &candidate_keys);
     }
 
     pub(super) fn finish(&self) -> CombatSearchV2DiagnosticsTurnSequence {
@@ -252,7 +285,32 @@ impl TurnSequenceDiagnosticsCollector {
                 })
             })
             .collect();
-        summarize_discard_order_shadow_audit(observations)
+        summarize_discard_order_shadow_audit(observations, &self.discard_order_shadow_audit)
+    }
+
+    fn discard_order_shadow_audit_candidate_keys(&self) -> BTreeSet<DiscardOrderShadowAuditKey> {
+        self.groups
+            .iter()
+            .filter_map(|(key, aggregate)| {
+                if aggregate.ordered_variants.len() <= 1 || aggregate.effect_variants.len() <= 1 {
+                    return None;
+                }
+
+                let divergence = aggregate.effect_components.classify();
+                if !is_static_discard_order_candidate(
+                    divergence.kind,
+                    divergence.first_divergence_path,
+                    divergence.guessed_reveal_gate,
+                ) {
+                    return None;
+                }
+
+                Some(DiscardOrderShadowAuditKey {
+                    origin_key: key.origin_key.clone(),
+                    unordered_key: key.unordered_key.clone(),
+                })
+            })
+            .collect()
     }
 }
 
