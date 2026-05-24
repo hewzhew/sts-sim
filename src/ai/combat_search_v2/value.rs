@@ -27,18 +27,6 @@ pub(super) struct CombatSearchStateValueV1 {
     pub(super) next_draw_low_cost: i32,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) struct CombatSearchRolloutValueV1 {
-    pub(super) evaluated: i32,
-    pub(super) terminal_rank: i32,
-    pub(super) final_hp: i32,
-    pub(super) enemy_progress: i32,
-    pub(super) survival_margin: i32,
-    pub(super) potion_conservation: i32,
-    pub(super) faster_turns: i32,
-    pub(super) fewer_cards_played: i32,
-}
-
 impl Ord for CombatSearchStateValueV1 {
     fn cmp(&self, other: &Self) -> Ordering {
         self.fewer_living_enemies
@@ -73,53 +61,6 @@ impl PartialOrd for CombatSearchStateValueV1 {
     }
 }
 
-impl Ord for CombatSearchRolloutValueV1 {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.evaluated
-            .cmp(&other.evaluated)
-            .then_with(|| self.terminal_rank.cmp(&other.terminal_rank))
-            .then_with(|| self.final_hp.cmp(&other.final_hp))
-            .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
-            .then_with(|| self.survival_margin.cmp(&other.survival_margin))
-            .then_with(|| self.potion_conservation.cmp(&other.potion_conservation))
-            .then_with(|| self.faster_turns.cmp(&other.faster_turns))
-            .then_with(|| self.fewer_cards_played.cmp(&other.fewer_cards_played))
-    }
-}
-
-impl PartialOrd for CombatSearchRolloutValueV1 {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-pub(super) fn terminal_rank(label: SearchTerminalLabel) -> i32 {
-    match label {
-        SearchTerminalLabel::Win => 2,
-        SearchTerminalLabel::Unresolved => 1,
-        SearchTerminalLabel::Loss => 0,
-    }
-}
-
-pub(super) fn total_living_enemy_hp(combat: &CombatState) -> i32 {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|monster| monster.is_alive_for_action())
-        .map(|monster| monster.current_hp.max(0))
-        .sum()
-}
-
-pub(super) fn living_enemy_count(combat: &CombatState) -> usize {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|monster| monster.is_alive_for_action())
-        .count()
-}
-
 pub(super) fn combat_search_state_value(node: &SearchNode) -> CombatSearchStateValueV1 {
     let hand = hand_value(&node.combat);
     let next_draw = next_draw_value(&node.combat);
@@ -142,19 +83,6 @@ pub(super) fn combat_search_state_value(node: &SearchNode) -> CombatSearchStateV
         next_draw_block: next_draw.block,
         next_draw_playable_cards: next_draw.playable_cards,
         next_draw_low_cost: next_draw.low_cost,
-    }
-}
-
-pub(super) fn rollout_priority_value(estimate: RolloutNodeEstimate) -> CombatSearchRolloutValueV1 {
-    CombatSearchRolloutValueV1 {
-        evaluated: i32::from(estimate.evaluated),
-        terminal_rank: estimate.priority_terminal_rank(),
-        final_hp: estimate.final_hp,
-        enemy_progress: estimate.enemy_progress(),
-        survival_margin: estimate.survival_margin,
-        potion_conservation: estimate.potion_conservation(),
-        faster_turns: estimate.faster_turns(),
-        fewer_cards_played: estimate.fewer_cards_played(),
     }
 }
 

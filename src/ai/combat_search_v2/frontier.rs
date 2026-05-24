@@ -1,7 +1,5 @@
-use super::value::{
-    combat_search_state_value, rollout_priority_value, CombatSearchRolloutValueV1,
-    CombatSearchStateValueV1,
-};
+use super::rollout_value::{rollout_priority_value, CombatSearchRolloutValueV1};
+use super::value::{combat_search_state_value, CombatSearchStateValueV1};
 use super::*;
 use std::hash::Hash;
 

@@ -30,6 +30,7 @@ mod potions;
 mod pressure_value;
 mod report;
 mod rollout;
+mod rollout_value;
 mod search;
 mod target_fanout;
 mod transition;
@@ -39,6 +40,7 @@ mod turn_prefix;
 mod turn_sequence;
 mod types;
 mod value;
+mod value_facts;
 
 use action_equivalence::{
     compress_equivalent_actions, ActionEquivalenceDiagnosticsCollector, ActionEquivalenceSummary,
@@ -80,10 +82,8 @@ use turn_prefix::{
 use turn_sequence::{
     summarize_turn_sequence, TurnSequenceDiagnosticsCollector, TurnSequenceSummary,
 };
-use value::{
-    combat_search_frontier_value_report, living_enemy_count, terminal_rank, total_living_enemy_hp,
-    COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
-};
+use value::{combat_search_frontier_value_report, COMBAT_SEARCH_FRONTIER_VALUE_POLICY};
+use value_facts::{living_enemy_count, terminal_rank, total_living_enemy_hp};
 
 pub use baseline::{
     compare_outcome_metrics, compare_trajectory_reports, CombatSearchV2OutcomeMetrics,
