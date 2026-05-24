@@ -15,6 +15,9 @@ use crate::eval::fingerprint::StateFingerprintV1;
 use crate::eval::run_control::load_combat_baseline_outcome_v1;
 use crate::sim::combat::CombatTerminal;
 
+use super::benchmark_gate::{
+    build_combat_search_v2_benchmark_gate_report, CombatSearchV2BenchmarkGateReport,
+};
 use super::{
     load_combat_search_v2_snapshot, load_combat_search_v2_start, CombatSearchV2LoadedStart,
     CombatSearchV2RunOptions,
@@ -128,6 +131,7 @@ pub struct CombatSearchV2BenchmarkReport {
     pub min_trust_level: ArtifactTrustLevel,
     pub case_count: usize,
     pub summary: CombatSearchV2BenchmarkSummary,
+    pub gate: CombatSearchV2BenchmarkGateReport,
     pub cases: Vec<CombatSearchV2BenchmarkCaseReport>,
 }
 
@@ -312,6 +316,7 @@ pub fn run_combat_search_v2_benchmark(
         .map(|case| run_combat_search_v2_benchmark_case(case, options.clone()))
         .collect::<Vec<_>>();
     let summary = summarize_benchmark_cases(&cases);
+    let gate = build_combat_search_v2_benchmark_gate_report(&summary, &cases);
 
     CombatSearchV2BenchmarkReport {
         schema_name: "CombatSearchV2BenchmarkReport",
@@ -320,6 +325,7 @@ pub fn run_combat_search_v2_benchmark(
         min_trust_level: loaded.min_trust_level,
         case_count: cases.len(),
         summary,
+        gate,
         cases,
     }
 }

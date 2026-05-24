@@ -1,4 +1,5 @@
 mod benchmark;
+mod benchmark_gate;
 mod start;
 
 pub use benchmark::{
@@ -10,6 +11,12 @@ pub use benchmark::{
     CombatSearchV2BenchmarkReport, CombatSearchV2BenchmarkSpec, CombatSearchV2BenchmarkSummary,
     CombatSearchV2InputFingerprintReport, CombatSearchV2LoadedBenchmark,
     CombatSearchV2LoadedBenchmarkCase, CombatSearchV2LoadedBenchmarkInput,
+};
+pub use benchmark_gate::{
+    CombatSearchV2BenchmarkGateCase, CombatSearchV2BenchmarkGateCaseMetrics,
+    CombatSearchV2BenchmarkGateFocusCount, CombatSearchV2BenchmarkGateReport,
+    CombatSearchV2BenchmarkGateRequirements, CombatSearchV2BenchmarkGateStatus,
+    CombatSearchV2BenchmarkGateSummary,
 };
 pub use start::{
     load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_v2_loaded_start,

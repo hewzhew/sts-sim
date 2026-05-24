@@ -63,11 +63,20 @@ struct Args {
     validate_only: bool,
 
     #[arg(long)]
+    gate_only: bool,
+
+    #[arg(long)]
     output: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if args.gate_only && args.benchmark_spec.is_none() {
+        return Err("--gate-only requires --benchmark-spec".into());
+    }
+    if args.gate_only && args.validate_only {
+        return Err("--gate-only cannot be used with --validate-only".into());
+    }
     if args.validate_only {
         let payload = validate_input_payload(&args)?;
         write_or_print(args.output.as_ref(), &payload)?;
@@ -88,7 +97,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
         let loaded = load_combat_search_v2_benchmark(path)?;
         let run = run_combat_search_v2_benchmark(&loaded, options);
-        serde_json::to_string_pretty(&run)?
+        if args.gate_only {
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_name": "CombatSearchV2BenchmarkGateOnlyReport",
+                "schema_version": 1,
+                "benchmark_name": run.benchmark_name,
+                "case_count": run.case_count,
+                "summary": run.summary,
+                "gate": run.gate,
+            }))?
+        } else {
+            serde_json::to_string_pretty(&run)?
+        }
     } else {
         let loaded = if let Some(path) = args.combat_snapshot.as_ref() {
             load_combat_search_v2_snapshot(path)?
