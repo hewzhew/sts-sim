@@ -40,6 +40,7 @@ mod pressure_value;
 mod report;
 mod rollout;
 mod rollout_policy;
+mod rollout_probe;
 mod rollout_value;
 mod search;
 #[cfg(test)]

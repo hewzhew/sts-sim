@@ -360,6 +360,10 @@ fn conservative_no_potion_rollout(
 
         let Some(selection) = choose_rollout_action(
             CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            &rollout,
+            stepper,
+            config,
+            deadline,
             &rollout.engine,
             &rollout.combat,
             legal,
