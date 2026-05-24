@@ -340,6 +340,7 @@ mod tests {
             cards_played: 0,
             potion_tactical_priority: 0,
             last_turn_branch_priority: 0,
+            rollout_estimate: RolloutNodeEstimate::unevaluated(),
         }
     }
 }

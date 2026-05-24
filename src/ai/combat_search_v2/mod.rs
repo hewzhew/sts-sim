@@ -23,8 +23,10 @@ mod card_identity;
 mod diagnostics;
 mod expansion;
 mod frontier;
+mod outcome_score;
 mod potions;
 mod report;
+mod rollout;
 mod search;
 mod target_fanout;
 mod transition;
@@ -53,7 +55,9 @@ use frontier::{
     is_resource_covered, push_frontier, remember_best_complete, remember_best_frontier,
     ResourceVector, SearchNode,
 };
+use outcome_score::CombatOutcomeScore;
 use report::{summarize_state, trajectory_report};
+use rollout::{RolloutCache, RolloutNodeEstimate};
 use target_fanout::{
     summarize_target_fanout, TargetFanoutDiagnosticsCollector, TargetFanoutSummary,
 };

@@ -16,11 +16,20 @@ pub(super) struct SearchNode {
     pub(super) cards_played: u32,
     pub(super) potion_tactical_priority: i32,
     pub(super) last_turn_branch_priority: i32,
+    pub(super) rollout_estimate: RolloutNodeEstimate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NodePriority {
     terminal_rank: i32,
+    rollout_evaluated: i32,
+    rollout_terminal_rank: i32,
+    rollout_final_hp: i32,
+    rollout_enemy_progress: i32,
+    rollout_survival_margin: i32,
+    rollout_potion_conservation: i32,
+    rollout_faster_turns: i32,
+    rollout_fewer_cards_played: i32,
     fewer_living_enemies: i32,
     enemy_progress: i32,
     survival_margin: i32,
@@ -41,6 +50,26 @@ impl Ord for NodePriority {
     fn cmp(&self, other: &Self) -> Ordering {
         self.terminal_rank
             .cmp(&other.terminal_rank)
+            .then_with(|| self.rollout_evaluated.cmp(&other.rollout_evaluated))
+            .then_with(|| self.rollout_terminal_rank.cmp(&other.rollout_terminal_rank))
+            .then_with(|| self.rollout_final_hp.cmp(&other.rollout_final_hp))
+            .then_with(|| {
+                self.rollout_enemy_progress
+                    .cmp(&other.rollout_enemy_progress)
+            })
+            .then_with(|| {
+                self.rollout_survival_margin
+                    .cmp(&other.rollout_survival_margin)
+            })
+            .then_with(|| {
+                self.rollout_potion_conservation
+                    .cmp(&other.rollout_potion_conservation)
+            })
+            .then_with(|| self.rollout_faster_turns.cmp(&other.rollout_faster_turns))
+            .then_with(|| {
+                self.rollout_fewer_cards_played
+                    .cmp(&other.rollout_fewer_cards_played)
+            })
             .then_with(|| self.fewer_living_enemies.cmp(&other.fewer_living_enemies))
             .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
             .then_with(|| self.survival_margin.cmp(&other.survival_margin))
@@ -130,8 +159,17 @@ fn priority_for_node(node: &SearchNode) -> NodePriority {
         SearchTerminalLabel::Loss => 1,
     };
     let next_draw = next_draw_quality(&node.combat);
+    let rollout = node.rollout_estimate;
     NodePriority {
         terminal_rank,
+        rollout_evaluated: i32::from(rollout.evaluated),
+        rollout_terminal_rank: rollout.priority_terminal_rank(),
+        rollout_final_hp: rollout.final_hp,
+        rollout_enemy_progress: rollout.enemy_progress(),
+        rollout_survival_margin: rollout.survival_margin,
+        rollout_potion_conservation: rollout.potion_conservation(),
+        rollout_faster_turns: rollout.faster_turns(),
+        rollout_fewer_cards_played: rollout.fewer_cards_played(),
         fewer_living_enemies: -(living_enemy_count(&node.combat) as i32),
         enemy_progress: -total_living_enemy_hp(&node.combat),
         survival_margin: survival_margin(&node.combat),
@@ -204,32 +242,7 @@ pub(super) fn remember_best_frontier(best: &mut Option<SearchNode>, candidate: &
 }
 
 fn compare_nodes(left: &SearchNode, right: &SearchNode) -> Ordering {
-    compare_node_terminal(left, right)
-        .then_with(|| {
-            left.combat
-                .entities
-                .player
-                .current_hp
-                .cmp(&right.combat.entities.player.current_hp)
-        })
-        .then_with(|| right.potions_used.cmp(&left.potions_used))
-        .then_with(|| {
-            right
-                .combat
-                .turn
-                .turn_count
-                .cmp(&left.combat.turn.turn_count)
-        })
-        .then_with(|| right.cards_played.cmp(&left.cards_played))
-        .then_with(|| {
-            total_living_enemy_hp(&right.combat).cmp(&total_living_enemy_hp(&left.combat))
-        })
-        .then_with(|| right.actions.len().cmp(&left.actions.len()))
-}
-
-fn compare_node_terminal(left: &SearchNode, right: &SearchNode) -> Ordering {
-    terminal_rank(terminal_label(&left.engine, &left.combat))
-        .cmp(&terminal_rank(terminal_label(&right.engine, &right.combat)))
+    CombatOutcomeScore::from_node(left).cmp(&CombatOutcomeScore::from_node(right))
 }
 
 pub(super) fn is_resource_covered<K: Eq + Hash>(
@@ -270,6 +283,7 @@ impl SearchNode {
             cards_played: self.cards_played,
             potion_tactical_priority: self.potion_tactical_priority,
             last_turn_branch_priority: self.last_turn_branch_priority,
+            rollout_estimate: RolloutNodeEstimate::unevaluated(),
         }
     }
 
@@ -416,6 +430,7 @@ mod tests {
             cards_played: 0,
             potion_tactical_priority: 0,
             last_turn_branch_priority: 0,
+            rollout_estimate: RolloutNodeEstimate::unevaluated(),
         }
     }
 }

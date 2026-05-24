@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+use crate::ai::combat_search_v2::{CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy};
 use crate::state::core::{CampfireChoice, ClientInput};
 
 use super::reward_auto::{parse_on_off, parse_reward_automation_target, RewardAutomationTarget};
@@ -82,6 +82,9 @@ pub struct RunControlSearchCombatOptions {
     pub wall_ms: Option<u64>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
+    pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
+    pub rollout_max_evaluations: Option<usize>,
+    pub rollout_max_actions: Option<usize>,
     pub evidence: Option<RunControlSearchEvidenceTarget>,
 }
 
@@ -248,7 +251,7 @@ Help:
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
     draw, discard, exhaust, actions, action <idx>
-    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [save=case|path]
+    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path]
 
   Map/Event/Reward:
     go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
@@ -270,7 +273,7 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
-    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [save=case|path] [max_ops=N]
+    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path] [max_ops=N]
     auto-reward
     auto-reward gold|potion|all on|off"
 }
@@ -411,6 +414,17 @@ fn parse_search_combat_options(rest: &[&str]) -> Result<RunControlSearchCombatOp
             "max_potions" | "max_potions_used" | "potions_used" => {
                 options.max_potions_used = Some(parse_u32_value(value, "max_potions_used")?);
             }
+            "rollout" | "rollout_policy" => {
+                options.rollout_policy = Some(parse_rollout_policy(value)?);
+            }
+            "rollouts" | "rollout_max_evaluations" | "max_rollouts" => {
+                options.rollout_max_evaluations =
+                    Some(parse_usize_value(value, "rollout_max_evaluations")?);
+            }
+            "rollout_actions" | "rollout_max_actions" => {
+                options.rollout_max_actions =
+                    Some(parse_usize_value(value, "rollout_max_actions")?);
+            }
             "save" | "evidence" | "output" | "out" => {
                 options.evidence = Some(parse_search_evidence_target(value));
             }
@@ -467,6 +481,18 @@ fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String
         }
         _ => Err(format!(
             "invalid potion policy '{value}', expected never|all|semantic"
+        )),
+    }
+}
+
+fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "disabled" | "off" | "none" => Ok(CombatSearchV2RolloutPolicy::Disabled),
+        "conservative" | "conservative_no_potion" | "conservative-no-potion" | "no_potion" => {
+            Ok(CombatSearchV2RolloutPolicy::ConservativeNoPotion)
+        }
+        _ => Err(format!(
+            "invalid rollout policy '{value}', expected disabled|conservative_no_potion"
         )),
     }
 }
@@ -608,7 +634,7 @@ mod tests {
     fn run_control_parser_accepts_search_combat_options() {
         assert_eq!(
             parse_run_control_command(
-                "search-combat max_nodes=123 wall_ms=50 potion=semantic max_potions=1",
+                "search-combat max_nodes=123 wall_ms=50 potion=semantic max_potions=1 rollout=disabled rollouts=7 rollout_actions=11",
             )
             .expect("search-combat should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
@@ -618,6 +644,9 @@ mod tests {
                 wall_ms: Some(50),
                 potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
                 max_potions_used: Some(1),
+                rollout_policy: Some(CombatSearchV2RolloutPolicy::Disabled),
+                rollout_max_evaluations: Some(7),
+                rollout_max_actions: Some(11),
                 evidence: None,
             })
         );
@@ -656,6 +685,9 @@ mod tests {
                     wall_ms: Some(50),
                     potion_policy: None,
                     max_potions_used: None,
+                    rollout_policy: None,
+                    rollout_max_evaluations: None,
+                    rollout_max_actions: None,
                     evidence: None,
                 },
                 max_operations: Some(9),

@@ -12,6 +12,9 @@ pub struct CombatSearchV2Config {
     pub input_label: Option<String>,
     pub potion_policy: CombatSearchV2PotionPolicy,
     pub max_potions_used: Option<u32>,
+    pub rollout_policy: CombatSearchV2RolloutPolicy,
+    pub rollout_max_evaluations: usize,
+    pub rollout_max_actions: usize,
 }
 
 impl Default for CombatSearchV2Config {
@@ -24,6 +27,9 @@ impl Default for CombatSearchV2Config {
             input_label: None,
             potion_policy: CombatSearchV2PotionPolicy::Never,
             max_potions_used: None,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            rollout_max_evaluations: super::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
+            rollout_max_actions: super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
         }
     }
 }
@@ -48,6 +54,28 @@ impl CombatSearchV2PotionPolicy {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2RolloutPolicy {
+    Disabled,
+    ConservativeNoPotion,
+}
+
+impl Default for CombatSearchV2RolloutPolicy {
+    fn default() -> Self {
+        Self::ConservativeNoPotion
+    }
+}
+
+impl CombatSearchV2RolloutPolicy {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            CombatSearchV2RolloutPolicy::Disabled => "disabled",
+            CombatSearchV2RolloutPolicy::ConservativeNoPotion => "conservative_no_potion",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2Report {
     pub schema_name: &'static str,
@@ -60,6 +88,7 @@ pub struct CombatSearchV2Report {
     pub best_complete_trajectory: Option<CombatSearchV2TrajectoryReport>,
     pub best_frontier_trajectory: Option<CombatSearchV2TrajectoryReport>,
     pub frontier: CombatSearchV2FrontierReport,
+    pub rollout: CombatSearchV2RolloutReport,
     pub diagnostics: CombatSearchV2DiagnosticsReport,
     pub stats: CombatSearchV2Stats,
     pub evidence_reliability: CombatSearchV2EvidenceReport,
@@ -85,6 +114,8 @@ pub struct CombatSearchV2BudgetReport {
     pub max_engine_steps_per_action: usize,
     pub wall_time_ms: Option<u128>,
     pub max_potions_used: Option<u32>,
+    pub rollout_max_evaluations: usize,
+    pub rollout_max_actions: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -104,6 +135,39 @@ pub struct CombatSearchV2FrontierReport {
     pub engine_step_limit_count: u64,
     pub potion_budget_cut_count: u64,
     pub sample_states: Vec<CombatSearchV2StateSummary>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2RolloutReport {
+    pub policy: &'static str,
+    pub behavioral_effect: &'static str,
+    pub max_evaluations: usize,
+    pub max_actions_per_rollout: usize,
+    pub evaluations: u64,
+    pub cache_hits: u64,
+    pub budget_skips: u64,
+    pub truncated_rollouts: u64,
+    pub terminal_wins: u64,
+    pub terminal_losses: u64,
+    pub best_frontier_estimate: Option<CombatSearchV2RolloutEstimateReport>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2RolloutEstimateReport {
+    pub terminal: SearchTerminalLabel,
+    pub estimated: bool,
+    pub final_hp: i32,
+    pub hp_loss: i32,
+    pub turns: u32,
+    pub potions_used: u32,
+    pub potions_discarded: u32,
+    pub cards_played: u32,
+    pub living_enemy_count: usize,
+    pub total_enemy_hp: i32,
+    pub survival_margin: i32,
+    pub actions_simulated: usize,
+    pub truncated: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

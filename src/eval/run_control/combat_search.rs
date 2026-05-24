@@ -186,6 +186,13 @@ fn search_config(
         input_label: Some(format!("run_play_driver:search_combat:step{decision_step}")),
         potion_policy: options.potion_policy.unwrap_or(defaults.potion_policy),
         max_potions_used: options.max_potions_used.or(defaults.max_potions_used),
+        rollout_policy: options.rollout_policy.unwrap_or(defaults.rollout_policy),
+        rollout_max_evaluations: options
+            .rollout_max_evaluations
+            .unwrap_or(defaults.rollout_max_evaluations),
+        rollout_max_actions: options
+            .rollout_max_actions
+            .unwrap_or(defaults.rollout_max_actions),
     }
 }
 
@@ -239,13 +246,16 @@ fn verify_trajectory_replays_to_win(
 
 fn render_search_rejection(report: &CombatSearchV2Report) -> String {
     format!(
-        "Search combat did not modify state.\n  terminal_report={:?}\n  proof_status={:?}\n  complete_trajectory_found={}\n  terminal_wins={}\n  nodes_expanded={}\n  nodes_generated={}\n  reliability={}\n  reason={}",
+        "Search combat did not modify state.\n  terminal_report={:?}\n  proof_status={:?}\n  complete_trajectory_found={}\n  terminal_wins={}\n  nodes_expanded={}\n  nodes_generated={}\n  rollouts={} rollout_wins={} rollout_skips={}\n  reliability={}\n  reason={}",
         report.outcome.terminal,
         report.outcome.proof_status,
         report.outcome.complete_trajectory_found,
         report.stats.terminal_wins,
         report.stats.nodes_expanded,
         report.stats.nodes_generated,
+        report.rollout.evaluations,
+        report.rollout.terminal_wins,
+        report.rollout.budget_skips,
         report.evidence_reliability.reliability,
         report.outcome.reason
     )
@@ -283,6 +293,13 @@ fn render_search_application(
             report.stats.nodes_expanded,
             report.stats.nodes_generated,
             report.stats.nodes_to_first_win
+        ),
+        format!(
+            "  rollout_policy={} rollouts={} rollout_wins={} rollout_skips={}",
+            report.rollout.policy,
+            report.rollout.evaluations,
+            report.rollout.terminal_wins,
+            report.rollout.budget_skips
         ),
         format!(
             "  action_count={} potion_policy={}",

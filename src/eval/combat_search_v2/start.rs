@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
+    CombatSearchV2RolloutPolicy,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::combat_capture::load_combat_capture_v1;
@@ -21,6 +22,9 @@ pub struct CombatSearchV2RunOptions {
     pub wall_ms: Option<u64>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
+    pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
+    pub rollout_max_evaluations: Option<usize>,
+    pub rollout_max_actions: Option<usize>,
 }
 
 impl CombatSearchV2RunOptions {
@@ -38,6 +42,13 @@ impl CombatSearchV2RunOptions {
             input_label: Some(input_label),
             potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
             max_potions_used: self.max_potions_used.or(defaults.max_potions_used),
+            rollout_policy: self.rollout_policy.unwrap_or(defaults.rollout_policy),
+            rollout_max_evaluations: self
+                .rollout_max_evaluations
+                .unwrap_or(defaults.rollout_max_evaluations),
+            rollout_max_actions: self
+                .rollout_max_actions
+                .unwrap_or(defaults.rollout_max_actions),
         }
     }
 }

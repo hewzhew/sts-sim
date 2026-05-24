@@ -22,9 +22,14 @@ pub fn run_combat_search_v2_with_stepper(
     let mut exact_transpositions: HashMap<CombatExactStateKey, Vec<ResourceVector>> =
         HashMap::new();
     let mut dominance: HashMap<CombatDominanceKey, Vec<ResourceVector>> = HashMap::new();
+    let mut rollout_cache = RolloutCache::new(
+        config.rollout_policy,
+        config.rollout_max_evaluations,
+        config.rollout_max_actions,
+    );
     let mut frontier = BinaryHeap::new();
     let mut next_sequence_id = 0u64;
-    let root = SearchNode {
+    let mut root = SearchNode {
         engine: engine.clone(),
         combat: combat.clone(),
         actions: Vec::new(),
@@ -35,7 +40,9 @@ pub fn run_combat_search_v2_with_stepper(
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
+    root.rollout_estimate = rollout_cache.estimate(&root, stepper, &config, deadline);
     if terminal_label(&root.engine, &root.combat) == SearchTerminalLabel::Win {
         stats.nodes_to_first_win = Some(0);
     }
@@ -188,6 +195,7 @@ pub fn run_combat_search_v2_with_stepper(
                 input: choice.input,
             });
             stats.nodes_generated = stats.nodes_generated.saturating_add(1);
+            child.rollout_estimate = rollout_cache.estimate(&child, stepper, &config, deadline);
 
             if !step.truncated && turn_local_dominance.observe_child(&child) {
                 stats.turn_local_dominance_prunes =
@@ -295,7 +303,7 @@ pub fn run_combat_search_v2_with_stepper(
             potion_policy: config.potion_policy.label(),
             transposition_table: "exact_runtime_state_key_with_resource_coverage",
             dominance_pruning: "global_dominance_bucket_resource_vector_plus_same_parent_same_turn_sibling_coverage",
-            rollout_value: "not_used_for_terminal_claims",
+            rollout_value: "conservative_no_potion_estimate_used_for_frontier_priority_only_not_terminal_claims",
             llm_authority: "none",
         },
         budget: CombatSearchV2BudgetReport {
@@ -304,6 +312,8 @@ pub fn run_combat_search_v2_with_stepper(
             max_engine_steps_per_action: config.max_engine_steps_per_action,
             wall_time_ms: config.wall_time.map(|duration| duration.as_millis()),
             max_potions_used: config.max_potions_used,
+            rollout_max_evaluations: config.rollout_max_evaluations,
+            rollout_max_actions: config.rollout_max_actions,
         },
         outcome: CombatSearchV2OutcomeReport {
             terminal: top_terminal,
@@ -329,6 +339,7 @@ pub fn run_combat_search_v2_with_stepper(
             potion_budget_cut_count,
             sample_states,
         },
+        rollout: rollout_cache.finish(best_frontier.as_ref()),
         diagnostics,
         stats,
         evidence_reliability: CombatSearchV2EvidenceReport {

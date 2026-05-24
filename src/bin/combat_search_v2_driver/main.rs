@@ -2,7 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::{ArgGroup, Parser};
-use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+use sts_simulator::ai::combat_search_v2::{
+    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+};
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
     load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
@@ -48,6 +50,15 @@ struct Args {
     #[arg(long)]
     max_potions_used: Option<u32>,
 
+    #[arg(long, value_parser = parse_rollout_policy)]
+    rollout_policy: Option<CombatSearchV2RolloutPolicy>,
+
+    #[arg(long)]
+    rollout_max_evaluations: Option<usize>,
+
+    #[arg(long)]
+    rollout_max_actions: Option<usize>,
+
     #[arg(long)]
     validate_only: bool,
 
@@ -70,6 +81,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         wall_ms: args.wall_ms,
         potion_policy: args.potion_policy,
         max_potions_used: args.max_potions_used,
+        rollout_policy: args.rollout_policy,
+        rollout_max_evaluations: args.rollout_max_evaluations,
+        rollout_max_actions: args.rollout_max_actions,
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
         let loaded = load_combat_search_v2_benchmark(path)?;
@@ -90,6 +104,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     write_or_print(args.output.as_ref(), &payload)?;
     Ok(())
+}
+
+fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "disabled" | "off" | "none" => Ok(CombatSearchV2RolloutPolicy::Disabled),
+        "conservative" | "conservative-no-potion" | "conservative_no_potion" | "no_potion" => {
+            Ok(CombatSearchV2RolloutPolicy::ConservativeNoPotion)
+        }
+        _ => Err(format!(
+            "invalid rollout policy '{value}', expected disabled|conservative_no_potion"
+        )),
+    }
 }
 
 fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
