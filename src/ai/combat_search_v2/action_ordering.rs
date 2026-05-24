@@ -69,7 +69,7 @@ struct ActionOrderingPriority {
     role_rank: i32,
     potion_tactical_rank: i32,
     mitigation: i32,
-    enemy_scaling_risk: i32,
+    reactive_risk: i32,
     target_progress: i32,
     block: i32,
     damage: i32,
@@ -218,17 +218,23 @@ fn priority_for_play_card(
     let def = cards::get_card_definition(card.id);
     let target_kind = cards::effective_target(card);
     let damage = evaluated.base_damage_mut.max(0);
-    let block = evaluated.base_block_mut.max(0);
-    let target_progress = target_progress_hint(combat, target_kind, target, damage);
     let effects = summarize_play_card_effects(combat, card, target);
+    let block = evaluated
+        .base_block_mut
+        .max(0)
+        .saturating_add(effects.reactive_player_block);
+    let target_progress = target_progress_hint(combat, target_kind, target, damage)
+        .saturating_add(effects.reactive_enemy_damage);
     let mitigation = effects.net_mitigation_ordering_score().max(0);
-    let enemy_scaling_risk = effects.enemy_scaling_risk_score();
+    let reactive_risk = effects.reactive_risk_score();
     let visible_damage = visible_incoming_damage(combat);
     let current_block = combat.entities.player.block;
     let current_hp = combat.entities.player.current_hp;
     let visible_loss_now = (visible_damage - current_block).max(0);
     let visible_loss_after_block =
-        (visible_damage - current_block - block - effects.visible_attack_mitigation_hint).max(0);
+        (visible_damage - current_block - block - effects.visible_attack_mitigation_hint)
+            .max(0)
+            .saturating_add(effects.reactive_player_hp_loss);
     let prevents_visible_lethal =
         visible_loss_now >= current_hp && visible_loss_after_block < current_hp;
     let prevents_hp_loss = visible_loss_after_block < visible_loss_now;
@@ -246,7 +252,7 @@ fn priority_for_play_card(
         )
     } else if def.card_type == CardType::Power {
         (ActionOrderingRole::DeferredSetup, ROLE_DEFERRED_SETUP)
-    } else if prevents_hp_loss && enemy_scaling_risk == 0 {
+    } else if prevents_hp_loss && reactive_risk == 0 {
         (ActionOrderingRole::PreventHpLoss, ROLE_PREVENT_HP_LOSS)
     } else if target_progress > 0 {
         (ActionOrderingRole::DamageProgress, ROLE_DAMAGE_PROGRESS)
@@ -265,7 +271,7 @@ fn priority_for_play_card(
         role,
         role_rank,
         mitigation,
-        enemy_scaling_risk: -enemy_scaling_risk,
+        reactive_risk: -reactive_risk,
         target_progress,
         block,
         damage,
@@ -340,7 +346,7 @@ impl ActionOrderingPriority {
             role_rank: ROLE_END_TURN,
             potion_tactical_rank: 0,
             mitigation: 0,
-            enemy_scaling_risk: 0,
+            reactive_risk: 0,
             target_progress: 0,
             block: 0,
             damage: 0,
@@ -510,7 +516,7 @@ impl Ord for ActionOrderingPriority {
             .cmp(&other.role_rank)
             .then_with(|| self.potion_tactical_rank.cmp(&other.potion_tactical_rank))
             .then_with(|| self.mitigation.cmp(&other.mitigation))
-            .then_with(|| self.enemy_scaling_risk.cmp(&other.enemy_scaling_risk))
+            .then_with(|| self.reactive_risk.cmp(&other.reactive_risk))
             .then_with(|| self.target_progress.cmp(&other.target_progress))
             .then_with(|| self.block.cmp(&other.block))
             .then_with(|| self.damage.cmp(&other.damage))
