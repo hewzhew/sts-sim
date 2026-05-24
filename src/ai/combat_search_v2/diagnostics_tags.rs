@@ -123,6 +123,18 @@ pub(super) fn diagnosis_tags(
     if pending_choice.high_fanout_states > 0 {
         tags.push("high_fanout_pending_choices_observed");
     }
+    if pending_choice.expanded_pending_choice_states > 0 {
+        tags.push("pending_choice_contract_observed");
+    }
+    if pending_choice.resolved_children > 0 {
+        tags.push("pending_choice_children_resolved");
+    }
+    if pending_choice.still_pending_children > 0 {
+        tags.push("pending_choice_children_remained_pending");
+    }
+    if pending_choice.truncated_children > 0 {
+        tags.push("pending_choice_children_truncated");
+    }
     if turn_prefix.states_observed > 0 {
         tags.push("turn_prefix_diagnostics_active");
     }
@@ -211,6 +223,10 @@ mod tests {
         pending_choice.states_observed = 3;
         pending_choice.pending_choice_states = 2;
         pending_choice.high_fanout_states = 1;
+        pending_choice.expanded_pending_choice_states = 1;
+        pending_choice.resolved_children = 1;
+        pending_choice.still_pending_children = 1;
+        pending_choice.truncated_children = 1;
         let mut turn_prefix = turn_prefix();
         turn_prefix.states_observed = 1;
         turn_prefix.non_empty_prefix_states = 1;
@@ -275,6 +291,10 @@ mod tests {
         assert!(tags.contains(&"pending_choice_profile_diagnostics_active"));
         assert!(tags.contains(&"pending_choice_states_observed"));
         assert!(tags.contains(&"high_fanout_pending_choices_observed"));
+        assert!(tags.contains(&"pending_choice_contract_observed"));
+        assert!(tags.contains(&"pending_choice_children_resolved"));
+        assert!(tags.contains(&"pending_choice_children_remained_pending"));
+        assert!(tags.contains(&"pending_choice_children_truncated"));
         assert!(tags.contains(&"turn_prefix_diagnostics_active"));
         assert!(tags.contains(&"non_empty_turn_prefix_observed"));
         assert!(tags.contains(&"long_turn_prefix_observed"));
@@ -401,11 +421,20 @@ mod tests {
         CombatSearchV2DiagnosticsPendingChoice {
             profiling_policy: "test",
             behavioral_effect: "diagnostic_only",
+            rollout_contract_policy: "test",
+            rollout_contract_behavioral_effect: "diagnostic_only",
             states_observed: 0,
             pending_choice_states: 0,
+            expanded_pending_choice_states: 0,
             high_fanout_states: 0,
             max_candidate_count: 0,
+            legal_actions_from_pending_choice: 0,
+            max_legal_actions_from_pending_choice: 0,
+            resolved_children: 0,
+            still_pending_children: 0,
+            truncated_children: 0,
             kind_counts: Vec::new(),
+            ordering_role_counts: Vec::new(),
             largest_pending_choices: Vec::new(),
             notes: Vec::new(),
         }

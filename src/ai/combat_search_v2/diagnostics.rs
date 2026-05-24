@@ -65,6 +65,24 @@ impl SearchDiagnosticsCollector {
         self.pending_choice.observe(profile);
     }
 
+    pub(super) fn observe_pending_choice_ordering(
+        &mut self,
+        profile: Option<&PendingChoiceProfile>,
+        ordering: &ActionOrderingSummary,
+    ) {
+        self.pending_choice.observe_ordering(profile, ordering);
+    }
+
+    pub(super) fn observe_pending_choice_child_transition(
+        &mut self,
+        profile: Option<&PendingChoiceProfile>,
+        truncated: bool,
+        child_engine: &EngineState,
+    ) {
+        self.pending_choice
+            .observe_child_transition(profile, truncated, child_engine);
+    }
+
     pub(super) fn observe_turn_prefix(&mut self, summary: &TurnPrefixSummary) {
         self.turn_prefix.observe(summary);
     }

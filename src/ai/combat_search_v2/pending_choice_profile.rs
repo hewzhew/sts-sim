@@ -1,3 +1,4 @@
+use super::action_priority::ActionOrderingRole;
 use super::pending_choice_fanout::{fanout_class, pending_choice_fanout};
 use super::*;
 use std::collections::BTreeMap;
@@ -22,9 +23,16 @@ pub(super) struct PendingChoiceProfile {
 pub(super) struct PendingChoiceDiagnosticsCollector {
     states_observed: u64,
     pending_choice_states: u64,
+    expanded_pending_choice_states: u64,
     high_fanout_states: u64,
     max_candidate_count: usize,
+    legal_actions_from_pending_choice: u64,
+    max_legal_actions_from_pending_choice: usize,
+    resolved_children: u64,
+    still_pending_children: u64,
+    truncated_children: u64,
     kind_counts: BTreeMap<&'static str, MutablePendingChoiceKindCount>,
+    ordering_role_counts: BTreeMap<ActionOrderingRole, MutablePendingChoiceOrderingRoleCount>,
     largest_pending_choices: Vec<PendingChoiceObservation>,
 }
 
@@ -33,6 +41,12 @@ struct MutablePendingChoiceKindCount {
     states: u64,
     max_candidate_count: usize,
     max_estimated_action_fanout: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+struct MutablePendingChoiceOrderingRoleCount {
+    actions: u64,
+    first_actions: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -187,20 +201,79 @@ impl PendingChoiceDiagnosticsCollector {
         });
     }
 
+    pub(super) fn observe_ordering(
+        &mut self,
+        profile: Option<&PendingChoiceProfile>,
+        ordering: &ActionOrderingSummary,
+    ) {
+        if profile.is_none() {
+            return;
+        }
+
+        self.expanded_pending_choice_states = self.expanded_pending_choice_states.saturating_add(1);
+        self.legal_actions_from_pending_choice = self
+            .legal_actions_from_pending_choice
+            .saturating_add(ordering.action_count() as u64);
+        self.max_legal_actions_from_pending_choice = self
+            .max_legal_actions_from_pending_choice
+            .max(ordering.action_count());
+
+        for (role, count) in ordering.role_counts() {
+            let mutable = self.ordering_role_counts.entry(role).or_default();
+            mutable.actions = mutable.actions.saturating_add(count as u64);
+        }
+        if let Some(first_role) = ordering.first_role() {
+            let mutable = self.ordering_role_counts.entry(first_role).or_default();
+            mutable.first_actions = mutable.first_actions.saturating_add(1);
+        }
+    }
+
+    pub(super) fn observe_child_transition(
+        &mut self,
+        profile: Option<&PendingChoiceProfile>,
+        truncated: bool,
+        child_engine: &EngineState,
+    ) {
+        if profile.is_none() {
+            return;
+        }
+
+        if truncated {
+            self.truncated_children = self.truncated_children.saturating_add(1);
+        } else if matches!(child_engine, EngineState::PendingChoice(_)) {
+            self.still_pending_children = self.still_pending_children.saturating_add(1);
+        } else {
+            self.resolved_children = self.resolved_children.saturating_add(1);
+        }
+    }
+
     pub(super) fn finish(&self) -> CombatSearchV2DiagnosticsPendingChoice {
         CombatSearchV2DiagnosticsPendingChoice {
             profiling_policy: "typed_pending_choice_profile_no_prune_no_auto_resolution",
             behavioral_effect: "diagnostic_only_search_expansion_unchanged",
+            rollout_contract_policy:
+                "search_expands_legal_pending_choice_actions_and_exact_replays_selected_child",
+            rollout_contract_behavioral_effect:
+                "diagnostic_only_no_prune_no_auto_resolution_no_terminal_claim",
             states_observed: self.states_observed,
             pending_choice_states: self.pending_choice_states,
+            expanded_pending_choice_states: self.expanded_pending_choice_states,
             high_fanout_states: self.high_fanout_states,
             max_candidate_count: self.max_candidate_count,
+            legal_actions_from_pending_choice: self.legal_actions_from_pending_choice,
+            max_legal_actions_from_pending_choice: self.max_legal_actions_from_pending_choice,
+            resolved_children: self.resolved_children,
+            still_pending_children: self.still_pending_children,
+            truncated_children: self.truncated_children,
             kind_counts: self.kind_count_reports(),
+            ordering_role_counts: self.ordering_role_count_reports(),
             largest_pending_choices: self.largest_pending_choice_reports(),
             notes: vec![
                 "pending choice profile only classifies choice boundaries; it does not resolve or prune them",
                 "large grid/hand/scry choices are search-risk signals, not evidence that any branch is safe to drop",
                 "future compression must prove selection equivalence or order-insensitivity before pruning",
+                "pending choice rollout contract metrics count exact child transitions after legal choice inputs",
+                "ordering roles are child-generation order hints only; they never suppress candidate choices",
             ],
         }
     }
@@ -234,6 +307,21 @@ impl PendingChoiceDiagnosticsCollector {
                     states: count.states,
                     max_candidate_count: count.max_candidate_count,
                     max_estimated_action_fanout: count.max_estimated_action_fanout,
+                },
+            )
+            .collect()
+    }
+
+    fn ordering_role_count_reports(
+        &self,
+    ) -> Vec<CombatSearchV2DiagnosticsPendingChoiceOrderingRoleCount> {
+        self.ordering_role_counts
+            .iter()
+            .map(
+                |(role, count)| CombatSearchV2DiagnosticsPendingChoiceOrderingRoleCount {
+                    role: role.label().to_string(),
+                    actions: count.actions,
+                    first_actions: count.first_actions,
                 },
             )
             .collect()

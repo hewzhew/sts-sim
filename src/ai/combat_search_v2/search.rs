@@ -135,6 +135,7 @@ pub fn run_combat_search_v2_with_stepper(
         diagnostics.observe_action_equivalence(&equivalence.summary);
         let ordered = order_indexed_action_choices(&node.engine, &node.combat, equivalence.choices);
         diagnostics.observe_action_ordering(&ordered.summary);
+        diagnostics.observe_pending_choice_ordering(pending_choice.as_ref(), &ordered.summary);
         let mut turn_branching =
             TurnBranchingStateObservation::new(&node.combat, ordered.choices.len());
         let mut turn_local_dominance = TurnLocalDominanceStateObservation::new(
@@ -177,6 +178,11 @@ pub fn run_combat_search_v2_with_stepper(
             }
 
             let mut child = node.clone_for_child(step.position.engine, step.position.combat);
+            diagnostics.observe_pending_choice_child_transition(
+                pending_choice.as_ref(),
+                step.truncated,
+                &child.engine,
+            );
             let turn_transition = classify_turn_branch_transition(
                 &node.engine,
                 &node.combat,
@@ -453,6 +459,48 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy)]
+    struct PendingChoiceResolveStepper;
+
+    impl CombatStepper for PendingChoiceResolveStepper {
+        fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+            if matches!(position.engine, EngineState::PendingChoice(_)) {
+                vec![
+                    ClientInput::SubmitDiscoverChoice(0),
+                    ClientInput::SubmitDiscoverChoice(1),
+                ]
+            } else {
+                Vec::new()
+            }
+        }
+
+        fn apply_to_stable(
+            &self,
+            position: &CombatPosition,
+            input: ClientInput,
+            _limits: CombatStepLimits,
+        ) -> crate::sim::combat::CombatStepResult {
+            let engine = if matches!(input, ClientInput::SubmitDiscoverChoice(_)) {
+                EngineState::CombatPlayerTurn
+            } else {
+                position.engine.clone()
+            };
+            let position = CombatPosition::new(engine, position.combat.clone());
+            crate::sim::combat::CombatStepResult {
+                terminal: combat_terminal(&position.engine, &position.combat),
+                alive: true,
+                truncated: false,
+                timed_out: false,
+                engine_steps: 1,
+                position,
+            }
+        }
+
+        fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+            combat_terminal(&position.engine, &position.combat)
+        }
+    }
+
     #[test]
     fn max_potions_used_cuts_potion_branches_without_disabling_policy_all() {
         let mut combat = blank_test_combat();
@@ -520,5 +568,53 @@ mod tests {
             .map(|action| action.action_id);
 
         assert_eq!(first_action_id, Some(1));
+    }
+
+    #[test]
+    fn pending_choice_contract_counts_exact_child_resolution() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        let config = CombatSearchV2Config {
+            max_nodes: 1,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            ..CombatSearchV2Config::default()
+        };
+
+        let report = run_combat_search_v2_with_stepper(
+            &EngineState::PendingChoice(crate::state::core::PendingChoice::StanceChoice),
+            &combat,
+            config,
+            &PendingChoiceResolveStepper,
+        );
+
+        assert_eq!(report.diagnostics.pending_choice.pending_choice_states, 1);
+        assert_eq!(
+            report
+                .diagnostics
+                .pending_choice
+                .expanded_pending_choice_states,
+            1
+        );
+        assert_eq!(
+            report
+                .diagnostics
+                .pending_choice
+                .legal_actions_from_pending_choice,
+            2
+        );
+        assert_eq!(report.diagnostics.pending_choice.resolved_children, 2);
+        assert_eq!(report.diagnostics.pending_choice.still_pending_children, 0);
+        assert!(report
+            .diagnostics
+            .pending_choice
+            .ordering_role_counts
+            .iter()
+            .any(|role| role.role == "pending_choice_neutral_selection"
+                && role.actions == 2
+                && role.first_actions == 1));
+        assert!(report
+            .diagnostics
+            .diagnosis
+            .contains(&"pending_choice_contract_observed"));
     }
 }

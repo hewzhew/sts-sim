@@ -88,6 +88,20 @@ struct ActionOrderingActionEffectObservation {
     effects: PlayCardEffectDiagnostics,
 }
 
+impl ActionOrderingSummary {
+    pub(super) fn action_count(&self) -> usize {
+        self.action_count
+    }
+
+    pub(super) fn first_role(&self) -> Option<ActionOrderingRole> {
+        self.first_role
+    }
+
+    pub(super) fn role_counts(&self) -> impl Iterator<Item = (ActionOrderingRole, usize)> + '_ {
+        self.role_counts.iter().map(|(role, count)| (*role, *count))
+    }
+}
+
 #[cfg(test)]
 fn order_action_choices(
     engine: &EngineState,

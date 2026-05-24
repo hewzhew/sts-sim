@@ -14,7 +14,9 @@ use crate::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper, CombatTerminal,
     EngineCombatStepper,
 };
-use crate::state::core::{ClientInput, EngineState, GridSelectReason, PendingChoice, PileType};
+use crate::state::core::{
+    ClientInput, EngineState, GridSelectReason, HandSelectReason, PendingChoice, PileType,
+};
 use crate::test_support::{blank_test_combat, test_monster};
 
 fn step_limits() -> CombatStepLimits {
@@ -164,6 +166,114 @@ fn stepper_headbutt_grid_select_moves_selected_discard_card_to_draw_top() {
     assert!(
         !discard.contains(&(CardId::Defend, 202)),
         "the selected Headbutt card should no longer remain in discard"
+    );
+}
+
+#[test]
+fn stepper_armaments_base_resolves_upgrade_pending_choice() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![monster(EnemyId::JawWorm, 10, 0, 40)];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Armaments, 100),
+        CombatCard::new(CardId::Strike, 101),
+        CombatCard::new(CardId::Bash, 102),
+    ];
+
+    let after_armaments = apply_from_player_turn(
+        combat,
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+    );
+
+    assert!(!after_armaments.truncated);
+    assert_eq!(after_armaments.position.combat.entities.player.block, 5);
+    match &after_armaments.position.engine {
+        EngineState::PendingChoice(PendingChoice::HandSelect {
+            candidate_uuids,
+            min_cards,
+            max_cards,
+            can_cancel,
+            reason,
+        }) => {
+            assert_eq!(candidate_uuids, &vec![101, 102]);
+            assert_eq!((*min_cards, *max_cards, *can_cancel), (1, 1, false));
+            assert_eq!(*reason, HandSelectReason::Upgrade);
+        }
+        other => panic!("base Armaments should suspend on an upgrade hand select, got {other:?}"),
+    }
+
+    let legal = legal_actions(&after_armaments.position);
+    assert!(legal.contains(&ClientInput::SubmitHandSelect(vec![102])));
+    assert!(
+        !legal.contains(&ClientInput::Proceed),
+        "pending hand select must not expose fake Proceed to search"
+    );
+
+    let after_select = apply(
+        &after_armaments.position,
+        ClientInput::SubmitHandSelect(vec![102]),
+    );
+
+    assert_stable_player_turn(&after_select);
+    let bash = after_select
+        .position
+        .combat
+        .zones
+        .hand
+        .iter()
+        .find(|card| card.uuid == 102)
+        .expect("selected Bash should remain in hand after Armaments resolves");
+    assert_eq!(bash.upgrades, 1);
+}
+
+#[test]
+fn stepper_armaments_plus_upgrades_all_eligible_hand_cards_without_pending_choice() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![monster(EnemyId::JawWorm, 10, 0, 40)];
+    let mut armaments_plus = CombatCard::new(CardId::Armaments, 100);
+    armaments_plus.upgrades = 1;
+    let mut already_upgraded_defend = CombatCard::new(CardId::Defend, 102);
+    already_upgraded_defend.upgrades = 1;
+    combat.zones.hand = vec![
+        armaments_plus,
+        CombatCard::new(CardId::Strike, 101),
+        already_upgraded_defend,
+        CombatCard::new(CardId::Wound, 103),
+    ];
+
+    let step = apply_from_player_turn(
+        combat,
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+    );
+
+    assert_stable_player_turn(&step);
+    assert_eq!(step.position.combat.entities.player.block, 5);
+    let hand = &step.position.combat.zones.hand;
+    assert_eq!(
+        hand.iter()
+            .find(|card| card.uuid == 101)
+            .map(|card| card.upgrades),
+        Some(1),
+        "Armaments+ should upgrade eligible cards left in hand"
+    );
+    assert_eq!(
+        hand.iter()
+            .find(|card| card.uuid == 102)
+            .map(|card| card.upgrades),
+        Some(1),
+        "already-upgraded non-Searing Blow cards should not gain an extra upgrade"
+    );
+    assert_eq!(
+        hand.iter()
+            .find(|card| card.uuid == 103)
+            .map(|card| card.upgrades),
+        Some(0),
+        "statuses are not Armaments upgrade targets"
     );
 }
 
