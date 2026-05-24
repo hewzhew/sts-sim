@@ -25,6 +25,7 @@ mod card_pile_value;
 mod diagnostics;
 mod diagnostics_tags;
 mod enemy_mechanics_profile;
+mod enemy_phase_transition;
 mod enemy_phase_value;
 mod expansion;
 mod frontier;
@@ -61,6 +62,7 @@ use card_identity::{
 use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
 use diagnostics_tags::diagnosis_tags;
 use enemy_mechanics_profile::{enemy_mechanics_profile, enemy_mechanics_profile_report};
+use enemy_phase_transition::enemy_phase_transition_hint_for_input;
 use expansion::{
     summarize_action_expansion, ActionExpansionDiagnosticsCollector, ActionExpansionSummary,
 };

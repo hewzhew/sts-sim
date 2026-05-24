@@ -251,6 +251,7 @@ impl ActionOrderingDiagnosticsCollector {
                 "a reorder sample is kept only when action order changed",
                 "ordering does not remove legal actions or prove action equivalence",
                 "reactive power risk is derived from simulator power hooks, not monster-name policy",
+                "enemy phase transition hints only reorder children and never suppress phase-triggering actions",
                 "pending choice ordering uses typed selection facts and never drops alternatives",
             ],
         }
@@ -564,6 +565,53 @@ mod tests {
             ordered.summary.first_role,
             Some(ActionOrderingRole::DamageProgress)
         );
+    }
+
+    #[test]
+    fn split_trigger_risk_orders_safe_damage_first_without_dropping_actions() {
+        let mut combat = blank_test_combat();
+        let mut slime = test_monster(EnemyId::AcidSlimeL);
+        slime.id = 1;
+        slime.current_hp = 40;
+        slime.max_hp = 65;
+        combat.entities.monsters = vec![slime];
+        combat.entities.power_db.insert(
+            1,
+            vec![Power {
+                power_type: PowerId::Split,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Carnage, 10),
+            CombatCard::new(CardId::Strike, 11),
+        ];
+        let choices = vec![
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(1),
+                },
+            ),
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 1,
+                    target: Some(1),
+                },
+            ),
+        ];
+
+        let ordered = order_action_choices(&EngineState::CombatPlayerTurn, &combat, choices);
+
+        assert_eq!(ordered.choices.len(), 2);
+        assert_eq!(ordered.choices[0].original_action_id, 1);
+        assert_eq!(ordered.choices[1].original_action_id, 0);
     }
 
     #[test]

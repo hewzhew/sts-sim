@@ -33,6 +33,7 @@ pub(super) struct ActionOrderingPriority {
     block: i32,
     damage: i32,
     cheaper_cost: i32,
+    phase_transition_safety: i32,
     pending_choice_primary: i32,
     pending_choice_secondary: i32,
     pending_choice_selected_count: i32,
@@ -136,6 +137,10 @@ fn priority_for_play_card(
         .saturating_add(effects.reactive_enemy_damage);
     let mitigation = effects.net_mitigation_ordering_score().max(0);
     let reactive_risk = effects.reactive_risk_score();
+    let phase_transition = enemy_phase_transition_hint_for_input(
+        combat,
+        &ClientInput::PlayCard { card_index, target },
+    );
     let visible_damage = visible_incoming_damage(combat);
     let current_block = combat.entities.player.block;
     let current_hp = combat.entities.player.current_hp;
@@ -185,6 +190,7 @@ fn priority_for_play_card(
         block,
         damage,
         cheaper_cost: -card.cost_for_turn_java().max(0),
+        phase_transition_safety: -phase_transition.ordering_risk_score(),
         effects: effect_diagnostics,
         ..ActionOrderingPriority::neutral(role)
     }
@@ -261,6 +267,7 @@ impl ActionOrderingPriority {
             block: 0,
             damage: 0,
             cheaper_cost: 0,
+            phase_transition_safety: 0,
             pending_choice_primary: 0,
             pending_choice_secondary: 0,
             pending_choice_selected_count: 0,
@@ -320,6 +327,10 @@ impl Ord for ActionOrderingPriority {
             .then_with(|| self.potion_tactical_rank.cmp(&other.potion_tactical_rank))
             .then_with(|| self.mitigation.cmp(&other.mitigation))
             .then_with(|| self.reactive_risk.cmp(&other.reactive_risk))
+            .then_with(|| {
+                self.phase_transition_safety
+                    .cmp(&other.phase_transition_safety)
+            })
             .then_with(|| self.target_progress.cmp(&other.target_progress))
             .then_with(|| self.block.cmp(&other.block))
             .then_with(|| self.damage.cmp(&other.damage))
