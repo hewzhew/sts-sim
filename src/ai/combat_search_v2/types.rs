@@ -534,6 +534,7 @@ pub struct CombatSearchV2DiagnosticsPendingChoiceKindCount {
     pub kind: String,
     pub states: u64,
     pub max_candidate_count: usize,
+    pub max_estimated_action_fanout: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -543,6 +544,7 @@ pub struct CombatSearchV2DiagnosticsPendingChoiceSample {
     pub reason: Option<String>,
     pub source_pile: Option<String>,
     pub candidate_count: usize,
+    pub estimated_action_fanout: usize,
     pub min_cards: usize,
     pub max_cards: usize,
     pub can_cancel: bool,

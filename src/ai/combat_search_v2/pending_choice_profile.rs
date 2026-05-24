@@ -1,3 +1,4 @@
+use super::pending_choice_fanout::{fanout_class, pending_choice_fanout};
 use super::*;
 use std::collections::BTreeMap;
 
@@ -9,6 +10,7 @@ pub(super) struct PendingChoiceProfile {
     reason: Option<String>,
     source_pile: Option<String>,
     candidate_count: usize,
+    estimated_action_fanout: usize,
     min_cards: usize,
     max_cards: usize,
     can_cancel: bool,
@@ -30,6 +32,7 @@ pub(super) struct PendingChoiceDiagnosticsCollector {
 struct MutablePendingChoiceKindCount {
     states: u64,
     max_candidate_count: usize,
+    max_estimated_action_fanout: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -39,100 +42,57 @@ struct PendingChoiceObservation {
 }
 
 pub(super) fn summarize_pending_choice(engine: &EngineState) -> Option<PendingChoiceProfile> {
-    let EngineState::PendingChoice(choice) = engine else {
+    let EngineState::PendingChoice(pending) = engine else {
         return None;
     };
 
-    let profile = match choice {
+    let profile = match pending {
         crate::state::core::PendingChoice::GridSelect {
             source_pile,
-            candidate_uuids,
-            min_cards,
-            max_cards,
-            can_cancel,
             reason,
+            ..
         } => profile(
             "grid_select",
             Some(format!("{reason:?}")),
             Some(format!("{source_pile:?}")),
-            candidate_uuids.len(),
-            *min_cards as usize,
-            *max_cards as usize,
-            *can_cancel,
+            pending,
         ),
-        crate::state::core::PendingChoice::HandSelect {
-            candidate_uuids,
-            min_cards,
-            max_cards,
-            can_cancel,
-            reason,
-        } => profile(
+        crate::state::core::PendingChoice::HandSelect { reason, .. } => profile(
             "hand_select",
             Some(format!("{reason:?}")),
             Some("Hand".to_string()),
-            candidate_uuids.len(),
-            *min_cards as usize,
-            *max_cards as usize,
-            *can_cancel,
+            pending,
         ),
-        crate::state::core::PendingChoice::DiscoverySelect(choice) => profile(
+        crate::state::core::PendingChoice::DiscoverySelect(_) => profile(
             "discovery_select",
             Some("Discovery".to_string()),
             None,
-            choice.cards.len(),
-            usize::from(!choice.can_skip),
-            1,
-            choice.can_skip,
+            pending,
         ),
-        crate::state::core::PendingChoice::ScrySelect { cards, .. } => profile(
-            "scry_select",
-            Some("Scry".to_string()),
-            None,
-            cards.len(),
-            0,
-            cards.len(),
-            false,
-        ),
-        crate::state::core::PendingChoice::CardRewardSelect {
-            cards,
-            destination,
-            can_skip,
-        } => profile(
+        crate::state::core::PendingChoice::ScrySelect { .. } => {
+            profile("scry_select", Some("Scry".to_string()), None, pending)
+        }
+        crate::state::core::PendingChoice::CardRewardSelect { destination, .. } => profile(
             "card_reward_select",
             Some(format!("{destination:?}")),
             None,
-            cards.len(),
-            usize::from(!can_skip),
-            1,
-            *can_skip,
+            pending,
         ),
-        crate::state::core::PendingChoice::ForeignInfluenceSelect { cards, upgraded } => profile(
+        crate::state::core::PendingChoice::ForeignInfluenceSelect { upgraded, .. } => profile(
             "foreign_influence_select",
             Some(format!("upgraded:{upgraded}")),
             None,
-            cards.len(),
-            1,
-            1,
-            false,
+            pending,
         ),
-        crate::state::core::PendingChoice::ChooseOneSelect { choices } => profile(
+        crate::state::core::PendingChoice::ChooseOneSelect { .. } => profile(
             "choose_one_select",
             Some("ChooseOne".to_string()),
             None,
-            choices.len(),
-            1,
-            1,
-            false,
+            pending,
         ),
-        crate::state::core::PendingChoice::StanceChoice => profile(
-            "stance_choice",
-            Some("Stance".to_string()),
-            None,
-            2,
-            1,
-            1,
-            false,
-        ),
+        crate::state::core::PendingChoice::StanceChoice => {
+            profile("stance_choice", Some("Stance".to_string()), None, pending)
+        }
     };
 
     Some(profile)
@@ -142,17 +102,17 @@ fn profile(
     kind: &'static str,
     reason: Option<String>,
     source_pile: Option<String>,
-    candidate_count: usize,
-    min_cards: usize,
-    max_cards: usize,
-    can_cancel: bool,
+    choice: &crate::state::core::PendingChoice,
 ) -> PendingChoiceProfile {
-    let fanout_class = fanout_class(candidate_count);
+    let fanout = pending_choice_fanout(choice);
+    let (min_cards, max_cards, can_cancel) = choice_bounds(choice);
+    let fanout_class = fanout_class(fanout.estimated_action_fanout);
     PendingChoiceProfile {
         kind,
         reason,
         source_pile,
-        candidate_count,
+        candidate_count: fanout.candidate_count,
+        estimated_action_fanout: fanout.estimated_action_fanout,
         min_cards,
         max_cards,
         can_cancel,
@@ -161,12 +121,30 @@ fn profile(
     }
 }
 
-fn fanout_class(candidate_count: usize) -> &'static str {
-    match candidate_count {
-        0 => "empty",
-        1..=3 => "small",
-        4..=8 => "medium",
-        _ => "large",
+fn choice_bounds(choice: &crate::state::core::PendingChoice) -> (usize, usize, bool) {
+    match choice {
+        crate::state::core::PendingChoice::GridSelect {
+            min_cards,
+            max_cards,
+            can_cancel,
+            ..
+        }
+        | crate::state::core::PendingChoice::HandSelect {
+            min_cards,
+            max_cards,
+            can_cancel,
+            ..
+        } => (*min_cards as usize, *max_cards as usize, *can_cancel),
+        crate::state::core::PendingChoice::DiscoverySelect(choice) => {
+            (usize::from(!choice.can_skip), 1, choice.can_skip)
+        }
+        crate::state::core::PendingChoice::ScrySelect { cards, .. } => (0, cards.len(), false),
+        crate::state::core::PendingChoice::CardRewardSelect { can_skip, .. } => {
+            (usize::from(!can_skip), 1, *can_skip)
+        }
+        crate::state::core::PendingChoice::ForeignInfluenceSelect { .. }
+        | crate::state::core::PendingChoice::ChooseOneSelect { .. }
+        | crate::state::core::PendingChoice::StanceChoice => (1, 1, false),
     }
 }
 
@@ -193,13 +171,16 @@ impl PendingChoiceDiagnosticsCollector {
 
         self.pending_choice_states = self.pending_choice_states.saturating_add(1);
         self.max_candidate_count = self.max_candidate_count.max(profile.candidate_count);
-        if profile.fanout_class == "large" {
+        if profile.search_risk == "high_fanout_pending_choice" {
             self.high_fanout_states = self.high_fanout_states.saturating_add(1);
         }
 
         let count = self.kind_counts.entry(profile.kind).or_default();
         count.states = count.states.saturating_add(1);
         count.max_candidate_count = count.max_candidate_count.max(profile.candidate_count);
+        count.max_estimated_action_fanout = count
+            .max_estimated_action_fanout
+            .max(profile.estimated_action_fanout);
         self.remember_largest_pending_choice(PendingChoiceObservation {
             observed_at_state_query: self.states_observed,
             profile: profile.clone(),
@@ -252,6 +233,7 @@ impl PendingChoiceDiagnosticsCollector {
                     kind: (*kind).to_string(),
                     states: count.states,
                     max_candidate_count: count.max_candidate_count,
+                    max_estimated_action_fanout: count.max_estimated_action_fanout,
                 },
             )
             .collect()
@@ -268,6 +250,7 @@ impl PendingChoiceDiagnosticsCollector {
                     reason: profile.reason.clone(),
                     source_pile: profile.source_pile.clone(),
                     candidate_count: profile.candidate_count,
+                    estimated_action_fanout: profile.estimated_action_fanout,
                     min_cards: profile.min_cards,
                     max_cards: profile.max_cards,
                     can_cancel: profile.can_cancel,
@@ -284,7 +267,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn grid_select_profile_marks_large_choices_as_high_fanout() {
+    fn single_card_grid_select_profile_uses_action_fanout_not_candidate_count() {
         let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
             source_pile: crate::state::core::PileType::Draw,
             candidate_uuids: (0..12).collect(),
@@ -298,6 +281,23 @@ mod tests {
 
         assert_eq!(profile.kind, "grid_select");
         assert_eq!(profile.candidate_count, 12);
+        assert_eq!(profile.estimated_action_fanout, 12);
+        assert_eq!(profile.fanout_class, "medium");
+        assert_eq!(profile.search_risk, "exact_branching_pending_choice");
+    }
+
+    #[test]
+    fn scry_profile_marks_combinatorial_choices_as_high_fanout() {
+        let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+            cards: vec![crate::content::cards::CardId::Strike; 7],
+            card_uuids: (0..7).collect(),
+        });
+
+        let profile = summarize_pending_choice(&engine).expect("pending choice should profile");
+
+        assert_eq!(profile.kind, "scry_select");
+        assert_eq!(profile.candidate_count, 7);
+        assert_eq!(profile.estimated_action_fanout, 128);
         assert_eq!(profile.fanout_class, "large");
         assert_eq!(profile.search_risk, "high_fanout_pending_choice");
     }
@@ -318,5 +318,6 @@ mod tests {
         assert_eq!(report.pending_choice_states, 1);
         assert_eq!(report.max_candidate_count, 2);
         assert_eq!(report.kind_counts[0].kind, "stance_choice");
+        assert_eq!(report.kind_counts[0].max_estimated_action_fanout, 2);
     }
 }

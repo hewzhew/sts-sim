@@ -1,11 +1,10 @@
 use super::enemy_mechanics_profile::{enemy_mechanics_profile, EnemyMechanicsProfileV1};
 use super::enemy_phase_value::{enemy_phase_value, EnemyPhaseValueV1};
+use super::pending_choice_fanout::pending_choice_fanout;
 use super::pressure_value::{combat_pressure_value, CombatPressureValueV1};
 use super::types::CombatSearchV2PhaseProfileReport;
 use crate::runtime::combat::CombatState;
 use crate::state::core::EngineState;
-
-const HIGH_PENDING_CHOICE_ACTION_FANOUT: usize = 64;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct CombatSearchPhaseProfileV1 {
@@ -109,127 +108,33 @@ fn pending_choice_phase_profile(engine: &EngineState) -> PendingChoicePhaseProfi
         return PendingChoicePhaseProfileV1::default();
     };
 
-    let (kind, candidate_count, estimated_action_fanout) = match choice {
-        crate::state::core::PendingChoice::HandSelect {
-            candidate_uuids,
-            min_cards,
-            max_cards,
-            can_cancel,
-            ..
-        } => {
-            let fanout = bounded_selection_fanout(
-                candidate_uuids.len(),
-                *min_cards as usize,
-                *max_cards as usize,
-                *can_cancel,
-            );
-            (
-                PendingChoicePhaseKind::HandSelect,
-                candidate_uuids.len(),
-                fanout,
-            )
+    let kind = match choice {
+        crate::state::core::PendingChoice::HandSelect { .. } => PendingChoicePhaseKind::HandSelect,
+        crate::state::core::PendingChoice::GridSelect { .. } => PendingChoicePhaseKind::GridSelect,
+        crate::state::core::PendingChoice::DiscoverySelect(_) => {
+            PendingChoicePhaseKind::DiscoverySelect
         }
-        crate::state::core::PendingChoice::GridSelect {
-            candidate_uuids,
-            min_cards,
-            max_cards,
-            can_cancel,
-            ..
-        } => {
-            let fanout = bounded_selection_fanout(
-                candidate_uuids.len(),
-                *min_cards as usize,
-                *max_cards as usize,
-                *can_cancel,
-            );
-            (
-                PendingChoicePhaseKind::GridSelect,
-                candidate_uuids.len(),
-                fanout,
-            )
+        crate::state::core::PendingChoice::ScrySelect { .. } => PendingChoicePhaseKind::ScrySelect,
+        crate::state::core::PendingChoice::CardRewardSelect { .. } => {
+            PendingChoicePhaseKind::CardRewardSelect
         }
-        crate::state::core::PendingChoice::DiscoverySelect(choice) => (
-            PendingChoicePhaseKind::DiscoverySelect,
-            choice.cards.len(),
-            choice
-                .cards
-                .len()
-                .saturating_add(usize::from(choice.can_skip)),
-        ),
-        crate::state::core::PendingChoice::ScrySelect { cards, .. } => (
-            PendingChoicePhaseKind::ScrySelect,
-            cards.len(),
-            scry_fanout(cards.len()),
-        ),
-        crate::state::core::PendingChoice::CardRewardSelect {
-            cards, can_skip, ..
-        } => (
-            PendingChoicePhaseKind::CardRewardSelect,
-            cards.len(),
-            cards.len().saturating_add(usize::from(*can_skip)),
-        ),
-        crate::state::core::PendingChoice::ForeignInfluenceSelect { cards, .. } => (
-            PendingChoicePhaseKind::ForeignInfluenceSelect,
-            cards.len(),
-            cards.len(),
-        ),
-        crate::state::core::PendingChoice::ChooseOneSelect { choices } => (
-            PendingChoicePhaseKind::ChooseOneSelect,
-            choices.len(),
-            choices.len(),
-        ),
-        crate::state::core::PendingChoice::StanceChoice => {
-            (PendingChoicePhaseKind::StanceChoice, 2, 2)
+        crate::state::core::PendingChoice::ForeignInfluenceSelect { .. } => {
+            PendingChoicePhaseKind::ForeignInfluenceSelect
         }
+        crate::state::core::PendingChoice::ChooseOneSelect { .. } => {
+            PendingChoicePhaseKind::ChooseOneSelect
+        }
+        crate::state::core::PendingChoice::StanceChoice => PendingChoicePhaseKind::StanceChoice,
     };
+    let fanout = pending_choice_fanout(choice);
 
     PendingChoicePhaseProfileV1 {
         present: true,
         kind: Some(kind),
-        candidate_count,
-        estimated_action_fanout,
-        high_fanout: estimated_action_fanout > HIGH_PENDING_CHOICE_ACTION_FANOUT,
+        candidate_count: fanout.candidate_count,
+        estimated_action_fanout: fanout.estimated_action_fanout,
+        high_fanout: fanout.high_fanout,
     }
-}
-
-fn bounded_selection_fanout(
-    candidate_count: usize,
-    min_cards: usize,
-    max_cards: usize,
-    can_cancel: bool,
-) -> usize {
-    let min_cards = min_cards.min(candidate_count);
-    let max_cards = max_cards.min(candidate_count);
-    if min_cards > max_cards {
-        return usize::from(can_cancel);
-    }
-
-    let selection_fanout = (min_cards..=max_cards)
-        .map(|selected| combination_count_capped(candidate_count, selected))
-        .fold(0usize, usize::saturating_add);
-    selection_fanout.saturating_add(usize::from(can_cancel))
-}
-
-fn scry_fanout(candidate_count: usize) -> usize {
-    if candidate_count >= usize::BITS as usize {
-        return usize::MAX;
-    }
-    1usize << candidate_count
-}
-
-fn combination_count_capped(n: usize, k: usize) -> usize {
-    if k > n {
-        return 0;
-    }
-    let k = k.min(n - k);
-    let mut value = 1usize;
-    for idx in 0..k {
-        value = value.saturating_mul(n - idx) / (idx + 1);
-        if value > HIGH_PENDING_CHOICE_ACTION_FANOUT {
-            return value;
-        }
-    }
-    value
 }
 
 #[cfg(test)]

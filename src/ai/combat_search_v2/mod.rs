@@ -31,6 +31,7 @@ mod enemy_phase_value;
 mod expansion;
 mod frontier;
 mod outcome_score;
+mod pending_choice_fanout;
 mod pending_choice_ordering;
 mod pending_choice_profile;
 mod phase_action_ordering;
