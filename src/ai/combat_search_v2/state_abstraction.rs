@@ -85,6 +85,28 @@ pub enum StateDivergenceKind {
     Unknown,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StateAbstractionLatentDebtKind {
+    DiscardOrder,
+    CardIdentity,
+    TurnPlayedCardHistory,
+    ImmediatePublicState,
+    TerminalClass,
+    LegalActionSet,
+    OtherRuntime,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StateAbstractionCandidateLevel {
+    HorizonLimitedCandidate,
+    IdentityAuditCandidate,
+    ReportOnlyBlocked,
+    ReportOnlyUnknown,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct StateAbstractionBoundarySpec {
     pub id: StateAbstractionBoundaryId,
@@ -107,6 +129,8 @@ pub struct StateAbstractionGateReport {
     pub case_count: usize,
     pub divergence_histogram: Vec<StateAbstractionHistogramEntry>,
     pub divergence_path_histogram: Vec<StateAbstractionHistogramEntry>,
+    pub latent_debt_histogram: Vec<StateAbstractionHistogramEntry>,
+    pub candidate_level_histogram: Vec<StateAbstractionHistogramEntry>,
     pub recommended_consumer_histogram: Vec<StateAbstractionHistogramEntry>,
     pub reveal_gate_histogram: Vec<StateAbstractionHistogramEntry>,
     pub cases: Vec<StateAbstractionCaseReport>,
@@ -131,6 +155,8 @@ pub struct StateAbstractionCaseReport {
     pub legal_actions_changed: Option<bool>,
     pub terminal_class_changed: Option<bool>,
     pub guessed_reveal_gate: StateAbstractionRevealGate,
+    pub latent_debt_kind: StateAbstractionLatentDebtKind,
+    pub candidate_level: StateAbstractionCandidateLevel,
     pub recommended_consumer: StateAbstractionConsumer,
     pub pruning_allowed: bool,
     pub exact_branch_removal_allowed: bool,
@@ -264,6 +290,8 @@ pub fn build_state_abstraction_gate_report(
                 .iter()
                 .map(|case| case.first_divergence_path.unwrap_or("none")),
         ),
+        latent_debt_histogram: histogram(cases.iter().map(|case| case.latent_debt_kind.label())),
+        candidate_level_histogram: histogram(cases.iter().map(|case| case.candidate_level.label())),
         recommended_consumer_histogram: histogram(
             cases.iter().map(|case| case.recommended_consumer.label()),
         ),
@@ -272,6 +300,7 @@ pub fn build_state_abstraction_gate_report(
         notes: vec![
             "exact simulator state remains authoritative",
             "turn_sequence_order_sensitive is report_only in v1",
+            "candidate_level identifies future audit targets and does not enable pruning",
             "pending choice deduplication is local action-list equivalence, not global state equality",
         ],
     }
@@ -290,6 +319,13 @@ fn turn_sequence_case_report(
         matches!(divergence_kind, StateDivergenceKind::ImmediatePublicDelta);
     let legal_actions_changed = matches!(divergence_kind, StateDivergenceKind::LegalActionDelta);
     let terminal_class_changed = matches!(divergence_kind, StateDivergenceKind::TerminalDelta);
+    let latent_debt_kind = latent_debt_kind(divergence_kind);
+    let candidate_level = candidate_level(
+        divergence_kind,
+        latent_debt_kind,
+        first_divergence_path,
+        guessed_reveal_gate,
+    );
     let turn_sequence_divergence_histogram = input
         .turn_sequence_divergence_histogram
         .into_iter()
@@ -311,6 +347,8 @@ fn turn_sequence_case_report(
         legal_actions_changed: Some(legal_actions_changed),
         terminal_class_changed: Some(terminal_class_changed),
         guessed_reveal_gate,
+        latent_debt_kind,
+        candidate_level,
         recommended_consumer,
         pruning_allowed: false,
         exact_branch_removal_allowed: false,
@@ -318,6 +356,54 @@ fn turn_sequence_case_report(
         order_sensitive_turn_sequence_groups: input.order_sensitive_turn_sequence_groups,
         turn_sequence_divergence_histogram,
         notes,
+    }
+}
+
+fn latent_debt_kind(divergence_kind: StateDivergenceKind) -> StateAbstractionLatentDebtKind {
+    match divergence_kind {
+        StateDivergenceKind::DiscardOrderDelta => StateAbstractionLatentDebtKind::DiscardOrder,
+        StateDivergenceKind::CardUuidDelta => StateAbstractionLatentDebtKind::CardIdentity,
+        StateDivergenceKind::TurnPlayedCardHistoryDelta => {
+            StateAbstractionLatentDebtKind::TurnPlayedCardHistory
+        }
+        StateDivergenceKind::ImmediatePublicDelta => {
+            StateAbstractionLatentDebtKind::ImmediatePublicState
+        }
+        StateDivergenceKind::TerminalDelta => StateAbstractionLatentDebtKind::TerminalClass,
+        StateDivergenceKind::LegalActionDelta => StateAbstractionLatentDebtKind::LegalActionSet,
+        StateDivergenceKind::Unknown => StateAbstractionLatentDebtKind::Unknown,
+        _ => StateAbstractionLatentDebtKind::OtherRuntime,
+    }
+}
+
+fn candidate_level(
+    divergence_kind: StateDivergenceKind,
+    latent_debt_kind: StateAbstractionLatentDebtKind,
+    first_divergence_path: Option<&'static str>,
+    guessed_reveal_gate: StateAbstractionRevealGate,
+) -> StateAbstractionCandidateLevel {
+    match (
+        divergence_kind,
+        latent_debt_kind,
+        first_divergence_path,
+        guessed_reveal_gate,
+    ) {
+        (
+            StateDivergenceKind::DiscardOrderDelta,
+            StateAbstractionLatentDebtKind::DiscardOrder,
+            Some("combat.zones.discard_pile"),
+            StateAbstractionRevealGate::NextShuffle,
+        ) => StateAbstractionCandidateLevel::HorizonLimitedCandidate,
+        (
+            StateDivergenceKind::CardUuidDelta,
+            StateAbstractionLatentDebtKind::CardIdentity,
+            Some("combat.zones.discard_pile.uuid_order"),
+            StateAbstractionRevealGate::NextShuffle,
+        ) => StateAbstractionCandidateLevel::IdentityAuditCandidate,
+        (_, StateAbstractionLatentDebtKind::Unknown, _, _) => {
+            StateAbstractionCandidateLevel::ReportOnlyUnknown
+        }
+        _ => StateAbstractionCandidateLevel::ReportOnlyBlocked,
     }
 }
 
@@ -415,6 +501,32 @@ impl StateAbstractionConsumer {
             StateAbstractionConsumer::EstimateShare => "estimate_share",
             StateAbstractionConsumer::CandidateOrdering => "candidate_ordering",
             StateAbstractionConsumer::ReportOnly => "report_only",
+        }
+    }
+}
+
+impl StateAbstractionLatentDebtKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            StateAbstractionLatentDebtKind::DiscardOrder => "discard_order",
+            StateAbstractionLatentDebtKind::CardIdentity => "card_identity",
+            StateAbstractionLatentDebtKind::TurnPlayedCardHistory => "turn_played_card_history",
+            StateAbstractionLatentDebtKind::ImmediatePublicState => "immediate_public_state",
+            StateAbstractionLatentDebtKind::TerminalClass => "terminal_class",
+            StateAbstractionLatentDebtKind::LegalActionSet => "legal_action_set",
+            StateAbstractionLatentDebtKind::OtherRuntime => "other_runtime",
+            StateAbstractionLatentDebtKind::Unknown => "unknown",
+        }
+    }
+}
+
+impl StateAbstractionCandidateLevel {
+    pub fn label(self) -> &'static str {
+        match self {
+            StateAbstractionCandidateLevel::HorizonLimitedCandidate => "horizon_limited_candidate",
+            StateAbstractionCandidateLevel::IdentityAuditCandidate => "identity_audit_candidate",
+            StateAbstractionCandidateLevel::ReportOnlyBlocked => "report_only_blocked",
+            StateAbstractionCandidateLevel::ReportOnlyUnknown => "report_only_unknown",
         }
     }
 }
@@ -546,5 +658,57 @@ mod tests {
         );
         assert_eq!(report.turn_sequence_divergence_histogram.len(), 1);
         assert_eq!(report.public_observation_changed, Some(false));
+    }
+
+    #[test]
+    fn discard_order_delta_is_horizon_limited_candidate_only() {
+        let report = classify_state_abstraction_case(StateAbstractionCaseInput {
+            case_id: "case",
+            same_effect_turn_sequence_groups: 0,
+            order_sensitive_turn_sequence_groups: 3,
+            turn_sequence_divergence_histogram: vec![StateAbstractionDivergenceInput {
+                kind: StateDivergenceKind::DiscardOrderDelta,
+                first_divergence_path: Some("combat.zones.discard_pile"),
+                guessed_reveal_gate: StateAbstractionRevealGate::NextShuffle,
+                groups: 2,
+            }],
+        })
+        .expect("order-sensitive sequence should classify");
+
+        assert_eq!(
+            report.latent_debt_kind,
+            StateAbstractionLatentDebtKind::DiscardOrder
+        );
+        assert_eq!(
+            report.candidate_level,
+            StateAbstractionCandidateLevel::HorizonLimitedCandidate
+        );
+        assert!(!report.pruning_allowed);
+        assert!(!report.exact_branch_removal_allowed);
+    }
+
+    #[test]
+    fn played_card_history_delta_blocks_abstraction_candidate() {
+        let report = classify_state_abstraction_case(StateAbstractionCaseInput {
+            case_id: "case",
+            same_effect_turn_sequence_groups: 0,
+            order_sensitive_turn_sequence_groups: 3,
+            turn_sequence_divergence_histogram: vec![StateAbstractionDivergenceInput {
+                kind: StateDivergenceKind::TurnPlayedCardHistoryDelta,
+                first_divergence_path: Some("combat.turn.counters.card_ids_played"),
+                guessed_reveal_gate: StateAbstractionRevealGate::NextLegalActionGeneration,
+                groups: 2,
+            }],
+        })
+        .expect("order-sensitive sequence should classify");
+
+        assert_eq!(
+            report.latent_debt_kind,
+            StateAbstractionLatentDebtKind::TurnPlayedCardHistory
+        );
+        assert_eq!(
+            report.candidate_level,
+            StateAbstractionCandidateLevel::ReportOnlyBlocked
+        );
     }
 }
