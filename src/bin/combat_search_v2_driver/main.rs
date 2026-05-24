@@ -7,8 +7,9 @@ use sts_simulator::ai::combat_search_v2::{
 };
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
-    load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
-    run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
+    compare_combat_search_v2_rollout_policies, load_combat_search_v2_benchmark,
+    load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_v2_benchmark,
+    run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
 };
 use sts_simulator::eval::fingerprint::StateFingerprintV1;
 
@@ -54,6 +55,9 @@ struct Args {
     rollout_policy: Option<CombatSearchV2RolloutPolicy>,
 
     #[arg(long)]
+    compare_rollout: Option<String>,
+
+    #[arg(long)]
     rollout_max_evaluations: Option<usize>,
 
     #[arg(long)]
@@ -77,6 +81,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.gate_only && args.validate_only {
         return Err("--gate-only cannot be used with --validate-only".into());
     }
+    if args.compare_rollout.is_some() && args.benchmark_spec.is_none() {
+        return Err("--compare-rollout requires --benchmark-spec".into());
+    }
+    if args.compare_rollout.is_some() && args.gate_only {
+        return Err("--compare-rollout cannot be used with --gate-only".into());
+    }
+    if args.compare_rollout.is_some() && args.rollout_policy.is_some() {
+        return Err("--compare-rollout cannot be combined with --rollout-policy".into());
+    }
     if args.validate_only {
         let payload = validate_input_payload(&args)?;
         write_or_print(args.output.as_ref(), &payload)?;
@@ -96,18 +109,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
         let loaded = load_combat_search_v2_benchmark(path)?;
-        let run = run_combat_search_v2_benchmark(&loaded, options);
-        if args.gate_only {
-            serde_json::to_string_pretty(&serde_json::json!({
-                "schema_name": "CombatSearchV2BenchmarkGateOnlyReport",
-                "schema_version": 1,
-                "benchmark_name": run.benchmark_name,
-                "case_count": run.case_count,
-                "summary": run.summary,
-                "gate": run.gate,
-            }))?
-        } else {
+        if let Some(compare) = args.compare_rollout.as_deref() {
+            let (left, right) = parse_rollout_policy_pair(compare)?;
+            let run = compare_combat_search_v2_rollout_policies(&loaded, options, left, right);
             serde_json::to_string_pretty(&run)?
+        } else {
+            let run = run_combat_search_v2_benchmark(&loaded, options);
+            if args.gate_only {
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "schema_name": "CombatSearchV2BenchmarkGateOnlyReport",
+                    "schema_version": 1,
+                    "benchmark_name": run.benchmark_name,
+                    "case_count": run.case_count,
+                    "summary": run.summary,
+                    "gate": run.gate,
+                }))?
+            } else {
+                serde_json::to_string_pretty(&run)?
+            }
         }
     } else {
         let loaded = if let Some(path) = args.combat_snapshot.as_ref() {
@@ -124,6 +143,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     write_or_print(args.output.as_ref(), &payload)?;
     Ok(())
+}
+
+fn parse_rollout_policy_pair(
+    value: &str,
+) -> Result<(CombatSearchV2RolloutPolicy, CombatSearchV2RolloutPolicy), String> {
+    let mut parts = value.split(',').map(str::trim);
+    let left = parts
+        .next()
+        .filter(|part| !part.is_empty())
+        .ok_or_else(|| "compare-rollout requires LEFT,RIGHT".to_string())
+        .and_then(parse_rollout_policy)?;
+    let right = parts
+        .next()
+        .filter(|part| !part.is_empty())
+        .ok_or_else(|| "compare-rollout requires LEFT,RIGHT".to_string())
+        .and_then(parse_rollout_policy)?;
+    if parts.next().is_some() {
+        return Err("compare-rollout requires exactly two comma-separated policies".to_string());
+    }
+    Ok((left, right))
 }
 
 fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, String> {

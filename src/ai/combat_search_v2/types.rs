@@ -74,7 +74,7 @@ impl Default for CombatSearchV2RolloutPolicy {
 }
 
 impl CombatSearchV2RolloutPolicy {
-    pub(super) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             CombatSearchV2RolloutPolicy::Disabled => "disabled",
             CombatSearchV2RolloutPolicy::ConservativeNoPotion => "conservative_no_potion",
