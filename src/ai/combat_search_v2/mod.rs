@@ -40,6 +40,8 @@ mod potions;
 mod pressure_value;
 mod report;
 mod rollout;
+mod rollout_cache;
+mod rollout_estimate;
 mod rollout_pending_choice;
 mod rollout_policy;
 mod rollout_probe;
@@ -88,7 +90,8 @@ use pending_choice_profile::{
 use phase_profile::{combat_search_phase_profile, combat_search_phase_profile_report};
 use pressure_value::visible_incoming_damage;
 use report::{summarize_state, trajectory_report};
-use rollout::{RolloutCache, RolloutNodeEstimate};
+use rollout_cache::RolloutCache;
+use rollout_estimate::{RolloutNodeEstimate, RolloutStopReason};
 use rollout_policy::{choose_rollout_action, filtered_rollout_legal_actions};
 use target_fanout::{
     summarize_target_fanout, TargetFanoutDiagnosticsCollector, TargetFanoutSummary,
