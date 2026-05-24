@@ -23,6 +23,10 @@ Active binaries:
     without running search
   - `--potion-policy all --max-potions-used <N>`: allow potion branches while
     bounding potion resource use for budgeted search experiments
+  - `--benchmark-spec <path> --explain-case <case_id>`: diagnostic-only
+    initial-decision microscope; reports the selected first action, current
+    candidate ordering, and exact one-step consequences without writing
+    artifacts or changing search policy
 - `run_play_driver`
   - thin shell over the `eval::run_control` kernel
   - starts in a game-like main screen; `deck`, `map`, `relics`, `potions`,

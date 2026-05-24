@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 use clap::{ArgGroup, Parser};
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    explain_combat_search_v2_initial_decision, CombatSearchV2PotionPolicy,
+    CombatSearchV2RolloutPolicy,
 };
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
@@ -58,6 +59,9 @@ struct Args {
     compare_rollout: Option<String>,
 
     #[arg(long)]
+    explain_case: Option<String>,
+
+    #[arg(long)]
     rollout_max_evaluations: Option<usize>,
 
     #[arg(long)]
@@ -90,6 +94,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.compare_rollout.is_some() && args.rollout_policy.is_some() {
         return Err("--compare-rollout cannot be combined with --rollout-policy".into());
     }
+    if args.explain_case.is_some() && args.benchmark_spec.is_none() {
+        return Err("--explain-case requires --benchmark-spec".into());
+    }
+    if args.explain_case.is_some() && args.compare_rollout.is_some() {
+        return Err("--explain-case cannot be combined with --compare-rollout".into());
+    }
+    if args.explain_case.is_some() && args.gate_only {
+        return Err("--explain-case cannot be combined with --gate-only".into());
+    }
+    if args.explain_case.is_some() && args.validate_only {
+        return Err("--explain-case cannot be combined with --validate-only".into());
+    }
     if args.validate_only {
         let payload = validate_input_payload(&args)?;
         write_or_print(args.output.as_ref(), &payload)?;
@@ -113,6 +129,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (left, right) = parse_rollout_policy_pair(compare)?;
             let run = compare_combat_search_v2_rollout_policies(&loaded, options, left, right);
             serde_json::to_string_pretty(&run)?
+        } else if let Some(case_id) = args.explain_case.as_deref() {
+            let case = loaded
+                .cases
+                .iter()
+                .find(|case| case.id == case_id)
+                .ok_or_else(|| format!("benchmark case '{case_id}' not found"))?;
+            let decision = explain_combat_search_v2_initial_decision(
+                &case.start.position.engine,
+                &case.start.position.combat,
+                options.to_search_config(case.start.label.clone()),
+            );
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_name": "CombatSearchV2BenchmarkDecisionMicroscopeReport",
+                "schema_version": 1,
+                "benchmark_name": loaded.name.clone(),
+                "case_id": case.id.clone(),
+                "input_kind": case.input.kind,
+                "input_path": case.input.path.display().to_string(),
+                "baseline": case.baseline.clone(),
+                "baseline_path": case.baseline_path.as_ref().map(|path| path.display().to_string()),
+                "decision": decision,
+                "notes": [
+                    "explain-case is diagnostic-only and does not write artifacts",
+                    "use it to inspect the first selected action before changing search policy"
+                ],
+            }))?
         } else {
             let run = run_combat_search_v2_benchmark(&loaded, options);
             if args.gate_only {

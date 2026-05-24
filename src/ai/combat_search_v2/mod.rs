@@ -22,6 +22,7 @@ mod action_priority;
 mod baseline;
 mod card_identity;
 mod card_pile_value;
+mod decision_microscope;
 mod diagnostics;
 mod diagnostics_tags;
 mod discard_order_shadow_audit;
@@ -117,6 +118,12 @@ use value_facts::{living_enemy_count, terminal_rank, total_living_enemy_hp};
 pub use baseline::{
     compare_outcome_metrics, compare_trajectory_reports, CombatSearchV2OutcomeMetrics,
     WHOLE_COMBAT_OUTCOME_CRITERIA,
+};
+pub use decision_microscope::{
+    explain_combat_search_v2_initial_decision, CombatSearchV2DecisionCandidateReport,
+    CombatSearchV2DecisionContext, CombatSearchV2DecisionMicroscopeConfigReport,
+    CombatSearchV2DecisionMicroscopeReport, CombatSearchV2DecisionOneStepReport,
+    CombatSearchV2DecisionSelectedAction, CombatSearchV2DecisionTrajectorySummary,
 };
 pub use report::trajectory_from_state;
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
