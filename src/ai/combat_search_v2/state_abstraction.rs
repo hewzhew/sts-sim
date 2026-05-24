@@ -137,6 +137,7 @@ pub struct StateAbstractionGateReport {
     pub recommended_consumer_histogram: Vec<StateAbstractionHistogramEntry>,
     pub reveal_gate_histogram: Vec<StateAbstractionHistogramEntry>,
     pub reveal_gate_group_histogram: Vec<StateAbstractionHistogramEntry>,
+    pub identity_audit: StateAbstractionIdentityAuditReport,
     pub cases: Vec<StateAbstractionCaseReport>,
     pub notes: Vec<&'static str>,
 }
@@ -168,6 +169,30 @@ pub struct StateAbstractionCaseReport {
     pub order_sensitive_turn_sequence_groups: usize,
     pub turn_sequence_divergence_histogram: Vec<StateAbstractionCaseDivergenceCount>,
     pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct StateAbstractionIdentityAuditReport {
+    pub audit_policy: &'static str,
+    pub behavioral_effect: &'static str,
+    pub status: &'static str,
+    pub candidate_cases: usize,
+    pub candidate_groups: usize,
+    pub proof_pruning_enabled: bool,
+    pub exact_branch_removal_allowed: bool,
+    pub blocked_reason: &'static str,
+    pub required_checks: Vec<&'static str>,
+    pub samples: Vec<StateAbstractionIdentityAuditSample>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct StateAbstractionIdentityAuditSample {
+    pub case_id: String,
+    pub groups: usize,
+    pub first_divergence_path: Option<&'static str>,
+    pub guessed_reveal_gate: StateAbstractionRevealGate,
+    pub required_next_check: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -282,9 +307,10 @@ pub fn classify_state_abstraction_case(
 pub fn build_state_abstraction_gate_report(
     cases: Vec<StateAbstractionCaseReport>,
 ) -> StateAbstractionGateReport {
+    let identity_audit = identity_audit_report(&cases);
     StateAbstractionGateReport {
         schema_name: "StateAbstractionGateReport",
-        schema_version: 1,
+        schema_version: 2,
         policy: "state abstractions are reported with explicit soundness and allowed consumers; report-only and estimate-only boundaries must not remove exact search branches",
         registered_boundaries: registered_boundary_specs(),
         case_count: cases.len(),
@@ -328,12 +354,75 @@ pub fn build_state_abstraction_gate_report(
                 .iter()
                 .map(|entry| (entry.guessed_reveal_gate.label(), entry.groups))
         })),
+        identity_audit,
         cases,
         notes: vec![
             "exact simulator state remains authoritative",
             "turn_sequence_order_sensitive is report_only in v1",
             "candidate_level identifies future audit targets and does not enable pruning",
             "pending choice deduplication is local action-list equivalence, not global state equality",
+        ],
+    }
+}
+
+fn identity_audit_report(
+    cases: &[StateAbstractionCaseReport],
+) -> StateAbstractionIdentityAuditReport {
+    let mut candidate_cases = BTreeMap::<&str, usize>::new();
+    let mut candidate_groups = 0usize;
+    let mut samples = Vec::new();
+
+    for case in cases {
+        for entry in &case.turn_sequence_divergence_histogram {
+            let debt = latent_debt_kind(entry.kind);
+            let level = candidate_level(
+                entry.kind,
+                debt,
+                entry.first_divergence_path,
+                entry.guessed_reveal_gate,
+            );
+            if level != StateAbstractionCandidateLevel::IdentityAuditCandidate {
+                continue;
+            }
+
+            candidate_groups = candidate_groups.saturating_add(entry.groups);
+            *candidate_cases.entry(&case.case_id).or_default() += entry.groups;
+            if samples.len() < 8 {
+                samples.push(StateAbstractionIdentityAuditSample {
+                    case_id: case.case_id.clone(),
+                    groups: entry.groups,
+                    first_divergence_path: entry.first_divergence_path,
+                    guessed_reveal_gate: entry.guessed_reveal_gate,
+                    required_next_check: "prove_uuid_not_referenced_by_pending_queue_legal_actions_or_discard_selection_before_shuffle",
+                });
+            }
+        }
+    }
+
+    StateAbstractionIdentityAuditReport {
+        audit_policy: "card_uuid_identity_candidates_are_blocked_until_reference_audit",
+        behavioral_effect: "report_only_no_prune_no_state_merge",
+        status: if candidate_groups == 0 {
+            "no_identity_audit_candidates_observed"
+        } else {
+            "blocked_until_card_identity_reference_audit"
+        },
+        candidate_cases: candidate_cases.len(),
+        candidate_groups,
+        proof_pruning_enabled: false,
+        exact_branch_removal_allowed: false,
+        blocked_reason: "card uuid differences can be referenced by pending queues, legal action descriptors, selection payloads, or future card identity lookups",
+        required_checks: vec![
+            "pending queue and queued card payloads do not reference the differing uuid",
+            "current legal action descriptors and selectable payloads are unchanged by the uuid order",
+            "no discard-pile card selection can read the differing uuid before the reveal gate",
+            "shuffle or other reveal-gate handling must split back to exact representatives before using the abstraction",
+        ],
+        samples,
+        notes: vec![
+            "identity_audit_candidate is deliberately blocked from proof pruning in v1",
+            "discard pile uuid-order differences may look similar to discard-order debt but are a separate identity-reference problem",
+            "this report is an audit target list, not a search optimization",
         ],
     }
 }
@@ -734,6 +823,33 @@ mod tests {
     }
 
     #[test]
+    fn discard_uuid_order_delta_requires_identity_audit() {
+        let report = classify_state_abstraction_case(StateAbstractionCaseInput {
+            case_id: "case",
+            same_effect_turn_sequence_groups: 0,
+            order_sensitive_turn_sequence_groups: 3,
+            turn_sequence_divergence_histogram: vec![StateAbstractionDivergenceInput {
+                kind: StateDivergenceKind::CardUuidDelta,
+                first_divergence_path: Some("combat.zones.discard_pile.uuid_order"),
+                guessed_reveal_gate: StateAbstractionRevealGate::NextShuffle,
+                groups: 2,
+            }],
+        })
+        .expect("order-sensitive sequence should classify");
+
+        assert_eq!(
+            report.latent_debt_kind,
+            StateAbstractionLatentDebtKind::CardIdentity
+        );
+        assert_eq!(
+            report.candidate_level,
+            StateAbstractionCandidateLevel::IdentityAuditCandidate
+        );
+        assert!(!report.pruning_allowed);
+        assert!(!report.exact_branch_removal_allowed);
+    }
+
+    #[test]
     fn played_card_history_delta_blocks_abstraction_candidate() {
         let report = classify_state_abstraction_case(StateAbstractionCaseInput {
             case_id: "case",
@@ -804,6 +920,35 @@ mod tests {
             histogram_count(&gate.candidate_level_group_histogram, "report_only_blocked"),
             2
         );
+    }
+
+    #[test]
+    fn gate_report_blocks_identity_candidates_until_reference_audit() {
+        let reports = vec![classify_state_abstraction_case(StateAbstractionCaseInput {
+            case_id: "case_identity",
+            same_effect_turn_sequence_groups: 0,
+            order_sensitive_turn_sequence_groups: 3,
+            turn_sequence_divergence_histogram: vec![StateAbstractionDivergenceInput {
+                kind: StateDivergenceKind::CardUuidDelta,
+                first_divergence_path: Some("combat.zones.discard_pile.uuid_order"),
+                guessed_reveal_gate: StateAbstractionRevealGate::NextShuffle,
+                groups: 5,
+            }],
+        })
+        .expect("identity candidate should classify")];
+
+        let gate = build_state_abstraction_gate_report(reports);
+
+        assert_eq!(gate.schema_version, 2);
+        assert_eq!(gate.identity_audit.candidate_cases, 1);
+        assert_eq!(gate.identity_audit.candidate_groups, 5);
+        assert_eq!(
+            gate.identity_audit.status,
+            "blocked_until_card_identity_reference_audit"
+        );
+        assert!(!gate.identity_audit.proof_pruning_enabled);
+        assert!(!gate.identity_audit.exact_branch_removal_allowed);
+        assert_eq!(gate.identity_audit.samples[0].case_id, "case_identity");
     }
 
     fn histogram_count(entries: &[StateAbstractionHistogramEntry], key: &str) -> usize {
