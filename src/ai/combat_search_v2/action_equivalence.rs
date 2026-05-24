@@ -1,5 +1,6 @@
 use super::*;
 use crate::content::cards;
+use crate::state::core::{PendingChoice, PileType};
 use std::collections::BTreeMap;
 
 const LARGEST_EQUIVALENCE_GROUP_SAMPLE_LIMIT: usize = 8;
@@ -33,6 +34,7 @@ struct ActionEquivalenceKey {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ActionEquivalenceKind {
     StarterBasicPlayCard,
+    SingleCardPendingChoiceSelection,
 }
 
 #[derive(Clone, Debug)]
@@ -139,12 +141,11 @@ fn equivalence_key_for_choice(
     combat: &CombatState,
     choice: &CombatActionChoice,
 ) -> Option<ActionEquivalenceKey> {
-    if !matches!(engine, EngineState::CombatPlayerTurn) {
-        return None;
-    }
-
     match &choice.input {
         ClientInput::PlayCard { card_index, target } => {
+            if !matches!(engine, EngineState::CombatPlayerTurn) {
+                return None;
+            }
             let card = combat.zones.hand.get(*card_index)?;
             if !cards::is_starter_basic(card.id) {
                 return None;
@@ -154,7 +155,63 @@ fn equivalence_key_for_choice(
                 signature: starter_basic_card_signature(combat, card, *target),
             })
         }
+        ClientInput::SubmitGridSelect(uuids) => {
+            pending_single_card_selection_key(engine, combat, uuids)
+        }
+        ClientInput::SubmitHandSelect(uuids) => {
+            pending_single_card_selection_key(engine, combat, uuids)
+        }
         _ => None,
+    }
+}
+
+fn pending_single_card_selection_key(
+    engine: &EngineState,
+    combat: &CombatState,
+    uuids: &[u32],
+) -> Option<ActionEquivalenceKey> {
+    let [uuid] = uuids else {
+        return None;
+    };
+    let EngineState::PendingChoice(choice) = engine else {
+        return None;
+    };
+
+    let (scope, cards) = match choice {
+        PendingChoice::GridSelect {
+            source_pile,
+            reason,
+            candidate_uuids,
+            ..
+        } if candidate_uuids.contains(uuid) => (
+            format!("grid_select/source:{source_pile:?}/reason:{reason:?}"),
+            pile_cards(combat, *source_pile),
+        ),
+        PendingChoice::HandSelect {
+            reason,
+            candidate_uuids,
+            ..
+        } if candidate_uuids.contains(uuid) => (
+            format!("hand_select/reason:{reason:?}"),
+            combat.zones.hand.as_slice(),
+        ),
+        _ => return None,
+    };
+    let card = cards.iter().find(|card| card.uuid == *uuid)?;
+    Some(ActionEquivalenceKey {
+        kind: ActionEquivalenceKind::SingleCardPendingChoiceSelection,
+        signature: format!("{scope}/selected_card:{}", card_runtime_signature(card)),
+    })
+}
+
+fn pile_cards(combat: &CombatState, pile: PileType) -> &[crate::runtime::combat::CombatCard] {
+    match pile {
+        PileType::Draw => &combat.zones.draw_pile,
+        PileType::Discard => &combat.zones.discard_pile,
+        PileType::Exhaust => &combat.zones.exhaust_pile,
+        PileType::Hand => &combat.zones.hand,
+        PileType::Limbo => &combat.zones.limbo,
+        PileType::MasterDeck => &[],
     }
 }
 
@@ -164,10 +221,17 @@ fn starter_basic_card_signature(
     target: Option<usize>,
 ) -> String {
     format!(
-        "play_card/starter_basic/card:{}+{}/target:{}/misc:{}/damage_override:{:?}/block_override:{:?}/cost_modifier:{}/cost_for_turn:{:?}/base_damage_mut:{}/base_block_mut:{}/base_magic_num_mut:{}/multi_damage:{:?}/exhaust_override:{:?}/retain_override:{:?}/free_to_play_once:{}/energy_on_use:{}",
+        "play_card/starter_basic/{}/target:{}",
+        card_runtime_signature(card),
+        crate::sim::combat_action::target_label(combat, target),
+    )
+}
+
+fn card_runtime_signature(card: &crate::runtime::combat::CombatCard) -> String {
+    format!(
+        "card:{}+{}/misc:{}/damage_override:{:?}/block_override:{:?}/cost_modifier:{}/cost_for_turn:{:?}/base_damage_mut:{}/base_block_mut:{}/base_magic_num_mut:{}/multi_damage:{:?}/exhaust_override:{:?}/retain_override:{:?}/free_to_play_once:{}/energy_on_use:{}",
         cards::java_id(card.id),
         card.upgrades,
-        crate::sim::combat_action::target_label(combat, target),
         card.misc_value,
         card.base_damage_override,
         card.base_block_override,
@@ -180,7 +244,7 @@ fn starter_basic_card_signature(
         card.exhaust_override,
         card.retain_override,
         card.free_to_play_once,
-        card.energy_on_use,
+        card.energy_on_use
     )
 }
 
@@ -215,7 +279,8 @@ impl ActionEquivalenceDiagnosticsCollector {
 
     pub(super) fn finish(&self) -> CombatSearchV2DiagnosticsEquivalence {
         CombatSearchV2DiagnosticsEquivalence {
-            equivalence_policy: "conservative_starter_basic_duplicate_play_card_by_target",
+            equivalence_policy:
+                "conservative_duplicate_play_card_and_single_card_pending_selection_by_runtime_signature",
             behavioral_effect:
                 "safe_representative_child_generation_for_proven_duplicate_actions_only",
             states_observed: self.states_observed,
@@ -228,9 +293,10 @@ impl ActionEquivalenceDiagnosticsCollector {
             group_kind_counts: self.group_kind_counts(),
             largest_groups: self.largest_group_samples(),
             notes: vec![
-                "only combat player-turn play-card actions are eligible in v1",
-                "only starter basic cards are eligible in v1",
-                "card runtime fields and target must match; card uuid is intentionally ignored",
+                "combat player-turn duplicate play-card compression remains limited to starter basic cards in v1",
+                "single-card pending grid/hand selections can merge runtime-identical source cards",
+                "multi-card pending selections stay atomic because selection order can affect resolution",
+                "card runtime fields and target or selection scope must match; card uuid is intentionally ignored",
                 "representative action traces keep the original legal action id",
                 "non-eligible actions stay atomic and order-sensitive",
             ],
@@ -312,6 +378,9 @@ impl ActionEquivalenceKind {
     fn label(self) -> &'static str {
         match self {
             ActionEquivalenceKind::StarterBasicPlayCard => "starter_basic_play_card",
+            ActionEquivalenceKind::SingleCardPendingChoiceSelection => {
+                "single_card_pending_choice_selection"
+            }
         }
     }
 }
@@ -482,6 +551,64 @@ mod tests {
         let result = compress_equivalent_actions(&EngineState::CombatPlayerTurn, &combat, choices);
 
         assert_eq!(result.choices.len(), 2);
+        assert_eq!(result.summary.actions_removed(), 0);
+    }
+
+    #[test]
+    fn compresses_single_card_pending_grid_selection_for_runtime_identical_cards() {
+        let mut combat = blank_test_combat();
+        combat.zones.discard_pile = vec![
+            CombatCard::new(CardId::Slimed, 10),
+            CombatCard::new(CardId::Slimed, 11),
+            CombatCard::new(CardId::Strike, 12),
+        ];
+        let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+            source_pile: crate::state::core::PileType::Discard,
+            candidate_uuids: vec![10, 11, 12],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: crate::state::core::GridSelectReason::MoveToDrawPile,
+        });
+        let choices = vec![
+            CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![10])),
+            CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![11])),
+            CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![12])),
+        ];
+
+        let result = compress_equivalent_actions(&engine, &combat, choices);
+
+        assert_eq!(result.choices.len(), 2);
+        assert_eq!(result.summary.actions_removed(), 1);
+        assert_eq!(
+            result.summary.groups[0].key.kind,
+            ActionEquivalenceKind::SingleCardPendingChoiceSelection
+        );
+    }
+
+    #[test]
+    fn keeps_pending_grid_multi_select_atomic() {
+        let mut combat = blank_test_combat();
+        combat.zones.discard_pile = vec![
+            CombatCard::new(CardId::Slimed, 10),
+            CombatCard::new(CardId::Slimed, 11),
+        ];
+        let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+            source_pile: crate::state::core::PileType::Discard,
+            candidate_uuids: vec![10, 11],
+            min_cards: 2,
+            max_cards: 2,
+            can_cancel: false,
+            reason: crate::state::core::GridSelectReason::DrawPileToHand,
+        });
+        let choices = vec![CombatActionChoice::from_input(
+            &combat,
+            ClientInput::SubmitGridSelect(vec![10, 11]),
+        )];
+
+        let result = compress_equivalent_actions(&engine, &combat, choices);
+
+        assert_eq!(result.choices.len(), 1);
         assert_eq!(result.summary.actions_removed(), 0);
     }
 

@@ -50,6 +50,8 @@ pub struct CombatSearchV2BenchmarkGateSummary {
     pub deadline_cases: usize,
     pub node_budget_cases: usize,
     pub high_fanout_pending_choice_cases: usize,
+    pub same_effect_turn_sequence_cases: usize,
+    pub order_sensitive_turn_sequence_cases: usize,
     pub engine_step_limit_cases: usize,
     pub max_action_line_cut_cases: usize,
     pub potion_budget_cut_cases: usize,
@@ -96,6 +98,7 @@ pub struct CombatSearchV2BenchmarkGateCaseMetrics {
     pub max_pending_choice_candidate_count: usize,
     pub max_legal_actions: usize,
     pub max_turn_generated_children: usize,
+    pub same_effect_turn_sequence_groups: usize,
     pub order_sensitive_turn_sequence_groups: usize,
     pub duplicate_card_identity_states: u64,
     pub uuid_card_id_conflict_states: u64,
@@ -127,6 +130,7 @@ struct CaseGateFacts<'a> {
     max_pending_choice_candidate_count: usize,
     max_legal_actions: usize,
     max_turn_generated_children: usize,
+    same_effect_turn_sequence_groups: usize,
     order_sensitive_turn_sequence_groups: usize,
     duplicate_card_identity_states: u64,
     uuid_card_id_conflict_states: u64,
@@ -213,6 +217,10 @@ fn case_gate_facts(case: &CombatSearchV2BenchmarkCaseReport) -> CaseGateFacts<'_
             .map(|sample| sample.generated_children)
             .max()
             .unwrap_or(0),
+        same_effect_turn_sequence_groups: case
+            .diagnostics
+            .turn_sequence
+            .same_effect_order_variant_groups,
         order_sensitive_turn_sequence_groups: case.diagnostics.turn_sequence.order_sensitive_groups,
         duplicate_card_identity_states: case
             .diagnostics
@@ -285,6 +293,19 @@ fn assess_case_facts(facts: CaseGateFacts<'_>) -> CombatSearchV2BenchmarkGateCas
     push_warning_if(
         &mut status,
         &mut reasons,
+        facts.same_effect_turn_sequence_groups > 0,
+        "same_effect_turn_sequence_candidates_observed",
+    );
+    push_warning_if(
+        &mut status,
+        &mut reasons,
+        facts.same_effect_turn_sequence_groups == 0
+            && facts.order_sensitive_turn_sequence_groups > 0,
+        "order_sensitive_turn_sequence_boundary_observed",
+    );
+    push_warning_if(
+        &mut status,
+        &mut reasons,
         facts.engine_step_limit_count > 0,
         "engine_step_limit_observed",
     );
@@ -341,6 +362,7 @@ fn assess_case_facts(facts: CaseGateFacts<'_>) -> CombatSearchV2BenchmarkGateCas
             max_pending_choice_candidate_count: facts.max_pending_choice_candidate_count,
             max_legal_actions: facts.max_legal_actions,
             max_turn_generated_children: facts.max_turn_generated_children,
+            same_effect_turn_sequence_groups: facts.same_effect_turn_sequence_groups,
             order_sensitive_turn_sequence_groups: facts.order_sensitive_turn_sequence_groups,
             duplicate_card_identity_states: facts.duplicate_card_identity_states,
             uuid_card_id_conflict_states: facts.uuid_card_id_conflict_states,
@@ -396,8 +418,10 @@ fn primary_focus(facts: &CaseGateFacts<'_>) -> &'static str {
         "state_integrity"
     } else if facts.high_fanout_pending_choice_states > 0 {
         "pending_choice"
-    } else if facts.order_sensitive_turn_sequence_groups > 0 {
+    } else if facts.same_effect_turn_sequence_groups > 0 {
         "turn_sequence"
+    } else if facts.order_sensitive_turn_sequence_groups > 0 {
+        "state_abstraction_boundary"
     } else if facts.deadline_hit || facts.node_budget_hit {
         "budget_or_rollout"
     } else if !facts.has_baseline {
@@ -463,6 +487,16 @@ fn accumulate_gate_summary(
         "high_fanout_pending_choice_observed",
     );
     count_reason(
+        &mut summary.same_effect_turn_sequence_cases,
+        &case.reasons,
+        "same_effect_turn_sequence_candidates_observed",
+    );
+    count_reason(
+        &mut summary.order_sensitive_turn_sequence_cases,
+        &case.reasons,
+        "order_sensitive_turn_sequence_boundary_observed",
+    );
+    count_reason(
         &mut summary.engine_step_limit_cases,
         &case.reasons,
         "engine_step_limit_observed",
@@ -520,9 +554,10 @@ fn focus_rank(focus: &'static str) -> u8 {
         "state_integrity" => 2,
         "pending_choice" => 3,
         "turn_sequence" => 4,
-        "budget_or_rollout" => 5,
-        "baseline_coverage" => 6,
-        "proof_boundary" => 7,
+        "state_abstraction_boundary" => 5,
+        "budget_or_rollout" => 6,
+        "baseline_coverage" => 7,
+        "proof_boundary" => 8,
         _ => 8,
     }
 }
@@ -601,6 +636,7 @@ mod tests {
             max_pending_choice_candidate_count: 0,
             max_legal_actions: 3,
             max_turn_generated_children: 3,
+            same_effect_turn_sequence_groups: 0,
             order_sensitive_turn_sequence_groups: 0,
             duplicate_card_identity_states: 0,
             uuid_card_id_conflict_states: 0,
@@ -638,6 +674,7 @@ mod tests {
             max_pending_choice_candidate_count: 0,
             max_legal_actions: 5,
             max_turn_generated_children: 5,
+            same_effect_turn_sequence_groups: 0,
             order_sensitive_turn_sequence_groups: 0,
             duplicate_card_identity_states: 0,
             uuid_card_id_conflict_states: 0,
@@ -649,5 +686,60 @@ mod tests {
         assert!(!case
             .reasons
             .contains(&"best_complete_candidate_worse_than_baseline"));
+    }
+
+    #[test]
+    fn gate_focus_separates_safe_turn_sequence_candidates_from_order_sensitive_boundaries() {
+        let mut facts = clean_warning_facts();
+        facts.same_effect_turn_sequence_groups = 2;
+        facts.order_sensitive_turn_sequence_groups = 4;
+
+        let same_effect = assess_case_facts(facts.clone());
+
+        assert_eq!(same_effect.primary_focus, "turn_sequence");
+        assert!(same_effect
+            .reasons
+            .contains(&"same_effect_turn_sequence_candidates_observed"));
+
+        facts.same_effect_turn_sequence_groups = 0;
+        let order_sensitive = assess_case_facts(facts);
+
+        assert_eq!(order_sensitive.primary_focus, "state_abstraction_boundary");
+        assert!(order_sensitive
+            .reasons
+            .contains(&"order_sensitive_turn_sequence_boundary_observed"));
+    }
+
+    fn clean_warning_facts() -> CaseGateFacts<'static> {
+        CaseGateFacts {
+            id: "case",
+            proof_status: SearchProofStatus::DeadlineHit,
+            best_complete_terminal: Some(SearchTerminalLabel::Win),
+            best_complete_final_hp: Some(20),
+            best_complete_potions_used: Some(0),
+            baseline_final_hp: Some(15),
+            baseline_potions_used: Some(0),
+            best_complete_candidate_verdict: Some(CombatSearchV2BaselineVerdict::SearchBetter),
+            has_baseline: true,
+            nodes_expanded: 10,
+            nodes_generated: 20,
+            nodes_to_first_win: Some(5),
+            terminal_wins: 1,
+            terminal_losses: 0,
+            deadline_hit: true,
+            node_budget_hit: false,
+            unresolved_leaf_count: 2,
+            max_actions_cut_count: 0,
+            engine_step_limit_count: 0,
+            potion_budget_cut_count: 0,
+            high_fanout_pending_choice_states: 0,
+            max_pending_choice_candidate_count: 0,
+            max_legal_actions: 5,
+            max_turn_generated_children: 5,
+            same_effect_turn_sequence_groups: 0,
+            order_sensitive_turn_sequence_groups: 0,
+            duplicate_card_identity_states: 0,
+            uuid_card_id_conflict_states: 0,
+        }
     }
 }
