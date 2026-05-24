@@ -325,10 +325,12 @@ pub struct CombatSearchV2DiagnosticsOrdering {
     pub states_reordered: u64,
     pub reordered_state_ratio: f64,
     pub total_actions_observed: u64,
+    pub action_effect_actions: u64,
     pub max_position_shift: usize,
     pub avg_position_shift: f64,
     pub action_role_counts: Vec<CombatSearchV2DiagnosticsActionRoleCount>,
     pub largest_reorders: Vec<CombatSearchV2DiagnosticsOrderingSample>,
+    pub action_effect_samples: Vec<CombatSearchV2DiagnosticsActionEffectSample>,
     pub notes: Vec<&'static str>,
 }
 
@@ -347,6 +349,24 @@ pub struct CombatSearchV2DiagnosticsOrderingSample {
     pub first_role: String,
     pub first_original_action_id: usize,
     pub first_action_key: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsActionEffectSample {
+    pub observed_at_state_query: u64,
+    pub original_action_id: usize,
+    pub ordered_index: usize,
+    pub role: String,
+    pub action_key: String,
+    pub mitigation_score: i32,
+    pub reactive_risk_score: i32,
+    pub enemy_strength_gain: i32,
+    pub visible_attack_pressure_hint: i32,
+    pub reactive_player_hp_loss: i32,
+    pub reactive_player_block: i32,
+    pub reactive_enemy_damage: i32,
+    pub reactive_bad_draw_cards: i32,
+    pub reactive_forced_turn_end: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

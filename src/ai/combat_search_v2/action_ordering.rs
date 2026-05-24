@@ -1,10 +1,11 @@
-use super::action_effects::summarize_play_card_effects;
+use super::action_effects::{summarize_play_card_effects, PlayCardEffectDiagnostics};
 use super::*;
 use crate::content::cards::{self, CardTarget, CardType};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 const LARGEST_REORDER_SAMPLE_LIMIT: usize = 8;
+const ACTION_EFFECT_SAMPLE_LIMIT: usize = 12;
 
 // These ranks only decide child-generation order inside the same legal action set.
 // They never merge, prune, or claim that two actions are equivalent.
@@ -43,6 +44,7 @@ pub(super) struct ActionOrderingSummary {
     first_role: Option<ActionOrderingRole>,
     first_original_action_id: Option<usize>,
     first_action_key: Option<String>,
+    action_effect_samples: Vec<ActionOrderingActionEffectSummary>,
 }
 
 #[derive(Default)]
@@ -54,6 +56,8 @@ pub(super) struct ActionOrderingDiagnosticsCollector {
     max_position_shift: usize,
     role_counts: BTreeMap<ActionOrderingRole, MutableOrderingRoleCount>,
     largest_reorders: Vec<ActionOrderingObservation>,
+    action_effect_actions: u64,
+    action_effect_samples: Vec<ActionOrderingActionEffectObservation>,
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +78,7 @@ struct ActionOrderingPriority {
     block: i32,
     damage: i32,
     cheaper_cost: i32,
+    effects: PlayCardEffectDiagnostics,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -107,6 +112,25 @@ struct ActionOrderingObservation {
     first_role: ActionOrderingRole,
     first_original_action_id: usize,
     first_action_key: String,
+}
+
+#[derive(Clone, Debug)]
+struct ActionOrderingActionEffectSummary {
+    original_action_id: usize,
+    ordered_index: usize,
+    role: ActionOrderingRole,
+    action_key: String,
+    effects: PlayCardEffectDiagnostics,
+}
+
+#[derive(Clone, Debug)]
+struct ActionOrderingActionEffectObservation {
+    observed_at_state_query: u64,
+    original_action_id: usize,
+    ordered_index: usize,
+    role: ActionOrderingRole,
+    action_key: String,
+    effects: PlayCardEffectDiagnostics,
 }
 
 #[cfg(test)]
@@ -219,6 +243,7 @@ fn priority_for_play_card(
     let target_kind = cards::effective_target(card);
     let damage = evaluated.base_damage_mut.max(0);
     let effects = summarize_play_card_effects(combat, card, target);
+    let effect_diagnostics = effects.diagnostics();
     let block = evaluated
         .base_block_mut
         .max(0)
@@ -276,6 +301,7 @@ fn priority_for_play_card(
         block,
         damage,
         cheaper_cost: -card.cost_for_turn_java().max(0),
+        effects: effect_diagnostics,
         ..ActionOrderingPriority::neutral(role)
     }
 }
@@ -351,6 +377,7 @@ impl ActionOrderingPriority {
             block: 0,
             damage: 0,
             cheaper_cost: 0,
+            effects: PlayCardEffectDiagnostics::default(),
         }
     }
 }
@@ -358,10 +385,20 @@ impl ActionOrderingPriority {
 fn summarize_ordering(entries: &[ActionOrderingEntry]) -> ActionOrderingSummary {
     let mut role_counts = BTreeMap::new();
     let mut max_position_shift = 0usize;
+    let mut action_effect_samples = Vec::new();
     for (ordered_index, entry) in entries.iter().enumerate() {
         *role_counts.entry(entry.priority.role).or_insert(0) += 1;
         max_position_shift =
             max_position_shift.max(entry.original_action_id.abs_diff(ordered_index));
+        if entry.priority.effects.has_reactive_signal() {
+            action_effect_samples.push(ActionOrderingActionEffectSummary {
+                original_action_id: entry.original_action_id,
+                ordered_index,
+                role: entry.priority.role,
+                action_key: entry.choice.action_key.clone(),
+                effects: entry.priority.effects,
+            });
+        }
     }
 
     ActionOrderingSummary {
@@ -371,6 +408,7 @@ fn summarize_ordering(entries: &[ActionOrderingEntry]) -> ActionOrderingSummary 
         first_role: entries.first().map(|entry| entry.priority.role),
         first_original_action_id: entries.first().map(|entry| entry.original_action_id),
         first_action_key: entries.first().map(|entry| entry.choice.action_key.clone()),
+        action_effect_samples,
     }
 }
 
@@ -413,6 +451,17 @@ impl ActionOrderingDiagnosticsCollector {
                 first_action_key: first_action_key.clone(),
             });
         }
+        for sample in &summary.action_effect_samples {
+            self.action_effect_actions = self.action_effect_actions.saturating_add(1);
+            self.remember_action_effect(ActionOrderingActionEffectObservation {
+                observed_at_state_query: self.states_observed,
+                original_action_id: sample.original_action_id,
+                ordered_index: sample.ordered_index,
+                role: sample.role,
+                action_key: sample.action_key.clone(),
+                effects: sample.effects,
+            });
+        }
     }
 
     pub(super) fn finish(&self) -> CombatSearchV2DiagnosticsOrdering {
@@ -424,10 +473,12 @@ impl ActionOrderingDiagnosticsCollector {
             states_reordered: self.states_reordered,
             reordered_state_ratio: rounded_ratio(self.states_reordered, self.states_observed),
             total_actions_observed: self.total_actions_observed,
+            action_effect_actions: self.action_effect_actions,
             max_position_shift: self.max_position_shift,
             avg_position_shift: rounded_ratio(self.total_position_shift, self.states_observed),
             action_role_counts: self.action_role_counts(),
             largest_reorders: self.largest_reorder_samples(),
+            action_effect_samples: self.action_effect_samples(),
             notes: vec![
                 "ordering diagnostics summarize which semantic roles are explored first",
                 "original action ids are preserved in action traces after ordering",
@@ -456,6 +507,35 @@ impl ActionOrderingDiagnosticsCollector {
         self.largest_reorders.truncate(LARGEST_REORDER_SAMPLE_LIMIT);
     }
 
+    fn remember_action_effect(&mut self, observation: ActionOrderingActionEffectObservation) {
+        self.action_effect_samples.push(observation);
+        self.action_effect_samples.sort_by(|left, right| {
+            right
+                .effects
+                .reactive_risk_score
+                .cmp(&left.effects.reactive_risk_score)
+                .then_with(|| {
+                    right
+                        .effects
+                        .mitigation_score
+                        .cmp(&left.effects.mitigation_score)
+                })
+                .then_with(|| {
+                    right
+                        .effects
+                        .reactive_enemy_damage
+                        .cmp(&left.effects.reactive_enemy_damage)
+                })
+                .then_with(|| {
+                    left.observed_at_state_query
+                        .cmp(&right.observed_at_state_query)
+                })
+                .then_with(|| left.ordered_index.cmp(&right.ordered_index))
+        });
+        self.action_effect_samples
+            .truncate(ACTION_EFFECT_SAMPLE_LIMIT);
+    }
+
     fn action_role_counts(&self) -> Vec<CombatSearchV2DiagnosticsActionRoleCount> {
         self.role_counts
             .iter()
@@ -477,6 +557,28 @@ impl ActionOrderingDiagnosticsCollector {
                 first_role: sample.first_role.label().to_string(),
                 first_original_action_id: sample.first_original_action_id,
                 first_action_key: sample.first_action_key.clone(),
+            })
+            .collect()
+    }
+
+    fn action_effect_samples(&self) -> Vec<CombatSearchV2DiagnosticsActionEffectSample> {
+        self.action_effect_samples
+            .iter()
+            .map(|sample| CombatSearchV2DiagnosticsActionEffectSample {
+                observed_at_state_query: sample.observed_at_state_query,
+                original_action_id: sample.original_action_id,
+                ordered_index: sample.ordered_index,
+                role: sample.role.label().to_string(),
+                action_key: sample.action_key.clone(),
+                mitigation_score: sample.effects.mitigation_score,
+                reactive_risk_score: sample.effects.reactive_risk_score,
+                enemy_strength_gain: sample.effects.enemy_strength_gain,
+                visible_attack_pressure_hint: sample.effects.visible_attack_pressure_hint,
+                reactive_player_hp_loss: sample.effects.reactive_player_hp_loss,
+                reactive_player_block: sample.effects.reactive_player_block,
+                reactive_enemy_damage: sample.effects.reactive_enemy_damage,
+                reactive_bad_draw_cards: sample.effects.reactive_bad_draw_cards,
+                reactive_forced_turn_end: sample.effects.reactive_forced_turn_end,
             })
             .collect()
     }
@@ -787,5 +889,65 @@ mod tests {
         assert_eq!(report.max_position_shift, 1);
         assert_eq!(report.largest_reorders.len(), 1);
         assert_eq!(report.largest_reorders[0].first_role, "lethal_card");
+    }
+
+    #[test]
+    fn ordering_collector_caps_action_effect_samples() {
+        let mut combat = blank_test_combat();
+        let mut nob = test_monster(EnemyId::GremlinNob);
+        nob.id = 1;
+        combat.entities.monsters = vec![nob];
+        combat.entities.power_db.insert(
+            1,
+            vec![Power {
+                power_type: PowerId::Anger,
+                instance_id: None,
+                amount: 2,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Defend, 10),
+            CombatCard::new(CardId::Strike, 11),
+        ];
+        let ordered = order_action_choices(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            vec![
+                CombatActionChoice::from_input(
+                    &combat,
+                    ClientInput::PlayCard {
+                        card_index: 0,
+                        target: None,
+                    },
+                ),
+                CombatActionChoice::from_input(
+                    &combat,
+                    ClientInput::PlayCard {
+                        card_index: 1,
+                        target: Some(1),
+                    },
+                ),
+            ],
+        );
+        let mut collector = ActionOrderingDiagnosticsCollector::default();
+
+        for _ in 0..(ACTION_EFFECT_SAMPLE_LIMIT + 3) {
+            collector.observe(&ordered.summary);
+        }
+        let report = collector.finish();
+
+        assert_eq!(
+            report.action_effect_actions,
+            (ACTION_EFFECT_SAMPLE_LIMIT + 3) as u64
+        );
+        assert_eq!(
+            report.action_effect_samples.len(),
+            ACTION_EFFECT_SAMPLE_LIMIT
+        );
+        assert!(report.action_effect_samples[0].enemy_strength_gain > 0);
+        assert!(report.action_effect_samples[0].reactive_risk_score > 0);
     }
 }

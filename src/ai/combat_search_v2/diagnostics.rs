@@ -427,10 +427,12 @@ mod tests {
                 states_reordered: 1,
                 reordered_state_ratio: 1.0,
                 total_actions_observed: 2,
+                action_effect_actions: 0,
                 max_position_shift: 1,
                 avg_position_shift: 1.0,
                 action_role_counts: Vec::new(),
                 largest_reorders: Vec::new(),
+                action_effect_samples: Vec::new(),
                 notes: Vec::new(),
             },
             &CombatSearchV2DiagnosticsTurnBranching {
