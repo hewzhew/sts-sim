@@ -25,10 +25,6 @@ pub(super) fn visible_incoming_damage(combat: &CombatState) -> i32 {
         .sum()
 }
 
-pub(super) fn survival_margin(combat: &CombatState) -> i32 {
-    combat_pressure_value(combat).survival_margin
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

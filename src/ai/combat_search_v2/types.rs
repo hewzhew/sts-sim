@@ -157,6 +157,7 @@ pub struct CombatSearchV2FrontierValueReport {
     pub split_debt_hp: i32,
     pub guardian_defensive_count: usize,
     pub guardian_defensive_block: i32,
+    pub phase_profile: CombatSearchV2PhaseProfileReport,
     pub sustained_mitigation: i32,
     pub hand: CombatSearchV2CardPileValueReport,
     pub next_draw: CombatSearchV2CardPileValueReport,
@@ -166,6 +167,24 @@ pub struct CombatSearchV2FrontierValueReport {
     pub cards_played: u32,
     pub actions_taken: usize,
     pub estimated: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2PhaseProfileReport {
+    pub profiling_policy: &'static str,
+    pub special_enemy_phase_count: usize,
+    pub split_pending_count: usize,
+    pub split_debt_hp: i32,
+    pub guardian_mode_shift_pending_count: usize,
+    pub guardian_defensive_count: usize,
+    pub lagavulin_sleeping_count: usize,
+    pub lagavulin_waking_count: usize,
+    pub pending_choice_present: bool,
+    pub pending_choice_kind: Option<&'static str>,
+    pub pending_choice_candidate_count: usize,
+    pub pending_choice_estimated_action_fanout: usize,
+    pub high_fanout_pending_choice: bool,
+    pub notes: Vec<&'static str>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -224,6 +243,9 @@ pub struct CombatSearchV2RolloutEstimateReport {
     pub total_enemy_hp: i32,
     pub total_enemy_block: i32,
     pub phase_adjusted_enemy_effort: i32,
+    pub special_enemy_phase_count: usize,
+    pub high_fanout_pending_choice: bool,
+    pub pending_choice_estimated_action_fanout: usize,
     pub survival_margin: i32,
     pub actions_simulated: usize,
     pub truncated: bool,

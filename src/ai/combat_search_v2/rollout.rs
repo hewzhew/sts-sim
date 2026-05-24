@@ -1,4 +1,3 @@
-use super::enemy_phase_value::enemy_phase_value;
 use super::*;
 
 pub(super) const DEFAULT_ROLLOUT_MAX_EVALUATIONS: usize = 384;
@@ -18,6 +17,9 @@ pub(super) struct RolloutNodeEstimate {
     pub(super) total_enemy_hp: i32,
     pub(super) total_enemy_block: i32,
     pub(super) phase_adjusted_enemy_effort: i32,
+    pub(super) special_enemy_phase_count: usize,
+    pub(super) high_fanout_pending_choice: bool,
+    pub(super) pending_choice_estimated_action_fanout: usize,
     pub(super) survival_margin: i32,
     pub(super) actions_simulated: usize,
     pub(super) truncated: bool,
@@ -48,6 +50,7 @@ pub(super) enum RolloutStopReason {
     NoLegalActions,
     PolicyDeclined,
     EngineStepLimit,
+    HighFanoutPendingChoice,
 }
 
 impl RolloutNodeEstimate {
@@ -65,6 +68,9 @@ impl RolloutNodeEstimate {
             total_enemy_hp: 0,
             total_enemy_block: 0,
             phase_adjusted_enemy_effort: 0,
+            special_enemy_phase_count: 0,
+            high_fanout_pending_choice: false,
+            pending_choice_estimated_action_fanout: 0,
             survival_margin: 0,
             actions_simulated: 0,
             truncated: false,
@@ -79,7 +85,7 @@ impl RolloutNodeEstimate {
         stop_reason: RolloutStopReason,
         last_action_reason: Option<&'static str>,
     ) -> Self {
-        let enemy_phase = enemy_phase_value(&node.combat);
+        let phase_profile = combat_search_phase_profile(&node.engine, &node.combat);
         Self {
             evaluated: true,
             terminal: terminal_label(&node.engine, &node.combat),
@@ -90,10 +96,17 @@ impl RolloutNodeEstimate {
             potions_discarded: node.potions_discarded,
             cards_played: node.cards_played,
             living_enemy_count: living_enemy_count(&node.combat),
-            total_enemy_hp: enemy_phase.raw_living_enemy_hp,
-            total_enemy_block: enemy_phase.raw_living_enemy_block,
-            phase_adjusted_enemy_effort: enemy_phase.phase_adjusted_living_enemy_effort,
-            survival_margin: survival_margin(&node.combat),
+            total_enemy_hp: phase_profile.enemy_phase.raw_living_enemy_hp,
+            total_enemy_block: phase_profile.enemy_phase.raw_living_enemy_block,
+            phase_adjusted_enemy_effort: phase_profile
+                .enemy_phase
+                .phase_adjusted_living_enemy_effort,
+            special_enemy_phase_count: phase_profile.special_enemy_phase_count(),
+            high_fanout_pending_choice: phase_profile.pending_choice.high_fanout,
+            pending_choice_estimated_action_fanout: phase_profile
+                .pending_choice
+                .estimated_action_fanout,
+            survival_margin: phase_profile.pressure.survival_margin,
             actions_simulated,
             truncated: stop_reason.is_truncated(),
             stop_reason,
@@ -140,6 +153,9 @@ impl RolloutNodeEstimate {
                 total_enemy_hp: self.total_enemy_hp,
                 total_enemy_block: self.total_enemy_block,
                 phase_adjusted_enemy_effort: self.phase_adjusted_enemy_effort,
+                special_enemy_phase_count: self.special_enemy_phase_count,
+                high_fanout_pending_choice: self.high_fanout_pending_choice,
+                pending_choice_estimated_action_fanout: self.pending_choice_estimated_action_fanout,
                 survival_margin: self.survival_margin,
                 actions_simulated: self.actions_simulated,
                 truncated: self.truncated,
@@ -159,6 +175,7 @@ impl RolloutStopReason {
             RolloutStopReason::NoLegalActions => "no_legal_actions",
             RolloutStopReason::PolicyDeclined => "policy_declined",
             RolloutStopReason::EngineStepLimit => "engine_step_limit",
+            RolloutStopReason::HighFanoutPendingChoice => "high_fanout_pending_choice",
         }
     }
 
@@ -249,7 +266,8 @@ impl RolloutCache {
                 "rollout estimates are not terminal proof",
                 "conservative_no_potion uses only legal simulator actions and disables potion actions",
                 "rollout cache is keyed by exact combat runtime state",
-                "unresolved rollout priority uses phase-adjusted enemy effort from enemy_phase_value",
+                "unresolved rollout priority uses phase-adjusted enemy effort from phase_profile",
+                "high-fanout pending choices stop rollout estimates instead of selecting an arbitrary branch",
             ],
         }
     }
@@ -286,6 +304,15 @@ fn conservative_no_potion_rollout(
                 &rollout,
                 actions_simulated,
                 RolloutStopReason::Deadline,
+                last_action_reason,
+            );
+        }
+        let phase_profile = combat_search_phase_profile(&rollout.engine, &rollout.combat);
+        if phase_profile.pending_choice.high_fanout {
+            return RolloutNodeEstimate::from_node(
+                &rollout,
+                actions_simulated,
+                RolloutStopReason::HighFanoutPendingChoice,
                 last_action_reason,
             );
         }
@@ -490,5 +517,41 @@ mod tests {
         assert_eq!(estimate.total_enemy_hp, 180);
         assert_eq!(estimate.total_enemy_block, 20);
         assert_eq!(estimate.phase_adjusted_enemy_effort, 200);
+    }
+
+    #[test]
+    fn conservative_rollout_stops_before_large_pending_choice_branch() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        let node = SearchNode {
+            engine: EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+                cards: vec![crate::content::cards::CardId::Strike; 7],
+                card_uuids: (0..7).collect(),
+            }),
+            combat,
+            actions: Vec::new(),
+            turn_prefix: TurnPrefixState::default(),
+            initial_hp: 80,
+            potions_used: 0,
+            potions_discarded: 0,
+            cards_played: 0,
+            potion_tactical_priority: 0,
+            last_turn_branch_priority: 0,
+            rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        };
+        let config = CombatSearchV2Config::default();
+
+        let estimate =
+            conservative_no_potion_rollout(&node, &FirstActionWinsStepper, &config, 4, None);
+
+        assert!(estimate.evaluated);
+        assert!(estimate.truncated);
+        assert_eq!(
+            estimate.stop_reason,
+            RolloutStopReason::HighFanoutPendingChoice
+        );
+        assert!(estimate.high_fanout_pending_choice);
+        assert_eq!(estimate.pending_choice_estimated_action_fanout, 128);
+        assert_eq!(estimate.actions_simulated, 0);
     }
 }

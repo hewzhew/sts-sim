@@ -6,6 +6,8 @@ pub(super) struct CombatSearchRolloutValueV1 {
     pub(super) terminal_rank: i32,
     pub(super) final_hp: i32,
     pub(super) enemy_progress: i32,
+    pub(super) special_enemy_phase_progress: i32,
+    pub(super) pending_choice_fanout: i32,
     pub(super) survival_margin: i32,
     pub(super) potion_conservation: i32,
     pub(super) faster_turns: i32,
@@ -19,6 +21,11 @@ impl Ord for CombatSearchRolloutValueV1 {
             .then_with(|| self.terminal_rank.cmp(&other.terminal_rank))
             .then_with(|| self.final_hp.cmp(&other.final_hp))
             .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
+            .then_with(|| {
+                self.special_enemy_phase_progress
+                    .cmp(&other.special_enemy_phase_progress)
+            })
+            .then_with(|| self.pending_choice_fanout.cmp(&other.pending_choice_fanout))
             .then_with(|| self.survival_margin.cmp(&other.survival_margin))
             .then_with(|| self.potion_conservation.cmp(&other.potion_conservation))
             .then_with(|| self.faster_turns.cmp(&other.faster_turns))
@@ -38,6 +45,8 @@ pub(super) fn rollout_priority_value(estimate: RolloutNodeEstimate) -> CombatSea
         terminal_rank: estimate.priority_terminal_rank(),
         final_hp: estimate.final_hp,
         enemy_progress: estimate.enemy_progress(),
+        special_enemy_phase_progress: -(estimate.special_enemy_phase_count as i32),
+        pending_choice_fanout: -(estimate.pending_choice_estimated_action_fanout as i32),
         survival_margin: estimate.survival_margin,
         potion_conservation: estimate.potion_conservation(),
         faster_turns: estimate.faster_turns(),
@@ -80,6 +89,22 @@ mod tests {
         higher_effort.phase_adjusted_enemy_effort = 50;
 
         assert!(rollout_priority_value(lower_effort) > rollout_priority_value(higher_effort));
+    }
+
+    #[test]
+    fn rollout_priority_penalizes_unresolved_high_fanout_pending_choices() {
+        let mut low_fanout = RolloutNodeEstimate::unevaluated();
+        low_fanout.evaluated = true;
+        low_fanout.terminal = SearchTerminalLabel::Unresolved;
+        low_fanout.final_hp = 40;
+        low_fanout.phase_adjusted_enemy_effort = 30;
+        low_fanout.pending_choice_estimated_action_fanout = 4;
+
+        let mut high_fanout = low_fanout;
+        high_fanout.high_fanout_pending_choice = true;
+        high_fanout.pending_choice_estimated_action_fanout = 128;
+
+        assert!(rollout_priority_value(low_fanout) > rollout_priority_value(high_fanout));
     }
 
     fn terminal_win_with_hp(final_hp: i32) -> RolloutNodeEstimate {

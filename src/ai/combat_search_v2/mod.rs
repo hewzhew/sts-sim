@@ -32,6 +32,7 @@ mod frontier;
 mod outcome_score;
 mod pending_choice_ordering;
 mod pending_choice_profile;
+mod phase_profile;
 mod potions;
 mod pressure_value;
 mod report;
@@ -63,7 +64,7 @@ use card_identity::{
 };
 use diagnostics::{SearchDiagnosticsCollector, SearchDiagnosticsFinish, FRONTIER_SAMPLE_LIMIT};
 use diagnostics_tags::diagnosis_tags;
-use enemy_mechanics_profile::{enemy_mechanics_profile, enemy_mechanics_profile_report};
+use enemy_mechanics_profile::enemy_mechanics_profile_report;
 use enemy_phase_transition::enemy_phase_transition_hint_for_input;
 use expansion::{
     summarize_action_expansion, ActionExpansionDiagnosticsCollector, ActionExpansionSummary,
@@ -77,7 +78,8 @@ use pending_choice_ordering::{pending_choice_ordering_hint, PendingChoiceOrderin
 use pending_choice_profile::{
     summarize_pending_choice, PendingChoiceDiagnosticsCollector, PendingChoiceProfile,
 };
-use pressure_value::{survival_margin, visible_incoming_damage};
+use phase_profile::{combat_search_phase_profile, combat_search_phase_profile_report};
+use pressure_value::visible_incoming_damage;
 use report::{summarize_state, trajectory_report};
 use rollout::{RolloutCache, RolloutNodeEstimate};
 use rollout_policy::{choose_rollout_action, filtered_rollout_legal_actions};
