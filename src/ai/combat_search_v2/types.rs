@@ -4,7 +4,8 @@ use crate::state::core::ClientInput;
 use serde::{Deserialize, Serialize};
 
 use super::state_abstraction::{
-    StateAbstractionBoundaryId, StateAbstractionConsumer, StateAbstractionSoundnessLevel,
+    StateAbstractionBoundaryId, StateAbstractionConsumer, StateAbstractionRevealGate,
+    StateAbstractionSoundnessLevel, StateDivergenceKind,
 };
 
 #[derive(Clone, Debug)]
@@ -602,8 +603,18 @@ pub struct CombatSearchV2DiagnosticsTurnSequence {
     pub max_effect_variants_per_group: usize,
     pub max_prefix_length: usize,
     pub max_legal_actions_after_prefix: usize,
+    pub order_sensitive_divergence_histogram:
+        Vec<CombatSearchV2DiagnosticsTurnSequenceDivergenceCount>,
     pub largest_groups: Vec<CombatSearchV2DiagnosticsTurnSequenceGroupSample>,
     pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsTurnSequenceDivergenceCount {
+    pub kind: StateDivergenceKind,
+    pub first_divergence_path: Option<&'static str>,
+    pub guessed_reveal_gate: StateAbstractionRevealGate,
+    pub groups: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -616,6 +627,9 @@ pub struct CombatSearchV2DiagnosticsTurnSequenceGroupSample {
     pub ordered_variants: usize,
     pub effect_variants: usize,
     pub max_legal_actions: usize,
+    pub divergence_kind: StateDivergenceKind,
+    pub first_divergence_path: Option<&'static str>,
+    pub guessed_reveal_gate: StateAbstractionRevealGate,
     pub ordered_samples: Vec<String>,
 }
 

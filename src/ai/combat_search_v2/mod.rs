@@ -50,6 +50,7 @@ mod turn_branching;
 mod turn_local_dominance;
 mod turn_prefix;
 mod turn_sequence;
+mod turn_sequence_effect;
 mod types;
 mod value;
 mod value_facts;

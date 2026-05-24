@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::ai::combat_search_v2::state_abstraction::{
     build_state_abstraction_gate_report, classify_state_abstraction_case,
-    StateAbstractionCaseInput, StateAbstractionGateReport,
+    StateAbstractionCaseInput, StateAbstractionDivergenceInput, StateAbstractionGateReport,
 };
 use crate::ai::combat_search_v2::{SearchProofStatus, SearchTerminalLabel};
 
@@ -154,6 +154,18 @@ pub fn build_combat_search_v2_benchmark_gate_report(
             case_id: facts.id,
             same_effect_turn_sequence_groups: facts.same_effect_turn_sequence_groups,
             order_sensitive_turn_sequence_groups: facts.order_sensitive_turn_sequence_groups,
+            turn_sequence_divergence_histogram: case
+                .diagnostics
+                .turn_sequence
+                .order_sensitive_divergence_histogram
+                .iter()
+                .map(|entry| StateAbstractionDivergenceInput {
+                    kind: entry.kind,
+                    first_divergence_path: entry.first_divergence_path,
+                    guessed_reveal_gate: entry.guessed_reveal_gate,
+                    groups: entry.groups,
+                })
+                .collect(),
         }) {
             state_abstraction_cases.push(abstraction_case);
         }

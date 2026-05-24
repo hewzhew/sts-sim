@@ -121,7 +121,16 @@ pub struct StateAbstractionCaseReport {
     pub exact_branch_removal_allowed: bool,
     pub same_effect_turn_sequence_groups: usize,
     pub order_sensitive_turn_sequence_groups: usize,
+    pub turn_sequence_divergence_histogram: Vec<StateAbstractionCaseDivergenceCount>,
     pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct StateAbstractionCaseDivergenceCount {
+    pub kind: StateDivergenceKind,
+    pub first_divergence_path: Option<&'static str>,
+    pub guessed_reveal_gate: StateAbstractionRevealGate,
+    pub groups: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -129,6 +138,15 @@ pub struct StateAbstractionCaseInput<'a> {
     pub case_id: &'a str,
     pub same_effect_turn_sequence_groups: usize,
     pub order_sensitive_turn_sequence_groups: usize,
+    pub turn_sequence_divergence_histogram: Vec<StateAbstractionDivergenceInput>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StateAbstractionDivergenceInput {
+    pub kind: StateDivergenceKind,
+    pub first_divergence_path: Option<&'static str>,
+    pub guessed_reveal_gate: StateAbstractionRevealGate,
+    pub groups: usize,
 }
 
 pub fn boundary_spec(id: StateAbstractionBoundaryId) -> StateAbstractionBoundarySpec {
@@ -190,6 +208,8 @@ pub fn classify_state_abstraction_case(
         return Some(turn_sequence_case_report(
             input,
             StateDivergenceKind::IdentityOnlyCandidate,
+            None,
+            StateAbstractionRevealGate::Unknown,
             StateAbstractionConsumer::ReportOnly,
             vec![
                 "same-effect ordered variants are candidates for later simulator-backed commutation probes",
@@ -198,13 +218,16 @@ pub fn classify_state_abstraction_case(
         ));
     }
     if input.order_sensitive_turn_sequence_groups > 0 {
+        let primary = primary_divergence(&input.turn_sequence_divergence_histogram);
         return Some(turn_sequence_case_report(
             input,
-            StateDivergenceKind::Unknown,
+            primary.kind,
+            primary.first_divergence_path,
+            primary.guessed_reveal_gate,
             StateAbstractionConsumer::ReportOnly,
             vec![
                 "current exact/dominance keys observe different future-relevant state for reordered prefixes",
-                "first divergence path is unknown until a typed state-pair diff is added",
+                "turn-sequence divergence classification is diagnostic guidance, not a pruning proof",
             ],
         ));
     }
@@ -237,27 +260,82 @@ pub fn build_state_abstraction_gate_report(
 fn turn_sequence_case_report(
     input: StateAbstractionCaseInput<'_>,
     divergence_kind: StateDivergenceKind,
+    first_divergence_path: Option<&'static str>,
+    guessed_reveal_gate: StateAbstractionRevealGate,
     recommended_consumer: StateAbstractionConsumer,
     notes: Vec<&'static str>,
 ) -> StateAbstractionCaseReport {
     let spec = boundary_spec(StateAbstractionBoundaryId::TurnSequenceOrderSensitive);
+    let public_observation_changed =
+        matches!(divergence_kind, StateDivergenceKind::ImmediatePublicDelta);
+    let legal_actions_changed = matches!(divergence_kind, StateDivergenceKind::LegalActionDelta);
+    let terminal_class_changed = matches!(divergence_kind, StateDivergenceKind::TerminalDelta);
+    let turn_sequence_divergence_histogram = input
+        .turn_sequence_divergence_histogram
+        .into_iter()
+        .map(|entry| StateAbstractionCaseDivergenceCount {
+            kind: entry.kind,
+            first_divergence_path: entry.first_divergence_path,
+            guessed_reveal_gate: entry.guessed_reveal_gate,
+            groups: entry.groups,
+        })
+        .collect();
     StateAbstractionCaseReport {
         case_id: input.case_id.to_string(),
         boundary_id: spec.id,
         soundness: spec.soundness,
         allowed_consumers: spec.allowed_consumers,
         divergence_kind,
-        first_divergence_path: None,
-        public_observation_changed: None,
-        legal_actions_changed: None,
-        terminal_class_changed: None,
-        guessed_reveal_gate: StateAbstractionRevealGate::Unknown,
+        first_divergence_path,
+        public_observation_changed: Some(public_observation_changed),
+        legal_actions_changed: Some(legal_actions_changed),
+        terminal_class_changed: Some(terminal_class_changed),
+        guessed_reveal_gate,
         recommended_consumer,
         pruning_allowed: false,
         exact_branch_removal_allowed: false,
         same_effect_turn_sequence_groups: input.same_effect_turn_sequence_groups,
         order_sensitive_turn_sequence_groups: input.order_sensitive_turn_sequence_groups,
+        turn_sequence_divergence_histogram,
         notes,
+    }
+}
+
+fn primary_divergence(
+    histogram: &[StateAbstractionDivergenceInput],
+) -> StateAbstractionDivergenceInput {
+    histogram
+        .iter()
+        .max_by(|left, right| {
+            left.groups
+                .cmp(&right.groups)
+                .then_with(|| divergence_rank(right.kind).cmp(&divergence_rank(left.kind)))
+                .then_with(|| right.kind.cmp(&left.kind))
+        })
+        .cloned()
+        .unwrap_or(StateAbstractionDivergenceInput {
+            kind: StateDivergenceKind::Unknown,
+            first_divergence_path: None,
+            guessed_reveal_gate: StateAbstractionRevealGate::Unknown,
+            groups: 0,
+        })
+}
+
+fn divergence_rank(kind: StateDivergenceKind) -> u8 {
+    match kind {
+        StateDivergenceKind::TerminalDelta => 0,
+        StateDivergenceKind::LegalActionDelta => 1,
+        StateDivergenceKind::ImmediatePublicDelta => 2,
+        StateDivergenceKind::HandOrderDelta => 3,
+        StateDivergenceKind::DrawPileOrderDelta => 4,
+        StateDivergenceKind::DiscardOrderDelta => 5,
+        StateDivergenceKind::ExhaustOrderDelta => 6,
+        StateDivergenceKind::RngStateDelta => 7,
+        StateDivergenceKind::CardUuidDelta => 8,
+        StateDivergenceKind::RelicCounterDelta => 9,
+        StateDivergenceKind::PendingQueueDelta => 10,
+        StateDivergenceKind::IdentityOnlyCandidate => 11,
+        StateDivergenceKind::Unknown => 12,
     }
 }
 
@@ -378,6 +456,7 @@ mod tests {
             case_id: "case",
             same_effect_turn_sequence_groups: 0,
             order_sensitive_turn_sequence_groups: 3,
+            turn_sequence_divergence_histogram: Vec::new(),
         })
         .expect("order-sensitive sequence should classify");
 
@@ -391,5 +470,33 @@ mod tests {
             StateAbstractionConsumer::ReportOnly
         );
         assert!(!report.exact_branch_removal_allowed);
+    }
+
+    #[test]
+    fn classifier_uses_turn_sequence_divergence_histogram() {
+        let report = classify_state_abstraction_case(StateAbstractionCaseInput {
+            case_id: "case",
+            same_effect_turn_sequence_groups: 0,
+            order_sensitive_turn_sequence_groups: 3,
+            turn_sequence_divergence_histogram: vec![StateAbstractionDivergenceInput {
+                kind: StateDivergenceKind::DrawPileOrderDelta,
+                first_divergence_path: Some("combat.zones.draw_pile"),
+                guessed_reveal_gate: StateAbstractionRevealGate::NextDraw,
+                groups: 2,
+            }],
+        })
+        .expect("order-sensitive sequence should classify");
+
+        assert_eq!(
+            report.divergence_kind,
+            StateDivergenceKind::DrawPileOrderDelta
+        );
+        assert_eq!(report.first_divergence_path, Some("combat.zones.draw_pile"));
+        assert_eq!(
+            report.guessed_reveal_gate,
+            StateAbstractionRevealGate::NextDraw
+        );
+        assert_eq!(report.turn_sequence_divergence_histogram.len(), 1);
+        assert_eq!(report.public_observation_changed, Some(false));
     }
 }

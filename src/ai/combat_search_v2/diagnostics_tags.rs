@@ -441,6 +441,7 @@ mod tests {
             max_effect_variants_per_group: 0,
             max_prefix_length: 0,
             max_legal_actions_after_prefix: 0,
+            order_sensitive_divergence_histogram: Vec::new(),
             largest_groups: Vec::new(),
             notes: Vec::new(),
         }

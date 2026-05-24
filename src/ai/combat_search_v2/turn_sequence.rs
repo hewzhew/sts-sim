@@ -1,3 +1,7 @@
+use super::turn_sequence_effect::{
+    effect_fingerprint, TurnSequenceDivergence, TurnSequenceEffectAggregate,
+    TurnSequenceEffectFingerprint,
+};
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,6 +16,7 @@ pub(super) struct TurnSequenceSummary {
     ordered_key: Option<String>,
     unordered_key: Option<String>,
     effect_key: Option<String>,
+    effect_fingerprint: Option<TurnSequenceEffectFingerprint>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -27,6 +32,7 @@ struct TurnSequenceGroupAggregate {
     max_legal_actions: usize,
     ordered_variants: BTreeSet<String>,
     effect_variants: BTreeSet<String>,
+    effect_components: TurnSequenceEffectAggregate,
 }
 
 #[derive(Default)]
@@ -52,24 +58,20 @@ pub(super) fn summarize_turn_sequence(
             ordered_key: None,
             unordered_key: None,
             effect_key: None,
+            effect_fingerprint: None,
         };
     }
 
+    let effect_fingerprint = effect_fingerprint(node, legal_actions);
     TurnSequenceSummary {
         prefix_length,
         legal_actions,
         origin_key: node.turn_prefix.origin_key().map(str::to_string),
         ordered_key: node.turn_prefix.ordered_sequence_key(),
         unordered_key: node.turn_prefix.unordered_sequence_key(),
-        effect_key: Some(effect_key(node)),
+        effect_key: Some(turn_sequence_effect::effect_key(&effect_fingerprint)),
+        effect_fingerprint: Some(effect_fingerprint),
     }
-}
-
-fn effect_key(node: &SearchNode) -> String {
-    stable_debug_hash(&(
-        combat_dominance_key(&node.engine, &node.combat),
-        node.resource_vector(),
-    ))
 }
 
 impl TurnSequenceDiagnosticsCollector {
@@ -107,6 +109,9 @@ impl TurnSequenceDiagnosticsCollector {
         aggregate.max_legal_actions = aggregate.max_legal_actions.max(summary.legal_actions);
         aggregate.ordered_variants.insert(ordered_key.clone());
         aggregate.effect_variants.insert(effect_key.clone());
+        if let Some(effect_fingerprint) = summary.effect_fingerprint.as_ref() {
+            aggregate.effect_components.observe(effect_fingerprint);
+        }
     }
 
     pub(super) fn finish(&self) -> CombatSearchV2DiagnosticsTurnSequence {
@@ -115,6 +120,7 @@ impl TurnSequenceDiagnosticsCollector {
         let mut order_sensitive_groups = 0usize;
         let mut max_ordered_variants_per_group = 0usize;
         let mut max_effect_variants_per_group = 0usize;
+        let mut divergence_counts = BTreeMap::<TurnSequenceDivergence, usize>::new();
 
         for aggregate in self.groups.values() {
             let ordered = aggregate.ordered_variants.len();
@@ -127,6 +133,9 @@ impl TurnSequenceDiagnosticsCollector {
                     same_effect_order_variant_groups += 1;
                 } else if effects > 1 {
                     order_sensitive_groups += 1;
+                    *divergence_counts
+                        .entry(aggregate.effect_components.classify())
+                        .or_default() += 1;
                 }
             }
         }
@@ -145,12 +154,14 @@ impl TurnSequenceDiagnosticsCollector {
             max_effect_variants_per_group,
             max_prefix_length: self.max_prefix_length,
             max_legal_actions_after_prefix: self.max_legal_actions_after_prefix,
+            order_sensitive_divergence_histogram: divergence_histogram(divergence_counts),
             largest_groups: self.largest_group_samples(),
             notes: vec![
                 "groups are scoped by the first action's turn-origin dominance hash",
                 "unordered prefix tokens intentionally ignore action order for diagnostics only",
-                "effect variants use CombatDominanceKey plus ResourceVector debug hashes",
+                "effect variants use typed diagnostic components plus dominance/resource fallback hashes",
                 "same-effect groups are candidates for later simulator-backed commutation probes, not pruning proof",
+                "order-sensitive group divergence is classifier guidance, not proof-safe abstraction",
                 "large-choice pending decisions are not handled by this diagnostic",
             ],
         }
@@ -180,8 +191,9 @@ impl TurnSequenceDiagnosticsCollector {
         samples
             .into_iter()
             .take(LARGEST_SEQUENCE_GROUP_SAMPLE_LIMIT)
-            .map(
-                |(key, aggregate)| CombatSearchV2DiagnosticsTurnSequenceGroupSample {
+            .map(|(key, aggregate)| {
+                let divergence = aggregate.effect_components.classify();
+                CombatSearchV2DiagnosticsTurnSequenceGroupSample {
                     group_class: group_class(aggregate).to_string(),
                     origin_key: key.origin_key.clone(),
                     unordered_key_preview: preview(&key.unordered_key),
@@ -190,14 +202,17 @@ impl TurnSequenceDiagnosticsCollector {
                     ordered_variants: aggregate.ordered_variants.len(),
                     effect_variants: aggregate.effect_variants.len(),
                     max_legal_actions: aggregate.max_legal_actions,
+                    divergence_kind: divergence.kind,
+                    first_divergence_path: divergence.first_divergence_path,
+                    guessed_reveal_gate: divergence.guessed_reveal_gate,
                     ordered_samples: aggregate
                         .ordered_variants
                         .iter()
                         .take(3)
                         .map(|ordered| preview(ordered))
                         .collect(),
-                },
-            )
+                }
+            })
             .collect()
     }
 }
@@ -222,13 +237,28 @@ fn preview(value: &str) -> String {
     }
 }
 
-fn stable_debug_hash<T: std::fmt::Debug>(value: &T) -> String {
-    let mut hash = 0xcbf29ce484222325u64;
-    for byte in format!("{value:?}").bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    format!("{hash:016x}")
+fn divergence_histogram(
+    counts: BTreeMap<TurnSequenceDivergence, usize>,
+) -> Vec<CombatSearchV2DiagnosticsTurnSequenceDivergenceCount> {
+    let mut entries = counts
+        .into_iter()
+        .map(
+            |(divergence, groups)| CombatSearchV2DiagnosticsTurnSequenceDivergenceCount {
+                kind: divergence.kind,
+                first_divergence_path: divergence.first_divergence_path,
+                guessed_reveal_gate: divergence.guessed_reveal_gate,
+                groups,
+            },
+        )
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        right
+            .groups
+            .cmp(&left.groups)
+            .then_with(|| left.kind.cmp(&right.kind))
+            .then_with(|| left.first_divergence_path.cmp(&right.first_divergence_path))
+    });
+    entries
 }
 
 #[cfg(test)]
@@ -325,6 +355,7 @@ mod tests {
             ordered_key: Some(ordered_key.to_string()),
             unordered_key: Some(unordered_key.to_string()),
             effect_key: Some(effect_key.to_string()),
+            effect_fingerprint: None,
         }
     }
 
