@@ -2,16 +2,16 @@ use super::*;
 use crate::content::cards;
 #[cfg(test)]
 use crate::content::powers::PowerId;
-use crate::runtime::action::{Action, DamageInfo};
 use crate::runtime::combat::CombatCard;
 
+mod damage_projection;
 mod projection;
+mod transition_rules;
 use projection::{PhaseProjection, ProjectedMonsterDamage};
-
-const SPLIT_MOVE_ID: u8 = 3;
-const SPLIT_TRIGGER_RISK_PER_DEBT_HP: i32 = 3;
-const GUARDIAN_MODE_SHIFT_TRIGGER_RISK: i32 = 40;
-const LAGAVULIN_WAKE_RISK: i32 = 80;
+use transition_rules::{
+    observe_guardian_transition, observe_lagavulin_transition, observe_split_transition,
+    GUARDIAN_MODE_SHIFT_TRIGGER_RISK, LAGAVULIN_WAKE_RISK, SPLIT_TRIGGER_RISK_PER_DEBT_HP,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct EnemyPhaseTransitionHint {
@@ -69,9 +69,10 @@ fn play_card_phase_transition_hint(
     );
     let mut projection = PhaseProjection::from_combat(combat);
 
-    for action in actions {
-        observe_action_damage(&mut projection, action.action);
-    }
+    damage_projection::observe_actions_damage(
+        &mut projection,
+        actions.into_iter().map(|action| action.action),
+    );
 
     for projected in projection.monsters.values() {
         observe_split_transition(&mut hint, projected);
@@ -80,114 +81,6 @@ fn play_card_phase_transition_hint(
     }
 
     hint
-}
-
-fn observe_action_damage(projection: &mut PhaseProjection, action: Action) {
-    match action {
-        Action::Damage(info)
-        | Action::PummelDamage(info)
-        | Action::BaneDamage(info)
-        | Action::WallopDamage(info)
-        | Action::DamagePerAttackPlayed(info)
-        | Action::HeelHook(info)
-        | Action::Flechettes(info)
-        | Action::DropkickDamageAndEffect {
-            damage_info: info, ..
-        }
-        | Action::Ftl {
-            damage_info: info, ..
-        }
-        | Action::Skewer {
-            damage_info: info, ..
-        }
-        | Action::Sunder {
-            damage_info: info, ..
-        }
-        | Action::FearNoEvil {
-            damage_info: info, ..
-        }
-        | Action::FiendFire {
-            damage_info: info, ..
-        }
-        | Action::Feed {
-            damage_info: info, ..
-        }
-        | Action::LessonLearned {
-            damage_info: info, ..
-        }
-        | Action::HandOfGreed {
-            damage_info: info, ..
-        }
-        | Action::RitualDagger {
-            damage_info: info, ..
-        }
-        | Action::VampireDamage(info)
-        | Action::Barrage { damage: info } => observe_damage_info(projection, &info),
-        Action::DamageAllEnemies { damages, .. }
-        | Action::VampireDamageAllEnemies { damages, .. } => {
-            for (slot, damage) in damages.iter().copied().enumerate() {
-                projection.apply_damage_to_slot(slot, damage);
-            }
-        }
-        Action::Whirlwind { damages, .. } => {
-            for (slot, damage) in damages.iter().copied().enumerate() {
-                projection.apply_damage_to_slot(slot, damage);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn observe_damage_info(projection: &mut PhaseProjection, info: &DamageInfo) {
-    projection.apply_damage_to_entity(info.target, info.output);
-}
-
-fn observe_split_transition(
-    hint: &mut EnemyPhaseTransitionHint,
-    projected: &ProjectedMonsterDamage,
-) {
-    if !projected.split_power || projected.large_slime_split_already_triggered {
-        return;
-    }
-    if projected.planned_move_id == SPLIT_MOVE_ID {
-        return;
-    }
-    let threshold = projected.max_hp.saturating_div(2);
-    if projected.current_hp > threshold
-        && projected.projected_hp <= threshold
-        && projected.projected_hp > 0
-    {
-        hint.split_trigger_count += 1;
-        hint.split_debt_hp = hint.split_debt_hp.saturating_add(projected.projected_hp);
-    }
-}
-
-fn observe_guardian_transition(
-    hint: &mut EnemyPhaseTransitionHint,
-    projected: &ProjectedMonsterDamage,
-) {
-    if !projected.guardian_open || projected.guardian_close_up_triggered || projected.hp_loss <= 0 {
-        return;
-    }
-    let Some(remaining) = projected.guardian_mode_shift_remaining else {
-        return;
-    };
-    hint.guardian_min_threshold_remaining_before_hit = Some(
-        hint.guardian_min_threshold_remaining_before_hit
-            .map_or(remaining, |old| old.min(remaining)),
-    );
-    if projected.hp_loss >= remaining.max(0) {
-        hint.guardian_mode_shift_trigger_count += 1;
-    }
-}
-
-fn observe_lagavulin_transition(
-    hint: &mut EnemyPhaseTransitionHint,
-    projected: &ProjectedMonsterDamage,
-) {
-    if projected.lagavulin_sleeping && projected.hp_loss > 0 {
-        hint.lagavulin_wake_risk_count += 1;
-    }
 }
 
 #[cfg(test)]
