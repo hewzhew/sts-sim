@@ -1,8 +1,12 @@
+use super::super::{filtered_legal_actions, CombatSearchV2PotionPolicy};
+use super::types::ActionExpansionKind;
 use super::*;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::potions::{Potion, PotionId};
 use crate::runtime::combat::CombatCard;
+use crate::sim::combat_action::CombatActionChoice;
+use crate::state::core::{ClientInput, EngineState};
 use crate::test_support::{blank_test_combat, test_monster};
 
 #[test]
