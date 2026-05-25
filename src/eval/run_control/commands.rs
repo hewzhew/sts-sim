@@ -15,6 +15,7 @@ pub enum RunControlCommand {
     Main,
     Deck,
     Map,
+    RouteSuggest,
     Relics,
     Potions,
     Draw,
@@ -124,6 +125,9 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "main" | "state" => Ok(RunControlCommand::Main),
         "deck" => Ok(RunControlCommand::Deck),
         "map" => Ok(RunControlCommand::Map),
+        "rs" | "route" | "route-suggest" | "route-suggestion" => {
+            Ok(RunControlCommand::RouteSuggest)
+        }
         "relics" | "relic-list" => Ok(RunControlCommand::Relics),
         "potions" | "potion-list" => Ok(RunControlCommand::Potions),
         "draw" | "draw-pile" => Ok(RunControlCommand::Draw),
@@ -244,7 +248,7 @@ pub fn run_control_help() -> &'static str {
     "\
 Help:
   Core:
-    main/state, deck, map, relics, potions, inspect <id>, case [path], d/details, r/raw, quit
+    main/state, deck, map, rs/route-suggest, relics, potions, inspect <id>, case [path], d/details, r/raw, quit
     n/next = advance to next human choice; <id> chooses a visible option
     Enter chooses the single visible option when safe
 
@@ -254,7 +258,7 @@ Help:
     sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path]
 
   Map/Event/Reward:
-    go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
+    rs/route-suggest = read-only route recommendation; go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
     hand-select <uuid...>, grid-select <uuid...>, choose <idx>, open, relic <idx>
 
   Shop/Campfire:
@@ -279,7 +283,7 @@ Help:
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "main | n=advance | deck | map | relics | potions | inspect <id> | auto-reward | details | raw | help"
+    "main | n=advance | deck | map | rs=route-suggest | relics | potions | inspect <id> | auto-reward | details | raw | help"
 }
 
 fn is_candidate_id(command: &str) -> bool {
@@ -776,6 +780,14 @@ mod tests {
         assert_eq!(
             parse_run_control_command("deck").expect("deck should parse"),
             RunControlCommand::Deck
+        );
+        assert_eq!(
+            parse_run_control_command("rs").expect("rs should parse"),
+            RunControlCommand::RouteSuggest
+        );
+        assert_eq!(
+            parse_run_control_command("route-suggest").expect("route-suggest should parse"),
+            RunControlCommand::RouteSuggest
         );
         assert_eq!(
             parse_run_control_command("d").expect("d should parse"),

@@ -165,6 +165,9 @@ impl RunControlSession {
                 Ok(RunControlCommandOutcome::message(render_deck_panel(self)))
             }
             RunControlCommand::Map => Ok(RunControlCommandOutcome::message(render_map_panel(self))),
+            RunControlCommand::RouteSuggest => Ok(RunControlCommandOutcome::message(
+                super::route_policy::render_route_suggestion(self),
+            )),
             RunControlCommand::Relics => {
                 Ok(RunControlCommandOutcome::message(render_relics_panel(self)))
             }

@@ -376,14 +376,6 @@ fn card_detail(name: &str, id: crate::content::cards::CardId, upgrades: u8) -> S
     out
 }
 
-pub(super) fn format_range(min: usize, max: usize) -> String {
-    if min == max {
-        min.to_string()
-    } else {
-        format!("{min}-{max}")
-    }
-}
-
 pub(super) fn format_first_floor(floor: Option<i32>) -> String {
     floor
         .map(|floor| format!("floor {floor}"))

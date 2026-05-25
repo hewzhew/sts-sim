@@ -16,6 +16,7 @@ mod pending_choice_card_contract_tests;
 pub mod registry;
 mod render;
 mod reward_auto;
+mod route_policy;
 mod search_evidence;
 mod session;
 mod session_trace;
