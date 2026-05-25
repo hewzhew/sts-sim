@@ -1,9 +1,9 @@
 use super::*;
-use crate::content::cards::{self, CardTarget};
-use crate::content::potions::PotionId;
 use std::collections::BTreeMap;
 
+mod candidates;
 mod diagnostics;
+use candidates::{target_fanout_candidate, TargetFanoutCandidate};
 pub(super) use diagnostics::TargetFanoutDiagnosticsCollector;
 
 #[derive(Clone, Debug)]
@@ -23,16 +23,6 @@ struct TargetFanoutGroupSummary {
     min_damage_hint: i32,
     max_damage_hint: i32,
     first_action_key: String,
-}
-
-#[derive(Clone, Debug)]
-struct TargetFanoutCandidate {
-    kind: TargetFanoutKind,
-    source_key: String,
-    target_hp_with_block: i32,
-    damage_hint: i32,
-    lethal: bool,
-    action_key: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -69,94 +59,6 @@ pub(super) fn summarize_target_fanout(
     }
 }
 
-fn target_fanout_candidate(
-    combat: &CombatState,
-    choice: &CombatActionChoice,
-) -> Option<TargetFanoutCandidate> {
-    match &choice.input {
-        ClientInput::PlayCard {
-            card_index,
-            target: Some(target),
-        } => card_target_candidate(combat, choice, *card_index, *target),
-        ClientInput::UsePotion {
-            potion_index,
-            target: Some(target),
-        } => potion_target_candidate(combat, choice, *potion_index, *target),
-        _ => None,
-    }
-}
-
-fn card_target_candidate(
-    combat: &CombatState,
-    choice: &CombatActionChoice,
-    card_index: usize,
-    target: usize,
-) -> Option<TargetFanoutCandidate> {
-    let card = combat.zones.hand.get(card_index)?;
-    let target_hp_with_block = monster_hp_with_block(combat, target)?;
-    let target_kind = cards::effective_target(card);
-    if !matches!(target_kind, CardTarget::Enemy | CardTarget::SelfAndEnemy) {
-        return None;
-    }
-    let evaluated = cards::evaluate_card_for_play(card, combat, Some(target));
-    let damage_hint = evaluated.base_damage_mut.max(0);
-    Some(TargetFanoutCandidate {
-        kind: TargetFanoutKind::PlayCard,
-        source_key: format!(
-            "play_card/hand:{card_index}/card:{}+{}/uuid:{}/cost:{}",
-            cards::java_id(card.id),
-            card.upgrades,
-            card.uuid,
-            card.cost_for_turn_java()
-        ),
-        target_hp_with_block,
-        damage_hint,
-        lethal: damage_hint >= target_hp_with_block && damage_hint > 0,
-        action_key: choice.action_key.clone(),
-    })
-}
-
-fn potion_target_candidate(
-    combat: &CombatState,
-    choice: &CombatActionChoice,
-    potion_index: usize,
-    target: usize,
-) -> Option<TargetFanoutCandidate> {
-    let potion = combat.entities.potions.get(potion_index)?.as_ref()?;
-    let target_hp_with_block = monster_hp_with_block(combat, target)?;
-    let damage_hint = potion_single_target_damage_hint(combat, potion.id);
-    Some(TargetFanoutCandidate {
-        kind: TargetFanoutKind::UsePotion,
-        source_key: format!(
-            "use_potion/slot:{potion_index}/potion:{:?}/uuid:{}",
-            potion.id, potion.uuid
-        ),
-        target_hp_with_block,
-        damage_hint,
-        lethal: damage_hint >= target_hp_with_block && damage_hint > 0,
-        action_key: choice.action_key.clone(),
-    })
-}
-
-fn potion_single_target_damage_hint(combat: &CombatState, id: PotionId) -> i32 {
-    match id {
-        PotionId::FirePotion => potion_potency(combat, id),
-        _ => 0,
-    }
-}
-
-fn potion_potency(combat: &CombatState, id: PotionId) -> i32 {
-    let mut potency = crate::content::potions::get_potion_definition(id).base_potency;
-    if combat
-        .entities
-        .player
-        .has_relic(crate::content::relics::RelicId::SacredBark)
-    {
-        potency *= 2;
-    }
-    potency
-}
-
 fn summarize_group(candidates: Vec<TargetFanoutCandidate>) -> Option<TargetFanoutGroupSummary> {
     let first = candidates.first()?;
     let mut min_target_hp_with_block = i32::MAX;
@@ -186,15 +88,6 @@ fn summarize_group(candidates: Vec<TargetFanoutCandidate>) -> Option<TargetFanou
         max_damage_hint,
         first_action_key: first.action_key.clone(),
     })
-}
-
-fn monster_hp_with_block(combat: &CombatState, entity_id: usize) -> Option<i32> {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .find(|monster| monster.id == entity_id && monster.is_alive_for_action())
-        .map(|monster| monster.current_hp + monster.block)
 }
 
 impl TargetFanoutGroupSummary {
