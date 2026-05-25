@@ -14,13 +14,21 @@ use payload::resolved_card_action_payload_facts;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2ActionFacts {
-    pub evidence_policy: &'static str,
     pub action_kind: &'static str,
     pub card: Option<CombatSearchV2ActionCardFacts>,
     pub target: Option<CombatSearchV2ActionTargetFacts>,
     pub immediate: CombatSearchV2ActionImmediateFacts,
     pub mechanics: CombatSearchV2ActionMechanicsFacts,
     pub exact_one_step_delta: CombatSearchV2ActionExactDeltaFacts,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2ActionFactsReport {
+    pub schema_name: &'static str,
+    pub schema_version: u32,
+    pub evidence_policy: &'static str,
+    pub consumer_boundary: &'static str,
+    pub facts: CombatSearchV2ActionFacts,
     pub notes: Vec<&'static str>,
 }
 
@@ -135,8 +143,6 @@ pub(super) fn summarize_action_facts_from_step(
     let exact_one_step_delta = exact_delta_facts_from_step(combat, step);
 
     CombatSearchV2ActionFacts {
-        evidence_policy:
-            "static_card_definition_plus_simulator_one_step_delta_no_quality_label_no_teacher_claim",
         action_kind: action_kind(input),
         card,
         target,
@@ -146,11 +152,25 @@ pub(super) fn summarize_action_facts_from_step(
         },
         mechanics,
         exact_one_step_delta,
+    }
+}
+
+pub(super) fn action_facts_report(
+    facts: CombatSearchV2ActionFacts,
+) -> CombatSearchV2ActionFactsReport {
+    CombatSearchV2ActionFactsReport {
+        schema_name: "CombatSearchV2ActionFactsReport",
+        schema_version: 1,
+        evidence_policy:
+            "static_card_definition_plus_simulator_one_step_delta_no_quality_label_no_teacher_claim",
+        consumer_boundary:
+            "diagnostic_report_wrapper; search_value_must_consume_CombatSearchV2ActionFacts_not_report_metadata",
+        facts,
         notes: vec![
             "action facts describe current-state affordances and exact one-step consequences",
             "facts do not claim the action is good or optimal",
             "one-step deltas use the supplied exact engine state and may include hidden draw/rng truth from that state",
-            "long-horizon value must consume these facts separately and remain explicit about estimate boundaries",
+            "long-horizon value must consume pure facts separately and remain explicit about estimate boundaries",
         ],
     }
 }

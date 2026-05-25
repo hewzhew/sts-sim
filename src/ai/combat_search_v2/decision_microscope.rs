@@ -76,7 +76,7 @@ pub struct CombatSearchV2DecisionCandidateReport {
     pub action_role: &'static str,
     pub selected_by_best_complete: bool,
     pub input: ClientInput,
-    pub action_facts: CombatSearchV2ActionFacts,
+    pub action_facts: CombatSearchV2ActionFactsReport,
     pub one_step: CombatSearchV2DecisionOneStepReport,
 }
 
@@ -233,7 +233,11 @@ fn candidate_report(
         action_role: role,
         selected_by_best_complete,
         input: input.clone(),
-        action_facts: summarize_action_facts_from_step(&root.combat, &input, &step),
+        action_facts: action_facts_report(summarize_action_facts_from_step(
+            &root.combat,
+            &input,
+            &step,
+        )),
         one_step: one_step_report(root, &input, &step),
     }
 }
