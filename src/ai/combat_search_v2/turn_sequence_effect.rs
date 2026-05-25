@@ -40,9 +40,11 @@ pub(super) struct TurnSequenceEffectFingerprint {
 }
 
 mod aggregate;
+mod divergence;
 mod projection;
 
-pub(super) use aggregate::{TurnSequenceDivergence, TurnSequenceEffectAggregate};
+pub(super) use aggregate::TurnSequenceEffectAggregate;
+pub(super) use divergence::TurnSequenceDivergence;
 use projection::{
     card_identity_order_key, card_public_order_key, public_state_projection, stable_debug_hash,
 };

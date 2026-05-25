@@ -1,4 +1,6 @@
 use super::super::state_abstraction::{StateAbstractionRevealGate, StateDivergenceKind};
+use super::divergence::divergence;
+use super::TurnSequenceDivergence;
 use super::TurnSequenceEffectFingerprint;
 use std::collections::BTreeSet;
 #[derive(Clone, Debug, Default)]
@@ -38,13 +40,6 @@ pub(in crate::ai::combat_search_v2) struct TurnSequenceEffectAggregate {
     pub(super) dominance_player_keys: BTreeSet<String>,
     pub(super) resource_public_keys: BTreeSet<String>,
     pub(super) resource_cost_keys: BTreeSet<String>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(in crate::ai::combat_search_v2) struct TurnSequenceDivergence {
-    pub kind: StateDivergenceKind,
-    pub first_divergence_path: Option<&'static str>,
-    pub guessed_reveal_gate: StateAbstractionRevealGate,
 }
 
 impl TurnSequenceEffectAggregate {
@@ -366,17 +361,5 @@ impl TurnSequenceEffectAggregate {
             None,
             StateAbstractionRevealGate::Unknown,
         )
-    }
-}
-
-fn divergence(
-    kind: StateDivergenceKind,
-    first_divergence_path: Option<&'static str>,
-    guessed_reveal_gate: StateAbstractionRevealGate,
-) -> TurnSequenceDivergence {
-    TurnSequenceDivergence {
-        kind,
-        first_divergence_path,
-        guessed_reveal_gate,
     }
 }
