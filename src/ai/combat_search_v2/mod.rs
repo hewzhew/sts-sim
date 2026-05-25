@@ -85,7 +85,7 @@ use frontier::{
     ResourceVector, SearchNode,
 };
 use outcome_score::CombatOutcomeScore;
-use pending_choice_ordering::{pending_choice_ordering_hint, PendingChoiceOrderingRole};
+use pending_choice_ordering::pending_choice_ordering_hint;
 use pending_choice_profile::{
     summarize_pending_choice, PendingChoiceDiagnosticsCollector, PendingChoiceProfile,
 };

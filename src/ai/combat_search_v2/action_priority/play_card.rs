@@ -1,8 +1,12 @@
 use super::super::action_effects::summarize_play_card_effects;
 use super::super::phase_action_ordering::{phase_action_ordering_hint, PhaseActionOrderingFacts};
 use super::super::phase_profile::CombatSearchPhaseProfileV1;
+use super::super::{enemy_phase_transition_hint_for_input, visible_incoming_damage};
+use super::constants::*;
 use super::*;
 use crate::content::cards::{self, CardTarget, CardType};
+use crate::runtime::combat::CombatState;
+use crate::state::core::ClientInput;
 
 pub(super) fn priority_for_play_card(
     combat: &CombatState,

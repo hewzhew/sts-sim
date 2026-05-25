@@ -2,6 +2,7 @@ use super::*;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatCard;
+use crate::state::core::{ClientInput, EngineState};
 use crate::test_support::{blank_test_combat, test_monster};
 
 #[test]
