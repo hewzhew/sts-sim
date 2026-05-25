@@ -66,7 +66,7 @@ mod value_facts;
 use action_equivalence::{
     compress_equivalent_actions, ActionEquivalenceDiagnosticsCollector, ActionEquivalenceSummary,
 };
-use action_facts::{action_facts_report, summarize_action_facts_from_step};
+use action_facts::summarize_action_facts_from_step;
 use action_ordering::{
     order_indexed_action_choices, ActionOrderingDiagnosticsCollector, ActionOrderingSummary,
     IndexedActionChoice,
@@ -119,18 +119,19 @@ use value_facts::{living_enemy_count, terminal_rank, total_living_enemy_hp};
 
 pub use action_facts::{
     CombatSearchV2ActionCardFacts, CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
-    CombatSearchV2ActionFactsReport, CombatSearchV2ActionImmediateFacts,
-    CombatSearchV2ActionMechanicsFacts, CombatSearchV2ActionTargetFacts,
+    CombatSearchV2ActionImmediateFacts, CombatSearchV2ActionMechanicsFacts,
+    CombatSearchV2ActionTargetFacts,
 };
 pub use baseline::{
     compare_outcome_metrics, compare_trajectory_reports, CombatSearchV2OutcomeMetrics,
     WHOLE_COMBAT_OUTCOME_CRITERIA,
 };
 pub use decision_microscope::{
-    explain_combat_search_v2_initial_decision, CombatSearchV2DecisionCandidateReport,
-    CombatSearchV2DecisionContext, CombatSearchV2DecisionMicroscopeConfigReport,
-    CombatSearchV2DecisionMicroscopeReport, CombatSearchV2DecisionOneStepReport,
-    CombatSearchV2DecisionSelectedAction, CombatSearchV2DecisionTrajectorySummary,
+    explain_combat_search_v2_initial_decision, CombatSearchV2ActionFactsReport,
+    CombatSearchV2DecisionCandidateReport, CombatSearchV2DecisionContext,
+    CombatSearchV2DecisionMicroscopeConfigReport, CombatSearchV2DecisionMicroscopeReport,
+    CombatSearchV2DecisionOneStepReport, CombatSearchV2DecisionSelectedAction,
+    CombatSearchV2DecisionTrajectorySummary,
 };
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use trajectory_report::trajectory_from_state;

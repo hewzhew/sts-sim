@@ -81,6 +81,16 @@ pub struct CombatSearchV2DecisionCandidateReport {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2ActionFactsReport {
+    pub schema_name: &'static str,
+    pub schema_version: u32,
+    pub evidence_policy: &'static str,
+    pub consumer_boundary: &'static str,
+    pub facts: CombatSearchV2ActionFacts,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2DecisionOneStepReport {
     pub status: &'static str,
     pub engine_steps: usize,
@@ -199,6 +209,24 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
             "candidate one-step probes are exact simulator transitions to the next stable boundary",
             "one-step values explain local consequences, not whole-combat optimality",
             "use this before changing global frontier ordering; if the failure is only a vague ordering preference, do not patch blindly",
+        ],
+    }
+}
+
+fn action_facts_report(facts: CombatSearchV2ActionFacts) -> CombatSearchV2ActionFactsReport {
+    CombatSearchV2ActionFactsReport {
+        schema_name: "CombatSearchV2ActionFactsReport",
+        schema_version: 1,
+        evidence_policy:
+            "static_card_definition_plus_simulator_one_step_delta_no_quality_label_no_teacher_claim",
+        consumer_boundary:
+            "diagnostic_report_wrapper; search_value_must_consume_CombatSearchV2ActionFacts_not_report_metadata",
+        facts,
+        notes: vec![
+            "action facts describe current-state affordances and exact one-step consequences",
+            "facts do not claim the action is good or optimal",
+            "one-step deltas use the supplied exact engine state and may include hidden draw/rng truth from that state",
+            "long-horizon value must consume pure facts separately and remain explicit about estimate boundaries",
         ],
     }
 }
