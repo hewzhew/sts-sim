@@ -1,5 +1,7 @@
 mod classifier;
+mod histogram;
 mod registry;
+mod rules;
 mod types;
 
 #[cfg(test)]
