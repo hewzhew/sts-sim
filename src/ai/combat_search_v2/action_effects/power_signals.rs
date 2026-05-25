@@ -4,6 +4,7 @@ use crate::runtime::combat::CombatCard;
 
 mod monster_signals;
 mod observation;
+mod reactive_observation;
 use monster_signals::{
     is_living_monster_id, monster_attack_relevance, visible_strength_down_mitigation_hint,
     visible_strength_gain_pressure_hint,
