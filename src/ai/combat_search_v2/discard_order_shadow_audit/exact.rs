@@ -13,45 +13,13 @@ use super::super::turn_sequence_effect::{
 use super::super::types::{CombatSearchV2ActionTrace, CombatSearchV2Config};
 use super::{is_static_discard_order_candidate, DiscardOrderShadowAuditKey};
 
-pub(super) const EXACT_SHADOW_STORED_GROUP_LIMIT: usize = 1024;
-pub(super) const EXACT_SHADOW_GROUP_SAMPLE_LIMIT: usize = 16;
-pub(super) const EXACT_SHADOW_REPRESENTATIVES_PER_GROUP: usize = 2;
-pub(super) const EXACT_SHADOW_ACTIONS_PER_GROUP: usize = 8;
-
-#[derive(Clone)]
-struct DiscardOrderShadowAuditRepresentative {
-    ordered_key: String,
-    effect_key: String,
-    effect_fingerprint: TurnSequenceEffectFingerprint,
-    node: SearchNode,
-}
-
-#[derive(Clone, Default)]
-pub(super) struct DiscardOrderShadowAuditGroup {
-    representatives: Vec<DiscardOrderShadowAuditRepresentative>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub(super) struct DiscardOrderShadowAuditExactSummary {
-    pub(super) checked_groups: usize,
-    pub(super) sample_verified_groups: usize,
-    pub(super) blocked_groups: usize,
-    pub(super) checked_actions: usize,
-    pub(super) verified_actions: usize,
-    pub(super) blocked_actions: usize,
-    group_results: BTreeMap<DiscardOrderShadowAuditKey, DiscardOrderShadowAuditExactGroupResult>,
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct DiscardOrderShadowAuditExactGroupResult {
-    pub(super) status: &'static str,
-    pub(super) checked_actions: usize,
-    pub(super) verified_actions: usize,
-    pub(super) blocked_actions: usize,
-    pub(super) blocking_action_key: Option<String>,
-    pub(super) blocking_divergence_kind: Option<StateDivergenceKind>,
-    pub(super) blocking_path: Option<&'static str>,
-}
+mod types;
+use types::DiscardOrderShadowAuditRepresentative;
+pub(super) use types::{
+    DiscardOrderShadowAuditExactGroupResult, DiscardOrderShadowAuditExactSummary,
+    DiscardOrderShadowAuditGroup, EXACT_SHADOW_ACTIONS_PER_GROUP, EXACT_SHADOW_GROUP_SAMPLE_LIMIT,
+    EXACT_SHADOW_REPRESENTATIVES_PER_GROUP, EXACT_SHADOW_STORED_GROUP_LIMIT,
+};
 
 impl DiscardOrderShadowAuditGroup {
     pub(super) fn observe_representative(
