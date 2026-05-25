@@ -1,7 +1,13 @@
 use super::context::PotionPlanningContext;
 use super::decision::{PotionGateDecision, PotionGateReason, PotionTacticalRole};
-use super::semantics::{potion_semantics, PotionArea, PotionSemanticKind, PotionUncertainty};
+use super::semantics::{potion_semantics, PotionSemanticKind, PotionUncertainty};
 use super::*;
+
+mod gates;
+use gates::{
+    block_gate, direct_damage_gate, enemy_power_gate, max_hp_gate, pressure_gate,
+    resource_conversion_gate, wounded_resource_gate,
+};
 
 pub(in crate::ai::combat_search_v2) fn semantic_potion_action_allowed(
     combat: &CombatState,
@@ -65,170 +71,4 @@ pub(super) fn semantic_potion_gate_decision(
             PotionGateDecision::reject(PotionGateReason::PassiveOnly)
         }
     }
-}
-
-fn direct_damage_gate(
-    combat: &CombatState,
-    context: PotionPlanningContext,
-    target: Option<usize>,
-    amount: i32,
-    area: PotionArea,
-) -> PotionGateDecision {
-    match area {
-        PotionArea::SingleEnemy => {
-            let Some(target) = target else {
-                return PotionGateDecision::reject(PotionGateReason::InvalidTarget);
-            };
-            let Some(monster) = combat
-                .entities
-                .monsters
-                .iter()
-                .find(|monster| monster.id == target && monster.is_alive_for_action())
-            else {
-                return PotionGateDecision::reject(PotionGateReason::InvalidTarget);
-            };
-            if amount >= monster.current_hp + monster.block {
-                PotionGateDecision::allow(
-                    PotionGateReason::DirectDamageCanKill,
-                    PotionTacticalRole::LethalDamage,
-                )
-            } else {
-                pressure_gate(context)
-            }
-        }
-        PotionArea::AllEnemies => {
-            let can_kill = combat
-                .entities
-                .monsters
-                .iter()
-                .filter(|monster| monster.is_alive_for_action())
-                .any(|monster| amount >= monster.current_hp + monster.block);
-            if can_kill {
-                PotionGateDecision::allow(
-                    PotionGateReason::DirectDamageCanKill,
-                    PotionTacticalRole::LethalDamage,
-                )
-            } else {
-                pressure_gate(context)
-            }
-        }
-    }
-}
-
-fn enemy_power_gate(
-    combat: &CombatState,
-    context: PotionPlanningContext,
-    target: Option<usize>,
-) -> PotionGateDecision {
-    if !target_points_to_live_enemy(combat, target) {
-        return PotionGateDecision::reject(PotionGateReason::InvalidTarget);
-    }
-    pressure_gate(context)
-}
-
-fn block_gate(context: PotionPlanningContext) -> PotionGateDecision {
-    if context.visible_attack_is_lethal {
-        PotionGateDecision::allow(
-            PotionGateReason::VisibleIncomingLethal,
-            PotionTacticalRole::PreventVisibleLethal,
-        )
-    } else if context.has_uncovered_visible_hp_loss() {
-        PotionGateDecision::allow(
-            PotionGateReason::VisibleIncomingUncoveredByHandBlock,
-            PotionTacticalRole::PreventUncoveredDamage,
-        )
-    } else if context.visible_hp_loss {
-        PotionGateDecision::reject(PotionGateReason::VisibleIncomingFullyBlockable)
-    } else {
-        PotionGateDecision::reject(PotionGateReason::NoVisibleIncomingHpLoss)
-    }
-}
-
-fn wounded_resource_gate(context: PotionPlanningContext) -> PotionGateDecision {
-    if !context.player_is_wounded() {
-        return PotionGateDecision::reject(PotionGateReason::NotWounded);
-    }
-    pressure_gate(context)
-}
-
-fn max_hp_gate(context: PotionPlanningContext) -> PotionGateDecision {
-    if context.visible_attack_is_lethal {
-        PotionGateDecision::allow(
-            PotionGateReason::VisibleIncomingLethal,
-            PotionTacticalRole::PreventVisibleLethal,
-        )
-    } else if context.has_uncovered_visible_hp_loss() {
-        PotionGateDecision::allow(
-            PotionGateReason::VisibleIncomingUncoveredByHandBlock,
-            PotionTacticalRole::PreventUncoveredDamage,
-        )
-    } else if context.player_is_wounded() && context.high_stakes_combat {
-        PotionGateDecision::allow(
-            PotionGateReason::PlayerWounded,
-            PotionTacticalRole::SustainResource,
-        )
-    } else {
-        PotionGateDecision::reject(PotionGateReason::NoTacticalPressure)
-    }
-}
-
-fn resource_conversion_gate(context: PotionPlanningContext) -> PotionGateDecision {
-    if !context.has_living_enemy() {
-        PotionGateDecision::reject(PotionGateReason::NoLivingEnemy)
-    } else if context.visible_attack_is_lethal {
-        PotionGateDecision::allow(
-            PotionGateReason::VisibleIncomingLethal,
-            PotionTacticalRole::PreventVisibleLethal,
-        )
-    } else if context.has_uncovered_visible_hp_loss() {
-        PotionGateDecision::allow(
-            PotionGateReason::VisibleIncomingUncoveredByHandBlock,
-            PotionTacticalRole::PreventUncoveredDamage,
-        )
-    } else if context.high_stakes_combat && context.lacks_visible_lethal() {
-        PotionGateDecision::allow(
-            PotionGateReason::HighStakesNoVisibleHandLethal,
-            PotionTacticalRole::HighStakesResourceConversion,
-        )
-    } else if context.visible_hp_loss {
-        PotionGateDecision::reject(PotionGateReason::VisibleIncomingFullyBlockable)
-    } else {
-        PotionGateDecision::reject(PotionGateReason::NoTacticalPressure)
-    }
-}
-
-fn pressure_gate(context: PotionPlanningContext) -> PotionGateDecision {
-    if !context.has_living_enemy() {
-        PotionGateDecision::reject(PotionGateReason::NoLivingEnemy)
-    } else if context.visible_attack_is_lethal {
-        PotionGateDecision::allow(
-            PotionGateReason::VisibleIncomingLethal,
-            PotionTacticalRole::PreventVisibleLethal,
-        )
-    } else if context.has_uncovered_visible_hp_loss() {
-        PotionGateDecision::allow(
-            PotionGateReason::VisibleIncomingUncoveredByHandBlock,
-            PotionTacticalRole::PreventUncoveredDamage,
-        )
-    } else if context.high_stakes_combat && context.lacks_visible_lethal() {
-        PotionGateDecision::allow(
-            PotionGateReason::HighStakesNoVisibleHandLethal,
-            PotionTacticalRole::HighStakesResourceConversion,
-        )
-    } else if context.visible_hp_loss {
-        PotionGateDecision::reject(PotionGateReason::VisibleIncomingFullyBlockable)
-    } else {
-        PotionGateDecision::reject(PotionGateReason::NoTacticalPressure)
-    }
-}
-
-fn target_points_to_live_enemy(combat: &CombatState, target: Option<usize>) -> bool {
-    let Some(target) = target else {
-        return false;
-    };
-    combat
-        .entities
-        .monsters
-        .iter()
-        .any(|monster| monster.id == target && monster.is_alive_for_action())
 }
