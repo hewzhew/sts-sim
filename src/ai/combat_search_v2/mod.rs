@@ -17,6 +17,7 @@ use crate::state::core::{ClientInput, EngineState};
 
 mod action_effects;
 mod action_equivalence;
+mod action_facts;
 mod action_ordering;
 mod action_priority;
 mod baseline;
@@ -65,6 +66,7 @@ mod value_facts;
 use action_equivalence::{
     compress_equivalent_actions, ActionEquivalenceDiagnosticsCollector, ActionEquivalenceSummary,
 };
+use action_facts::summarize_action_facts;
 use action_ordering::{
     order_indexed_action_choices, ActionOrderingDiagnosticsCollector, ActionOrderingSummary,
     IndexedActionChoice,
@@ -115,6 +117,11 @@ use turn_sequence::{
 use value::{combat_search_frontier_value_report, COMBAT_SEARCH_FRONTIER_VALUE_POLICY};
 use value_facts::{living_enemy_count, terminal_rank, total_living_enemy_hp};
 
+pub use action_facts::{
+    CombatSearchV2ActionCardFacts, CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
+    CombatSearchV2ActionImmediateFacts, CombatSearchV2ActionMechanicsFacts,
+    CombatSearchV2ActionTargetFacts,
+};
 pub use baseline::{
     compare_outcome_metrics, compare_trajectory_reports, CombatSearchV2OutcomeMetrics,
     WHOLE_COMBAT_OUTCOME_CRITERIA,

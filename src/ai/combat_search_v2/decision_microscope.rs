@@ -76,6 +76,7 @@ pub struct CombatSearchV2DecisionCandidateReport {
     pub action_role: &'static str,
     pub selected_by_best_complete: bool,
     pub input: ClientInput,
+    pub action_facts: CombatSearchV2ActionFacts,
     pub one_step: CombatSearchV2DecisionOneStepReport,
 }
 
@@ -224,6 +225,13 @@ fn candidate_report(
         action_role: role,
         selected_by_best_complete,
         input: input.clone(),
+        action_facts: summarize_action_facts(
+            &root.engine,
+            &root.combat,
+            &input,
+            stepper,
+            config.max_engine_steps_per_action,
+        ),
         one_step: one_step_report(root, stepper, config, &input),
     }
 }
