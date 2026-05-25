@@ -1,24 +1,22 @@
-use super::action_effects::{summarize_play_card_effects, PlayCardEffectDiagnostics};
-use super::phase_action_ordering::{
-    phase_action_ordering_hint, PhaseActionOrderingFacts, PhaseActionOrderingHint,
-};
-use super::phase_profile::CombatSearchPhaseProfileV1;
+use super::action_effects::PlayCardEffectDiagnostics;
+use super::phase_action_ordering::PhaseActionOrderingHint;
 use super::*;
-use crate::content::cards::{self, CardTarget, CardType};
 use std::cmp::Ordering;
+
+mod play_card;
 
 // These ranks only decide child-generation order inside the same legal action set.
 // They never merge, prune, or claim that two actions are equivalent.
-const ROLE_LETHAL_CARD: i32 = 130;
-const ROLE_PREVENT_VISIBLE_LETHAL: i32 = 120;
-const ROLE_SUSTAINED_MITIGATION: i32 = 95;
+pub(super) const ROLE_LETHAL_CARD: i32 = 130;
+pub(super) const ROLE_PREVENT_VISIBLE_LETHAL: i32 = 120;
+pub(super) const ROLE_SUSTAINED_MITIGATION: i32 = 95;
 const ROLE_TACTICAL_POTION_BASE: i32 = 60;
-const ROLE_PREVENT_HP_LOSS: i32 = 85;
-const ROLE_DEFERRED_SETUP: i32 = 75;
-const ROLE_DAMAGE_PROGRESS: i32 = 60;
-const ROLE_REACTIVE_RISK_PREVENT_HP_LOSS: i32 = 55;
-const ROLE_BLOCK: i32 = 45;
-const ROLE_UTILITY_PLAY: i32 = 35;
+pub(super) const ROLE_PREVENT_HP_LOSS: i32 = 85;
+pub(super) const ROLE_DEFERRED_SETUP: i32 = 75;
+pub(super) const ROLE_DAMAGE_PROGRESS: i32 = 60;
+pub(super) const ROLE_REACTIVE_RISK_PREVENT_HP_LOSS: i32 = 55;
+pub(super) const ROLE_BLOCK: i32 = 45;
+pub(super) const ROLE_UTILITY_PLAY: i32 = 35;
 const ROLE_END_TURN: i32 = 0;
 const ROLE_PENDING_VALUE_SELECTION: i32 = 70;
 const ROLE_PENDING_REMOVAL_SELECTION: i32 = 65;
@@ -92,7 +90,7 @@ pub(super) fn priority_for_input(
     match input {
         ClientInput::PlayCard { card_index, target } => {
             let phase_profile = combat_search_phase_profile(engine, combat);
-            priority_for_play_card(combat, *card_index, *target, phase_profile)
+            play_card::priority_for_play_card(combat, *card_index, *target, phase_profile)
         }
         ClientInput::UsePotion { .. } => {
             let potion_rank =
@@ -120,160 +118,6 @@ pub(super) fn priority_for_input(
             ..ActionOrderingPriority::neutral(ActionOrderingRole::UtilityPlay)
         },
     }
-}
-
-fn priority_for_play_card(
-    combat: &CombatState,
-    card_index: usize,
-    target: Option<usize>,
-    phase_profile: CombatSearchPhaseProfileV1,
-) -> ActionOrderingPriority {
-    let Some(card) = combat.zones.hand.get(card_index) else {
-        return ActionOrderingPriority::neutral(ActionOrderingRole::Neutral);
-    };
-
-    let evaluated = cards::evaluate_card_for_play(card, combat, target);
-    let def = cards::get_card_definition(card.id);
-    let target_kind = cards::effective_target(card);
-    let damage = evaluated.base_damage_mut.max(0);
-    let effects = summarize_play_card_effects(combat, card, target);
-    let effect_diagnostics = effects.diagnostics();
-    let block = evaluated
-        .base_block_mut
-        .max(0)
-        .saturating_add(effects.reactive_player_block);
-    let target_progress = target_progress_hint(combat, target_kind, target, damage)
-        .saturating_add(effects.reactive_enemy_damage);
-    let mitigation = effects.net_mitigation_ordering_score().max(0);
-    let reactive_risk = effects.reactive_risk_score();
-    let phase_transition = enemy_phase_transition_hint_for_input(
-        combat,
-        &ClientInput::PlayCard { card_index, target },
-    );
-    let phase_hint = phase_action_ordering_hint(
-        phase_profile,
-        PhaseActionOrderingFacts {
-            card_type: def.card_type,
-            block,
-            mitigation,
-            phase_transition,
-        },
-    );
-    let visible_damage = visible_incoming_damage(combat);
-    let current_block = combat.entities.player.block;
-    let current_hp = combat.entities.player.current_hp;
-    let visible_loss_now = (visible_damage - current_block).max(0);
-    let visible_loss_after_block =
-        (visible_damage - current_block - block - effects.visible_attack_mitigation_hint)
-            .max(0)
-            .saturating_add(effects.reactive_player_hp_loss);
-    let prevents_visible_lethal =
-        visible_loss_now >= current_hp && visible_loss_after_block < current_hp;
-    let prevents_hp_loss = visible_loss_after_block < visible_loss_now;
-    let (role, role_rank) = if target_progress_kills(combat, target_kind, target, damage) {
-        (ActionOrderingRole::LethalCard, ROLE_LETHAL_CARD)
-    } else if prevents_visible_lethal {
-        (
-            ActionOrderingRole::PreventVisibleLethal,
-            ROLE_PREVENT_VISIBLE_LETHAL,
-        )
-    } else if mitigation > 0 {
-        (
-            ActionOrderingRole::SustainedMitigation,
-            ROLE_SUSTAINED_MITIGATION,
-        )
-    } else if def.card_type == CardType::Power {
-        (ActionOrderingRole::DeferredSetup, ROLE_DEFERRED_SETUP)
-    } else if prevents_hp_loss && reactive_risk == 0 {
-        (ActionOrderingRole::PreventHpLoss, ROLE_PREVENT_HP_LOSS)
-    } else if target_progress > 0 {
-        (ActionOrderingRole::DamageProgress, ROLE_DAMAGE_PROGRESS)
-    } else if prevents_hp_loss {
-        (
-            ActionOrderingRole::ReactiveRiskPreventHpLoss,
-            ROLE_REACTIVE_RISK_PREVENT_HP_LOSS,
-        )
-    } else if block > 0 {
-        (ActionOrderingRole::Block, ROLE_BLOCK)
-    } else {
-        (ActionOrderingRole::UtilityPlay, ROLE_UTILITY_PLAY)
-    };
-
-    ActionOrderingPriority {
-        role,
-        role_rank: role_rank.saturating_add(phase_hint.role_rank_adjustment),
-        mitigation,
-        reactive_risk: -reactive_risk,
-        target_progress,
-        block,
-        damage,
-        cheaper_cost: -card.cost_for_turn_java().max(0),
-        phase_setup: phase_hint.phase_setup,
-        phase_survival: phase_hint.phase_survival,
-        phase_transition_safety: phase_hint.phase_transition_safety,
-        phase_hint,
-        effects: effect_diagnostics,
-        ..ActionOrderingPriority::neutral(role)
-    }
-}
-
-fn target_progress_hint(
-    combat: &CombatState,
-    target_kind: CardTarget,
-    target: Option<usize>,
-    damage: i32,
-) -> i32 {
-    if damage <= 0 {
-        return 0;
-    }
-
-    match target_kind {
-        CardTarget::AllEnemy => combat
-            .entities
-            .monsters
-            .iter()
-            .filter(|monster| monster.is_alive_for_action())
-            .map(|monster| damage.min(monster.current_hp + monster.block).max(0))
-            .sum(),
-        CardTarget::Enemy | CardTarget::SelfAndEnemy => target
-            .and_then(|target| monster_hp_with_block(combat, target))
-            .map(|hp| damage.min(hp).max(0))
-            .unwrap_or_default(),
-        _ => 0,
-    }
-}
-
-fn target_progress_kills(
-    combat: &CombatState,
-    target_kind: CardTarget,
-    target: Option<usize>,
-    damage: i32,
-) -> bool {
-    if damage <= 0 {
-        return false;
-    }
-
-    match target_kind {
-        CardTarget::AllEnemy => combat
-            .entities
-            .monsters
-            .iter()
-            .filter(|monster| monster.is_alive_for_action())
-            .any(|monster| damage >= monster.current_hp + monster.block),
-        CardTarget::Enemy | CardTarget::SelfAndEnemy => target
-            .and_then(|target| monster_hp_with_block(combat, target))
-            .is_some_and(|hp| damage >= hp),
-        _ => false,
-    }
-}
-
-fn monster_hp_with_block(combat: &CombatState, entity_id: usize) -> Option<i32> {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .find(|monster| monster.id == entity_id && monster.is_alive_for_action())
-        .map(|monster| monster.current_hp + monster.block)
 }
 
 impl ActionOrderingPriority {
