@@ -1,4 +1,4 @@
-use crate::content::cards::CardId;
+use crate::content::cards::{CardId, CardType};
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatCard, Power, PowerPayload};
 use crate::sim::combat::EngineCombatStepper;
