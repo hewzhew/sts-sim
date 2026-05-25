@@ -9,65 +9,14 @@ use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::potions::{Potion, PotionId};
 use crate::content::powers::{store, PowerId};
-use crate::runtime::combat::{CombatCard, CombatState, MonsterEntity, Power, PowerPayload};
-use crate::sim::combat::{
-    CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper, CombatTerminal,
-    EngineCombatStepper,
-};
+use crate::runtime::combat::CombatCard;
+use crate::sim::combat::CombatTerminal;
 use crate::state::core::{
     ClientInput, EngineState, GridSelectReason, HandSelectReason, PendingChoice, PileType,
 };
-use crate::test_support::{blank_test_combat, test_monster};
 
-fn step_limits() -> CombatStepLimits {
-    CombatStepLimits {
-        max_engine_steps: 128,
-        deadline: None,
-    }
-}
-
-fn player_turn_position(combat: CombatState) -> CombatPosition {
-    CombatPosition::new(EngineState::CombatPlayerTurn, combat)
-}
-
-fn apply_from_player_turn(combat: CombatState, input: ClientInput) -> CombatStepResult {
-    apply(&player_turn_position(combat), input)
-}
-
-fn apply(position: &CombatPosition, input: ClientInput) -> CombatStepResult {
-    let stepper = EngineCombatStepper;
-    stepper.apply_to_stable(position, input, step_limits())
-}
-
-fn legal_actions(position: &CombatPosition) -> Vec<ClientInput> {
-    let stepper = EngineCombatStepper;
-    stepper.legal_actions(position)
-}
-
-fn assert_stable_player_turn(step: &CombatStepResult) {
-    assert!(!step.truncated);
-    assert_eq!(step.position.engine, EngineState::CombatPlayerTurn);
-}
-
-fn power(power_type: PowerId, amount: i32) -> Power {
-    Power {
-        power_type,
-        instance_id: None,
-        amount,
-        extra_data: 0,
-        payload: PowerPayload::None,
-        just_applied: false,
-    }
-}
-
-fn monster(enemy_id: EnemyId, id: usize, slot: u8, hp: i32) -> MonsterEntity {
-    let mut monster = test_monster(enemy_id);
-    monster.id = id;
-    monster.slot = slot;
-    monster.current_hp = hp;
-    monster.max_hp = hp.max(monster.max_hp);
-    monster
-}
+mod support;
+use support::*;
 
 fn card_snapshots(cards: &[CombatCard]) -> Vec<(CardId, u32)> {
     cards.iter().map(|card| (card.id, card.uuid)).collect()
