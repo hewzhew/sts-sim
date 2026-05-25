@@ -40,6 +40,7 @@ pub(super) struct TurnSequenceEffectFingerprint {
 }
 
 mod aggregate;
+mod classification;
 mod divergence;
 mod projection;
 
