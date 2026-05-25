@@ -217,6 +217,14 @@ fn candidate_report(
     let selected_by_best_complete = selected_identity
         .map(|(id, key)| id == choice.original_action_id && key == choice.choice.action_key)
         .unwrap_or(false);
+    let step = stepper.apply_to_stable(
+        &CombatPosition::new(root.engine.clone(), root.combat.clone()),
+        input.clone(),
+        CombatStepLimits {
+            max_engine_steps: config.max_engine_steps_per_action,
+            deadline: None,
+        },
+    );
     CombatSearchV2DecisionCandidateReport {
         original_action_id: choice.original_action_id,
         ordered_index,
@@ -225,32 +233,16 @@ fn candidate_report(
         action_role: role,
         selected_by_best_complete,
         input: input.clone(),
-        action_facts: summarize_action_facts(
-            &root.engine,
-            &root.combat,
-            &input,
-            stepper,
-            config.max_engine_steps_per_action,
-        ),
-        one_step: one_step_report(root, stepper, config, &input),
+        action_facts: summarize_action_facts_from_step(&root.combat, &input, &step),
+        one_step: one_step_report(root, &input, &step),
     }
 }
 
 fn one_step_report(
     root: &SearchNode,
-    stepper: &impl CombatStepper,
-    config: &CombatSearchV2Config,
     input: &ClientInput,
+    step: &crate::sim::combat::CombatStepResult,
 ) -> CombatSearchV2DecisionOneStepReport {
-    let position = CombatPosition::new(root.engine.clone(), root.combat.clone());
-    let step = stepper.apply_to_stable(
-        &position,
-        input.clone(),
-        CombatStepLimits {
-            max_engine_steps: config.max_engine_steps_per_action,
-            deadline: None,
-        },
-    );
     let transition = (!step.truncated && !step.timed_out && step.alive).then(|| {
         classify_turn_branch_transition(
             &root.engine,

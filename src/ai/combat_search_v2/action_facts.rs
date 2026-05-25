@@ -2,10 +2,15 @@ use serde::Serialize;
 
 use crate::content::cards::{self, CardTarget, CardType};
 use crate::content::powers::PowerId;
+use crate::sim::combat::CombatStepResult;
+#[cfg(test)]
 use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
 
 use super::action_effects::summarize_play_card_effects;
 use super::*;
+
+mod payload;
+use payload::resolved_card_action_payload_facts;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2ActionFacts {
@@ -55,6 +60,8 @@ pub struct CombatSearchV2ActionTargetFacts {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct CombatSearchV2ActionImmediateFacts {
     pub damage_hint: i32,
+    pub action_payload_damage_hint: i32,
+    pub action_payload_damage_hit_count_hint: usize,
     pub block_hint: i32,
     pub target_progress_hint: i32,
     pub all_enemy_progress_hint: i32,
@@ -98,6 +105,7 @@ pub struct CombatSearchV2ActionExactDeltaFacts {
     pub pending_choice_estimated_action_fanout: usize,
 }
 
+#[cfg(test)]
 pub(super) fn summarize_action_facts(
     engine: &EngineState,
     combat: &CombatState,
@@ -105,10 +113,26 @@ pub(super) fn summarize_action_facts(
     stepper: &impl CombatStepper,
     max_engine_steps: usize,
 ) -> CombatSearchV2ActionFacts {
+    let step = stepper.apply_to_stable(
+        &CombatPosition::new(engine.clone(), combat.clone()),
+        input.clone(),
+        CombatStepLimits {
+            max_engine_steps,
+            deadline: None,
+        },
+    );
+    summarize_action_facts_from_step(combat, input, &step)
+}
+
+pub(super) fn summarize_action_facts_from_step(
+    combat: &CombatState,
+    input: &ClientInput,
+    step: &CombatStepResult,
+) -> CombatSearchV2ActionFacts {
     let card = card_facts(combat, input);
     let target = target_facts(combat, input);
     let (immediate, mechanics) = immediate_and_mechanics_facts(combat, input, card.as_ref());
-    let exact_one_step_delta = exact_delta_facts(engine, combat, input, stepper, max_engine_steps);
+    let exact_one_step_delta = exact_delta_facts_from_step(combat, step);
 
     CombatSearchV2ActionFacts {
         evidence_policy:
@@ -217,12 +241,18 @@ fn immediate_and_mechanics_facts(
             CombatSearchV2ActionMechanicsFacts::default(),
         );
     };
+    let payload = resolved_card_action_payload_facts(combat, runtime_card, target);
     let effects = summarize_play_card_effects(combat, runtime_card, target);
+    let target_progress_damage = if card_facts.effective_target == CardTarget::AllEnemy {
+        card_facts.evaluated_damage
+    } else {
+        payload.damage_total_hint.max(card_facts.evaluated_damage)
+    };
     let target_progress = target_progress_hint(
         combat,
         card_facts.effective_target,
         target,
-        card_facts.evaluated_damage,
+        target_progress_damage,
     );
     let all_enemy_progress = all_enemy_progress_hint(
         combat,
@@ -233,8 +263,11 @@ fn immediate_and_mechanics_facts(
     (
         CombatSearchV2ActionImmediateFacts {
             damage_hint: card_facts.evaluated_damage,
+            action_payload_damage_hint: payload.damage_total_hint,
+            action_payload_damage_hit_count_hint: payload.damage_hit_count_hint,
             block_hint: card_facts
                 .evaluated_block
+                .max(payload.player_block_hint)
                 .saturating_add(effects.reactive_player_block),
             target_progress_hint: target_progress,
             all_enemy_progress_hint: all_enemy_progress,
@@ -258,23 +291,12 @@ fn immediate_and_mechanics_facts(
     )
 }
 
-fn exact_delta_facts(
-    engine: &EngineState,
+fn exact_delta_facts_from_step(
     combat: &CombatState,
-    input: &ClientInput,
-    stepper: &impl CombatStepper,
-    max_engine_steps: usize,
+    step: &CombatStepResult,
 ) -> CombatSearchV2ActionExactDeltaFacts {
     let before_enemy_hp = total_monster_hp(combat);
     let before_enemy_block = total_monster_block(combat);
-    let step = stepper.apply_to_stable(
-        &CombatPosition::new(engine.clone(), combat.clone()),
-        input.clone(),
-        CombatStepLimits {
-            max_engine_steps,
-            deadline: None,
-        },
-    );
     let after = &step.position.combat;
     let phase = combat_search_phase_profile(&step.position.engine, after);
     CombatSearchV2ActionExactDeltaFacts {
@@ -431,6 +453,33 @@ mod tests {
         assert_eq!(card.card_type, CardType::Attack);
         assert!(facts.immediate.damage_hint > 0);
         assert!(facts.exact_one_step_delta.total_enemy_hp_delta < 0);
+    }
+
+    #[test]
+    fn facts_report_action_payload_damage_for_multi_hit_card() {
+        let mut combat = blank_test_combat();
+        combat.zones.hand = vec![CombatCard::new(CardId::TwinStrike, 10)];
+        combat.entities.monsters = vec![planned_monster(EnemyId::JawWorm, 1)];
+
+        let facts = summarize_action_facts(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            &EngineCombatStepper,
+            250,
+        );
+
+        assert_eq!(
+            facts.card.as_ref().map(|card| card.evaluated_damage),
+            Some(5)
+        );
+        assert_eq!(facts.immediate.action_payload_damage_hint, 10);
+        assert_eq!(facts.immediate.action_payload_damage_hit_count_hint, 2);
+        assert_eq!(facts.immediate.target_progress_hint, 10);
+        assert_eq!(facts.exact_one_step_delta.total_enemy_hp_delta, -10);
     }
 
     #[test]

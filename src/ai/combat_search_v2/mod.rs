@@ -66,7 +66,7 @@ mod value_facts;
 use action_equivalence::{
     compress_equivalent_actions, ActionEquivalenceDiagnosticsCollector, ActionEquivalenceSummary,
 };
-use action_facts::summarize_action_facts;
+use action_facts::summarize_action_facts_from_step;
 use action_ordering::{
     order_indexed_action_choices, ActionOrderingDiagnosticsCollector, ActionOrderingSummary,
     IndexedActionChoice,
