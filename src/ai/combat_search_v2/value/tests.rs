@@ -1,8 +1,11 @@
+use super::super::frontier::SearchNode;
+use super::super::{RolloutNodeEstimate, TurnPrefixState};
 use super::*;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::combat::{CombatCard, Power, PowerPayload};
+use crate::state::core::EngineState;
 use crate::test_support::blank_test_combat;
 
 #[test]

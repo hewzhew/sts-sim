@@ -1,0 +1,87 @@
+use super::super::rollout_value::{rollout_priority_value, CombatSearchRolloutValueV1};
+use super::super::transition::terminal_label;
+use super::super::value::{combat_search_state_value, CombatSearchStateValueV1};
+use super::super::SearchTerminalLabel;
+use super::node::SearchNode;
+use std::cmp::Ordering;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ai::combat_search_v2::frontier) struct NodePriority {
+    terminal_rank: i32,
+    rollout_value: CombatSearchRolloutValueV1,
+    state_value: CombatSearchStateValueV1,
+    potion_tactical_priority: i32,
+    potion_conservation: i32,
+    turn_branch_priority: i32,
+    shorter_line: i32,
+}
+
+impl Ord for NodePriority {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.terminal_rank
+            .cmp(&other.terminal_rank)
+            .then_with(|| self.rollout_value.cmp(&other.rollout_value))
+            .then_with(|| self.state_value.cmp(&other.state_value))
+            .then_with(|| {
+                self.potion_tactical_priority
+                    .cmp(&other.potion_tactical_priority)
+            })
+            .then_with(|| self.potion_conservation.cmp(&other.potion_conservation))
+            .then_with(|| self.turn_branch_priority.cmp(&other.turn_branch_priority))
+            .then_with(|| self.shorter_line.cmp(&other.shorter_line))
+    }
+}
+
+impl PartialOrd for NodePriority {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Clone)]
+pub(in crate::ai::combat_search_v2) struct QueueEntry {
+    pub(in crate::ai::combat_search_v2::frontier) priority: NodePriority,
+    pub(in crate::ai::combat_search_v2::frontier) sequence_id: u64,
+    pub(in crate::ai::combat_search_v2) node: SearchNode,
+}
+
+impl Eq for QueueEntry {}
+
+impl PartialEq for QueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.sequence_id == other.sequence_id && self.priority == other.priority
+    }
+}
+
+impl Ord for QueueEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.priority
+            .cmp(&other.priority)
+            .then_with(|| other.sequence_id.cmp(&self.sequence_id))
+    }
+}
+
+impl PartialOrd for QueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+pub(in crate::ai::combat_search_v2::frontier) fn priority_for_node(
+    node: &SearchNode,
+) -> NodePriority {
+    let terminal_rank = match terminal_label(&node.engine, &node.combat) {
+        SearchTerminalLabel::Win => 3,
+        SearchTerminalLabel::Unresolved => 2,
+        SearchTerminalLabel::Loss => 1,
+    };
+    NodePriority {
+        terminal_rank,
+        rollout_value: rollout_priority_value(node.rollout_estimate),
+        state_value: combat_search_state_value(node),
+        potion_tactical_priority: node.potion_tactical_priority,
+        potion_conservation: -((node.potions_used + node.potions_discarded) as i32),
+        turn_branch_priority: node.last_turn_branch_priority,
+        shorter_line: -(node.actions.len() as i32),
+    }
+}
