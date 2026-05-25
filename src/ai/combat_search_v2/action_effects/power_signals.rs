@@ -1,25 +1,14 @@
-use std::collections::{BTreeMap, BTreeSet};
-
 use super::*;
-use crate::content::powers::store::powers_snapshot_for;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
 use crate::runtime::combat::CombatCard;
-use crate::sim::combat_projection::project_monster_move_preview_in_combat;
 
-#[derive(Default)]
-struct RawPowerEffects {
-    enemy_strength_down_by_target: BTreeMap<usize, i32>,
-    enemy_strength_gain_by_target: BTreeMap<usize, i32>,
-    shackled_targets: BTreeSet<usize>,
-    reactive_player_hp_loss: i32,
-    reactive_player_block: i32,
-    reactive_enemy_damage: i32,
-    reactive_bad_draw_cards: i32,
-    reactive_forced_turn_end: bool,
-    enemy_weak: i32,
-    enemy_vulnerable: i32,
-}
+mod monster_signals;
+mod observation;
+use monster_signals::{
+    is_living_monster_id, monster_attack_relevance, visible_strength_down_mitigation_hint,
+    visible_strength_gain_pressure_hint,
+};
+use observation::{observe_card_power_effects, RawPowerEffects};
 
 pub(super) fn summarize_play_card_power_effects(
     combat: &CombatState,
@@ -35,13 +24,7 @@ pub(super) fn summarize_play_card_power_effects(
             played_from_hand: true,
         },
     );
-    let mut raw = RawPowerEffects::default();
-
-    for info in actions {
-        observe_power_action(&mut raw, info.action);
-    }
-    observe_card_play_reactive_power_actions(combat, card, &mut raw);
-
+    let raw = observe_card_power_effects(combat, card, actions.into_iter().map(|info| info.action));
     summarize_power_effects(combat, raw)
 }
 
@@ -59,179 +42,6 @@ pub(super) fn state_sustained_mitigation_score(combat: &CombatState) -> i32 {
             (-strength).saturating_mul(monster_attack_relevance(combat, monster.id))
         })
         .sum()
-}
-
-fn observe_power_action(raw: &mut RawPowerEffects, action: Action) {
-    match action {
-        Action::ApplyPower {
-            target,
-            power_id,
-            amount,
-            ..
-        }
-        | Action::ApplyPowerDetailed {
-            target,
-            power_id,
-            amount,
-            ..
-        }
-        | Action::ApplyPowerWithPayload {
-            target,
-            power_id,
-            amount,
-            ..
-        } => observe_apply_power(raw, target, power_id, amount),
-        _ => {}
-    }
-}
-
-fn observe_apply_power(raw: &mut RawPowerEffects, target: usize, power_id: PowerId, amount: i32) {
-    match power_id {
-        PowerId::Strength if amount < 0 => {
-            *raw.enemy_strength_down_by_target.entry(target).or_default() += -amount;
-        }
-        PowerId::Strength if amount > 0 => {
-            *raw.enemy_strength_gain_by_target.entry(target).or_default() += amount;
-        }
-        PowerId::Shackled if amount > 0 => {
-            raw.shackled_targets.insert(target);
-        }
-        PowerId::Weak if amount > 0 => {
-            raw.enemy_weak = raw.enemy_weak.saturating_add(amount);
-        }
-        PowerId::Vulnerable if amount > 0 => {
-            raw.enemy_vulnerable = raw.enemy_vulnerable.saturating_add(amount);
-        }
-        _ => {}
-    }
-}
-
-fn observe_card_play_reactive_power_actions(
-    combat: &CombatState,
-    card: &CombatCard,
-    raw: &mut RawPowerEffects,
-) {
-    let trigger_owners = std::iter::once(0usize)
-        .chain(combat.entities.monsters.iter().map(|monster| monster.id))
-        .collect::<Vec<_>>();
-    for owner in trigger_owners {
-        for power in powers_snapshot_for(combat, owner) {
-            let actions = crate::content::powers::resolve_power_on_card_played(
-                power.power_type,
-                combat,
-                owner,
-                card,
-                power.amount,
-            );
-            for action in actions {
-                observe_reactive_action(combat, raw, action);
-            }
-        }
-    }
-}
-
-fn observe_reactive_action(combat: &CombatState, raw: &mut RawPowerEffects, action: Action) {
-    observe_power_action(raw, action.clone());
-    match action {
-        Action::Damage(info)
-        | Action::PummelDamage(info)
-        | Action::BaneDamage(info)
-        | Action::WallopDamage(info)
-        | Action::DamagePerAttackPlayed(info)
-        | Action::DropkickDamageAndEffect {
-            damage_info: info, ..
-        }
-        | Action::Ftl {
-            damage_info: info, ..
-        }
-        | Action::Skewer {
-            damage_info: info, ..
-        }
-        | Action::VampireDamage(info)
-        | Action::Barrage { damage: info }
-        | Action::Sunder {
-            damage_info: info, ..
-        }
-        | Action::FearNoEvil {
-            damage_info: info, ..
-        }
-        | Action::FiendFire {
-            damage_info: info, ..
-        }
-        | Action::Feed {
-            damage_info: info, ..
-        }
-        | Action::LessonLearned {
-            damage_info: info, ..
-        }
-        | Action::HandOfGreed {
-            damage_info: info, ..
-        }
-        | Action::RitualDagger {
-            damage_info: info, ..
-        } => observe_reactive_damage_info(combat, raw, info.target, info.output.max(info.base)),
-        Action::LoseHp { target, amount, .. } | Action::PoisonLoseHp { target, amount } => {
-            observe_reactive_hp_loss(combat, raw, target, amount)
-        }
-        Action::DamageAllEnemies { damages, .. }
-        | Action::VampireDamageAllEnemies { damages, .. } => {
-            for (slot, damage) in damages.into_iter().enumerate() {
-                if let Some(monster) = combat.entities.monsters.get(slot) {
-                    observe_reactive_hp_loss(combat, raw, monster.id, damage);
-                }
-            }
-        }
-        Action::GainBlock { target, amount } if target == 0 => {
-            raw.reactive_player_block = raw.reactive_player_block.saturating_add(amount.max(0));
-        }
-        Action::MakeTempCardInDrawPile {
-            card_id, amount, ..
-        } => {
-            if generated_card_is_bad_draw(card_id) {
-                raw.reactive_bad_draw_cards = raw
-                    .reactive_bad_draw_cards
-                    .saturating_add(i32::from(amount));
-            }
-        }
-        Action::TriggerTimeWarpEndTurn { .. } => {
-            raw.reactive_forced_turn_end = true;
-        }
-        _ => {}
-    }
-}
-
-fn observe_reactive_damage_info(
-    combat: &CombatState,
-    raw: &mut RawPowerEffects,
-    target: usize,
-    amount: i32,
-) {
-    observe_reactive_hp_loss(combat, raw, target, amount);
-}
-
-fn observe_reactive_hp_loss(
-    combat: &CombatState,
-    raw: &mut RawPowerEffects,
-    target: usize,
-    amount: i32,
-) {
-    let amount = amount.max(0);
-    if amount == 0 {
-        return;
-    }
-    if target == 0 {
-        raw.reactive_player_hp_loss = raw.reactive_player_hp_loss.saturating_add(amount);
-    } else if is_living_monster_id(combat, target) {
-        raw.reactive_enemy_damage = raw.reactive_enemy_damage.saturating_add(amount);
-    }
-}
-
-fn generated_card_is_bad_draw(card_id: crate::content::cards::CardId) -> bool {
-    let def = crate::content::cards::get_card_definition(card_id);
-    matches!(
-        def.card_type,
-        crate::content::cards::CardType::Status | crate::content::cards::CardType::Curse
-    )
 }
 
 fn summarize_power_effects(combat: &CombatState, raw: RawPowerEffects) -> PlayCardEffectSummary {
@@ -277,72 +87,4 @@ fn summarize_power_effects(combat: &CombatState, raw: RawPowerEffects) -> PlayCa
     }
 
     summary
-}
-
-fn visible_strength_down_mitigation_hint(
-    combat: &CombatState,
-    target: usize,
-    strength_down: i32,
-) -> i32 {
-    let Some(monster) = combat
-        .entities
-        .monsters
-        .iter()
-        .find(|monster| monster.id == target && monster.is_alive_for_action())
-    else {
-        return 0;
-    };
-    let preview = project_monster_move_preview_in_combat(combat, monster);
-    let Some(damage_per_hit) = preview.damage_per_hit else {
-        return 0;
-    };
-    let per_hit = strength_down.min(damage_per_hit).max(0);
-    per_hit.saturating_mul(preview.hits.max(1) as i32)
-}
-
-fn visible_strength_gain_pressure_hint(
-    combat: &CombatState,
-    target: usize,
-    strength_gain: i32,
-) -> i32 {
-    let Some(monster) = combat
-        .entities
-        .monsters
-        .iter()
-        .find(|monster| monster.id == target && monster.is_alive_for_action())
-    else {
-        return 0;
-    };
-    let preview = project_monster_move_preview_in_combat(combat, monster);
-    if preview.damage_per_hit.is_none() {
-        return 0;
-    }
-    strength_gain
-        .max(0)
-        .saturating_mul(preview.hits.max(1) as i32)
-}
-
-fn monster_attack_relevance(combat: &CombatState, target: usize) -> i32 {
-    let Some(monster) = combat
-        .entities
-        .monsters
-        .iter()
-        .find(|monster| monster.id == target && monster.is_alive_for_action())
-    else {
-        return 0;
-    };
-    let preview = project_monster_move_preview_in_combat(combat, monster);
-    if preview.hits > 0 {
-        preview.hits as i32
-    } else {
-        1
-    }
-}
-
-fn is_living_monster_id(combat: &CombatState, target: usize) -> bool {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .any(|monster| monster.id == target && monster.is_alive_for_action())
 }
