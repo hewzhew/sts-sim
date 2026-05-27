@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use blake2::{Blake2b512, Digest};
 
+use crate::eval::artifact::ArtifactSourceKind;
 use crate::eval::combat_capture::{load_combat_capture_v1, CombatCaptureV1};
 use crate::eval::combat_search_v2::{
     load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
@@ -213,6 +214,7 @@ impl ArtifactAuditor {
                             "combat capture loads and validates",
                         );
                         self.audit_capture_expectations(suite_id, case, &path, &capture);
+                        self.audit_capture_provenance(suite_id, case, &path, &capture);
                         self.audit_combat_snapshot_search_input(suite_id, case, &path);
                     }
                     Err(err) => self.push_check(
@@ -327,6 +329,32 @@ impl ArtifactAuditor {
                 "registered expected fingerprints do not match the capture",
             );
         }
+    }
+
+    fn audit_capture_provenance(
+        &mut self,
+        suite_id: &str,
+        case: &CombatSearchV2BenchmarkCaseSpec,
+        path: &Path,
+        capture: &CombatCaptureV1,
+    ) {
+        let (status, code) = if capture.provenance.source_kind == ArtifactSourceKind::Unknown {
+            (ArtifactAuditStatus::Warn, "capture_provenance_unknown")
+        } else {
+            (ArtifactAuditStatus::Ok, "capture_provenance_ok")
+        };
+        self.push_check(
+            format!("case:{suite_id}:{}:capture_provenance", case.id),
+            status,
+            Some(path.to_path_buf()),
+            code,
+            format!(
+                "capture provenance source_kind={:?} capture_method={} label_role={}",
+                capture.provenance.source_kind,
+                capture.provenance.capture_method,
+                capture.provenance.label_role
+            ),
+        );
     }
 
     fn audit_case_baseline(
