@@ -6,8 +6,8 @@ use super::features::{node_features, summarize_route_from};
 use super::needs::estimate_needs;
 use super::scorer::{route_reasons, safety_flag, score_route_candidate};
 use super::types::{
-    RouteCandidateTraceV1, RouteDecisionTraceV1, RoutePlannerConfigV1, RouteSafetyFlagV1,
-    ROUTE_DECISION_TRACE_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_VERSION,
+    RouteCandidateTraceV1, RouteDecisionTraceV1, RouteMoveKindV1, RoutePlannerConfigV1,
+    RouteSafetyFlagV1, ROUTE_DECISION_TRACE_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_VERSION,
 };
 
 pub fn plan_route_decision_v1(
@@ -52,7 +52,7 @@ pub fn plan_route_decision_v1(
                 reasons,
                 cautions,
                 suggested_command: matches!(engine_state, EngineState::MapNavigation)
-                    .then(|| format!("go {}", target.x)),
+                    .then(|| route_command_hint(target.move_kind, target.x, target.y)),
             }
         })
         .collect::<Vec<_>>();
@@ -106,5 +106,12 @@ fn safety_sort_key(flag: RouteSafetyFlagV1) -> u8 {
         RouteSafetyFlagV1::Ok => 2,
         RouteSafetyFlagV1::RiskyButAllowed => 1,
         RouteSafetyFlagV1::RejectUnlessNoAlternative => 0,
+    }
+}
+
+fn route_command_hint(move_kind: RouteMoveKindV1, x: i32, y: i32) -> String {
+    match move_kind {
+        RouteMoveKindV1::NormalEdge => format!("go {x}"),
+        RouteMoveKindV1::WingBootsJump => format!("fly {x} {y}"),
     }
 }

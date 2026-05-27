@@ -92,7 +92,10 @@ pub fn render_map_panel(session: &RunControlSession) -> String {
     }
     push_line(&mut out, "");
     if navigable {
-        push_line(&mut out, "Commands: main | rs | go <x> | details | raw | q");
+        push_line(
+            &mut out,
+            "Commands: main | rs | rg | go <x> | details | raw | q",
+        );
     } else {
         push_line(&mut out, "Commands: main | rs | details | raw | q");
     }

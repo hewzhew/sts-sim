@@ -172,7 +172,9 @@ fn main_command_hint(session: &RunControlSession, view: &RunControlViewModel) ->
         | EngineState::PendingChoice(_) => {
             "draw | discard | exhaust | potions | relics | case | raw | help | q"
         }
-        EngineState::MapNavigation => "deck | map | rs | relics | potions | case | raw | help | q",
+        EngineState::MapNavigation => {
+            "deck | map | rs | rg | relics | potions | case | raw | help | q"
+        }
         _ => "deck | map | relics | potions | case | raw | help | q",
     };
     let baseline = if session.last_completed_manual_combat_matches_capture_case() {
@@ -189,7 +191,7 @@ fn state_command_hint(session: &RunControlSession) -> String {
             "card-2 or card 2 | relic-1 or relic 1 | potion-0 or potion 0 | leave".to_string()
         }
         EngineState::Campfire => "rest | smith-<deck_idx> or smith <deck_idx> | recall".to_string(),
-        EngineState::MapNavigation => "type a path id, e.g. 0 or 5".to_string(),
+        EngineState::MapNavigation => "type a path id, e.g. 0 or 5 | rg=route-go".to_string(),
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
         EngineState::PendingChoice(_) => "type visible selection id".to_string(),
         EngineState::CombatPlayerTurn | EngineState::CombatProcessing => {

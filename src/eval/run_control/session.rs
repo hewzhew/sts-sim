@@ -168,6 +168,7 @@ impl RunControlSession {
             RunControlCommand::RouteSuggest => Ok(RunControlCommandOutcome::message(
                 super::route_policy::render_route_suggestion(self),
             )),
+            RunControlCommand::RouteGo => super::route_policy::apply_route_go(self),
             RunControlCommand::Relics => {
                 Ok(RunControlCommandOutcome::message(render_relics_panel(self)))
             }

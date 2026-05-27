@@ -1,10 +1,12 @@
 use crate::ai::route_planner_v1::{
     plan_route_decision_v1, render_route_decision_trace_v1, route_targets as ai_route_targets,
-    summarize_route_from as ai_summarize_route_from, MapRouteTargetV1, RoutePathSummaryV1,
-    RoutePlannerConfigV1,
+    summarize_route_from as ai_summarize_route_from, MapRouteTargetV1, RouteCandidateTraceV1,
+    RouteMoveKindV1, RoutePathSummaryV1, RoutePlannerConfigV1, RouteSafetyFlagV1,
 };
+use crate::state::core::{ClientInput, EngineState};
 
-use super::session::RunControlSession;
+use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::view_model::room_type_label;
 
 pub(in crate::eval::run_control) fn render_route_suggestion(session: &RunControlSession) -> String {
     let trace = plan_route_decision_v1(
@@ -13,6 +15,45 @@ pub(in crate::eval::run_control) fn render_route_suggestion(session: &RunControl
         RoutePlannerConfigV1::default(),
     );
     render_route_decision_trace_v1(&trace)
+}
+
+pub(in crate::eval::run_control) fn apply_route_go(
+    session: &mut RunControlSession,
+) -> Result<RunControlCommandOutcome, String> {
+    if !matches!(session.engine_state, EngineState::MapNavigation) {
+        return Err(format!(
+            "route-go is only valid on Map. Use `rs` for read-only route evidence from this screen.\n{}",
+            render_route_suggestion(session)
+        ));
+    }
+
+    let trace = plan_route_decision_v1(
+        &session.run_state,
+        &session.engine_state,
+        RoutePlannerConfigV1::default(),
+    );
+    let selected_index = trace
+        .selected_index
+        .ok_or_else(|| "route planner found no legal map target".to_string())?;
+    let candidate = trace
+        .candidates
+        .get(selected_index)
+        .cloned()
+        .ok_or_else(|| "route planner selected an out-of-range map target".to_string())?;
+    if candidate.safety == RouteSafetyFlagV1::RejectUnlessNoAlternative {
+        return Err(format!(
+            "route planner selected only reject-unless-forced routes; inspect with `rs` and choose manually with `go <x>` or `fly <x> <y>`.\n{}",
+            render_route_go_selection(&candidate)
+        ));
+    }
+
+    let input = route_candidate_input(&candidate)?;
+    let selection = render_route_go_selection(&candidate);
+    let outcome = session.apply_input(input)?;
+    Ok(RunControlCommandOutcome {
+        message: format!("{selection}\n{}", outcome.message),
+        ..outcome
+    })
 }
 
 pub(in crate::eval::run_control) fn route_targets(
@@ -47,9 +88,63 @@ pub(in crate::eval::run_control) fn recovery_label(summary: &RoutePathSummaryV1)
     }
 }
 
+fn route_candidate_input(candidate: &RouteCandidateTraceV1) -> Result<ClientInput, String> {
+    let x = usize::try_from(candidate.target.x).map_err(|_| {
+        format!(
+            "route planner selected invalid map x={}",
+            candidate.target.x
+        )
+    })?;
+    let y = usize::try_from(candidate.target.y).map_err(|_| {
+        format!(
+            "route planner selected invalid map y={}",
+            candidate.target.y
+        )
+    })?;
+    match candidate.target.move_kind {
+        RouteMoveKindV1::NormalEdge => Ok(ClientInput::SelectMapNode(x)),
+        RouteMoveKindV1::WingBootsJump => Ok(ClientInput::FlyToNode(x, y)),
+    }
+}
+
+fn render_route_go_selection(candidate: &RouteCandidateTraceV1) -> String {
+    let mut lines = Vec::new();
+    lines.push("Route planner selected:".to_string());
+    lines.push(format!(
+        "  x={} {} [{} score={:.2}]",
+        candidate.target.x,
+        room_type_label(candidate.target.room_type),
+        safety_label(candidate.safety),
+        candidate.total_score
+    ));
+    if candidate.target.move_kind == RouteMoveKindV1::WingBootsJump {
+        lines.push("  uses Wing Boots charge".to_string());
+    }
+    if let Some(command) = candidate.suggested_command.as_ref() {
+        lines.push(format!("  command: {command}"));
+    }
+    lines.push("  label_role: behavior_policy_not_teacher".to_string());
+    if !candidate.reasons.is_empty() {
+        lines.push(format!("  reason: {}", candidate.reasons.join("; ")));
+    }
+    if !candidate.cautions.is_empty() {
+        lines.push(format!("  caution: {}", candidate.cautions.join("; ")));
+    }
+    lines.join("\n")
+}
+
+fn safety_label(safety: RouteSafetyFlagV1) -> &'static str {
+    match safety {
+        RouteSafetyFlagV1::Ok => "ok",
+        RouteSafetyFlagV1::RiskyButAllowed => "risky",
+        RouteSafetyFlagV1::RejectUnlessNoAlternative => "reject_unless_forced",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eval::run_control::commands::RunControlCommand;
     use crate::eval::run_control::session::RunControlConfig;
     use crate::state::core::EngineState;
 
@@ -115,5 +210,37 @@ mod tests {
                 session.decision_step
             )
         );
+    }
+
+    #[test]
+    fn route_go_rejects_locked_route_selection() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session
+            .apply_command(RunControlCommand::DefaultCandidate)
+            .expect("Neow intro should advance");
+
+        let err = apply_route_go(&mut session).expect_err("route-go should reject Neow bonus");
+
+        assert!(err.contains("route-go is only valid on Map"));
+        assert!(err.contains("route selection is locked"));
+        assert_eq!(session.decision_step, 1);
+    }
+
+    #[test]
+    fn route_go_executes_selected_map_target() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.engine_state = EngineState::MapNavigation;
+        let before_y = session.run_state.map.current_y;
+
+        let outcome = apply_route_go(&mut session).expect("route-go should choose a map node");
+
+        assert!(outcome.message.contains("Route planner selected:"));
+        assert!(outcome
+            .message
+            .contains("label_role: behavior_policy_not_teacher"));
+        assert!(outcome.action_result.is_some());
+        assert!(session.run_state.map.current_y > before_y);
+        assert_eq!(session.decision_step, 1);
     }
 }
