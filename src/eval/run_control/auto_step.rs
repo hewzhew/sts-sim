@@ -76,6 +76,9 @@ pub(super) fn apply_guarded_auto_step(
             )?;
             if let Some(result) = outcome.action_result.as_ref() {
                 applied.push(format!("combat search: {}", result.chosen_label));
+                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+                trace_annotations.extend(outcome.trace_annotations);
+                applied.extend(auto_capture_summaries);
                 continue;
             }
             return finish_auto_step(
@@ -94,8 +97,11 @@ pub(super) fn apply_guarded_auto_step(
             match super::route_policy::apply_route_go_with_summary(session) {
                 Ok(applied_route) => {
                     if applied_route.outcome.action_result.is_some() {
+                        let auto_capture_summaries =
+                            auto_capture_summaries(&applied_route.outcome.trace_annotations);
                         trace_annotations.extend(applied_route.outcome.trace_annotations);
                         applied.push(applied_route.auto_step_summary);
+                        applied.extend(auto_capture_summaries);
                         continue;
                     }
                     trace_annotations.extend(applied_route.outcome.trace_annotations);
@@ -139,11 +145,14 @@ pub(super) fn apply_guarded_auto_step(
                 .as_ref()
                 .map(|result| result.chosen_label.clone())
                 .unwrap_or_else(|| auto_candidate.candidate.label.clone());
+            let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            trace_annotations.extend(outcome.trace_annotations);
             applied.push(format!(
                 "{}: {label} ({})",
                 auto_class_label(auto_candidate.class),
                 auto_candidate.reason
             ));
+            applied.extend(auto_capture_summaries);
             continue;
         }
 
@@ -165,6 +174,20 @@ pub(super) fn apply_guarded_auto_step(
         format!("operation budget exhausted at {max_operations} automatic operations"),
         None,
     )
+}
+
+fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<String> {
+    annotations
+        .iter()
+        .filter_map(|annotation| match annotation {
+            RunControlTraceAnnotationV1::AutoCombatCapture {
+                case_id,
+                capture_path,
+                ..
+            } => Some(format!("auto capture: {case_id} -> {capture_path}")),
+            RunControlTraceAnnotationV1::RoutePlannerSelection { .. } => None,
+        })
+        .collect()
 }
 
 fn auto_search_options(

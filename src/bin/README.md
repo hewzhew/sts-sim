@@ -59,6 +59,17 @@ Active binaries:
     advances routine or forced-safe screens, claims low-risk rewards, and uses
     combat search only when a complete winning trajectory is available, then
     stops at the next human strategic choice
+  - `n route=planner ...`: same guarded auto-step, but allows the route planner
+    to choose map nodes; each route choice is tagged as
+    `behavior_policy_not_teacher`
+  - `nr` / `next-route`: short form for `n route=planner`; accepts the same
+    search and budget options except an explicit `route=...`
+  - `rs` / `route-suggest`: read-only route evidence; `rg` / `route-go`:
+    execute one selected route planner move from the current map screen
+  - `--auto-capture-combat [--auto-capture-combat-root <benchmark_dir>]`:
+    automatically saves each new combat at the first stable player-turn
+    boundary; with `--trace`, these captures are recorded as trace annotations
+    and artifact refs
   - reward screens auto-claim gold/stolen gold and only claim potion rewards
     when an empty potion slot exists; use `auto-reward gold|potion|all on|off`
     to inspect or change this convenience setting

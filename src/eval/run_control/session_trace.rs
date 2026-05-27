@@ -12,7 +12,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 4;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -241,6 +241,8 @@ impl SessionTraceRecorder {
         action_result: &ActionResult,
         annotations: &[RunControlTraceAnnotationV1],
     ) -> Result<(), String> {
+        let raw_command_line = pending.raw_command_line.clone();
+        let decision_step_after = session_after.decision_step;
         let (selected_candidate, selection_resolution) = if pending.selected_candidate.is_some() {
             (pending.selected_candidate, pending.selection_resolution)
         } else {
@@ -262,6 +264,11 @@ impl SessionTraceRecorder {
             action_result: action_result.clone(),
         };
         self.trace.steps.push(step);
+        self.trace.artifact_refs.extend(annotation_artifact_refs(
+            &raw_command_line,
+            decision_step_after,
+            annotations,
+        ));
         self.save()
     }
 
@@ -385,6 +392,32 @@ impl SessionTraceRecorder {
         let payload = serde_json::to_string_pretty(&self.trace).map_err(|err| err.to_string())?;
         fs::write(&self.path, payload).map_err(|err| err.to_string())
     }
+}
+
+fn annotation_artifact_refs(
+    raw_command_line: &str,
+    decision_step: u64,
+    annotations: &[RunControlTraceAnnotationV1],
+) -> Vec<SessionTraceArtifactRefV1> {
+    annotations
+        .iter()
+        .filter_map(|annotation| match annotation {
+            RunControlTraceAnnotationV1::AutoCombatCapture {
+                capture_path,
+                benchmark_manifest_path,
+                ..
+            } => Some(SessionTraceArtifactRefV1 {
+                raw_command_line: raw_command_line.to_string(),
+                decision_step,
+                artifact_kind: SessionTraceArtifactKind::CombatCaptureCase,
+                capture_path: Some(capture_path.clone()),
+                baseline_path: None,
+                search_evidence_path: None,
+                benchmark_manifest_path: Some(benchmark_manifest_path.clone()),
+            }),
+            RunControlTraceAnnotationV1::RoutePlannerSelection { .. } => None,
+        })
+        .collect()
 }
 
 fn boundary_fingerprint(session: &RunControlSession) -> SessionTraceBoundaryFingerprintV1 {
@@ -546,7 +579,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::eval::run_control::{
-        RunControlAutoStepOptions, RunControlCommand, RunControlConfig,
+        AutoCombatCaptureConfig, RunControlAutoStepOptions, RunControlCommand, RunControlConfig,
         RunControlRouteAutomationMode,
     };
     use crate::state::core::{ClientInput, EngineState};
@@ -741,12 +774,69 @@ mod tests {
             command,
             label_role,
             ..
-        } = &annotations[0];
+        } = &annotations[0]
+        else {
+            panic!("expected route planner annotation")
+        };
         assert!(*target_x >= 0);
         assert!(command.starts_with("go ") || command.starts_with("fly "));
         assert_eq!(label_role, "behavior_policy_not_teacher");
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn recorder_records_auto_capture_annotation_and_artifact_ref() {
+        let mut session = test_session_after_neow_at_map();
+        let path = unique_temp_dir("session_trace_auto_capture").join("trace.json");
+        let root = path.parent().unwrap().join("bench");
+        session.auto_capture = AutoCombatCaptureConfig {
+            enabled: true,
+            root: Some(root.clone()),
+        };
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+        let command = RunControlCommand::Input(ClientInput::SelectMapNode(1));
+        let pending = SessionTraceRecorder::prepare_step(&session, "go 1", &command);
+        let outcome = session
+            .apply_command(command)
+            .expect("map input should enter combat and auto-capture");
+        let action_result = outcome
+            .action_result
+            .as_ref()
+            .expect("map input should produce an action result");
+
+        recorder
+            .record_action_step(pending, &session, action_result, &outcome.trace_annotations)
+            .expect("trace step should save auto capture artifact");
+
+        assert_eq!(recorder.trace().steps.len(), 1);
+        assert_eq!(recorder.trace().artifact_refs.len(), 1);
+        let annotations = &recorder.trace().steps[0].annotations;
+        assert_eq!(annotations.len(), 1);
+        let RunControlTraceAnnotationV1::AutoCombatCapture {
+            case_id,
+            capture_path,
+            benchmark_manifest_path,
+            label_role,
+        } = &annotations[0]
+        else {
+            panic!("expected auto capture annotation")
+        };
+        assert!(case_id.starts_with("act1_floor01_combat01_"));
+        assert!(capture_path.ends_with(".capture.json"));
+        assert!(benchmark_manifest_path.ends_with("benchmark.json"));
+        assert_eq!(label_role, "diagnostic_capture_not_human_baseline");
+        assert_eq!(
+            recorder.trace().artifact_refs[0].artifact_kind,
+            SessionTraceArtifactKind::CombatCaptureCase
+        );
+        assert_eq!(
+            recorder.trace().artifact_refs[0].capture_path.as_deref(),
+            Some(capture_path.as_str())
+        );
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+        let _ = fs::remove_dir_all(root);
     }
 
     fn test_session_after_neow_at_map() -> RunControlSession {

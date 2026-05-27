@@ -14,4 +14,10 @@ pub enum RunControlTraceAnnotationV1 {
         command: String,
         label_role: String,
     },
+    AutoCombatCapture {
+        case_id: String,
+        capture_path: String,
+        benchmark_manifest_path: String,
+        label_role: String,
+    },
 }

@@ -127,7 +127,7 @@ impl RunControlCommandOutcome {
         mut self,
         trace_annotations: Vec<RunControlTraceAnnotationV1>,
     ) -> Self {
-        self.trace_annotations = trace_annotations;
+        self.trace_annotations.extend(trace_annotations);
         self
     }
 }
@@ -450,10 +450,22 @@ impl RunControlSession {
         } else {
             report
         };
+        let trace_annotations = auto_capture
+            .as_ref()
+            .map(|auto_capture| {
+                vec![RunControlTraceAnnotationV1::AutoCombatCapture {
+                    case_id: auto_capture.case_id.clone(),
+                    capture_path: auto_capture.capture_path.display().to_string(),
+                    benchmark_manifest_path: auto_capture.benchmark_manifest.display().to_string(),
+                    label_role: "diagnostic_capture_not_human_baseline".to_string(),
+                }]
+            })
+            .unwrap_or_default();
         Ok(RunControlCommandOutcome::action(
             format!("{report}\n{}", render_run_control_state(self)),
             action_result,
-        ))
+        )
+        .with_trace_annotations(trace_annotations))
     }
 
     fn cleanup_inactive_combat(&mut self) {
@@ -895,6 +907,39 @@ mod tests {
             EngineState::CombatPlayerTurn
         ));
         assert_eq!(session.run_state.map.current_y, 0);
+    }
+
+    #[test]
+    fn run_control_auto_step_route_planner_reports_auto_capture() {
+        let root = unique_temp_dir("run_control_auto_step_route_auto_capture");
+        let mut session = test_session_with_first_monster_room();
+        session.auto_capture = AutoCombatCaptureConfig {
+            enabled: true,
+            root: Some(root.clone()),
+        };
+
+        let outcome = session
+            .apply_command(RunControlCommand::AutoStep(
+                crate::eval::run_control::RunControlAutoStepOptions {
+                    route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                    max_operations: Some(1),
+                    ..Default::default()
+                },
+            ))
+            .expect("route planner should enter combat and auto-capture");
+
+        assert!(outcome.message.contains("route planner:"));
+        assert!(outcome.message.contains("auto capture:"));
+        assert!(outcome.trace_annotations.iter().any(|annotation| matches!(
+            annotation,
+            RunControlTraceAnnotationV1::AutoCombatCapture { .. }
+        )));
+        assert!(outcome.trace_annotations.iter().any(|annotation| matches!(
+            annotation,
+            RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+        )));
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
