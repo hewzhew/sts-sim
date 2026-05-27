@@ -171,6 +171,7 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "n" | "next" | "advance" | "advance-to-human-boundary" | "auto-step" | "autostep" => {
             parse_auto_step_command(&rest)
         }
+        "nr" | "next-route" | "advance-route" => parse_route_auto_step_command(&rest),
         "auto-reward" => parse_auto_reward_command(&rest),
         "action" => Ok(RunControlCommand::ActionIndex(parse_usize_arg(
             rest.first(),
@@ -288,12 +289,13 @@ Help:
 
   Automation:
     n/next/advance-to-human-boundary [route=manual|planner] [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path] [max_ops=N]
+    nr/next-route = n route=planner, with the same options except route=
     auto-reward
     auto-reward gold|potion|all on|off"
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "main | n=advance | deck | map | rs=route-suggest | rg=route-go | relics | potions | inspect <id> | auto-reward | details | raw | help"
+    "main | n=advance | nr=route-advance | deck | map | rs=route-suggest | rg=route-go | relics | potions | inspect <id> | auto-reward | details | raw | help"
 }
 
 fn is_candidate_id(command: &str) -> bool {
@@ -475,6 +477,24 @@ fn parse_auto_step_command(rest: &[&str]) -> Result<RunControlCommand, String> {
         }
     }
     options.search = parse_search_combat_options(&search_tokens)?;
+    Ok(RunControlCommand::AutoStep(options))
+}
+
+fn parse_route_auto_step_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    if rest.iter().any(|token| {
+        token.split_once('=').is_some_and(|(key, _)| {
+            matches!(
+                key.to_ascii_lowercase().as_str(),
+                "route" | "route_policy" | "route-policy"
+            )
+        })
+    }) {
+        return Err("nr/next-route already means route=planner; do not pass route=".to_string());
+    }
+    let RunControlCommand::AutoStep(mut options) = parse_auto_step_command(rest)? else {
+        unreachable!("parse_auto_step_command always returns AutoStep")
+    };
+    options.route = RunControlRouteAutomationMode::Planner;
     Ok(RunControlCommand::AutoStep(options))
 }
 
@@ -734,6 +754,18 @@ mod tests {
                 max_operations: Some(9),
                 route: RunControlRouteAutomationMode::Planner,
             })
+        );
+        assert_eq!(
+            parse_run_control_command("nr max_ops=9").expect("nr should parse"),
+            RunControlCommand::AutoStep(RunControlAutoStepOptions {
+                search: RunControlSearchCombatOptions::default(),
+                max_operations: Some(9),
+                route: RunControlRouteAutomationMode::Planner,
+            })
+        );
+        assert!(
+            parse_run_control_command("nr route=manual").is_err(),
+            "nr should not silently accept conflicting route mode"
         );
     }
 
