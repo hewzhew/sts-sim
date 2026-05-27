@@ -1,5 +1,7 @@
 use super::{format_first_floor, push_line};
-use crate::eval::run_control::route_policy::{route_targets, summarize_route_from};
+use crate::eval::run_control::route_policy::{
+    format_range, recovery_label, route_targets, summarize_route_from,
+};
 use crate::eval::run_control::session::RunControlSession;
 use crate::eval::run_control::view_model::{boss_label, room_type_label};
 use crate::state::core::EngineState;
@@ -46,21 +48,27 @@ pub fn render_map_panel(session: &RunControlSession) -> String {
             let summary = summarize_route_from(session, node.x, node.y);
             push_line(
                 &mut out,
-                format!("  x={} {}", node.x, room_type_label(node.class)),
+                format!("  x={} {}", node.x, room_type_label(node.room_type)),
             );
             push_line(
                 &mut out,
                 format!(
                     "    early pressure: {} monster/elite rooms before floor 4",
-                    summary.early_pressure_label()
+                    format_range(summary.min_early_pressure, summary.max_early_pressure)
                 ),
             );
-            push_line(&mut out, format!("    elites: {}", summary.elite_label()));
+            push_line(
+                &mut out,
+                format!(
+                    "    elites: {}",
+                    format_range(summary.min_elites, summary.max_elites)
+                ),
+            );
             push_line(
                 &mut out,
                 format!(
                     "    shops: {}, first shop {}",
-                    summary.shop_label(),
+                    format_range(summary.min_shops, summary.max_shops),
                     format_first_floor(summary.first_shop_floor)
                 ),
             );
@@ -68,13 +76,13 @@ pub fn render_map_panel(session: &RunControlSession) -> String {
                 &mut out,
                 format!(
                     "    fires: {}, first fire {}",
-                    summary.fire_label(),
+                    format_range(summary.min_fires, summary.max_fires),
                     format_first_floor(summary.first_fire_floor)
                 ),
             );
             push_line(
                 &mut out,
-                format!("    recovery: {}", summary.recovery_label()),
+                format!("    recovery: {}", recovery_label(&summary)),
             );
             push_line(
                 &mut out,
