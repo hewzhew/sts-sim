@@ -868,6 +868,11 @@ mod tests {
             .expect("auto-step route planner should choose a map node");
 
         assert!(outcome.message.contains("route planner:"));
+        assert!(outcome.message.contains("x="));
+        assert!(outcome.message.contains("command=go"));
+        assert!(outcome
+            .message
+            .contains("label_role=behavior_policy_not_teacher"));
         assert!(outcome
             .message
             .contains("Reason: operation budget exhausted at 1 automatic operations"));

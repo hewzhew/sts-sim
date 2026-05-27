@@ -87,10 +87,10 @@ pub(super) fn apply_guarded_auto_step(
         if matches!(session.engine_state, EngineState::MapNavigation)
             && options.route == RunControlRouteAutomationMode::Planner
         {
-            match super::route_policy::apply_route_go(session) {
-                Ok(outcome) => {
-                    if let Some(result) = outcome.action_result.as_ref() {
-                        applied.push(format!("route planner: {}", result.chosen_label));
+            match super::route_policy::apply_route_go_with_summary(session) {
+                Ok(applied_route) => {
+                    if applied_route.outcome.action_result.is_some() {
+                        applied.push(applied_route.auto_step_summary);
                         continue;
                     }
                     return finish_auto_step(
@@ -98,7 +98,7 @@ pub(super) fn apply_guarded_auto_step(
                         &before,
                         applied,
                         "route planner did not modify state",
-                        Some(outcome.message),
+                        Some(applied_route.outcome.message),
                     );
                 }
                 Err(err) => {

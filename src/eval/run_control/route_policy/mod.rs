@@ -8,6 +8,11 @@ use crate::state::core::{ClientInput, EngineState};
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::view_model::room_type_label;
 
+pub(in crate::eval::run_control) struct RouteGoApplied {
+    pub outcome: RunControlCommandOutcome,
+    pub auto_step_summary: String,
+}
+
 pub(in crate::eval::run_control) fn render_route_suggestion(session: &RunControlSession) -> String {
     let trace = plan_route_decision_v1(
         &session.run_state,
@@ -20,6 +25,12 @@ pub(in crate::eval::run_control) fn render_route_suggestion(session: &RunControl
 pub(in crate::eval::run_control) fn apply_route_go(
     session: &mut RunControlSession,
 ) -> Result<RunControlCommandOutcome, String> {
+    Ok(apply_route_go_with_summary(session)?.outcome)
+}
+
+pub(in crate::eval::run_control) fn apply_route_go_with_summary(
+    session: &mut RunControlSession,
+) -> Result<RouteGoApplied, String> {
     if !matches!(session.engine_state, EngineState::MapNavigation) {
         return Err(format!(
             "route-go is only valid on Map. Use `rs` for read-only route evidence from this screen.\n{}",
@@ -49,10 +60,14 @@ pub(in crate::eval::run_control) fn apply_route_go(
 
     let input = route_candidate_input(&candidate)?;
     let selection = render_route_go_selection(&candidate);
+    let auto_step_summary = render_route_go_auto_step_summary(&candidate);
     let outcome = session.apply_input(input)?;
-    Ok(RunControlCommandOutcome {
-        message: format!("{selection}\n{}", outcome.message),
-        ..outcome
+    Ok(RouteGoApplied {
+        auto_step_summary,
+        outcome: RunControlCommandOutcome {
+            message: format!("{selection}\n{}", outcome.message),
+            ..outcome
+        },
     })
 }
 
@@ -131,6 +146,21 @@ fn render_route_go_selection(candidate: &RouteCandidateTraceV1) -> String {
         lines.push(format!("  caution: {}", candidate.cautions.join("; ")));
     }
     lines.join("\n")
+}
+
+fn render_route_go_auto_step_summary(candidate: &RouteCandidateTraceV1) -> String {
+    let command = candidate
+        .suggested_command
+        .as_deref()
+        .unwrap_or("unknown-command");
+    format!(
+        "route planner: x={} {} [{} score={:.2}] command={} label_role=behavior_policy_not_teacher",
+        candidate.target.x,
+        room_type_label(candidate.target.room_type),
+        safety_label(candidate.safety),
+        candidate.total_score,
+        command,
+    )
 }
 
 fn safety_label(safety: RouteSafetyFlagV1) -> &'static str {
