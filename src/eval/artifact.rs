@@ -66,6 +66,7 @@ pub enum ArtifactSourceKind {
     Unknown,
     ExactCombatPosition,
     ManualRunControl,
+    AutoRunControl,
     IntentReplay,
     FixtureStartSpec,
 }
@@ -126,6 +127,14 @@ impl ArtifactProvenanceV1 {
         Self::new(
             ArtifactSourceKind::ManualRunControl,
             "run_control_manual_capture",
+            Some(ArtifactRunConfigV1::from_run_state(run)),
+        )
+    }
+
+    pub fn auto_run_control(run: &RunState) -> Self {
+        Self::new(
+            ArtifactSourceKind::AutoRunControl,
+            "run_control_auto_capture",
             Some(ArtifactRunConfigV1::from_run_state(run)),
         )
     }

@@ -169,6 +169,18 @@ pub fn capture_combat_position_from_run_v1(
     )
 }
 
+pub fn capture_combat_position_from_auto_run_v1(
+    label: Option<String>,
+    position: &CombatPosition,
+    run_state: &RunState,
+) -> Result<CombatCaptureV1, String> {
+    capture_combat_position_with_provenance_v1(
+        label,
+        position,
+        ArtifactProvenanceV1::auto_run_control(run_state),
+    )
+}
+
 pub fn capture_combat_position_with_provenance_v1(
     label: Option<String>,
     position: &CombatPosition,
@@ -185,6 +197,7 @@ pub fn capture_combat_position_with_provenance_v1(
     let fingerprints = combat_state_fingerprint_v1(position);
     let legal_actions = legal_actions_for_position(position);
     let summary = summary_for_position(&position);
+    let source_capture_method = provenance.capture_method.clone();
     Ok(CombatCaptureV1 {
         schema_name: COMBAT_CAPTURE_SCHEMA_NAME.to_string(),
         schema_version: COMBAT_CAPTURE_SCHEMA_VERSION,
@@ -196,7 +209,7 @@ pub fn capture_combat_position_with_provenance_v1(
         provenance,
         source: CombatCaptureSourceV1 {
             producer: ARTIFACT_PRODUCER.to_string(),
-            capture_method: "exact_combat_position".to_string(),
+            capture_method: source_capture_method,
         },
         integrity,
         fingerprints: Some(fingerprints),

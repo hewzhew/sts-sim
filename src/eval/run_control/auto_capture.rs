@@ -41,7 +41,7 @@ pub(super) fn maybe_auto_capture_combat_start(
         .unwrap_or_else(|| default_benchmark_root(session));
     let case_id = next_available_case_id(&root, &base_case_id(session));
     let paths = BenchmarkCasePaths::for_case(&root, &case_id);
-    session.save_current_combat_capture(&paths.capture_path, Some(case_id.clone()))?;
+    session.save_current_auto_combat_capture(&paths.capture_path, Some(case_id.clone()))?;
     let paths = add_case_to_benchmark_registry(&root, &case_id)?;
     session.remember_capture_case(root, case_id.clone());
     session.auto_capture_last_combat_sequence = Some(session.combat_sequence);
@@ -142,6 +142,8 @@ fn slug(raw: &str) -> String {
 mod tests {
     use super::*;
     use crate::content::monsters::factory::EncounterId;
+    use crate::eval::artifact::ArtifactSourceKind;
+    use crate::eval::combat_capture::load_combat_capture_v1;
     use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
     use crate::state::core::ClientInput;
     use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
@@ -176,6 +178,16 @@ mod tests {
         )
         .benchmark_manifest
         .exists());
+        let capture = load_combat_capture_v1(&captures[0]).expect("auto capture should load");
+        assert_eq!(
+            capture.provenance.source_kind,
+            ArtifactSourceKind::AutoRunControl
+        );
+        assert_eq!(
+            capture.provenance.capture_method,
+            "run_control_auto_capture"
+        );
+        assert_eq!(capture.source.capture_method, "run_control_auto_capture");
 
         let second =
             maybe_auto_capture_combat_start(&mut session).expect("same combat should not fail");

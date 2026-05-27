@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::eval::combat_capture::{
-    capture_combat_position_from_run_v1, save_combat_capture_v1, CombatCaptureV1,
+    capture_combat_position_from_auto_run_v1, capture_combat_position_from_run_v1,
+    save_combat_capture_v1, CombatCaptureV1,
 };
 
 use super::decision_case::{
@@ -175,6 +176,17 @@ impl RunControlSession {
     ) -> Result<CombatCaptureV1, String> {
         let position = self.current_active_combat_position()?;
         let capture = capture_combat_position_from_run_v1(label, &position, &self.run_state)?;
+        save_combat_capture_v1(path, &capture)?;
+        Ok(capture)
+    }
+
+    pub(in crate::eval::run_control) fn save_current_auto_combat_capture(
+        &self,
+        path: &Path,
+        label: Option<String>,
+    ) -> Result<CombatCaptureV1, String> {
+        let position = self.current_active_combat_position()?;
+        let capture = capture_combat_position_from_auto_run_v1(label, &position, &self.run_state)?;
         save_combat_capture_v1(path, &capture)?;
         Ok(capture)
     }

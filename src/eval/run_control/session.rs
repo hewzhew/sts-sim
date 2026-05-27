@@ -625,6 +625,11 @@ mod tests {
             crate::eval::artifact::ArtifactSourceKind::ManualRunControl
         );
         assert_eq!(
+            loaded.provenance.capture_method,
+            "run_control_manual_capture"
+        );
+        assert_eq!(loaded.source.capture_method, "run_control_manual_capture");
+        assert_eq!(
             loaded
                 .provenance
                 .run_config
