@@ -12,7 +12,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 5;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -771,6 +771,8 @@ mod tests {
         assert_eq!(annotations.len(), 1);
         let RunControlTraceAnnotationV1::RoutePlannerSelection {
             target_x,
+            candidate_count,
+            top_candidates,
             command,
             label_role,
             ..
@@ -779,6 +781,9 @@ mod tests {
             panic!("expected route planner annotation")
         };
         assert!(*target_x >= 0);
+        assert!(*candidate_count > 0);
+        assert!(!top_candidates.is_empty());
+        assert!(top_candidates.len() <= 3);
         assert!(command.starts_with("go ") || command.starts_with("fly "));
         assert_eq!(label_role, "behavior_policy_not_teacher");
 

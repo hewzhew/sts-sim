@@ -17,7 +17,9 @@ pub(super) fn score_route_candidate(
         card_reward: needs.need_card_rewards
             * (features.expected_card_rewards + path.max_early_pressure as f32 * 0.15),
         relic: needs.need_relics * (features.expected_relics + path.max_elites as f32 * 0.45),
-        remove: needs.need_remove * (features.remove_access + path.max_shops as f32 * 0.12),
+        remove: needs.need_remove
+            * needs.need_shop
+            * (features.remove_access + path.max_shops as f32 * 0.12),
         upgrade: needs.need_upgrade * (features.upgrade_access + path.max_fires as f32 * 0.10),
         heal: needs.need_heal * (features.heal_access + path.max_fires as f32 * 0.16),
         shop: needs.need_shop * (features.shop_access + path.max_shops as f32 * 0.10),

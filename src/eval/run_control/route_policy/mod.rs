@@ -6,7 +6,7 @@ use crate::ai::route_planner_v1::{
 use crate::state::core::{ClientInput, EngineState};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
-use super::trace_annotation::RunControlTraceAnnotationV1;
+use super::trace_annotation::{RoutePlannerCandidateSummaryV1, RunControlTraceAnnotationV1};
 use super::view_model::room_type_label;
 
 pub(in crate::eval::run_control) struct RouteGoApplied {
@@ -62,7 +62,8 @@ pub(in crate::eval::run_control) fn apply_route_go_with_summary(
     let input = route_candidate_input(&candidate)?;
     let selection = render_route_go_selection(&candidate);
     let auto_step_summary = render_route_go_auto_step_summary(&candidate);
-    let trace_annotation = route_go_trace_annotation(&candidate, &auto_step_summary);
+    let trace_annotation =
+        route_go_trace_annotation(&trace, selected_index, &candidate, &auto_step_summary);
     let outcome = session.apply_input(input)?;
     Ok(RouteGoApplied {
         auto_step_summary,
@@ -167,11 +168,15 @@ fn render_route_go_auto_step_summary(candidate: &RouteCandidateTraceV1) -> Strin
 }
 
 fn route_go_trace_annotation(
+    trace: &crate::ai::route_planner_v1::RouteDecisionTraceV1,
+    selected_index: usize,
     candidate: &RouteCandidateTraceV1,
     summary: &str,
 ) -> RunControlTraceAnnotationV1 {
     RunControlTraceAnnotationV1::RoutePlannerSelection {
         summary: summary.to_string(),
+        selected_index: Some(selected_index),
+        candidate_count: trace.candidates.len(),
         target_x: candidate.target.x,
         target_y: candidate.target.y,
         room_type: room_type_label(candidate.target.room_type).to_string(),
@@ -183,8 +188,34 @@ fn route_go_trace_annotation(
             .as_deref()
             .unwrap_or("unknown-command")
             .to_string(),
+        top_candidates: route_go_top_candidate_summaries(trace),
         label_role: "behavior_policy_not_teacher".to_string(),
     }
+}
+
+fn route_go_top_candidate_summaries(
+    trace: &crate::ai::route_planner_v1::RouteDecisionTraceV1,
+) -> Vec<RoutePlannerCandidateSummaryV1> {
+    trace
+        .candidates
+        .iter()
+        .take(3)
+        .enumerate()
+        .map(|(rank, candidate)| RoutePlannerCandidateSummaryV1 {
+            rank,
+            target_x: candidate.target.x,
+            target_y: candidate.target.y,
+            room_type: room_type_label(candidate.target.room_type).to_string(),
+            move_kind: format!("{:?}", candidate.target.move_kind),
+            safety: safety_label(candidate.safety).to_string(),
+            score: candidate.total_score,
+            command: candidate
+                .suggested_command
+                .as_deref()
+                .unwrap_or("unknown-command")
+                .to_string(),
+        })
+        .collect()
 }
 
 fn safety_label(safety: RouteSafetyFlagV1) -> &'static str {
