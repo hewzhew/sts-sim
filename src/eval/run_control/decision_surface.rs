@@ -192,17 +192,6 @@ fn state_command_hint(session: &RunControlSession) -> String {
         }
         EngineState::Campfire => "rest | smith-<deck_idx> or smith <deck_idx> | recall".to_string(),
         EngineState::MapNavigation => "type a path id, e.g. 0 or 5 | rg=route-go".to_string(),
-        EngineState::RewardScreen(ref reward)
-            if reward.pending_card_choice.is_none()
-                && reward.skippable
-                && reward.items.len() == 1
-                && matches!(
-                    reward.items.first(),
-                    Some(crate::state::rewards::RewardItem::Card { .. })
-                ) =>
-        {
-            "Enter/0 = open card reward | skip = leave reward screen".to_string()
-        }
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
         EngineState::PendingChoice(_) => "type visible selection id".to_string(),
         EngineState::CombatPlayerTurn | EngineState::CombatProcessing => {

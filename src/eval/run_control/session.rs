@@ -303,16 +303,13 @@ impl RunControlSession {
 
     fn apply_default_candidate(&mut self) -> Result<RunControlCommandOutcome, String> {
         let surface = super::decision_surface::build_decision_surface(self);
-        let id = if surface.view.candidates.len() == 1 {
-            surface.view.candidates[0].id.clone()
-        } else if let Some(candidate) = default_reward_card_pack_candidate(self, &surface) {
-            candidate.id.clone()
-        } else {
+        if surface.view.candidates.len() != 1 {
             return Err(
                 "Enter only executes when exactly one visible action is available; choose an id"
                     .to_string(),
             );
-        };
+        }
+        let id = surface.view.candidates[0].id.clone();
         self.apply_visible_candidate(&id)
     }
 
@@ -576,34 +573,6 @@ impl RunControlSession {
             })
             .unwrap_or((self.run_state.current_hp, self.run_state.max_hp))
     }
-}
-
-fn default_reward_card_pack_candidate<'a>(
-    session: &RunControlSession,
-    surface: &'a super::decision_surface::DecisionSurface,
-) -> Option<&'a super::view_model::DecisionCandidate> {
-    let EngineState::RewardScreen(reward) = &session.engine_state else {
-        return None;
-    };
-    if reward.pending_card_choice.is_some() || !reward.skippable {
-        return None;
-    }
-
-    let non_skip = surface
-        .view
-        .candidates
-        .iter()
-        .filter(|candidate| candidate.id != "skip")
-        .collect::<Vec<_>>();
-    let [candidate] = non_skip.as_slice() else {
-        return None;
-    };
-    let Some(ClientInput::ClaimReward(index)) = candidate.action.executable_input() else {
-        return None;
-    };
-    reward.items.get(index).and_then(|item| {
-        matches!(item, crate::state::rewards::RewardItem::Card { .. }).then_some(*candidate)
-    })
 }
 
 pub fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
@@ -1037,34 +1006,6 @@ mod tests {
             Some(crate::content::potions::PotionId::EssenceOfSteel)
         );
         assert!(outcome.action_result.is_some());
-    }
-
-    #[test]
-    fn run_control_enter_opens_single_card_reward_pack_with_skip_visible() {
-        let mut session = RunControlSession::new(RunControlConfig::default());
-        let mut rewards = crate::state::rewards::RewardState::new();
-        rewards.items = vec![crate::state::rewards::RewardItem::Card {
-            cards: vec![
-                crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Shockwave, 0),
-                crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Armaments, 0),
-                crate::state::rewards::RewardCard::new(crate::content::cards::CardId::SeverSoul, 0),
-            ],
-        }];
-        rewards.skippable = true;
-        session.engine_state = EngineState::RewardScreen(rewards);
-
-        let outcome = session
-            .apply_command(RunControlCommand::DefaultCandidate)
-            .expect("Enter should open the only card reward pack even when skip is visible");
-
-        assert!(outcome.message.contains("Advanced to: Card Reward"));
-        assert!(matches!(
-            session.engine_state,
-            EngineState::RewardScreen(crate::state::rewards::RewardState {
-                pending_card_choice: Some(_),
-                ..
-            })
-        ));
     }
 
     #[test]
