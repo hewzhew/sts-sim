@@ -11,7 +11,7 @@ mod combat;
 mod map;
 
 pub use combat::{render_combat_zone_panel, CombatZonePanel};
-pub use map::render_map_panel;
+pub use map::{render_full_map_panel, render_map_panel};
 
 pub fn render_run_control_main(session: &RunControlSession) -> String {
     let surface = build_decision_surface(session);

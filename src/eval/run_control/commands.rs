@@ -15,6 +15,7 @@ pub enum RunControlCommand {
     Main,
     Deck,
     Map,
+    MapFull,
     RouteSuggest,
     RouteGo,
     Relics,
@@ -133,7 +134,9 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "q" | "quit" | "exit" => Ok(RunControlCommand::Quit),
         "main" | "state" => Ok(RunControlCommand::Main),
         "deck" => Ok(RunControlCommand::Deck),
+        "map" if is_full_map_arg(rest.first()) => Ok(RunControlCommand::MapFull),
         "map" => Ok(RunControlCommand::Map),
+        "mf" | "map-full" | "full-map" => Ok(RunControlCommand::MapFull),
         "rs" | "route" | "route-suggest" | "route-suggestion" => {
             Ok(RunControlCommand::RouteSuggest)
         }
@@ -259,7 +262,7 @@ pub fn run_control_help() -> &'static str {
     "\
 Help:
   Core:
-    main/state, deck, map, rs/route-suggest, rg/route-go, relics, potions, inspect <id>, case [path], d/details, r/raw, quit
+    main/state, deck, map, mf/map-full, rs/route-suggest, rg/route-go, relics, potions, inspect <id>, case [path], d/details, r/raw, quit
     n/next = advance to next human choice; <id> chooses a visible option
     Enter chooses the single visible option when safe
 
@@ -295,7 +298,7 @@ Help:
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "main | n=advance | nr=route-advance | deck | map | rs=route-suggest | rg=route-go | relics | potions | inspect <id> | auto-reward | details | raw | help"
+    "main | n=advance | nr=route-advance | deck | map | mf=full-map | rs=route-suggest | rg=route-go | relics | potions | inspect <id> | auto-reward | details | raw | help"
 }
 
 fn is_candidate_id(command: &str) -> bool {
@@ -312,6 +315,15 @@ fn is_structured_candidate_id(command: &str) -> bool {
         "card" | "relic" | "potion" | "smith"
     ) && !suffix.is_empty()
         && suffix.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn is_full_map_arg(value: Option<&&str>) -> bool {
+    value.is_some_and(|arg| {
+        matches!(
+            arg.to_ascii_lowercase().as_str(),
+            "full" | "f" | "all" | "grid"
+        )
+    })
 }
 
 fn parse_capture_command(rest: &[&str]) -> Result<RunControlCommand, String> {
@@ -847,6 +859,18 @@ mod tests {
         assert_eq!(
             parse_run_control_command("deck").expect("deck should parse"),
             RunControlCommand::Deck
+        );
+        assert_eq!(
+            parse_run_control_command("mf").expect("mf should parse"),
+            RunControlCommand::MapFull
+        );
+        assert_eq!(
+            parse_run_control_command("map full").expect("map full should parse"),
+            RunControlCommand::MapFull
+        );
+        assert_eq!(
+            parse_run_control_command("map").expect("map should parse"),
+            RunControlCommand::Map
         );
         assert_eq!(
             parse_run_control_command("rs").expect("rs should parse"),

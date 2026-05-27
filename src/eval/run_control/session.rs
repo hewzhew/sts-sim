@@ -11,8 +11,8 @@ use super::combat_start::ensure_combat_started_if_needed;
 use super::commands::{run_control_help, RunControlCommand};
 use super::outcome::CombatOutcomeTracker;
 use super::panels::{
-    render_combat_zone_panel, render_deck_panel, render_inspect_panel, render_map_panel,
-    render_potions_panel, render_relics_panel, CombatZonePanel,
+    render_combat_zone_panel, render_deck_panel, render_full_map_panel, render_inspect_panel,
+    render_map_panel, render_potions_panel, render_relics_panel, CombatZonePanel,
 };
 use super::render::{
     render_combat_actions, render_run_control_details, render_run_control_raw,
@@ -178,6 +178,9 @@ impl RunControlSession {
                 Ok(RunControlCommandOutcome::message(render_deck_panel(self)))
             }
             RunControlCommand::Map => Ok(RunControlCommandOutcome::message(render_map_panel(self))),
+            RunControlCommand::MapFull => Ok(RunControlCommandOutcome::message(
+                render_full_map_panel(self),
+            )),
             RunControlCommand::RouteSuggest => Ok(RunControlCommandOutcome::message(
                 super::route_policy::render_route_suggestion(self),
             )),
