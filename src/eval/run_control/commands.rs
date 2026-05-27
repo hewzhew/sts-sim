@@ -100,6 +100,14 @@ pub enum RunControlSearchEvidenceTarget {
 pub struct RunControlAutoStepOptions {
     pub search: RunControlSearchCombatOptions,
     pub max_operations: Option<usize>,
+    pub route: RunControlRouteAutomationMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RunControlRouteAutomationMode {
+    #[default]
+    Manual,
+    Planner,
 }
 
 pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String> {
@@ -279,7 +287,7 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
-    n/next/advance-to-human-boundary [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path] [max_ops=N]
+    n/next/advance-to-human-boundary [route=manual|planner] [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path] [max_ops=N]
     auto-reward
     auto-reward gold|potion|all on|off"
 }
@@ -460,6 +468,9 @@ fn parse_auto_step_command(rest: &[&str]) -> Result<RunControlCommand, String> {
             "max_ops" | "max_operations" | "max_steps" => {
                 options.max_operations = Some(parse_usize_value(value, "max_ops")?);
             }
+            "route" | "route_policy" | "route-policy" => {
+                options.route = parse_route_automation_mode(value)?;
+            }
             _ => search_tokens.push(*token),
         }
     }
@@ -475,6 +486,18 @@ fn parse_auto_reward_command(rest: &[&str]) -> Result<RunControlCommand, String>
             enabled: parse_on_off(enabled)?,
         }),
         _ => Err("auto-reward expects no args or: auto-reward gold|potion|all on|off".to_string()),
+    }
+}
+
+fn parse_route_automation_mode(value: &str) -> Result<RunControlRouteAutomationMode, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "manual" | "off" | "stop" | "human" => Ok(RunControlRouteAutomationMode::Manual),
+        "planner" | "route_planner" | "route-planner" | "auto" => {
+            Ok(RunControlRouteAutomationMode::Planner)
+        }
+        _ => Err(format!(
+            "invalid route automation mode '{value}', expected manual|planner"
+        )),
     }
 }
 
@@ -700,6 +723,16 @@ mod tests {
                     evidence: None,
                 },
                 max_operations: Some(9),
+                route: RunControlRouteAutomationMode::Manual,
+            })
+        );
+        assert_eq!(
+            parse_run_control_command("auto-step route=planner max_ops=9")
+                .expect("auto-step route planner should parse"),
+            RunControlCommand::AutoStep(RunControlAutoStepOptions {
+                search: RunControlSearchCombatOptions::default(),
+                max_operations: Some(9),
+                route: RunControlRouteAutomationMode::Planner,
             })
         );
     }

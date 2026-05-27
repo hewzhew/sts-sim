@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
-use super::commands::{RunControlAutoStepOptions, RunControlSearchCombatOptions};
+use super::commands::{
+    RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+};
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::transition_report::{
     action_result_from_transition, render_action_result, RunApplyStatus, RunVisibleSnapshot,
@@ -80,6 +82,35 @@ pub(super) fn apply_guarded_auto_step(
                 "combat search did not find an executable complete win",
                 Some(trim_search_rejection(&outcome.message)),
             );
+        }
+
+        if matches!(session.engine_state, EngineState::MapNavigation)
+            && options.route == RunControlRouteAutomationMode::Planner
+        {
+            match super::route_policy::apply_route_go(session) {
+                Ok(outcome) => {
+                    if let Some(result) = outcome.action_result.as_ref() {
+                        applied.push(format!("route planner: {}", result.chosen_label));
+                        continue;
+                    }
+                    return finish_auto_step(
+                        session,
+                        &before,
+                        applied,
+                        "route planner did not modify state",
+                        Some(outcome.message),
+                    );
+                }
+                Err(err) => {
+                    return finish_auto_step(
+                        session,
+                        &before,
+                        applied,
+                        "route planner declined automatic map selection",
+                        Some(err),
+                    );
+                }
+            }
         }
 
         let view = build_run_control_view_model(session);

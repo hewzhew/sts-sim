@@ -26,7 +26,8 @@ mod view_model;
 pub use auto_capture::AutoCombatCaptureConfig;
 pub use commands::{
     parse_run_control_command, run_control_help, run_control_short_hint, RunControlAutoStepOptions,
-    RunControlCommand, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
+    RunControlCommand, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+    RunControlSearchEvidenceTarget,
 };
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,

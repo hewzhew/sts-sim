@@ -854,6 +854,32 @@ mod tests {
     }
 
     #[test]
+    fn run_control_auto_step_route_planner_advances_map_then_stops_at_combat() {
+        let mut session = test_session_with_first_monster_room();
+
+        let outcome = session
+            .apply_command(RunControlCommand::AutoStep(
+                crate::eval::run_control::RunControlAutoStepOptions {
+                    route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                    max_operations: Some(1),
+                    ..Default::default()
+                },
+            ))
+            .expect("auto-step route planner should choose a map node");
+
+        assert!(outcome.message.contains("route planner:"));
+        assert!(outcome
+            .message
+            .contains("Reason: operation budget exhausted at 1 automatic operations"));
+        assert!(outcome.action_result.is_some());
+        assert!(matches!(
+            session.engine_state,
+            EngineState::CombatPlayerTurn
+        ));
+        assert_eq!(session.run_state.map.current_y, 0);
+    }
+
+    #[test]
     fn run_control_auto_step_leaves_empty_shop() {
         let mut session = test_session_at_shop();
         if let EngineState::Shop(shop) = &mut session.engine_state {
