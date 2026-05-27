@@ -155,7 +155,12 @@ fn execute_line(
     if let Some(recorder) = trace.as_deref_mut() {
         if let Some(action_result) = outcome.action_result.as_ref() {
             if let Some(pending) = pending_trace {
-                recorder.record_action_step(pending, session, action_result)?;
+                recorder.record_action_step(
+                    pending,
+                    session,
+                    action_result,
+                    &outcome.trace_annotations,
+                )?;
             }
         } else {
             recorder.record_artifact_command(trimmed, session, &command)?;

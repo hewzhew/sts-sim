@@ -20,6 +20,7 @@ mod route_policy;
 mod search_evidence;
 mod session;
 mod session_trace;
+mod trace_annotation;
 mod transition_report;
 mod view_model;
 
@@ -57,6 +58,7 @@ pub use session_trace::{
     SessionTraceRewardAutomationV1, SessionTraceRunConfigV1, SessionTraceSelectionResolution,
     SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME, SESSION_TRACE_SCHEMA_VERSION,
 };
+pub use trace_annotation::RunControlTraceAnnotationV1;
 pub use transition_report::{
     ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,
     CardSnapshot as RunActionCardSnapshotV1, CombatPlayerResult as RunActionCombatPlayerResultV1,

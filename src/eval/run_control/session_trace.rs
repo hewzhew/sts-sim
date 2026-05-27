@@ -7,11 +7,12 @@ use serde::{Deserialize, Serialize};
 use super::commands::RunControlCommand;
 use super::registry::BenchmarkCasePaths;
 use super::session::RunControlSession;
+use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 3;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -89,6 +90,7 @@ pub struct SessionTraceStepV1 {
     pub visible_candidates: Vec<SessionTraceCandidateV1>,
     pub selected_candidate: Option<SessionTraceCandidateV1>,
     pub selection_resolution: SessionTraceSelectionResolution,
+    pub annotations: Vec<RunControlTraceAnnotationV1>,
     pub action_result: ActionResult,
 }
 
@@ -237,6 +239,7 @@ impl SessionTraceRecorder {
         pending: SessionTracePendingStep,
         session_after: &RunControlSession,
         action_result: &ActionResult,
+        annotations: &[RunControlTraceAnnotationV1],
     ) -> Result<(), String> {
         let (selected_candidate, selection_resolution) = if pending.selected_candidate.is_some() {
             (pending.selected_candidate, pending.selection_resolution)
@@ -255,6 +258,7 @@ impl SessionTraceRecorder {
             visible_candidates: pending.visible_candidates,
             selected_candidate,
             selection_resolution,
+            annotations: annotations.to_vec(),
             action_result: action_result.clone(),
         };
         self.trace.steps.push(step);
@@ -541,7 +545,10 @@ fn hex_lower(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::eval::run_control::{RunControlCommand, RunControlConfig};
+    use crate::eval::run_control::{
+        RunControlAutoStepOptions, RunControlCommand, RunControlConfig,
+        RunControlRouteAutomationMode,
+    };
     use crate::state::core::{ClientInput, EngineState};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -573,7 +580,7 @@ mod tests {
             .expect("state-changing command should return action result");
 
         recorder
-            .record_action_step(pending, &session, action_result)
+            .record_action_step(pending, &session, action_result, &[])
             .expect("trace step should save");
 
         assert_eq!(recorder.trace().steps.len(), 1);
@@ -585,6 +592,7 @@ mod tests {
             SessionTraceSelectionResolution::ResolvedSingleVisibleCandidate
         );
         assert!(step.selected_candidate.is_some());
+        assert!(step.annotations.is_empty());
         assert!(path.exists());
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
@@ -699,6 +707,44 @@ mod tests {
             .search_evidence_path
             .as_ref()
             .is_some_and(|path| path.ends_with("search.json")));
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn recorder_preserves_route_planner_annotation() {
+        let mut session = test_session_after_neow_at_map();
+        let path = unique_temp_dir("session_trace_route_planner").join("trace.json");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+        let command = RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            route: RunControlRouteAutomationMode::Planner,
+            max_operations: Some(1),
+            ..Default::default()
+        });
+        let pending = SessionTraceRecorder::prepare_step(&session, "n route=planner", &command);
+        let outcome = session
+            .apply_command(command)
+            .expect("route planner auto-step should advance map");
+        let action_result = outcome
+            .action_result
+            .as_ref()
+            .expect("route planner auto-step should produce an action result");
+
+        recorder
+            .record_action_step(pending, &session, action_result, &outcome.trace_annotations)
+            .expect("trace step should save route annotation");
+
+        let annotations = &recorder.trace().steps[0].annotations;
+        assert_eq!(annotations.len(), 1);
+        let RunControlTraceAnnotationV1::RoutePlannerSelection {
+            target_x,
+            command,
+            label_role,
+            ..
+        } = &annotations[0];
+        assert!(*target_x >= 0);
+        assert!(command.starts_with("go ") || command.starts_with("fly "));
+        assert_eq!(label_role, "behavior_policy_not_teacher");
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

@@ -6,6 +6,7 @@ use super::commands::{
     RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
 use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::transition_report::{
     action_result_from_transition, render_action_result, RunApplyStatus, RunVisibleSnapshot,
     TransitionAction,
@@ -35,6 +36,7 @@ pub(super) fn apply_guarded_auto_step(
 ) -> Result<RunControlCommandOutcome, String> {
     let before = RunVisibleSnapshot::capture(session);
     let mut applied = Vec::new();
+    let mut trace_annotations = Vec::new();
     let mut seen_boundaries = BTreeSet::new();
     let max_operations = options.max_operations.unwrap_or(DEFAULT_MAX_OPERATIONS);
 
@@ -45,6 +47,7 @@ pub(super) fn apply_guarded_auto_step(
                 session,
                 &before,
                 applied,
+                trace_annotations,
                 "repeated boundary detected while advancing automatically",
                 Some(format!(
                     "boundary={boundary_key}\nThis usually means an event or transition kept presenting the same screen after an automatic action."
@@ -79,6 +82,7 @@ pub(super) fn apply_guarded_auto_step(
                 session,
                 &before,
                 applied,
+                trace_annotations,
                 "combat search did not find an executable complete win",
                 Some(trim_search_rejection(&outcome.message)),
             );
@@ -90,13 +94,16 @@ pub(super) fn apply_guarded_auto_step(
             match super::route_policy::apply_route_go_with_summary(session) {
                 Ok(applied_route) => {
                     if applied_route.outcome.action_result.is_some() {
+                        trace_annotations.extend(applied_route.outcome.trace_annotations);
                         applied.push(applied_route.auto_step_summary);
                         continue;
                     }
+                    trace_annotations.extend(applied_route.outcome.trace_annotations);
                     return finish_auto_step(
                         session,
                         &before,
                         applied,
+                        trace_annotations,
                         "route planner did not modify state",
                         Some(applied_route.outcome.message),
                     );
@@ -106,6 +113,7 @@ pub(super) fn apply_guarded_auto_step(
                         session,
                         &before,
                         applied,
+                        trace_annotations,
                         "route planner declined automatic map selection",
                         Some(err),
                     );
@@ -120,6 +128,7 @@ pub(super) fn apply_guarded_auto_step(
                     session,
                     &before,
                     applied,
+                    trace_annotations,
                     "auto-selected candidate is not executable",
                     None,
                 );
@@ -138,13 +147,21 @@ pub(super) fn apply_guarded_auto_step(
             continue;
         }
 
-        return finish_auto_step(session, &before, applied, human_stop_reason(session), None);
+        return finish_auto_step(
+            session,
+            &before,
+            applied,
+            trace_annotations,
+            human_stop_reason(session),
+            None,
+        );
     }
 
     finish_auto_step(
         session,
         &before,
         applied,
+        trace_annotations,
         format!("operation budget exhausted at {max_operations} automatic operations"),
         None,
     )
@@ -346,6 +363,7 @@ fn finish_auto_step(
     session: &RunControlSession,
     before: &RunVisibleSnapshot,
     applied: Vec<String>,
+    trace_annotations: Vec<RunControlTraceAnnotationV1>,
     reason: impl Into<String>,
     detail: Option<String>,
 ) -> Result<RunControlCommandOutcome, String> {
@@ -370,7 +388,8 @@ fn finish_auto_step(
 
     if applied.is_empty() {
         lines.push(super::render::render_run_control_state(session));
-        return Ok(RunControlCommandOutcome::message(lines.join("\n")));
+        return Ok(RunControlCommandOutcome::message(lines.join("\n"))
+            .with_trace_annotations(trace_annotations));
     }
 
     let after = RunVisibleSnapshot::capture(session);
@@ -387,10 +406,10 @@ fn finish_auto_step(
     );
     lines.push(render_action_result(&action_result));
     lines.push(super::render::render_run_control_state(session));
-    Ok(RunControlCommandOutcome::action(
-        lines.join("\n"),
-        action_result,
-    ))
+    Ok(
+        RunControlCommandOutcome::action(lines.join("\n"), action_result)
+            .with_trace_annotations(trace_annotations),
+    )
 }
 
 fn auto_boundary_key(session: &RunControlSession) -> String {

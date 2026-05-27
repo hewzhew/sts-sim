@@ -19,6 +19,7 @@ use super::render::{
     render_run_control_state,
 };
 use super::reward_auto::{set_reward_automation, RewardAutomationConfig};
+use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::transition_report::{
     action_result_from_transition, render_action_result, transition_action_for_input, ActionResult,
     RunApplyStatus, RunVisibleSnapshot,
@@ -85,6 +86,7 @@ pub struct RunControlCommandOutcome {
     pub message: String,
     pub action_result: Option<ActionResult>,
     pub search_evidence_path: Option<PathBuf>,
+    pub trace_annotations: Vec<RunControlTraceAnnotationV1>,
 }
 
 impl RunControlCommandOutcome {
@@ -94,6 +96,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: None,
             search_evidence_path: None,
+            trace_annotations: Vec::new(),
         }
     }
 
@@ -103,6 +106,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: None,
             search_evidence_path: None,
+            trace_annotations: Vec::new(),
         }
     }
 
@@ -115,7 +119,16 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: Some(action_result),
             search_evidence_path: None,
+            trace_annotations: Vec::new(),
         }
+    }
+
+    pub(in crate::eval::run_control) fn with_trace_annotations(
+        mut self,
+        trace_annotations: Vec<RunControlTraceAnnotationV1>,
+    ) -> Self {
+        self.trace_annotations = trace_annotations;
+        self
     }
 }
 

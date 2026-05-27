@@ -6,6 +6,7 @@ use crate::ai::route_planner_v1::{
 use crate::state::core::{ClientInput, EngineState};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::view_model::room_type_label;
 
 pub(in crate::eval::run_control) struct RouteGoApplied {
@@ -61,13 +62,15 @@ pub(in crate::eval::run_control) fn apply_route_go_with_summary(
     let input = route_candidate_input(&candidate)?;
     let selection = render_route_go_selection(&candidate);
     let auto_step_summary = render_route_go_auto_step_summary(&candidate);
+    let trace_annotation = route_go_trace_annotation(&candidate, &auto_step_summary);
     let outcome = session.apply_input(input)?;
     Ok(RouteGoApplied {
         auto_step_summary,
         outcome: RunControlCommandOutcome {
             message: format!("{selection}\n{}", outcome.message),
             ..outcome
-        },
+        }
+        .with_trace_annotations(vec![trace_annotation]),
     })
 }
 
@@ -161,6 +164,27 @@ fn render_route_go_auto_step_summary(candidate: &RouteCandidateTraceV1) -> Strin
         candidate.total_score,
         command,
     )
+}
+
+fn route_go_trace_annotation(
+    candidate: &RouteCandidateTraceV1,
+    summary: &str,
+) -> RunControlTraceAnnotationV1 {
+    RunControlTraceAnnotationV1::RoutePlannerSelection {
+        summary: summary.to_string(),
+        target_x: candidate.target.x,
+        target_y: candidate.target.y,
+        room_type: room_type_label(candidate.target.room_type).to_string(),
+        move_kind: format!("{:?}", candidate.target.move_kind),
+        safety: safety_label(candidate.safety).to_string(),
+        score: candidate.total_score,
+        command: candidate
+            .suggested_command
+            .as_deref()
+            .unwrap_or("unknown-command")
+            .to_string(),
+        label_role: "behavior_policy_not_teacher".to_string(),
+    }
 }
 
 fn safety_label(safety: RouteSafetyFlagV1) -> &'static str {
