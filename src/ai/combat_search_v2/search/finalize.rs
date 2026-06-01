@@ -68,6 +68,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             expansion_order:
                 "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_then_frontier_value_v1",
             frontier_value: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
+            frontier_policy: config.frontier_policy.label(),
             turn_branching: "turn_transition_classification_with_late_frontier_tie_break",
             turn_plan_policy: config.turn_plan_policy.label(),
             potion_policy: config.potion_policy.label(),

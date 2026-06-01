@@ -199,6 +199,7 @@ fn search_config(
         turn_plan_policy: options
             .turn_plan_policy
             .unwrap_or(defaults.turn_plan_policy),
+        frontier_policy: options.frontier_policy.unwrap_or(defaults.frontier_policy),
     }
 }
 

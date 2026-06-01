@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use crate::ai::combat_search_v2::{
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    CombatSearchV2TurnPlanPolicy,
 };
 use crate::state::core::ClientInput;
 
@@ -56,6 +57,9 @@ pub(super) fn parse_search_combat_options(
             }
             "turn_plan" | "turn_plan_policy" | "turn-plan-policy" => {
                 options.turn_plan_policy = Some(parse_turn_plan_policy(value)?);
+            }
+            "frontier" | "frontier_policy" | "frontier-policy" => {
+                options.frontier_policy = Some(parse_frontier_policy(value)?);
             }
             "save" | "evidence" | "output" | "out" => {
                 options.evidence = Some(parse_search_evidence_target(value));
@@ -178,6 +182,21 @@ fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, S
         }
         _ => Err(format!(
             "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed"
+        )),
+    }
+}
+
+fn parse_frontier_policy(value: &str) -> Result<CombatSearchV2FrontierPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "single" | "single_queue" | "single-queue" => Ok(CombatSearchV2FrontierPolicy::SingleQueue),
+        "round_robin"
+        | "round-robin"
+        | "round_robin_eval_buckets"
+        | "round-robin-eval-buckets"
+        | "eval_buckets"
+        | "eval-buckets" => Ok(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets),
+        _ => Err(format!(
+            "invalid frontier policy '{value}', expected single_queue|round_robin_eval_buckets"
         )),
     }
 }

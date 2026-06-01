@@ -5,8 +5,9 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
-    run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-    CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    run_combat_search_v2, CombatSearchV2Config, CombatSearchV2FrontierPolicy,
+    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2RolloutPolicy,
+    CombatSearchV2TurnPlanPolicy,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::combat_capture::load_combat_capture_v1;
@@ -27,6 +28,7 @@ pub struct CombatSearchV2RunOptions {
     pub rollout_max_actions: Option<usize>,
     pub rollout_beam_width: Option<usize>,
     pub turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
+    pub frontier_policy: Option<CombatSearchV2FrontierPolicy>,
 }
 
 impl CombatSearchV2RunOptions {
@@ -55,6 +57,7 @@ impl CombatSearchV2RunOptions {
                 .rollout_beam_width
                 .unwrap_or(defaults.rollout_beam_width),
             turn_plan_policy: self.turn_plan_policy.unwrap_or(defaults.turn_plan_policy),
+            frontier_policy: self.frontier_policy.unwrap_or(defaults.frontier_policy),
         }
     }
 }

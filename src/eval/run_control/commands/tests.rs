@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use crate::ai::combat_search_v2::{
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    CombatSearchV2TurnPlanPolicy,
 };
 
 use super::super::reward_auto::RewardAutomationTarget;
@@ -68,7 +69,7 @@ fn run_control_parser_accepts_case_artifact_commands() {
 fn run_control_parser_accepts_search_combat_options() {
     assert_eq!(
             parse_run_control_command(
-                "search-combat max_nodes=123 wall_ms=50 potion=semantic max_potions=1 rollout=turn_beam_no_potion rollouts=7 rollout_actions=11 beam=4 turn_plan=root_frontier_seed",
+                "search-combat max_nodes=123 wall_ms=50 potion=semantic max_potions=1 rollout=turn_beam_no_potion rollouts=7 rollout_actions=11 beam=4 turn_plan=root_frontier_seed frontier=round_robin",
             )
             .expect("search-combat should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
@@ -83,6 +84,7 @@ fn run_control_parser_accepts_search_combat_options() {
                 rollout_max_actions: Some(11),
                 rollout_beam_width: Some(4),
                 turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::RootFrontierSeed),
+                frontier_policy: Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets),
                 evidence: None,
             })
         );
@@ -126,6 +128,7 @@ fn run_control_parser_accepts_auto_step_options() {
                 rollout_max_actions: None,
                 rollout_beam_width: None,
                 turn_plan_policy: None,
+                frontier_policy: None,
                 evidence: None,
             },
             max_operations: Some(9),

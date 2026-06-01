@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use clap::{ArgGroup, Parser};
 use sts_simulator::ai::combat_search_v2::{
-    explain_combat_search_v2_initial_decision, CombatSearchV2PotionPolicy,
-    CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    explain_combat_search_v2_initial_decision, CombatSearchV2FrontierPolicy,
+    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
@@ -75,6 +75,9 @@ struct Args {
 
     #[arg(long, value_parser = parse_turn_plan_policy)]
     turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
+
+    #[arg(long, value_parser = parse_frontier_policy)]
+    frontier_policy: Option<CombatSearchV2FrontierPolicy>,
 
     #[arg(long)]
     validate_only: bool,
@@ -148,6 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rollout_max_actions: args.rollout_max_actions,
         rollout_beam_width: args.rollout_beam_width,
         turn_plan_policy: args.turn_plan_policy,
+        frontier_policy: args.frontier_policy,
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
         let loaded = load_combat_search_v2_benchmark(path)?;
@@ -299,6 +303,21 @@ fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, S
         }
         _ => Err(format!(
             "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed"
+        )),
+    }
+}
+
+fn parse_frontier_policy(value: &str) -> Result<CombatSearchV2FrontierPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "single" | "single_queue" | "single-queue" => Ok(CombatSearchV2FrontierPolicy::SingleQueue),
+        "round_robin"
+        | "round-robin"
+        | "round_robin_eval_buckets"
+        | "round-robin-eval-buckets"
+        | "eval_buckets"
+        | "eval-buckets" => Ok(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets),
+        _ => Err(format!(
+            "invalid frontier policy '{value}', expected single_queue|round_robin_eval_buckets"
         )),
     }
 }

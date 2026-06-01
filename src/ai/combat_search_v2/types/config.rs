@@ -16,6 +16,7 @@ pub struct CombatSearchV2Config {
     pub rollout_max_actions: usize,
     pub rollout_beam_width: usize,
     pub turn_plan_policy: CombatSearchV2TurnPlanPolicy,
+    pub frontier_policy: CombatSearchV2FrontierPolicy,
 }
 
 impl Default for CombatSearchV2Config {
@@ -33,6 +34,7 @@ impl Default for CombatSearchV2Config {
             rollout_max_actions: super::super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
             rollout_beam_width: super::super::rollout::DEFAULT_TURN_BEAM_WIDTH,
             turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            frontier_policy: CombatSearchV2FrontierPolicy::SingleQueue,
         }
     }
 }
@@ -106,5 +108,27 @@ impl CombatSearchV2TurnPlanPolicy {
 
     pub(in crate::ai::combat_search_v2) fn seeds_frontier(self) -> bool {
         matches!(self, Self::RootFrontierSeed)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2FrontierPolicy {
+    SingleQueue,
+    RoundRobinEvalBuckets,
+}
+
+impl Default for CombatSearchV2FrontierPolicy {
+    fn default() -> Self {
+        Self::SingleQueue
+    }
+}
+
+impl CombatSearchV2FrontierPolicy {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::SingleQueue => "single_queue",
+            Self::RoundRobinEvalBuckets => "round_robin_eval_buckets",
+        }
     }
 }

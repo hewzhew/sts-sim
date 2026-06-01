@@ -159,6 +159,8 @@ fn config_report(config: &CombatSearchV2Config) -> CombatSearchV2DecisionMicrosc
         rollout_policy: config.rollout_policy.label(),
         rollout_max_evaluations: config.rollout_max_evaluations,
         rollout_max_actions: config.rollout_max_actions,
+        rollout_beam_width: config.rollout_beam_width,
+        frontier_policy: config.frontier_policy.label(),
     }
 }
 
