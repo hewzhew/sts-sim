@@ -3,9 +3,9 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
-    compare_outcome_metrics, CombatSearchV2OutcomeMetrics, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TrajectoryReport, CombatSearchV2TurnPlanPolicy, SearchProofStatus,
-    SearchTerminalLabel,
+    compare_outcome_metrics, CombatSearchV2FrontierPolicy, CombatSearchV2OutcomeMetrics,
+    CombatSearchV2RolloutPolicy, CombatSearchV2TrajectoryReport, CombatSearchV2TurnPlanPolicy,
+    SearchProofStatus, SearchTerminalLabel,
 };
 
 use super::benchmark::{
@@ -22,6 +22,7 @@ pub type CombatSearchV2RolloutPolicyComparisonSummary = CombatSearchV2PolicyComp
 pub type CombatSearchV2RolloutPolicyComparisonCase = CombatSearchV2PolicyComparisonCase;
 pub type CombatSearchV2RolloutPolicyComparisonVerdict = CombatSearchV2PolicyComparisonVerdict;
 pub type CombatSearchV2RolloutPolicyComparisonRun = CombatSearchV2PolicyComparisonRun;
+pub type CombatSearchV2FrontierPolicyComparisonReport = CombatSearchV2PolicyComparisonReport;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2PolicyComparisonReport {
@@ -48,6 +49,8 @@ pub struct CombatSearchV2PolicyComparisonSummary {
     pub both_inconclusive: usize,
     pub first_action_diff_cases: usize,
     pub right_minus_left_final_hp_total: i32,
+    pub right_minus_left_nodes_expanded_total: i64,
+    pub right_minus_left_nodes_generated_total: i64,
     pub right_minus_left_turn_plan_frontier_seeded_nodes_total: i64,
     pub right_minus_left_rollout_evaluations_total: i64,
     pub right_minus_left_rollout_terminal_wins_total: i64,
@@ -170,6 +173,38 @@ pub fn compare_combat_search_v2_turn_plan_policies(
             "turn_plan_policy=root_frontier_seed seeds exact root turn-plan end states into frontier",
             "seeded turn-plan states do not prune exact states and do not create terminal claims without exact replay",
             "first_action_diff context is reconstructed by exact replay of the common prefix and is diagnostic only",
+        ],
+    )
+}
+
+pub fn compare_combat_search_v2_frontier_policies(
+    loaded: &CombatSearchV2LoadedBenchmark,
+    options: CombatSearchV2RunOptions,
+    left_policy: CombatSearchV2FrontierPolicy,
+    right_policy: CombatSearchV2FrontierPolicy,
+) -> CombatSearchV2PolicyComparisonReport {
+    let mut left_options = options.clone();
+    left_options.frontier_policy = Some(left_policy);
+    let left = run_combat_search_v2_benchmark(loaded, left_options);
+
+    let mut right_options = options.clone();
+    right_options.frontier_policy = Some(right_policy);
+    let right = run_combat_search_v2_benchmark(loaded, right_options);
+
+    build_comparison_report(
+        loaded,
+        &options,
+        "frontier_policy",
+        left_policy.label(),
+        right_policy.label(),
+        &left,
+        &right,
+        vec![
+            "comparison uses best complete trajectories, not proof of optimality",
+            "frontier policy only changes which exact states are expanded first under budget",
+            "round_robin_eval_buckets is experimental and defaults off",
+            "estimated lanes do not create terminal claims without exact replay",
+            "node deltas are budget diagnostics; outcome comparison still uses whole-combat trajectories",
         ],
     )
 }
@@ -341,6 +376,10 @@ fn observe_case(
     if let Some(delta) = case.right_minus_left_final_hp {
         summary.right_minus_left_final_hp_total += delta;
     }
+    summary.right_minus_left_nodes_expanded_total +=
+        case.right.nodes_expanded as i64 - case.left.nodes_expanded as i64;
+    summary.right_minus_left_nodes_generated_total +=
+        case.right.nodes_generated as i64 - case.left.nodes_generated as i64;
     summary.right_minus_left_turn_plan_frontier_seeded_nodes_total +=
         case.right_minus_left_turn_plan_frontier_seeded_nodes;
     summary.right_minus_left_rollout_evaluations_total +=

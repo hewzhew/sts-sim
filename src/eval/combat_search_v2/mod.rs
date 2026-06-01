@@ -21,7 +21,8 @@ pub use benchmark_gate::{
     CombatSearchV2BenchmarkGateSummary,
 };
 pub use policy_compare::{
-    compare_combat_search_v2_rollout_policies, compare_combat_search_v2_turn_plan_policies,
+    compare_combat_search_v2_frontier_policies, compare_combat_search_v2_rollout_policies,
+    compare_combat_search_v2_turn_plan_policies, CombatSearchV2FrontierPolicyComparisonReport,
     CombatSearchV2PolicyComparisonCase, CombatSearchV2PolicyComparisonReport,
     CombatSearchV2PolicyComparisonRun, CombatSearchV2PolicyComparisonSummary,
     CombatSearchV2PolicyComparisonVerdict, CombatSearchV2RolloutPolicyComparisonCase,

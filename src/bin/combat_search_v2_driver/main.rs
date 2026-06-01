@@ -8,9 +8,10 @@ use sts_simulator::ai::combat_search_v2::{
 };
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
-    compare_combat_search_v2_rollout_policies, compare_combat_search_v2_turn_plan_policies,
-    load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
-    run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
+    compare_combat_search_v2_frontier_policies, compare_combat_search_v2_rollout_policies,
+    compare_combat_search_v2_turn_plan_policies, load_combat_search_v2_benchmark,
+    load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_v2_benchmark,
+    run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
 };
 use sts_simulator::eval::fingerprint::StateFingerprintV1;
 
@@ -60,6 +61,9 @@ struct Args {
 
     #[arg(long)]
     compare_turn_plan: Option<String>,
+
+    #[arg(long)]
+    compare_frontier: Option<String>,
 
     #[arg(long)]
     explain_case: Option<String>,
@@ -118,6 +122,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.compare_turn_plan.is_some() && args.compare_rollout.is_some() {
         return Err("--compare-turn-plan cannot be combined with --compare-rollout".into());
     }
+    if args.compare_frontier.is_some() && args.benchmark_spec.is_none() {
+        return Err("--compare-frontier requires --benchmark-spec".into());
+    }
+    if args.compare_frontier.is_some() && args.gate_only {
+        return Err("--compare-frontier cannot be used with --gate-only".into());
+    }
+    if args.compare_frontier.is_some() && args.frontier_policy.is_some() {
+        return Err("--compare-frontier cannot be combined with --frontier-policy".into());
+    }
+    if args.compare_frontier.is_some()
+        && (args.compare_rollout.is_some() || args.compare_turn_plan.is_some())
+    {
+        return Err("--compare-frontier cannot be combined with other compare options".into());
+    }
     if args.explain_case.is_some() && args.benchmark_spec.is_none() {
         return Err("--explain-case requires --benchmark-spec".into());
     }
@@ -126,6 +144,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.explain_case.is_some() && args.compare_turn_plan.is_some() {
         return Err("--explain-case cannot be combined with --compare-turn-plan".into());
+    }
+    if args.explain_case.is_some() && args.compare_frontier.is_some() {
+        return Err("--explain-case cannot be combined with --compare-frontier".into());
     }
     if args.explain_case.is_some() && args.gate_only {
         return Err("--explain-case cannot be combined with --gate-only".into());
@@ -162,6 +183,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else if let Some(compare) = args.compare_turn_plan.as_deref() {
             let (left, right) = parse_turn_plan_policy_pair(compare)?;
             let run = compare_combat_search_v2_turn_plan_policies(&loaded, options, left, right);
+            serde_json::to_string_pretty(&run)?
+        } else if let Some(compare) = args.compare_frontier.as_deref() {
+            let (left, right) = parse_frontier_policy_pair(compare)?;
+            let run = compare_combat_search_v2_frontier_policies(&loaded, options, left, right);
             serde_json::to_string_pretty(&run)?
         } else if let Some(case_id) = args.explain_case.as_deref() {
             let case = loaded
@@ -261,6 +286,26 @@ fn parse_turn_plan_policy_pair(
     Ok((left, right))
 }
 
+fn parse_frontier_policy_pair(
+    value: &str,
+) -> Result<(CombatSearchV2FrontierPolicy, CombatSearchV2FrontierPolicy), String> {
+    let mut parts = value.split(',').map(str::trim);
+    let left = parts
+        .next()
+        .filter(|part| !part.is_empty())
+        .ok_or_else(|| "compare-frontier requires LEFT,RIGHT".to_string())
+        .and_then(parse_frontier_policy)?;
+    let right = parts
+        .next()
+        .filter(|part| !part.is_empty())
+        .ok_or_else(|| "compare-frontier requires LEFT,RIGHT".to_string())
+        .and_then(parse_frontier_policy)?;
+    if parts.next().is_some() {
+        return Err("compare-frontier requires exactly two comma-separated policies".to_string());
+    }
+    Ok((left, right))
+}
+
 fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
         "disabled" | "off" | "none" => Ok(CombatSearchV2RolloutPolicy::Disabled),
@@ -343,6 +388,18 @@ mod tests {
         assert_eq!(
             parse_rollout_policy("turn_beam_no_potion").expect("policy should parse"),
             CombatSearchV2RolloutPolicy::TurnBeamNoPotion
+        );
+    }
+
+    #[test]
+    fn parse_frontier_policy_pair_accepts_single_and_eval_buckets() {
+        assert_eq!(
+            parse_frontier_policy_pair("single_queue,round_robin_eval_buckets")
+                .expect("pair should parse"),
+            (
+                CombatSearchV2FrontierPolicy::SingleQueue,
+                CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets
+            )
         );
     }
 }
