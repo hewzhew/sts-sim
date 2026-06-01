@@ -1,0 +1,113 @@
+use super::super::frontier::SearchNode;
+use super::super::value::{
+    CombatEvalOutcomeClass, CombatEvalProgressBucket, CombatEvalSurvivalBucket, CombatEvalV2,
+};
+use super::super::*;
+
+pub(in crate::ai::combat_search_v2) const DEFAULT_TURN_PLAN_MAX_INNER_NODES: usize = 128;
+pub(in crate::ai::combat_search_v2) const DEFAULT_TURN_PLAN_MAX_END_STATES: usize = 16;
+pub(in crate::ai::combat_search_v2) const DEFAULT_TURN_PLAN_PER_BUCKET_LIMIT: usize = 3;
+
+#[derive(Clone, Debug)]
+pub(in crate::ai::combat_search_v2) struct TurnPlannerConfigV1 {
+    pub(in crate::ai::combat_search_v2) max_inner_nodes: usize,
+    pub(in crate::ai::combat_search_v2) max_end_states: usize,
+    pub(in crate::ai::combat_search_v2) per_bucket_limit: usize,
+    pub(in crate::ai::combat_search_v2) potion_policy: CombatSearchV2PotionPolicy,
+    pub(in crate::ai::combat_search_v2) max_engine_steps_per_action: usize,
+}
+
+impl Default for TurnPlannerConfigV1 {
+    fn default() -> Self {
+        Self {
+            max_inner_nodes: DEFAULT_TURN_PLAN_MAX_INNER_NODES,
+            max_end_states: DEFAULT_TURN_PLAN_MAX_END_STATES,
+            per_bucket_limit: DEFAULT_TURN_PLAN_PER_BUCKET_LIMIT,
+            potion_policy: CombatSearchV2PotionPolicy::Never,
+            max_engine_steps_per_action: CombatSearchV2Config::default()
+                .max_engine_steps_per_action,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(in crate::ai::combat_search_v2) struct TurnPlanV1 {
+    pub(in crate::ai::combat_search_v2) actions: Vec<CombatSearchV2ActionTrace>,
+    pub(in crate::ai::combat_search_v2) end_node: SearchNode,
+    pub(in crate::ai::combat_search_v2) stop_reason: TurnPlanStopReason,
+    pub(in crate::ai::combat_search_v2) bucket: TurnPlanBucket,
+    pub(in crate::ai::combat_search_v2) eval: CombatEvalV2,
+}
+
+#[derive(Clone, Default)]
+pub(in crate::ai::combat_search_v2) struct TurnPlanEnumeration {
+    pub(in crate::ai::combat_search_v2) plans: Vec<TurnPlanV1>,
+    pub(in crate::ai::combat_search_v2) nodes_expanded: usize,
+    pub(in crate::ai::combat_search_v2) nodes_generated: usize,
+    pub(in crate::ai::combat_search_v2) exact_state_skips: usize,
+    pub(in crate::ai::combat_search_v2) truncated_children: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ai::combat_search_v2) enum TurnPlanStopReason {
+    Terminal,
+    NextTurn,
+    PendingChoice,
+    OtherBoundary,
+    NoLegalActions,
+    EngineStepLimit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(in crate::ai::combat_search_v2) enum TurnPlanBucket {
+    TerminalWin,
+    TerminalLoss,
+    Survival,
+    Progress,
+    Setup,
+    Balanced,
+    Boundary,
+}
+
+impl TurnPlanBucket {
+    pub(in crate::ai::combat_search_v2) fn from_eval_and_stop(
+        eval: CombatEvalV2,
+        stop_reason: TurnPlanStopReason,
+    ) -> Self {
+        match eval.outcome_class() {
+            CombatEvalOutcomeClass::Win => Self::TerminalWin,
+            CombatEvalOutcomeClass::Loss => Self::TerminalLoss,
+            CombatEvalOutcomeClass::Unresolved => match stop_reason {
+                TurnPlanStopReason::PendingChoice | TurnPlanStopReason::OtherBoundary => {
+                    Self::Boundary
+                }
+                _ if matches!(
+                    eval.survival_bucket(),
+                    CombatEvalSurvivalBucket::DeadOrForcedLoss
+                        | CombatEvalSurvivalBucket::LethalVisible
+                        | CombatEvalSurvivalBucket::Critical
+                ) =>
+                {
+                    Self::Survival
+                }
+                _ if matches!(
+                    eval.progress_bucket(),
+                    CombatEvalProgressBucket::LethalNow
+                        | CombatEvalProgressBucket::LethalNextTurnLikely
+                        | CombatEvalProgressBucket::RaceFavored
+                ) =>
+                {
+                    Self::Progress
+                }
+                _ if matches!(
+                    eval.progress_bucket(),
+                    CombatEvalProgressBucket::AttritionFavored
+                ) =>
+                {
+                    Self::Setup
+                }
+                _ => Self::Balanced,
+            },
+        }
+    }
+}

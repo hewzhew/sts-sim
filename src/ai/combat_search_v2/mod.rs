@@ -56,6 +56,7 @@ mod trajectory_report;
 mod transition;
 mod turn_branching;
 mod turn_local_dominance;
+pub(crate) mod turn_planner;
 mod turn_prefix;
 mod turn_sequence;
 mod turn_sequence_effect;

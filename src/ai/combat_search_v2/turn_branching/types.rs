@@ -64,6 +64,22 @@ pub(in crate::ai::combat_search_v2::turn_branching) struct TurnBranchTransitionC
 }
 
 impl TurnBranchTransition {
+    pub(in crate::ai::combat_search_v2) fn is_same_turn(self) -> bool {
+        matches!(self.kind, TurnBranchTransitionKind::SameTurn)
+    }
+
+    pub(in crate::ai::combat_search_v2) fn is_next_turn(self) -> bool {
+        matches!(self.kind, TurnBranchTransitionKind::NextTurn)
+    }
+
+    pub(in crate::ai::combat_search_v2) fn is_pending_choice(self) -> bool {
+        matches!(self.kind, TurnBranchTransitionKind::PendingChoice)
+    }
+
+    pub(in crate::ai::combat_search_v2) fn is_terminal(self) -> bool {
+        matches!(self.kind, TurnBranchTransitionKind::Terminal)
+    }
+
     pub(in crate::ai::combat_search_v2) fn frontier_priority_hint(self) -> i32 {
         match (self.action_kind, self.kind) {
             (_, TurnBranchTransitionKind::Terminal) => 40,

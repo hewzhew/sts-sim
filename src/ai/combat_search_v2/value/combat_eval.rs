@@ -118,6 +118,18 @@ impl PartialOrd for CombatEvalV2 {
 }
 
 impl CombatEvalV2 {
+    pub(in crate::ai::combat_search_v2) fn outcome_class(self) -> CombatEvalOutcomeClass {
+        self.outcome
+    }
+
+    pub(in crate::ai::combat_search_v2) fn survival_bucket(self) -> CombatEvalSurvivalBucket {
+        self.survival
+    }
+
+    pub(in crate::ai::combat_search_v2) fn progress_bucket(self) -> CombatEvalProgressBucket {
+        self.progress
+    }
+
     fn compare_terminal(self, other: &Self) -> Ordering {
         self.final_hp
             .cmp(&other.final_hp)
