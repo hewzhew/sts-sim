@@ -26,6 +26,9 @@ fn post_reward_state(run_state: &mut RunState) -> EngineState {
             relics,
         ));
     }
+    if run_state.complete_pending_boss_act_transition() {
+        return EngineState::MapNavigation;
+    }
     EngineState::MapNavigation
 }
 

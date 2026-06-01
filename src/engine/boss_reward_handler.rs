@@ -119,6 +119,61 @@ mod tests {
     }
 
     #[test]
+    fn boss_relic_choice_defers_act_transition_until_reward_screen_relics_resolve() {
+        let mut run_state = RunState::new(7, 0, false, "Ironclad");
+        run_state.common_relic_pool = vec![RelicId::Anchor];
+        run_state.uncommon_relic_pool = vec![RelicId::Pear];
+        run_state.rare_relic_pool = vec![RelicId::Mango];
+        let mut boss_state = BossRelicChoiceState::new(vec![RelicId::CallingBell]);
+
+        let next = handle(
+            &mut run_state,
+            &mut boss_state,
+            Some(ClientInput::SubmitRelicChoice(0)),
+        )
+        .expect("Calling Bell should open reward screen");
+
+        let EngineState::RewardScreen(mut rewards) = next else {
+            panic!("Calling Bell should interrupt into RewardScreen");
+        };
+        assert_eq!(run_state.act_num, 1);
+        assert!(run_state.pending_boss_act_transition);
+        assert_eq!(rewards.items.len(), 3);
+
+        let mut transition = None;
+        while !rewards.items.is_empty() {
+            transition = crate::engine::reward_handler::handle(
+                &mut run_state,
+                &mut rewards,
+                Some(ClientInput::ClaimReward(0)),
+            );
+        }
+
+        assert!(matches!(transition, Some(EngineState::MapNavigation)));
+        assert_eq!(
+            run_state.act_num, 2,
+            "boss act transition should happen after Calling Bell relic rewards are claimed"
+        );
+        assert!(!run_state.pending_boss_act_transition);
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::CallingBell));
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Anchor));
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Pear));
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Mango));
+    }
+
+    #[test]
     fn boss_starter_upgrade_relic_replaces_starter_slot_before_advancing_act() {
         for (player_class, starter, upgrade) in [
             ("Ironclad", RelicId::BurningBlood, RelicId::BlackBlood),
