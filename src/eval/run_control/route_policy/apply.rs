@@ -1,5 +1,5 @@
 use crate::ai::route_planner_v1::{RouteCandidateTraceV1, RouteMoveKindV1, RouteSafetyFlagV1};
-use crate::state::core::{ClientInput, EngineState};
+use crate::state::core::ClientInput;
 
 use super::super::session::{RunControlCommandOutcome, RunControlSession};
 use super::format::{render_route_go_auto_step_summary, render_route_go_selection};
@@ -21,7 +21,7 @@ pub(in crate::eval::run_control) fn apply_route_go(
 pub(in crate::eval::run_control) fn apply_route_go_with_summary(
     session: &mut RunControlSession,
 ) -> Result<RouteGoApplied, String> {
-    if !matches!(session.engine_state, EngineState::MapNavigation) {
+    if !session.engine_state.is_map_surface() {
         return Err(format!(
             "route-go is only valid on Map. Use `rs` for read-only route evidence from this screen.\n{}",
             render_route_suggestion(session)

@@ -252,6 +252,7 @@ fn decision_kind(engine: &EngineState) -> String {
         EngineState::Campfire => "campfire".to_string(),
         EngineState::Shop(_) => "shop".to_string(),
         EngineState::MapNavigation => "map_choice".to_string(),
+        EngineState::MapOverlay { .. } => "map_overlay_choice".to_string(),
         EngineState::EventRoom => "event_choice".to_string(),
         EngineState::RunPendingChoice(choice) => format!("run_pending_choice:{:?}", choice.reason),
         EngineState::BossRelicSelect(_) => "boss_relic_choice".to_string(),

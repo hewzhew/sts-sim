@@ -94,6 +94,7 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
         | EngineState::Campfire
         | EngineState::Shop(_)
         | EngineState::MapNavigation
+        | EngineState::MapOverlay { .. }
         | EngineState::EventRoom
         | EngineState::RunPendingChoice(_)
         | EngineState::BossRelicSelect(_) => StableFrontierScope::PostCombat,

@@ -91,7 +91,7 @@ pub(super) fn apply_guarded_auto_step(
             );
         }
 
-        if matches!(session.engine_state, EngineState::MapNavigation)
+        if session.engine_state.is_map_surface()
             && options.route == RunControlRouteAutomationMode::Planner
         {
             match super::route_policy::apply_route_go_with_summary(session) {
@@ -335,6 +335,7 @@ fn human_stop_reason(session: &RunControlSession) -> String {
             }
         }
         EngineState::MapNavigation => "map route requires human choice".to_string(),
+        EngineState::MapOverlay { .. } => "map preview requires route choice or cancel".to_string(),
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             "card reward requires human choice".to_string()
         }

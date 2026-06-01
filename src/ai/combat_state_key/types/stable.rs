@@ -18,6 +18,7 @@ pub(crate) enum StableEngineKey {
     Campfire,
     Shop(StableShopKey),
     MapNavigation,
+    MapOverlay(StableRunPendingReturnKey),
     EventRoom,
     CombatStart(String),
     RunPendingChoice(StableRunPendingChoiceKey),
@@ -154,6 +155,9 @@ impl StableEngineKey {
             StableEngineKey::Campfire => "campfire".to_string(),
             StableEngineKey::Shop(value) => format!("shop:{}", value.diagnostic_string()),
             StableEngineKey::MapNavigation => "map_navigation".to_string(),
+            StableEngineKey::MapOverlay(value) => {
+                format!("map_overlay:return{}", value.diagnostic_string())
+            }
             StableEngineKey::EventRoom => "event_room".to_string(),
             StableEngineKey::CombatStart(value) => format!("combat_start:{value}"),
             StableEngineKey::RunPendingChoice(value) => {

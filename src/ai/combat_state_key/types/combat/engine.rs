@@ -10,6 +10,7 @@ pub(crate) enum CombatEngineKey {
     Campfire,
     Shop(String),
     MapNavigation,
+    MapOverlay(String),
     EventRoom,
     CombatStart(String),
     RunPendingChoice(String),

@@ -77,9 +77,11 @@ impl RunControlSession {
                 .current_combat_position_for_actions()
                 .map(|position| get_legal_moves(&position.engine, &position.combat).contains(input))
                 .unwrap_or(false),
-            (EngineState::MapNavigation, ClientInput::FlyToNode(target_x, target_y)) => {
-                self.map_flight_is_allowed(*target_x, *target_y)
-            }
+            (
+                EngineState::MapNavigation | EngineState::MapOverlay { .. },
+                ClientInput::FlyToNode(target_x, target_y),
+            ) => self.map_flight_is_allowed(*target_x, *target_y),
+            (EngineState::MapOverlay { .. }, ClientInput::Cancel) => true,
             (EngineState::RunPendingChoice(choice), ClientInput::SubmitDeckSelect(indices)) => {
                 self.run_pending_selection_is_allowed(choice, indices)
             }
@@ -148,6 +150,7 @@ impl RunControlSession {
         if !matches!(
             self.engine_state,
             EngineState::MapNavigation
+                | EngineState::MapOverlay { .. }
                 | EngineState::EventRoom
                 | EngineState::RewardScreen(_)
                 | EngineState::TreasureRoom(_)

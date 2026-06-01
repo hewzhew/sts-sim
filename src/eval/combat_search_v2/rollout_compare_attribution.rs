@@ -199,6 +199,7 @@ fn engine_state_label(engine: &EngineState) -> &'static str {
         EngineState::Campfire => "campfire",
         EngineState::Shop(_) => "shop",
         EngineState::MapNavigation => "map_navigation",
+        EngineState::MapOverlay { .. } => "map_overlay",
         EngineState::EventRoom => "event_room",
         EngineState::CombatStart(_) => "combat_start",
         EngineState::PendingChoice(_) => "pending_choice",

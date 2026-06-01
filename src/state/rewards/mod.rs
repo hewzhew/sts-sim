@@ -43,9 +43,14 @@ pub struct RewardState {
     /// Mirrors the Java combat reward screen opening mode:
     /// `open()`, `openCombat(TEXT[0])`, or `openCombat(TEXT[1], true)`.
     pub screen_context: RewardScreenContext,
-    /// When a Card reward is claimed, the offered cards are stored here
-    /// until the player picks one (SelectCard) or skips.
+    /// When a Card reward is opened, the offered cards are stored here until
+    /// the player picks one or backs out to the reward screen.
     pub pending_card_choice: Option<Vec<RewardCard>>,
+    /// Index of the reward item that opened `pending_card_choice`. Java keeps
+    /// the reward item on the combat reward screen while the card screen is
+    /// open; this lets us remove the right item only after a card is selected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_card_reward_index: Option<usize>,
 }
 
 impl Default for RewardState {
@@ -86,6 +91,7 @@ impl RewardState {
             skippable: true,
             screen_context: RewardScreenContext::Standard,
             pending_card_choice: None,
+            pending_card_reward_index: None,
         }
     }
 

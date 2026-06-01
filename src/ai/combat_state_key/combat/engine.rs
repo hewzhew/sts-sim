@@ -15,6 +15,9 @@ pub(super) fn engine_key(engine: &EngineState) -> CombatEngineKey {
         EngineState::Campfire => CombatEngineKey::Campfire,
         EngineState::Shop(value) => CombatEngineKey::Shop(format!("{value:?}")),
         EngineState::MapNavigation => CombatEngineKey::MapNavigation,
+        EngineState::MapOverlay { return_state } => {
+            CombatEngineKey::MapOverlay(format!("{return_state:?}"))
+        }
         EngineState::EventRoom => CombatEngineKey::EventRoom,
         EngineState::CombatStart(value) => CombatEngineKey::CombatStart(format!("{value:?}")),
         EngineState::RunPendingChoice(value) => {

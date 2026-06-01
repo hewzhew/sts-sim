@@ -9,7 +9,7 @@ use super::RunControlSession;
 pub(super) fn decision_context(session: &RunControlSession) -> Vec<String> {
     match &session.engine_state {
         EngineState::EventRoom => event_context(session),
-        EngineState::MapNavigation => map_context(session),
+        EngineState::MapNavigation | EngineState::MapOverlay { .. } => map_context(session),
         EngineState::RewardScreen(reward) => reward_context(reward),
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
@@ -49,7 +49,7 @@ pub(super) fn decision_context(session: &RunControlSession) -> Vec<String> {
 
 pub(super) fn decision_warnings(session: &RunControlSession) -> Vec<String> {
     match &session.engine_state {
-        EngineState::MapNavigation => vec![
+        EngineState::MapNavigation | EngineState::MapOverlay { .. } => vec![
             "Map context is local next-node visibility, not a route policy evaluation.".to_string(),
         ],
         EngineState::EventRoom => {
@@ -111,7 +111,7 @@ fn map_context(session: &RunControlSession) -> Vec<String> {
 fn reward_context(reward: &RewardState) -> Vec<String> {
     if let Some(cards) = reward.pending_card_choice.as_ref() {
         return vec![format!(
-            "Reward cards: {} options | skip=proceed/cancel",
+            "Reward cards: {} options | back returns to reward screen without consuming the card reward",
             cards.len()
         )];
     }

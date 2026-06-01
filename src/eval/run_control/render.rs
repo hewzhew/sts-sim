@@ -65,7 +65,9 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
     render_candidate_resolution_details(session, &mut out);
 
     match &session.engine_state {
-        EngineState::MapNavigation => render_map_state(session, &mut out),
+        EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
+            render_map_state(session, &mut out)
+        }
         EngineState::EventRoom => render_event_state(session, &mut out),
         EngineState::RewardScreen(reward) => render_reward_state(reward, &mut out),
         EngineState::TreasureRoom(chest) => {

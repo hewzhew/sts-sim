@@ -200,6 +200,7 @@ fn decision_title(session: &RunControlSession) -> String {
             }
         }
         EngineState::MapNavigation => "Map".to_string(),
+        EngineState::MapOverlay { .. } => "Map Preview".to_string(),
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             "Card Reward".to_string()
         }
@@ -246,9 +247,13 @@ fn decision_summary(session: &RunControlSession) -> DecisionSummary {
             label: "Choose the next room.".to_string(),
             status: None,
         },
+        EngineState::MapOverlay { .. } => DecisionSummary {
+            label: "Preview the map; choose a room to commit or go back to rewards.".to_string(),
+            status: None,
+        },
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             DecisionSummary {
-                label: "Choose a card or skip.".to_string(),
+                label: "Choose a card or return to the reward screen.".to_string(),
                 status: None,
             }
         }

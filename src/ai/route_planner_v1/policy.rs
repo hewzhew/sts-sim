@@ -51,7 +51,8 @@ pub fn plan_route_decision_v1(
                 safety,
                 reasons,
                 cautions,
-                suggested_command: matches!(engine_state, EngineState::MapNavigation)
+                suggested_command: engine_state
+                    .is_map_surface()
                     .then(|| route_command_hint(target.move_kind, target.x, target.y)),
             }
         })
@@ -69,7 +70,7 @@ pub fn plan_route_decision_v1(
     });
     let selected_index = selected_index(&candidates);
     let mut warnings = Vec::new();
-    if !matches!(engine_state, EngineState::MapNavigation) {
+    if !engine_state.is_map_surface() {
         warnings.push(
             "route selection is locked until the current screen returns to map navigation"
                 .to_string(),

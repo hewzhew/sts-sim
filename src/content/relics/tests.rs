@@ -1757,6 +1757,7 @@ fn singing_bowl_card_reward_option_grants_two_max_hp_with_reward_source() {
             CardId::Strike,
             0,
         )]),
+        pending_card_reward_index: None,
     };
 
     assert_eq!(

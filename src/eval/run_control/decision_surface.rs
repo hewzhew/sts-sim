@@ -141,13 +141,13 @@ fn candidate_section_title(session: &RunControlSession) -> &'static str {
         EngineState::PendingChoice(_) => "Selections:",
         EngineState::CombatPlayerTurn | EngineState::CombatProcessing => "Actions:",
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => "Choices:",
-        EngineState::MapNavigation => "Paths:",
+        EngineState::MapNavigation | EngineState::MapOverlay { .. } => "Paths:",
         _ => "Available actions:",
     }
 }
 
 fn inspectable_panels(session: &RunControlSession) -> &'static str {
-    match session.engine_state {
+    match &session.engine_state {
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
         | EngineState::PendingChoice(_) => {
@@ -172,7 +172,7 @@ fn main_command_hint(session: &RunControlSession, view: &RunControlViewModel) ->
         | EngineState::PendingChoice(_) => {
             "draw | discard | exhaust | potions | relics | case | raw | help | q"
         }
-        EngineState::MapNavigation => {
+        EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
             "deck | map | rs | rg | relics | potions | case | raw | help | q"
         }
         _ => "deck | map | relics | potions | case | raw | help | q",
@@ -186,12 +186,18 @@ fn main_command_hint(session: &RunControlSession, view: &RunControlViewModel) ->
 }
 
 fn state_command_hint(session: &RunControlSession) -> String {
-    match session.engine_state {
+    match &session.engine_state {
         EngineState::Shop(_) => {
             "card-2 or card 2 | relic-1 or relic 1 | potion-0 or potion 0 | leave".to_string()
         }
         EngineState::Campfire => "rest | smith-<deck_idx> or smith <deck_idx> | recall".to_string(),
         EngineState::MapNavigation => "type a path id, e.g. 0 or 5 | rg=route-go".to_string(),
+        EngineState::MapOverlay { .. } => {
+            "type a path id to commit, or back/cancel to return".to_string()
+        }
+        EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
+            "type visible id to take card, or back".to_string()
+        }
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
         EngineState::PendingChoice(_) => "type visible selection id".to_string(),
         EngineState::CombatPlayerTurn | EngineState::CombatProcessing => {

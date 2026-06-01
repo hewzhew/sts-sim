@@ -32,6 +32,17 @@ fn post_reward_state(run_state: &mut RunState) -> EngineState {
     EngineState::MapNavigation
 }
 
+fn reward_map_overlay_or_post_reward_state(
+    run_state: &mut RunState,
+    reward_state: &RewardState,
+) -> EngineState {
+    if reward_state.items.is_empty() && reward_state.pending_card_choice.is_none() {
+        post_reward_state(run_state)
+    } else {
+        EngineState::map_overlay(EngineState::RewardScreen(reward_state.clone()))
+    }
+}
+
 pub fn handle(
     run_state: &mut crate::state::run::RunState,
     reward_state: &mut crate::state::rewards::RewardState,
@@ -46,6 +57,17 @@ pub fn handle(
         match in_val {
             ClientInput::ClaimReward(idx) => {
                 if idx < reward_state.items.len() {
+                    if let Some(RewardItem::Card { cards }) = reward_state.items.get(idx) {
+                        // Java opens CardRewardScreen with a pointer to the
+                        // RewardItem and removes that item only after the
+                        // player actually picks a card. Closing the card screen
+                        // returns to the combat reward screen with the card
+                        // reward still present.
+                        reward_state.pending_card_choice = Some(cards.clone());
+                        reward_state.pending_card_reward_index = Some(idx);
+                        return None;
+                    }
+
                     let item = reward_state.items.remove(idx);
                     match item {
                         RewardItem::Gold { amount } => {
@@ -99,10 +121,8 @@ pub fn handle(
                                     .insert(idx, RewardItem::Potion { potion_id });
                             }
                         }
-                        RewardItem::Card { cards } => {
-                            // Enter card choice mode — player must pick one (or skip)
-                            // Stay in RewardScreen; handler branches on pending_card_choice
-                            reward_state.pending_card_choice = Some(cards);
+                        RewardItem::Card { .. } => {
+                            unreachable!("card rewards are handled before removal")
                         }
                         RewardItem::EmeraldKey => {
                             // Java: ObtainKeyEffect(GREEN) — sets green key
@@ -122,7 +142,12 @@ pub fn handle(
                 }
             }
             crate::state::core::ClientInput::Proceed | crate::state::core::ClientInput::Cancel => {
-                return Some(post_reward_state(run_state));
+                if reward_state.skippable {
+                    return Some(reward_map_overlay_or_post_reward_state(
+                        run_state,
+                        reward_state,
+                    ));
+                }
             }
             _ => {}
         }
@@ -165,22 +190,33 @@ fn handle_card_choice(
                     }
                 }
                 reward_state.pending_card_choice = None;
+                remove_pending_card_reward(reward_state);
                 // Stay in RewardScreen — if no more items, proceed
                 if reward_state.items.is_empty() {
                     return Some(post_reward_state(run_state));
                 }
             }
             ClientInput::Proceed | ClientInput::Cancel => {
-                // Skip card reward
+                // Java closes CardRewardScreen back to CombatRewardScreen
+                // without consuming the underlying RewardItem. The player can
+                // inspect map/relic/deck context and return later; the card
+                // reward is only abandoned when the next room is committed.
                 reward_state.pending_card_choice = None;
-                if reward_state.items.is_empty() {
-                    return Some(post_reward_state(run_state));
-                }
+                reward_state.pending_card_reward_index = None;
             }
             _ => {}
         }
     }
     None
+}
+
+fn remove_pending_card_reward(reward_state: &mut RewardState) {
+    let Some(idx) = reward_state.pending_card_reward_index.take() else {
+        return;
+    };
+    if matches!(reward_state.items.get(idx), Some(RewardItem::Card { .. })) {
+        reward_state.items.remove(idx);
+    }
 }
 
 fn remove_linked_sapphire_key_after_claiming_relic(
@@ -309,6 +345,82 @@ mod tests {
             }],
             "Java RewardItem.claimReward returns false on full potion slots, leaving the reward"
         );
+    }
+
+    #[test]
+    fn unclaimed_reward_proceed_opens_map_overlay_without_dropping_rewards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Gold { amount: 25 }];
+
+        let next = handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::Proceed),
+        )
+        .expect("proceed with unclaimed rewards should open map overlay");
+
+        let EngineState::MapOverlay { return_state } = next else {
+            panic!("expected Java-style dismissible map overlay");
+        };
+        let EngineState::RewardScreen(returned_rewards) = *return_state else {
+            panic!("map overlay should return to the reward screen");
+        };
+        assert_eq!(
+            returned_rewards.items,
+            vec![RewardItem::Gold { amount: 25 }]
+        );
+        assert_eq!(reward_state.items, vec![RewardItem::Gold { amount: 25 }]);
+        assert_eq!(run_state.gold, 99, "opening map must not claim gold");
+    }
+
+    #[test]
+    fn card_reward_item_is_removed_only_after_selecting_card() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Card {
+            cards: vec![crate::state::rewards::RewardCard::new(
+                CardId::PommelStrike,
+                0,
+            )],
+        }];
+
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(0)),
+        );
+        assert!(reward_state.pending_card_choice.is_some());
+        assert_eq!(reward_state.pending_card_reward_index, Some(0));
+        assert_eq!(
+            reward_state.items.len(),
+            1,
+            "opening card choices is read-only"
+        );
+
+        handle(&mut run_state, &mut reward_state, Some(ClientInput::Cancel));
+        assert!(reward_state.pending_card_choice.is_none());
+        assert_eq!(
+            reward_state.items.len(),
+            1,
+            "closing card choices returns to reward screen with the card reward intact"
+        );
+
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(0)),
+        );
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::SelectCard(0)),
+        );
+        assert!(reward_state.items.is_empty());
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::PommelStrike));
     }
 
     #[test]

@@ -53,6 +53,7 @@ pub(super) fn generate_combat_rewards_from_existing_with_escape_gate(
         skippable: !is_boss,
         screen_context: crate::state::rewards::RewardScreenContext::Standard,
         pending_card_choice: None,
+        pending_card_reward_index: None,
     }
 }
 

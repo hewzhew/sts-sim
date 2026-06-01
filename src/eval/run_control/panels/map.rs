@@ -11,7 +11,7 @@ use std::cmp::Ordering;
 
 pub fn render_map_panel(session: &RunControlSession) -> String {
     let mut out = String::new();
-    let navigable = matches!(session.engine_state, EngineState::MapNavigation);
+    let navigable = session.engine_state.is_map_surface();
     push_line(
         &mut out,
         format!(
@@ -126,10 +126,14 @@ pub fn render_full_map_panel(session: &RunControlSession) -> String {
         out.push('\n');
     }
     push_line(&mut out, "");
-    if matches!(session.engine_state, EngineState::MapNavigation) {
+    if session.engine_state.is_map_surface() {
         push_line(
             &mut out,
-            "Commands: map | rs | rg | go <x> | details | raw | q",
+            if matches!(session.engine_state, EngineState::MapOverlay { .. }) {
+                "Commands: map | rs | rg | go <x> | back | details | raw | q"
+            } else {
+                "Commands: map | rs | rg | go <x> | details | raw | q"
+            },
         );
     } else {
         push_line(&mut out, "Commands: map | rs | details | raw | q");

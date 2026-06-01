@@ -294,6 +294,7 @@ fn is_run_level_potion_context(engine_state: &EngineState) -> bool {
     matches!(
         engine_state,
         EngineState::MapNavigation
+            | EngineState::MapOverlay { .. }
             | EngineState::EventRoom
             | EngineState::RewardScreen(_)
             | EngineState::TreasureRoom(_)
@@ -1011,7 +1012,23 @@ pub fn tick_run_active_with_observer(
             }
             true
         }
-        EngineState::MapNavigation => {
+        EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
+            let overlay_return_state = match engine_state {
+                EngineState::MapOverlay { return_state } => Some(return_state.clone()),
+                _ => None,
+            };
+            if let (Some(ClientInput::Cancel), Some(return_state)) = (&input, overlay_return_state)
+            {
+                *engine_state = *return_state;
+                if resolve_out_of_combat_defeat(engine_state, run_state) {
+                    return RunTickOutcome::without_finished(false);
+                }
+                return RunTickOutcome {
+                    keep_running: true,
+                    finished_combat: None,
+                };
+            }
+
             // Extract travel target from input: normal adjacency or WingBoots flight
             let travel_target = match &input {
                 Some(ClientInput::SelectMapNode(target_x)) => {
@@ -1374,6 +1391,65 @@ mod tests {
         second.class = Some(RoomType::MonsterRoom);
         run_state.map = MapState::new(vec![vec![first], vec![second]]);
         run_state
+    }
+
+    #[test]
+    fn map_overlay_cancel_returns_to_stashed_reward_screen() {
+        let mut run_state = run_state_with_first_room(RoomType::MonsterRoom);
+        let reward = RewardState {
+            items: vec![RewardItem::Gold { amount: 25 }],
+            skippable: true,
+            screen_context: RewardScreenContext::Standard,
+            pending_card_choice: None,
+            pending_card_reward_index: None,
+        };
+        let mut engine_state = EngineState::map_overlay(EngineState::RewardScreen(reward));
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::Cancel),
+        ));
+
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("cancel should reopen the reward screen");
+        };
+        assert_eq!(rewards.items, vec![RewardItem::Gold { amount: 25 }]);
+        assert_eq!(run_state.map.current_y, -1);
+        assert!(combat_state.is_none());
+    }
+
+    #[test]
+    fn map_overlay_path_selection_commits_travel_and_drops_return_screen() {
+        let mut run_state = run_state_with_first_room(RoomType::MonsterRoom);
+        let reward = RewardState {
+            items: vec![RewardItem::Gold { amount: 25 }],
+            skippable: true,
+            screen_context: RewardScreenContext::Standard,
+            pending_card_choice: None,
+            pending_card_reward_index: None,
+        };
+        let mut engine_state = EngineState::map_overlay(EngineState::RewardScreen(reward));
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SelectMapNode(0)),
+        ));
+
+        assert_eq!(run_state.map.current_y, 0);
+        assert_eq!(run_state.floor_num, 1);
+        assert!(
+            matches!(
+                engine_state,
+                EngineState::CombatStart(_) | EngineState::CombatPlayerTurn
+            ),
+            "selecting a map node should commit to the next room, got {engine_state:?}"
+        );
     }
 
     #[test]

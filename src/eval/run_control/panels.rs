@@ -182,14 +182,19 @@ fn push_visible_screen(session: &RunControlSession, out: &mut String) {
                         format!("  {idx} {}", reward_card_brief(card.id, card.upgrades)),
                     );
                 }
-                if reward.skippable {
-                    push_line(out, format!("  {} Skip", cards.len()));
-                }
+                push_line(out, "  back Return to reward screen");
             }
         }
-        EngineState::MapNavigation => {
+        EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
             push_line(out, "");
-            push_line(out, "Type `map` for the visible route summary.");
+            if matches!(session.engine_state, EngineState::MapOverlay { .. }) {
+                push_line(
+                    out,
+                    "Map preview: selecting a path commits travel; `back` returns to rewards.",
+                );
+            } else {
+                push_line(out, "Type `map` for the visible route summary.");
+            }
         }
         _ => {}
     }

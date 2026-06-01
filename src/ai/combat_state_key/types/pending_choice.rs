@@ -15,6 +15,7 @@ pub(crate) enum StableRunPendingReturnKey {
     Campfire,
     Shop(StableShopKey),
     MapNavigation,
+    MapOverlay(Box<StableRunPendingReturnKey>),
     EventRoom,
     BossRelic(StableBossRelicKey),
     RunPendingChoice(Box<StableRunPendingChoiceKey>),
@@ -98,6 +99,9 @@ impl StableRunPendingReturnKey {
                 format!("shop:{}", value.diagnostic_string())
             }
             StableRunPendingReturnKey::MapNavigation => "map_navigation".to_string(),
+            StableRunPendingReturnKey::MapOverlay(value) => {
+                format!("map_overlay:return{}", value.diagnostic_string())
+            }
             StableRunPendingReturnKey::EventRoom => "event_room".to_string(),
             StableRunPendingReturnKey::BossRelic(value) => {
                 format!("boss_relic:{}", value.diagnostic_string())

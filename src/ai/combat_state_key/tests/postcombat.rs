@@ -7,12 +7,14 @@ fn stable_run_pending_choice_keeps_return_state_payloads_distinct() {
         screen_context: crate::state::rewards::RewardScreenContext::Standard,
         items: vec![crate::state::rewards::RewardItem::Gold { amount: 10 }],
         pending_card_choice: None,
+        pending_card_reward_index: None,
         skippable: true,
     };
     let reward_b = crate::state::rewards::RewardState {
         screen_context: crate::state::rewards::RewardScreenContext::Standard,
         items: vec![crate::state::rewards::RewardItem::Gold { amount: 20 }],
         pending_card_choice: None,
+        pending_card_reward_index: None,
         skippable: true,
     };
 
@@ -52,6 +54,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
             crate::state::rewards::RewardCard::new(CardId::Strike, 0),
             crate::state::rewards::RewardCard::new(CardId::Defend, 0),
         ]),
+        pending_card_reward_index: Some(0),
         skippable: true,
     };
     let reward_b = crate::state::rewards::RewardState {
@@ -64,6 +67,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
             crate::state::rewards::RewardCard::new(CardId::Defend, 0),
             crate::state::rewards::RewardCard::new(CardId::Strike, 0),
         ]),
+        pending_card_reward_index: Some(1),
         skippable: true,
     };
     assert_eq!(
@@ -168,6 +172,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
                     crate::state::rewards::RewardCard::new(CardId::Strike, 0),
                     crate::state::rewards::RewardCard::new(CardId::Defend, 0),
                 ]),
+                pending_card_reward_index: Some(0),
                 skippable: true,
             },
         )),
@@ -187,6 +192,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
                     crate::state::rewards::RewardCard::new(CardId::Defend, 0),
                     crate::state::rewards::RewardCard::new(CardId::Strike, 0),
                 ]),
+                pending_card_reward_index: Some(1),
                 skippable: true,
             },
         )),

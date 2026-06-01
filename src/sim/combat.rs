@@ -161,6 +161,7 @@ pub fn stable_boundary(engine: &EngineState, combat: &CombatState) -> bool {
         | EngineState::Campfire
         | EngineState::Shop(_)
         | EngineState::MapNavigation
+        | EngineState::MapOverlay { .. }
         | EngineState::EventRoom
         | EngineState::RunPendingChoice(_)
         | EngineState::BossRelicSelect(_) => true,

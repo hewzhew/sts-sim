@@ -135,6 +135,9 @@ pub(super) fn stable_run_pending_return_key(state: &EngineState) -> StableRunPen
         EngineState::Campfire => StableRunPendingReturnKey::Campfire,
         EngineState::Shop(shop) => StableRunPendingReturnKey::Shop(stable_shop_key(shop)),
         EngineState::MapNavigation => StableRunPendingReturnKey::MapNavigation,
+        EngineState::MapOverlay { return_state } => StableRunPendingReturnKey::MapOverlay(
+            Box::new(stable_run_pending_return_key(return_state)),
+        ),
         EngineState::EventRoom => StableRunPendingReturnKey::EventRoom,
         EngineState::BossRelicSelect(state) => {
             StableRunPendingReturnKey::BossRelic(stable_boss_relic_key(state))

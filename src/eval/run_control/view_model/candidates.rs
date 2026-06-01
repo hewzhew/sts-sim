@@ -15,7 +15,7 @@ use super::{CandidateResolution, DecisionCandidate, RunControlSession};
 pub(super) fn decision_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     match &session.engine_state {
         EngineState::EventRoom => event_candidates(session),
-        EngineState::MapNavigation => map_candidates(session),
+        EngineState::MapNavigation | EngineState::MapOverlay { .. } => map_candidates(session),
         EngineState::RewardScreen(reward) => reward_candidates(session, reward),
         EngineState::TreasureRoom(_) => {
             vec![candidate(
@@ -119,17 +119,21 @@ fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         session.run_state.map.current_y + 1
     };
     if target_y == 15 {
-        return vec![candidate(
-            "0",
-            "Boss room",
-            ClientInput::SelectMapNode(0),
-            Some("boss"),
-        )];
+        return with_map_overlay_back_candidate(
+            session,
+            vec![candidate(
+                "0",
+                "Boss room",
+                ClientInput::SelectMapNode(0),
+                Some("boss"),
+            )],
+        );
     }
     let Some(row) = session.run_state.map.graph.get(target_y as usize) else {
-        return Vec::new();
+        return with_map_overlay_back_candidate(session, Vec::new());
     };
-    row.iter()
+    let candidates = row
+        .iter()
         .filter(|node| session.run_state.map.can_travel_to(node.x, node.y, false))
         .map(|node| {
             candidate(
@@ -139,7 +143,23 @@ fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
                 node.has_emerald_key.then_some("emerald elite"),
             )
         })
-        .collect()
+        .collect();
+    with_map_overlay_back_candidate(session, candidates)
+}
+
+fn with_map_overlay_back_candidate(
+    session: &RunControlSession,
+    mut candidates: Vec<DecisionCandidate>,
+) -> Vec<DecisionCandidate> {
+    if matches!(session.engine_state, EngineState::MapOverlay { .. }) {
+        candidates.push(candidate(
+            "back",
+            "Back to reward screen",
+            ClientInput::Cancel,
+            Some("unclaimed rewards remain"),
+        ));
+    }
+    candidates
 }
 
 fn reward_candidates(session: &RunControlSession, reward: &RewardState) -> Vec<DecisionCandidate> {
@@ -159,10 +179,10 @@ fn reward_candidates(session: &RunControlSession, reward: &RewardState) -> Vec<D
             })
             .collect::<Vec<_>>();
         candidates.push(candidate(
-            cards.len().to_string(),
-            "Skip card reward",
-            ClientInput::Proceed,
-            None::<String>,
+            "back",
+            "Back to reward screen",
+            ClientInput::Cancel,
+            Some("card reward remains"),
         ));
         return candidates;
     }
@@ -184,12 +204,15 @@ fn reward_candidates(session: &RunControlSession, reward: &RewardState) -> Vec<D
         })
         .collect::<Vec<_>>();
     if reward.skippable {
-        candidates.push(candidate(
-            "skip",
-            "Leave reward screen",
-            ClientInput::Proceed,
-            None::<String>,
-        ));
+        let (label, note) = if reward.items.is_empty() {
+            ("Leave reward screen", Some("routine"))
+        } else {
+            (
+                "Open map preview",
+                Some("unclaimed rewards remain until a path is chosen"),
+            )
+        };
+        candidates.push(candidate("skip", label, ClientInput::Proceed, note));
     }
     candidates
 }
