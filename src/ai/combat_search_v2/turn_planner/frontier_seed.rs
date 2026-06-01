@@ -52,11 +52,49 @@ fn should_seed_frontier(
     if action_count == 0 {
         return false;
     }
-    if bucket == TurnPlanBucket::TerminalLoss {
+    if !matches!(
+        bucket,
+        TurnPlanBucket::TerminalWin | TurnPlanBucket::Progress
+    ) {
         return false;
     }
     !matches!(
         stop_reason,
         TurnPlanStopReason::EngineStepLimit | TurnPlanStopReason::NoLegalActions
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frontier_seed_keeps_only_terminal_win_or_progress_plans() {
+        assert!(should_seed_frontier(
+            TurnPlanBucket::TerminalWin,
+            TurnPlanStopReason::Terminal,
+            1
+        ));
+        assert!(should_seed_frontier(
+            TurnPlanBucket::Progress,
+            TurnPlanStopReason::NextTurn,
+            1
+        ));
+
+        assert!(!should_seed_frontier(
+            TurnPlanBucket::Setup,
+            TurnPlanStopReason::NextTurn,
+            1
+        ));
+        assert!(!should_seed_frontier(
+            TurnPlanBucket::Balanced,
+            TurnPlanStopReason::NextTurn,
+            1
+        ));
+        assert!(!should_seed_frontier(
+            TurnPlanBucket::Survival,
+            TurnPlanStopReason::NextTurn,
+            1
+        ));
+    }
 }
