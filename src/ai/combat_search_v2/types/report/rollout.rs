@@ -22,8 +22,33 @@ pub struct CombatSearchV2RolloutReport {
     pub rollouts_stopped_on_high_fanout_pending_choice: u64,
     pub pending_choice_actions_simulated: u64,
     pub max_pending_choice_estimated_action_fanout: usize,
+    pub turn_beam_attribution: CombatSearchV2TurnBeamAttributionReport,
     pub best_frontier_estimate: Option<CombatSearchV2RolloutEstimateReport>,
     pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatSearchV2TurnBeamAttributionReport {
+    pub enabled: bool,
+    pub calls: u64,
+    pub conservative_anchor_present: u64,
+    pub conservative_anchor_selected: u64,
+    pub conservative_anchor_terminal_wins: u64,
+    pub extension_calls: u64,
+    pub turn_plan_calls: u64,
+    pub turn_plan_inner_nodes_expanded: u64,
+    pub turn_plan_inner_nodes_generated: u64,
+    pub turn_plans_kept: u64,
+    pub turn_plans_kept_by_bucket: Vec<CombatSearchV2TurnBeamBucketCountReport>,
+    pub terminal_candidates_kept: u64,
+    pub best_pv_len: usize,
+    pub best_pv_terminal: Option<SearchTerminalLabel>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnBeamBucketCountReport {
+    pub bucket: &'static str,
+    pub count: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
 use super::value::combat_eval_from_rollout_estimate;
@@ -12,8 +12,20 @@ pub(super) struct RolloutCache {
     pub(super) max_actions: usize,
     pub(super) beam_width: usize,
     pub(super) turn_beam_extension_budget: usize,
+    pub(super) turn_beam_calls: u64,
+    pub(super) turn_beam_conservative_anchor_present: u64,
+    pub(super) turn_beam_conservative_anchor_selected: u64,
+    pub(super) turn_beam_conservative_anchor_terminal_wins: u64,
     pub(super) turn_beam_extensions: u64,
     pub(super) turn_beam_extension_budget_skips: u64,
+    pub(super) turn_beam_turn_plan_calls: u64,
+    pub(super) turn_beam_turn_plan_inner_nodes_expanded: u64,
+    pub(super) turn_beam_turn_plan_inner_nodes_generated: u64,
+    pub(super) turn_beam_turn_plans_kept: u64,
+    pub(super) turn_beam_turn_plans_kept_by_bucket: BTreeMap<&'static str, u64>,
+    pub(super) turn_beam_terminal_candidates_kept: u64,
+    pub(super) turn_beam_best_pv_len: usize,
+    pub(super) turn_beam_best_pv_terminal: Option<SearchTerminalLabel>,
     pub(super) evaluations: u64,
     pub(super) cache_hits: u64,
     pub(super) budget_skips: u64,
@@ -91,6 +103,7 @@ impl RolloutCache {
                 )
             }
             CombatSearchV2RolloutPolicy::TurnBeamNoPotion => {
+                self.turn_beam_calls = self.turn_beam_calls.saturating_add(1);
                 let anchor = rollout::turn_beam_conservative_anchor_rollout(
                     node,
                     stepper,
@@ -98,22 +111,43 @@ impl RolloutCache {
                     self.max_actions,
                     deadline,
                 );
+                self.turn_beam_conservative_anchor_present =
+                    self.turn_beam_conservative_anchor_present.saturating_add(1);
                 if anchor.terminal == SearchTerminalLabel::Win {
+                    self.turn_beam_conservative_anchor_terminal_wins = self
+                        .turn_beam_conservative_anchor_terminal_wins
+                        .saturating_add(1);
+                    self.turn_beam_conservative_anchor_selected = self
+                        .turn_beam_conservative_anchor_selected
+                        .saturating_add(1);
+                    self.observe_turn_beam_best_pv(anchor);
                     anchor
                 } else if self.turn_beam_extensions as usize >= self.turn_beam_extension_budget {
                     self.turn_beam_extension_budget_skips =
                         self.turn_beam_extension_budget_skips.saturating_add(1);
+                    self.turn_beam_conservative_anchor_selected = self
+                        .turn_beam_conservative_anchor_selected
+                        .saturating_add(1);
+                    self.observe_turn_beam_best_pv(anchor);
                     anchor
                 } else {
                     self.turn_beam_extensions = self.turn_beam_extensions.saturating_add(1);
-                    let beam = rollout::turn_beam_extension_rollout(
+                    let (beam, attribution) = rollout::turn_beam_extension_rollout_with_attribution(
                         node,
                         stepper,
                         config,
                         self.max_actions,
                         deadline,
                     );
-                    better_rollout_estimate(beam, anchor)
+                    self.observe_turn_beam_extension_attribution(attribution);
+                    let selected = better_rollout_estimate(beam, anchor);
+                    if selected == anchor {
+                        self.turn_beam_conservative_anchor_selected = self
+                            .turn_beam_conservative_anchor_selected
+                            .saturating_add(1);
+                    }
+                    self.observe_turn_beam_best_pv(selected);
+                    selected
                 }
             }
         };
@@ -168,6 +202,30 @@ impl RolloutCache {
             pending_choice_actions_simulated: self.pending_choice_actions_simulated,
             max_pending_choice_estimated_action_fanout: self
                 .max_pending_choice_estimated_action_fanout,
+            turn_beam_attribution: CombatSearchV2TurnBeamAttributionReport {
+                enabled: self.policy == CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
+                calls: self.turn_beam_calls,
+                conservative_anchor_present: self.turn_beam_conservative_anchor_present,
+                conservative_anchor_selected: self.turn_beam_conservative_anchor_selected,
+                conservative_anchor_terminal_wins: self
+                    .turn_beam_conservative_anchor_terminal_wins,
+                extension_calls: self.turn_beam_extensions,
+                turn_plan_calls: self.turn_beam_turn_plan_calls,
+                turn_plan_inner_nodes_expanded: self.turn_beam_turn_plan_inner_nodes_expanded,
+                turn_plan_inner_nodes_generated: self.turn_beam_turn_plan_inner_nodes_generated,
+                turn_plans_kept: self.turn_beam_turn_plans_kept,
+                turn_plans_kept_by_bucket: self
+                    .turn_beam_turn_plans_kept_by_bucket
+                    .iter()
+                    .map(|(bucket, count)| CombatSearchV2TurnBeamBucketCountReport {
+                        bucket: *bucket,
+                        count: *count,
+                    })
+                    .collect(),
+                terminal_candidates_kept: self.turn_beam_terminal_candidates_kept,
+                best_pv_len: self.turn_beam_best_pv_len,
+                best_pv_terminal: self.turn_beam_best_pv_terminal,
+            },
             best_frontier_estimate: best_frontier
                 .and_then(|node| node.rollout_estimate.to_report()),
             notes: vec![
@@ -179,6 +237,48 @@ impl RolloutCache {
                 "small pending choices may be followed by rollout, but their actions are still exact simulator inputs and never proof claims",
                 "turn_beam_no_potion uses turn-plan end states as an estimate-only beam and still reports no proof claim",
             ],
+        }
+    }
+
+    fn observe_turn_beam_extension_attribution(
+        &mut self,
+        attribution: rollout::TurnBeamExtensionAttribution,
+    ) {
+        self.turn_beam_turn_plan_calls = self
+            .turn_beam_turn_plan_calls
+            .saturating_add(attribution.turn_plan_calls);
+        self.turn_beam_turn_plan_inner_nodes_expanded = self
+            .turn_beam_turn_plan_inner_nodes_expanded
+            .saturating_add(attribution.turn_plan_inner_nodes_expanded);
+        self.turn_beam_turn_plan_inner_nodes_generated = self
+            .turn_beam_turn_plan_inner_nodes_generated
+            .saturating_add(attribution.turn_plan_inner_nodes_generated);
+        self.turn_beam_turn_plans_kept = self
+            .turn_beam_turn_plans_kept
+            .saturating_add(attribution.turn_plans_kept);
+        self.turn_beam_terminal_candidates_kept = self
+            .turn_beam_terminal_candidates_kept
+            .saturating_add(attribution.terminal_candidates_kept);
+        for (bucket, count) in attribution.turn_plans_kept_by_bucket {
+            *self
+                .turn_beam_turn_plans_kept_by_bucket
+                .entry(bucket)
+                .or_default() += count;
+        }
+        if self.turn_beam_best_pv_terminal.is_none()
+            || attribution.best_pv_len > self.turn_beam_best_pv_len
+        {
+            self.turn_beam_best_pv_len = attribution.best_pv_len;
+            self.turn_beam_best_pv_terminal = attribution.best_pv_terminal;
+        }
+    }
+
+    fn observe_turn_beam_best_pv(&mut self, estimate: RolloutNodeEstimate) {
+        if self.turn_beam_best_pv_terminal.is_none()
+            || estimate.actions_simulated > self.turn_beam_best_pv_len
+        {
+            self.turn_beam_best_pv_len = estimate.actions_simulated;
+            self.turn_beam_best_pv_terminal = Some(estimate.terminal);
         }
     }
 }

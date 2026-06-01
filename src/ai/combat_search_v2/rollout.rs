@@ -14,7 +14,10 @@ pub(super) const DEFAULT_TURN_BEAM_WIDTH: usize = 3;
 pub(super) use no_potion::{conservative_no_potion_rollout, phase_aware_no_potion_rollout};
 #[cfg(test)]
 pub(super) use turn_beam::turn_beam_no_potion_rollout;
-pub(super) use turn_beam::{turn_beam_conservative_anchor_rollout, turn_beam_extension_rollout};
+pub(super) use turn_beam::{
+    turn_beam_conservative_anchor_rollout, turn_beam_extension_rollout_with_attribution,
+    TurnBeamExtensionAttribution,
+};
 
 #[cfg(test)]
 mod tests;

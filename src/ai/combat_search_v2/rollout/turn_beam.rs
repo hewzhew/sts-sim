@@ -1,10 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::time::Instant;
 
 use crate::sim::combat::CombatStepper;
 
 use super::super::rollout_pending_choice::RolloutPendingChoiceProgress;
-use super::super::turn_planner::{enumerate_turn_plans, TurnPlannerConfigV1};
+use super::super::turn_planner::{
+    enumerate_turn_plans, TurnPlanBucket, TurnPlanEnumeration, TurnPlannerConfigV1,
+};
 use super::super::value::combat_eval_from_rollout_estimate;
 use super::super::*;
 
@@ -20,6 +22,49 @@ struct TurnBeamState {
     progress: RolloutPendingChoiceProgress,
     last_action_reason: Option<&'static str>,
     estimate_override: Option<RolloutNodeEstimate>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(in crate::ai::combat_search_v2) struct TurnBeamExtensionAttribution {
+    pub(in crate::ai::combat_search_v2) turn_plan_calls: u64,
+    pub(in crate::ai::combat_search_v2) turn_plan_inner_nodes_expanded: u64,
+    pub(in crate::ai::combat_search_v2) turn_plan_inner_nodes_generated: u64,
+    pub(in crate::ai::combat_search_v2) turn_plans_kept: u64,
+    pub(in crate::ai::combat_search_v2) turn_plans_kept_by_bucket: BTreeMap<&'static str, u64>,
+    pub(in crate::ai::combat_search_v2) terminal_candidates_kept: u64,
+    pub(in crate::ai::combat_search_v2) best_pv_len: usize,
+    pub(in crate::ai::combat_search_v2) best_pv_terminal: Option<SearchTerminalLabel>,
+}
+
+impl TurnBeamExtensionAttribution {
+    fn observe_turn_plan_enumeration(&mut self, enumeration: &TurnPlanEnumeration) {
+        self.turn_plan_calls = self.turn_plan_calls.saturating_add(1);
+        self.turn_plan_inner_nodes_expanded = self
+            .turn_plan_inner_nodes_expanded
+            .saturating_add(enumeration.nodes_expanded as u64);
+        self.turn_plan_inner_nodes_generated = self
+            .turn_plan_inner_nodes_generated
+            .saturating_add(enumeration.nodes_generated as u64);
+        self.turn_plans_kept = self
+            .turn_plans_kept
+            .saturating_add(enumeration.plans.len() as u64);
+        for plan in &enumeration.plans {
+            *self
+                .turn_plans_kept_by_bucket
+                .entry(plan.bucket.label())
+                .or_default() += 1;
+            if plan.bucket == TurnPlanBucket::TerminalWin {
+                self.terminal_candidates_kept = self.terminal_candidates_kept.saturating_add(1);
+            }
+        }
+    }
+
+    fn observe_best_estimate(&mut self, estimate: RolloutNodeEstimate) {
+        if self.best_pv_terminal.is_none() || estimate.actions_simulated > self.best_pv_len {
+            self.best_pv_len = estimate.actions_simulated;
+            self.best_pv_terminal = Some(estimate.terminal);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -55,15 +100,27 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_conservative_anchor_rollout(
     estimate
 }
 
-pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout(
+#[cfg(test)]
+fn turn_beam_extension_rollout(
     node: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
     max_actions: usize,
     deadline: Option<Instant>,
 ) -> RolloutNodeEstimate {
+    turn_beam_extension_rollout_with_attribution(node, stepper, config, max_actions, deadline).0
+}
+
+pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribution(
+    node: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    max_actions: usize,
+    deadline: Option<Instant>,
+) -> (RolloutNodeEstimate, TurnBeamExtensionAttribution) {
     let root_action_count = node.actions.len();
     let beam_width = config.rollout_beam_width.max(1);
+    let mut attribution = TurnBeamExtensionAttribution::default();
     let mut beam = vec![TurnBeamState {
         node: node.clone_for_rollout(),
         progress: RolloutPendingChoiceProgress::default(),
@@ -73,7 +130,10 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout(
 
     loop {
         if deadline.is_some_and(|limit| Instant::now() >= limit) {
-            return best_estimate(&beam, root_action_count, RolloutStopReason::Deadline);
+            return finish_with_attribution(
+                best_estimate(&beam, root_action_count, RolloutStopReason::Deadline),
+                attribution,
+            );
         }
 
         if let Some(winner) = beam
@@ -83,13 +143,19 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout(
             })
             .max_by_key(|state| state.node.combat.entities.player.current_hp)
         {
-            return state_estimate(winner, root_action_count, RolloutStopReason::TerminalState);
+            return finish_with_attribution(
+                state_estimate(winner, root_action_count, RolloutStopReason::TerminalState),
+                attribution,
+            );
         }
         if beam.iter().all(|state| {
             terminal_label(&state.node.engine, &state.node.combat)
                 != SearchTerminalLabel::Unresolved
         }) {
-            return best_estimate(&beam, root_action_count, RolloutStopReason::TerminalState);
+            return finish_with_attribution(
+                best_estimate(&beam, root_action_count, RolloutStopReason::TerminalState),
+                attribution,
+            );
         }
 
         let max_simulated = beam
@@ -98,7 +164,10 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout(
             .max()
             .unwrap_or_default();
         if max_simulated >= max_actions {
-            return best_estimate(&beam, root_action_count, RolloutStopReason::MaxActions);
+            return finish_with_attribution(
+                best_estimate(&beam, root_action_count, RolloutStopReason::MaxActions),
+                attribution,
+            );
         }
 
         let mut next = Vec::new();
@@ -162,6 +231,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout(
                 ..TurnPlannerConfigV1::default()
             };
             let plans = enumerate_turn_plans(&state.node, stepper, &turn_config, deadline);
+            attribution.observe_turn_plan_enumeration(&plans);
             if plans.plans.is_empty() {
                 let mut no_plan = state.node.clone();
                 no_plan.rollout_estimate = RolloutNodeEstimate::from_node(
@@ -212,13 +282,27 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout(
 
         if next.is_empty() {
             if !stalled.is_empty() {
-                return best_estimate(&stalled, root_action_count, stalled_stop_reason);
+                return finish_with_attribution(
+                    best_estimate(&stalled, root_action_count, stalled_stop_reason),
+                    attribution,
+                );
             }
-            return best_estimate(&beam, root_action_count, RolloutStopReason::NoLegalActions);
+            return finish_with_attribution(
+                best_estimate(&beam, root_action_count, RolloutStopReason::NoLegalActions),
+                attribution,
+            );
         }
 
         beam = select_beam(next, beam_width);
     }
+}
+
+fn finish_with_attribution(
+    estimate: RolloutNodeEstimate,
+    mut attribution: TurnBeamExtensionAttribution,
+) -> (RolloutNodeEstimate, TurnBeamExtensionAttribution) {
+    attribution.observe_best_estimate(estimate);
+    (estimate, attribution)
 }
 
 #[cfg(test)]

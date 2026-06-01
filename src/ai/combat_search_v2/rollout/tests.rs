@@ -79,6 +79,36 @@ impl CombatStepper for PendingChoiceWinsStepper {
     }
 }
 
+#[derive(Clone, Copy)]
+struct StalledEndTurnStepper;
+
+impl CombatStepper for StalledEndTurnStepper {
+    fn legal_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+        vec![ClientInput::EndTurn]
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        _input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        let position = CombatPosition::new(position.engine.clone(), position.combat.clone());
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&position.engine, &position.combat),
+            alive: true,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
 #[test]
 fn conservative_rollout_records_estimated_terminal_win() {
     let mut combat = blank_test_combat();
@@ -129,6 +159,88 @@ fn rollout_cache_reuses_exact_state_estimate() {
     assert_eq!(first, second);
     assert_eq!(cache.evaluations, 1);
     assert_eq!(cache.cache_hits, 1);
+}
+
+#[test]
+fn rollout_report_includes_turn_beam_anchor_attribution() {
+    let mut cache = RolloutCache::new(CombatSearchV2RolloutPolicy::TurnBeamNoPotion, 4, 4, 3);
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    let node = SearchNode {
+        engine: EngineState::CombatPlayerTurn,
+        combat,
+        actions: Vec::new(),
+        turn_prefix: TurnPrefixState::default(),
+        initial_hp: 80,
+        potions_used: 0,
+        potions_discarded: 0,
+        cards_played: 0,
+        potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
+        rollout_estimate: RolloutNodeEstimate::unevaluated(),
+    };
+    let config = CombatSearchV2Config {
+        rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
+        ..CombatSearchV2Config::default()
+    };
+
+    let estimate = cache.estimate(&node, &FirstActionWinsStepper, &config, None);
+    let report = cache.finish(None);
+
+    assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
+    assert!(report.turn_beam_attribution.enabled);
+    assert_eq!(report.turn_beam_attribution.calls, 1);
+    assert_eq!(report.turn_beam_attribution.conservative_anchor_present, 1);
+    assert_eq!(report.turn_beam_attribution.conservative_anchor_selected, 1);
+    assert_eq!(
+        report
+            .turn_beam_attribution
+            .conservative_anchor_terminal_wins,
+        1
+    );
+    assert_eq!(report.turn_beam_attribution.extension_calls, 0);
+}
+
+#[test]
+fn rollout_report_includes_turn_beam_extension_attribution() {
+    let mut cache = RolloutCache::new(CombatSearchV2RolloutPolicy::TurnBeamNoPotion, 4, 2, 3);
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    let node = SearchNode {
+        engine: EngineState::CombatPlayerTurn,
+        combat,
+        actions: Vec::new(),
+        turn_prefix: TurnPrefixState::default(),
+        initial_hp: 80,
+        potions_used: 0,
+        potions_discarded: 0,
+        cards_played: 0,
+        potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
+        rollout_estimate: RolloutNodeEstimate::unevaluated(),
+    };
+    let config = CombatSearchV2Config {
+        rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
+        ..CombatSearchV2Config::default()
+    };
+
+    let estimate = cache.estimate(&node, &StalledEndTurnStepper, &config, None);
+    let report = cache.finish(None);
+
+    assert_eq!(estimate.terminal, SearchTerminalLabel::Unresolved);
+    assert_eq!(report.turn_beam_attribution.calls, 1);
+    assert_eq!(report.turn_beam_attribution.conservative_anchor_present, 1);
+    assert_eq!(report.turn_beam_attribution.extension_calls, 1);
+    assert_eq!(report.turn_beam_attribution.turn_plan_calls, 1);
+    assert_eq!(
+        report.turn_beam_attribution.turn_plan_inner_nodes_generated,
+        1
+    );
+    assert_eq!(report.turn_beam_attribution.best_pv_len, 0);
+    assert_eq!(
+        report.turn_beam_attribution.best_pv_terminal,
+        Some(SearchTerminalLabel::Unresolved)
+    );
 }
 
 #[test]
