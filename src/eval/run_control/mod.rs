@@ -18,6 +18,7 @@ mod render;
 mod reward_auto;
 mod route_policy;
 mod search_evidence;
+mod selection_surface;
 mod session;
 mod session_trace;
 mod trace_annotation;

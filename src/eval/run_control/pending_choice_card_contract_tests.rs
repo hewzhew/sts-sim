@@ -1,4 +1,5 @@
 use super::decision_surface::{build_decision_surface, surface_legal_visibility_violations};
+use super::view_model::CandidateAction;
 use super::{RunControlCommand, RunControlConfig, RunControlSession};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
@@ -138,6 +139,46 @@ fn assert_pending_choice_surface_contract(
         case.name,
         surface.view.candidates
     );
+
+    if let Some(selection_surface) = super::selection_surface::active_selection_surface(session) {
+        let select = surface
+            .view
+            .candidates
+            .iter()
+            .find(|candidate| candidate.id == "select")
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} compact selection surface must expose a select command: {:?}",
+                    case.name, surface.view.candidates
+                )
+            });
+        assert!(
+            matches!(select.action, CandidateAction::ManualCommand { .. }),
+            "{} compact selection command must stay manual, got {:?}",
+            case.name,
+            select.action
+        );
+        assert!(
+            select
+                .note
+                .as_ref()
+                .is_some_and(|note| note.contains(&format!("{}", selection_surface.max_choices))),
+            "{} compact selection command should describe bounds, got {:?}",
+            case.name,
+            select.note
+        );
+        assert!(
+            !surface
+                .view
+                .candidates
+                .iter()
+                .any(|candidate| candidate.label.contains(", ")),
+            "{} compact selection surface must not enumerate card combinations: {:?}",
+            case.name,
+            surface.view.candidates
+        );
+        return;
+    }
 
     for candidate in &surface.view.candidates {
         let Some(input) = candidate.action.executable_input() else {

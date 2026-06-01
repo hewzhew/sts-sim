@@ -110,6 +110,19 @@ pub(super) fn surface_legal_visibility_violations(session: &RunControlSession) -
 
     if let Ok(position) = session.current_combat_position_for_actions() {
         if matches!(position.engine, EngineState::PendingChoice(_)) {
+            if super::selection_surface::active_selection_surface(session).is_some() {
+                if !surface
+                    .view
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.id == "select")
+                {
+                    violations.push(
+                        "compact selection surface is missing select command candidate".to_string(),
+                    );
+                }
+                return violations;
+            }
             let legal_moves = crate::sim::combat_legal_actions::get_legal_moves(
                 &position.engine,
                 &position.combat,
@@ -129,6 +142,9 @@ pub(super) fn surface_legal_visibility_violations(session: &RunControlSession) -
 
 fn candidate_section_title(session: &RunControlSession) -> &'static str {
     match &session.engine_state {
+        _ if super::selection_surface::active_selection_surface(session).is_some() => {
+            "Selection commands:"
+        }
         EngineState::EventRoom => {
             if session.run_state.event_state.as_ref().is_some_and(|event| {
                 event.id == crate::state::events::EventId::Neow && event.current_screen > 0
@@ -165,7 +181,9 @@ fn inspectable_panels(session: &RunControlSession) -> &'static str {
 fn main_command_hint(session: &RunControlSession, view: &RunControlViewModel) -> String {
     let first = view.candidates.first();
     let primary = match first {
-        Some(candidate) if view.candidates.len() == 1 => {
+        Some(candidate)
+            if view.candidates.len() == 1 && candidate.action.executable_input().is_some() =>
+        {
             format!("Enter/{}: {}", candidate.id, candidate.label)
         }
         Some(_) => state_command_hint(session),
@@ -210,6 +228,11 @@ fn state_command_hint(session: &RunControlSession) -> String {
         }
         EngineState::RewardOverlay { .. } => "type visible id, bowl, or back".to_string(),
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
+        EngineState::PendingChoice(_)
+            if super::selection_surface::active_selection_surface(session).is_some() =>
+        {
+            "select <idx...> | select = choose nothing | cancel".to_string()
+        }
         EngineState::PendingChoice(_) => "type visible selection id".to_string(),
         EngineState::CombatPlayerTurn | EngineState::CombatProcessing => {
             "cap <case_id> | n | visible action id | end".to_string()

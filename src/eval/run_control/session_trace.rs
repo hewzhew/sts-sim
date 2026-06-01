@@ -495,6 +495,20 @@ fn resolve_selected_candidate(
             candidates.first().cloned(),
             SessionTraceSelectionResolution::ResolvedSingleVisibleCandidate,
         ),
+        RunControlCommand::SelectionIndices(_) => {
+            let candidate = candidates
+                .iter()
+                .find(|candidate| candidate.id == "select")
+                .cloned();
+            if candidate.is_some() {
+                (
+                    candidate,
+                    SessionTraceSelectionResolution::ResolvedByVisibleId,
+                )
+            } else {
+                (None, SessionTraceSelectionResolution::Unresolved)
+            }
+        }
         _ => action_result
             .map(|result| resolve_selected_candidate_by_label(candidates, result))
             .unwrap_or((None, SessionTraceSelectionResolution::Unresolved)),

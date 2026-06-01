@@ -112,9 +112,10 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "pick" | "select-card" => Ok(RunControlCommand::Input(ClientInput::SelectCard(
             parse_usize_arg(rest.first(), "card option index")?,
         ))),
-        "select" => Ok(RunControlCommand::Input(ClientInput::SubmitDeckSelect(
-            parse_usize_list(&rest, "deck index")?,
-        ))),
+        "select" => Ok(RunControlCommand::SelectionIndices(parse_usize_list(
+            &rest,
+            "selection index",
+        )?)),
         "hand-select" => Ok(RunControlCommand::Input(ClientInput::SubmitHandSelect(
             parse_u32_list(&rest, "hand card uuid")?,
         ))),

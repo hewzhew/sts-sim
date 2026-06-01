@@ -81,10 +81,8 @@ fn decision_surface_pending_choices_expose_all_legal_inputs() {
 fn decision_surface_pending_choice_hints_do_not_offer_end_turn() {
     let surface = build_decision_surface(&pending_grid_session());
 
-    assert_eq!(surface.candidate_section_title, "Selections:");
-    assert!(surface
-        .command_hint
-        .starts_with("type visible selection id"));
+    assert_eq!(surface.candidate_section_title, "Selection commands:");
+    assert!(surface.command_hint.starts_with("select <idx...>"));
     assert!(
         !surface.command_hint.contains("end"),
         "pending choices must not advertise end turn: {}",
@@ -97,16 +95,20 @@ fn decision_surface_scry_exposes_keep_and_discard_choices() {
     let session = pending_scry_session();
     let surface = build_decision_surface(&session);
 
-    assert_eq!(surface.candidate_section_title, "Selections:");
+    assert_eq!(surface.candidate_section_title, "Selection commands:");
     assert!(surface.view.candidates.iter().any(|candidate| {
-        candidate.label == "Keep all"
-            && candidate.action.executable_input() == Some(ClientInput::SubmitScryDiscard(vec![]))
+        candidate.id == "select"
+            && candidate.label.contains("Submit selection")
+            && candidate.action.command_hint() == "select <idx...>"
     }));
-    assert!(surface.view.candidates.iter().any(|candidate| {
-        candidate.label == "Discard Strike, Defend"
-            && candidate.action.executable_input()
-                == Some(ClientInput::SubmitScryDiscard(vec![0, 1]))
-    }));
+    assert!(
+        !surface
+            .view
+            .candidates
+            .iter()
+            .any(|candidate| candidate.label == "Discard Strike, Defend"),
+        "scry should use compact selection surface instead of enumerating combinations"
+    );
 }
 
 #[test]

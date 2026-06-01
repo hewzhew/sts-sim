@@ -12,7 +12,8 @@ Help:
     sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|disabled] [rollouts=N] [rollout_actions=N] [save=case|path]
 
   Map/Event/Reward:
-    rs/route-suggest = read-only route evidence; rg/route-go = execute selected route planner move; go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <deck_idx...>
+    rs/route-suggest = read-only route evidence; rg/route-go = execute selected route planner move; go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <idx...>
+    select <idx...> submits the visible selection surface; empty select chooses nothing when allowed
     hand-select <uuid...>, grid-select <uuid...>, choose <idx>, open, relic <idx>
 
   Shop/Campfire:

@@ -428,7 +428,7 @@ fn combat_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         return Vec::new();
     };
     if let EngineState::PendingChoice(choice) = &position.engine {
-        return pending_choice_candidates(choice, &position.combat);
+        return pending_choice_candidates(session, choice, &position.combat);
     }
     let legal_moves = get_legal_moves(&position.engine, &position.combat);
     let mut playable: BTreeMap<usize, Vec<Option<usize>>> = BTreeMap::new();
@@ -500,9 +500,30 @@ fn combat_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
 }
 
 fn pending_choice_candidates(
+    session: &RunControlSession,
     choice: &PendingChoice,
     combat: &crate::runtime::combat::CombatState,
 ) -> Vec<DecisionCandidate> {
+    if let Some(surface) =
+        crate::eval::run_control::selection_surface::active_selection_surface(session)
+    {
+        let mut candidates = vec![candidate(
+            "select",
+            format!("Submit selection with `{}`", surface.submit_hint),
+            surface.submit_hint,
+            Some(selection_surface_note(&surface)),
+        )];
+        if surface.can_cancel {
+            candidates.push(candidate(
+                "cancel",
+                "Cancel selection",
+                ClientInput::Cancel,
+                Some("return without selecting cards"),
+            ));
+        }
+        return candidates;
+    }
+
     let legal_moves = get_legal_moves(&EngineState::PendingChoice(choice.clone()), combat);
     legal_moves
         .into_iter()
@@ -512,6 +533,22 @@ fn pending_choice_candidates(
             candidate(idx.to_string(), label, input, None::<String>)
         })
         .collect()
+}
+
+fn selection_surface_note(
+    surface: &crate::eval::run_control::selection_surface::SelectionSurface,
+) -> String {
+    if surface.min_choices == 0 {
+        format!(
+            "choose 0-{} from {} visible item(s); `select` chooses nothing",
+            surface.max_choices, surface.item_count
+        )
+    } else {
+        format!(
+            "choose {}-{} from {} visible item(s)",
+            surface.min_choices, surface.max_choices, surface.item_count
+        )
+    }
 }
 
 fn pending_choice_input_label(
@@ -753,7 +790,7 @@ mod tests {
     use crate::state::rewards::RewardItem;
 
     #[test]
-    fn pending_grid_select_candidates_are_visible_and_executable() {
+    fn pending_grid_select_uses_compact_selection_command() {
         let mut session = RunControlSession::new(Default::default());
         let mut combat = crate::test_support::blank_test_combat();
         combat.zones.discard_pile = vec![
@@ -779,19 +816,12 @@ mod tests {
 
         let candidates = decision_candidates(&session);
 
-        assert_eq!(candidates.len(), 2);
-        assert_eq!(candidates[0].id, "0");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id, "select");
         assert!(candidates[0]
             .label
-            .contains("Put on top of draw pile: Strike"));
-        assert_eq!(
-            candidates[0].action.executable_input(),
-            Some(ClientInput::SubmitGridSelect(vec![10]))
-        );
-        assert_eq!(
-            candidates[1].action.executable_input(),
-            Some(ClientInput::SubmitGridSelect(vec![20]))
-        );
+            .contains("Submit selection with `select <idx...>`"));
+        assert!(candidates[0].action.executable_input().is_none());
     }
 
     #[test]

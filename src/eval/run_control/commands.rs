@@ -75,6 +75,7 @@ pub enum RunControlCommand {
     },
     CardIndex(usize),
     RelicIndex(usize),
+    SelectionIndices(Vec<usize>),
     ActionIndex(usize),
     PlayCard {
         card_index: usize,

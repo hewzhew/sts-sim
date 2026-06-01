@@ -119,7 +119,10 @@ impl RunControlSession {
             RunControlCommand::CardIndex(index) => {
                 if matches!(self.engine_state, EngineState::Shop(_)) {
                     self.apply_input(ClientInput::BuyCard(index))
-                } else if matches!(self.engine_state, EngineState::RewardScreen(_)) {
+                } else if matches!(
+                    self.engine_state,
+                    EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. }
+                ) {
                     self.apply_input(ClientInput::SelectCard(index))
                 } else {
                     Err("card <idx> is only valid in shop or card reward screens".to_string())
@@ -133,6 +136,11 @@ impl RunControlSession {
                 } else {
                     Err("relic <idx> is only valid in shop or boss relic screens".to_string())
                 }
+            }
+            RunControlCommand::SelectionIndices(indices) => {
+                let input =
+                    super::super::selection_surface::resolve_selection_indices(self, indices)?;
+                self.apply_input(input)
             }
             RunControlCommand::ActionIndex(index) => {
                 let input = self.combat_action_by_index(index)?;

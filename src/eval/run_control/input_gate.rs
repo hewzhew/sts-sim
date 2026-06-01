@@ -67,6 +67,13 @@ impl RunControlSession {
     }
 
     fn current_screen_allows_extra_input(&self, input: &ClientInput) -> bool {
+        if let Some(allowed) =
+            crate::eval::run_control::selection_surface::current_selection_input_is_allowed(
+                self, input,
+            )
+        {
+            return allowed;
+        }
         match (&self.engine_state, input) {
             (
                 EngineState::CombatPlayerTurn
@@ -110,7 +117,7 @@ impl RunControlSession {
                 .can_travel_to(target_x as i32, target_y as i32, true)
     }
 
-    fn run_pending_selection_is_allowed(
+    pub(in crate::eval::run_control) fn run_pending_selection_is_allowed(
         &self,
         choice: &crate::state::core::RunPendingChoiceState,
         indices: &[usize],

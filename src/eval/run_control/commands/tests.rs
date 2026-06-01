@@ -267,4 +267,12 @@ fn run_control_parser_accepts_view_commands() {
         parse_run_control_command("case").expect("case should parse"),
         RunControlCommand::SaveDecisionCase { path: None }
     );
+    assert_eq!(
+        parse_run_control_command("select").expect("empty select should parse"),
+        RunControlCommand::SelectionIndices(Vec::new())
+    );
+    assert_eq!(
+        parse_run_control_command("select 2 4").expect("selection indices should parse"),
+        RunControlCommand::SelectionIndices(vec![2, 4])
+    );
 }

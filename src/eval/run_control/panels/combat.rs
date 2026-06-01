@@ -97,7 +97,7 @@ fn push_pending_choice_screen(session: &RunControlSession, combat: &CombatState,
             push_line(
                 out,
                 format!(
-                    "Pending selection: {:?} from {:?} | choose {}-{} | cancel={}",
+                    "Pending selection: {:?} from {:?} | choose {} to {} | cancel={}",
                     reason, source_pile, min_cards, max_cards, can_cancel
                 ),
             );
@@ -106,6 +106,7 @@ fn push_pending_choice_screen(session: &RunControlSession, combat: &CombatState,
                 grid_source_cards(combat, *source_pile),
                 candidate_uuids,
             );
+            push_selection_command(out, *min_cards as usize, *max_cards as usize, *can_cancel);
         }
         PendingChoice::HandSelect {
             candidate_uuids,
@@ -117,11 +118,12 @@ fn push_pending_choice_screen(session: &RunControlSession, combat: &CombatState,
             push_line(
                 out,
                 format!(
-                    "Pending hand selection: {:?} | choose {}-{} | cancel={}",
+                    "Pending hand selection: {:?} | choose {} to {} | cancel={}",
                     reason, min_cards, max_cards, can_cancel
                 ),
             );
             push_selection_cards(out, &combat.zones.hand, candidate_uuids);
+            push_selection_command(out, *min_cards as usize, *max_cards as usize, *can_cancel);
         }
         PendingChoice::DiscoverySelect(choice) => {
             push_line(out, "Pending discovery:");
@@ -161,6 +163,7 @@ fn push_pending_choice_screen(session: &RunControlSession, combat: &CombatState,
             for (idx, card) in cards.iter().enumerate() {
                 push_line(out, format!("  {idx} {}", reward_card_label(*card, 0)));
             }
+            push_selection_command(out, 0, cards.len(), false);
         }
         PendingChoice::StanceChoice => {
             push_line(out, "Pending stance choice:");
@@ -180,6 +183,24 @@ fn push_selection_cards(out: &mut String, cards: &[CombatCard], candidate_uuids:
             .unwrap_or_else(|| format!("card uuid {uuid}"));
         push_line(out, format!("  {idx} {label} | uuid {uuid}"));
     }
+}
+
+fn push_selection_command(
+    out: &mut String,
+    min_choices: usize,
+    max_choices: usize,
+    can_cancel: bool,
+) {
+    let mut parts = vec![format!(
+        "select <idx...> = submit {min_choices} to {max_choices}"
+    )];
+    if min_choices == 0 {
+        parts.push("select = choose nothing".to_string());
+    }
+    if can_cancel {
+        parts.push("cancel = return without selecting".to_string());
+    }
+    push_line(out, format!("Selection command: {}", parts.join(" | ")));
 }
 
 fn grid_source_cards(combat: &CombatState, source_pile: PileType) -> &[CombatCard] {
@@ -461,8 +482,8 @@ mod tests {
     use crate::runtime::combat::CombatCard;
     use crate::runtime::monster_move::{AttackSpec, BuffSpec, DamageKind};
     use crate::state::core::{
-        ActiveCombat, CombatContext, EngineState, GridSelectReason, PendingChoice,
-        RoomCombatContext,
+        ActiveCombat, CombatContext, EngineState, GridSelectReason, HandSelectReason,
+        PendingChoice, RoomCombatContext,
     };
     use crate::state::map::node::RoomType;
 
@@ -518,6 +539,47 @@ mod tests {
         assert!(rendered.contains("Pending selection: MoveToDrawPile from Discard"));
         assert!(rendered.contains("0 Strike"));
         assert!(rendered.contains("1 Defend"));
-        assert!(rendered.contains("0 | Put on top of draw pile: Strike"));
+        assert!(rendered.contains("Selection command: select <idx...> = submit 1 to 1"));
+        assert!(rendered.contains("select | Submit selection with `select <idx...>`"));
+    }
+
+    #[test]
+    fn combat_screen_uses_compact_surface_for_multi_hand_select() {
+        let mut session = RunControlSession::new(Default::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::ThunderClap, 10),
+            CombatCard::new(CardId::RecklessCharge, 20),
+            CombatCard::new(CardId::Whirlwind, 30),
+        ];
+        let choice = PendingChoice::HandSelect {
+            candidate_uuids: vec![10, 20, 30],
+            min_cards: 0,
+            max_cards: 3,
+            can_cancel: true,
+            reason: HandSelectReason::Exhaust,
+        };
+        session.engine_state = EngineState::PendingChoice(choice.clone());
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::PendingChoice(choice),
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        let rendered = crate::eval::run_control::render_run_control_state(&session);
+
+        assert!(rendered.contains("Pending hand selection: Exhaust | choose 0 to 3"));
+        assert!(rendered.contains("0 Thunderclap"));
+        assert!(rendered.contains("1 Reckless Charge"));
+        assert!(rendered.contains("2 Whirlwind"));
+        assert!(rendered.contains("select = choose nothing"));
+        assert!(rendered.contains("cancel = return without selecting"));
+        assert!(rendered.contains("select | Submit selection with `select <idx...>`"));
+        assert!(
+            !rendered.contains("Exhaust: Thunderclap, Reckless Charge"),
+            "multi-select UI must not enumerate card combinations:\n{rendered}"
+        );
     }
 }
