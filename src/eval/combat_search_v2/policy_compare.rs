@@ -4,7 +4,8 @@ use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
     compare_outcome_metrics, CombatSearchV2OutcomeMetrics, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TrajectoryReport, SearchProofStatus, SearchTerminalLabel,
+    CombatSearchV2TrajectoryReport, CombatSearchV2TurnPlanPolicy, SearchProofStatus,
+    SearchTerminalLabel,
 };
 
 use super::benchmark::{
@@ -16,21 +17,28 @@ use super::rollout_compare_attribution::{
 };
 use super::{CombatSearchV2LoadedBenchmark, CombatSearchV2RunOptions};
 
+pub type CombatSearchV2RolloutPolicyComparisonReport = CombatSearchV2PolicyComparisonReport;
+pub type CombatSearchV2RolloutPolicyComparisonSummary = CombatSearchV2PolicyComparisonSummary;
+pub type CombatSearchV2RolloutPolicyComparisonCase = CombatSearchV2PolicyComparisonCase;
+pub type CombatSearchV2RolloutPolicyComparisonVerdict = CombatSearchV2PolicyComparisonVerdict;
+pub type CombatSearchV2RolloutPolicyComparisonRun = CombatSearchV2PolicyComparisonRun;
+
 #[derive(Clone, Debug, Serialize)]
-pub struct CombatSearchV2RolloutPolicyComparisonReport {
+pub struct CombatSearchV2PolicyComparisonReport {
     pub schema_name: &'static str,
     pub schema_version: u32,
     pub benchmark_name: String,
     pub case_count: usize,
-    pub left_policy: &'static str,
-    pub right_policy: &'static str,
-    pub summary: CombatSearchV2RolloutPolicyComparisonSummary,
+    pub comparison_kind: &'static str,
+    pub left_policy: String,
+    pub right_policy: String,
+    pub summary: CombatSearchV2PolicyComparisonSummary,
     pub notes: Vec<&'static str>,
-    pub cases: Vec<CombatSearchV2RolloutPolicyComparisonCase>,
+    pub cases: Vec<CombatSearchV2PolicyComparisonCase>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
-pub struct CombatSearchV2RolloutPolicyComparisonSummary {
+pub struct CombatSearchV2PolicyComparisonSummary {
     pub cases_compared: usize,
     pub right_better: usize,
     pub left_better: usize,
@@ -40,27 +48,29 @@ pub struct CombatSearchV2RolloutPolicyComparisonSummary {
     pub both_inconclusive: usize,
     pub first_action_diff_cases: usize,
     pub right_minus_left_final_hp_total: i32,
+    pub right_minus_left_turn_plan_frontier_seeded_nodes_total: i64,
     pub first_diff_action_index_histogram: BTreeMap<String, usize>,
     pub right_better_right_role_histogram: BTreeMap<String, usize>,
     pub left_better_right_role_histogram: BTreeMap<String, usize>,
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct CombatSearchV2RolloutPolicyComparisonCase {
+pub struct CombatSearchV2PolicyComparisonCase {
     pub id: String,
-    pub verdict: CombatSearchV2RolloutPolicyComparisonVerdict,
+    pub verdict: CombatSearchV2PolicyComparisonVerdict,
     pub right_minus_left_final_hp: Option<i32>,
     pub right_minus_left_hp_loss: Option<i32>,
     pub right_minus_left_turns: Option<i32>,
     pub right_minus_left_cards_played: Option<i32>,
-    pub left: CombatSearchV2RolloutPolicyComparisonRun,
-    pub right: CombatSearchV2RolloutPolicyComparisonRun,
+    pub right_minus_left_turn_plan_frontier_seeded_nodes: i64,
+    pub left: CombatSearchV2PolicyComparisonRun,
+    pub right: CombatSearchV2PolicyComparisonRun,
     pub first_action_diff: Option<CombatSearchV2RolloutPolicyFirstActionDiff>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CombatSearchV2RolloutPolicyComparisonVerdict {
+pub enum CombatSearchV2PolicyComparisonVerdict {
     RightBetter,
     LeftBetter,
     Tied,
@@ -70,8 +80,8 @@ pub enum CombatSearchV2RolloutPolicyComparisonVerdict {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct CombatSearchV2RolloutPolicyComparisonRun {
-    pub policy: &'static str,
+pub struct CombatSearchV2PolicyComparisonRun {
+    pub policy: String,
     pub terminal: Option<SearchTerminalLabel>,
     pub proof_status: SearchProofStatus,
     pub complete_trajectory_found: bool,
@@ -86,6 +96,7 @@ pub struct CombatSearchV2RolloutPolicyComparisonRun {
     pub nodes_to_first_win: Option<u64>,
     pub deadline_hit: bool,
     pub node_budget_hit: bool,
+    pub turn_plan_frontier_seeded_nodes: u64,
 }
 
 pub fn compare_combat_search_v2_rollout_policies(
@@ -93,7 +104,7 @@ pub fn compare_combat_search_v2_rollout_policies(
     options: CombatSearchV2RunOptions,
     left_policy: CombatSearchV2RolloutPolicy,
     right_policy: CombatSearchV2RolloutPolicy,
-) -> CombatSearchV2RolloutPolicyComparisonReport {
+) -> CombatSearchV2PolicyComparisonReport {
     let mut left_options = options.clone();
     left_options.rollout_policy = Some(left_policy);
     let left = run_combat_search_v2_benchmark(loaded, left_options);
@@ -102,18 +113,65 @@ pub fn compare_combat_search_v2_rollout_policies(
     right_options.rollout_policy = Some(right_policy);
     let right = run_combat_search_v2_benchmark(loaded, right_options);
 
-    build_comparison_report(loaded, &options, left_policy, right_policy, &left, &right)
+    build_comparison_report(
+        loaded,
+        &options,
+        "rollout_policy",
+        left_policy.label(),
+        right_policy.label(),
+        &left,
+        &right,
+        vec![
+            "comparison uses best complete trajectories, not proof of optimality",
+            "first_action_diff identifies where selected best complete trajectories diverge",
+            "rollout policy affects frontier priority; action diffs are consequences, not direct rollout action labels",
+            "first_action_diff context is reconstructed by exact replay of the common prefix and is diagnostic only",
+        ],
+    )
+}
+
+pub fn compare_combat_search_v2_turn_plan_policies(
+    loaded: &CombatSearchV2LoadedBenchmark,
+    options: CombatSearchV2RunOptions,
+    left_policy: CombatSearchV2TurnPlanPolicy,
+    right_policy: CombatSearchV2TurnPlanPolicy,
+) -> CombatSearchV2PolicyComparisonReport {
+    let mut left_options = options.clone();
+    left_options.turn_plan_policy = Some(left_policy);
+    let left = run_combat_search_v2_benchmark(loaded, left_options);
+
+    let mut right_options = options.clone();
+    right_options.turn_plan_policy = Some(right_policy);
+    let right = run_combat_search_v2_benchmark(loaded, right_options);
+
+    build_comparison_report(
+        loaded,
+        &options,
+        "turn_plan_policy",
+        left_policy.label(),
+        right_policy.label(),
+        &left,
+        &right,
+        vec![
+            "comparison uses best complete trajectories, not proof of optimality",
+            "turn_plan_policy=root_frontier_seed seeds exact root turn-plan end states into frontier",
+            "seeded turn-plan states do not prune exact states and do not create terminal claims without exact replay",
+            "first_action_diff context is reconstructed by exact replay of the common prefix and is diagnostic only",
+        ],
+    )
 }
 
 fn build_comparison_report(
     loaded: &CombatSearchV2LoadedBenchmark,
     options: &CombatSearchV2RunOptions,
-    left_policy: CombatSearchV2RolloutPolicy,
-    right_policy: CombatSearchV2RolloutPolicy,
+    comparison_kind: &'static str,
+    left_policy: &'static str,
+    right_policy: &'static str,
     left: &CombatSearchV2BenchmarkReport,
     right: &CombatSearchV2BenchmarkReport,
-) -> CombatSearchV2RolloutPolicyComparisonReport {
-    let mut summary = CombatSearchV2RolloutPolicyComparisonSummary::default();
+    notes: Vec<&'static str>,
+) -> CombatSearchV2PolicyComparisonReport {
+    let mut summary = CombatSearchV2PolicyComparisonSummary::default();
     let cases = loaded
         .cases
         .iter()
@@ -135,20 +193,16 @@ fn build_comparison_report(
         })
         .collect::<Vec<_>>();
 
-    CombatSearchV2RolloutPolicyComparisonReport {
-        schema_name: "CombatSearchV2RolloutPolicyComparisonReport",
-        schema_version: 2,
+    CombatSearchV2PolicyComparisonReport {
+        schema_name: "CombatSearchV2PolicyComparisonReport",
+        schema_version: 1,
         benchmark_name: loaded.name.clone(),
         case_count: cases.len(),
-        left_policy: left_policy.label(),
-        right_policy: right_policy.label(),
+        comparison_kind,
+        left_policy: left_policy.to_string(),
+        right_policy: right_policy.to_string(),
         summary,
-        notes: vec![
-            "comparison uses best complete trajectories, not proof of optimality",
-            "first_action_diff identifies where selected best complete trajectories diverge",
-            "rollout policy affects frontier priority; action diffs are consequences, not direct rollout action labels",
-            "first_action_diff context is reconstructed by exact replay of the common prefix and is diagnostic only",
-        ],
+        notes,
         cases,
     }
 }
@@ -156,15 +210,15 @@ fn build_comparison_report(
 fn compare_case(
     loaded: &CombatSearchV2LoadedBenchmarkCase,
     options: &CombatSearchV2RunOptions,
-    left_policy: CombatSearchV2RolloutPolicy,
-    right_policy: CombatSearchV2RolloutPolicy,
+    left_policy: &'static str,
+    right_policy: &'static str,
     left: &CombatSearchV2BenchmarkCaseReport,
     right: &CombatSearchV2BenchmarkCaseReport,
-) -> CombatSearchV2RolloutPolicyComparisonCase {
+) -> CombatSearchV2PolicyComparisonCase {
     let left_trajectory = left.best_complete_trajectory.as_ref();
     let right_trajectory = right.best_complete_trajectory.as_ref();
     let verdict = compare_trajectories(left_trajectory, right_trajectory);
-    CombatSearchV2RolloutPolicyComparisonCase {
+    CombatSearchV2PolicyComparisonCase {
         id: left.id.clone(),
         verdict,
         right_minus_left_final_hp: delta_i32(
@@ -183,6 +237,11 @@ fn compare_case(
             left_trajectory.map(|trajectory| trajectory.cards_played),
             right_trajectory.map(|trajectory| trajectory.cards_played),
         ),
+        right_minus_left_turn_plan_frontier_seeded_nodes: right
+            .diagnostics
+            .turn_plan
+            .frontier_seeded_nodes as i64
+            - left.diagnostics.turn_plan.frontier_seeded_nodes as i64,
         left: summarize_run(left_policy, left),
         right: summarize_run(right_policy, right),
         first_action_diff: first_action_diff(
@@ -197,21 +256,19 @@ fn compare_case(
 fn compare_trajectories(
     left: Option<&CombatSearchV2TrajectoryReport>,
     right: Option<&CombatSearchV2TrajectoryReport>,
-) -> CombatSearchV2RolloutPolicyComparisonVerdict {
+) -> CombatSearchV2PolicyComparisonVerdict {
     match (left.filter(is_resolved), right.filter(is_resolved)) {
         (Some(left), Some(right)) => match compare_outcome_metrics(
             CombatSearchV2OutcomeMetrics::from_trajectory(right),
             CombatSearchV2OutcomeMetrics::from_trajectory(left),
         ) {
-            std::cmp::Ordering::Greater => {
-                CombatSearchV2RolloutPolicyComparisonVerdict::RightBetter
-            }
-            std::cmp::Ordering::Equal => CombatSearchV2RolloutPolicyComparisonVerdict::Tied,
-            std::cmp::Ordering::Less => CombatSearchV2RolloutPolicyComparisonVerdict::LeftBetter,
+            std::cmp::Ordering::Greater => CombatSearchV2PolicyComparisonVerdict::RightBetter,
+            std::cmp::Ordering::Equal => CombatSearchV2PolicyComparisonVerdict::Tied,
+            std::cmp::Ordering::Less => CombatSearchV2PolicyComparisonVerdict::LeftBetter,
         },
-        (None, Some(_)) => CombatSearchV2RolloutPolicyComparisonVerdict::RightOnlyComplete,
-        (Some(_), None) => CombatSearchV2RolloutPolicyComparisonVerdict::LeftOnlyComplete,
-        (None, None) => CombatSearchV2RolloutPolicyComparisonVerdict::BothInconclusive,
+        (None, Some(_)) => CombatSearchV2PolicyComparisonVerdict::RightOnlyComplete,
+        (Some(_), None) => CombatSearchV2PolicyComparisonVerdict::LeftOnlyComplete,
+        (None, None) => CombatSearchV2PolicyComparisonVerdict::BothInconclusive,
     }
 }
 
@@ -220,12 +277,12 @@ fn is_resolved(trajectory: &&CombatSearchV2TrajectoryReport) -> bool {
 }
 
 fn summarize_run(
-    policy: CombatSearchV2RolloutPolicy,
+    policy: &'static str,
     case: &CombatSearchV2BenchmarkCaseReport,
-) -> CombatSearchV2RolloutPolicyComparisonRun {
+) -> CombatSearchV2PolicyComparisonRun {
     let trajectory = case.best_complete_trajectory.as_ref();
-    CombatSearchV2RolloutPolicyComparisonRun {
-        policy: policy.label(),
+    CombatSearchV2PolicyComparisonRun {
+        policy: policy.to_string(),
         terminal: trajectory.map(|trajectory| trajectory.terminal),
         proof_status: case.outcome.proof_status,
         complete_trajectory_found: case.outcome.complete_trajectory_found,
@@ -240,31 +297,30 @@ fn summarize_run(
         nodes_to_first_win: case.stats.nodes_to_first_win,
         deadline_hit: case.stats.deadline_hit,
         node_budget_hit: case.stats.node_budget_hit,
+        turn_plan_frontier_seeded_nodes: case.diagnostics.turn_plan.frontier_seeded_nodes,
     }
 }
 
 fn observe_case(
-    summary: &mut CombatSearchV2RolloutPolicyComparisonSummary,
-    case: &CombatSearchV2RolloutPolicyComparisonCase,
+    summary: &mut CombatSearchV2PolicyComparisonSummary,
+    case: &CombatSearchV2PolicyComparisonCase,
 ) {
     summary.cases_compared += 1;
     match case.verdict {
-        CombatSearchV2RolloutPolicyComparisonVerdict::RightBetter => summary.right_better += 1,
-        CombatSearchV2RolloutPolicyComparisonVerdict::LeftBetter => summary.left_better += 1,
-        CombatSearchV2RolloutPolicyComparisonVerdict::Tied => summary.tied += 1,
-        CombatSearchV2RolloutPolicyComparisonVerdict::RightOnlyComplete => {
+        CombatSearchV2PolicyComparisonVerdict::RightBetter => summary.right_better += 1,
+        CombatSearchV2PolicyComparisonVerdict::LeftBetter => summary.left_better += 1,
+        CombatSearchV2PolicyComparisonVerdict::Tied => summary.tied += 1,
+        CombatSearchV2PolicyComparisonVerdict::RightOnlyComplete => {
             summary.right_only_complete += 1
         }
-        CombatSearchV2RolloutPolicyComparisonVerdict::LeftOnlyComplete => {
-            summary.left_only_complete += 1
-        }
-        CombatSearchV2RolloutPolicyComparisonVerdict::BothInconclusive => {
-            summary.both_inconclusive += 1
-        }
+        CombatSearchV2PolicyComparisonVerdict::LeftOnlyComplete => summary.left_only_complete += 1,
+        CombatSearchV2PolicyComparisonVerdict::BothInconclusive => summary.both_inconclusive += 1,
     }
     if let Some(delta) = case.right_minus_left_final_hp {
         summary.right_minus_left_final_hp_total += delta;
     }
+    summary.right_minus_left_turn_plan_frontier_seeded_nodes_total +=
+        case.right_minus_left_turn_plan_frontier_seeded_nodes;
     if case.first_action_diff.is_some() {
         summary.first_action_diff_cases += 1;
     }
@@ -274,20 +330,20 @@ fn observe_case(
             diff.action_index.to_string(),
         );
         match case.verdict {
-            CombatSearchV2RolloutPolicyComparisonVerdict::RightBetter
-            | CombatSearchV2RolloutPolicyComparisonVerdict::RightOnlyComplete => {
+            CombatSearchV2PolicyComparisonVerdict::RightBetter
+            | CombatSearchV2PolicyComparisonVerdict::RightOnlyComplete => {
                 if let Some(role) = diff.right_action_role {
                     increment_histogram(&mut summary.right_better_right_role_histogram, role);
                 }
             }
-            CombatSearchV2RolloutPolicyComparisonVerdict::LeftBetter
-            | CombatSearchV2RolloutPolicyComparisonVerdict::LeftOnlyComplete => {
+            CombatSearchV2PolicyComparisonVerdict::LeftBetter
+            | CombatSearchV2PolicyComparisonVerdict::LeftOnlyComplete => {
                 if let Some(role) = diff.right_action_role {
                     increment_histogram(&mut summary.left_better_right_role_histogram, role);
                 }
             }
-            CombatSearchV2RolloutPolicyComparisonVerdict::Tied
-            | CombatSearchV2RolloutPolicyComparisonVerdict::BothInconclusive => {}
+            CombatSearchV2PolicyComparisonVerdict::Tied
+            | CombatSearchV2PolicyComparisonVerdict::BothInconclusive => {}
         }
     }
 }
@@ -305,5 +361,5 @@ fn delta_u32(left: Option<u32>, right: Option<u32>) -> Option<i32> {
 }
 
 #[cfg(test)]
-#[path = "rollout_compare_tests.rs"]
+#[path = "policy_compare_tests.rs"]
 mod tests;

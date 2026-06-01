@@ -8,9 +8,9 @@ use sts_simulator::ai::combat_search_v2::{
 };
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
-    compare_combat_search_v2_rollout_policies, load_combat_search_v2_benchmark,
-    load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_v2_benchmark,
-    run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
+    compare_combat_search_v2_rollout_policies, compare_combat_search_v2_turn_plan_policies,
+    load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
+    run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
 };
 use sts_simulator::eval::fingerprint::StateFingerprintV1;
 
@@ -59,6 +59,9 @@ struct Args {
     compare_rollout: Option<String>,
 
     #[arg(long)]
+    compare_turn_plan: Option<String>,
+
+    #[arg(long)]
     explain_case: Option<String>,
 
     #[arg(long)]
@@ -97,11 +100,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.compare_rollout.is_some() && args.rollout_policy.is_some() {
         return Err("--compare-rollout cannot be combined with --rollout-policy".into());
     }
+    if args.compare_turn_plan.is_some() && args.benchmark_spec.is_none() {
+        return Err("--compare-turn-plan requires --benchmark-spec".into());
+    }
+    if args.compare_turn_plan.is_some() && args.gate_only {
+        return Err("--compare-turn-plan cannot be used with --gate-only".into());
+    }
+    if args.compare_turn_plan.is_some() && args.turn_plan_policy.is_some() {
+        return Err("--compare-turn-plan cannot be combined with --turn-plan-policy".into());
+    }
+    if args.compare_turn_plan.is_some() && args.compare_rollout.is_some() {
+        return Err("--compare-turn-plan cannot be combined with --compare-rollout".into());
+    }
     if args.explain_case.is_some() && args.benchmark_spec.is_none() {
         return Err("--explain-case requires --benchmark-spec".into());
     }
     if args.explain_case.is_some() && args.compare_rollout.is_some() {
         return Err("--explain-case cannot be combined with --compare-rollout".into());
+    }
+    if args.explain_case.is_some() && args.compare_turn_plan.is_some() {
+        return Err("--explain-case cannot be combined with --compare-turn-plan".into());
     }
     if args.explain_case.is_some() && args.gate_only {
         return Err("--explain-case cannot be combined with --gate-only".into());
@@ -132,6 +150,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(compare) = args.compare_rollout.as_deref() {
             let (left, right) = parse_rollout_policy_pair(compare)?;
             let run = compare_combat_search_v2_rollout_policies(&loaded, options, left, right);
+            serde_json::to_string_pretty(&run)?
+        } else if let Some(compare) = args.compare_turn_plan.as_deref() {
+            let (left, right) = parse_turn_plan_policy_pair(compare)?;
+            let run = compare_combat_search_v2_turn_plan_policies(&loaded, options, left, right);
             serde_json::to_string_pretty(&run)?
         } else if let Some(case_id) = args.explain_case.as_deref() {
             let case = loaded
@@ -211,6 +233,26 @@ fn parse_rollout_policy_pair(
     Ok((left, right))
 }
 
+fn parse_turn_plan_policy_pair(
+    value: &str,
+) -> Result<(CombatSearchV2TurnPlanPolicy, CombatSearchV2TurnPlanPolicy), String> {
+    let mut parts = value.split(',').map(str::trim);
+    let left = parts
+        .next()
+        .filter(|part| !part.is_empty())
+        .ok_or_else(|| "compare-turn-plan requires LEFT,RIGHT".to_string())
+        .and_then(parse_turn_plan_policy)?;
+    let right = parts
+        .next()
+        .filter(|part| !part.is_empty())
+        .ok_or_else(|| "compare-turn-plan requires LEFT,RIGHT".to_string())
+        .and_then(parse_turn_plan_policy)?;
+    if parts.next().is_some() {
+        return Err("compare-turn-plan requires exactly two comma-separated policies".to_string());
+    }
+    Ok((left, right))
+}
+
 fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
         "disabled" | "off" | "none" => Ok(CombatSearchV2RolloutPolicy::Disabled),
@@ -251,6 +293,23 @@ fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, S
         _ => Err(format!(
             "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed"
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_turn_plan_policy_pair_accepts_diagnostic_and_seed() {
+        assert_eq!(
+            parse_turn_plan_policy_pair("diagnostic_only,root_frontier_seed")
+                .expect("pair should parse"),
+            (
+                CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+                CombatSearchV2TurnPlanPolicy::RootFrontierSeed
+            )
+        );
     }
 }
 
