@@ -32,6 +32,7 @@ pub struct CombatSearchV2PolicyReport {
     pub expansion_order: &'static str,
     pub frontier_value: &'static str,
     pub turn_branching: &'static str,
+    pub turn_plan_policy: &'static str,
     pub potion_policy: &'static str,
     pub transposition_table: &'static str,
     pub dominance_pruning: &'static str,

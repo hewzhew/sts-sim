@@ -14,6 +14,7 @@ pub struct CombatSearchV2Config {
     pub rollout_policy: CombatSearchV2RolloutPolicy,
     pub rollout_max_evaluations: usize,
     pub rollout_max_actions: usize,
+    pub turn_plan_policy: CombatSearchV2TurnPlanPolicy,
 }
 
 impl Default for CombatSearchV2Config {
@@ -29,6 +30,7 @@ impl Default for CombatSearchV2Config {
             rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
             rollout_max_evaluations: super::super::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
             rollout_max_actions: super::super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
         }
     }
 }
@@ -74,5 +76,31 @@ impl CombatSearchV2RolloutPolicy {
             CombatSearchV2RolloutPolicy::ConservativeNoPotion => "conservative_no_potion",
             CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => "phase_aware_no_potion",
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2TurnPlanPolicy {
+    DiagnosticOnly,
+    RootFrontierSeed,
+}
+
+impl Default for CombatSearchV2TurnPlanPolicy {
+    fn default() -> Self {
+        Self::DiagnosticOnly
+    }
+}
+
+impl CombatSearchV2TurnPlanPolicy {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::DiagnosticOnly => "diagnostic_only",
+            Self::RootFrontierSeed => "root_frontier_seed",
+        }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn seeds_frontier(self) -> bool {
+        matches!(self, Self::RootFrontierSeed)
     }
 }

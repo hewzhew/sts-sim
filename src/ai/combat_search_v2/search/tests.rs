@@ -126,6 +126,59 @@ impl CombatStepper for PendingChoiceResolveStepper {
     }
 }
 
+#[derive(Clone, Copy)]
+struct OneCardWinStepper;
+
+impl CombatStepper for OneCardWinStepper {
+    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        if !matches!(position.engine, EngineState::CombatPlayerTurn)
+            || position.combat.zones.hand.is_empty()
+        {
+            return Vec::new();
+        }
+        vec![ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        }]
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        let mut combat = position.combat.clone();
+        let mut engine = position.engine.clone();
+        if matches!(input, ClientInput::PlayCard { .. }) {
+            if let Some(monster) = combat.entities.monsters.first_mut() {
+                monster.current_hp = 0;
+            }
+        }
+        if combat
+            .entities
+            .monsters
+            .iter()
+            .all(|monster| !monster.is_alive_for_action())
+        {
+            engine = EngineState::GameOver(crate::state::core::RunResult::Victory);
+        }
+        let position = CombatPosition::new(engine, combat);
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&position.engine, &position.combat),
+            alive: true,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
 #[test]
 fn max_potions_used_cuts_potion_branches_without_disabling_policy_all() {
     let mut combat = blank_test_combat();
@@ -241,4 +294,54 @@ fn pending_choice_contract_counts_exact_child_resolution() {
         .diagnostics
         .diagnosis
         .contains(&"pending_choice_contract_observed"));
+}
+
+#[test]
+fn root_turn_plan_frontier_seed_is_explicit_opt_in() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+        crate::content::cards::CardId::Strike,
+        100,
+    )];
+    let base_config = CombatSearchV2Config {
+        max_nodes: 1,
+        rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+        ..CombatSearchV2Config::default()
+    };
+
+    let diagnostic_only = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        base_config.clone(),
+        &OneCardWinStepper,
+    );
+    assert!(!diagnostic_only.outcome.complete_trajectory_found);
+    assert_eq!(
+        diagnostic_only.search_policy.turn_plan_policy,
+        "diagnostic_only"
+    );
+
+    let seeded = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::RootFrontierSeed,
+            ..base_config
+        },
+        &OneCardWinStepper,
+    );
+
+    assert!(seeded.outcome.complete_trajectory_found);
+    assert_eq!(seeded.stats.nodes_to_first_win, Some(1));
+    assert_eq!(seeded.diagnostics.turn_plan.frontier_seeded_nodes, 1);
+    assert_eq!(
+        seeded.diagnostics.turn_plan.behavioral_effect,
+        "root_frontier_seed_exact_end_states_no_prune_no_terminal_claim"
+    );
+    assert!(seeded
+        .diagnostics
+        .diagnosis
+        .contains(&"turn_plan_frontier_seeded"));
+    assert_eq!(seeded.search_policy.turn_plan_policy, "root_frontier_seed");
 }

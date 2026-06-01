@@ -8,7 +8,7 @@ use crate::ai::combat_search_v2::CombatSearchV2Report;
 
 pub const COMBAT_SEARCH_EVIDENCE_SCHEMA_NAME: &str = "CombatSearchEvidenceV1";
 pub const COMBAT_SEARCH_EVIDENCE_SCHEMA_VERSION: u32 = 1;
-pub const COMBAT_SEARCH_REPORT_SCHEMA_VERSION: u64 = 3;
+pub const COMBAT_SEARCH_REPORT_SCHEMA_VERSION: u64 = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CombatSearchEvidenceContextV1 {
@@ -213,7 +213,7 @@ mod tests {
             },
             "report": {
                 "schema_name": "CombatSearchV2Report",
-                "schema_version": 3,
+                "schema_version": 4,
                 "outcome": {},
                 "budget": {}
             }

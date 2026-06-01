@@ -166,6 +166,9 @@ pub(super) fn diagnosis_tags(
     if turn_plan.total_plans > 0 {
         tags.push("turn_plan_candidates_observed");
     }
+    if turn_plan.frontier_seeded_nodes > 0 {
+        tags.push("turn_plan_frontier_seeded");
+    }
     if card_identity.states_observed > 0 {
         tags.push("card_identity_diagnostics_active");
     }

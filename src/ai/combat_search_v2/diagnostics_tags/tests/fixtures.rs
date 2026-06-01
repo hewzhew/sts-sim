@@ -205,6 +205,7 @@ pub(super) fn turn_plan() -> CombatSearchV2DiagnosticsTurnPlan {
         total_inner_nodes_generated: 0,
         total_exact_state_skips: 0,
         total_truncated_children: 0,
+        frontier_seeded_nodes: 0,
         bucket_counts: Vec::new(),
         stop_reason_counts: Vec::new(),
         samples: Vec::new(),

@@ -51,7 +51,20 @@ pub fn run_combat_search_v2_with_stepper(
         stats.nodes_to_first_win = Some(0);
     }
     let root_for_turn_plan_diagnostics = root.clone();
+    let mut seeded_nodes =
+        root_turn_plan_frontier_seed(&root_for_turn_plan_diagnostics, stepper, &config, deadline);
+    diagnostics.observe_turn_plan_frontier_seeded_nodes(seeded_nodes.nodes.len());
     push_frontier(&mut frontier, root, &mut next_sequence_id);
+    for mut seed in seeded_nodes.nodes.drain(..) {
+        seed.rollout_estimate = rollout_cache.estimate(&seed, stepper, &config, deadline);
+        stats.nodes_generated = stats.nodes_generated.saturating_add(1);
+        if stats.nodes_to_first_win.is_none()
+            && terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Win
+        {
+            stats.nodes_to_first_win = Some(stats.nodes_generated);
+        }
+        push_frontier(&mut frontier, seed, &mut next_sequence_id);
+    }
 
     let mut best_complete: Option<SearchNode> = None;
     let mut best_frontier: Option<SearchNode> = None;

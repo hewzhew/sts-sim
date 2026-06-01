@@ -100,6 +100,7 @@ pub struct RunControlSearchCombatOptions {
     pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
     pub rollout_max_evaluations: Option<usize>,
     pub rollout_max_actions: Option<usize>,
+    pub turn_plan_policy: Option<crate::ai::combat_search_v2::CombatSearchV2TurnPlanPolicy>,
     pub evidence: Option<RunControlSearchEvidenceTarget>,
 }
 

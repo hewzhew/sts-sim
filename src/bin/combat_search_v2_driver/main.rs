@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::{ArgGroup, Parser};
 use sts_simulator::ai::combat_search_v2::{
     explain_combat_search_v2_initial_decision, CombatSearchV2PotionPolicy,
-    CombatSearchV2RolloutPolicy,
+    CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
@@ -67,6 +67,9 @@ struct Args {
     #[arg(long)]
     rollout_max_actions: Option<usize>,
 
+    #[arg(long, value_parser = parse_turn_plan_policy)]
+    turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
+
     #[arg(long)]
     validate_only: bool,
 
@@ -122,6 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rollout_policy: args.rollout_policy,
         rollout_max_evaluations: args.rollout_max_evaluations,
         rollout_max_actions: args.rollout_max_actions,
+        turn_plan_policy: args.turn_plan_policy,
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
         let loaded = load_combat_search_v2_benchmark(path)?;
@@ -232,6 +236,20 @@ fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String
         | "semantic_budgeted_potion_actions" => Ok(CombatSearchV2PotionPolicy::SemanticBudgeted),
         _ => Err(format!(
             "invalid potion policy '{value}', expected never|all|semantic"
+        )),
+    }
+}
+
+fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "diagnostic" | "diagnostic-only" | "diagnostic_only" | "off" => {
+            Ok(CombatSearchV2TurnPlanPolicy::DiagnosticOnly)
+        }
+        "root-seed" | "root_seed" | "root-frontier-seed" | "root_frontier_seed" | "seed" => {
+            Ok(CombatSearchV2TurnPlanPolicy::RootFrontierSeed)
+        }
+        _ => Err(format!(
+            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed"
         )),
     }
 }

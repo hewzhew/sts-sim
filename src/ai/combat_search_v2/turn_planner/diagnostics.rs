@@ -26,6 +26,7 @@ pub(in crate::ai::combat_search_v2) struct TurnPlanDiagnosticsCollector {
     total_inner_nodes_generated: u64,
     total_exact_state_skips: u64,
     total_truncated_children: u64,
+    frontier_seeded_nodes: u64,
     bucket_counts: BTreeMap<TurnPlanBucket, u64>,
     stop_reason_counts: BTreeMap<TurnPlanStopReason, u64>,
     samples: Vec<TurnPlanDiagnosticSample>,
@@ -84,7 +85,7 @@ impl TurnPlanDiagnosticsCollector {
     pub(in crate::ai::combat_search_v2) fn finish(&self) -> CombatSearchV2DiagnosticsTurnPlan {
         CombatSearchV2DiagnosticsTurnPlan {
             planning_policy: "turn_plan_v1_root_only_bounded_exact_step_enumeration",
-            behavioral_effect: "diagnostic_only_no_frontier_steering_no_prune_no_proof_claim",
+            behavioral_effect: self.behavioral_effect_label(),
             root_states_observed: self.root_states_observed,
             total_plans: self.total_plans,
             max_plans_in_state: self.max_plans_in_state,
@@ -92,6 +93,7 @@ impl TurnPlanDiagnosticsCollector {
             total_inner_nodes_generated: self.total_inner_nodes_generated,
             total_exact_state_skips: self.total_exact_state_skips,
             total_truncated_children: self.total_truncated_children,
+            frontier_seeded_nodes: self.frontier_seeded_nodes,
             bucket_counts: count_reports(&self.bucket_counts, TurnPlanBucket::label),
             stop_reason_counts: count_reports(&self.stop_reason_counts, TurnPlanStopReason::label),
             samples: self.sample_reports(),
@@ -101,6 +103,14 @@ impl TurnPlanDiagnosticsCollector {
                 "bucket selection preserves objective diversity before filling by estimate",
                 "this diagnostic is currently root-only to avoid changing search behavior or wall-clock budget",
             ],
+        }
+    }
+
+    fn behavioral_effect_label(&self) -> &'static str {
+        if self.frontier_seeded_nodes > 0 {
+            "root_frontier_seed_exact_end_states_no_prune_no_terminal_claim"
+        } else {
+            "diagnostic_only_no_frontier_steering_no_prune_no_proof_claim"
         }
     }
 
@@ -137,6 +147,10 @@ impl TurnPlanDiagnosticsCollector {
             truncated_children: enumeration.truncated_children,
             top_plans: plan_entries(&enumeration.plans),
         });
+    }
+
+    pub(in crate::ai::combat_search_v2) fn observe_frontier_seeded_nodes(&mut self, nodes: usize) {
+        self.frontier_seeded_nodes = self.frontier_seeded_nodes.saturating_add(nodes as u64);
     }
 
     fn sample_reports(&self) -> Vec<CombatSearchV2DiagnosticsTurnPlanSample> {

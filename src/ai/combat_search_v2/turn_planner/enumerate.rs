@@ -126,7 +126,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
 }
 
 fn plan_from_node(
-    node: SearchNode,
+    mut node: SearchNode,
     root_action_len: usize,
     stop_reason: TurnPlanStopReason,
 ) -> TurnPlanV1 {
@@ -139,6 +139,7 @@ fn plan_from_node(
         pending_choice_progress,
     );
     let eval = combat_eval_from_rollout_estimate(estimate);
+    node.rollout_estimate = estimate;
     TurnPlanV1 {
         actions: node.actions[root_action_len..].to_vec(),
         end_node: node,

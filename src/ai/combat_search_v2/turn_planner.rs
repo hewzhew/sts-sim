@@ -4,9 +4,11 @@
 
 mod diagnostics;
 mod enumerate;
+mod frontier_seed;
 mod types;
 
 pub(in crate::ai::combat_search_v2) use diagnostics::TurnPlanDiagnosticsCollector;
+pub(in crate::ai::combat_search_v2) use frontier_seed::root_turn_plan_frontier_seed;
 
 #[cfg(test)]
 mod tests;

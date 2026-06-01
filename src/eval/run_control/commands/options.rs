@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use crate::ai::combat_search_v2::{CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy};
+use crate::ai::combat_search_v2::{
+    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+};
 use crate::state::core::ClientInput;
 
 use super::super::reward_auto::{parse_on_off, parse_reward_automation_target};
@@ -48,6 +50,9 @@ pub(super) fn parse_search_combat_options(
             "rollout_actions" | "rollout_max_actions" => {
                 options.rollout_max_actions =
                     Some(parse_usize_value(value, "rollout_max_actions")?);
+            }
+            "turn_plan" | "turn_plan_policy" | "turn-plan-policy" => {
+                options.turn_plan_policy = Some(parse_turn_plan_policy(value)?);
             }
             "save" | "evidence" | "output" | "out" => {
                 options.evidence = Some(parse_search_evidence_target(value));
@@ -153,6 +158,20 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
         }
         _ => Err(format!(
             "invalid rollout policy '{value}', expected disabled|conservative_no_potion|phase_aware_no_potion"
+        )),
+    }
+}
+
+fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "diagnostic" | "diagnostic_only" | "diagnostic-only" | "off" => {
+            Ok(CombatSearchV2TurnPlanPolicy::DiagnosticOnly)
+        }
+        "root_seed" | "root-seed" | "root_frontier_seed" | "root-frontier-seed" | "seed" => {
+            Ok(CombatSearchV2TurnPlanPolicy::RootFrontierSeed)
+        }
+        _ => Err(format!(
+            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed"
         )),
     }
 }
