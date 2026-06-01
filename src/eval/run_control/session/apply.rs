@@ -6,7 +6,8 @@ use crate::eval::run_control::auto_capture::render_auto_capture_result;
 use crate::eval::run_control::commands::{run_control_help, RunControlCommand};
 use crate::eval::run_control::panels::{
     render_combat_zone_panel, render_deck_panel, render_full_map_panel, render_inspect_panel,
-    render_map_panel, render_potions_panel, render_relics_panel, CombatZonePanel,
+    render_map_panel, render_potions_panel, render_relics_panel, render_route_summary_panel,
+    CombatZonePanel,
 };
 use crate::eval::run_control::render::{
     render_combat_actions, render_run_control_details, render_run_control_raw,
@@ -43,6 +44,9 @@ impl RunControlSession {
             RunControlCommand::Map => Ok(RunControlCommandOutcome::message(render_map_panel(self))),
             RunControlCommand::MapFull => Ok(RunControlCommandOutcome::message(
                 render_full_map_panel(self),
+            )),
+            RunControlCommand::MapSummary => Ok(RunControlCommandOutcome::message(
+                render_route_summary_panel(self),
             )),
             RunControlCommand::RouteSuggest => Ok(RunControlCommandOutcome::message(
                 super::super::route_policy::render_route_suggestion(self),

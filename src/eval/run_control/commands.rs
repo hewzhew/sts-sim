@@ -26,6 +26,7 @@ pub enum RunControlCommand {
     Deck,
     Map,
     MapFull,
+    MapSummary,
     RouteSuggest,
     RouteGo,
     Relics,

@@ -34,6 +34,7 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "deck" => Ok(RunControlCommand::Deck),
         "map" if is_full_map_arg(rest.first()) => Ok(RunControlCommand::MapFull),
         "map" => Ok(RunControlCommand::Map),
+        "ms" | "map-summary" | "route-summary" | "routes" => Ok(RunControlCommand::MapSummary),
         "mf" | "map-full" | "full-map" => Ok(RunControlCommand::MapFull),
         "rs" | "route" | "route-suggest" | "route-suggestion" => {
             Ok(RunControlCommand::RouteSuggest)

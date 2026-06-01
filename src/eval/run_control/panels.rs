@@ -11,7 +11,7 @@ mod combat;
 mod map;
 
 pub use combat::{render_combat_zone_panel, CombatZonePanel};
-pub use map::{render_full_map_panel, render_map_panel};
+pub use map::{render_full_map_panel, render_map_panel, render_route_summary_panel};
 
 pub fn render_run_control_main(session: &RunControlSession) -> String {
     let surface = build_decision_surface(session);
@@ -188,7 +188,7 @@ fn push_visible_screen(session: &RunControlSession, out: &mut String) {
                     "Map preview: selecting a path commits travel; `back` returns to rewards.",
                 );
             } else {
-                push_line(out, "Type `map` for the visible route summary.");
+                push_line(out, "Type `map` for the full map; `ms` for route summary; `rs` for route planner evidence.");
             }
         }
         _ => {}

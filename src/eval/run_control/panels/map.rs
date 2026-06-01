@@ -9,7 +9,7 @@ use crate::state::events::EventId;
 use crate::state::map::node::{Map, MapRoomNode, RoomType};
 use std::cmp::Ordering;
 
-pub fn render_map_panel(session: &RunControlSession) -> String {
+pub fn render_route_summary_panel(session: &RunControlSession) -> String {
     let mut out = String::new();
     let navigable = session.engine_state.is_map_surface();
     push_line(
@@ -96,15 +96,18 @@ pub fn render_map_panel(session: &RunControlSession) -> String {
     if navigable {
         push_line(
             &mut out,
-            "Commands: main | mf | rs | rg | go <x> | details | raw | q",
+            "Commands: main | map | ms | rs | rg | go <x> | details | raw | q",
         );
     } else {
-        push_line(&mut out, "Commands: main | mf | rs | details | raw | q");
+        push_line(
+            &mut out,
+            "Commands: main | map | ms | rs | details | raw | q",
+        );
     }
     out
 }
 
-pub fn render_full_map_panel(session: &RunControlSession) -> String {
+pub fn render_map_panel(session: &RunControlSession) -> String {
     let mut out = String::new();
     push_line(
         &mut out,
@@ -130,15 +133,19 @@ pub fn render_full_map_panel(session: &RunControlSession) -> String {
         push_line(
             &mut out,
             if matches!(session.engine_state, EngineState::MapOverlay { .. }) {
-                "Commands: map | rs | rg | go <x> | back | details | raw | q"
+                "Commands: ms | rs | rg | go <x> | back | details | raw | q"
             } else {
-                "Commands: map | rs | rg | go <x> | details | raw | q"
+                "Commands: ms | rs | rg | go <x> | details | raw | q"
             },
         );
     } else {
-        push_line(&mut out, "Commands: map | rs | details | raw | q");
+        push_line(&mut out, "Commands: ms | rs | details | raw | q");
     }
     out
+}
+
+pub fn render_full_map_panel(session: &RunControlSession) -> String {
+    render_map_panel(session)
 }
 
 fn map_locked_note(session: &RunControlSession) -> &'static str {
@@ -248,9 +255,9 @@ mod tests {
     use crate::state::core::EngineState;
 
     #[test]
-    fn map_panel_shows_route_summary_on_demand() {
+    fn route_summary_panel_shows_route_summary_on_demand() {
         let session = test_session_after_neow_at_map();
-        let rendered = render_map_panel(&session);
+        let rendered = render_route_summary_panel(&session);
 
         assert!(rendered.contains("Map route summary"));
         assert!(rendered.contains("Start choices:"));
@@ -261,7 +268,7 @@ mod tests {
     #[test]
     fn full_map_panel_shows_complete_map_grid_on_demand() {
         let session = test_session_after_neow_at_map();
-        let rendered = render_full_map_panel(&session);
+        let rendered = render_map_panel(&session);
 
         assert!(rendered.contains("Full map to Act"));
         assert!(rendered.contains("Legend: M=Monster"));
@@ -279,7 +286,7 @@ mod tests {
             .apply_command(crate::eval::run_control::commands::RunControlCommand::DefaultCandidate)
             .expect("Neow intro should advance");
 
-        let rendered = render_full_map_panel(&session);
+        let rendered = render_map_panel(&session);
 
         assert!(rendered.contains("Full map to Act"));
         assert!(rendered.contains("Legal next:"));
@@ -287,13 +294,13 @@ mod tests {
     }
 
     #[test]
-    fn neow_map_panel_is_read_only_and_does_not_offer_go() {
+    fn neow_route_summary_panel_is_read_only_and_does_not_offer_go() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         session
             .apply_command(crate::eval::run_control::commands::RunControlCommand::DefaultCandidate)
             .expect("Neow intro should advance");
 
-        let rendered = render_map_panel(&session);
+        let rendered = render_route_summary_panel(&session);
 
         assert!(rendered.contains("Map route preview"));
         assert!(rendered.contains("first room selection is locked until Neow is complete"));

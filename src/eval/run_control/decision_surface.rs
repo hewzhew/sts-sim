@@ -196,7 +196,7 @@ fn main_command_hint(session: &RunControlSession, view: &RunControlViewModel) ->
             "draw | discard | exhaust | potions | relics | case | raw | help | q"
         }
         EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
-            "deck | map | rs | rg | relics | potions | case | raw | help | q"
+            "deck | map | ms | rs | rg | relics | potions | case | raw | help | q"
         }
         _ => "deck | map | relics | potions | case | raw | help | q",
     };
@@ -214,7 +214,9 @@ fn state_command_hint(session: &RunControlSession) -> String {
             "card-2 or card 2 | relic-1 or relic 1 | potion-0 or potion 0 | leave".to_string()
         }
         EngineState::Campfire => "rest | smith-<deck_idx> or smith <deck_idx> | recall".to_string(),
-        EngineState::MapNavigation => "type a path id, e.g. 0 or 5 | rg=route-go".to_string(),
+        EngineState::MapNavigation => {
+            "type a path id, e.g. 0 or 5 | map=full map | rg=route-go".to_string()
+        }
         EngineState::MapOverlay { .. } => {
             "type a path id to commit, or back/cancel to return".to_string()
         }

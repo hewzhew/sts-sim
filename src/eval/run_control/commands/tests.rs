@@ -232,6 +232,14 @@ fn run_control_parser_accepts_view_commands() {
         RunControlCommand::MapFull
     );
     assert_eq!(
+        parse_run_control_command("ms").expect("ms should parse"),
+        RunControlCommand::MapSummary
+    );
+    assert_eq!(
+        parse_run_control_command("map-summary").expect("map-summary should parse"),
+        RunControlCommand::MapSummary
+    );
+    assert_eq!(
         parse_run_control_command("map full").expect("map full should parse"),
         RunControlCommand::MapFull
     );
