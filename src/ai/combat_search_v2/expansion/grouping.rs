@@ -143,6 +143,7 @@ fn engine_state_label(engine: &EngineState) -> &'static str {
         EngineState::CombatStart(_) => "combat_start",
         EngineState::PendingChoice(_) => "pending_choice",
         EngineState::RewardScreen(_) => "reward_screen",
+        EngineState::RewardOverlay { .. } => "reward_overlay",
         EngineState::TreasureRoom(_) => "treasure_room",
         EngineState::Campfire => "campfire",
         EngineState::Shop(_) => "shop",

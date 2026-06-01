@@ -15,9 +15,13 @@ fn push_card_reward(
 }
 
 pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<EngineState> {
-    let mut reward_state = match return_state {
-        EngineState::RewardScreen(reward_state) => reward_state,
-        _ => crate::rewards::state::RewardState::new(),
+    let (mut reward_state, overlay_return) = match return_state {
+        EngineState::RewardScreen(reward_state) => (reward_state, None),
+        EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } => (reward_state, Some(*return_state)),
+        other => (crate::rewards::state::RewardState::new(), Some(other)),
     };
 
     for _ in 0..4 {
@@ -31,7 +35,10 @@ pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<E
         push_card_reward(run_state, &mut reward_state);
     }
 
-    Some(EngineState::RewardScreen(reward_state))
+    Some(match overlay_return {
+        Some(return_state) => EngineState::reward_overlay(reward_state, return_state),
+        None => EngineState::RewardScreen(reward_state),
+    })
 }
 
 #[cfg(test)]
@@ -54,7 +61,7 @@ mod tests {
             .expect("orrery should open reward screen");
 
         match next_state {
-            EngineState::RewardScreen(reward_state) => {
+            EngineState::RewardOverlay { reward_state, .. } => {
                 assert_eq!(reward_state.items.len(), 5);
                 for item in reward_state.items {
                     match item {
@@ -65,7 +72,7 @@ mod tests {
                     }
                 }
             }
-            other => panic!("expected reward screen, got {other:?}"),
+            other => panic!("expected reward overlay, got {other:?}"),
         }
     }
 
@@ -94,6 +101,34 @@ mod tests {
                 relic_id: RelicId::Akabeko
             }
         ));
+        assert_eq!(
+            reward_state
+                .items
+                .iter()
+                .filter(|item| matches!(item, RewardItem::Card { .. }))
+                .count(),
+            5
+        );
+    }
+
+    #[test]
+    fn orrery_from_shop_opens_reward_overlay_that_returns_to_shop() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+
+        let next_state = on_equip(
+            &mut run_state,
+            EngineState::Shop(crate::state::shop::ShopState::new()),
+        )
+        .expect("orrery should open overlay rewards from shop");
+
+        let EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } = next_state
+        else {
+            panic!("expected reward overlay");
+        };
+        assert!(matches!(*return_state, EngineState::Shop(_)));
         assert_eq!(
             reward_state
                 .items

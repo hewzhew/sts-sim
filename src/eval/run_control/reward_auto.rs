@@ -78,8 +78,10 @@ pub(super) fn apply_reward_automation(
 }
 
 fn next_auto_claim(session: &RunControlSession) -> Option<RewardAutomationClaim> {
-    let EngineState::RewardScreen(reward) = &session.engine_state else {
-        return None;
+    let reward = match &session.engine_state {
+        EngineState::RewardScreen(reward) => reward,
+        EngineState::RewardOverlay { reward_state, .. } => reward_state,
+        _ => return None,
     };
     if reward.pending_card_choice.is_some() {
         return None;

@@ -1330,6 +1330,30 @@ pub fn tick_run_active_with_observer(
             }
             true
         }
+        EngineState::RewardOverlay { .. } => {
+            let mut transition = None;
+            if let EngineState::RewardOverlay {
+                reward_state,
+                return_state,
+            } = engine_state
+            {
+                if let Some(new_state) = crate::engine::reward_handler::handle_overlay(
+                    run_state,
+                    reward_state,
+                    input.clone(),
+                    (**return_state).clone(),
+                ) {
+                    transition = Some(new_state);
+                }
+            }
+            if let Some(new_state) = transition {
+                *engine_state = new_state;
+            }
+            if resolve_out_of_combat_defeat(engine_state, run_state) {
+                return RunTickOutcome::without_finished(false);
+            }
+            true
+        }
         EngineState::BossRelicSelect(_) => {
             let mut transition = None;
             if let EngineState::BossRelicSelect(bs) = engine_state {

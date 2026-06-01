@@ -53,6 +53,7 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
             path: rest.first().map(PathBuf::from),
         }),
         "back" => Ok(RunControlCommand::Candidate("back".to_string())),
+        "bowl" | "singing-bowl" => Ok(RunControlCommand::Candidate("bowl".to_string())),
         "skip" => Ok(RunControlCommand::Candidate("skip".to_string())),
         "leave" => Ok(RunControlCommand::Candidate("leave".to_string())),
         "d" | "details" => Ok(RunControlCommand::Details),

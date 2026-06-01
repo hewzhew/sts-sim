@@ -90,6 +90,7 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
             StableFrontierScope::Unstable
         }
         EngineState::RewardScreen(_)
+        | EngineState::RewardOverlay { .. }
         | EngineState::TreasureRoom(_)
         | EngineState::Campfire
         | EngineState::Shop(_)

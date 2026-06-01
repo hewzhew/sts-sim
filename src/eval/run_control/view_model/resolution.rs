@@ -46,6 +46,7 @@ pub enum KnownEffect {
     ObtainKey(RunKey),
     RemoveCard { count: usize },
     UpgradeCard { count: usize },
+    UpgradeAllCards,
     TransformCard { count: usize },
     DuplicateCard { count: usize },
     LoseSpecificRelic { relic: RelicId, starter_only: bool },
@@ -339,6 +340,7 @@ impl KnownEffect {
             KnownEffect::ObtainKey(key) => format!("obtain {} key", key.brief()),
             KnownEffect::RemoveCard { count } => format!("remove {count} card"),
             KnownEffect::UpgradeCard { count } => format!("upgrade {count} card"),
+            KnownEffect::UpgradeAllCards => "upgrade all upgradeable cards".to_string(),
             KnownEffect::TransformCard { count } => format!("transform {count} card"),
             KnownEffect::DuplicateCard { count } => format!("duplicate {count} card"),
             KnownEffect::LoseSpecificRelic {
@@ -625,6 +627,9 @@ fn push_effect_resolution(
         EventEffect::RemoveCard { count, .. } => {
             known_effects.push(KnownEffect::RemoveCard { count: *count });
         }
+        EventEffect::UpgradeCard { count } if *count == usize::MAX => {
+            known_effects.push(KnownEffect::UpgradeAllCards);
+        }
         EventEffect::UpgradeCard { count } => {
             known_effects.push(KnownEffect::UpgradeCard { count: *count });
         }
@@ -835,5 +840,35 @@ fn selection_boundary(kind: EventSelectionKind) -> SelectionBoundary {
         EventSelectionKind::TransformCard => SelectionBoundary::TransformCard,
         EventSelectionKind::DuplicateCard => SelectionBoundary::DuplicateCard,
         EventSelectionKind::OfferCard => SelectionBoundary::OfferCard,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::events::{EventActionKind, EventChoiceMeta, EventOptionSemantics};
+
+    #[test]
+    fn all_card_upgrade_effect_does_not_leak_usize_sentinel_to_ui() {
+        let option = EventOption::new(
+            EventChoiceMeta::new("[Remember] Upgrade all cards. Obtain Mark of the Bloom."),
+            EventOptionSemantics {
+                action: EventActionKind::Accept,
+                effects: vec![EventEffect::UpgradeCard { count: usize::MAX }],
+                constraints: Vec::new(),
+                transition: EventOptionTransition::AdvanceScreen,
+                repeatable: false,
+                terminal: false,
+            },
+        );
+
+        let resolution =
+            CandidateResolution::from_event_option(&option).expect("effect should resolve");
+        let note = resolution
+            .main_note()
+            .expect("all-card upgrade should produce a visible note");
+
+        assert_eq!(note, "upgrade all upgradeable cards");
+        assert!(!note.contains(&usize::MAX.to_string()));
     }
 }

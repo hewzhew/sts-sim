@@ -11,6 +11,10 @@ pub(super) fn engine_key(engine: &EngineState) -> CombatEngineKey {
             CombatEngineKey::PendingChoice(pending_choice_key(choice))
         }
         EngineState::RewardScreen(value) => CombatEngineKey::RewardScreen(format!("{value:?}")),
+        EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } => CombatEngineKey::RewardOverlay(format!("{reward_state:?}|return={return_state:?}")),
         EngineState::TreasureRoom(value) => CombatEngineKey::TreasureRoom(format!("{value:?}")),
         EngineState::Campfire => CombatEngineKey::Campfire,
         EngineState::Shop(value) => CombatEngineKey::Shop(format!("{value:?}")),

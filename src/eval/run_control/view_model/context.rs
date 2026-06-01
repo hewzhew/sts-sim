@@ -10,7 +10,8 @@ pub(super) fn decision_context(session: &RunControlSession) -> Vec<String> {
     match &session.engine_state {
         EngineState::EventRoom => event_context(session),
         EngineState::MapNavigation | EngineState::MapOverlay { .. } => map_context(session),
-        EngineState::RewardScreen(reward) => reward_context(reward),
+        EngineState::RewardScreen(reward) => reward_context(reward, false),
+        EngineState::RewardOverlay { reward_state, .. } => reward_context(reward_state, true),
         EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
         | EngineState::PendingChoice(_) => combat_context(session),
@@ -108,19 +109,28 @@ fn map_context(session: &RunControlSession) -> Vec<String> {
     ]
 }
 
-fn reward_context(reward: &RewardState) -> Vec<String> {
+fn reward_context(reward: &RewardState, overlay: bool) -> Vec<String> {
     if let Some(cards) = reward.pending_card_choice.as_ref() {
+        let destination = if overlay {
+            "overlay reward screen"
+        } else {
+            "reward screen"
+        };
         return vec![format!(
-            "Reward cards: {} options | back returns to reward screen without consuming the card reward",
+            "Reward cards: {} options | back returns to {destination} without consuming the card reward",
             cards.len()
         )];
     }
-    vec![format!(
+    let mut context = vec![format!(
         "Rewards: items={} | skippable={} | context={:?}",
         reward.items.len(),
         reward.skippable,
         reward.screen_context
-    )]
+    )];
+    if overlay {
+        context.push("Overlay reward: returning abandons unclaimed overlay rewards.".to_string());
+    }
+    context
 }
 
 fn combat_context(session: &RunControlSession) -> Vec<String> {

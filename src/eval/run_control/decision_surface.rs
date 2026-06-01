@@ -141,6 +141,11 @@ fn candidate_section_title(session: &RunControlSession) -> &'static str {
         EngineState::PendingChoice(_) => "Selections:",
         EngineState::CombatPlayerTurn | EngineState::CombatProcessing => "Actions:",
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => "Choices:",
+        EngineState::RewardOverlay { reward_state, .. }
+            if reward_state.pending_card_choice.is_some() =>
+        {
+            "Choices:"
+        }
         EngineState::MapNavigation | EngineState::MapOverlay { .. } => "Paths:",
         _ => "Available actions:",
     }
@@ -198,6 +203,12 @@ fn state_command_hint(session: &RunControlSession) -> String {
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             "type visible id to take card, or back".to_string()
         }
+        EngineState::RewardOverlay { reward_state, .. }
+            if reward_state.pending_card_choice.is_some() =>
+        {
+            "type visible id to take card, bowl, or back".to_string()
+        }
+        EngineState::RewardOverlay { .. } => "type visible id, bowl, or back".to_string(),
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
         EngineState::PendingChoice(_) => "type visible selection id".to_string(),
         EngineState::CombatPlayerTurn | EngineState::CombatProcessing => {

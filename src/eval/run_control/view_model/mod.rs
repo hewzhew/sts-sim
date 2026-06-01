@@ -201,6 +201,12 @@ fn decision_title(session: &RunControlSession) -> String {
         }
         EngineState::MapNavigation => "Map".to_string(),
         EngineState::MapOverlay { .. } => "Map Preview".to_string(),
+        EngineState::RewardOverlay { reward_state, .. }
+            if reward_state.pending_card_choice.is_some() =>
+        {
+            "Card Reward".to_string()
+        }
+        EngineState::RewardOverlay { .. } => "Reward Overlay".to_string(),
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             "Card Reward".to_string()
         }
@@ -249,6 +255,18 @@ fn decision_summary(session: &RunControlSession) -> DecisionSummary {
         },
         EngineState::MapOverlay { .. } => DecisionSummary {
             label: "Preview the map; choose a room to commit or go back to rewards.".to_string(),
+            status: None,
+        },
+        EngineState::RewardOverlay { reward_state, .. }
+            if reward_state.pending_card_choice.is_some() =>
+        {
+            DecisionSummary {
+                label: "Choose a card or return to the overlay reward screen.".to_string(),
+                status: None,
+            }
+        }
+        EngineState::RewardOverlay { .. } => DecisionSummary {
+            label: "Claim overlay rewards or return to the previous screen.".to_string(),
             status: None,
         },
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {

@@ -1,4 +1,5 @@
 use crate::content::potions::get_potion_definition;
+use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice, PileType};
@@ -16,7 +17,11 @@ pub(super) fn decision_candidates(session: &RunControlSession) -> Vec<DecisionCa
     match &session.engine_state {
         EngineState::EventRoom => event_candidates(session),
         EngineState::MapNavigation | EngineState::MapOverlay { .. } => map_candidates(session),
-        EngineState::RewardScreen(reward) => reward_candidates(session, reward),
+        EngineState::RewardScreen(reward) => reward_candidates(session, reward, None),
+        EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } => reward_candidates(session, reward_state, Some(return_state.as_ref())),
         EngineState::TreasureRoom(_) => {
             vec![candidate(
                 "open",
@@ -162,7 +167,11 @@ fn with_map_overlay_back_candidate(
     candidates
 }
 
-fn reward_candidates(session: &RunControlSession, reward: &RewardState) -> Vec<DecisionCandidate> {
+fn reward_candidates(
+    session: &RunControlSession,
+    reward: &RewardState,
+    overlay_return_state: Option<&EngineState>,
+) -> Vec<DecisionCandidate> {
     if let Some(cards) = reward.pending_card_choice.as_ref() {
         let mut candidates = cards
             .iter()
@@ -178,6 +187,19 @@ fn reward_candidates(session: &RunControlSession, reward: &RewardState) -> Vec<D
                 candidate
             })
             .collect::<Vec<_>>();
+        if session
+            .run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::SingingBowl)
+        {
+            candidates.push(candidate(
+                "bowl",
+                "Singing Bowl | gain 2 max HP",
+                ClientInput::SelectCard(cards.len()),
+                Some("consume this card reward instead of taking a card"),
+            ));
+        }
         candidates.push(candidate(
             "back",
             "Back to reward screen",
@@ -204,17 +226,47 @@ fn reward_candidates(session: &RunControlSession, reward: &RewardState) -> Vec<D
         })
         .collect::<Vec<_>>();
     if reward.skippable {
-        let (label, note) = if reward.items.is_empty() {
-            ("Leave reward screen", Some("routine"))
+        let (id, label, note, input) = if let Some(return_state) = overlay_return_state {
+            (
+                "back",
+                reward_overlay_return_label(return_state),
+                if reward.items.is_empty() {
+                    Some("routine")
+                } else {
+                    Some("unclaimed overlay rewards are abandoned")
+                },
+                ClientInput::Cancel,
+            )
+        } else if reward.items.is_empty() {
+            (
+                "skip",
+                "Leave reward screen".to_string(),
+                Some("routine"),
+                ClientInput::Proceed,
+            )
         } else {
             (
-                "Open map preview",
+                "skip",
+                "Open map preview".to_string(),
                 Some("unclaimed rewards remain until a path is chosen"),
+                ClientInput::Proceed,
             )
         };
-        candidates.push(candidate("skip", label, ClientInput::Proceed, note));
+        candidates.push(candidate(id, label, input, note));
     }
     candidates
+}
+
+fn reward_overlay_return_label(return_state: &EngineState) -> String {
+    match return_state {
+        EngineState::Shop(_) => "Return to shop".to_string(),
+        EngineState::EventRoom => "Return to event".to_string(),
+        EngineState::Campfire => "Return to campfire".to_string(),
+        EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => {
+            "Return to reward screen".to_string()
+        }
+        _ => "Return to previous screen".to_string(),
+    }
 }
 
 fn campfire_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
@@ -692,11 +744,13 @@ fn boss_relic_candidates(choice: &BossRelicChoiceState) -> Vec<DecisionCandidate
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{
         ActiveCombat, CombatContext, GridSelectReason, PendingChoice, RoomCombatContext,
     };
     use crate::state::map::node::RoomType;
+    use crate::state::rewards::RewardItem;
 
     #[test]
     fn pending_grid_select_candidates_are_visible_and_executable() {
@@ -738,5 +792,53 @@ mod tests {
             candidates[1].action.executable_input(),
             Some(ClientInput::SubmitGridSelect(vec![20]))
         );
+    }
+
+    #[test]
+    fn singing_bowl_card_reward_candidate_is_visible_and_executable() {
+        let mut session = RunControlSession::new(Default::default());
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::SingingBowl));
+        let mut reward = RewardState::new();
+        reward.pending_card_choice = Some(vec![crate::state::rewards::RewardCard::new(
+            CardId::PommelStrike,
+            0,
+        )]);
+        reward.pending_card_reward_index = Some(0);
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let candidates = decision_candidates(&session);
+
+        let bowl = candidates
+            .iter()
+            .find(|candidate| candidate.id == "bowl")
+            .expect("Singing Bowl should appear as a visible card reward option");
+        assert_eq!(
+            bowl.action.executable_input(),
+            Some(ClientInput::SelectCard(1))
+        );
+        assert!(bowl.label.contains("gain 2 max HP"));
+    }
+
+    #[test]
+    fn reward_overlay_uses_return_candidate_instead_of_map_preview_skip() {
+        let mut session = RunControlSession::new(Default::default());
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Gold { amount: 25 }];
+        session.engine_state = EngineState::reward_overlay(
+            reward,
+            EngineState::Shop(crate::state::shop::ShopState::new()),
+        );
+
+        let candidates = decision_candidates(&session);
+
+        assert!(candidates.iter().any(|candidate| {
+            candidate.id == "back"
+                && candidate.label == "Return to shop"
+                && candidate.action.executable_input() == Some(ClientInput::Cancel)
+        }));
+        assert!(!candidates.iter().any(|candidate| candidate.id == "skip"));
     }
 }

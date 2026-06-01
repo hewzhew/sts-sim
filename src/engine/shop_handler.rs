@@ -229,36 +229,20 @@ pub fn handle(
                 if idx < shop.relics.len() && run_state.gold >= shop.relics[idx].price {
                     let purchased = shop.relics.remove(idx);
                     run_state.change_gold_with_source(-purchased.price, DomainEventSource::Shop);
-                    if let Some(next_state) = run_state.obtain_relic_with_source(
+                    let next_state = run_state.obtain_relic_with_source(
                         purchased.relic_id,
                         EngineState::Shop(shop.clone()),
                         DomainEventSource::Shop,
-                    ) {
-                        return Some(next_state);
-                    }
+                    );
 
-                    if purchased.relic_id == RelicId::MembershipCard {
-                        apply_shop_discount(
-                            shop,
-                            0.5,
-                            true,
-                            has_relic(run_state, RelicId::SmilingMask),
-                            base_purge_cost(run_state),
-                        );
-                    }
-                    if purchased.relic_id == RelicId::SmilingMask {
-                        shop.purge_cost = 50;
-                    }
-                    if matches!(
+                    apply_post_relic_purchase_shop_updates(
+                        run_state,
+                        shop,
                         purchased.relic_id,
-                        RelicId::MoltenEgg | RelicId::ToxicEgg | RelicId::FrozenEgg
-                    ) {
-                        preview_shop_cards_after_relic_purchase(run_state, shop);
-                    }
-                    if purchased.relic_id == RelicId::Courier
-                        || has_relic(run_state, RelicId::Courier)
-                    {
-                        replace_shop_relic_slot(run_state, shop, idx);
+                        idx,
+                    );
+                    if let Some(next_state) = next_state {
+                        return Some(with_updated_shop_return_state(next_state, shop.clone()));
                     }
                 }
             }
@@ -309,6 +293,58 @@ pub fn handle(
         }
     }
     None
+}
+
+fn apply_post_relic_purchase_shop_updates(
+    run_state: &mut RunState,
+    shop: &mut ShopState,
+    purchased_relic_id: RelicId,
+    purchased_slot: usize,
+) {
+    if purchased_relic_id == RelicId::MembershipCard {
+        apply_shop_discount(
+            shop,
+            0.5,
+            true,
+            has_relic(run_state, RelicId::SmilingMask),
+            base_purge_cost(run_state),
+        );
+    }
+    if purchased_relic_id == RelicId::SmilingMask {
+        shop.purge_cost = 50;
+    }
+    if matches!(
+        purchased_relic_id,
+        RelicId::MoltenEgg | RelicId::ToxicEgg | RelicId::FrozenEgg
+    ) {
+        preview_shop_cards_after_relic_purchase(run_state, shop);
+    }
+    if purchased_relic_id == RelicId::Courier || has_relic(run_state, RelicId::Courier) {
+        replace_shop_relic_slot(run_state, shop, purchased_slot);
+    }
+}
+
+fn with_updated_shop_return_state(state: EngineState, updated_shop: ShopState) -> EngineState {
+    match state {
+        EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } => {
+            let return_state = if matches!(*return_state, EngineState::Shop(_)) {
+                EngineState::Shop(updated_shop)
+            } else {
+                *return_state
+            };
+            EngineState::reward_overlay(reward_state, return_state)
+        }
+        EngineState::RunPendingChoice(mut choice)
+            if matches!(*choice.return_state, EngineState::Shop(_)) =>
+        {
+            choice.return_state = Box::new(EngineState::Shop(updated_shop));
+            EngineState::RunPendingChoice(choice)
+        }
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -460,6 +496,47 @@ mod tests {
             .find(|relic| relic.id == RelicId::Omamori)
             .expect("Omamori should remain after blocking shop curse");
         assert_eq!(omamori.counter, 1);
+    }
+
+    #[test]
+    fn buying_orrery_returns_to_updated_shop_after_overlay_rewards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 500;
+        let mut shop = ShopState::new();
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::Orrery,
+            price: 150,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyRelic(0)))
+            .expect("Orrery should open an overlay reward screen");
+
+        let EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } = next
+        else {
+            panic!("expected reward overlay");
+        };
+        assert_eq!(run_state.gold, 350);
+        assert_eq!(shop.relics.len(), 0);
+        assert_eq!(
+            reward_state
+                .items
+                .iter()
+                .filter(|item| matches!(item, crate::state::rewards::RewardItem::Card { .. }))
+                .count(),
+            5
+        );
+        let EngineState::Shop(return_shop) = *return_state else {
+            panic!("Orrery overlay should return to shop");
+        };
+        assert!(
+            return_shop.relics.is_empty(),
+            "returning to shop must not resurrect the purchased Orrery slot"
+        );
     }
 
     #[test]

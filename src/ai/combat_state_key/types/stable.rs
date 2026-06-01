@@ -14,6 +14,10 @@ pub(crate) enum StableEngineKey {
     CombatProcessing,
     PendingChoice(StablePendingChoiceKey),
     Reward(StableRewardKey),
+    RewardOverlay {
+        reward: StableRewardKey,
+        return_state: StableRunPendingReturnKey,
+    },
     TreasureRoom(StableTreasureChestKey),
     Campfire,
     Shop(StableShopKey),
@@ -149,6 +153,14 @@ impl StableEngineKey {
                 format!("pending_choice:{}", value.diagnostic_string())
             }
             StableEngineKey::Reward(value) => format!("reward:{}", value.diagnostic_string()),
+            StableEngineKey::RewardOverlay {
+                reward,
+                return_state,
+            } => format!(
+                "reward_overlay:{}:return{}",
+                reward.diagnostic_string(),
+                return_state.diagnostic_string()
+            ),
             StableEngineKey::TreasureRoom(value) => {
                 format!("treasure:{}", value.diagnostic_string())
             }

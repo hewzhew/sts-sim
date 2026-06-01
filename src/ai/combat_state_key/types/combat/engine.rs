@@ -6,6 +6,7 @@ pub(crate) enum CombatEngineKey {
     CombatProcessing,
     PendingChoice(CombatPendingChoiceKey),
     RewardScreen(String),
+    RewardOverlay(String),
     TreasureRoom(String),
     Campfire,
     Shop(String),

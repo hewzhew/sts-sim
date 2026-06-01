@@ -129,6 +129,13 @@ pub(super) fn stable_run_pending_return_key(state: &EngineState) -> StableRunPen
         EngineState::RewardScreen(reward) => {
             StableRunPendingReturnKey::Reward(stable_reward_key(reward))
         }
+        EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } => StableRunPendingReturnKey::RewardOverlay {
+            reward: stable_reward_key(reward_state),
+            return_state: Box::new(stable_run_pending_return_key(return_state)),
+        },
         EngineState::TreasureRoom(chest) => {
             StableRunPendingReturnKey::TreasureRoom(stable_treasure_chest_key(chest))
         }

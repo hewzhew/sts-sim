@@ -216,6 +216,22 @@ fn auto_advance_candidate<'a>(
                 });
         }
     }
+    if let EngineState::RewardOverlay { reward_state, .. } = &session.engine_state {
+        if reward_state.pending_card_choice.is_none()
+            && reward_state.items.is_empty()
+            && reward_state.skippable
+        {
+            return view
+                .candidates
+                .iter()
+                .find(|candidate| candidate.action.executable_input() == Some(ClientInput::Cancel))
+                .map(|candidate| AutoAdvanceCandidate {
+                    candidate,
+                    class: AutoAdvanceClass::Routine,
+                    reason: "empty overlay reward screen",
+                });
+        }
+    }
 
     if view.candidates.len() == 1
         && view.candidates[0].note.as_deref() == Some("routine")
@@ -266,6 +282,13 @@ fn classify_single_executable_candidate(
             if reward.pending_card_choice.is_none()
                 && reward.items.is_empty()
                 && candidate.action.executable_input() == Some(ClientInput::Proceed) =>
+        {
+            AutoAdvanceClass::Routine
+        }
+        EngineState::RewardOverlay { reward_state, .. }
+            if reward_state.pending_card_choice.is_none()
+                && reward_state.items.is_empty()
+                && candidate.action.executable_input() == Some(ClientInput::Cancel) =>
         {
             AutoAdvanceClass::Routine
         }
@@ -339,17 +362,34 @@ fn human_stop_reason(session: &RunControlSession) -> String {
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             "card reward requires human choice".to_string()
         }
+        EngineState::RewardOverlay { reward_state, .. }
+            if reward_state.pending_card_choice.is_some() =>
+        {
+            "card reward requires human choice".to_string()
+        }
         EngineState::RewardScreen(reward) if reward_has_card_item(reward) => {
+            "card reward requires human choice".to_string()
+        }
+        EngineState::RewardOverlay { reward_state, .. } if reward_has_card_item(reward_state) => {
             "card reward requires human choice".to_string()
         }
         EngineState::RewardScreen(reward) if reward_has_relic_item(reward) => {
             "relic reward requires human choice".to_string()
         }
+        EngineState::RewardOverlay { reward_state, .. } if reward_has_relic_item(reward_state) => {
+            "relic reward requires human choice".to_string()
+        }
         EngineState::RewardScreen(reward) if !reward.items.is_empty() => {
             "remaining reward requires human choice".to_string()
         }
+        EngineState::RewardOverlay { reward_state, .. } if !reward_state.items.is_empty() => {
+            "remaining overlay reward requires human choice".to_string()
+        }
         EngineState::RewardScreen(_) => {
             "reward screen cannot be advanced automatically".to_string()
+        }
+        EngineState::RewardOverlay { .. } => {
+            "overlay reward screen cannot be advanced automatically".to_string()
         }
         EngineState::TreasureRoom(_) => {
             "treasure room is not at an executable routine boundary".to_string()

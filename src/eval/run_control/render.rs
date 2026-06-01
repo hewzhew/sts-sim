@@ -70,6 +70,13 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
         }
         EngineState::EventRoom => render_event_state(session, &mut out),
         EngineState::RewardScreen(reward) => render_reward_state(reward, &mut out),
+        EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } => {
+            push_line(&mut out, format!("reward_overlay_return={return_state:?}"));
+            render_reward_state(reward_state, &mut out);
+        }
         EngineState::TreasureRoom(chest) => {
             push_line(&mut out, format!("treasure={chest:?} command=open"));
         }

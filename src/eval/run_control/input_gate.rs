@@ -92,6 +92,9 @@ impl RunControlSession {
             (EngineState::RewardScreen(reward), ClientInput::Cancel) => {
                 reward.skippable || reward.pending_card_choice.is_some()
             }
+            (EngineState::RewardOverlay { reward_state, .. }, ClientInput::Cancel) => {
+                reward_state.skippable || reward_state.pending_card_choice.is_some()
+            }
             _ => false,
         }
     }
@@ -153,6 +156,7 @@ impl RunControlSession {
                 | EngineState::MapOverlay { .. }
                 | EngineState::EventRoom
                 | EngineState::RewardScreen(_)
+                | EngineState::RewardOverlay { .. }
                 | EngineState::TreasureRoom(_)
                 | EngineState::Campfire
                 | EngineState::Shop(_)

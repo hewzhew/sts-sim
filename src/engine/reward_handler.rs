@@ -43,14 +43,60 @@ fn reward_map_overlay_or_post_reward_state(
     }
 }
 
+fn reward_done_state(
+    run_state: &mut RunState,
+    overlay_return_state: Option<EngineState>,
+) -> EngineState {
+    overlay_return_state.unwrap_or_else(|| post_reward_state(run_state))
+}
+
+fn reward_exit_state(
+    run_state: &mut RunState,
+    reward_state: &RewardState,
+    overlay_return_state: Option<EngineState>,
+) -> EngineState {
+    overlay_return_state
+        .unwrap_or_else(|| reward_map_overlay_or_post_reward_state(run_state, reward_state))
+}
+
+fn current_reward_surface_state(
+    reward_state: &RewardState,
+    overlay_return_state: Option<&EngineState>,
+) -> EngineState {
+    match overlay_return_state {
+        Some(return_state) => {
+            EngineState::reward_overlay(reward_state.clone(), return_state.clone())
+        }
+        None => EngineState::RewardScreen(reward_state.clone()),
+    }
+}
+
 pub fn handle(
     run_state: &mut crate::state::run::RunState,
     reward_state: &mut crate::state::rewards::RewardState,
     input: Option<crate::state::core::ClientInput>,
 ) -> Option<crate::state::core::EngineState> {
+    handle_internal(run_state, reward_state, input, None)
+}
+
+pub fn handle_overlay(
+    run_state: &mut crate::state::run::RunState,
+    reward_state: &mut crate::state::rewards::RewardState,
+    input: Option<crate::state::core::ClientInput>,
+    return_state: EngineState,
+) -> Option<crate::state::core::EngineState> {
+    handle_internal(run_state, reward_state, input, Some(return_state))
+}
+
+fn handle_internal(
+    run_state: &mut crate::state::run::RunState,
+    reward_state: &mut crate::state::rewards::RewardState,
+    input: Option<crate::state::core::ClientInput>,
+    overlay_return_state: Option<EngineState>,
+) -> Option<crate::state::core::EngineState> {
     // If we're in card choice mode, handle that first
     if reward_state.pending_card_choice.is_some() {
-        return handle_card_choice(run_state, reward_state, input);
+        return handle_card_choice(run_state, reward_state, input, overlay_return_state);
     }
 
     if let Some(in_val) = input {
@@ -93,7 +139,10 @@ pub fn handle(
                         }
                         RewardItem::Relic { relic_id: id } => {
                             remove_linked_sapphire_key_after_claiming_relic(reward_state, idx);
-                            let return_state = EngineState::RewardScreen(reward_state.clone());
+                            let return_state = current_reward_surface_state(
+                                reward_state,
+                                overlay_return_state.as_ref(),
+                            );
                             if let Some(next_state) = run_state.obtain_relic_with_source(
                                 id,
                                 return_state,
@@ -138,14 +187,15 @@ pub fn handle(
                     }
                 }
                 if reward_state.items.is_empty() && reward_state.pending_card_choice.is_none() {
-                    return Some(post_reward_state(run_state));
+                    return Some(reward_done_state(run_state, overlay_return_state));
                 }
             }
             crate::state::core::ClientInput::Proceed | crate::state::core::ClientInput::Cancel => {
                 if reward_state.skippable {
-                    return Some(reward_map_overlay_or_post_reward_state(
+                    return Some(reward_exit_state(
                         run_state,
                         reward_state,
+                        overlay_return_state,
                     ));
                 }
             }
@@ -161,10 +211,12 @@ fn handle_card_choice(
     run_state: &mut RunState,
     reward_state: &mut RewardState,
     input: Option<ClientInput>,
+    overlay_return_state: Option<EngineState>,
 ) -> Option<EngineState> {
     if let Some(in_val) = input {
         match in_val {
             ClientInput::SelectCard(idx) => {
+                let mut resolved_choice = false;
                 if let Some(ref cards) = reward_state.pending_card_choice {
                     if idx < cards.len() {
                         let reward_card = &cards[idx];
@@ -173,6 +225,7 @@ fn handle_card_choice(
                             reward_card.upgrades,
                             DomainEventSource::RewardScreen,
                         );
+                        resolved_choice = true;
                     } else if idx == cards.len() {
                         // SingingBowl: extra option at index == cards.len()
                         // Choosing this gives +2 Max HP instead of a card
@@ -186,14 +239,18 @@ fn handle_card_choice(
                                 2,
                                 DomainEventSource::RewardScreen,
                             );
+                            resolved_choice = true;
                         }
                     }
+                }
+                if !resolved_choice {
+                    return None;
                 }
                 reward_state.pending_card_choice = None;
                 remove_pending_card_reward(reward_state);
                 // Stay in RewardScreen — if no more items, proceed
                 if reward_state.items.is_empty() {
-                    return Some(post_reward_state(run_state));
+                    return Some(reward_done_state(run_state, overlay_return_state));
                 }
             }
             ClientInput::Proceed | ClientInput::Cancel => {
@@ -258,6 +315,7 @@ mod tests {
     use crate::state::rewards::{RewardItem, RewardState};
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
+    use crate::state::shop::ShopState;
 
     #[test]
     fn interrupting_relic_claim_preserves_remaining_reward_screen_items() {
@@ -421,6 +479,98 @@ mod tests {
             .master_deck
             .iter()
             .any(|card| card.id == CardId::PommelStrike));
+    }
+
+    #[test]
+    fn singing_bowl_card_reward_option_consumes_reward_and_grants_max_hp() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.push(RelicState::new(RelicId::SingingBowl));
+        let max_hp_before = run_state.max_hp;
+        let deck_len_before = run_state.master_deck.len();
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Card {
+            cards: vec![crate::state::rewards::RewardCard::new(
+                CardId::PommelStrike,
+                0,
+            )],
+        }];
+
+        handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(0)),
+        );
+        let next = handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::SelectCard(1)),
+        )
+        .expect("last reward should finish reward screen");
+
+        assert_eq!(run_state.max_hp, max_hp_before + 2);
+        assert_eq!(
+            run_state.master_deck.len(),
+            deck_len_before,
+            "Singing Bowl should not add the offered card"
+        );
+        assert!(reward_state.items.is_empty());
+        assert!(matches!(next, EngineState::MapNavigation));
+    }
+
+    #[test]
+    fn overlay_card_reward_returns_to_shop_after_last_card_choice() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Card {
+            cards: vec![crate::state::rewards::RewardCard::new(
+                CardId::PommelStrike,
+                0,
+            )],
+        }];
+        let shop_return = EngineState::Shop(ShopState::new());
+
+        assert!(super::handle_overlay(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(0)),
+            shop_return.clone(),
+        )
+        .is_none());
+        assert!(reward_state.pending_card_choice.is_some());
+
+        let next = super::handle_overlay(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::SelectCard(0)),
+            shop_return,
+        )
+        .expect("last overlay reward should return to parent screen");
+
+        assert!(matches!(next, EngineState::Shop(_)));
+        assert!(reward_state.items.is_empty());
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::PommelStrike));
+    }
+
+    #[test]
+    fn overlay_cancel_returns_to_shop_without_opening_map_preview() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Gold { amount: 25 }];
+
+        let next = super::handle_overlay(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::Cancel),
+            EngineState::Shop(ShopState::new()),
+        )
+        .expect("overlay cancel should return to the parent screen");
+
+        assert!(matches!(next, EngineState::Shop(_)));
+        assert_eq!(run_state.gold, 99);
+        assert_eq!(reward_state.items, vec![RewardItem::Gold { amount: 25 }]);
     }
 
     #[test]

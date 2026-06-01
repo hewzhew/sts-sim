@@ -173,17 +173,12 @@ fn push_visible_screen(session: &RunControlSession, out: &mut String) {
         | EngineState::CombatProcessing
         | EngineState::PendingChoice(_) => combat::push_combat_screen(session, out),
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
-            if let Some(cards) = reward.pending_card_choice.as_ref() {
-                push_line(out, "");
-                push_line(out, "Cards:");
-                for (idx, card) in cards.iter().enumerate() {
-                    push_line(
-                        out,
-                        format!("  {idx} {}", reward_card_brief(card.id, card.upgrades)),
-                    );
-                }
-                push_line(out, "  back Return to reward screen");
-            }
+            push_reward_card_choice_screen(reward, "reward screen", session, out);
+        }
+        EngineState::RewardOverlay { reward_state, .. }
+            if reward_state.pending_card_choice.is_some() =>
+        {
+            push_reward_card_choice_screen(reward_state, "overlay reward screen", session, out);
         }
         EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
             push_line(out, "");
@@ -304,9 +299,46 @@ fn inspect_card_for_visible_candidate(session: &RunControlSession, id: &str) -> 
                 card.upgrades,
             ))
         }
+        EngineState::RewardOverlay { reward_state, .. } => {
+            let cards = reward_state.pending_card_choice.as_ref()?;
+            let card = cards.get(idx)?;
+            Some(card_detail(
+                &reward_card_label(card.id, card.upgrades),
+                card.id,
+                card.upgrades,
+            ))
+        }
         EngineState::RunPendingChoice(_) => inspect_deck_card(session, idx),
         _ => None,
     }
+}
+
+fn push_reward_card_choice_screen(
+    reward: &crate::state::rewards::RewardState,
+    back_destination: &str,
+    session: &RunControlSession,
+    out: &mut String,
+) {
+    let Some(cards) = reward.pending_card_choice.as_ref() else {
+        return;
+    };
+    push_line(out, "");
+    push_line(out, "Cards:");
+    for (idx, card) in cards.iter().enumerate() {
+        push_line(
+            out,
+            format!("  {idx} {}", reward_card_brief(card.id, card.upgrades)),
+        );
+    }
+    if session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == crate::content::relics::RelicId::SingingBowl)
+    {
+        push_line(out, "  bowl Singing Bowl | gain 2 max HP");
+    }
+    push_line(out, format!("  back Return to {back_destination}"));
 }
 
 fn inspect_card_reference(session: &RunControlSession, id: &str) -> Option<String> {

@@ -157,6 +157,7 @@ pub fn stable_boundary(engine: &EngineState, combat: &CombatState) -> bool {
         EngineState::CombatProcessing => false,
         EngineState::CombatStart(_) => false,
         EngineState::RewardScreen(_)
+        | EngineState::RewardOverlay { .. }
         | EngineState::TreasureRoom(_)
         | EngineState::Campfire
         | EngineState::Shop(_)

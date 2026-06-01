@@ -95,6 +95,13 @@ fn stable_combat_engine_key(engine: &EngineState, combat: &CombatState) -> Stabl
 fn stable_postcombat_engine_key(engine: &EngineState, combat: &CombatState) -> StableEngineKey {
     match engine {
         EngineState::RewardScreen(reward) => StableEngineKey::Reward(stable_reward_key(reward)),
+        EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } => StableEngineKey::RewardOverlay {
+            reward: stable_reward_key(reward_state),
+            return_state: stable_run_pending_return_key(return_state),
+        },
         EngineState::TreasureRoom(chest) => {
             StableEngineKey::TreasureRoom(stable_treasure_chest_key(chest))
         }

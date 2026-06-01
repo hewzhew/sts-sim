@@ -248,6 +248,7 @@ fn decision_kind(engine: &EngineState) -> String {
         EngineState::CombatProcessing => "combat_processing".to_string(),
         EngineState::CombatStart(request) => format!("combat_start:{:?}", request.encounter_id),
         EngineState::RewardScreen(_) => "reward_screen".to_string(),
+        EngineState::RewardOverlay { .. } => "reward_overlay".to_string(),
         EngineState::TreasureRoom(_) => "treasure_room".to_string(),
         EngineState::Campfire => "campfire".to_string(),
         EngineState::Shop(_) => "shop".to_string(),

@@ -21,6 +21,10 @@ pub(crate) enum StableRunPendingReturnKey {
     RunPendingChoice(Box<StableRunPendingChoiceKey>),
     GameOver(&'static str),
     Combat,
+    RewardOverlay {
+        reward: StableRewardKey,
+        return_state: Box<StableRunPendingReturnKey>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -91,6 +95,14 @@ impl StableRunPendingReturnKey {
             StableRunPendingReturnKey::Reward(value) => {
                 format!("reward:{}", value.diagnostic_string())
             }
+            StableRunPendingReturnKey::RewardOverlay {
+                reward,
+                return_state,
+            } => format!(
+                "reward_overlay:{}:return{}",
+                reward.diagnostic_string(),
+                return_state.diagnostic_string()
+            ),
             StableRunPendingReturnKey::TreasureRoom(value) => {
                 format!("treasure:{}", value.diagnostic_string())
             }
