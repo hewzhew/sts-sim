@@ -47,7 +47,7 @@ mod tests {
     use super::handle;
     use crate::content::relics::RelicId;
     use crate::state::core::{ClientInput, EngineState};
-    use crate::state::rewards::BossRelicChoiceState;
+    use crate::state::rewards::{BossRelicChoiceState, RewardState};
     use crate::state::run::RunState;
     use crate::state::selection::{SelectionResolution, SelectionScope};
 
@@ -140,14 +140,7 @@ mod tests {
         assert!(run_state.pending_boss_act_transition);
         assert_eq!(rewards.items.len(), 3);
 
-        let mut transition = None;
-        while !rewards.items.is_empty() {
-            transition = crate::engine::reward_handler::handle(
-                &mut run_state,
-                &mut rewards,
-                Some(ClientInput::ClaimReward(0)),
-            );
-        }
+        let transition = claim_all_reward_screen_items(&mut run_state, &mut rewards);
 
         assert!(matches!(transition, Some(EngineState::MapNavigation)));
         assert_eq!(
@@ -171,6 +164,39 @@ mod tests {
             .relics
             .iter()
             .any(|relic| relic.id == RelicId::Mango));
+    }
+
+    #[test]
+    fn boss_relic_choice_defers_act_transition_until_reward_screen_card_choice_resolves() {
+        let mut run_state = RunState::new(7, 0, false, "Ironclad");
+        let mut boss_state = BossRelicChoiceState::new(vec![RelicId::TinyHouse]);
+
+        let next = handle(
+            &mut run_state,
+            &mut boss_state,
+            Some(ClientInput::SubmitRelicChoice(0)),
+        )
+        .expect("Tiny House should open reward screen");
+
+        let EngineState::RewardScreen(mut rewards) = next else {
+            panic!("Tiny House should interrupt into RewardScreen");
+        };
+        assert_eq!(run_state.act_num, 1);
+        assert!(run_state.pending_boss_act_transition);
+        assert_eq!(rewards.items.len(), 3);
+
+        let transition = claim_all_reward_screen_items(&mut run_state, &mut rewards);
+
+        assert!(matches!(transition, Some(EngineState::MapNavigation)));
+        assert_eq!(
+            run_state.act_num, 2,
+            "boss act transition should happen after Tiny House reward screen and card choice resolve"
+        );
+        assert!(!run_state.pending_boss_act_transition);
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::TinyHouse));
     }
 
     #[test]
@@ -204,5 +230,21 @@ mod tests {
                 "starter relic should not remain beside its boss upgrade"
             );
         }
+    }
+
+    fn claim_all_reward_screen_items(
+        run_state: &mut RunState,
+        rewards: &mut RewardState,
+    ) -> Option<EngineState> {
+        let mut transition = None;
+        while !rewards.items.is_empty() || rewards.pending_card_choice.is_some() {
+            let input = if rewards.pending_card_choice.is_some() {
+                ClientInput::SelectCard(0)
+            } else {
+                ClientInput::ClaimReward(0)
+            };
+            transition = crate::engine::reward_handler::handle(run_state, rewards, Some(input));
+        }
+        transition
     }
 }
