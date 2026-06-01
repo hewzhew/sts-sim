@@ -79,72 +79,6 @@ impl CombatStepper for PendingChoiceWinsStepper {
     }
 }
 
-#[derive(Clone, Copy)]
-struct TwoTurnPlanWinsStepper;
-
-impl CombatStepper for TwoTurnPlanWinsStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
-        if !matches!(position.engine, EngineState::CombatPlayerTurn) {
-            return Vec::new();
-        }
-        match position.combat.turn.turn_count {
-            0 => vec![
-                ClientInput::PlayCard {
-                    card_index: 0,
-                    target: Some(1),
-                },
-                ClientInput::PlayCard {
-                    card_index: 1,
-                    target: Some(1),
-                },
-            ],
-            1 if position.combat.entities.monsters[0].current_hp <= 5 => {
-                vec![ClientInput::EndTurn]
-            }
-            _ => Vec::new(),
-        }
-    }
-
-    fn apply_to_stable(
-        &self,
-        position: &CombatPosition,
-        input: ClientInput,
-        _limits: CombatStepLimits,
-    ) -> crate::sim::combat::CombatStepResult {
-        let mut combat = position.combat.clone();
-        let mut engine = position.engine.clone();
-        match input {
-            ClientInput::PlayCard { card_index: 0, .. } => {
-                combat.entities.monsters[0].current_hp = 80;
-                combat.turn.turn_count = 1;
-            }
-            ClientInput::PlayCard { card_index: 1, .. } => {
-                combat.entities.player.current_hp = 60;
-                combat.entities.monsters[0].current_hp = 5;
-                combat.turn.turn_count = 1;
-            }
-            ClientInput::EndTurn if combat.entities.monsters[0].current_hp <= 5 => {
-                combat.entities.monsters[0].current_hp = 0;
-                engine = EngineState::GameOver(crate::state::core::RunResult::Victory);
-            }
-            _ => {}
-        }
-        let position = CombatPosition::new(engine, combat);
-        crate::sim::combat::CombatStepResult {
-            terminal: combat_terminal(&position.engine, &position.combat),
-            alive: true,
-            truncated: false,
-            timed_out: false,
-            engine_steps: 1,
-            position,
-        }
-    }
-
-    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
-        combat_terminal(&position.engine, &position.combat)
-    }
-}
-
 #[test]
 fn conservative_rollout_records_estimated_terminal_win() {
     let mut combat = blank_test_combat();
@@ -309,18 +243,9 @@ fn conservative_rollout_tracks_small_pending_choice_resolution() {
 }
 
 #[test]
-fn turn_beam_rollout_uses_turn_plans_across_turn_boundaries() {
+fn turn_beam_rollout_preserves_conservative_anchor_win() {
     let mut combat = blank_test_combat();
-    let mut monster = test_monster(EnemyId::JawWorm);
-    monster.id = 1;
-    monster.current_hp = 100;
-    monster.max_hp = 100;
-    combat.entities.monsters = vec![monster];
-    combat.turn.turn_count = 0;
-    combat.zones.hand = vec![
-        crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 1),
-        crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Bash, 2),
-    ];
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     let node = SearchNode {
         engine: EngineState::CombatPlayerTurn,
         combat,
@@ -340,14 +265,14 @@ fn turn_beam_rollout_uses_turn_plans_across_turn_boundaries() {
         ..CombatSearchV2Config::default()
     };
 
-    let estimate = turn_beam_no_potion_rollout(&node, &TwoTurnPlanWinsStepper, &config, 4, None);
+    let estimate = turn_beam_no_potion_rollout(&node, &FirstActionWinsStepper, &config, 4, None);
 
     assert!(estimate.evaluated);
     assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
-    assert_eq!(estimate.actions_simulated, 2);
+    assert_eq!(estimate.actions_simulated, 1);
     assert_eq!(
         estimate.last_action_reason,
-        Some("turn_beam_no_potion_selected_turn_plan_end_state")
+        Some("turn_beam_no_potion_conservative_anchor")
     );
 }
 

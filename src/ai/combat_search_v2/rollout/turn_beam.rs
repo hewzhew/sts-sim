@@ -10,6 +10,7 @@ use super::super::*;
 
 const TURN_BEAM_ACTION_REASON: &str = "turn_beam_no_potion_selected_turn_plan_end_state";
 const TURN_BEAM_NO_PLAN_REASON: &str = "turn_beam_no_potion_no_turn_plan_available";
+const TURN_BEAM_CONSERVATIVE_ANCHOR_REASON: &str = "turn_beam_no_potion_conservative_anchor";
 const TURN_BEAM_BOUNDARY_FALLBACK_REASON: &str =
     "turn_beam_no_potion_conservative_boundary_fallback";
 
@@ -22,6 +23,24 @@ struct TurnBeamState {
 }
 
 pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
+    node: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    max_actions: usize,
+    deadline: Option<Instant>,
+) -> RolloutNodeEstimate {
+    if !matches!(node.engine, EngineState::CombatPlayerTurn) {
+        return turn_beam_rollout_without_anchor(node, stepper, config, max_actions, deadline);
+    }
+    let anchor = conservative_anchor_rollout(node, stepper, config, max_actions, deadline);
+    if anchor.terminal == SearchTerminalLabel::Win {
+        return anchor;
+    }
+    let beam = turn_beam_rollout_without_anchor(node, stepper, config, max_actions, deadline);
+    better_estimate(beam, anchor)
+}
+
+fn turn_beam_rollout_without_anchor(
     node: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
@@ -184,6 +203,29 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
         }
 
         beam = select_beam(next, beam_width);
+    }
+}
+
+fn conservative_anchor_rollout(
+    node: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    max_actions: usize,
+    deadline: Option<Instant>,
+) -> RolloutNodeEstimate {
+    let mut estimate =
+        super::conservative_no_potion_rollout(node, stepper, config, max_actions, deadline);
+    estimate.last_action_reason = Some(TURN_BEAM_CONSERVATIVE_ANCHOR_REASON);
+    estimate
+}
+
+fn better_estimate(left: RolloutNodeEstimate, right: RolloutNodeEstimate) -> RolloutNodeEstimate {
+    let left_eval = combat_eval_from_rollout_estimate(left);
+    let right_eval = combat_eval_from_rollout_estimate(right);
+    if right_eval > left_eval {
+        right
+    } else {
+        left
     }
 }
 
