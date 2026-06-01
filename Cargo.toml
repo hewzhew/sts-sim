@@ -2,6 +2,9 @@
 name = "sts_simulator"
 version = "0.1.0"
 edition = "2021"
+description = "Unofficial Rust Slay the Spire simulator and AI-search workspace"
+readme = "README.md"
+repository = "https://github.com/hewzhew/sts-sim"
 
 [dependencies]
 blake2 = "0.10"
