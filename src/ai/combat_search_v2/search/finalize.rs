@@ -1,4 +1,4 @@
-use super::super::frontier::QueueEntry;
+use super::super::frontier::FrontierQueue;
 use super::super::*;
 
 pub(super) struct SearchFinishInput {
@@ -7,7 +7,7 @@ pub(super) struct SearchFinishInput {
     pub(super) diagnostics: SearchDiagnosticsCollector,
     pub(super) exact_transpositions: HashMap<CombatExactStateKey, Vec<ResourceVector>>,
     pub(super) dominance: HashMap<CombatDominanceKey, Vec<ResourceVector>>,
-    pub(super) frontier: BinaryHeap<QueueEntry>,
+    pub(super) frontier: FrontierQueue,
     pub(super) best_complete: Option<SearchNode>,
     pub(super) best_frontier: Option<SearchNode>,
     pub(super) rollout_cache: RolloutCache,
@@ -177,7 +177,7 @@ fn proof_status_reason(proof_status: SearchProofStatus) -> String {
     }
 }
 
-fn frontier_sample_states(frontier: &BinaryHeap<QueueEntry>) -> Vec<CombatSearchV2StateSummary> {
+fn frontier_sample_states(frontier: &FrontierQueue) -> Vec<CombatSearchV2StateSummary> {
     frontier
         .iter()
         .take(FRONTIER_SAMPLE_LIMIT)

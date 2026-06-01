@@ -67,6 +67,24 @@ fn frontier_priority_uses_sustained_mitigation_after_raw_enemy_progress() {
     assert!(priority_for_node(&disarmed) > priority_for_node(&better_progress));
 }
 
+#[test]
+fn frontier_queue_preserves_single_queue_priority_order() {
+    let mut queue = FrontierQueue::new();
+    let mut next_sequence_id = 0;
+
+    let low_priority = test_node();
+    let mut high_priority = test_node();
+    high_priority.potion_tactical_priority = 50;
+
+    push_frontier(&mut queue, low_priority, &mut next_sequence_id);
+    push_frontier(&mut queue, high_priority, &mut next_sequence_id);
+
+    assert_eq!(queue.len(), 2);
+    assert_eq!(queue.pop().unwrap().node.potion_tactical_priority, 50);
+    assert_eq!(queue.pop().unwrap().node.potion_tactical_priority, 0);
+    assert!(queue.is_empty());
+}
+
 fn test_node() -> SearchNode {
     SearchNode {
         engine: EngineState::CombatPlayerTurn,

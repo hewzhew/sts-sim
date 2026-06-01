@@ -2,18 +2,16 @@ use super::*;
 
 mod node;
 mod priority;
+mod queue;
 pub(in crate::ai::combat_search_v2) mod resources;
 
 pub(super) use node::SearchNode;
 use priority::priority_for_node;
 pub(super) use priority::QueueEntry;
+pub(super) use queue::FrontierQueue;
 pub(super) use resources::{is_resource_covered, ResourceVector};
 
-pub(super) fn push_frontier(
-    frontier: &mut BinaryHeap<QueueEntry>,
-    node: SearchNode,
-    sequence_id: &mut u64,
-) {
+pub(super) fn push_frontier(frontier: &mut FrontierQueue, node: SearchNode, sequence_id: &mut u64) {
     let priority = priority_for_node(&node);
     frontier.push(QueueEntry {
         priority,

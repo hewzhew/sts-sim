@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::ai::combat_state_key::{
@@ -84,7 +84,7 @@ use expansion::{
 };
 use frontier::{
     is_resource_covered, push_frontier, remember_best_complete, remember_best_frontier,
-    ResourceVector, SearchNode,
+    FrontierQueue, ResourceVector, SearchNode,
 };
 use outcome_score::CombatOutcomeScore;
 use pending_choice_ordering::pending_choice_ordering_hint;

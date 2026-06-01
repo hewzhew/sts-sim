@@ -32,7 +32,7 @@ pub fn run_combat_search_v2_with_stepper(
         config.rollout_max_actions,
         config.rollout_beam_width,
     );
-    let mut frontier = BinaryHeap::new();
+    let mut frontier = FrontierQueue::new();
     let mut next_sequence_id = 0u64;
     let mut root = SearchNode {
         engine: engine.clone(),
