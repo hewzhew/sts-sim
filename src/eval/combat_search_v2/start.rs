@@ -25,6 +25,7 @@ pub struct CombatSearchV2RunOptions {
     pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
     pub rollout_max_evaluations: Option<usize>,
     pub rollout_max_actions: Option<usize>,
+    pub rollout_beam_width: Option<usize>,
     pub turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
 }
 
@@ -50,6 +51,9 @@ impl CombatSearchV2RunOptions {
             rollout_max_actions: self
                 .rollout_max_actions
                 .unwrap_or(defaults.rollout_max_actions),
+            rollout_beam_width: self
+                .rollout_beam_width
+                .unwrap_or(defaults.rollout_beam_width),
             turn_plan_policy: self.turn_plan_policy.unwrap_or(defaults.turn_plan_policy),
         }
     }

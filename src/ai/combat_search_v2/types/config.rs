@@ -14,6 +14,7 @@ pub struct CombatSearchV2Config {
     pub rollout_policy: CombatSearchV2RolloutPolicy,
     pub rollout_max_evaluations: usize,
     pub rollout_max_actions: usize,
+    pub rollout_beam_width: usize,
     pub turn_plan_policy: CombatSearchV2TurnPlanPolicy,
 }
 
@@ -30,6 +31,7 @@ impl Default for CombatSearchV2Config {
             rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
             rollout_max_evaluations: super::super::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
             rollout_max_actions: super::super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
+            rollout_beam_width: super::super::rollout::DEFAULT_TURN_BEAM_WIDTH,
             turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
         }
     }
@@ -61,6 +63,7 @@ pub enum CombatSearchV2RolloutPolicy {
     Disabled,
     ConservativeNoPotion,
     PhaseAwareNoPotion,
+    TurnBeamNoPotion,
 }
 
 impl Default for CombatSearchV2RolloutPolicy {
@@ -75,6 +78,7 @@ impl CombatSearchV2RolloutPolicy {
             CombatSearchV2RolloutPolicy::Disabled => "disabled",
             CombatSearchV2RolloutPolicy::ConservativeNoPotion => "conservative_no_potion",
             CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => "phase_aware_no_potion",
+            CombatSearchV2RolloutPolicy::TurnBeamNoPotion => "turn_beam_no_potion",
         }
     }
 }

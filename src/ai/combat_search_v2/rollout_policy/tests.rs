@@ -162,6 +162,7 @@ fn test_config() -> CombatSearchV2Config {
         rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
         rollout_max_evaluations: 10,
         rollout_max_actions: 10,
+        rollout_beam_width: 3,
         turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
     }
 }

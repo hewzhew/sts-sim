@@ -8,6 +8,7 @@ pub struct CombatSearchV2RolloutReport {
     pub behavioral_effect: &'static str,
     pub max_evaluations: usize,
     pub max_actions_per_rollout: usize,
+    pub beam_width: usize,
     pub evaluations: u64,
     pub cache_hits: u64,
     pub budget_skips: u64,

@@ -49,6 +49,7 @@ pub struct CombatSearchV2BudgetReport {
     pub max_potions_used: Option<u32>,
     pub rollout_max_evaluations: usize,
     pub rollout_max_actions: usize,
+    pub rollout_beam_width: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]

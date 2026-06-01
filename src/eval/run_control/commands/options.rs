@@ -51,6 +51,9 @@ pub(super) fn parse_search_combat_options(
                 options.rollout_max_actions =
                     Some(parse_usize_value(value, "rollout_max_actions")?);
             }
+            "beam" | "beam_width" | "rollout_beam_width" => {
+                options.rollout_beam_width = Some(parse_usize_value(value, "rollout_beam_width")?);
+            }
             "turn_plan" | "turn_plan_policy" | "turn-plan-policy" => {
                 options.turn_plan_policy = Some(parse_turn_plan_policy(value)?);
             }
@@ -156,8 +159,11 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
         "phase-aware" | "phase_aware" | "phase-aware-no-potion" | "phase_aware_no_potion" => {
             Ok(CombatSearchV2RolloutPolicy::PhaseAwareNoPotion)
         }
+        "turn-beam" | "turn_beam" | "turn-beam-no-potion" | "turn_beam_no_potion" => {
+            Ok(CombatSearchV2RolloutPolicy::TurnBeamNoPotion)
+        }
         _ => Err(format!(
-            "invalid rollout policy '{value}', expected disabled|conservative_no_potion|phase_aware_no_potion"
+            "invalid rollout policy '{value}', expected disabled|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion"
         )),
     }
 }

@@ -79,6 +79,72 @@ impl CombatStepper for PendingChoiceWinsStepper {
     }
 }
 
+#[derive(Clone, Copy)]
+struct TwoTurnPlanWinsStepper;
+
+impl CombatStepper for TwoTurnPlanWinsStepper {
+    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        if !matches!(position.engine, EngineState::CombatPlayerTurn) {
+            return Vec::new();
+        }
+        match position.combat.turn.turn_count {
+            0 => vec![
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(1),
+                },
+                ClientInput::PlayCard {
+                    card_index: 1,
+                    target: Some(1),
+                },
+            ],
+            1 if position.combat.entities.monsters[0].current_hp <= 5 => {
+                vec![ClientInput::EndTurn]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        let mut combat = position.combat.clone();
+        let mut engine = position.engine.clone();
+        match input {
+            ClientInput::PlayCard { card_index: 0, .. } => {
+                combat.entities.monsters[0].current_hp = 80;
+                combat.turn.turn_count = 1;
+            }
+            ClientInput::PlayCard { card_index: 1, .. } => {
+                combat.entities.player.current_hp = 60;
+                combat.entities.monsters[0].current_hp = 5;
+                combat.turn.turn_count = 1;
+            }
+            ClientInput::EndTurn if combat.entities.monsters[0].current_hp <= 5 => {
+                combat.entities.monsters[0].current_hp = 0;
+                engine = EngineState::GameOver(crate::state::core::RunResult::Victory);
+            }
+            _ => {}
+        }
+        let position = CombatPosition::new(engine, combat);
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&position.engine, &position.combat),
+            alive: true,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
 #[test]
 fn conservative_rollout_records_estimated_terminal_win() {
     let mut combat = blank_test_combat();
@@ -107,7 +173,7 @@ fn conservative_rollout_records_estimated_terminal_win() {
 
 #[test]
 fn rollout_cache_reuses_exact_state_estimate() {
-    let mut cache = RolloutCache::new(CombatSearchV2RolloutPolicy::ConservativeNoPotion, 4, 4);
+    let mut cache = RolloutCache::new(CombatSearchV2RolloutPolicy::ConservativeNoPotion, 4, 4, 3);
     let node = SearchNode {
         engine: EngineState::CombatPlayerTurn,
         combat: blank_test_combat(),
@@ -240,4 +306,77 @@ fn conservative_rollout_tracks_small_pending_choice_resolution() {
     assert_eq!(estimate.last_pending_choice_kind, Some("stance_choice"));
     assert!(!estimate.stopped_on_high_fanout_pending_choice);
     assert_eq!(estimate.actions_simulated, 1);
+}
+
+#[test]
+fn turn_beam_rollout_uses_turn_plans_across_turn_boundaries() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    monster.current_hp = 100;
+    monster.max_hp = 100;
+    combat.entities.monsters = vec![monster];
+    combat.turn.turn_count = 0;
+    combat.zones.hand = vec![
+        crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 1),
+        crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Bash, 2),
+    ];
+    let node = SearchNode {
+        engine: EngineState::CombatPlayerTurn,
+        combat,
+        actions: Vec::new(),
+        turn_prefix: TurnPrefixState::default(),
+        initial_hp: 80,
+        potions_used: 0,
+        potions_discarded: 0,
+        cards_played: 0,
+        potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
+        rollout_estimate: RolloutNodeEstimate::unevaluated(),
+    };
+    let config = CombatSearchV2Config {
+        rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
+        rollout_beam_width: 1,
+        ..CombatSearchV2Config::default()
+    };
+
+    let estimate = turn_beam_no_potion_rollout(&node, &TwoTurnPlanWinsStepper, &config, 4, None);
+
+    assert!(estimate.evaluated);
+    assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
+    assert_eq!(estimate.actions_simulated, 2);
+    assert_eq!(
+        estimate.last_action_reason,
+        Some("turn_beam_no_potion_selected_turn_plan_end_state")
+    );
+}
+
+#[test]
+fn turn_beam_rollout_declines_non_turn_boundary_without_looping() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    let node = SearchNode {
+        engine: EngineState::PendingChoice(crate::state::core::PendingChoice::StanceChoice),
+        combat,
+        actions: Vec::new(),
+        turn_prefix: TurnPrefixState::default(),
+        initial_hp: 80,
+        potions_used: 0,
+        potions_discarded: 0,
+        cards_played: 0,
+        potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
+        rollout_estimate: RolloutNodeEstimate::unevaluated(),
+    };
+    let config = CombatSearchV2Config {
+        rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
+        ..CombatSearchV2Config::default()
+    };
+
+    let estimate = turn_beam_no_potion_rollout(&node, &PendingChoiceWinsStepper, &config, 4, None);
+
+    assert!(estimate.evaluated);
+    assert_eq!(estimate.terminal, SearchTerminalLabel::Unresolved);
+    assert_eq!(estimate.stop_reason, RolloutStopReason::PolicyDeclined);
+    assert_eq!(estimate.actions_simulated, 0);
 }

@@ -32,7 +32,8 @@ pub(super) fn filtered_rollout_legal_actions(
     match policy {
         CombatSearchV2RolloutPolicy::Disabled => Vec::new(),
         CombatSearchV2RolloutPolicy::ConservativeNoPotion
-        | CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => {
+        | CombatSearchV2RolloutPolicy::PhaseAwareNoPotion
+        | CombatSearchV2RolloutPolicy::TurnBeamNoPotion => {
             filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never, combat)
         }
     }
@@ -54,6 +55,9 @@ pub(super) fn choose_rollout_action(
             false, node, stepper, config, deadline, engine, combat, legal,
         ),
         CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => choose_conservative_no_potion_action(
+            true, node, stepper, config, deadline, engine, combat, legal,
+        ),
+        CombatSearchV2RolloutPolicy::TurnBeamNoPotion => choose_conservative_no_potion_action(
             true, node, stepper, config, deadline, engine, combat, legal,
         ),
     }

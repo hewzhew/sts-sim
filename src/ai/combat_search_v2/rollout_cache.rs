@@ -8,6 +8,7 @@ pub(super) struct RolloutCache {
     pub(super) policy: CombatSearchV2RolloutPolicy,
     pub(super) max_evaluations: usize,
     pub(super) max_actions: usize,
+    pub(super) beam_width: usize,
     pub(super) evaluations: u64,
     pub(super) cache_hits: u64,
     pub(super) budget_skips: u64,
@@ -26,11 +27,13 @@ impl RolloutCache {
         policy: CombatSearchV2RolloutPolicy,
         max_evaluations: usize,
         max_actions: usize,
+        beam_width: usize,
     ) -> Self {
         Self {
             policy,
             max_evaluations,
             max_actions,
+            beam_width,
             ..Self::default()
         }
     }
@@ -81,6 +84,13 @@ impl RolloutCache {
                     deadline,
                 )
             }
+            CombatSearchV2RolloutPolicy::TurnBeamNoPotion => rollout::turn_beam_no_potion_rollout(
+                node,
+                stepper,
+                config,
+                self.max_actions,
+                deadline,
+            ),
         };
         if estimate.truncated {
             self.truncated = self.truncated.saturating_add(1);
@@ -117,6 +127,7 @@ impl RolloutCache {
                 "estimated_frontier_priority_only_no_terminal_proof_no_baseline_claim",
             max_evaluations: self.max_evaluations,
             max_actions_per_rollout: self.max_actions,
+            beam_width: self.beam_width,
             evaluations: self.evaluations,
             cache_hits: self.cache_hits,
             budget_skips: self.budget_skips,
@@ -138,6 +149,7 @@ impl RolloutCache {
                 "unresolved rollout priority uses phase-adjusted enemy effort from phase_profile",
                 "high-fanout pending choices stop rollout estimates instead of selecting an arbitrary branch",
                 "small pending choices may be followed by rollout, but their actions are still exact simulator inputs and never proof claims",
+                "turn_beam_no_potion uses turn-plan end states as an estimate-only beam and still reports no proof claim",
             ],
         }
     }

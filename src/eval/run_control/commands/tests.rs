@@ -68,7 +68,7 @@ fn run_control_parser_accepts_case_artifact_commands() {
 fn run_control_parser_accepts_search_combat_options() {
     assert_eq!(
             parse_run_control_command(
-                "search-combat max_nodes=123 wall_ms=50 potion=semantic max_potions=1 rollout=disabled rollouts=7 rollout_actions=11 turn_plan=root_frontier_seed",
+                "search-combat max_nodes=123 wall_ms=50 potion=semantic max_potions=1 rollout=turn_beam_no_potion rollouts=7 rollout_actions=11 beam=4 turn_plan=root_frontier_seed",
             )
             .expect("search-combat should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
@@ -78,9 +78,10 @@ fn run_control_parser_accepts_search_combat_options() {
                 wall_ms: Some(50),
                 potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
                 max_potions_used: Some(1),
-                rollout_policy: Some(CombatSearchV2RolloutPolicy::Disabled),
+                rollout_policy: Some(CombatSearchV2RolloutPolicy::TurnBeamNoPotion),
                 rollout_max_evaluations: Some(7),
                 rollout_max_actions: Some(11),
+                rollout_beam_width: Some(4),
                 turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::RootFrontierSeed),
                 evidence: None,
             })
@@ -123,6 +124,7 @@ fn run_control_parser_accepts_auto_step_options() {
                 rollout_policy: None,
                 rollout_max_evaluations: None,
                 rollout_max_actions: None,
+                rollout_beam_width: None,
                 turn_plan_policy: None,
                 evidence: None,
             },

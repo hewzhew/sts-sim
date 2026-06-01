@@ -10,7 +10,7 @@ Help:
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
     draw, discard, exhaust, actions, action <idx>
-    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|disabled] [rollouts=N] [rollout_actions=N] [turn_plan=diagnostic_only|root_frontier_seed] [save=case|path]
+    sc/search-combat [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=diagnostic_only|root_frontier_seed] [save=case|path]
 
   Map/Event/Reward:
     rs/route-suggest = read-only route evidence; rg/route-go = execute selected route planner move; go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <idx...>
@@ -33,7 +33,7 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
-    n/next/advance-to-human-boundary [route=manual|planner] [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|disabled] [rollouts=N] [rollout_actions=N] [turn_plan=diagnostic_only|root_frontier_seed] [save=case|path] [max_ops=N]
+    n/next/advance-to-human-boundary [route=manual|planner] [max_nodes=N] [wall_ms=N] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=diagnostic_only|root_frontier_seed] [save=case|path] [max_ops=N]
     nr/next-route = n route=planner, with the same options except route=
     auto-reward
     auto-reward gold|potion|all on|off"

@@ -84,6 +84,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             max_potions_used: config.max_potions_used,
             rollout_max_evaluations: config.rollout_max_evaluations,
             rollout_max_actions: config.rollout_max_actions,
+            rollout_beam_width: config.rollout_beam_width,
         },
         outcome: CombatSearchV2OutcomeReport {
             terminal: top_terminal,

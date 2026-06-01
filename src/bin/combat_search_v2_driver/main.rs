@@ -70,6 +70,9 @@ struct Args {
     #[arg(long)]
     rollout_max_actions: Option<usize>,
 
+    #[arg(long)]
+    rollout_beam_width: Option<usize>,
+
     #[arg(long, value_parser = parse_turn_plan_policy)]
     turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
 
@@ -143,6 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rollout_policy: args.rollout_policy,
         rollout_max_evaluations: args.rollout_max_evaluations,
         rollout_max_actions: args.rollout_max_actions,
+        rollout_beam_width: args.rollout_beam_width,
         turn_plan_policy: args.turn_plan_policy,
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
@@ -262,8 +266,11 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
         "phase-aware" | "phase_aware" | "phase-aware-no-potion" | "phase_aware_no_potion" => {
             Ok(CombatSearchV2RolloutPolicy::PhaseAwareNoPotion)
         }
+        "turn-beam" | "turn_beam" | "turn-beam-no-potion" | "turn_beam_no_potion" => {
+            Ok(CombatSearchV2RolloutPolicy::TurnBeamNoPotion)
+        }
         _ => Err(format!(
-            "invalid rollout policy '{value}', expected disabled|conservative_no_potion|phase_aware_no_potion"
+            "invalid rollout policy '{value}', expected disabled|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion"
         )),
     }
 }
@@ -309,6 +316,14 @@ mod tests {
                 CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
                 CombatSearchV2TurnPlanPolicy::RootFrontierSeed
             )
+        );
+    }
+
+    #[test]
+    fn parse_rollout_policy_accepts_turn_beam_no_potion() {
+        assert_eq!(
+            parse_rollout_policy("turn_beam_no_potion").expect("policy should parse"),
+            CombatSearchV2RolloutPolicy::TurnBeamNoPotion
         );
     }
 }

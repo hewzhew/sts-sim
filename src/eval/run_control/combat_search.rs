@@ -193,6 +193,9 @@ fn search_config(
         rollout_max_actions: options
             .rollout_max_actions
             .unwrap_or(defaults.rollout_max_actions),
+        rollout_beam_width: options
+            .rollout_beam_width
+            .unwrap_or(defaults.rollout_beam_width),
         turn_plan_policy: options
             .turn_plan_policy
             .unwrap_or(defaults.turn_plan_policy),
