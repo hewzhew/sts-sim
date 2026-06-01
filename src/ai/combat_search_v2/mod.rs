@@ -15,55 +15,73 @@ use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
 use crate::state::core::{ClientInput, EngineState};
 
+// Core search loop and frontier ownership.
+mod frontier;
+mod outcome_score;
+mod search;
+mod transition;
+
+// Action semantics: legal action facts, ordering, equivalence, and expansion shape.
 mod action_effects;
 mod action_equivalence;
 mod action_facts;
 mod action_ordering;
 mod action_priority;
-mod baseline;
-mod card_identity;
-mod card_pile_value;
-mod decision_microscope;
-mod diagnostics;
-mod diagnostics_tags;
-mod discard_order_shadow_audit;
-mod enemy_mechanics_profile;
-mod enemy_phase_transition;
-mod enemy_phase_value;
 mod expansion;
-mod frontier;
-mod outcome_score;
-mod pending_choice_fanout;
-mod pending_choice_ordering;
-mod pending_choice_profile;
-mod phase_action_ordering;
-mod phase_profile;
-mod potions;
+mod target_fanout;
+
+// Evaluation, value, and outcome comparison.
+mod baseline;
+mod card_pile_value;
+mod enemy_phase_value;
 mod pressure_value;
+mod rollout_value;
+mod value;
+mod value_facts;
+
+// Rollout policies and bounded rollout execution.
 mod rollout;
 mod rollout_cache;
 mod rollout_estimate;
 mod rollout_pending_choice;
 mod rollout_policy;
-mod rollout_probe;
 mod rollout_scheduler;
-mod rollout_value;
-mod search;
-#[cfg(test)]
-mod semantic_regression;
-pub mod state_abstraction;
-mod target_fanout;
-mod trajectory_report;
-mod transition;
+
+// Turn-level planning and current-turn structure.
 mod turn_branching;
 mod turn_local_dominance;
 pub(crate) mod turn_planner;
 mod turn_prefix;
 mod turn_sequence;
 mod turn_sequence_effect;
+
+// Combat phase and enemy mechanics facts.
+mod enemy_mechanics_profile;
+mod enemy_phase_transition;
+mod phase_action_ordering;
+mod phase_profile;
+
+// Pending choice and potion boundaries.
+mod pending_choice_fanout;
+mod pending_choice_ordering;
+mod pending_choice_profile;
+mod potions;
+
+// State abstraction and exactness audits.
+mod card_identity;
+mod discard_order_shadow_audit;
+pub mod state_abstraction;
+
+// Reports, diagnostics, and opt-in analysis tools.
+mod decision_microscope;
+mod diagnostics;
+mod diagnostics_tags;
+mod rollout_probe;
+mod trajectory_report;
+
+#[cfg(test)]
+mod semantic_regression;
 mod types;
-mod value;
-mod value_facts;
 
 use action_equivalence::{
     compress_equivalent_actions, ActionEquivalenceDiagnosticsCollector, ActionEquivalenceSummary,
