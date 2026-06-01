@@ -46,6 +46,7 @@ mod rollout_estimate;
 mod rollout_pending_choice;
 mod rollout_policy;
 mod rollout_probe;
+mod rollout_scheduler;
 mod rollout_value;
 mod search;
 #[cfg(test)]

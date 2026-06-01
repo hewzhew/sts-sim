@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use super::value::combat_eval_from_rollout_estimate;
 use super::*;
+use crate::ai::combat_search_v2::rollout_scheduler::turn_beam_extension_budget;
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct RolloutCache {
@@ -9,6 +11,9 @@ pub(super) struct RolloutCache {
     pub(super) max_evaluations: usize,
     pub(super) max_actions: usize,
     pub(super) beam_width: usize,
+    pub(super) turn_beam_extension_budget: usize,
+    pub(super) turn_beam_extensions: u64,
+    pub(super) turn_beam_extension_budget_skips: u64,
     pub(super) evaluations: u64,
     pub(super) cache_hits: u64,
     pub(super) budget_skips: u64,
@@ -34,6 +39,7 @@ impl RolloutCache {
             max_evaluations,
             max_actions,
             beam_width,
+            turn_beam_extension_budget: turn_beam_extension_budget(max_evaluations, beam_width),
             ..Self::default()
         }
     }
@@ -84,13 +90,32 @@ impl RolloutCache {
                     deadline,
                 )
             }
-            CombatSearchV2RolloutPolicy::TurnBeamNoPotion => rollout::turn_beam_no_potion_rollout(
-                node,
-                stepper,
-                config,
-                self.max_actions,
-                deadline,
-            ),
+            CombatSearchV2RolloutPolicy::TurnBeamNoPotion => {
+                let anchor = rollout::turn_beam_conservative_anchor_rollout(
+                    node,
+                    stepper,
+                    config,
+                    self.max_actions,
+                    deadline,
+                );
+                if anchor.terminal == SearchTerminalLabel::Win {
+                    anchor
+                } else if self.turn_beam_extensions as usize >= self.turn_beam_extension_budget {
+                    self.turn_beam_extension_budget_skips =
+                        self.turn_beam_extension_budget_skips.saturating_add(1);
+                    anchor
+                } else {
+                    self.turn_beam_extensions = self.turn_beam_extensions.saturating_add(1);
+                    let beam = rollout::turn_beam_extension_rollout(
+                        node,
+                        stepper,
+                        config,
+                        self.max_actions,
+                        deadline,
+                    );
+                    better_rollout_estimate(beam, anchor)
+                }
+            }
         };
         if estimate.truncated {
             self.truncated = self.truncated.saturating_add(1);
@@ -128,6 +153,9 @@ impl RolloutCache {
             max_evaluations: self.max_evaluations,
             max_actions_per_rollout: self.max_actions,
             beam_width: self.beam_width,
+            turn_beam_extension_budget: self.turn_beam_extension_budget,
+            turn_beam_extensions: self.turn_beam_extensions,
+            turn_beam_extension_budget_skips: self.turn_beam_extension_budget_skips,
             evaluations: self.evaluations,
             cache_hits: self.cache_hits,
             budget_skips: self.budget_skips,
@@ -152,5 +180,18 @@ impl RolloutCache {
                 "turn_beam_no_potion uses turn-plan end states as an estimate-only beam and still reports no proof claim",
             ],
         }
+    }
+}
+
+fn better_rollout_estimate(
+    left: RolloutNodeEstimate,
+    right: RolloutNodeEstimate,
+) -> RolloutNodeEstimate {
+    let left_eval = combat_eval_from_rollout_estimate(left);
+    let right_eval = combat_eval_from_rollout_estimate(right);
+    if right_eval > left_eval {
+        right
+    } else {
+        left
     }
 }

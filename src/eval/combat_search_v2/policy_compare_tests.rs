@@ -41,6 +41,9 @@ fn comparison_summary_counts_verdicts_and_hp_delta() {
     assert_eq!(run_summary(10).rollout_evaluations, 11);
     assert_eq!(run_summary(10).rollout_terminal_wins, 2);
     assert_eq!(run_summary(10).rollout_budget_skips, 4);
+    assert_eq!(run_summary(10).rollout_turn_beam_extension_budget, 3);
+    assert_eq!(run_summary(10).rollout_turn_beam_extensions, 2);
+    assert_eq!(run_summary(10).rollout_turn_beam_extension_budget_skips, 5);
     assert_eq!(summary.first_diff_action_index_histogram.get("0"), Some(&1));
     assert_eq!(
         summary
@@ -74,6 +77,9 @@ fn run_summary(final_hp: i32) -> CombatSearchV2RolloutPolicyComparisonRun {
         rollout_terminal_wins: 2,
         rollout_terminal_losses: 1,
         rollout_beam_width: 3,
+        rollout_turn_beam_extension_budget: 3,
+        rollout_turn_beam_extensions: 2,
+        rollout_turn_beam_extension_budget_skips: 5,
     }
 }
 

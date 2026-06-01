@@ -106,6 +106,9 @@ pub struct CombatSearchV2PolicyComparisonRun {
     pub rollout_terminal_wins: u64,
     pub rollout_terminal_losses: u64,
     pub rollout_beam_width: usize,
+    pub rollout_turn_beam_extension_budget: usize,
+    pub rollout_turn_beam_extensions: u64,
+    pub rollout_turn_beam_extension_budget_skips: u64,
 }
 
 pub fn compare_combat_search_v2_rollout_policies(
@@ -314,6 +317,9 @@ fn summarize_run(
         rollout_terminal_wins: case.rollout.terminal_wins,
         rollout_terminal_losses: case.rollout.terminal_losses,
         rollout_beam_width: case.rollout.beam_width,
+        rollout_turn_beam_extension_budget: case.rollout.turn_beam_extension_budget,
+        rollout_turn_beam_extensions: case.rollout.turn_beam_extensions,
+        rollout_turn_beam_extension_budget_skips: case.rollout.turn_beam_extension_budget_skips,
     }
 }
 

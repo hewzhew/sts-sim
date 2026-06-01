@@ -22,6 +22,7 @@ struct TurnBeamState {
     estimate_override: Option<RolloutNodeEstimate>,
 }
 
+#[cfg(test)]
 pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
     node: &SearchNode,
     stepper: &impl CombatStepper,
@@ -30,17 +31,31 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
     deadline: Option<Instant>,
 ) -> RolloutNodeEstimate {
     if !matches!(node.engine, EngineState::CombatPlayerTurn) {
-        return turn_beam_rollout_without_anchor(node, stepper, config, max_actions, deadline);
+        return turn_beam_extension_rollout(node, stepper, config, max_actions, deadline);
     }
-    let anchor = conservative_anchor_rollout(node, stepper, config, max_actions, deadline);
+    let anchor =
+        turn_beam_conservative_anchor_rollout(node, stepper, config, max_actions, deadline);
     if anchor.terminal == SearchTerminalLabel::Win {
         return anchor;
     }
-    let beam = turn_beam_rollout_without_anchor(node, stepper, config, max_actions, deadline);
+    let beam = turn_beam_extension_rollout(node, stepper, config, max_actions, deadline);
     better_estimate(beam, anchor)
 }
 
-fn turn_beam_rollout_without_anchor(
+pub(in crate::ai::combat_search_v2) fn turn_beam_conservative_anchor_rollout(
+    node: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    max_actions: usize,
+    deadline: Option<Instant>,
+) -> RolloutNodeEstimate {
+    let mut estimate =
+        super::conservative_no_potion_rollout(node, stepper, config, max_actions, deadline);
+    estimate.last_action_reason = Some(TURN_BEAM_CONSERVATIVE_ANCHOR_REASON);
+    estimate
+}
+
+pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout(
     node: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
@@ -206,19 +221,7 @@ fn turn_beam_rollout_without_anchor(
     }
 }
 
-fn conservative_anchor_rollout(
-    node: &SearchNode,
-    stepper: &impl CombatStepper,
-    config: &CombatSearchV2Config,
-    max_actions: usize,
-    deadline: Option<Instant>,
-) -> RolloutNodeEstimate {
-    let mut estimate =
-        super::conservative_no_potion_rollout(node, stepper, config, max_actions, deadline);
-    estimate.last_action_reason = Some(TURN_BEAM_CONSERVATIVE_ANCHOR_REASON);
-    estimate
-}
-
+#[cfg(test)]
 fn better_estimate(left: RolloutNodeEstimate, right: RolloutNodeEstimate) -> RolloutNodeEstimate {
     let left_eval = combat_eval_from_rollout_estimate(left);
     let right_eval = combat_eval_from_rollout_estimate(right);
