@@ -26,6 +26,7 @@ pub struct CombatSearchV2DiagnosticsReport {
     pub pending_choice: CombatSearchV2DiagnosticsPendingChoice,
     pub turn_prefix: CombatSearchV2DiagnosticsTurnPrefix,
     pub turn_sequence: CombatSearchV2DiagnosticsTurnSequence,
+    pub turn_plan: CombatSearchV2DiagnosticsTurnPlan,
     pub card_identity: CombatSearchV2DiagnosticsCardIdentity,
     pub turn_local_dominance: CombatSearchV2DiagnosticsTurnLocalDominance,
     pub pruning: CombatSearchV2DiagnosticsPruning,

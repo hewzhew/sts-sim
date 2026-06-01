@@ -19,6 +19,7 @@ pub(in crate::ai::combat_search_v2) struct SearchDiagnosticsCollector {
     pub(in crate::ai::combat_search_v2::diagnostics) turn_prefix: TurnPrefixDiagnosticsCollector,
     pub(in crate::ai::combat_search_v2::diagnostics) turn_sequence:
         TurnSequenceDiagnosticsCollector,
+    pub(in crate::ai::combat_search_v2::diagnostics) turn_plan: TurnPlanDiagnosticsCollector,
     pub(in crate::ai::combat_search_v2::diagnostics) card_identity:
         CardIdentityDiagnosticsCollector,
     pub(in crate::ai::combat_search_v2::diagnostics) turn_local_dominance:
@@ -106,6 +107,14 @@ impl SearchDiagnosticsCollector {
         node: &SearchNode,
     ) {
         self.turn_sequence.observe_with_node(summary, node);
+    }
+
+    pub(in crate::ai::combat_search_v2) fn observe_root_turn_plan(
+        &mut self,
+        root: &SearchNode,
+        stepper: &impl CombatStepper,
+    ) {
+        self.turn_plan.observe_root(root, stepper);
     }
 
     pub(in crate::ai::combat_search_v2) fn observe_card_identity(

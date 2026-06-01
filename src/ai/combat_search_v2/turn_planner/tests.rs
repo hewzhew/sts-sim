@@ -1,5 +1,5 @@
 use super::super::*;
-use super::{enumerate::enumerate_turn_plans, types::*};
+use super::{diagnostics::TurnPlanDiagnosticsCollector, enumerate::enumerate_turn_plans, types::*};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -166,6 +166,37 @@ fn turn_planner_retains_different_objective_buckets_before_filling_overall() {
         .plans
         .iter()
         .any(|plan| plan.bucket == TurnPlanBucket::Survival));
+}
+
+#[test]
+fn turn_plan_diagnostics_reports_root_plan_preview_without_behavior_claim() {
+    let root = test_node(test_combat_with_hand(3));
+    let mut collector = TurnPlanDiagnosticsCollector::default();
+
+    collector.observe_root(
+        &root,
+        &TestTurnStepper {
+            mode: TestTurnMode::DirectNextTurnOutcomes,
+        },
+    );
+    let report = collector.finish();
+
+    assert_eq!(
+        report.behavioral_effect,
+        "diagnostic_only_no_frontier_steering_no_prune_no_proof_claim"
+    );
+    assert_eq!(report.root_states_observed, 1);
+    assert!(report.total_plans >= 2);
+    assert!(report
+        .bucket_counts
+        .iter()
+        .any(|count| count.label == "progress"));
+    assert!(report
+        .samples
+        .first()
+        .and_then(|sample| sample.top_plans.first())
+        .and_then(|plan| plan.first_action_key.as_ref())
+        .is_some());
 }
 
 fn apply_direct_outcome(card_index: usize, combat: &mut CombatState) {

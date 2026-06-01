@@ -107,6 +107,7 @@ use turn_branching::{
 use turn_local_dominance::{
     TurnLocalDominanceDiagnosticsCollector, TurnLocalDominanceStateObservation,
 };
+use turn_planner::TurnPlanDiagnosticsCollector;
 use turn_prefix::{
     advance_turn_prefix, summarize_turn_prefix, TurnPrefixDiagnosticsCollector, TurnPrefixState,
     TurnPrefixSummary,

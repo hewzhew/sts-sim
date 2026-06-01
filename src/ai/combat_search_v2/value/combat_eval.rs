@@ -130,6 +130,18 @@ impl CombatEvalV2 {
         self.progress
     }
 
+    pub(in crate::ai::combat_search_v2) fn risk_margin(self) -> i32 {
+        self.risk_margin
+    }
+
+    pub(in crate::ai::combat_search_v2) fn final_hp(self) -> i32 {
+        self.final_hp
+    }
+
+    pub(in crate::ai::combat_search_v2) fn enemy_progress(self) -> i32 {
+        self.enemy_progress
+    }
+
     fn compare_terminal(self, other: &Self) -> Ordering {
         self.final_hp
             .cmp(&other.final_hp)
@@ -159,6 +171,41 @@ impl CombatEvalV2 {
                 .then_with(|| self.survival.cmp(&other.survival))
                 .then_with(|| self.risk_margin.cmp(&other.risk_margin))
                 .then_with(|| self.final_hp.cmp(&other.final_hp))
+        }
+    }
+}
+
+impl CombatEvalOutcomeClass {
+    pub(in crate::ai::combat_search_v2) fn label(self) -> &'static str {
+        match self {
+            Self::Loss => "loss",
+            Self::Unresolved => "unresolved",
+            Self::Win => "win",
+        }
+    }
+}
+
+impl CombatEvalSurvivalBucket {
+    pub(in crate::ai::combat_search_v2) fn label(self) -> &'static str {
+        match self {
+            Self::DeadOrForcedLoss => "dead_or_forced_loss",
+            Self::LethalVisible => "lethal_visible",
+            Self::Critical => "critical",
+            Self::Stabilizing => "stabilizing",
+            Self::Stable => "stable",
+        }
+    }
+}
+
+impl CombatEvalProgressBucket {
+    pub(in crate::ai::combat_search_v2) fn label(self) -> &'static str {
+        match self {
+            Self::Regression => "regression",
+            Self::Stalled => "stalled",
+            Self::AttritionFavored => "attrition_favored",
+            Self::RaceFavored => "race_favored",
+            Self::LethalNextTurnLikely => "lethal_next_turn_likely",
+            Self::LethalNow => "lethal_now",
         }
     }
 }

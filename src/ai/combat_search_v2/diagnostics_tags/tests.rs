@@ -53,6 +53,9 @@ fn tags_surface_budget_and_active_diagnostics() {
     turn_sequence.same_effect_order_variant_groups = 1;
     turn_sequence.order_sensitive_groups = 1;
     turn_sequence.discard_order_shadow_audit.candidate_groups = 1;
+    let mut turn_plan = turn_plan();
+    turn_plan.root_states_observed = 1;
+    turn_plan.total_plans = 2;
     let mut card_identity = card_identity();
     card_identity.states_observed = 1;
     card_identity.states_with_duplicate_active_uuid = 1;
@@ -77,6 +80,7 @@ fn tags_surface_budget_and_active_diagnostics() {
         &pending_choice,
         &turn_prefix,
         &turn_sequence,
+        &turn_plan,
         &card_identity,
         &turn_local_dominance,
         &pruning,
@@ -119,6 +123,8 @@ fn tags_surface_budget_and_active_diagnostics() {
     assert!(tags.contains(&"turn_sequence_same_effect_candidates_observed"));
     assert!(tags.contains(&"turn_sequence_order_sensitive_groups_observed"));
     assert!(tags.contains(&"discard_order_shadow_audit_candidates_observed"));
+    assert!(tags.contains(&"turn_plan_diagnostics_active"));
+    assert!(tags.contains(&"turn_plan_candidates_observed"));
     assert!(tags.contains(&"card_identity_diagnostics_active"));
     assert!(tags.contains(&"duplicate_active_card_uuid_observed"));
     assert!(tags.contains(&"card_uuid_id_conflict_observed"));

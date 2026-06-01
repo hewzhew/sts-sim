@@ -48,7 +48,7 @@ pub(in crate::ai::combat_search_v2) struct TurnPlanEnumeration {
     pub(in crate::ai::combat_search_v2) truncated_children: usize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(in crate::ai::combat_search_v2) enum TurnPlanStopReason {
     Terminal,
     NextTurn,
@@ -108,6 +108,31 @@ impl TurnPlanBucket {
                 }
                 _ => Self::Balanced,
             },
+        }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn label(self) -> &'static str {
+        match self {
+            Self::TerminalWin => "terminal_win",
+            Self::TerminalLoss => "terminal_loss",
+            Self::Survival => "survival",
+            Self::Progress => "progress",
+            Self::Setup => "setup",
+            Self::Balanced => "balanced",
+            Self::Boundary => "boundary",
+        }
+    }
+}
+
+impl TurnPlanStopReason {
+    pub(in crate::ai::combat_search_v2) fn label(self) -> &'static str {
+        match self {
+            Self::Terminal => "terminal",
+            Self::NextTurn => "next_turn",
+            Self::PendingChoice => "pending_choice",
+            Self::OtherBoundary => "other_boundary",
+            Self::NoLegalActions => "no_legal_actions",
+            Self::EngineStepLimit => "engine_step_limit",
         }
     }
 }

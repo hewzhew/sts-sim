@@ -12,6 +12,7 @@ pub(super) fn diagnosis_tags(
     pending_choice: &CombatSearchV2DiagnosticsPendingChoice,
     turn_prefix: &CombatSearchV2DiagnosticsTurnPrefix,
     turn_sequence: &CombatSearchV2DiagnosticsTurnSequence,
+    turn_plan: &CombatSearchV2DiagnosticsTurnPlan,
     card_identity: &CombatSearchV2DiagnosticsCardIdentity,
     turn_local_dominance: &CombatSearchV2DiagnosticsTurnLocalDominance,
     pruning: &CombatSearchV2DiagnosticsPruning,
@@ -158,6 +159,12 @@ pub(super) fn diagnosis_tags(
     }
     if turn_sequence.discard_order_shadow_audit.candidate_groups > 0 {
         tags.push("discard_order_shadow_audit_candidates_observed");
+    }
+    if turn_plan.root_states_observed > 0 {
+        tags.push("turn_plan_diagnostics_active");
+    }
+    if turn_plan.total_plans > 0 {
+        tags.push("turn_plan_candidates_observed");
     }
     if card_identity.states_observed > 0 {
         tags.push("card_identity_diagnostics_active");

@@ -50,6 +50,7 @@ pub fn run_combat_search_v2_with_stepper(
     if terminal_label(&root.engine, &root.combat) == SearchTerminalLabel::Win {
         stats.nodes_to_first_win = Some(0);
     }
+    let root_for_turn_plan_diagnostics = root.clone();
     push_frontier(&mut frontier, root, &mut next_sequence_id);
 
     let mut best_complete: Option<SearchNode> = None;
@@ -238,6 +239,7 @@ pub fn run_combat_search_v2_with_stepper(
 
     diagnostics.run_discard_order_exact_shadow_audit(stepper, &config);
     stats.elapsed_ms = started.elapsed().as_millis();
+    diagnostics.observe_root_turn_plan(&root_for_turn_plan_diagnostics, stepper);
     finish_combat_search_report(SearchFinishInput {
         config,
         stats,

@@ -64,6 +64,7 @@ impl SearchDiagnosticsCollector {
         let pending_choice = self.pending_choice.finish();
         let turn_prefix = self.turn_prefix.finish();
         let turn_sequence = self.turn_sequence.finish();
+        let turn_plan = self.turn_plan.finish();
         let card_identity = self.card_identity.finish();
         let turn_local_dominance = self.turn_local_dominance.finish();
         let diagnosis = diagnosis_tags(
@@ -78,6 +79,7 @@ impl SearchDiagnosticsCollector {
             &pending_choice,
             &turn_prefix,
             &turn_sequence,
+            &turn_plan,
             &card_identity,
             &turn_local_dominance,
             &pruning,
@@ -85,7 +87,7 @@ impl SearchDiagnosticsCollector {
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 11,
+            schema_version: 12,
             mode: "summary",
             tables,
             branching,
@@ -97,6 +99,7 @@ impl SearchDiagnosticsCollector {
             pending_choice,
             turn_prefix,
             turn_sequence,
+            turn_plan,
             card_identity,
             turn_local_dominance,
             pruning,

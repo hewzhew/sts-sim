@@ -194,6 +194,24 @@ pub(super) fn turn_sequence() -> CombatSearchV2DiagnosticsTurnSequence {
     }
 }
 
+pub(super) fn turn_plan() -> CombatSearchV2DiagnosticsTurnPlan {
+    CombatSearchV2DiagnosticsTurnPlan {
+        planning_policy: "test",
+        behavioral_effect: "diagnostic_only",
+        root_states_observed: 0,
+        total_plans: 0,
+        max_plans_in_state: 0,
+        total_inner_nodes_expanded: 0,
+        total_inner_nodes_generated: 0,
+        total_exact_state_skips: 0,
+        total_truncated_children: 0,
+        bucket_counts: Vec::new(),
+        stop_reason_counts: Vec::new(),
+        samples: Vec::new(),
+        notes: Vec::new(),
+    }
+}
+
 pub(super) fn card_identity() -> CombatSearchV2DiagnosticsCardIdentity {
     CombatSearchV2DiagnosticsCardIdentity {
         audit_policy: "test",
