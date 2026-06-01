@@ -1,0 +1,270 @@
+use std::path::PathBuf;
+
+use crate::ai::combat_search_v2::{CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy};
+
+use super::super::reward_auto::RewardAutomationTarget;
+use super::*;
+
+#[test]
+fn run_control_parser_accepts_capture_label() {
+    let parsed = parse_run_control_command("capture captures/jaw.json jaw worm start")
+        .expect("capture command should parse");
+
+    assert_eq!(
+        parsed,
+        RunControlCommand::Capture {
+            path: PathBuf::from("captures/jaw.json"),
+            label: Some("jaw worm start".to_string()),
+        }
+    );
+}
+
+#[test]
+fn run_control_parser_accepts_case_artifact_commands() {
+    assert_eq!(
+        parse_run_control_command("capture-case data/bench case_a first fight")
+            .expect("capture-case should parse"),
+        RunControlCommand::CaptureCase {
+            root: PathBuf::from("data/bench"),
+            case_id: "case_a".to_string(),
+            label: Some("first fight".to_string()),
+        }
+    );
+    assert_eq!(
+        parse_run_control_command("cap case_a first fight").expect("cap should parse"),
+        RunControlCommand::CaptureCaseDefault {
+            case_id: "case_a".to_string(),
+            label: Some("first fight".to_string()),
+        }
+    );
+    assert_eq!(
+        parse_run_control_command("save-baseline-case data/bench case_a")
+            .expect("save-baseline-case should parse"),
+        RunControlCommand::SaveBaselineCase {
+            root: PathBuf::from("data/bench"),
+            case_id: "case_a".to_string(),
+        }
+    );
+    assert_eq!(
+        parse_run_control_command("baseline").expect("baseline should parse"),
+        RunControlCommand::SaveBaselineForLastCaptureCase
+    );
+    assert_eq!(
+        parse_run_control_command("b").expect("b should parse"),
+        RunControlCommand::SaveBaselineForLastCaptureCase
+    );
+    assert_eq!(
+        parse_run_control_command("bench-add data/bench case_a").expect("bench-add should parse"),
+        RunControlCommand::RegisterBenchmarkCase {
+            root: PathBuf::from("data/bench"),
+            case_id: "case_a".to_string(),
+        }
+    );
+}
+
+#[test]
+fn run_control_parser_accepts_search_combat_options() {
+    assert_eq!(
+            parse_run_control_command(
+                "search-combat max_nodes=123 wall_ms=50 potion=semantic max_potions=1 rollout=disabled rollouts=7 rollout_actions=11",
+            )
+            .expect("search-combat should parse"),
+            RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
+                max_nodes: Some(123),
+                max_actions_per_line: None,
+                max_engine_steps_per_action: None,
+                wall_ms: Some(50),
+                potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
+                max_potions_used: Some(1),
+                rollout_policy: Some(CombatSearchV2RolloutPolicy::Disabled),
+                rollout_max_evaluations: Some(7),
+                rollout_max_actions: Some(11),
+                evidence: None,
+            })
+        );
+    assert_eq!(
+        parse_run_control_command("sc").expect("sc should parse"),
+        RunControlCommand::SearchCombat(RunControlSearchCombatOptions::default())
+    );
+    assert_eq!(
+        parse_run_control_command("sc save=case").expect("search evidence should parse"),
+        RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
+            evidence: Some(RunControlSearchEvidenceTarget::LastCaptureCase),
+            ..Default::default()
+        })
+    );
+}
+
+#[test]
+fn run_control_parser_accepts_auto_step_options() {
+    assert_eq!(
+        parse_run_control_command("n").expect("n should parse"),
+        RunControlCommand::AutoStep(RunControlAutoStepOptions::default())
+    );
+    assert_eq!(
+        parse_run_control_command("advance-to-human-boundary")
+            .expect("long advance command should parse"),
+        RunControlCommand::AutoStep(RunControlAutoStepOptions::default())
+    );
+    assert_eq!(
+        parse_run_control_command("auto-step max_nodes=123 wall_ms=50 max_ops=9")
+            .expect("auto-step should parse"),
+        RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            search: RunControlSearchCombatOptions {
+                max_nodes: Some(123),
+                max_actions_per_line: None,
+                max_engine_steps_per_action: None,
+                wall_ms: Some(50),
+                potion_policy: None,
+                max_potions_used: None,
+                rollout_policy: None,
+                rollout_max_evaluations: None,
+                rollout_max_actions: None,
+                evidence: None,
+            },
+            max_operations: Some(9),
+            route: RunControlRouteAutomationMode::Manual,
+        })
+    );
+    assert_eq!(
+        parse_run_control_command("auto-step route=planner max_ops=9")
+            .expect("auto-step route planner should parse"),
+        RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            search: RunControlSearchCombatOptions::default(),
+            max_operations: Some(9),
+            route: RunControlRouteAutomationMode::Planner,
+        })
+    );
+    assert_eq!(
+        parse_run_control_command("nr max_ops=9").expect("nr should parse"),
+        RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            search: RunControlSearchCombatOptions::default(),
+            max_operations: Some(9),
+            route: RunControlRouteAutomationMode::Planner,
+        })
+    );
+    assert!(
+        parse_run_control_command("nr route=manual").is_err(),
+        "nr should not silently accept conflicting route mode"
+    );
+}
+
+#[test]
+fn run_control_parser_accepts_auto_reward_settings() {
+    assert_eq!(
+        parse_run_control_command("auto-reward").expect("auto-reward should parse"),
+        RunControlCommand::RewardAutomationStatus
+    );
+    assert_eq!(
+        parse_run_control_command("auto-reward potion off")
+            .expect("auto-reward setting should parse"),
+        RunControlCommand::SetRewardAutomation {
+            target: RewardAutomationTarget::Potion,
+            enabled: false,
+        }
+    );
+}
+
+#[test]
+fn run_control_parser_accepts_visible_non_numeric_ids() {
+    assert_eq!(
+        parse_run_control_command("card-2").expect("shop card id should parse"),
+        RunControlCommand::Candidate("card-2".to_string())
+    );
+    assert_eq!(
+        parse_run_control_command("Card-2").expect("case-insensitive shop card id should parse"),
+        RunControlCommand::Candidate("Card-2".to_string())
+    );
+    assert_eq!(
+        parse_run_control_command("relic-1").expect("shop relic id should parse"),
+        RunControlCommand::Candidate("relic-1".to_string())
+    );
+    assert_eq!(
+        parse_run_control_command("potion-0").expect("shop potion id should parse"),
+        RunControlCommand::Candidate("potion-0".to_string())
+    );
+    assert_eq!(
+        parse_run_control_command("smith-8").expect("campfire smith id should parse"),
+        RunControlCommand::Candidate("smith-8".to_string())
+    );
+    assert_eq!(
+        parse_run_control_command("leave").expect("leave id should parse"),
+        RunControlCommand::Candidate("leave".to_string())
+    );
+    assert_eq!(
+        parse_run_control_command("purge").expect("purge candidate should parse"),
+        RunControlCommand::Candidate("purge".to_string())
+    );
+}
+
+#[test]
+fn run_control_parser_accepts_contextual_shop_words() {
+    assert_eq!(
+        parse_run_control_command("card 2").expect("card index should parse"),
+        RunControlCommand::CardIndex(2)
+    );
+    assert_eq!(
+        parse_run_control_command("relic 1").expect("relic index should parse"),
+        RunControlCommand::RelicIndex(1)
+    );
+}
+
+#[test]
+fn run_control_parser_accepts_view_commands() {
+    assert_eq!(
+        parse_run_control_command("h").expect("h should parse"),
+        RunControlCommand::Help
+    );
+    assert_eq!(
+        parse_run_control_command("").expect("enter should parse"),
+        RunControlCommand::DefaultCandidate
+    );
+    assert_eq!(
+        parse_run_control_command("0").expect("candidate id should parse"),
+        RunControlCommand::Candidate("0".to_string())
+    );
+    assert_eq!(
+        parse_run_control_command("deck").expect("deck should parse"),
+        RunControlCommand::Deck
+    );
+    assert_eq!(
+        parse_run_control_command("mf").expect("mf should parse"),
+        RunControlCommand::MapFull
+    );
+    assert_eq!(
+        parse_run_control_command("map full").expect("map full should parse"),
+        RunControlCommand::MapFull
+    );
+    assert_eq!(
+        parse_run_control_command("map").expect("map should parse"),
+        RunControlCommand::Map
+    );
+    assert_eq!(
+        parse_run_control_command("rs").expect("rs should parse"),
+        RunControlCommand::RouteSuggest
+    );
+    assert_eq!(
+        parse_run_control_command("route-suggest").expect("route-suggest should parse"),
+        RunControlCommand::RouteSuggest
+    );
+    assert_eq!(
+        parse_run_control_command("rg").expect("rg should parse"),
+        RunControlCommand::RouteGo
+    );
+    assert_eq!(
+        parse_run_control_command("route-go").expect("route-go should parse"),
+        RunControlCommand::RouteGo
+    );
+    assert_eq!(
+        parse_run_control_command("d").expect("d should parse"),
+        RunControlCommand::Details
+    );
+    assert_eq!(
+        parse_run_control_command("raw").expect("raw should parse"),
+        RunControlCommand::Raw
+    );
+    assert_eq!(
+        parse_run_control_command("case").expect("case should parse"),
+        RunControlCommand::SaveDecisionCase { path: None }
+    );
+}
