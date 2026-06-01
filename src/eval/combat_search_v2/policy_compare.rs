@@ -49,6 +49,9 @@ pub struct CombatSearchV2PolicyComparisonSummary {
     pub first_action_diff_cases: usize,
     pub right_minus_left_final_hp_total: i32,
     pub right_minus_left_turn_plan_frontier_seeded_nodes_total: i64,
+    pub right_minus_left_rollout_evaluations_total: i64,
+    pub right_minus_left_rollout_terminal_wins_total: i64,
+    pub right_minus_left_rollout_budget_skips_total: i64,
     pub first_diff_action_index_histogram: BTreeMap<String, usize>,
     pub right_better_right_role_histogram: BTreeMap<String, usize>,
     pub left_better_right_role_histogram: BTreeMap<String, usize>,
@@ -97,6 +100,12 @@ pub struct CombatSearchV2PolicyComparisonRun {
     pub deadline_hit: bool,
     pub node_budget_hit: bool,
     pub turn_plan_frontier_seeded_nodes: u64,
+    pub rollout_evaluations: u64,
+    pub rollout_cache_hits: u64,
+    pub rollout_budget_skips: u64,
+    pub rollout_terminal_wins: u64,
+    pub rollout_terminal_losses: u64,
+    pub rollout_beam_width: usize,
 }
 
 pub fn compare_combat_search_v2_rollout_policies(
@@ -125,6 +134,7 @@ pub fn compare_combat_search_v2_rollout_policies(
             "comparison uses best complete trajectories, not proof of optimality",
             "first_action_diff identifies where selected best complete trajectories diverge",
             "rollout policy affects frontier priority; action diffs are consequences, not direct rollout action labels",
+            "turn_beam_no_potion is a rollout estimate policy; it does not seed proof states and does not change terminal proof semantics",
             "first_action_diff context is reconstructed by exact replay of the common prefix and is diagnostic only",
         ],
     )
@@ -298,6 +308,12 @@ fn summarize_run(
         deadline_hit: case.stats.deadline_hit,
         node_budget_hit: case.stats.node_budget_hit,
         turn_plan_frontier_seeded_nodes: case.diagnostics.turn_plan.frontier_seeded_nodes,
+        rollout_evaluations: case.rollout.evaluations,
+        rollout_cache_hits: case.rollout.cache_hits,
+        rollout_budget_skips: case.rollout.budget_skips,
+        rollout_terminal_wins: case.rollout.terminal_wins,
+        rollout_terminal_losses: case.rollout.terminal_losses,
+        rollout_beam_width: case.rollout.beam_width,
     }
 }
 
@@ -321,6 +337,12 @@ fn observe_case(
     }
     summary.right_minus_left_turn_plan_frontier_seeded_nodes_total +=
         case.right_minus_left_turn_plan_frontier_seeded_nodes;
+    summary.right_minus_left_rollout_evaluations_total +=
+        case.right.rollout_evaluations as i64 - case.left.rollout_evaluations as i64;
+    summary.right_minus_left_rollout_terminal_wins_total +=
+        case.right.rollout_terminal_wins as i64 - case.left.rollout_terminal_wins as i64;
+    summary.right_minus_left_rollout_budget_skips_total +=
+        case.right.rollout_budget_skips as i64 - case.left.rollout_budget_skips as i64;
     if case.first_action_diff.is_some() {
         summary.first_action_diff_cases += 1;
     }
