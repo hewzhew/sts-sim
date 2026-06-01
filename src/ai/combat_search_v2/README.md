@@ -27,6 +27,12 @@ this map and extend an existing boundary when one already exists.
 - `turn_planner/`: exact same-turn enumeration and optional frontier seeding.
   Reuse this for turn-level macro candidates; do not create another turn-plan
   system.
+  - `root_frontier_seed` seeds exact current-turn end states from the initial
+    search root only.
+  - `turn_boundary_frontier_seed` is opt-in and seeds exact current-turn end
+    states whenever search reaches a new empty-prefix player-turn boundary,
+    with exact source-key de-duplication. It does not prune atomic branches or
+    make terminal proof claims by itself.
 - `turn_local_dominance/`: same-parent same-turn pruning only. Cross-turn or
   cross-parent dominance belongs in `frontier/` resource dominance, not here.
 

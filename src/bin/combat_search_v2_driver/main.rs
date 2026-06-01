@@ -346,8 +346,12 @@ fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, S
         "root-seed" | "root_seed" | "root-frontier-seed" | "root_frontier_seed" | "seed" => {
             Ok(CombatSearchV2TurnPlanPolicy::RootFrontierSeed)
         }
+        "turn-boundary-frontier-seed"
+        | "turn_boundary_frontier_seed"
+        | "turn-boundary-seed"
+        | "turn_boundary_seed" => Ok(CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed),
         _ => Err(format!(
-            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed"
+            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed"
         )),
     }
 }
@@ -380,6 +384,14 @@ mod tests {
                 CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
                 CombatSearchV2TurnPlanPolicy::RootFrontierSeed
             )
+        );
+    }
+
+    #[test]
+    fn parse_turn_plan_policy_accepts_turn_boundary_seed() {
+        assert_eq!(
+            parse_turn_plan_policy("turn_boundary_frontier_seed").expect("policy should parse"),
+            CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed
         );
     }
 

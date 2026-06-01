@@ -16,16 +16,12 @@ pub(in crate::ai::combat_search_v2) struct TurnPlanFrontierSeedResult {
     pub(in crate::ai::combat_search_v2) nodes: Vec<SearchNode>,
 }
 
-pub(in crate::ai::combat_search_v2) fn root_turn_plan_frontier_seed(
-    root: &SearchNode,
+pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
+    node: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
     deadline: Option<Instant>,
 ) -> TurnPlanFrontierSeedResult {
-    if !config.turn_plan_policy.seeds_frontier() {
-        return TurnPlanFrontierSeedResult::default();
-    }
-
     let turn_config = TurnPlannerConfigV1 {
         max_inner_nodes: TURN_PLAN_FRONTIER_SEED_MAX_INNER_NODES,
         max_end_states: TURN_PLAN_FRONTIER_SEED_MAX_END_STATES,
@@ -33,7 +29,7 @@ pub(in crate::ai::combat_search_v2) fn root_turn_plan_frontier_seed(
         potion_policy: config.potion_policy,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
     };
-    let enumeration = enumerate_turn_plans(root, stepper, &turn_config, deadline);
+    let enumeration = enumerate_turn_plans(node, stepper, &turn_config, deadline);
     let nodes = enumeration
         .plans
         .into_iter()

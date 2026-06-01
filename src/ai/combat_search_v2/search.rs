@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashSet;
 
 mod finalize;
 
@@ -33,6 +34,7 @@ pub fn run_combat_search_v2_with_stepper(
         config.rollout_beam_width,
     );
     let mut frontier = FrontierQueue::new(config.frontier_policy);
+    let mut turn_plan_seeded_sources = HashSet::new();
     let mut next_sequence_id = 0u64;
     let mut root = SearchNode {
         engine: engine.clone(),
@@ -52,19 +54,20 @@ pub fn run_combat_search_v2_with_stepper(
         stats.nodes_to_first_win = Some(0);
     }
     let root_for_turn_plan_diagnostics = root.clone();
-    let mut seeded_nodes =
-        root_turn_plan_frontier_seed(&root_for_turn_plan_diagnostics, stepper, &config, deadline);
-    diagnostics.observe_turn_plan_frontier_seeded_nodes(seeded_nodes.nodes.len());
     push_frontier(&mut frontier, root, &mut next_sequence_id);
-    for mut seed in seeded_nodes.nodes.drain(..) {
-        seed.rollout_estimate = rollout_cache.estimate(&seed, stepper, &config, deadline);
-        stats.nodes_generated = stats.nodes_generated.saturating_add(1);
-        if stats.nodes_to_first_win.is_none()
-            && terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Win
-        {
-            stats.nodes_to_first_win = Some(stats.nodes_generated);
-        }
-        push_frontier(&mut frontier, seed, &mut next_sequence_id);
+    if config.turn_plan_policy.seeds_root_frontier() {
+        seed_turn_plan_frontier(
+            &root_for_turn_plan_diagnostics,
+            stepper,
+            &config,
+            deadline,
+            &mut rollout_cache,
+            &mut stats,
+            &mut diagnostics,
+            &mut frontier,
+            &mut next_sequence_id,
+            &mut turn_plan_seeded_sources,
+        );
     }
 
     let mut best_complete: Option<SearchNode> = None;
@@ -125,6 +128,21 @@ pub fn run_combat_search_v2_with_stepper(
         if is_resource_covered(&mut dominance, dominance_key, resource) {
             stats.dominance_prunes = stats.dominance_prunes.saturating_add(1);
             continue;
+        }
+
+        if should_seed_turn_plan_at_node(&node, &config) {
+            seed_turn_plan_frontier(
+                &node,
+                stepper,
+                &config,
+                deadline,
+                &mut rollout_cache,
+                &mut stats,
+                &mut diagnostics,
+                &mut frontier,
+                &mut next_sequence_id,
+                &mut turn_plan_seeded_sources,
+            );
         }
 
         stats.nodes_expanded = stats.nodes_expanded.saturating_add(1);
@@ -270,6 +288,44 @@ pub fn run_combat_search_v2_with_stepper(
         potion_budget_cut_count,
         exhausted,
     })
+}
+
+fn seed_turn_plan_frontier(
+    source: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    deadline: Option<Instant>,
+    rollout_cache: &mut RolloutCache,
+    stats: &mut CombatSearchV2Stats,
+    diagnostics: &mut SearchDiagnosticsCollector,
+    frontier: &mut FrontierQueue,
+    next_sequence_id: &mut u64,
+    seeded_sources: &mut HashSet<CombatExactStateKey>,
+) {
+    let source_key = combat_exact_state_key(&source.engine, &source.combat);
+    if !seeded_sources.insert(source_key) {
+        return;
+    }
+
+    let mut seeded_nodes = turn_plan_frontier_seed(source, stepper, config, deadline);
+    diagnostics.observe_turn_plan_frontier_seeded_nodes(seeded_nodes.nodes.len());
+    for mut seed in seeded_nodes.nodes.drain(..) {
+        seed.rollout_estimate = rollout_cache.estimate(&seed, stepper, config, deadline);
+        stats.nodes_generated = stats.nodes_generated.saturating_add(1);
+        if stats.nodes_to_first_win.is_none()
+            && terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Win
+        {
+            stats.nodes_to_first_win = Some(stats.nodes_generated);
+        }
+        push_frontier(frontier, seed, next_sequence_id);
+    }
+}
+
+fn should_seed_turn_plan_at_node(node: &SearchNode, config: &CombatSearchV2Config) -> bool {
+    config.turn_plan_policy.seeds_turn_boundary_frontier()
+        && matches!(node.engine, EngineState::CombatPlayerTurn)
+        && node.turn_prefix.prefix_length() == 0
+        && terminal_label(&node.engine, &node.combat) == SearchTerminalLabel::Unresolved
 }
 
 #[cfg(test)]

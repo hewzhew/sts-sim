@@ -108,7 +108,7 @@ impl TurnPlanDiagnosticsCollector {
 
     fn behavioral_effect_label(&self) -> &'static str {
         if self.frontier_seeded_nodes > 0 {
-            "root_frontier_seed_exact_end_states_no_prune_no_terminal_claim"
+            "turn_plan_frontier_seed_exact_end_states_no_prune_no_terminal_claim"
         } else {
             "diagnostic_only_no_frontier_steering_no_prune_no_proof_claim"
         }

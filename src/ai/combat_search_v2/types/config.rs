@@ -90,6 +90,7 @@ impl CombatSearchV2RolloutPolicy {
 pub enum CombatSearchV2TurnPlanPolicy {
     DiagnosticOnly,
     RootFrontierSeed,
+    TurnBoundaryFrontierSeed,
 }
 
 impl Default for CombatSearchV2TurnPlanPolicy {
@@ -103,11 +104,19 @@ impl CombatSearchV2TurnPlanPolicy {
         match self {
             Self::DiagnosticOnly => "diagnostic_only",
             Self::RootFrontierSeed => "root_frontier_seed",
+            Self::TurnBoundaryFrontierSeed => "turn_boundary_frontier_seed",
         }
     }
 
-    pub(in crate::ai::combat_search_v2) fn seeds_frontier(self) -> bool {
-        matches!(self, Self::RootFrontierSeed)
+    pub(in crate::ai::combat_search_v2) fn seeds_root_frontier(self) -> bool {
+        matches!(
+            self,
+            Self::RootFrontierSeed | Self::TurnBoundaryFrontierSeed
+        )
+    }
+
+    pub(in crate::ai::combat_search_v2) fn seeds_turn_boundary_frontier(self) -> bool {
+        matches!(self, Self::TurnBoundaryFrontierSeed)
     }
 }
 

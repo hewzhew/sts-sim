@@ -179,6 +179,69 @@ impl CombatStepper for OneCardWinStepper {
     }
 }
 
+#[derive(Clone, Copy)]
+struct TwoTurnWinStepper;
+
+impl CombatStepper for TwoTurnWinStepper {
+    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        if !matches!(position.engine, EngineState::CombatPlayerTurn) {
+            return Vec::new();
+        }
+        if position.combat.turn.turn_count == 0 {
+            vec![ClientInput::EndTurn]
+        } else {
+            vec![ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            }]
+        }
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        let mut combat = position.combat.clone();
+        let mut engine = position.engine.clone();
+        match input {
+            ClientInput::EndTurn => {
+                combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
+                combat.entities.player.current_hp =
+                    combat.entities.player.current_hp.saturating_sub(1);
+            }
+            ClientInput::PlayCard { .. } => {
+                if let Some(monster) = combat.entities.monsters.first_mut() {
+                    monster.current_hp = 0;
+                }
+            }
+            _ => {}
+        }
+        if combat
+            .entities
+            .monsters
+            .iter()
+            .all(|monster| !monster.is_alive_for_action())
+        {
+            engine = EngineState::GameOver(crate::state::core::RunResult::Victory);
+        }
+        let position = CombatPosition::new(engine, combat);
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&position.engine, &position.combat),
+            alive: true,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
 #[test]
 fn max_potions_used_cuts_potion_branches_without_disabling_policy_all() {
     let mut combat = blank_test_combat();
@@ -337,11 +400,61 @@ fn root_turn_plan_frontier_seed_is_explicit_opt_in() {
     assert_eq!(seeded.diagnostics.turn_plan.frontier_seeded_nodes, 1);
     assert_eq!(
         seeded.diagnostics.turn_plan.behavioral_effect,
-        "root_frontier_seed_exact_end_states_no_prune_no_terminal_claim"
+        "turn_plan_frontier_seed_exact_end_states_no_prune_no_terminal_claim"
     );
     assert!(seeded
         .diagnostics
         .diagnosis
         .contains(&"turn_plan_frontier_seeded"));
     assert_eq!(seeded.search_policy.turn_plan_policy, "root_frontier_seed");
+}
+
+#[test]
+fn turn_boundary_frontier_seed_extends_beyond_root_when_explicitly_enabled() {
+    let mut combat = blank_test_combat();
+    combat.turn.turn_count = 0;
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    monster.current_hp = 200;
+    monster.max_hp = 200;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+        crate::content::cards::CardId::Strike,
+        100,
+    )];
+    let base_config = CombatSearchV2Config {
+        max_nodes: 4,
+        rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+        ..CombatSearchV2Config::default()
+    };
+
+    let root_only = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::RootFrontierSeed,
+            ..base_config.clone()
+        },
+        &TwoTurnWinStepper,
+    );
+
+    let turn_boundary = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed,
+            ..base_config
+        },
+        &TwoTurnWinStepper,
+    );
+
+    assert_eq!(root_only.diagnostics.turn_plan.frontier_seeded_nodes, 0);
+    assert!(
+        turn_boundary.diagnostics.turn_plan.frontier_seeded_nodes
+            > root_only.diagnostics.turn_plan.frontier_seeded_nodes
+    );
+    assert_eq!(
+        turn_boundary.search_policy.turn_plan_policy,
+        "turn_boundary_frontier_seed"
+    );
 }
