@@ -1,7 +1,8 @@
 use super::*;
+use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
-use crate::runtime::combat::{Power, PowerPayload};
+use crate::runtime::combat::{CombatCard, Power, PowerPayload};
 use crate::sim::combat::{CombatPosition, CombatStepLimits};
 use crate::test_support::{blank_test_combat, test_monster};
 
@@ -150,6 +151,52 @@ fn one_step_probe_terminal_only_mode_rejects_nonterminal_phase_upgrade() {
 }
 
 #[test]
+fn one_step_probe_can_choose_sustained_mitigation_from_action_facts() {
+    let combat = attacking_guardian_with_hand(vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::Disarm, 11),
+    ]);
+    let node = test_node(combat.clone());
+    let ordered = vec![
+        indexed_choice(
+            &combat,
+            0,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+        indexed_choice(
+            &combat,
+            1,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+        ),
+    ];
+
+    let (selection, reason) = choose_by_one_step_probe(
+        &node,
+        &ProbeStepper {
+            damage_on_card_index: None,
+            player_hp_loss_on_damage: 0,
+        },
+        &test_config(),
+        None,
+        &ordered,
+        true,
+    )
+    .expect("Disarm facts should be eligible when it does not regress survival");
+
+    assert_eq!(selection.original_action_id, 1);
+    assert_eq!(
+        reason,
+        super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_ACTION_FACTS_VALUE
+    );
+}
+
+#[test]
 fn probe_upgrade_reason_accepts_hp_gain_as_survival_value() {
     let fallback = score_with_survival(30, 5, 0);
     let candidate = score_with_survival(31, 5, 0);
@@ -191,6 +238,53 @@ fn probe_upgrade_reason_accepts_reduced_visible_hp_loss() {
             super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE
         )
     );
+}
+
+#[test]
+fn probe_upgrade_reason_accepts_action_fact_setup_value() {
+    let fallback = score_with_survival(30, 5, 0);
+    let mut candidate = fallback;
+    candidate.action_debuff_setup = 2;
+
+    assert_eq!(
+        probe_upgrade_reason(candidate, fallback, true),
+        Some(
+            super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_ACTION_FACTS_VALUE
+        )
+    );
+}
+
+#[test]
+fn probe_upgrade_reason_rejects_fact_upgrade_with_reactive_risk_regression() {
+    let fallback = score_with_survival(30, 5, 0);
+    let mut candidate = fallback;
+    candidate.action_debuff_setup = 2;
+    candidate.action_reactive_safety = -1;
+
+    assert_eq!(probe_upgrade_reason(candidate, fallback, true), None);
+}
+
+#[test]
+fn probe_upgrade_reason_allows_survival_gain_before_reactive_risk_gate() {
+    let fallback = score_with_survival(30, 5, 0);
+    let mut candidate = score_with_survival(31, 5, 0);
+    candidate.action_reactive_safety = -1;
+
+    assert_eq!(
+        probe_upgrade_reason(candidate, fallback, true),
+        Some(
+            super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE
+        )
+    );
+}
+
+#[test]
+fn probe_score_prefers_lower_visible_hp_loss_before_late_tie_breakers() {
+    let mut fallback = score_with_survival(30, 5, 8);
+    fallback.action_progress_hint = 10;
+    let candidate = score_with_survival(30, 5, 3);
+
+    assert!(candidate > fallback);
 }
 
 fn indexed_choice(
@@ -241,6 +335,16 @@ fn split_debt_combat() -> CombatState {
     combat
 }
 
+fn attacking_guardian_with_hand(hand: Vec<CombatCard>) -> CombatState {
+    let mut combat = blank_test_combat();
+    let mut guardian = test_monster(EnemyId::TheGuardian);
+    guardian.id = 1;
+    guardian.set_planned_move_id(4);
+    combat.entities.monsters = vec![guardian];
+    combat.zones.hand = hand;
+    combat
+}
+
 fn test_config() -> CombatSearchV2Config {
     CombatSearchV2Config {
         max_nodes: 100,
@@ -270,6 +374,11 @@ fn score_with_survival(
         phase_adjusted_enemy_progress: -30,
         split_debt_stability: 0,
         mechanics_stability: 0,
+        action_sustained_mitigation: 0,
+        action_visible_mitigation: 0,
+        action_debuff_setup: 0,
+        action_progress_hint: 0,
+        action_reactive_safety: 0,
         pending_choice_fanout: 0,
         ordered_preference: 0,
         nonterminal_upgrade_eligible: true,

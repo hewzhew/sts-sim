@@ -13,6 +13,8 @@ pub(super) const ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE: &st
     "conservative_policy_selected_bounded_one_step_survival_value_no_potion_action";
 pub(super) const ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PHASE_VALUE: &str =
     "conservative_policy_selected_bounded_one_step_phase_value_no_potion_action";
+pub(super) const ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_ACTION_FACTS_VALUE: &str =
+    "conservative_policy_selected_bounded_one_step_action_facts_value_no_potion_action";
 
 pub(super) const CONSERVATIVE_ROLLOUT_PROBE_ACTION_LIMIT: usize = 6;
 

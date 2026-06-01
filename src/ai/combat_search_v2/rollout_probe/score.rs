@@ -17,6 +17,11 @@ pub(super) struct RolloutActionProbeScore {
     pub(super) phase_adjusted_enemy_progress: i32,
     pub(super) split_debt_stability: i32,
     pub(super) mechanics_stability: i32,
+    pub(super) action_sustained_mitigation: i32,
+    pub(super) action_visible_mitigation: i32,
+    pub(super) action_debuff_setup: i32,
+    pub(super) action_progress_hint: i32,
+    pub(super) action_reactive_safety: i32,
     pub(super) pending_choice_fanout: i32,
     pub(super) ordered_preference: i32,
     pub(super) nonterminal_upgrade_eligible: bool,
@@ -29,19 +34,29 @@ struct RolloutPhaseProbeScore {
     pending_choice_fanout: i32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+struct RolloutActionFactsProbeScore {
+    sustained_mitigation: i32,
+    visible_mitigation: i32,
+    debuff_setup: i32,
+    progress_hint: i32,
+    reactive_safety: i32,
+}
+
 impl Ord for RolloutActionProbeScore {
     fn cmp(&self, other: &Self) -> Ordering {
         self.terminal_rank
             .cmp(&other.terminal_rank)
             .then_with(|| self.final_hp.cmp(&other.final_hp))
             .then_with(|| self.survival_margin.cmp(&other.survival_margin))
+            .then_with(|| other.visible_hp_loss.cmp(&self.visible_hp_loss))
             .then_with(|| self.living_enemy_progress.cmp(&other.living_enemy_progress))
             .then_with(|| {
                 self.phase_adjusted_enemy_progress
                     .cmp(&other.phase_adjusted_enemy_progress)
             })
-            .then_with(|| self.mechanics_stability.cmp(&other.mechanics_stability))
-            .then_with(|| self.pending_choice_fanout.cmp(&other.pending_choice_fanout))
+            .then_with(|| self.phase_score().cmp(&other.phase_score()))
+            .then_with(|| self.action_facts_score().cmp(&other.action_facts_score()))
             .then_with(|| self.ordered_preference.cmp(&other.ordered_preference))
     }
 }
@@ -93,6 +108,8 @@ pub(super) fn probe_action_score(
                 .gremlin_nob_anger_amount_total
                 .max(0),
         );
+    let action_facts = summarize_action_facts_from_step(&node.combat, &choice.choice.input, &step);
+    let action_facts_score = action_facts_probe_score(&action_facts);
     let player_block = step.position.combat.entities.player.block;
     let visible_hp_loss = (phase_profile.pressure.visible_incoming_damage - player_block).max(0);
     Some(RolloutActionProbeScore {
@@ -106,6 +123,11 @@ pub(super) fn probe_action_score(
             .phase_adjusted_living_enemy_effort,
         split_debt_stability: -phase_profile.enemy_phase.split_debt_hp,
         mechanics_stability: -mechanics_pressure,
+        action_sustained_mitigation: action_facts_score.sustained_mitigation,
+        action_visible_mitigation: action_facts_score.visible_mitigation,
+        action_debuff_setup: action_facts_score.debuff_setup,
+        action_progress_hint: action_facts_score.progress_hint,
+        action_reactive_safety: action_facts_score.reactive_safety,
         pending_choice_fanout: -(phase_profile.pending_choice.estimated_action_fanout as i32),
         ordered_preference: -(ordered_index as i32),
         nonterminal_upgrade_eligible: !matches!(choice.choice.input, ClientInput::EndTurn),
@@ -141,17 +163,46 @@ pub(super) fn probe_upgrade_reason(
             super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE,
         );
     }
-    if candidate.survival_margin > fallback.survival_margin
-        && candidate.visible_hp_loss < fallback.visible_hp_loss
-    {
+    if candidate.visible_hp_loss < fallback.visible_hp_loss {
         return Some(
             super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE,
         );
     }
+    if candidate.action_reactive_safety < fallback.action_reactive_safety {
+        return None;
+    }
     if candidate.phase_score() > fallback.phase_score() {
         Some(super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PHASE_VALUE)
+    } else if candidate.action_facts_score() > fallback.action_facts_score() {
+        Some(
+            super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_ACTION_FACTS_VALUE,
+        )
     } else {
         None
+    }
+}
+
+fn action_facts_probe_score(facts: &CombatSearchV2ActionFacts) -> RolloutActionFactsProbeScore {
+    RolloutActionFactsProbeScore {
+        sustained_mitigation: facts.mechanics.persistent_enemy_strength_down,
+        visible_mitigation: facts
+            .mechanics
+            .temporary_enemy_strength_down
+            .saturating_add(facts.mechanics.visible_attack_mitigation_hint)
+            .saturating_add(facts.mechanics.enemy_weak),
+        debuff_setup: facts.mechanics.enemy_vulnerable,
+        progress_hint: facts
+            .immediate
+            .target_progress_hint
+            .max(facts.immediate.all_enemy_progress_hint)
+            .saturating_add(facts.mechanics.reactive_enemy_damage),
+        reactive_safety: -facts
+            .mechanics
+            .enemy_strength_gain
+            .saturating_add(facts.mechanics.visible_attack_pressure_hint)
+            .saturating_add(facts.mechanics.reactive_player_hp_loss)
+            .saturating_add(facts.mechanics.reactive_bad_draw_cards)
+            .saturating_add(i32::from(facts.mechanics.reactive_forced_turn_end)),
     }
 }
 
@@ -161,6 +212,16 @@ impl RolloutActionProbeScore {
             split_debt_stability: self.split_debt_stability,
             mechanics_stability: self.mechanics_stability,
             pending_choice_fanout: self.pending_choice_fanout,
+        }
+    }
+
+    fn action_facts_score(self) -> RolloutActionFactsProbeScore {
+        RolloutActionFactsProbeScore {
+            sustained_mitigation: self.action_sustained_mitigation,
+            visible_mitigation: self.action_visible_mitigation,
+            debuff_setup: self.action_debuff_setup,
+            progress_hint: self.action_progress_hint,
+            reactive_safety: self.action_reactive_safety,
         }
     }
 }
