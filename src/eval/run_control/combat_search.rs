@@ -1,6 +1,6 @@
 use crate::ai::combat_search_v2::{
     filter_combat_search_legal_actions, run_combat_search_v2, CombatSearchV2ActionTrace,
-    CombatSearchV2Config, CombatSearchV2Report, SearchProofStatus, SearchTerminalLabel,
+    CombatSearchV2Config, CombatSearchV2Report, SearchTerminalLabel,
 };
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
@@ -62,11 +62,7 @@ pub(super) fn apply_search_combat(
     }
     let after_snapshot = RunVisibleSnapshot::capture(session);
     let status = current_run_apply_status(session);
-    let mut transition_label = format!(
-        "search-combat applied {} actions [proof_status={:?}]",
-        applied.len(),
-        report.outcome.proof_status
-    );
+    let mut transition_label = format!("search-combat applied {} actions", applied.len());
     if let Some(path) = saved_evidence.as_ref() {
         transition_label.push_str(&format!(" saved_search={}", path.display()));
     }
@@ -253,9 +249,8 @@ fn verify_trajectory_replays_to_win(
 
 fn render_search_rejection(report: &CombatSearchV2Report) -> String {
     format!(
-        "Search combat did not modify state.\n  terminal_report={:?}\n  proof_status={:?}\n  complete_trajectory_found={}\n  terminal_wins={}\n  nodes_expanded={}\n  nodes_generated={}\n  rollouts={} rollout_wins={} rollout_skips={}\n  reliability={}\n  reason={}",
-        report.outcome.terminal,
-        report.outcome.proof_status,
+        "Search combat did not modify state.\n  result=no_complete_winning_candidate\n  coverage_status={:?}\n  complete_trajectory_found={}\n  terminal_wins={}\n  nodes_expanded={}\n  nodes_generated={}\n  rollouts={} rollout_wins={} rollout_skips={}\n  reliability={}\n  coverage_reason={}",
+        report.outcome.coverage_status,
         report.outcome.complete_trajectory_found,
         report.stats.terminal_wins,
         report.stats.nodes_expanded,
@@ -264,7 +259,7 @@ fn render_search_rejection(report: &CombatSearchV2Report) -> String {
         report.rollout.terminal_wins,
         report.rollout.budget_skips,
         report.evidence_reliability.reliability,
-        report.outcome.reason
+        report.outcome.coverage_reason
     )
 }
 
@@ -276,17 +271,14 @@ fn render_search_application(
         .best_complete_trajectory
         .as_ref()
         .expect("caller only renders after selecting a complete trajectory");
-    let optimality = if report.outcome.proof_status == SearchProofStatus::Exhaustive {
-        "exact_under_supplied_state"
-    } else {
-        "not_claimed_budgeted_complete_win"
-    };
     let mut lines = vec![
-        "Search combat applied complete winning trajectory.".to_string(),
+        "Search combat applied complete winning candidate.".to_string(),
         format!(
-            "  proof_status={:?} optimality={optimality}",
-            report.outcome.proof_status
+            "  coverage_status={:?} reliability={}",
+            report.outcome.coverage_status, report.evidence_reliability.reliability
         ),
+        format!("  coverage_reason={}", report.outcome.coverage_reason),
+        format!("  terminal={:?}", trajectory.terminal),
         format!(
             "  final_hp={} hp_loss={} turns={} cards_played={} potions_used={}",
             trajectory.final_hp,

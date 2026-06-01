@@ -37,9 +37,8 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
     } = input;
 
     let exhaustive = !exhausted && frontier.is_empty();
-    let proof_status = proof_status_for_finished_search(&stats, exhaustive);
-    let top_terminal = top_terminal_for_finished_search(exhaustive, best_complete.as_ref());
-    let reason = proof_status_reason(proof_status);
+    let coverage_status = coverage_status_for_finished_search(&stats, exhaustive);
+    let coverage_reason = coverage_status_reason(coverage_status);
     let sample_states = frontier_sample_states(&frontier);
     let diagnostics = diagnostics.finish(SearchDiagnosticsFinish {
         exact_transpositions: &exact_transpositions,
@@ -47,7 +46,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         frontier_remaining_states: frontier.len(),
         frontier_sample_count: sample_states.len(),
         stats: &stats,
-        proof_status,
+        coverage_status,
         unresolved_leaf_count,
         max_actions_cut_count,
         engine_step_limit_count,
@@ -59,7 +58,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
 
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
-        schema_version: 4,
+        schema_version: 5,
         input_label: config.input_label,
         information_boundary: "engine_state_snapshot_truth_v0",
         search_policy: CombatSearchV2PolicyReport {
@@ -88,9 +87,8 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             rollout_beam_width: config.rollout_beam_width,
         },
         outcome: CombatSearchV2OutcomeReport {
-            terminal: top_terminal,
-            proof_status,
-            reason,
+            coverage_status,
+            coverage_reason,
             complete_trajectory_found: best_complete.is_some(),
             exhaustive,
         },
@@ -133,47 +131,34 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
     }
 }
 
-fn proof_status_for_finished_search(
+fn coverage_status_for_finished_search(
     stats: &CombatSearchV2Stats,
     exhaustive: bool,
-) -> SearchProofStatus {
+) -> SearchCoverageStatus {
     if stats.deadline_hit {
-        SearchProofStatus::DeadlineHit
+        SearchCoverageStatus::TimeBudgetLimited
     } else if stats.node_budget_hit {
-        SearchProofStatus::BudgetExhausted
+        SearchCoverageStatus::NodeBudgetLimited
     } else if exhaustive {
-        SearchProofStatus::Exhaustive
+        SearchCoverageStatus::Exhaustive
     } else {
-        SearchProofStatus::FrontierUnresolved
+        SearchCoverageStatus::FrontierOpen
     }
 }
 
-fn top_terminal_for_finished_search(
-    exhaustive: bool,
-    best_complete: Option<&SearchNode>,
-) -> SearchTerminalLabel {
-    if exhaustive {
-        best_complete
-            .map(|node| terminal_label(&node.engine, &node.combat))
-            .unwrap_or(SearchTerminalLabel::Unresolved)
-    } else {
-        SearchTerminalLabel::Unresolved
-    }
-}
-
-fn proof_status_reason(proof_status: SearchProofStatus) -> String {
-    match proof_status {
-        SearchProofStatus::Exhaustive => {
-            "frontier exhausted; best_complete_trajectory is the best complete trajectory found by this exact-state search".to_string()
+fn coverage_status_reason(coverage_status: SearchCoverageStatus) -> String {
+    match coverage_status {
+        SearchCoverageStatus::Exhaustive => {
+            "frontier exhausted under the current exact-state search configuration".to_string()
         }
-        SearchProofStatus::BudgetExhausted => {
-            "node budget exhausted; unresolved frontier remains, so no optimality claim is made".to_string()
+        SearchCoverageStatus::NodeBudgetLimited => {
+            "node budget limit reached with frontier still open".to_string()
         }
-        SearchProofStatus::DeadlineHit => {
-            "wall-clock deadline hit; unresolved frontier remains, so no optimality claim is made".to_string()
+        SearchCoverageStatus::TimeBudgetLimited => {
+            "wall-clock deadline reached with frontier still open".to_string()
         }
-        SearchProofStatus::FrontierUnresolved => {
-            "frontier unresolved under current safety limits; no optimality claim is made".to_string()
+        SearchCoverageStatus::FrontierOpen => {
+            "frontier remains open under current safety limits".to_string()
         }
     }
 }

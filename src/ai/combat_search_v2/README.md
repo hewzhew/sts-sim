@@ -22,7 +22,7 @@ this map and extend an existing boundary when one already exists.
   search, rollout, or reports.
 - `action_ordering/`: action child-generation order only. It must not prune or
   merge legal actions.
-- `action_equivalence/`: proof-scoped local action-list deduplication only. Do
+- `action_equivalence/`: soundness-scoped local action-list deduplication only. Do
   not use it for global state merging.
 - `turn_planner/`: exact same-turn enumeration and optional frontier seeding.
   Reuse this for turn-level macro candidates; do not create another turn-plan
@@ -32,7 +32,7 @@ this map and extend an existing boundary when one already exists.
   - `turn_boundary_frontier_seed` is opt-in and seeds exact current-turn end
     states whenever search reaches a new empty-prefix player-turn boundary,
     with exact source-key de-duplication. It does not prune atomic branches or
-    make terminal proof claims by itself.
+    create terminal outcome records by itself.
 - `turn_local_dominance/`: same-parent same-turn pruning only. Cross-turn or
   cross-parent dominance belongs in `frontier/` resource dominance, not here.
 
@@ -62,7 +62,7 @@ this map and extend an existing boundary when one already exists.
   `turn_sequence_effect/`, `discard_order_shadow_audit/`, `card_identity/`,
   `state_abstraction/`: observation, audit, and boundary classification.
   These modules must not remove exact branches unless the boundary is promoted
-  to a proof-safe consumer.
+  to a prune-safe consumer.
 - `decision_microscope/` and `rollout_probe/`: opt-in analysis tools. Do not
   route normal search behavior through them.
 - `trajectory_report.rs` and `baseline.rs`: whole-combat outcome reporting and
@@ -73,10 +73,10 @@ this map and extend an existing boundary when one already exists.
 1. If the work is about full-turn candidates, start in `turn_planner/`.
 2. If the work is about child order, start in `action_ordering/` or
    `phase_action_ordering.rs`.
-3. If the work is about pruning, identify the proof boundary first:
+3. If the work is about pruning, identify the safe-pruning boundary first:
    `action_equivalence/`, `frontier/`, or `turn_local_dominance/`.
 4. If the work is about estimates, use `value/` or `rollout/`; do not let it
-   claim proof.
+   claim a terminal outcome.
 5. If the work only explains behavior, it belongs in diagnostics and needs a
    concrete consumer before adding more report fields.
 6. New top-level files in this directory should be rare. Prefer extending the

@@ -28,7 +28,7 @@ pub fn classify_state_abstraction_case(
             StateAbstractionConsumer::ReportOnly,
             vec![
                 "current exact/dominance keys observe different future-relevant state for reordered prefixes",
-                "turn-sequence divergence classification is diagnostic guidance, not a pruning proof",
+                "turn-sequence divergence classification is diagnostic guidance, not safe-pruning evidence",
             ],
         ));
     }

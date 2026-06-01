@@ -183,7 +183,7 @@ impl RolloutCache {
         CombatSearchV2RolloutReport {
             policy: self.policy.label(),
             behavioral_effect:
-                "estimated_frontier_priority_only_no_terminal_proof_no_baseline_claim",
+                "estimated_frontier_priority_only_no_terminal_outcome_no_baseline_claim",
             max_evaluations: self.max_evaluations,
             max_actions_per_rollout: self.max_actions,
             beam_width: self.beam_width,
@@ -229,13 +229,13 @@ impl RolloutCache {
             best_frontier_estimate: best_frontier
                 .and_then(|node| node.rollout_estimate.to_report()),
             notes: vec![
-                "rollout estimates are not terminal proof",
+                "rollout estimates are not terminal outcome records",
                 "conservative_no_potion uses only legal simulator actions and disables potion actions",
                 "rollout cache is keyed by exact combat runtime state",
                 "unresolved rollout priority uses phase-adjusted enemy effort from phase_profile",
                 "high-fanout pending choices stop rollout estimates instead of selecting an arbitrary branch",
-                "small pending choices may be followed by rollout, but their actions are still exact simulator inputs and never proof claims",
-                "turn_beam_no_potion uses turn-plan end states as an estimate-only beam and still reports no proof claim",
+                "small pending choices may be followed by rollout, but their actions are still exact simulator inputs and never terminal outcome records",
+                "turn_beam_no_potion uses turn-plan end states as an estimate-only beam and still reports no terminal outcome record",
             ],
         }
     }

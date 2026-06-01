@@ -99,7 +99,7 @@ impl TargetFanoutDiagnosticsCollector {
             largest_target_fanouts: self.largest_target_fanout_samples(),
             notes: vec![
                 "target fanout groups are not equivalence classes",
-                "damage hints are visible ordering diagnostics, not simulator damage proofs",
+                "damage hints are visible ordering diagnostics, not exact simulator damage facts",
                 "non-damage targeted potions are counted with zero damage hint",
                 "future target pruning must prove monster-specific safety before removing branches",
             ],

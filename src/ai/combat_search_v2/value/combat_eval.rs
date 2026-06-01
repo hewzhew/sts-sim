@@ -2,8 +2,9 @@ use std::cmp::Ordering;
 
 use super::super::{RolloutNodeEstimate, SearchTerminalLabel};
 
-// CombatEval is an estimate-only ordering surface. It must not become a proof
-// boundary; exact terminal trajectories and exact state keys remain authoritative.
+// CombatEval is an estimate-only ordering surface. It must not become an
+// authoritative terminal-outcome boundary; exact terminal trajectories and exact
+// state keys remain authoritative.
 const CRITICAL_SURVIVAL_MARGIN_MAX: i32 = 6;
 const STABILIZING_SURVIVAL_MARGIN_MAX: i32 = 15;
 const LIKELY_NEXT_TURN_LETHAL_EFFORT_MAX: i32 = 20;

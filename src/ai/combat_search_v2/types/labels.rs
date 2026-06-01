@@ -10,9 +10,9 @@ pub enum SearchTerminalLabel {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SearchProofStatus {
+pub enum SearchCoverageStatus {
     Exhaustive,
-    BudgetExhausted,
-    DeadlineHit,
-    FrontierUnresolved,
+    NodeBudgetLimited,
+    TimeBudgetLimited,
+    FrontierOpen,
 }

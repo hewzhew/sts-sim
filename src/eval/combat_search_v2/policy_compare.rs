@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::ai::combat_search_v2::{
     compare_outcome_metrics, CombatSearchV2FrontierPolicy, CombatSearchV2OutcomeMetrics,
     CombatSearchV2RolloutPolicy, CombatSearchV2TrajectoryReport, CombatSearchV2TurnPlanPolicy,
-    SearchProofStatus, SearchTerminalLabel,
+    SearchCoverageStatus, SearchTerminalLabel,
 };
 
 use super::benchmark::{
@@ -89,7 +89,7 @@ pub enum CombatSearchV2PolicyComparisonVerdict {
 pub struct CombatSearchV2PolicyComparisonRun {
     pub policy: String,
     pub terminal: Option<SearchTerminalLabel>,
-    pub proof_status: SearchProofStatus,
+    pub coverage_status: SearchCoverageStatus,
     pub complete_trajectory_found: bool,
     pub final_hp: Option<i32>,
     pub hp_loss: Option<i32>,
@@ -137,10 +137,10 @@ pub fn compare_combat_search_v2_rollout_policies(
         &left,
         &right,
         vec![
-            "comparison uses best complete trajectories, not proof of optimality",
+            "comparison uses complete candidate trajectories, not stepwise action agreement",
             "first_action_diff identifies where selected best complete trajectories diverge",
             "rollout policy affects frontier priority; action diffs are consequences, not direct rollout action labels",
-            "turn_beam_no_potion is a rollout estimate policy; it does not seed proof states and does not change terminal proof semantics",
+            "turn_beam_no_potion is a rollout estimate policy; it does not change exact replay validation",
             "first_action_diff context is reconstructed by exact replay of the common prefix and is diagnostic only",
         ],
     )
@@ -169,9 +169,9 @@ pub fn compare_combat_search_v2_turn_plan_policies(
         &left,
         &right,
         vec![
-            "comparison uses best complete trajectories, not proof of optimality",
+            "comparison uses complete candidate trajectories, not stepwise action agreement",
             "turn_plan_policy=root_frontier_seed seeds exact root turn-plan end states into frontier",
-            "seeded turn-plan states do not prune exact states and do not create terminal claims without exact replay",
+            "seeded turn-plan states do not prune exact states and cannot create terminal outcome records without exact replay",
             "first_action_diff context is reconstructed by exact replay of the common prefix and is diagnostic only",
         ],
     )
@@ -200,7 +200,7 @@ pub fn compare_combat_search_v2_frontier_policies(
         &left,
         &right,
         vec![
-            "comparison uses best complete trajectories, not proof of optimality",
+            "comparison uses complete candidate trajectories, not stepwise action agreement",
             "frontier policy only changes which exact states are expanded first under budget",
             "round_robin_eval_buckets is experimental and defaults off",
             "estimated lanes do not create terminal claims without exact replay",
@@ -332,7 +332,7 @@ fn summarize_run(
     CombatSearchV2PolicyComparisonRun {
         policy: policy.to_string(),
         terminal: trajectory.map(|trajectory| trajectory.terminal),
-        proof_status: case.outcome.proof_status,
+        coverage_status: case.outcome.coverage_status,
         complete_trajectory_found: case.outcome.complete_trajectory_found,
         final_hp: trajectory.map(|trajectory| trajectory.final_hp),
         hp_loss: trajectory.map(|trajectory| trajectory.hp_loss),

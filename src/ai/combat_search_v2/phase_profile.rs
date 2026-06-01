@@ -72,7 +72,7 @@ pub(super) fn combat_search_phase_profile_report(
         notes: vec![
             "phase profile is a read-only state classifier used by value and rollout",
             "high-fanout pending choices stop rollout estimates but do not prune main search",
-            "enemy phase counts are structural signals, not standalone proof of line quality",
+            "enemy phase counts are structural signals, not standalone evidence of line quality",
         ],
     }
 }

@@ -69,7 +69,7 @@ fn tags_surface_budget_and_active_diagnostics() {
     pruning.unresolved_leaf_count = 1;
 
     let tags = diagnosis_tags(
-        SearchProofStatus::BudgetExhausted,
+        SearchCoverageStatus::NodeBudgetLimited,
         &stats,
         &branching,
         &expansion,
@@ -87,7 +87,7 @@ fn tags_surface_budget_and_active_diagnostics() {
         4,
     );
 
-    assert!(tags.contains(&"budget_exhausted_with_unresolved_frontier"));
+    assert!(tags.contains(&"node_budget_limited_with_open_frontier"));
     assert!(tags.contains(&"terminal_wins_found"));
     assert!(tags.contains(&"transposition_pruning_active"));
     assert!(tags.contains(&"dominance_pruning_inactive"));

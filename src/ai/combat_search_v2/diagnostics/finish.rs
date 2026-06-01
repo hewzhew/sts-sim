@@ -11,7 +11,7 @@ pub(in crate::ai::combat_search_v2) struct SearchDiagnosticsFinish<'a> {
     pub(in crate::ai::combat_search_v2) frontier_remaining_states: usize,
     pub(in crate::ai::combat_search_v2) frontier_sample_count: usize,
     pub(in crate::ai::combat_search_v2) stats: &'a CombatSearchV2Stats,
-    pub(in crate::ai::combat_search_v2) proof_status: SearchProofStatus,
+    pub(in crate::ai::combat_search_v2) coverage_status: SearchCoverageStatus,
     pub(in crate::ai::combat_search_v2) unresolved_leaf_count: u64,
     pub(in crate::ai::combat_search_v2) max_actions_cut_count: u64,
     pub(in crate::ai::combat_search_v2) engine_step_limit_count: u64,
@@ -68,7 +68,7 @@ impl SearchDiagnosticsCollector {
         let card_identity = self.card_identity.finish();
         let turn_local_dominance = self.turn_local_dominance.finish();
         let diagnosis = diagnosis_tags(
-            input.proof_status,
+            input.coverage_status,
             input.stats,
             &branching,
             &expansion,

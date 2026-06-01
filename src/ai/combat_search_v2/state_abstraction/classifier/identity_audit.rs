@@ -58,7 +58,7 @@ pub(super) fn identity_audit_report(
         ],
         samples,
         notes: vec![
-            "identity_audit_candidate is deliberately blocked from proof pruning in v1",
+            "identity_audit_candidate is deliberately blocked from prune-safe consumers in v1",
             "discard pile uuid-order differences may look similar to discard-order debt but are a separate identity-reference problem",
             "this report is an audit target list, not a search optimization",
         ],

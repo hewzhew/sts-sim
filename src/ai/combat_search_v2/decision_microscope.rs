@@ -103,7 +103,7 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
             "this report explains the initial decision boundary only",
             "selected_first_action comes from the best complete trajectory found under the current budget",
             "candidate one-step probes are exact simulator transitions to the next stable boundary",
-            "one-step values explain local consequences, not whole-combat optimality",
+            "one-step values explain local consequences, not whole-combat outcome ranking",
             "use this before changing global frontier ordering; if the failure is only a vague ordering preference, do not patch blindly",
         ],
     }

@@ -1,8 +1,7 @@
 use serde::Serialize;
 
 use super::super::{
-    CombatSearchV2DiagnosticsReport, CombatSearchV2TrajectoryReport, SearchProofStatus,
-    SearchTerminalLabel,
+    CombatSearchV2DiagnosticsReport, CombatSearchV2TrajectoryReport, SearchCoverageStatus,
 };
 use super::frontier::CombatSearchV2FrontierReport;
 use super::rollout::CombatSearchV2RolloutReport;
@@ -55,9 +54,8 @@ pub struct CombatSearchV2BudgetReport {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2OutcomeReport {
-    pub terminal: SearchTerminalLabel,
-    pub proof_status: SearchProofStatus,
-    pub reason: String,
+    pub coverage_status: SearchCoverageStatus,
+    pub coverage_reason: String,
     pub complete_trajectory_found: bool,
     pub exhaustive: bool,
 }

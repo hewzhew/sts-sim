@@ -4,7 +4,7 @@ use crate::ai::combat_search_v2::state_abstraction::{
     build_state_abstraction_gate_report, classify_state_abstraction_case,
     StateAbstractionCaseInput, StateAbstractionDivergenceInput, StateAbstractionGateReport,
 };
-use crate::ai::combat_search_v2::{SearchProofStatus, SearchTerminalLabel};
+use crate::ai::combat_search_v2::{SearchCoverageStatus, SearchTerminalLabel};
 
 use super::benchmark::{
     CombatSearchV2BaselineVerdict, CombatSearchV2BenchmarkCaseReport,
@@ -35,9 +35,8 @@ pub enum CombatSearchV2BenchmarkGateStatus {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2BenchmarkGateRequirements {
-    pub require_best_complete_candidate_win_for_every_case: bool,
-    pub require_no_best_complete_candidate_baseline_regression: bool,
-    pub treat_unresolved_proof_as_warning: bool,
+    pub require_complete_candidate_win_for_every_case: bool,
+    pub require_no_complete_candidate_baseline_regression: bool,
     pub treat_deadline_or_node_budget_as_warning: bool,
     pub treat_missing_baseline_as_warning: bool,
 }
@@ -49,9 +48,8 @@ pub struct CombatSearchV2BenchmarkGateSummary {
     pub fail_cases: usize,
     pub missing_complete_trajectory: usize,
     pub non_winning_complete_candidate: usize,
-    pub best_complete_candidate_baseline_regressions: usize,
+    pub complete_candidate_baseline_regressions: usize,
     pub missing_baseline_cases: usize,
-    pub unresolved_proof_cases: usize,
     pub deadline_cases: usize,
     pub node_budget_cases: usize,
     pub high_fanout_pending_choice_cases: usize,
@@ -81,13 +79,13 @@ pub struct CombatSearchV2BenchmarkGateCase {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2BenchmarkGateCaseMetrics {
-    pub proof_status: SearchProofStatus,
+    pub coverage_status: SearchCoverageStatus,
     pub best_complete_terminal: Option<SearchTerminalLabel>,
     pub best_complete_final_hp: Option<i32>,
     pub baseline_final_hp: Option<i32>,
     pub search_minus_baseline_final_hp: Option<i32>,
     pub search_minus_baseline_potions_used: Option<i32>,
-    pub best_complete_candidate_verdict: Option<CombatSearchV2BaselineVerdict>,
+    pub complete_candidate_verdict: Option<CombatSearchV2BaselineVerdict>,
     pub nodes_expanded: u64,
     pub nodes_generated: u64,
     pub nodes_to_first_win: Option<u64>,
@@ -112,13 +110,13 @@ pub struct CombatSearchV2BenchmarkGateCaseMetrics {
 #[derive(Clone, Debug)]
 struct CaseGateFacts<'a> {
     id: &'a str,
-    proof_status: SearchProofStatus,
+    coverage_status: SearchCoverageStatus,
     best_complete_terminal: Option<SearchTerminalLabel>,
     best_complete_final_hp: Option<i32>,
     best_complete_potions_used: Option<u32>,
     baseline_final_hp: Option<i32>,
     baseline_potions_used: Option<u32>,
-    best_complete_candidate_verdict: Option<CombatSearchV2BaselineVerdict>,
+    complete_candidate_verdict: Option<CombatSearchV2BaselineVerdict>,
     has_baseline: bool,
     nodes_expanded: u64,
     nodes_generated: u64,
@@ -189,14 +187,13 @@ pub fn build_combat_search_v2_benchmark_gate_report(
 
     CombatSearchV2BenchmarkGateReport {
         schema_name: "CombatSearchV2BenchmarkGateReport",
-        schema_version: 1,
+        schema_version: 2,
         gate_name: "combat_search_benchmark_gate",
         status,
-        policy: "fail only on missing/non-winning complete candidate or candidate baseline regression; warn on unresolved proof, budget pressure, missing baselines, and diagnostic fanout risks",
+        policy: "fail on missing/non-winning complete candidate or complete-candidate baseline regression; warn on budget pressure, missing baselines, and diagnostic fanout risks",
         requirements: CombatSearchV2BenchmarkGateRequirements {
-            require_best_complete_candidate_win_for_every_case: true,
-            require_no_best_complete_candidate_baseline_regression: true,
-            treat_unresolved_proof_as_warning: true,
+            require_complete_candidate_win_for_every_case: true,
+            require_no_complete_candidate_baseline_regression: true,
             treat_deadline_or_node_budget_as_warning: true,
             treat_missing_baseline_as_warning: true,
         },
@@ -212,14 +209,14 @@ fn case_gate_facts(case: &CombatSearchV2BenchmarkCaseReport) -> CaseGateFacts<'_
     let baseline = case.baseline.as_ref();
     CaseGateFacts {
         id: &case.id,
-        proof_status: case.outcome.proof_status,
+        coverage_status: case.outcome.coverage_status,
         best_complete_terminal: best.map(|trajectory| trajectory.terminal),
         best_complete_final_hp: best.map(|trajectory| trajectory.final_hp),
         best_complete_potions_used: best.map(|trajectory| trajectory.potions_used),
         baseline_final_hp: baseline.map(|baseline| baseline.final_hp),
         baseline_potions_used: baseline.map(|baseline| baseline.potions_used),
-        best_complete_candidate_verdict: case
-            .best_complete_candidate_comparison
+        complete_candidate_verdict: case
+            .baseline_comparison
             .as_ref()
             .map(|comparison| comparison.verdict),
         has_baseline: baseline.is_some(),
@@ -283,17 +280,10 @@ fn assess_case_facts(facts: CaseGateFacts<'_>) -> CombatSearchV2BenchmarkGateCas
     push_failure_if(
         &mut status,
         &mut reasons,
-        facts.best_complete_candidate_verdict
-            == Some(CombatSearchV2BaselineVerdict::BaselineBetter),
-        "best_complete_candidate_worse_than_baseline",
+        facts.complete_candidate_verdict == Some(CombatSearchV2BaselineVerdict::BaselineBetter),
+        "complete_candidate_worse_than_baseline",
     );
 
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        facts.proof_status != SearchProofStatus::Exhaustive,
-        "strict_proof_not_exhaustive",
-    );
     push_warning_if(
         &mut status,
         &mut reasons,
@@ -362,7 +352,7 @@ fn assess_case_facts(facts: CaseGateFacts<'_>) -> CombatSearchV2BenchmarkGateCas
         primary_focus: primary_focus(&facts),
         reasons,
         metrics: CombatSearchV2BenchmarkGateCaseMetrics {
-            proof_status: facts.proof_status,
+            coverage_status: facts.coverage_status,
             best_complete_terminal: facts.best_complete_terminal,
             best_complete_final_hp: facts.best_complete_final_hp,
             baseline_final_hp: facts.baseline_final_hp,
@@ -374,7 +364,7 @@ fn assess_case_facts(facts: CaseGateFacts<'_>) -> CombatSearchV2BenchmarkGateCas
                 facts.best_complete_potions_used,
                 facts.baseline_potions_used,
             ),
-            best_complete_candidate_verdict: facts.best_complete_candidate_verdict,
+            complete_candidate_verdict: facts.complete_candidate_verdict,
             nodes_expanded: facts.nodes_expanded,
             nodes_generated: facts.nodes_generated,
             nodes_to_first_win: facts.nodes_to_first_win,
@@ -438,7 +428,7 @@ fn primary_focus(facts: &CaseGateFacts<'_>) -> &'static str {
         } else {
             "complete_trajectory"
         }
-    } else if facts.best_complete_candidate_verdict
+    } else if facts.complete_candidate_verdict
         == Some(CombatSearchV2BaselineVerdict::BaselineBetter)
     {
         "value_outcome"
@@ -454,8 +444,6 @@ fn primary_focus(facts: &CaseGateFacts<'_>) -> &'static str {
         "budget_or_rollout"
     } else if !facts.has_baseline {
         "baseline_coverage"
-    } else if facts.proof_status != SearchProofStatus::Exhaustive {
-        "proof_boundary"
     } else {
         "none"
     }
@@ -489,19 +477,14 @@ fn accumulate_gate_summary(
         "complete_candidate_not_win",
     );
     count_reason(
-        &mut summary.best_complete_candidate_baseline_regressions,
+        &mut summary.complete_candidate_baseline_regressions,
         &case.reasons,
-        "best_complete_candidate_worse_than_baseline",
+        "complete_candidate_worse_than_baseline",
     );
     count_reason(
         &mut summary.missing_baseline_cases,
         &case.reasons,
         "missing_human_baseline",
-    );
-    count_reason(
-        &mut summary.unresolved_proof_cases,
-        &case.reasons,
-        "strict_proof_not_exhaustive",
     );
     count_reason(&mut summary.deadline_cases, &case.reasons, "deadline_hit");
     count_reason(
@@ -585,7 +568,6 @@ fn focus_rank(focus: &'static str) -> u8 {
         "state_abstraction_boundary" => 5,
         "budget_or_rollout" => 6,
         "baseline_coverage" => 7,
-        "proof_boundary" => 8,
         _ => 8,
     }
 }
@@ -618,17 +600,10 @@ fn focus_counts(
 fn gate_notes(summary: &CombatSearchV2BenchmarkSummary) -> Vec<&'static str> {
     let mut notes = vec![
         "gate compares whole-combat outcomes; it does not require stepwise action agreement",
-        "candidate comparisons are not proof of optimality when proof_* remains unresolved",
+        "coverage fields describe budget and frontier coverage; they are not pass/fail criteria by themselves",
     ];
-    if summary.proof_unresolved > 0 {
-        notes.push(
-            "proof_unresolved cases remain useful as candidate evidence but not optimality claims",
-        );
-    }
-    if summary.best_complete_missing > 0 {
-        notes.push(
-            "missing best-complete candidates should be handled before tuning value preferences",
-        );
+    if summary.complete_candidate_missing > 0 {
+        notes.push("missing complete candidates should be handled before tuning value preferences");
     }
     notes
 }
@@ -641,13 +616,13 @@ mod tests {
     fn gate_case_fails_missing_complete_candidate() {
         let case = assess_case_facts(CaseGateFacts {
             id: "case",
-            proof_status: SearchProofStatus::BudgetExhausted,
+            coverage_status: SearchCoverageStatus::NodeBudgetLimited,
             best_complete_terminal: None,
             best_complete_final_hp: None,
             best_complete_potions_used: None,
             baseline_final_hp: Some(10),
             baseline_potions_used: Some(0),
-            best_complete_candidate_verdict: None,
+            complete_candidate_verdict: None,
             has_baseline: true,
             nodes_expanded: 10,
             nodes_generated: 20,
@@ -676,16 +651,16 @@ mod tests {
     }
 
     #[test]
-    fn gate_case_warns_on_unproven_candidate_win_without_failing() {
+    fn gate_case_warns_on_budget_limited_candidate_win_without_failing() {
         let case = assess_case_facts(CaseGateFacts {
             id: "case",
-            proof_status: SearchProofStatus::DeadlineHit,
+            coverage_status: SearchCoverageStatus::TimeBudgetLimited,
             best_complete_terminal: Some(SearchTerminalLabel::Win),
             best_complete_final_hp: Some(20),
             best_complete_potions_used: Some(0),
             baseline_final_hp: Some(15),
             baseline_potions_used: Some(0),
-            best_complete_candidate_verdict: Some(CombatSearchV2BaselineVerdict::SearchBetter),
+            complete_candidate_verdict: Some(CombatSearchV2BaselineVerdict::SearchBetter),
             has_baseline: true,
             nodes_expanded: 10,
             nodes_generated: 20,
@@ -709,11 +684,10 @@ mod tests {
         });
 
         assert_eq!(case.status, CombatSearchV2BenchmarkGateStatus::Warn);
-        assert!(case.reasons.contains(&"strict_proof_not_exhaustive"));
         assert!(case.reasons.contains(&"deadline_hit"));
         assert!(!case
             .reasons
-            .contains(&"best_complete_candidate_worse_than_baseline"));
+            .contains(&"complete_candidate_worse_than_baseline"));
     }
 
     #[test]
@@ -741,13 +715,13 @@ mod tests {
     fn clean_warning_facts() -> CaseGateFacts<'static> {
         CaseGateFacts {
             id: "case",
-            proof_status: SearchProofStatus::DeadlineHit,
+            coverage_status: SearchCoverageStatus::TimeBudgetLimited,
             best_complete_terminal: Some(SearchTerminalLabel::Win),
             best_complete_final_hp: Some(20),
             best_complete_potions_used: Some(0),
             baseline_final_hp: Some(15),
             baseline_potions_used: Some(0),
-            best_complete_candidate_verdict: Some(CombatSearchV2BaselineVerdict::SearchBetter),
+            complete_candidate_verdict: Some(CombatSearchV2BaselineVerdict::SearchBetter),
             has_baseline: true,
             nodes_expanded: 10,
             nodes_generated: 20,

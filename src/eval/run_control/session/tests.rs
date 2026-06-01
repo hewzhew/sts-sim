@@ -218,10 +218,8 @@ fn run_control_search_combat_applies_complete_winning_trajectory() {
 
     assert!(outcome
         .message
-        .contains("Search combat applied complete winning trajectory"));
-    assert!(outcome
-        .message
-        .contains("optimality=not_claimed_budgeted_complete_win"));
+        .contains("Search combat applied complete winning candidate"));
+    assert!(outcome.message.contains("coverage_status="));
     assert!(outcome.action_result.is_some());
     assert!(session.active_combat.is_none());
     assert_eq!(

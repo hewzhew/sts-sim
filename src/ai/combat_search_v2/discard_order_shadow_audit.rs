@@ -170,7 +170,7 @@ pub(super) fn summarize_discard_order_shadow_audit(
         notes: vec![
             "static audit only identifies candidate groups; exact shadow audit is bounded and sampled",
             "one-step exact audit applies common legal actions from paired exact states and compares the resulting typed effect boundary",
-            "sample-verified groups are not proof-safe pruning because the audit is one-step and action-sampled",
+            "sample-verified groups are not prune-safe because the audit is one-step and action-sampled",
             "exact_rollout_verified_groups stays zero until a simulator-backed until-reveal-gate rollout audit is implemented",
         ],
     }

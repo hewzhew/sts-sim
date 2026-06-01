@@ -110,7 +110,7 @@ impl TurnPlanDiagnosticsCollector {
         if self.frontier_seeded_nodes > 0 {
             "turn_plan_frontier_seed_exact_end_states_no_prune_no_terminal_claim"
         } else {
-            "diagnostic_only_no_frontier_steering_no_prune_no_proof_claim"
+            "diagnostic_only_no_frontier_steering_no_prune_no_terminal_claim"
         }
     }
 

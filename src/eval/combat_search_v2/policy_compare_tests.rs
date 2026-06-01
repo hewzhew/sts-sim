@@ -57,7 +57,7 @@ fn run_summary(final_hp: i32) -> CombatSearchV2RolloutPolicyComparisonRun {
     CombatSearchV2RolloutPolicyComparisonRun {
         policy: "test".to_string(),
         terminal: Some(SearchTerminalLabel::Win),
-        proof_status: SearchProofStatus::DeadlineHit,
+        coverage_status: SearchCoverageStatus::TimeBudgetLimited,
         complete_trajectory_found: true,
         final_hp: Some(final_hp),
         hp_loss: Some(0),

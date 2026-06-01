@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn diagnosis_tags(
-    proof_status: SearchProofStatus,
+    coverage_status: SearchCoverageStatus,
     stats: &CombatSearchV2Stats,
     branching: &CombatSearchV2DiagnosticsBranching,
     expansion: &CombatSearchV2DiagnosticsExpansion,
@@ -20,23 +20,23 @@ pub(super) fn diagnosis_tags(
 ) -> Vec<&'static str> {
     let mut tags = Vec::new();
 
-    match proof_status {
-        SearchProofStatus::Exhaustive => tags.push("frontier_exhausted"),
-        SearchProofStatus::BudgetExhausted => {
+    match coverage_status {
+        SearchCoverageStatus::Exhaustive => tags.push("frontier_exhausted"),
+        SearchCoverageStatus::NodeBudgetLimited => {
             if frontier_remaining_states > 0 {
-                tags.push("budget_exhausted_with_unresolved_frontier");
+                tags.push("node_budget_limited_with_open_frontier");
             } else {
-                tags.push("budget_exhausted");
+                tags.push("node_budget_limited");
             }
         }
-        SearchProofStatus::DeadlineHit => {
+        SearchCoverageStatus::TimeBudgetLimited => {
             if frontier_remaining_states > 0 {
-                tags.push("deadline_hit_with_unresolved_frontier");
+                tags.push("time_budget_limited_with_open_frontier");
             } else {
-                tags.push("deadline_hit");
+                tags.push("time_budget_limited");
             }
         }
-        SearchProofStatus::FrontierUnresolved => tags.push("frontier_unresolved"),
+        SearchCoverageStatus::FrontierOpen => tags.push("frontier_open"),
     }
 
     if stats.terminal_wins > 0 {

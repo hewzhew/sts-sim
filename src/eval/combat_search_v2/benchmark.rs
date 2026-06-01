@@ -8,7 +8,7 @@ use crate::ai::combat_search_v2::{
     compare_outcome_metrics, run_combat_search_v2, CombatSearchV2DiagnosticsReport,
     CombatSearchV2FrontierValueReport, CombatSearchV2OutcomeMetrics, CombatSearchV2OutcomeReport,
     CombatSearchV2Report, CombatSearchV2RolloutReport, CombatSearchV2Stats,
-    CombatSearchV2TrajectoryReport, SearchProofStatus, SearchTerminalLabel,
+    CombatSearchV2TrajectoryReport, SearchCoverageStatus, SearchTerminalLabel,
     WHOLE_COMBAT_OUTCOME_CRITERIA,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
@@ -138,30 +138,20 @@ pub struct CombatSearchV2BenchmarkReport {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct CombatSearchV2BenchmarkSummary {
-    pub outcome_count_policy: &'static str,
-    pub wins: usize,
-    pub losses: usize,
-    pub unresolved: usize,
-    pub proof_wins: usize,
-    pub proof_losses: usize,
-    pub proof_unresolved: usize,
-    pub best_complete_wins: usize,
-    pub best_complete_losses: usize,
-    pub best_complete_unresolved: usize,
-    pub best_complete_missing: usize,
-    pub exhaustive: usize,
+    pub complete_candidate_wins: usize,
+    pub complete_candidate_losses: usize,
+    pub complete_candidate_unresolved: usize,
+    pub complete_candidate_missing: usize,
     pub complete_trajectory_found: usize,
-    pub budget_exhausted: usize,
-    pub deadline_hit: usize,
+    pub coverage_exhaustive: usize,
+    pub coverage_node_budget_limited: usize,
+    pub coverage_time_budget_limited: usize,
+    pub coverage_frontier_open: usize,
     pub baseline_cases: usize,
     pub search_better: usize,
     pub search_tied: usize,
     pub baseline_better: usize,
     pub inconclusive: usize,
-    pub candidate_search_better: usize,
-    pub candidate_search_tied: usize,
-    pub candidate_baseline_better: usize,
-    pub candidate_inconclusive: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -183,7 +173,6 @@ pub struct CombatSearchV2BenchmarkCaseReport {
     pub baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
     pub baseline_path: Option<String>,
     pub baseline_comparison: Option<CombatSearchV2BaselineComparison>,
-    pub best_complete_candidate_comparison: Option<CombatSearchV2BaselineComparison>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -322,7 +311,7 @@ pub fn run_combat_search_v2_benchmark(
 
     CombatSearchV2BenchmarkReport {
         schema_name: "CombatSearchV2BenchmarkReport",
-        schema_version: 1,
+        schema_version: 2,
         benchmark_name: loaded.name.clone(),
         min_trust_level: loaded.min_trust_level,
         case_count: cases.len(),
@@ -344,11 +333,7 @@ fn run_combat_search_v2_benchmark_case(
     let baseline_comparison = case
         .baseline
         .as_ref()
-        .map(|baseline| compare_search_to_baseline_outcome(&search_report, baseline));
-    let best_complete_candidate_comparison = case
-        .baseline
-        .as_ref()
-        .map(|baseline| compare_best_complete_candidate_to_baseline(&search_report, baseline));
+        .map(|baseline| compare_complete_candidate_to_baseline(&search_report, baseline));
 
     CombatSearchV2BenchmarkCaseReport {
         id: case.id.clone(),
@@ -377,7 +362,6 @@ fn run_combat_search_v2_benchmark_case(
             .as_ref()
             .map(|path| path.display().to_string()),
         baseline_comparison,
-        best_complete_candidate_comparison,
     }
 }
 
@@ -439,29 +423,22 @@ fn validate_benchmark_case_artifact(
 fn summarize_benchmark_cases(
     cases: &[CombatSearchV2BenchmarkCaseReport],
 ) -> CombatSearchV2BenchmarkSummary {
-    let mut summary = CombatSearchV2BenchmarkSummary {
-        outcome_count_policy:
-            "wins/losses/unresolved count best_complete_candidate; proof_* counts strict proof outcome",
-        ..CombatSearchV2BenchmarkSummary::default()
-    };
+    let mut summary = CombatSearchV2BenchmarkSummary::default();
     for case in cases {
-        summarize_proof_terminal(&mut summary, case.outcome.terminal);
-        if case.outcome.exhaustive {
-            summary.exhaustive += 1;
-        }
         if case.outcome.complete_trajectory_found {
             summary.complete_trajectory_found += 1;
         }
-        summarize_best_complete_terminal(
+        summarize_complete_candidate_terminal(
             &mut summary,
             case.best_complete_trajectory
                 .as_ref()
                 .map(|trajectory| trajectory.terminal),
         );
-        match case.outcome.proof_status {
-            SearchProofStatus::BudgetExhausted => summary.budget_exhausted += 1,
-            SearchProofStatus::DeadlineHit => summary.deadline_hit += 1,
-            SearchProofStatus::Exhaustive | SearchProofStatus::FrontierUnresolved => {}
+        match case.outcome.coverage_status {
+            SearchCoverageStatus::Exhaustive => summary.coverage_exhaustive += 1,
+            SearchCoverageStatus::NodeBudgetLimited => summary.coverage_node_budget_limited += 1,
+            SearchCoverageStatus::TimeBudgetLimited => summary.coverage_time_budget_limited += 1,
+            SearchCoverageStatus::FrontierOpen => summary.coverage_frontier_open += 1,
         }
         if let Some(comparison) = &case.baseline_comparison {
             summary.baseline_cases += 1;
@@ -472,121 +449,23 @@ fn summarize_benchmark_cases(
                 _ => summary.inconclusive += 1,
             }
         }
-        if let Some(comparison) = &case.best_complete_candidate_comparison {
-            match comparison.verdict {
-                CombatSearchV2BaselineVerdict::SearchBetter => summary.candidate_search_better += 1,
-                CombatSearchV2BaselineVerdict::SearchTied => summary.candidate_search_tied += 1,
-                CombatSearchV2BaselineVerdict::BaselineBetter => {
-                    summary.candidate_baseline_better += 1
-                }
-                _ => summary.candidate_inconclusive += 1,
-            }
-        }
     }
     summary
 }
 
-fn summarize_proof_terminal(
-    summary: &mut CombatSearchV2BenchmarkSummary,
-    terminal: SearchTerminalLabel,
-) {
-    match terminal {
-        SearchTerminalLabel::Win => summary.proof_wins += 1,
-        SearchTerminalLabel::Loss => summary.proof_losses += 1,
-        SearchTerminalLabel::Unresolved => summary.proof_unresolved += 1,
-    }
-}
-
-fn summarize_best_complete_terminal(
+fn summarize_complete_candidate_terminal(
     summary: &mut CombatSearchV2BenchmarkSummary,
     terminal: Option<SearchTerminalLabel>,
 ) {
     match terminal {
-        Some(SearchTerminalLabel::Win) => {
-            summary.wins += 1;
-            summary.best_complete_wins += 1;
-        }
-        Some(SearchTerminalLabel::Loss) => {
-            summary.losses += 1;
-            summary.best_complete_losses += 1;
-        }
-        Some(SearchTerminalLabel::Unresolved) => {
-            summary.unresolved += 1;
-            summary.best_complete_unresolved += 1;
-        }
-        None => {
-            summary.unresolved += 1;
-            summary.best_complete_missing += 1;
-        }
+        Some(SearchTerminalLabel::Win) => summary.complete_candidate_wins += 1,
+        Some(SearchTerminalLabel::Loss) => summary.complete_candidate_losses += 1,
+        Some(SearchTerminalLabel::Unresolved) => summary.complete_candidate_unresolved += 1,
+        None => summary.complete_candidate_missing += 1,
     }
 }
 
-fn compare_search_to_baseline_outcome(
-    search_report: &CombatSearchV2Report,
-    baseline: &CombatSearchV2BaselineOutcomeSpec,
-) -> CombatSearchV2BaselineComparison {
-    let criteria_order = WHOLE_COMBAT_OUTCOME_CRITERIA.to_vec();
-    let Some(search) = search_report.best_complete_trajectory.as_ref() else {
-        return inconclusive_baseline_comparison(
-            baseline,
-            criteria_order,
-            "no_search_complete_trajectory",
-        );
-    };
-    if !search_report.outcome.exhaustive || search.terminal == SearchTerminalLabel::Unresolved {
-        return CombatSearchV2BaselineComparison {
-            verdict: CombatSearchV2BaselineVerdict::InconclusiveUnresolvedSearch,
-            basis: "whole_combat_outcome",
-            reason: Some(
-                "search has unresolved frontier and cannot claim not-weaker-than-baseline",
-            ),
-            criteria_order,
-            search_terminal: Some(search.terminal),
-            baseline_terminal: baseline.terminal,
-            search_final_hp: Some(search.final_hp),
-            baseline_final_hp: baseline.final_hp,
-            search_potions_used: Some(search.potions_used),
-            baseline_potions_used: baseline.potions_used,
-            search_turns: Some(search.turns),
-            baseline_turns: baseline.turns,
-            search_cards_played: Some(search.cards_played),
-            baseline_cards_played: baseline.cards_played,
-        };
-    }
-
-    let ordering = compare_outcome_metrics(
-        CombatSearchV2OutcomeMetrics::from_trajectory(search),
-        CombatSearchV2OutcomeMetrics {
-            terminal: baseline.terminal,
-            final_hp: baseline.final_hp,
-            potions_used: baseline.potions_used,
-            turns: baseline.turns,
-            cards_played: baseline.cards_played,
-        },
-    );
-    CombatSearchV2BaselineComparison {
-        verdict: match ordering {
-            std::cmp::Ordering::Greater => CombatSearchV2BaselineVerdict::SearchBetter,
-            std::cmp::Ordering::Equal => CombatSearchV2BaselineVerdict::SearchTied,
-            std::cmp::Ordering::Less => CombatSearchV2BaselineVerdict::BaselineBetter,
-        },
-        basis: "whole_combat_outcome",
-        reason: None,
-        criteria_order,
-        search_terminal: Some(search.terminal),
-        baseline_terminal: baseline.terminal,
-        search_final_hp: Some(search.final_hp),
-        baseline_final_hp: baseline.final_hp,
-        search_potions_used: Some(search.potions_used),
-        baseline_potions_used: baseline.potions_used,
-        search_turns: Some(search.turns),
-        baseline_turns: baseline.turns,
-        search_cards_played: Some(search.cards_played),
-        baseline_cards_played: baseline.cards_played,
-    }
-}
-
-fn compare_best_complete_candidate_to_baseline(
+fn compare_complete_candidate_to_baseline(
     search_report: &CombatSearchV2Report,
     baseline: &CombatSearchV2BaselineOutcomeSpec,
 ) -> CombatSearchV2BaselineComparison {
@@ -602,7 +481,7 @@ fn compare_best_complete_candidate_to_baseline(
         return inconclusive_baseline_comparison(
             baseline,
             criteria_order,
-            "search_best_complete_candidate_is_unresolved",
+            "search_complete_candidate_is_unresolved",
         );
     }
 
@@ -622,10 +501,8 @@ fn compare_best_complete_candidate_to_baseline(
             std::cmp::Ordering::Equal => CombatSearchV2BaselineVerdict::SearchTied,
             std::cmp::Ordering::Less => CombatSearchV2BaselineVerdict::BaselineBetter,
         },
-        basis: "best_complete_candidate_whole_combat_outcome_not_proof",
-        reason: Some(
-            "best complete trajectory compared as a candidate only; unresolved frontier remains unless proof_status is exhaustive",
-        ),
+        basis: "complete_candidate_whole_combat_outcome",
+        reason: None,
         criteria_order,
         search_terminal: Some(search.terminal),
         baseline_terminal: baseline.terminal,
@@ -1024,27 +901,24 @@ mod tests {
     }
 
     #[test]
-    fn benchmark_summary_separates_proof_outcome_from_best_complete_candidate() {
+    fn benchmark_summary_counts_complete_candidate_outcomes_without_strict_outcome_counts() {
         let mut summary = CombatSearchV2BenchmarkSummary::default();
 
-        summarize_proof_terminal(&mut summary, SearchTerminalLabel::Unresolved);
-        summarize_best_complete_terminal(&mut summary, Some(SearchTerminalLabel::Win));
+        summarize_complete_candidate_terminal(&mut summary, Some(SearchTerminalLabel::Win));
 
-        assert_eq!(summary.proof_unresolved, 1);
-        assert_eq!(summary.proof_wins, 0);
-        assert_eq!(summary.wins, 1);
-        assert_eq!(summary.best_complete_wins, 1);
-        assert_eq!(summary.unresolved, 0);
+        assert_eq!(summary.complete_candidate_wins, 1);
+        assert_eq!(summary.complete_candidate_losses, 0);
+        assert_eq!(summary.complete_candidate_unresolved, 0);
+        assert_eq!(summary.complete_candidate_missing, 0);
     }
 
     #[test]
     fn benchmark_summary_counts_missing_complete_candidate_as_unresolved_candidate() {
         let mut summary = CombatSearchV2BenchmarkSummary::default();
 
-        summarize_best_complete_terminal(&mut summary, None);
+        summarize_complete_candidate_terminal(&mut summary, None);
 
-        assert_eq!(summary.unresolved, 1);
-        assert_eq!(summary.best_complete_missing, 1);
+        assert_eq!(summary.complete_candidate_missing, 1);
     }
 
     fn unique_temp_dir(label: &str) -> PathBuf {

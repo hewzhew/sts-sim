@@ -183,7 +183,7 @@ fn turn_plan_diagnostics_reports_root_plan_preview_without_behavior_claim() {
 
     assert_eq!(
         report.behavioral_effect,
-        "diagnostic_only_no_frontier_steering_no_prune_no_proof_claim"
+        "diagnostic_only_no_frontier_steering_no_prune_no_terminal_claim"
     );
     assert_eq!(report.root_states_observed, 1);
     assert!(report.total_plans >= 2);

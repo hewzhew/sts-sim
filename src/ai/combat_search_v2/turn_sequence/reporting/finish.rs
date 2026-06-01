@@ -53,8 +53,8 @@ impl TurnSequenceDiagnosticsCollector {
                 "groups are scoped by the first action's turn-origin dominance hash",
                 "unordered prefix tokens intentionally ignore action order for diagnostics only",
                 "effect variants use typed diagnostic components plus dominance/resource fallback hashes",
-                "same-effect groups are candidates for later simulator-backed commutation probes, not pruning proof",
-                "order-sensitive group divergence is classifier guidance, not proof-safe abstraction",
+                "same-effect groups are candidates for later simulator-backed commutation probes, not safe-pruning evidence",
+                "order-sensitive group divergence is classifier guidance, not prune-safe abstraction",
                 "large-choice pending decisions are not handled by this diagnostic",
             ],
         }
