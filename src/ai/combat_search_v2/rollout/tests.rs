@@ -352,7 +352,7 @@ fn turn_beam_rollout_uses_turn_plans_across_turn_boundaries() {
 }
 
 #[test]
-fn turn_beam_rollout_declines_non_turn_boundary_without_looping() {
+fn turn_beam_rollout_resolves_small_pending_choice_via_conservative_fallback() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     let node = SearchNode {
@@ -376,7 +376,53 @@ fn turn_beam_rollout_declines_non_turn_boundary_without_looping() {
     let estimate = turn_beam_no_potion_rollout(&node, &PendingChoiceWinsStepper, &config, 4, None);
 
     assert!(estimate.evaluated);
+    assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
+    assert_eq!(estimate.stop_reason, RolloutStopReason::TerminalState);
+    assert_eq!(estimate.pending_choices_seen, 1);
+    assert_eq!(estimate.pending_choice_actions_simulated, 1);
+    assert_eq!(estimate.actions_simulated, 1);
+    assert_eq!(
+        estimate.last_action_reason,
+        Some("turn_beam_no_potion_conservative_boundary_fallback")
+    );
+}
+
+#[test]
+fn turn_beam_rollout_still_stops_before_large_pending_choice_branch() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    let node = SearchNode {
+        engine: EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+            cards: vec![crate::content::cards::CardId::Strike; 7],
+            card_uuids: (0..7).collect(),
+        }),
+        combat,
+        actions: Vec::new(),
+        turn_prefix: TurnPrefixState::default(),
+        initial_hp: 80,
+        potions_used: 0,
+        potions_discarded: 0,
+        cards_played: 0,
+        potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
+        rollout_estimate: RolloutNodeEstimate::unevaluated(),
+    };
+    let config = CombatSearchV2Config {
+        rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
+        ..CombatSearchV2Config::default()
+    };
+
+    let estimate = turn_beam_no_potion_rollout(&node, &FirstActionWinsStepper, &config, 4, None);
+
+    assert!(estimate.evaluated);
     assert_eq!(estimate.terminal, SearchTerminalLabel::Unresolved);
-    assert_eq!(estimate.stop_reason, RolloutStopReason::PolicyDeclined);
-    assert_eq!(estimate.actions_simulated, 0);
+    assert_eq!(
+        estimate.stop_reason,
+        RolloutStopReason::HighFanoutPendingChoice
+    );
+    assert!(estimate.truncated);
+    assert_eq!(estimate.pending_choices_seen, 1);
+    assert_eq!(estimate.pending_choice_actions_simulated, 0);
+    assert!(estimate.stopped_on_high_fanout_pending_choice);
+    assert_eq!(estimate.last_action_reason, None);
 }

@@ -10,12 +10,15 @@ use super::super::*;
 
 const TURN_BEAM_ACTION_REASON: &str = "turn_beam_no_potion_selected_turn_plan_end_state";
 const TURN_BEAM_NO_PLAN_REASON: &str = "turn_beam_no_potion_no_turn_plan_available";
+const TURN_BEAM_BOUNDARY_FALLBACK_REASON: &str =
+    "turn_beam_no_potion_conservative_boundary_fallback";
 
 #[derive(Clone)]
 struct TurnBeamState {
     node: SearchNode,
     progress: RolloutPendingChoiceProgress,
     last_action_reason: Option<&'static str>,
+    estimate_override: Option<RolloutNodeEstimate>,
 }
 
 pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
@@ -31,6 +34,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
         node: node.clone_for_rollout(),
         progress: RolloutPendingChoiceProgress::default(),
         last_action_reason: None,
+        estimate_override: None,
     }];
 
     loop {
@@ -76,15 +80,29 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
                     node: state.node.clone(),
                     progress,
                     last_action_reason: state.last_action_reason,
+                    estimate_override: None,
                 });
                 continue;
             }
             if !matches!(state.node.engine, EngineState::CombatPlayerTurn) {
-                stalled_stop_reason = RolloutStopReason::PolicyDeclined;
+                let simulated = state.node.actions.len().saturating_sub(root_action_count);
+                let remaining_actions = max_actions.saturating_sub(simulated);
+                let mut estimate = super::conservative_no_potion_rollout(
+                    &state.node,
+                    stepper,
+                    config,
+                    remaining_actions,
+                    deadline,
+                );
+                estimate.actions_simulated = estimate.actions_simulated.saturating_add(simulated);
+                estimate.last_action_reason = Some(TURN_BEAM_BOUNDARY_FALLBACK_REASON);
+                merge_prior_pending_choice_progress(&mut estimate, state.progress);
+                stalled_stop_reason = estimate.stop_reason;
                 stalled.push(TurnBeamState {
                     node: state.node.clone(),
                     progress,
                     last_action_reason: state.last_action_reason,
+                    estimate_override: Some(estimate),
                 });
                 continue;
             }
@@ -97,6 +115,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
                     node: state.node.clone(),
                     progress,
                     last_action_reason: state.last_action_reason,
+                    estimate_override: None,
                 });
                 continue;
             }
@@ -123,6 +142,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
                     node: no_plan,
                     progress,
                     last_action_reason: Some(TURN_BEAM_NO_PLAN_REASON),
+                    estimate_override: None,
                 });
             } else {
                 let before = next.len();
@@ -141,6 +161,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
                             node: plan.end_node,
                             progress,
                             last_action_reason: Some(TURN_BEAM_ACTION_REASON),
+                            estimate_override: None,
                         }),
                 );
                 if next.len() == before {
@@ -149,6 +170,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
                         node: state.node.clone(),
                         progress,
                         last_action_reason: state.last_action_reason,
+                        estimate_override: None,
                     });
                 }
             }
@@ -200,6 +222,9 @@ fn state_estimate(
     root_action_count: usize,
     stop_reason: RolloutStopReason,
 ) -> RolloutNodeEstimate {
+    if let Some(estimate) = state.estimate_override {
+        return estimate;
+    }
     RolloutNodeEstimate::from_node(
         &state.node,
         state.node.actions.len().saturating_sub(root_action_count),
@@ -207,4 +232,27 @@ fn state_estimate(
         state.last_action_reason,
         state.progress,
     )
+}
+
+fn merge_prior_pending_choice_progress(
+    estimate: &mut RolloutNodeEstimate,
+    prior: RolloutPendingChoiceProgress,
+) {
+    estimate.pending_choices_seen = estimate
+        .pending_choices_seen
+        .saturating_add(prior.pending_choices_seen);
+    estimate.pending_choice_actions_simulated = estimate
+        .pending_choice_actions_simulated
+        .saturating_add(prior.pending_choice_actions_simulated);
+    estimate.max_pending_choice_candidate_count = estimate
+        .max_pending_choice_candidate_count
+        .max(prior.max_pending_choice_candidate_count);
+    estimate.max_pending_choice_estimated_action_fanout = estimate
+        .max_pending_choice_estimated_action_fanout
+        .max(prior.max_pending_choice_estimated_action_fanout);
+    if estimate.last_pending_choice_kind.is_none() {
+        estimate.last_pending_choice_kind = prior.last_pending_choice_kind_label();
+    }
+    estimate.stopped_on_high_fanout_pending_choice |= prior.stopped_on_high_fanout_pending_choice;
+    estimate.high_fanout_pending_choice |= prior.stopped_on_high_fanout_pending_choice;
 }
