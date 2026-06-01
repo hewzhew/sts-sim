@@ -6,8 +6,9 @@
 //   [Fight] → combat with "Colosseum Nobs" (rewards: RARE relic, UNCOMMON relic, 100g)
 // Screen 3 (LEAVE): [Leave] → openMap
 
+use crate::content::monsters::factory::EncounterId;
 use crate::rewards::state::{RewardItem, RewardState};
-use crate::state::core::{EngineState, EventCombatState, PostCombatReturn};
+use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
 
@@ -46,13 +47,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             // After combat, return to EventRoom → screen 2 (POST_COMBAT)
             event_state.current_screen = 2;
             run_state.event_state = Some(event_state);
-            *engine_state = EngineState::EventCombat(EventCombatState {
-                rewards: RewardState::new(),
-                reward_allowed: false,
-                no_cards_in_rewards: true,
-                post_combat_return: PostCombatReturn::EventRoom,
-                encounter_key: "Colosseum Slavers",
-            });
+            *engine_state = EngineState::CombatStart(CombatStartRequest::event(
+                EncounterId::ColosseumSlavers,
+                RewardState::new(),
+                false,
+                true,
+                false,
+                PostCombatReturn::EventRoom,
+            ));
             return;
         }
         2 => {
@@ -84,13 +86,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     event_state.current_screen = 3;
                     event_state.completed = true;
                     run_state.event_state = Some(event_state);
-                    *engine_state = EngineState::EventCombat(EventCombatState {
+                    *engine_state = EngineState::CombatStart(CombatStartRequest::event(
+                        EncounterId::ColosseumNobs,
                         rewards,
-                        reward_allowed: true,
-                        no_cards_in_rewards: false,
-                        post_combat_return: PostCombatReturn::MapNavigation,
-                        encounter_key: "Colosseum Nobs",
-                    });
+                        true,
+                        false,
+                        true,
+                        PostCombatReturn::MapNavigation,
+                    ));
                     return;
                 }
             }
@@ -102,4 +105,76 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::core::CombatContext;
+
+    #[test]
+    fn first_fight_returns_to_event_room_without_rewards_or_elite_trigger() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(crate::state::events::EventState::new(
+            crate::state::events::EventId::Colosseum,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("first Colosseum fight should request CombatStart");
+        };
+        assert_eq!(request.encounter_id, EncounterId::ColosseumSlavers);
+        let CombatContext::Event(combat) = request.context else {
+            panic!("first Colosseum fight should carry event combat context");
+        };
+        assert!(!combat.reward_allowed);
+        assert!(combat.no_cards_in_rewards);
+        assert!(!combat.elite_trigger);
+        assert!(matches!(
+            combat.post_combat_return,
+            PostCombatReturn::EventRoom
+        ));
+    }
+
+    #[test]
+    fn second_fight_preserves_java_elite_trigger_without_normal_elite_rewards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(crate::state::events::EventState::new(
+            crate::state::events::EventId::Colosseum,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        run_state.event_state.as_mut().unwrap().current_screen = 2;
+        engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("second Colosseum fight should request CombatStart");
+        };
+        assert_eq!(request.encounter_id, EncounterId::ColosseumNobs);
+        let CombatContext::Event(combat) = request.context else {
+            panic!("second Colosseum fight should carry event combat context");
+        };
+        assert!(combat.reward_allowed);
+        assert!(combat.elite_trigger);
+        assert_eq!(combat.rewards.items.len(), 3);
+        assert!(combat
+            .rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, RewardItem::Gold { amount: 100 })));
+        assert!(combat
+            .rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, RewardItem::Relic { .. })));
+    }
 }

@@ -1,7 +1,30 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::Neutralize,
+        name: "Neutralize",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Basic,
+        cost: 0,
+        base_damage: 3,
+        base_block: 0,
+        base_magic: 1,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 1,
+        upgrade_block: 0,
+        upgrade_magic: 1,
+    }
+}
 
 pub fn neutralize_play(
     state: &CombatState,

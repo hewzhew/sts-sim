@@ -92,22 +92,18 @@ These tests should cover:
 - move-history-sensitive sequences
 - hidden/runtime-state-sensitive behavior when applicable
 
-### 4. Live / Protocol / Regression Tests
+### 4. External-Oracle Regression Tests
 
 Tests that validate:
 
-- split snapshot import
-- live-comm panic regressions
-- protocol truth import
-- replay/minimized captures
+- external Java observations
+- live adapter behavior after a future adapter is rebuilt
+- replay/minimized captures after a future oracle format exists
 
 must remain outside content modules.
 
-These belong in existing integration surfaces such as:
-
-- `tests/live_comm_*`
-- `tests/protocol_*`
-- `tests/state_sync_*`
+The old protocol/state-sync integration surfaces are retired. Do not recreate
+them as monster test scaffolding.
 
 ## What Stays Inline
 
@@ -128,7 +124,7 @@ Move the test out of the monster file when any of the following are true:
 
 - it builds `CombatState`, `EntityState`, `PlayerEntity`, or `CardZones` manually
 - it validates a real turn sequence rather than a pure helper
-- it needs move history, runtime state, or protocol-derived truth
+- it needs move history or runtime state
 - the test setup is longer than the assertion logic
 
 ## Migration Rule
@@ -170,12 +166,12 @@ This keeps responsibilities clean:
 - content files own monster rules
 - `testing::support` owns generic test scaffolding
 - `tests/` owns behavior validation
-- live/protocol tests stay in their existing system-level locations
+- external adapter tests stay out of content modules if that adapter is rebuilt
 
 This also matches the larger architecture direction:
 
 - one semantic execution path
-- one protocol adapter path
+- no active protocol adapter path inside simulator runtime
 - one place for reusable test construction
 
 ## Immediate Application

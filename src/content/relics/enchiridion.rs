@@ -7,19 +7,28 @@ use smallvec::SmallVec;
 /// Event Relic
 /// At the start of each combat, add a random Power card to your hand. It costs 0 this turn.
 /// Java: atPreBattle() → returnTrulyRandomCardInCombat(CardType.POWER) → setCostForTurn(0) → addToBot(MakeTempCardInHandAction)
-pub fn at_battle_start(_state: &CombatState, _relic: &mut RelicState) -> SmallVec<[ActionInfo; 4]> {
+pub fn at_battle_start(
+    state: &mut CombatState,
+    _relic: &mut RelicState,
+) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
 
-    // Java uses returnTrulyRandomCardInCombat(CardType.POWER) which picks from the full
-    // srcCommon+srcUncommon+srcRare pool filtered to POWER type.
-    // We use MakeRandomCardInHand with card_type=Power and cost_for_turn=0.
-    actions.push(ActionInfo {
-        action: Action::MakeRandomCardInHand {
-            card_type: Some(crate::content::cards::CardType::Power),
-            cost_for_turn: Some(0),
-        },
-        insertion_mode: AddTo::Bottom, // Java: addToBot
-    });
+    if let Some(mut card) = crate::content::cards::make_random_class_card_copy_for_combat(
+        state,
+        Some(crate::content::cards::CardType::Power),
+    ) {
+        if card.combat_cost_without_turn_override_java() != -1 {
+            card.set_cost_for_turn_java(0);
+        }
+        crate::content::cards::apply_master_reality_to_generated_card(&mut card, state, 1);
+        actions.push(ActionInfo {
+            action: Action::MakeConstructedCopyInHand {
+                original: Box::new(card),
+                amount: 1,
+            },
+            insertion_mode: AddTo::Bottom, // Java: addToBot
+        });
+    }
 
     actions
 }

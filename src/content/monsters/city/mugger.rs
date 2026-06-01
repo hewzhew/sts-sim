@@ -33,6 +33,100 @@ fn gold_amount(asc: u8) -> i32 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn mugger_mug_burns_java_audio_talk_and_branch_rng() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut entity = crate::test_support::test_monster(EnemyId::Mugger);
+
+        entity.thief.slash_count = 0;
+        let before_first = state.rng.ai_rng.counter;
+        let _ = <Mugger as MonsterBehavior>::take_turn_plan(&mut state, &entity, &mug_plan(0));
+        assert_eq!(
+            state.rng.ai_rng.counter - before_first,
+            1,
+            "first Mugger Mug burns aiRng.random(2) for Java playSfx"
+        );
+
+        entity.thief.slash_count = 1;
+        let before_second = state.rng.ai_rng.counter;
+        let _ = <Mugger as MonsterBehavior>::take_turn_plan(&mut state, &entity, &mug_plan(0));
+        assert_eq!(
+            state.rng.ai_rng.counter - before_second,
+            3,
+            "second Mugger Mug burns playSfx, TalkAction randomBoolean(0.6), and the smoke-bomb/big-swipe branch"
+        );
+    }
+
+    #[test]
+    fn mugger_big_swipe_burns_java_audio_rng() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::Mugger);
+
+        let before = state.rng.ai_rng.counter;
+        let _ =
+            <Mugger as MonsterBehavior>::take_turn_plan(&mut state, &entity, &big_swipe_plan(0));
+        assert_eq!(
+            state.rng.ai_rng.counter - before,
+            1,
+            "Mugger.java Big Swipe calls playSfx, which burns aiRng.random(2)"
+        );
+    }
+
+    #[test]
+    fn mugger_big_swipe_sets_smoke_bomb_before_queued_damage_like_java_immediate_set_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::Mugger);
+
+        let actions =
+            <Mugger as MonsterBehavior>::take_turn_plan(&mut state, &entity, &big_swipe_plan(0));
+
+        assert!(
+            matches!(actions.first(), Some(Action::SetMonsterMove { next_move_byte: SMOKE_BOMB, .. })),
+            "Mugger.java BIGSWIPE calls setMove(SMOKE_BOMB) synchronously after queueing damage; Rust must apply that move before queued steal/damage can be interrupted"
+        );
+    }
+
+    #[test]
+    fn mugger_escape_still_queues_escape_intent_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::Mugger);
+
+        let actions =
+            <Mugger as MonsterBehavior>::take_turn_plan(&mut state, &entity, &escape_plan());
+
+        assert!(
+            matches!(
+                actions.as_slice(),
+                [
+                    Action::Escape { .. },
+                    Action::SetMonsterMove {
+                        next_move_byte: ESCAPE,
+                        ..
+                    }
+                ]
+            ),
+            "Mugger.java escape turn queues EscapeAction and then SetMoveAction(ESCAPE)"
+        );
+    }
+
+    #[test]
+    fn mugger_death_burns_java_death_sfx_rng_even_without_stolen_gold() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::Mugger);
+
+        let before = state.rng.ai_rng.counter;
+        let actions = Mugger::on_death(&mut state, &entity);
+
+        assert_eq!(state.rng.ai_rng.counter - before, 1);
+        assert!(actions.is_empty());
+    }
+}
+
 fn mug_damage(asc: u8) -> i32 {
     if asc >= 2 {
         11
@@ -206,39 +300,68 @@ impl MonsterBehavior for Mugger {
     ) -> Vec<Action> {
         match decode_turn(plan) {
             MuggerTurn::Mug(steal, attack) => {
+                // Java Mugger.playSfx uses AbstractDungeon.aiRng.random(2), so
+                // even this audio-only branch must burn gameplay RNG.
+                let _ = state.rng.ai_rng.random(2);
+                if current_slash_count(entity) == 1 {
+                    let _ = state.rng.ai_rng.random_boolean_chance(0.6);
+                }
                 let next_slash_count = current_slash_count(entity).saturating_add(1);
                 let mut actions = vec![steal_gold_action(entity, steal)];
                 actions.extend(attack_actions(entity.id, PLAYER, attack));
-                let next_plan = if next_slash_count == 2 {
+                if next_slash_count == 2 {
                     if state.rng.ai_rng.random_boolean_chance(0.5) {
-                        smoke_bomb_plan(state.meta.ascension_level)
+                        // Java calls setMove(SMOKE_BOMB) synchronously here,
+                        // not through SetMoveAction.
+                        actions.insert(
+                            0,
+                            set_next_move_action(
+                                entity,
+                                smoke_bomb_plan(state.meta.ascension_level),
+                            ),
+                        );
                     } else {
-                        big_swipe_plan(state.meta.ascension_level)
-                    }
+                        actions.push(set_next_move_action(
+                            entity,
+                            big_swipe_plan(state.meta.ascension_level),
+                        ));
+                    };
                 } else {
-                    mug_plan(state.meta.ascension_level)
-                };
-                actions.push(set_next_move_action(entity, next_plan));
+                    actions.push(set_next_move_action(
+                        entity,
+                        mug_plan(state.meta.ascension_level),
+                    ));
+                }
                 actions
             }
             MuggerTurn::BigSwipe(steal, attack) => {
-                let mut actions = vec![steal_gold_action(entity, steal)];
-                actions.extend(attack_actions(entity.id, PLAYER, attack));
-                actions.push(set_next_move_action(
+                let _ = state.rng.ai_rng.random(2);
+                // Java calls setMove(SMOKE_BOMB) synchronously after queueing
+                // damage, so the move update is not vulnerable to later action
+                // queue cleanup.
+                let mut actions = vec![set_next_move_action(
                     entity,
                     smoke_bomb_plan(state.meta.ascension_level),
-                ));
+                )];
+                actions.push(steal_gold_action(entity, steal));
+                actions.extend(attack_actions(entity.id, PLAYER, attack));
                 actions
             }
             MuggerTurn::SmokeBomb(block) => vec![
                 gain_block_action(entity, block),
                 set_next_move_action(entity, escape_plan()),
             ],
-            MuggerTurn::Escape => vec![Action::Escape { target: entity.id }],
+            MuggerTurn::Escape => vec![
+                Action::Escape { target: entity.id },
+                set_next_move_action(entity, escape_plan()),
+            ],
         }
     }
 
-    fn on_death(_state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
+    fn on_death(state: &mut CombatState, entity: &MonsterEntity) -> Vec<Action> {
+        // Java Mugger.die() calls playDeathSfx(), which consumes aiRng.random(2)
+        // even though the selected sound itself is presentation-only.
+        let _ = state.rng.ai_rng.random(2);
         let stolen_gold = current_stolen_gold(entity);
         if stolen_gold <= 0 {
             Vec::new()

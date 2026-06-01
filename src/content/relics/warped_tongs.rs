@@ -1,9 +1,9 @@
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
-/// WarpedTongs: At the start of your turn, upgrade a random card in your hand for this combat.
-/// Java: addToBot(UpgradeRandomCardAction()) — random selection deferred to engine handler.
-pub fn at_turn_start(_state: &crate::runtime::combat::CombatState) -> SmallVec<[ActionInfo; 4]> {
+/// WarpedTongs: after start-of-turn draw, upgrade a random card in hand for this combat.
+/// Java: atTurnStartPostDraw -> addToBot(UpgradeRandomCardAction()).
+pub fn at_turn_start_post_draw() -> SmallVec<[ActionInfo; 4]> {
     smallvec::smallvec![ActionInfo {
         action: Action::UpgradeRandomCard,
         insertion_mode: AddTo::Bottom,

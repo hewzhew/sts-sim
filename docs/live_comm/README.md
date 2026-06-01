@@ -1,28 +1,34 @@
 # Live Comm
 
-`live_comm` is the primary Rust versus Java acceptance loop for this repo.
+`live_comm` is legacy Java bridge tooling. It is currently downgraded to
+fixture-capture and historical parity context only.
 
-Use it for:
+Do not use it as the AI, search, workbench, or policy-development mainline.
+The active direction is local simulator/search/eval first; Java-connected
+execution can be revived later as an adapter around a working local system.
 
-- engine parity debugging
-- protocol/importer validation
-- human-assist handoff and noncombat audit experiments
-- collecting real archived runs for later analysis
+Current boundary and revival plan:
+
+- [LEGACY_FIXTURE_ONLY.md](LEGACY_FIXTURE_ONLY.md)
 
 ## Start Here
 
+- [LEGACY_FIXTURE_ONLY.md](LEGACY_FIXTURE_ONLY.md)
+  - current boundary, old responsibilities, and future revival architecture
 - [LIVE_COMM_RUNBOOK.md](LIVE_COMM_RUNBOOK.md)
-  - day-to-day launch and triage workflow
+  - historical launch and triage workflow
 - [LIVE_COMM_MODES.md](LIVE_COMM_MODES.md)
-  - choose the run goal before picking watch settings
+  - historical mode split
 - [LIVE_COMM_PARITY_WORKFLOW.md](LIVE_COMM_PARITY_WORKFLOW.md)
-  - strict versus survey parity rules
+  - retired strict versus survey parity rules
 - [LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
-  - manual `scenario` capture workflow for protocol truth samples
+  - retired manual capture workflow
 - [../../tools/live_comm/README.md](../../tools/live_comm/README.md)
-  - launcher, profile, and config helper details
+  - legacy launcher, profile, and config helper details
 
-## Current Operating Model
+## Legacy Operating Model
+
+The old workflow was:
 
 1. pick a mode
    - `engine`
@@ -34,7 +40,7 @@ Use it for:
 4. archive the run under `logs/runs/<run_id>/`
 5. triage from `focus.txt` and `findings.json`, not from raw logs first
 
-Current high-value profiles:
+Historical high-value profiles:
 
 - `Ironclad_Engine_Strict`
 - `Ironclad_Engine_Survey`
@@ -43,7 +49,7 @@ Current high-value profiles:
 - `Ironclad_Assisted_Progression_BossHandoff`
 - `Ironclad_HumanPrimary_Capture`
 
-## Log Reading Defaults
+## Historical Log Reading Defaults
 
 Read artifacts in this order:
 
@@ -55,9 +61,9 @@ Read artifacts in this order:
 If an older run predates `findings.json`, `inspect-findings` can synthesize a view
 from `failure_snapshots.jsonl`.
 
-## What Changed Recently
+## Historical Notes
 
-The active workflow assumes:
+The old workflow assumed:
 
 - per-run archival under `logs/runs/<run_id>/`
 - stale `play.exe` detection in `tools/live_comm/launch_live_comm.ps1`

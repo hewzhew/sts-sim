@@ -3,8 +3,8 @@ use crate::content::monsters::exordium::{
 };
 use crate::content::monsters::{MonsterBehavior, MonsterRollContext};
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, DarklingRuntimeState, MonsterEntity};
 use crate::semantics::combat::{
     ApplyPowerStep, AttackSpec, BuffSpec, DamageKind, DefendSpec, EffectStrength, HealStep,
     MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget, PowerEffectKind,
@@ -39,6 +39,7 @@ pub fn initialize_runtime_state(
 
     entity.darkling.first_move = true;
     entity.darkling.nip_dmg = roll_nip_damage(hp_rng, ascension_level);
+    entity.darkling.protocol_seeded = true;
 }
 
 fn chomp_damage(ascension_level: u8) -> i32 {
@@ -61,19 +62,35 @@ fn is_even_position(entity: &MonsterEntity, monsters: &[MonsterEntity]) -> bool 
     position % 2 == 0
 }
 
-fn current_nip_damage(entity: &MonsterEntity, ascension_level: u8) -> i32 {
-    if entity.darkling.nip_dmg > 0 {
-        entity.darkling.nip_dmg
-    } else if entity.planned_move_id() == NIP {
-        entity
-            .turn_plan()
-            .attack()
-            .map(|attack| attack.base_damage)
-            .unwrap_or(if ascension_level >= 2 { 11 } else { 9 })
-    } else if ascension_level >= 2 {
-        11
-    } else {
-        9
+fn current_nip_damage(entity: &MonsterEntity, _ascension_level: u8) -> i32 {
+    let runtime = runtime(entity);
+    assert!(
+        runtime.nip_dmg > 0,
+        "darkling nip_dmg must be protocol-seeded or factory-seeded"
+    );
+    runtime.nip_dmg
+}
+
+fn runtime(entity: &MonsterEntity) -> &DarklingRuntimeState {
+    assert!(
+        entity.darkling.protocol_seeded,
+        "darkling runtime truth must be protocol-seeded or factory-seeded"
+    );
+    &entity.darkling
+}
+
+fn darkling_runtime_update(
+    entity: &MonsterEntity,
+    first_move: Option<bool>,
+    nip_dmg: Option<i32>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::Darkling {
+            first_move,
+            nip_dmg,
+            protocol_seeded: Some(true),
+        },
     }
 }
 
@@ -144,7 +161,7 @@ fn reincarnate_plan(entity: &MonsterEntity) -> MonsterTurnPlan {
             MoveStep::ApplyPower(ApplyPowerStep {
                 target: MoveTarget::SelfTarget,
                 power_id: PowerId::Regrow,
-                amount: -1,
+                amount: 1,
                 effect: PowerEffectKind::Buff,
                 visible_strength: EffectStrength::Normal,
             }),
@@ -182,7 +199,7 @@ fn roll_move_custom_plan(
         return count_plan();
     }
 
-    if entity.darkling.first_move {
+    if runtime(entity).first_move {
         return if num < 50 {
             harden_plan(ascension_level)
         } else {
@@ -229,6 +246,19 @@ impl MonsterBehavior for Darkling {
         roll_move_custom_plan(rng, entity, ascension_level, num, ctx.monsters)
     }
 
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if runtime(entity).first_move && !entity.half_dead && entity.current_hp > 0 {
+            vec![darkling_runtime_update(entity, Some(false), None)]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn use_pre_battle_actions(
         state: &mut CombatState,
         entity: &MonsterEntity,
@@ -264,24 +294,15 @@ impl MonsterBehavior for Darkling {
             ],
             (COUNT, []) => Vec::new(),
             (REINCARNATE, [MoveStep::Heal(heal), MoveStep::ApplyPower(power)]) => {
-                let mut actions = vec![
-                    Action::ReviveMonster { target: entity.id },
+                let actions = vec![
                     Action::Heal {
                         target: entity.id,
                         amount: heal.amount,
                     },
+                    Action::ReviveMonster { target: entity.id },
                     apply_power_action(entity, power),
                 ];
-                if let Some(target_idx) = state
-                    .entities
-                    .monsters
-                    .iter()
-                    .position(|m| m.id == entity.id)
-                {
-                    actions.extend(crate::content::relics::hooks::on_spawn_monster(
-                        state, target_idx,
-                    ));
-                }
+                crate::content::relics::hooks::on_spawn_monster(state, entity.id);
                 actions
             }
             (move_id, steps) => panic!("darkling plan/steps mismatch: {} {:?}", move_id, steps),
@@ -315,15 +336,17 @@ impl MonsterBehavior for Darkling {
         if all_dead {
             for id in darkling_ids {
                 if let Some(monster) = state.entities.monsters.iter_mut().find(|m| m.id == id) {
-                    monster.half_dead = false;
+                    if monster.id == entity.id {
+                        monster.half_dead = false;
+                    }
                     monster.is_dying = true;
                     monster.current_hp = 0;
                 }
-                crate::content::powers::store::remove_entity_powers(state, id);
             }
             return Vec::new();
         }
 
+        let should_queue_count = entity.planned_move_id() != COUNT;
         if let Some(monster) = state
             .entities
             .monsters
@@ -333,75 +356,268 @@ impl MonsterBehavior for Darkling {
             monster.half_dead = true;
             monster.is_dying = false;
             monster.current_hp = 0;
-            monster.set_planned_move_id(COUNT);
+            if should_queue_count {
+                let plan = count_plan();
+                monster.set_planned_move_id(plan.move_id);
+                monster.set_planned_steps(plan.steps.clone());
+                monster.set_planned_visible_spec(plan.visible_spec.clone());
+                monster.move_history_mut().push_back(plan.move_id);
+            }
         }
-        crate::content::powers::store::remove_entity_powers(state, entity.id);
 
-        vec![set_next_move_action(entity, count_plan())]
+        if should_queue_count {
+            vec![set_next_move_action(entity, count_plan())]
+        } else {
+            Vec::new()
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{current_nip_damage, HARDEN, NIP};
-    use crate::content::monsters::EnemyId;
-    use crate::runtime::combat::{
-        ByrdRuntimeState, ChosenRuntimeState, DarklingRuntimeState, HexaghostRuntimeState,
-        LagavulinRuntimeState, MonsterEntity, MonsterMoveState, ShelledParasiteRuntimeState,
-        SneckoRuntimeState,
-    };
-    use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
-    use std::collections::VecDeque;
+    use super::{current_nip_damage, reincarnate_plan, Darkling, COUNT, HARDEN, NIP, REINCARNATE};
+    use crate::content::monsters::{EnemyId, MonsterBehavior, MonsterRollContext};
+    use crate::content::powers::{store, PowerId};
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::action::{Action, MonsterRuntimePatch};
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    fn power(power_type: PowerId, amount: i32) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
 
     #[test]
-    fn nip_damage_uses_current_attack_plan_before_preview_projection() {
-        let entity = MonsterEntity {
-            id: 1,
-            monster_type: EnemyId::Darkling as usize,
-            current_hp: 20,
-            max_hp: 56,
-            block: 0,
-            slot: 0,
-            is_dying: false,
-            is_escaped: false,
-            half_dead: false,
-            move_state: MonsterMoveState {
-                planned_move_id: NIP,
-                history: VecDeque::from([HARDEN, NIP]),
-                planned_steps: Some(
-                    MonsterMoveSpec::Attack(AttackSpec {
-                        base_damage: 13,
-                        hits: 1,
-                        damage_kind: DamageKind::Normal,
-                    })
-                    .to_steps(),
-                ),
-                planned_visible_spec: None,
-            },
-            logical_position: 0,
-            hexaghost: HexaghostRuntimeState::default(),
-            louse: Default::default(),
-            jaw_worm: Default::default(),
-            thief: Default::default(),
-            byrd: ByrdRuntimeState::default(),
-            chosen: ChosenRuntimeState::default(),
-            snecko: SneckoRuntimeState::default(),
-            shelled_parasite: ShelledParasiteRuntimeState::default(),
-            bronze_automaton: Default::default(),
-            bronze_orb: Default::default(),
-            book_of_stabbing: Default::default(),
-            collector: Default::default(),
-            champ: Default::default(),
-            awakened_one: Default::default(),
-            corrupt_heart: Default::default(),
-            darkling: DarklingRuntimeState {
-                first_move: false,
-                nip_dmg: 0,
-            },
-            lagavulin: LagavulinRuntimeState::default(),
-            guardian: Default::default(),
-        };
+    fn nip_damage_uses_seeded_private_runtime_truth() {
+        let mut entity = crate::testing::support::test_monster(EnemyId::Darkling);
+        entity.darkling.nip_dmg = 13;
 
         assert_eq!(current_nip_damage(&entity, 2), 13);
+    }
+
+    #[test]
+    fn first_roll_uses_private_first_move_and_marks_it() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let entity = crate::testing::support::test_monster(EnemyId::Darkling);
+        let monsters = vec![entity.clone()];
+        let ctx = MonsterRollContext {
+            monsters: &monsters,
+            player_powers: &[],
+        };
+        let plan = Darkling::roll_move_plan_with_context(&mut rng, &entity, 0, 49, ctx);
+
+        assert_eq!(plan.move_id, HARDEN);
+        assert_eq!(
+            Darkling::on_roll_move(0, &entity, 49, &plan),
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::Darkling {
+                    first_move: Some(false),
+                    nip_dmg: None,
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn half_dead_reincarnate_roll_does_not_clear_first_move() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut entity = crate::testing::support::test_monster(EnemyId::Darkling);
+        entity.half_dead = true;
+        let monsters = vec![entity.clone()];
+        let ctx = MonsterRollContext {
+            monsters: &monsters,
+            player_powers: &[],
+        };
+        let plan = Darkling::roll_move_plan_with_context(&mut rng, &entity, 0, 49, ctx);
+
+        assert_eq!(plan.move_id, REINCARNATE);
+        assert!(Darkling::on_roll_move(0, &entity, 49, &plan).is_empty());
+    }
+
+    #[test]
+    fn reincarnate_turn_queues_java_heal_revive_power_order() {
+        let mut entity = crate::testing::support::test_monster(EnemyId::Darkling);
+        entity.id = 7;
+        entity.current_hp = 0;
+        entity.max_hp = 58;
+        entity.half_dead = true;
+        let mut state = crate::testing::support::combat_with_monsters(vec![entity.clone()]);
+        let plan = reincarnate_plan(&entity);
+
+        let actions = Darkling::take_turn_plan(&mut state, &entity, &plan);
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::Heal {
+                    target: 7,
+                    amount: 29,
+                },
+                Action::ReviveMonster { target: 7 },
+                Action::ApplyPower {
+                    source: 7,
+                    target: 7,
+                    power_id: PowerId::Regrow,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 7 },
+            ],
+            "Java Darkling queues HealAction, ChangeStateAction(REVIVE), ApplyPowerAction(Regrow, 1), then RollMoveAction"
+        );
+    }
+
+    #[test]
+    fn first_half_death_immediately_records_count_then_queues_set_move() {
+        let mut target = crate::testing::support::test_monster(EnemyId::Darkling);
+        target.id = 7;
+        target.set_planned_move_id(NIP);
+        target.move_history_mut().push_back(NIP);
+        let mut other = crate::testing::support::test_monster(EnemyId::Darkling);
+        other.id = 8;
+        other.slot = 1;
+        let mut state = crate::testing::support::combat_with_monsters(vec![target.clone(), other]);
+
+        let actions = Darkling::on_death(&mut state, &target);
+
+        let darkling = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == 7)
+            .unwrap();
+        assert!(darkling.half_dead);
+        assert!(!darkling.is_dying);
+        assert_eq!(darkling.planned_move_id(), COUNT);
+        assert_eq!(
+            darkling.move_history().iter().filter(|&&m| m == COUNT).count(),
+            1,
+            "Java Darkling.damage() calls setMove(COUNT) immediately before queuing SetMoveAction(COUNT)"
+        );
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::SetMonsterMove {
+                monster_id: 7,
+                next_move_byte: COUNT,
+                ..
+            }]
+        ));
+
+        crate::engine::action_handlers::execute_action(actions[0].clone(), &mut state);
+        let darkling = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == 7)
+            .unwrap();
+        assert_eq!(
+            darkling
+                .move_history()
+                .iter()
+                .filter(|&&m| m == COUNT)
+                .count(),
+            2,
+            "Java queued SetMoveAction(COUNT) records the duplicate move-history entry"
+        );
+    }
+
+    #[test]
+    fn half_death_already_on_count_does_not_queue_duplicate_set_move() {
+        let mut target = crate::testing::support::test_monster(EnemyId::Darkling);
+        target.id = 7;
+        target.set_planned_move_id(COUNT);
+        target.move_history_mut().push_back(COUNT);
+        let mut other = crate::testing::support::test_monster(EnemyId::Darkling);
+        other.id = 8;
+        other.slot = 1;
+        let mut state = crate::testing::support::combat_with_monsters(vec![target.clone(), other]);
+
+        let actions = Darkling::on_death(&mut state, &target);
+
+        assert!(actions.is_empty());
+        let darkling = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == 7)
+            .unwrap();
+        assert_eq!(
+            darkling
+                .move_history()
+                .iter()
+                .filter(|&&m| m == COUNT)
+                .count(),
+            1,
+            "Java guards the half-death SetMoveAction with nextMove != COUNT"
+        );
+    }
+
+    #[test]
+    fn central_darkling_death_keeps_powers_for_relic_hooks_then_clears_them() {
+        let mut target = crate::testing::support::test_monster(EnemyId::Darkling);
+        target.id = 7;
+        target.current_hp = 1;
+        target.set_planned_move_id(NIP);
+        let mut other = crate::testing::support::test_monster(EnemyId::Darkling);
+        other.id = 8;
+        other.slot = 1;
+        let mut state = crate::testing::support::combat_with_monsters(vec![target, other]);
+        state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::TheSpecimen));
+        store::set_powers_for(
+            &mut state,
+            7,
+            vec![power(PowerId::Regrow, -1), power(PowerId::Poison, 6)],
+        );
+
+        crate::engine::action_handlers::damage::handle_damage(
+            crate::runtime::action::DamageInfo {
+                source: crate::content::monsters::exordium::PLAYER,
+                target: 7,
+                base: 1,
+                output: 1,
+                damage_type: crate::runtime::action::DamageType::Normal,
+                is_modified: true,
+            },
+            &mut state,
+        );
+
+        let first = state
+            .pop_next_action()
+            .expect("The Specimen poison transfer");
+        assert_eq!(
+            first,
+            Action::ApplyPower {
+                source: 0,
+                target: 8,
+                power_id: PowerId::Poison,
+                amount: 6,
+            },
+            "Java calls relic onMonsterDeath while Darkling powers are still present"
+        );
+        let second = state
+            .pop_next_action()
+            .expect("queued Darkling SetMoveAction");
+        assert!(matches!(
+            second,
+            Action::SetMonsterMove {
+                monster_id: 7,
+                next_move_byte: COUNT,
+                ..
+            }
+        ));
+        assert!(
+            store::powers_for(&state, 7).is_none(),
+            "Java clears Darkling powers after relic onMonsterDeath hooks"
+        );
     }
 }

@@ -1,16 +1,40 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::Disarm,
+        name: "Disarm",
+        card_type: CardType::Skill,
+        rarity: CardRarity::Uncommon,
+        cost: 1,
+        base_damage: 0,
+        base_block: 0,
+        base_magic: 2,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: true,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 0,
+        upgrade_block: 0,
+        upgrade_magic: 1,
+    }
+}
+
 pub fn disarm_play(
-    _state: &CombatState,
+    state: &CombatState,
     card: &CombatCard,
     target: Option<crate::core::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Disarm requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
-    let amount = card.base_magic_num_mut; // 2, upgraded 3
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
+    let amount = evaluated.base_magic_num_mut;
 
     actions.push(ActionInfo {
         action: Action::ApplyPower {

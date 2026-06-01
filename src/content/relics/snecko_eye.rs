@@ -11,7 +11,7 @@ pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
             source: 0,
             target: 0,
             power_id: crate::content::powers::PowerId::Confusion,
-            amount: 0, // Confusion has no numeric value
+            amount: -1,
         },
         insertion_mode: AddTo::Bottom,
     });

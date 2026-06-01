@@ -3,11 +3,13 @@ use crate::content::cards::{
 };
 use crate::content::potions::{self, PotionId};
 use crate::content::relics::{RelicId, RelicTier};
-use crate::shop::merchant::{random_shop_colored_card_of_type, random_shop_colorless_card};
-use crate::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
+use crate::state::shop::merchant::{
+    random_shop_colored_card_of_type_for_courier_restock, random_shop_colorless_card,
+};
+use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
 fn has_relic(run_state: &RunState, relic_id: RelicId) -> bool {
     run_state.relics.iter().any(|relic| relic.id == relic_id)
@@ -22,6 +24,16 @@ fn current_shop_price_multiplier(run_state: &RunState) -> f32 {
         multiplier *= 0.5;
     }
     multiplier
+}
+
+fn apply_restock_relic_or_potion_discounts(run_state: &RunState, mut price: i32) -> i32 {
+    if has_relic(run_state, RelicId::Courier) {
+        price = (price as f32 * 0.8).round() as i32;
+    }
+    if has_relic(run_state, RelicId::MembershipCard) {
+        price = (price as f32 * 0.5).round() as i32;
+    }
+    price
 }
 
 fn base_purge_cost(run_state: &RunState) -> i32 {
@@ -79,7 +91,7 @@ fn reprice_relic_price(run_state: &mut RunState, base_price: i32) -> i32 {
             .merchant_rng
             .random_f32_min_max(0.95, 1.05))
     .round() as i32;
-    (jittered as f32 * current_shop_price_multiplier(run_state)).round() as i32
+    apply_restock_relic_or_potion_discounts(run_state, jittered)
 }
 
 fn reprice_potion_price(run_state: &mut RunState, potion_id: PotionId) -> i32 {
@@ -90,7 +102,7 @@ fn reprice_potion_price(run_state: &mut RunState, potion_id: PotionId) -> i32 {
             .merchant_rng
             .random_f32_min_max(0.95, 1.05))
     .round() as i32;
-    (jittered as f32 * current_shop_price_multiplier(run_state)).round() as i32
+    apply_restock_relic_or_potion_discounts(run_state, jittered)
 }
 
 fn reprice_card_price(run_state: &mut RunState, card_id: CardId) -> i32 {
@@ -111,7 +123,7 @@ fn reprice_card_price(run_state: &mut RunState, card_id: CardId) -> i32 {
 fn replace_shop_relic_slot(run_state: &mut RunState, shop: &mut ShopState, idx: usize) {
     let replacement = loop {
         let tier = roll_shop_relic_tier(run_state);
-        let relic_id = run_state.random_relic_by_tier(tier);
+        let relic_id = run_state.random_relic_end_by_tier(tier);
         if matches!(
             relic_id,
             RelicId::OldCoin | RelicId::SmilingMask | RelicId::MawBank | RelicId::Courier
@@ -165,7 +177,7 @@ fn replace_shop_card_slot(
         random_shop_colorless_card(&mut run_state.rng_pool, rarity)
     } else {
         let card_type = get_card_definition(purchased_card_id).card_type;
-        random_shop_colored_card_of_type(
+        random_shop_colored_card_of_type_for_courier_restock(
             &mut run_state.rng_pool,
             run_state.player_class,
             run_state.card_blizz_randomizer,
@@ -174,6 +186,7 @@ fn replace_shop_card_slot(
     };
     let replacement = ShopCard {
         card_id: replacement_id,
+        upgrades: run_state.preview_obtain_card_upgrades(replacement_id, 0),
         price: reprice_card_price(run_state, replacement_id),
         can_buy: true,
         blocked_reason: None,
@@ -182,6 +195,12 @@ fn replace_shop_card_slot(
         shop.cards[idx] = replacement;
     } else {
         shop.cards.push(replacement);
+    }
+}
+
+fn preview_shop_cards_after_relic_purchase(run_state: &RunState, shop: &mut ShopState) {
+    for card in &mut shop.cards {
+        card.upgrades = run_state.preview_obtain_card_upgrades(card.card_id, card.upgrades);
     }
 }
 
@@ -196,7 +215,11 @@ pub fn handle(
                 if idx < shop.cards.len() && run_state.gold >= shop.cards[idx].price {
                     let purchased = shop.cards.remove(idx);
                     run_state.change_gold_with_source(-purchased.price, DomainEventSource::Shop);
-                    run_state.add_card_to_deck(purchased.card_id);
+                    run_state.add_card_to_deck_with_upgrades_from(
+                        purchased.card_id,
+                        purchased.upgrades,
+                        DomainEventSource::Shop,
+                    );
                     if has_relic(run_state, RelicId::Courier) {
                         replace_shop_card_slot(run_state, shop, idx, purchased.card_id);
                     }
@@ -226,6 +249,12 @@ pub fn handle(
                     if purchased.relic_id == RelicId::SmilingMask {
                         shop.purge_cost = 50;
                     }
+                    if matches!(
+                        purchased.relic_id,
+                        RelicId::MoltenEgg | RelicId::ToxicEgg | RelicId::FrozenEgg
+                    ) {
+                        preview_shop_cards_after_relic_purchase(run_state, shop);
+                    }
                     if purchased.relic_id == RelicId::Courier
                         || has_relic(run_state, RelicId::Courier)
                     {
@@ -236,12 +265,7 @@ pub fn handle(
             ClientInput::BuyPotion(idx) => {
                 if idx < shop.potions.len() && run_state.gold >= shop.potions[idx].price {
                     if has_relic(run_state, RelicId::Sozu) {
-                        let purchased = shop.potions.remove(idx);
-                        run_state
-                            .change_gold_with_source(-purchased.price, DomainEventSource::Shop);
-                        if has_relic(run_state, RelicId::Courier) {
-                            replace_shop_potion_slot(run_state, shop, idx);
-                        }
+                        return None;
                     } else if let Some(empty_slot) = run_state.find_empty_potion_slot() {
                         let purchased = shop.potions.remove(idx);
                         run_state
@@ -263,11 +287,18 @@ pub fn handle(
                 if shop.purge_available
                     && run_state.gold >= shop.purge_cost
                     && idx < run_state.master_deck.len()
+                    && crate::state::core::master_deck_card_is_purgeable(
+                        &run_state.master_deck[idx],
+                    )
+                    && !crate::state::core::master_deck_card_is_bottled(
+                        &run_state.master_deck[idx],
+                        &run_state.relics,
+                    )
                 {
                     let uuid = run_state.master_deck[idx].uuid;
                     run_state.change_gold_with_source(-shop.purge_cost, DomainEventSource::Shop);
                     shop.purge_available = false;
-                    run_state.remove_card_from_deck(uuid);
+                    run_state.remove_card_from_deck_with_source(uuid, DomainEventSource::Shop);
                     run_state.shop_purge_count += 1;
                 }
             }
@@ -282,13 +313,30 @@ pub fn handle(
 
 #[cfg(test)]
 mod tests {
-    use super::handle;
+    use super::{apply_restock_relic_or_potion_discounts, handle, replace_shop_relic_slot};
     use crate::content::cards::CardId;
     use crate::content::potions::PotionId;
     use crate::content::relics::{RelicId, RelicState};
-    use crate::shop::state::{ShopCard, ShopPotion, ShopRelic, ShopState};
     use crate::state::core::{ClientInput, EngineState};
     use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+    use crate::state::shop::state::{ShopCard, ShopPotion, ShopRelic, ShopState};
+
+    #[test]
+    fn courier_membership_restock_relic_potion_discounts_round_sequentially() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Courier));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::MembershipCard));
+
+        assert_eq!(
+            apply_restock_relic_or_potion_discounts(&run_state, 101),
+            41,
+            "Java ShopScreen.getNewPrice rounds after Courier, then rounds again after Membership Card"
+        );
+    }
 
     #[test]
     fn spending_gold_in_shop_uses_up_maw_bank() {
@@ -300,6 +348,7 @@ mod tests {
         let mut shop = ShopState::new();
         shop.cards.push(ShopCard {
             card_id: CardId::Strike,
+            upgrades: 0,
             price: 50,
             can_buy: true,
             blocked_reason: None,
@@ -314,6 +363,103 @@ mod tests {
             .expect("MawBank should still be present");
         assert!(maw_bank.used_up);
         assert_eq!(maw_bank.counter, -2);
+    }
+
+    #[test]
+    fn buying_shop_card_spends_gold_before_fast_obtain_hooks_and_card_obtained() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::PommelStrike,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyCard(0)));
+        assert!(next.is_none());
+
+        let events = run_state.take_emitted_events();
+        let spend_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: -50,
+                        source: DomainEventSource::Shop,
+                        ..
+                    }
+                )
+            })
+            .expect("Shop card purchase should spend gold");
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Shop,
+                        ..
+                    }
+                )
+            })
+            .expect("Shop card purchase should run Ceramic Fish obtain hook");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Shop,
+                    } if card.id == CardId::PommelStrike
+                )
+            })
+            .expect("Shop card purchase should obtain the bought card");
+
+        assert!(
+            spend_pos < fish_gold_pos && fish_gold_pos < obtained_pos,
+            "Java ShopScreen.purchaseCard queues FastCardObtainEffect, then loses gold; the effect later runs onObtainCard before Soul.obtain"
+        );
+    }
+
+    #[test]
+    fn buying_shop_curse_still_spends_gold_when_omamori_blocks_fast_obtain() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::Regret,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        handle(&mut run_state, &mut shop, Some(ClientInput::BuyCard(0)));
+
+        assert_eq!(
+            run_state.gold, 150,
+            "Java FastCardObtainEffect can be blocked by Omamori, but ShopScreen.purchaseCard still loses gold after constructing it"
+        );
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Regret));
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Omamori should remain after blocking shop curse");
+        assert_eq!(omamori.counter, 1);
     }
 
     #[test]
@@ -336,6 +482,45 @@ mod tests {
     }
 
     #[test]
+    fn shop_purge_uses_java_non_bottled_purgeable_cards_and_shop_source() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 200;
+        run_state.master_deck = vec![
+            crate::runtime::combat::CombatCard::new(CardId::Strike, 10),
+            crate::runtime::combat::CombatCard::new(CardId::AscendersBane, 11),
+            crate::runtime::combat::CombatCard::new(CardId::Defend, 12),
+        ];
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 12;
+        run_state.relics.push(bottle);
+        run_state.emitted_events.clear();
+
+        let mut shop = ShopState::new();
+        shop.purge_available = true;
+        shop.purge_cost = 75;
+
+        assert!(handle(&mut run_state, &mut shop, Some(ClientInput::PurgeCard(1))).is_none());
+        assert_eq!(run_state.gold, 200);
+        assert_eq!(run_state.master_deck.len(), 3);
+
+        assert!(handle(&mut run_state, &mut shop, Some(ClientInput::PurgeCard(2))).is_none());
+        assert_eq!(run_state.gold, 200);
+        assert_eq!(run_state.master_deck.len(), 3);
+
+        assert!(handle(&mut run_state, &mut shop, Some(ClientInput::PurgeCard(0))).is_none());
+        assert_eq!(run_state.gold, 125);
+        assert_eq!(run_state.master_deck.len(), 2);
+        assert!(!shop.purge_available);
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            crate::state::selection::DomainEvent::CardRemoved {
+                card,
+                source: crate::state::selection::DomainEventSource::Shop,
+            } if card.id == CardId::Strike && card.uuid == 10
+        )));
+    }
+
+    #[test]
     fn membership_card_purchase_discounts_remaining_shop_inventory() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.gold = 500;
@@ -346,6 +531,7 @@ mod tests {
         shop.purge_cost = 100;
         shop.cards.push(ShopCard {
             card_id: CardId::Strike,
+            upgrades: 0,
             price: 100,
             can_buy: true,
             blocked_reason: None,
@@ -421,6 +607,31 @@ mod tests {
     }
 
     #[test]
+    fn courier_relic_replacement_uses_end_path_and_can_spawn_filter() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state.common_relic_pool = vec![RelicId::Anchor, RelicId::BottledFlame];
+        run_state.uncommon_relic_pool = vec![RelicId::Anchor, RelicId::BottledFlame];
+        run_state.rare_relic_pool = vec![RelicId::Anchor, RelicId::BottledFlame];
+
+        let mut shop = ShopState::new();
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::Courier,
+            price: 150,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        replace_shop_relic_slot(&mut run_state, &mut shop, 0);
+
+        assert_eq!(
+            shop.relics[0].relic_id,
+            RelicId::Anchor,
+            "Java shop/end relic replacement draws from the end, but rejects Bottled Flame when canSpawn is false"
+        );
+    }
+
+    #[test]
     fn courier_keeps_potion_slot_filled_after_purchase() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.gold = 500;
@@ -442,7 +653,7 @@ mod tests {
     }
 
     #[test]
-    fn sozu_shop_potion_purchase_spends_gold_and_absorbs_offer_without_potion() {
+    fn sozu_shop_potion_purchase_is_blocked_without_spending_or_removing_offer() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.gold = 200;
         run_state.relics.push(RelicState::new(RelicId::Sozu));
@@ -459,13 +670,13 @@ mod tests {
         let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyPotion(0)));
 
         assert!(next.is_none());
-        assert_eq!(run_state.gold, 150);
+        assert_eq!(run_state.gold, 200);
         assert_eq!(run_state.potions, starting_potions);
-        assert!(shop.potions.is_empty());
+        assert_eq!(shop.potions.len(), 1);
     }
 
     #[test]
-    fn courier_refills_sozu_absorbed_shop_potion_purchase() {
+    fn courier_does_not_refill_sozu_blocked_shop_potion_purchase() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.gold = 200;
         run_state.relics.clear();
@@ -484,9 +695,10 @@ mod tests {
         let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyPotion(0)));
 
         assert!(next.is_none());
-        assert_eq!(run_state.gold, 150);
+        assert_eq!(run_state.gold, 200);
         assert_eq!(run_state.potions, starting_potions);
         assert_eq!(shop.potions.len(), 1);
+        assert_eq!(shop.potions[0].potion_id, PotionId::BlockPotion);
     }
 
     #[test]
@@ -500,6 +712,7 @@ mod tests {
         let mut shop = ShopState::new();
         shop.cards.push(ShopCard {
             card_id: CardId::Strike,
+            upgrades: 0,
             price: 50,
             can_buy: true,
             blocked_reason: None,
@@ -509,5 +722,68 @@ mod tests {
         assert!(next.is_none());
         assert_eq!(run_state.master_deck.len(), starting_deck_len + 1);
         assert_eq!(shop.cards.len(), 1);
+    }
+
+    #[test]
+    fn shop_card_purchase_preserves_preview_upgrades() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 500;
+        run_state.relics.clear();
+        run_state.master_deck.clear();
+
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::SearingBlow,
+            upgrades: 1,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyCard(0)));
+        assert!(next.is_none());
+        assert_eq!(run_state.master_deck.len(), 1);
+        assert_eq!(run_state.master_deck[0].id, CardId::SearingBlow);
+        assert_eq!(
+            run_state.master_deck[0].upgrades, 1,
+            "shop purchase must carry the visible card upgrade state into master_deck"
+        );
+    }
+
+    #[test]
+    fn buying_egg_relic_previews_existing_shop_cards_like_java_store_relic() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 500;
+        run_state.relics.clear();
+
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::Strike,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        shop.cards.push(ShopCard {
+            card_id: CardId::Defend,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::MoltenEgg,
+            price: 100,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyRelic(0)));
+        assert!(next.is_none());
+        assert_eq!(shop.cards[0].upgrades, 1);
+        assert_eq!(
+            shop.cards[1].upgrades, 0,
+            "Molten Egg previews attack cards only; skill cards wait for Toxic Egg"
+        );
     }
 }

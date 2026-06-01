@@ -5,22 +5,19 @@
 // Forge uses gridSelectScreen for player to choose which card to upgrade.
 
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     if event_state.current_screen == 1 {
         return vec![EventChoiceMeta::new("[Leave]")];
     }
 
-    let has_upgradable = run_state.master_deck.iter().any(|c| {
-        let def = crate::content::cards::get_card_definition(c.id);
-        // Java: canUpgrade() — curses never, SearingBlow always, others only if upgrades == 0
-        match def.rarity {
-            crate::content::cards::CardRarity::Curse => false,
-            _ => c.id == crate::content::cards::CardId::SearingBlow || c.upgrades == 0,
-        }
-    });
+    let has_upgradable = run_state
+        .master_deck
+        .iter()
+        .any(crate::state::core::master_deck_card_can_upgrade);
 
     let mut choices = vec![];
     if has_upgradable {
@@ -51,22 +48,42 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             match choice_idx {
                 0 => {
                     // Forge: upgrade a card via grid-select (Java: gridSelectScreen.open(getUpgradableCards(), 1, ...))
-                    *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
-                        min_choices: 1,
-                        max_choices: 1,
-                        reason: RunPendingChoiceReason::Upgrade,
-                        return_state: Box::new(EngineState::EventRoom),
-                    });
-                    event_state.current_screen = 1;
+                    if run_state
+                        .master_deck
+                        .iter()
+                        .any(crate::state::core::master_deck_card_can_upgrade)
+                    {
+                        *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+                            min_choices: 1,
+                            max_choices: 1,
+                            reason: RunPendingChoiceReason::Upgrade,
+                            return_state: Box::new(EngineState::EventRoom),
+                        });
+                        event_state.current_screen = 1;
+                    }
                 }
                 1 => {
-                    // Rummage: obtain Pain curse + WarpedTongs relic
-                    run_state.add_card_to_deck(crate::content::cards::CardId::Pain);
-                    run_state
+                    // Rummage: Java constructs ShowCardAndObtainEffect(Pain)
+                    // before spawnRelicAndObtain(WarpedTongs). Omamori checks
+                    // happen at effect construction time, while card obtain
+                    // resolves after the relic has been obtained.
+                    let omamori_snapshot = run_state
                         .relics
-                        .push(crate::content::relics::RelicState::new(
-                            crate::content::relics::RelicId::WarpedTongs,
-                        ));
+                        .iter()
+                        .find(|relic| relic.id == crate::content::relics::RelicId::Omamori)
+                        .map(|relic| relic.counter);
+                    let _ = run_state.obtain_relic_with_source(
+                        crate::content::relics::RelicId::WarpedTongs,
+                        EngineState::EventRoom,
+                        DomainEventSource::Event(EventId::AccursedBlacksmith),
+                    );
+                    run_state.add_card_to_deck_with_omamori_snapshot_from(
+                        crate::content::cards::CardId::Pain,
+                        0,
+                        DomainEventSource::Event(EventId::AccursedBlacksmith),
+                        omamori_snapshot.is_some(),
+                        omamori_snapshot.unwrap_or(0),
+                    );
                     event_state.current_screen = 1;
                 }
                 _ => {
@@ -81,4 +98,213 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::engine::run_loop::tick_run;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::ClientInput;
+    use crate::state::selection::{
+        DomainEvent, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
+    };
+
+    fn blacksmith_run() -> RunState {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.event_state = Some(EventState {
+            id: EventId::AccursedBlacksmith,
+            current_screen: 0,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        run_state
+    }
+
+    fn deck_card(id: CardId, uuid: u32, upgrades: u8) -> CombatCard {
+        let mut card = CombatCard::new(id, uuid);
+        card.upgrades = upgrades;
+        card
+    }
+
+    #[test]
+    fn forge_opens_upgrade_pending_choice_like_grid_select() {
+        let mut run_state = blacksmith_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(matches!(
+            engine_state,
+            EngineState::RunPendingChoice(ref pending)
+                if pending.reason == RunPendingChoiceReason::Upgrade
+                    && pending.min_choices == 1
+                    && pending.max_choices == 1
+        ));
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+    }
+
+    #[test]
+    fn disabled_forge_does_not_open_empty_upgrade_selection() {
+        let mut run_state = blacksmith_run();
+        run_state.master_deck.clear();
+        run_state
+            .master_deck
+            .push(crate::runtime::combat::CombatCard::new(CardId::Injury, 100));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
+    }
+
+    #[test]
+    fn forge_selection_uses_upgradable_cards_like_java() {
+        let mut run_state = blacksmith_run();
+        run_state.master_deck = vec![
+            deck_card(CardId::Strike, 101, 0),
+            deck_card(CardId::Defend, 102, 1),
+            deck_card(CardId::Injury, 103, 0),
+        ];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Forge should open deck upgrade selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::Upgrade);
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::Upgrade);
+        assert_eq!(
+            request.targets,
+            vec![SelectionTargetRef::CardUuid(101)],
+            "Java opens masterDeck.getUpgradableCards()"
+        );
+    }
+
+    #[test]
+    fn forge_upgrades_selected_card_with_event_source() {
+        let mut run_state = blacksmith_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101, 0)];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+        assert_eq!(run_state.master_deck[0].upgrades, 1);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardUpgraded {
+                before,
+                after,
+                source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+            } if before.id == CardId::Strike
+                && before.uuid == 101
+                && before.upgrades == 0
+                && after.upgrades == 1
+        )));
+    }
+
+    #[test]
+    fn rummage_uses_event_sources_for_pain_and_warped_tongs() {
+        let mut run_state = blacksmith_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Pain));
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::WarpedTongs));
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                card,
+                source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+            } if card.id == CardId::Pain
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::RelicObtained {
+                relic_id: RelicId::WarpedTongs,
+                source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+            }
+        )));
+        let relic_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::RelicObtained {
+                        relic_id: RelicId::WarpedTongs,
+                        source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+                    }
+                )
+            })
+            .expect("Warped Tongs should be obtained");
+        let pain_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::AccursedBlacksmith),
+                    } if card.id == CardId::Pain
+                )
+            })
+            .expect("Pain should be obtained");
+        assert!(
+            relic_pos < pain_pos,
+            "Java spawnRelicAndObtain resolves before the queued ShowCardAndObtainEffect obtains Pain"
+        );
+    }
+
+    #[test]
+    fn rummage_pain_can_be_blocked_by_omamori_without_blocking_warped_tongs() {
+        let mut run_state = blacksmith_run();
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::Pain));
+        assert!(run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::WarpedTongs));
+        let omamori = run_state
+            .relics
+            .iter()
+            .find(|relic| relic.id == RelicId::Omamori)
+            .expect("Omamori should remain after blocking Pain");
+        assert_eq!(omamori.counter, 1);
+    }
 }

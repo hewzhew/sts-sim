@@ -23,15 +23,27 @@ pub fn at_damage_final_receive(
     }
 }
 
-pub fn at_end_of_turn(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
+pub fn at_end_of_turn(
+    owner: EntityId,
+    amount: i32,
+    just_applied: bool,
+) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
 
-    if amount > 0 {
-        actions.push(Action::ApplyPower {
-            source: owner,
+    if just_applied {
+        return actions;
+    }
+
+    if amount == 0 {
+        actions.push(Action::RemovePower {
             target: owner,
             power_id: PowerId::Intangible,
-            amount: -1,
+        });
+    } else {
+        actions.push(Action::ReducePower {
+            target: owner,
+            power_id: PowerId::Intangible,
+            amount: 1,
         });
     }
 
@@ -41,12 +53,16 @@ pub fn at_end_of_turn(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Actio
 pub fn at_end_of_round(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
 
-    if amount > 0 {
-        actions.push(Action::ApplyPower {
-            source: owner,
+    if amount == 0 {
+        actions.push(Action::RemovePower {
             target: owner,
             power_id: PowerId::IntangiblePlayer,
-            amount: -1,
+        });
+    } else {
+        actions.push(Action::ReducePower {
+            target: owner,
+            power_id: PowerId::IntangiblePlayer,
+            amount: 1,
         });
     }
 

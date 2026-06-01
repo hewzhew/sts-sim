@@ -14,6 +14,51 @@ pub struct SnakePlant;
 const CHOMPY_CHOMPS: u8 = 1;
 const SPORES: u8 = 2;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+
+    #[test]
+    fn a17_spores_cooldown_checks_last_move_before_like_java() {
+        let mut plant = crate::test_support::test_monster(EnemyId::SnakePlant);
+        plant.move_history_mut().push_back(SPORES);
+        plant.move_history_mut().push_back(CHOMPY_CHOMPS);
+
+        let a17_plan =
+            SnakePlant::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &plant, 17, 65);
+        let lower_asc_plan =
+            SnakePlant::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &plant, 16, 65);
+
+        assert_eq!(
+            a17_plan.move_id, CHOMPY_CHOMPS,
+            "Java A17+ checks lastMoveBefore(SPORES) and blocks immediate Spores here"
+        );
+        assert_eq!(
+            lower_asc_plan.move_id, SPORES,
+            "Java below A17 only checks lastMove(SPORES)"
+        );
+    }
+
+    #[test]
+    fn chomp_queues_three_damage_actions_before_roll_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let plant = crate::test_support::test_monster(EnemyId::SnakePlant);
+
+        let actions = SnakePlant::take_turn_plan(&mut state, &plant, &chomp_plan(0));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack { base_damage: 7, .. },
+                Action::MonsterAttack { base_damage: 7, .. },
+                Action::MonsterAttack { base_damage: 7, .. },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+}
+
 enum SnakePlantTurn<'a> {
     Chomp(&'a AttackSpec),
     Spores(&'a ApplyPowerStep, &'a ApplyPowerStep),

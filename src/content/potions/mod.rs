@@ -1,6 +1,8 @@
 pub mod potion_effects;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum PotionId {
     // Common (20)
     FirePotion,
@@ -51,7 +53,7 @@ pub enum PotionId {
     EssenceOfDarkness, // Defect
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 pub enum PotionRarity {
     Common,
     Uncommon,
@@ -59,7 +61,7 @@ pub enum PotionRarity {
 }
 
 /// Which player class can obtain this potion (None = any class)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 pub enum PotionClass {
     Any,
     Ironclad,
@@ -450,7 +452,7 @@ pub fn get_potion_definition(id: PotionId) -> PotionDefinition {
             id,
             name: "Ambrosia",
             rarity: PotionRarity::Rare,
-            base_potency: 0,
+            base_potency: 2,
             target_required: false,
             is_thrown: false,
             class: PotionClass::Watcher,
@@ -604,7 +606,7 @@ pub const ALL_POTIONS: &[PotionId] = &[
     PotionId::EntropicBrew,
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Potion {
     pub id: PotionId,
     pub uuid: u32,
@@ -642,6 +644,65 @@ impl Potion {
     }
 }
 
+pub fn potion_can_discard_in_event(is_we_meet_again_event: bool) -> bool {
+    !is_we_meet_again_event
+}
+
+pub fn potion_can_use_out_of_combat(id: PotionId, is_we_meet_again_event: bool) -> bool {
+    if is_we_meet_again_event {
+        return false;
+    }
+    matches!(
+        id,
+        PotionId::BloodPotion | PotionId::FruitJuice | PotionId::EntropicBrew
+    )
+}
+
+/// Java `AbstractPotion.canUse()` for an already-owned potion in combat, plus
+/// potion-specific overrides that are mechanical rather than UI-only.
+///
+/// This deliberately belongs below the generic potion metadata because it is a
+/// runtime legality rule: adapters and action execution must agree on it.
+pub fn potion_can_use_in_combat_like_java(
+    potion: &Potion,
+    combat: &crate::runtime::combat::CombatState,
+) -> bool {
+    if !potion.can_use || potion.id == PotionId::FairyPotion {
+        return false;
+    }
+    if !matches!(
+        combat.turn.current_phase,
+        crate::runtime::combat::CombatPhase::PlayerTurn
+    ) {
+        return false;
+    }
+    if matches!(
+        potion.id,
+        PotionId::BloodPotion | PotionId::FruitJuice | PotionId::EntropicBrew
+    ) {
+        return true;
+    }
+    !combat.are_monsters_basically_dead_java()
+        && !potion_blocked_in_combat_by_java_override(potion.id, combat)
+}
+
+pub fn potion_blocked_in_combat_by_java_override(
+    id: PotionId,
+    combat: &crate::runtime::combat::CombatState,
+) -> bool {
+    id == PotionId::SmokeBomb
+        && (combat.meta.is_boss_fight
+            || combat.entities.monsters.iter().any(|monster| {
+                crate::content::monsters::EnemyId::from_id(monster.monster_type)
+                    .is_some_and(|enemy_id| enemy_id.is_boss())
+                    || crate::content::powers::store::has_power(
+                        combat,
+                        monster.id,
+                        crate::content::powers::PowerId::BackAttack,
+                    )
+            }))
+}
+
 /// Returns a random potion with rarity weighting, matching Java's `AbstractDungeon.returnRandomPotion()`.
 /// Rolls 0-99: <65 = Common, 65-89 = Uncommon, ≥90 = Rare.
 /// When `limited=true`, excludes FruitJuice (Java behavior for EntropicBrew).
@@ -663,7 +724,10 @@ pub fn random_potion(
 
 /// Returns a random potion of the given rarity from the class pool.
 /// Java: `AbstractDungeon.returnRandomPotion(rarity, limited)` — rejection-samples from flat pool.
-/// When `limited=true`, excludes FruitJuice.
+///
+/// When `limited=true`, Java initializes `spamCheck` to true after taking an
+/// initial flat random potion, so the first flat roll is always discarded before
+/// the acceptable non-Fruit-Juice rejection-sampling loop begins.
 pub fn random_potion_by_rarity(
     rng: &mut crate::runtime::rng::StsRng,
     class: PotionClass,
@@ -671,6 +735,9 @@ pub fn random_potion_by_rarity(
     limited: bool,
 ) -> PotionId {
     let pool = potions_for_class(class);
+    if limited {
+        let _ = pool[rng.random(pool.len() as i32 - 1) as usize];
+    }
     loop {
         let idx = rng.random(pool.len() as i32 - 1) as usize;
         let id = pool[idx];
@@ -689,4 +756,251 @@ pub fn random_potion_any(rng: &mut crate::runtime::rng::StsRng, class: PotionCla
     let pool = potions_for_class(class);
     let idx = rng.random(pool.len() as i32 - 1) as usize;
     pool[idx]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::runtime::action::{Action, AddTo};
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    #[test]
+    fn potion_helper_pools_match_java_order_for_all_classes() {
+        assert_eq!(
+            potions_for_class(PotionClass::Ironclad),
+            vec![
+                PotionId::BloodPotion,
+                PotionId::Elixir,
+                PotionId::HeartOfIron,
+                PotionId::BlockPotion,
+                PotionId::DexterityPotion,
+                PotionId::EnergyPotion,
+                PotionId::ExplosivePotion,
+                PotionId::FirePotion,
+                PotionId::StrengthPotion,
+                PotionId::SwiftPotion,
+                PotionId::WeakenPotion,
+                PotionId::FearPotion,
+                PotionId::AttackPotion,
+                PotionId::SkillPotion,
+                PotionId::PowerPotion,
+                PotionId::ColorlessPotion,
+                PotionId::SteroidPotion,
+                PotionId::SpeedPotion,
+                PotionId::BlessingOfTheForge,
+                PotionId::RegenPotion,
+                PotionId::AncientPotion,
+                PotionId::LiquidBronze,
+                PotionId::GamblersBrew,
+                PotionId::EssenceOfSteel,
+                PotionId::DuplicationPotion,
+                PotionId::DistilledChaosPotion,
+                PotionId::LiquidMemories,
+                PotionId::CultistPotion,
+                PotionId::FruitJuice,
+                PotionId::SneckoOil,
+                PotionId::FairyPotion,
+                PotionId::SmokeBomb,
+                PotionId::EntropicBrew,
+            ]
+        );
+        assert_eq!(
+            &potions_for_class(PotionClass::Silent)[..3],
+            &[
+                PotionId::PoisonPotion,
+                PotionId::CunningPotion,
+                PotionId::GhostInAJar
+            ]
+        );
+        assert_eq!(
+            &potions_for_class(PotionClass::Defect)[..3],
+            &[
+                PotionId::FocusPotion,
+                PotionId::PotionOfCapacity,
+                PotionId::EssenceOfDarkness
+            ]
+        );
+        assert_eq!(
+            &potions_for_class(PotionClass::Watcher)[..3],
+            &[
+                PotionId::BottledMiracle,
+                PotionId::StancePotion,
+                PotionId::Ambrosia
+            ]
+        );
+        assert_eq!(
+            potions_for_class(PotionClass::Any),
+            ALL_POTIONS,
+            "Java PotionHelper.getPotions(null, true) is the all-potion upload/order list"
+        );
+        assert_eq!(ALL_POTIONS.len(), 42);
+    }
+
+    #[test]
+    fn potion_can_use_overrides_match_java_sources() {
+        assert!(potion_can_use_out_of_combat(PotionId::BloodPotion, false));
+        assert!(potion_can_use_out_of_combat(PotionId::FruitJuice, false));
+        assert!(potion_can_use_out_of_combat(PotionId::EntropicBrew, false));
+        assert!(!potion_can_use_out_of_combat(PotionId::BlockPotion, false));
+        assert!(!potion_can_use_out_of_combat(PotionId::FirePotion, false));
+        assert!(!potion_can_use_out_of_combat(PotionId::FairyPotion, false));
+        assert!(!potion_can_use_out_of_combat(PotionId::BloodPotion, true));
+        assert!(!potion_can_discard_in_event(true));
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters = vec![crate::test_support::test_monster(
+            crate::content::monsters::EnemyId::JawWorm,
+        )];
+        combat.turn.current_phase = crate::runtime::combat::CombatPhase::PlayerTurn;
+        combat.meta.is_boss_fight = false;
+        assert!(potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::FirePotion, 1),
+            &combat
+        ));
+        assert!(potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::BloodPotion, 2),
+            &combat
+        ));
+        assert!(!potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::FairyPotion, 3),
+            &combat
+        ));
+
+        combat.entities.monsters[0].current_hp = 0;
+        combat.entities.monsters[0].is_dying = true;
+        assert!(!potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::FirePotion, 5),
+            &combat
+        ));
+        assert!(
+            potion_can_use_in_combat_like_java(&Potion::new(PotionId::FruitJuice, 6), &combat),
+            "Java FruitJuice overrides AbstractPotion.canUse and does not inherit the alive-monster gate"
+        );
+        combat.entities.monsters[0].current_hp = 40;
+        combat.entities.monsters[0].is_dying = false;
+
+        combat.meta.is_boss_fight = true;
+        assert!(!potion_can_use_in_combat_like_java(
+            &Potion::new(PotionId::SmokeBomb, 4),
+            &combat
+        ));
+    }
+
+    #[test]
+    fn limited_random_potion_discards_initial_flat_roll_like_java() {
+        let mut rng = crate::runtime::rng::StsRng::new(17);
+        let before = rng.counter;
+
+        let potion =
+            random_potion_by_rarity(&mut rng, PotionClass::Silent, PotionRarity::Rare, true);
+
+        assert_ne!(potion, PotionId::FruitJuice);
+        assert!(
+            rng.counter >= before + 2,
+            "Java returnRandomPotion(rarity, true) consumes and discards one initial PotionHelper.getRandomPotion roll before accepting a limited result"
+        );
+    }
+
+    #[test]
+    fn watcher_potion_metadata_matches_java_sources() {
+        let bottled = get_potion_definition(PotionId::BottledMiracle);
+        assert_eq!(bottled.rarity, PotionRarity::Common);
+        assert_eq!(bottled.base_potency, 2);
+        assert!(!bottled.target_required);
+        assert!(!bottled.is_thrown);
+        assert_eq!(bottled.class, PotionClass::Watcher);
+
+        let stance = get_potion_definition(PotionId::StancePotion);
+        assert_eq!(stance.rarity, PotionRarity::Uncommon);
+        assert_eq!(stance.base_potency, 0);
+        assert!(!stance.target_required);
+        assert!(!stance.is_thrown);
+        assert_eq!(stance.class, PotionClass::Watcher);
+
+        let ambrosia = get_potion_definition(PotionId::Ambrosia);
+        assert_eq!(ambrosia.rarity, PotionRarity::Rare);
+        assert_eq!(ambrosia.base_potency, 2);
+        assert!(!ambrosia.target_required);
+        assert!(!ambrosia.is_thrown);
+        assert_eq!(ambrosia.class, PotionClass::Watcher);
+
+        let watcher_pool = potions_for_class(PotionClass::Watcher);
+        assert_eq!(
+            &watcher_pool[..3],
+            &[
+                PotionId::BottledMiracle,
+                PotionId::StancePotion,
+                PotionId::Ambrosia
+            ]
+        );
+    }
+
+    #[test]
+    fn watcher_potion_actions_match_java_sources() {
+        let state = crate::test_support::blank_test_combat();
+
+        let bottled = potion_effects::get_potion_actions(&state, PotionId::BottledMiracle, None, 2);
+        assert_eq!(bottled.len(), 1);
+        assert_eq!(bottled[0].insertion_mode, AddTo::Bottom);
+        match &bottled[0].action {
+            Action::MakeConstructedCopyInHand { original, amount } => {
+                assert_eq!(original.id, CardId::Miracle);
+                assert_eq!(original.upgrades, 0);
+                assert_eq!(*amount, 2);
+            }
+            other => panic!("Bottled Miracle should queue constructed Miracles, got {other:?}"),
+        }
+
+        let stance = potion_effects::get_potion_actions(&state, PotionId::StancePotion, None, 0);
+        assert_eq!(stance.len(), 1);
+        assert_eq!(stance[0].insertion_mode, AddTo::Bottom);
+        assert!(matches!(stance[0].action, Action::SuspendForStanceChoice));
+
+        let ambrosia = potion_effects::get_potion_actions(&state, PotionId::Ambrosia, None, 2);
+        assert_eq!(ambrosia.len(), 1);
+        assert_eq!(ambrosia[0].insertion_mode, AddTo::Bottom);
+        assert!(matches!(&ambrosia[0].action, Action::EnterStance(stance) if stance == "Divinity"));
+    }
+
+    #[test]
+    fn generated_card_potions_use_make_temp_constructor_master_reality() {
+        let mut state = crate::test_support::blank_test_combat();
+        crate::content::powers::store::set_powers_for(
+            &mut state,
+            0,
+            vec![Power {
+                power_type: crate::content::powers::PowerId::MasterRealityPower,
+                instance_id: None,
+                amount: -1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        let bottled = potion_effects::get_potion_actions(&state, PotionId::BottledMiracle, None, 2);
+        match &bottled[0].action {
+            Action::MakeConstructedCopyInHand { original, amount } => {
+                assert_eq!(original.id, CardId::Miracle);
+                assert_eq!(original.upgrades, 1);
+                assert_eq!(*amount, 2);
+            }
+            other => {
+                panic!("Bottled Miracle should construct Miracle before queueing, got {other:?}")
+            }
+        }
+
+        let cunning = potion_effects::get_potion_actions(&state, PotionId::CunningPotion, None, 3);
+        match &cunning[0].action {
+            Action::MakeConstructedCopyInHand { original, amount } => {
+                assert_eq!(original.id, CardId::Shiv);
+                assert_eq!(original.upgrades, 1);
+                assert_eq!(*amount, 3);
+            }
+            other => panic!(
+                "Cunning Potion should construct upgraded Shiv before queueing, got {other:?}"
+            ),
+        }
+    }
 }

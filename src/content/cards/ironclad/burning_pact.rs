@@ -1,33 +1,46 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::BurningPact,
+        name: "Burning Pact",
+        card_type: CardType::Skill,
+        rarity: CardRarity::Uncommon,
+        cost: 1,
+        base_damage: 0,
+        base_block: 0,
+        base_magic: 2,
+        target: CardTarget::None,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 0,
+        upgrade_block: 0,
+        upgrade_magic: 1,
+    }
+}
+
 pub fn burning_pact_play(state: &CombatState, card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, None);
     let mut actions = SmallVec::new();
 
-    if state.zones.hand.len() == 1 {
-        actions.push(ActionInfo {
-            action: Action::ExhaustCard {
-                card_uuid: state.zones.hand[0].uuid,
-                source_pile: crate::state::PileType::Hand,
-            },
-            insertion_mode: AddTo::Bottom,
-        });
-    } else if state.zones.hand.len() > 1 {
-        actions.push(ActionInfo {
-            action: Action::SuspendForHandSelect {
-                min: 1,
-                max: 1,
-                can_cancel: false,
-                filter: crate::state::HandSelectFilter::Any,
-                reason: crate::state::HandSelectReason::Exhaust,
-            },
-            insertion_mode: AddTo::Bottom,
-        });
-    }
+    actions.push(ActionInfo {
+        action: Action::ExhaustFromHand {
+            amount: 1,
+            random: false,
+            any_number: false,
+            can_pick_zero: false,
+        },
+        insertion_mode: AddTo::Bottom,
+    });
 
     actions.push(ActionInfo {
-        action: Action::DrawCards(card.base_magic_num_mut as u32),
+        action: Action::DrawCards(evaluated.base_magic_num_mut as u32),
         insertion_mode: AddTo::Bottom,
     });
 

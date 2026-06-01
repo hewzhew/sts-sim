@@ -1,0 +1,159 @@
+use std::path::PathBuf;
+
+use crate::state::core::{ActiveCombat, EngineState};
+use crate::state::run::RunState;
+
+use super::auto_capture::AutoCombatCaptureConfig;
+use super::outcome::CombatOutcomeTracker;
+use super::reward_auto::RewardAutomationConfig;
+use super::trace_annotation::RunControlTraceAnnotationV1;
+use super::transition_report::ActionResult;
+
+mod apply;
+mod combat;
+
+#[derive(Clone, Debug)]
+pub struct RunControlConfig {
+    pub seed: u64,
+    pub ascension_level: u8,
+    pub final_act: bool,
+    pub player_class: &'static str,
+    pub reward_automation: RewardAutomationConfig,
+    pub auto_capture: AutoCombatCaptureConfig,
+}
+
+impl Default for RunControlConfig {
+    fn default() -> Self {
+        Self {
+            seed: 1,
+            ascension_level: 0,
+            final_act: false,
+            player_class: "Ironclad",
+            reward_automation: RewardAutomationConfig::default(),
+            auto_capture: AutoCombatCaptureConfig::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RunControlSession {
+    pub engine_state: EngineState,
+    pub run_state: RunState,
+    pub active_combat: Option<ActiveCombat>,
+    pub decision_step: u64,
+    pub reward_automation: RewardAutomationConfig,
+    pub(in crate::eval::run_control) auto_capture: AutoCombatCaptureConfig,
+    pub(super) combat_outcomes: CombatOutcomeTracker,
+    pub(in crate::eval::run_control) combat_sequence: u64,
+    pub(in crate::eval::run_control) auto_capture_last_combat_sequence: Option<u64>,
+    last_completed_combat_sequence: Option<u64>,
+    last_completed_combat_source: Option<CombatCompletionSource>,
+    current_combat_source: Option<CombatCompletionSource>,
+    last_capture_case: Option<LastBenchmarkCaptureCase>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::eval::run_control) struct LastBenchmarkCaptureCase {
+    pub root: PathBuf,
+    pub case_id: String,
+    pub combat_sequence: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::eval::run_control) enum CombatCompletionSource {
+    Manual,
+    SearchCombat,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunControlCommandOutcome {
+    pub should_quit: bool,
+    pub message: String,
+    pub action_result: Option<ActionResult>,
+    pub search_evidence_path: Option<PathBuf>,
+    pub trace_annotations: Vec<RunControlTraceAnnotationV1>,
+}
+
+impl RunControlCommandOutcome {
+    pub(in crate::eval::run_control) fn message(message: impl Into<String>) -> Self {
+        Self {
+            should_quit: false,
+            message: message.into(),
+            action_result: None,
+            search_evidence_path: None,
+            trace_annotations: Vec::new(),
+        }
+    }
+
+    fn quit(message: impl Into<String>) -> Self {
+        Self {
+            should_quit: true,
+            message: message.into(),
+            action_result: None,
+            search_evidence_path: None,
+            trace_annotations: Vec::new(),
+        }
+    }
+
+    pub(in crate::eval::run_control) fn action(
+        message: impl Into<String>,
+        action_result: ActionResult,
+    ) -> Self {
+        Self {
+            should_quit: false,
+            message: message.into(),
+            action_result: Some(action_result),
+            search_evidence_path: None,
+            trace_annotations: Vec::new(),
+        }
+    }
+
+    pub(in crate::eval::run_control) fn with_trace_annotations(
+        mut self,
+        trace_annotations: Vec<RunControlTraceAnnotationV1>,
+    ) -> Self {
+        self.trace_annotations.extend(trace_annotations);
+        self
+    }
+}
+
+impl RunControlSession {
+    pub fn new(config: RunControlConfig) -> Self {
+        let run_state = RunState::new(
+            config.seed,
+            config.ascension_level,
+            config.final_act,
+            config.player_class,
+        );
+        let engine_state = EngineState::EventRoom;
+
+        Self {
+            engine_state,
+            run_state,
+            active_combat: None,
+            decision_step: 0,
+            reward_automation: config.reward_automation,
+            auto_capture: config.auto_capture,
+            combat_outcomes: CombatOutcomeTracker::default(),
+            combat_sequence: 0,
+            auto_capture_last_combat_sequence: None,
+            last_completed_combat_sequence: None,
+            last_completed_combat_source: None,
+            current_combat_source: None,
+            last_capture_case: None,
+        }
+    }
+}
+
+pub fn canonical_player_class(raw: &str) -> Result<&'static str, String> {
+    match raw.to_ascii_lowercase().as_str() {
+        "ironclad" | "red" => Ok("Ironclad"),
+        "silent" | "green" => Ok("Silent"),
+        "defect" | "blue" => Ok("Defect"),
+        "watcher" | "purple" => Ok("Watcher"),
+        _ => Err(format!("unsupported player class '{raw}'")),
+    }
+}
+
+#[cfg(test)]
+mod tests;

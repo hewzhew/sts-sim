@@ -21,7 +21,7 @@ pub mod spike_slime;
 pub mod the_guardian;
 
 use crate::core::EntityId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::MonsterEntity;
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, BlockStep, CardDestination, MonsterTurnPlan,
@@ -30,6 +30,29 @@ use crate::semantics::combat::{
 };
 
 pub const PLAYER: EntityId = 0;
+
+pub(crate) fn initialize_large_slime_runtime_state(entity: &mut MonsterEntity) {
+    entity.large_slime.protocol_seeded = true;
+    entity.large_slime.split_triggered = false;
+}
+
+pub(crate) fn large_slime_split_triggered(entity: &MonsterEntity) -> bool {
+    assert!(
+        entity.large_slime.protocol_seeded,
+        "large slime splitTriggered truth must be protocol-seeded or factory-seeded"
+    );
+    entity.large_slime.split_triggered
+}
+
+pub(crate) fn mark_large_slime_split_triggered_action(entity: &MonsterEntity) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::LargeSlime {
+            split_triggered: Some(true),
+            protocol_seeded: Some(true),
+        },
+    }
+}
 
 /// Builds the canonical action sequence for a simple monster attack.
 ///
@@ -58,10 +81,18 @@ pub fn add_card_action(step: &AddCardStep) -> Action {
             amount: step.amount,
             upgraded: step.upgraded,
         },
+        CardDestination::DrawPileTop => Action::MakeTempCardInDrawPile {
+            card_id: step.card_id,
+            amount: step.amount,
+            random_spot: false,
+            to_bottom: false,
+            upgraded: step.upgraded,
+        },
         CardDestination::DrawPileRandom => Action::MakeTempCardInDrawPile {
             card_id: step.card_id,
             amount: step.amount,
             random_spot: true,
+            to_bottom: false,
             upgraded: step.upgraded,
         },
     }

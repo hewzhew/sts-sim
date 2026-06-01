@@ -2,7 +2,7 @@ use super::{add_card_action, attack_actions, PLAYER};
 use crate::content::cards::CardId;
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     AddCardStep, AttackSpec, AttackStep, CardDestination, DamageKind, EffectStrength,
@@ -90,6 +90,24 @@ fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> SentryTurn<'a> {
     }
 }
 
+fn runtime(entity: &MonsterEntity) -> bool {
+    assert!(
+        entity.sentry.protocol_seeded,
+        "sentry runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.sentry.first_move
+}
+
+fn sentry_runtime_update(entity: &MonsterEntity, first_move: Option<bool>) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::Sentry {
+            first_move,
+            protocol_seeded: Some(true),
+        },
+    }
+}
+
 impl MonsterBehavior for Sentry {
     fn roll_move_plan(
         _rng: &mut crate::runtime::rng::StsRng,
@@ -97,11 +115,30 @@ impl MonsterBehavior for Sentry {
         ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        match entity.move_history().back().copied() {
-            None if entity.slot % 2 == 0 => bolt_plan(ascension_level),
-            None => beam_plan(ascension_level),
-            Some(BEAM) => bolt_plan(ascension_level),
-            Some(_) => beam_plan(ascension_level),
+        if runtime(entity) {
+            if entity.slot % 2 == 0 {
+                bolt_plan(ascension_level)
+            } else {
+                beam_plan(ascension_level)
+            }
+        } else {
+            match entity.move_history().back().copied() {
+                Some(BEAM) => bolt_plan(ascension_level),
+                _ => beam_plan(ascension_level),
+            }
+        }
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if runtime(entity) {
+            vec![sentry_runtime_update(entity, Some(false))]
+        } else {
+            Vec::new()
         }
     }
 
@@ -144,5 +181,44 @@ impl MonsterBehavior for Sentry {
                 actions
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Sentry, BEAM, BOLT};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::{Action, MonsterRuntimePatch};
+
+    #[test]
+    fn sentry_first_roll_uses_private_first_move_and_marks_it() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let monster = crate::testing::support::test_monster(EnemyId::Sentry);
+        let plan = Sentry::roll_move_plan(&mut rng, &monster, 0, 99);
+
+        assert_eq!(plan.move_id, BOLT);
+        assert_eq!(
+            Sentry::on_roll_move(0, &monster, 99, &plan),
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::Sentry {
+                    first_move: Some(false),
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn sentry_first_move_is_private_runtime_not_empty_history() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let mut monster = crate::testing::support::test_monster(EnemyId::Sentry);
+        monster.sentry.first_move = false;
+
+        assert_eq!(
+            Sentry::roll_move_plan(&mut rng, &monster, 0, 99).move_id,
+            BEAM,
+            "Java uses private firstMove; empty imported history alone must not force opening parity"
+        );
     }
 }

@@ -1,5 +1,8 @@
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventOption, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventId, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use serde_json::{json, Value};
 
@@ -60,7 +63,7 @@ impl LiveEventRebuildResult {
 pub fn event_id_from_name(raw: &str) -> Option<EventId> {
     match raw.trim() {
         "Big Fish" => Some(EventId::BigFish),
-        "Cleric" => Some(EventId::Cleric),
+        "Cleric" | "The Cleric" => Some(EventId::Cleric),
         "Dead Adventurer" => Some(EventId::DeadAdventurer),
         "Golden Idol" => Some(EventId::GoldenIdol),
         "Living Wall" => Some(EventId::LivingWall),
@@ -70,7 +73,7 @@ pub fn event_id_from_name(raw: &str) -> Option<EventId> {
         "Ssssserpent" | "The Ssssserpent" | "Liars Game" => Some(EventId::Ssssserpent),
         "World of Goop" => Some(EventId::WorldOfGoop),
         "Golden Wing" | "Wing Statue" => Some(EventId::GoldenWing),
-        "Match and Keep" => Some(EventId::MatchAndKeep),
+        "Match and Keep" | "Match and Keep!" => Some(EventId::MatchAndKeep),
         "Golden Shrine" => Some(EventId::GoldenShrine),
         "Addict" => Some(EventId::Addict),
         "Back to Basics" => Some(EventId::BackTotheBasics),
@@ -80,36 +83,39 @@ pub fn event_id_from_name(raw: &str) -> Option<EventId> {
         "Drug Dealer" => Some(EventId::DrugDealer),
         "Knowing Skull" => Some(EventId::KnowingSkull),
         "Masked Bandits" => Some(EventId::MaskedBandits),
-        "Mausoleum" => Some(EventId::Mausoleum),
+        "Mausoleum" | "The Mausoleum" => Some(EventId::Mausoleum),
         "Nest" => Some(EventId::Nest),
-        "Nloth" => Some(EventId::Nloth),
+        "Nloth" | "N'loth" => Some(EventId::Nloth),
         "The Joust" => Some(EventId::TheJoust),
         "The Library" => Some(EventId::TheLibrary),
         "Vampires" => Some(EventId::Vampires),
         "Cursed Tome" => Some(EventId::CursedTome),
         "Winding Halls" => Some(EventId::WindingHalls),
         "Forgotten Altar" => Some(EventId::ForgottenAltar),
-        "Mind Bloom" => Some(EventId::MindBloom),
-        "Moai Head" => Some(EventId::MoaiHead),
+        "Mind Bloom" | "MindBloom" => Some(EventId::MindBloom),
+        "Moai Head" | "The Moai Head" => Some(EventId::MoaiHead),
         "Mysterious Sphere" => Some(EventId::MysteriousSphere),
-        "Sensory Stone" => Some(EventId::SensoryStone),
-        "Tomb Red Mask" => Some(EventId::TombRedMask),
+        "Sensory Stone" | "SensoryStone" => Some(EventId::SensoryStone),
+        "Tomb Red Mask" | "Tomb of Lord Red Mask" => Some(EventId::TombRedMask),
         "Accursed Blacksmith" => Some(EventId::AccursedBlacksmith),
         "Bonfire Spirits" => Some(EventId::BonfireSpirits),
         "Bonfire Elementals" => Some(EventId::BonfireElementals),
         "Designer" => Some(EventId::Designer),
         "Duplicator" => Some(EventId::Duplicator),
-        "Face Trader" => Some(EventId::FaceTrader),
-        "Fountain of Curse Cleansing" => Some(EventId::FountainOfCurseCleansing),
-        "Gremlin Wheel Game" => Some(EventId::GremlinWheelGame),
+        "Face Trader" | "FaceTrader" => Some(EventId::FaceTrader),
+        "Fountain of Curse Cleansing" | "Fountain of Cleansing" => {
+            Some(EventId::FountainOfCurseCleansing)
+        }
+        "Gremlin Wheel Game" | "Wheel of Change" => Some(EventId::GremlinWheelGame),
         "Lab" => Some(EventId::Lab),
-        "Note For Yourself" => Some(EventId::NoteForYourself),
-        "Purification Shrine" => Some(EventId::Purifier),
-        "Transmogrifier" => Some(EventId::Transmorgrifier),
+        "Note For Yourself" | "NoteForYourself" => Some(EventId::NoteForYourself),
+        "Purification Shrine" | "Purifier" => Some(EventId::Purifier),
+        "SecretPortal" | "Secret Portal" => Some(EventId::SecretPortal),
+        "Transmogrifier" | "Transmorgrifier" => Some(EventId::Transmorgrifier),
         "Upgrade Shrine" => Some(EventId::UpgradeShrine),
-        "We Meet Again" => Some(EventId::WeMeetAgain),
+        "We Meet Again" | "WeMeetAgain" => Some(EventId::WeMeetAgain),
         "Falling" => Some(EventId::Falling),
-        "Woman in Blue" => Some(EventId::WomanInBlue),
+        "Woman in Blue" | "The Woman in Blue" => Some(EventId::WomanInBlue),
         "Neow" | "Neow Event" => Some(EventId::Neow),
         other => match other.to_ascii_lowercase().as_str() {
             "world of goop" => Some(EventId::WorldOfGoop),
@@ -526,6 +532,11 @@ pub fn handle_event_choice(
         EventId::TheJoust => {
             crate::content::events::the_joust::handle_choice(engine_state, run_state, choice_idx)
         }
+        EventId::SecretPortal => crate::content::events::secret_portal::handle_choice(
+            engine_state,
+            run_state,
+            choice_idx,
+        ),
         EventId::Neow => {
             crate::content::events::neow::handle_choice(engine_state, run_state, choice_idx)
         }
@@ -534,10 +545,39 @@ pub fn handle_event_choice(
     Ok(())
 }
 
+pub fn handle_event_post_run_pending_choice(
+    engine_state: &mut EngineState,
+    run_state: &mut RunState,
+) -> Result<bool, &'static str> {
+    let Some(event_state) = run_state.event_state.as_ref() else {
+        return Ok(false);
+    };
+
+    let should_resume = matches!(
+        (event_state.id, event_state.current_screen),
+        (EventId::BonfireSpirits, 2) | (EventId::BonfireElementals, 2) | (EventId::Designer, 2)
+    );
+
+    if !should_resume {
+        return Ok(false);
+    }
+
+    handle_event_choice(engine_state, run_state, 0)?;
+    Ok(true)
+}
+
 pub fn get_event_options(run_state: &RunState) -> Vec<EventOption> {
     if let Some(event_state) = &run_state.event_state {
         if event_state.completed {
-            return vec![EventOption::unknown(EventChoiceMeta::new("Leave."))];
+            return vec![EventOption::new(
+                EventChoiceMeta::new("Leave."),
+                EventOptionSemantics {
+                    action: EventActionKind::Leave,
+                    transition: EventOptionTransition::Complete,
+                    terminal: true,
+                    ..EventOptionSemantics::default()
+                },
+            )];
         }
 
         return try_get_structured_event_options_for_state(run_state, event_state).unwrap_or_else(
@@ -583,7 +623,11 @@ pub fn try_get_structured_event_options_for_state(
         EventId::WomanInBlue => {
             crate::content::events::woman_in_blue::get_options(run_state, event_state)
         }
+        EventId::SecretPortal => {
+            crate::content::events::secret_portal::get_options(run_state, event_state)
+        }
         EventId::Cleric => crate::content::events::cleric::get_options(run_state, event_state),
+        EventId::Neow => crate::content::events::neow::get_options(run_state, event_state),
         _ => return None,
     })
 }
@@ -594,14 +638,25 @@ pub fn try_build_event_state_from_screen_state(
     current_screen: usize,
     screen_state: &Value,
 ) -> Option<EventState> {
+    if event_id == EventId::WeMeetAgain && current_screen == 0 {
+        let (internal_state, extra_data) = decode_we_meet_again_state_fields(
+            run_state,
+            screen_state.get("event_semantics_state")?,
+        )?;
+        return Some(EventState {
+            id: event_id,
+            current_screen,
+            internal_state,
+            completed: false,
+            combat_pending: false,
+            extra_data,
+        });
+    }
+
     let internal_state = match event_id {
         EventId::Designer if current_screen == 1 => {
             decode_designer_internal_state(screen_state.get("event_semantics_state")?)?
         }
-        EventId::WeMeetAgain if current_screen == 0 => decode_we_meet_again_internal_state(
-            run_state,
-            screen_state.get("event_semantics_state")?,
-        )?,
         EventId::Falling if current_screen == 1 => {
             decode_falling_internal_state(run_state, screen_state.get("event_semantics_state")?)?
         }
@@ -624,17 +679,12 @@ pub fn event_semantics_state(run_state: &RunState, event_state: &EventState) -> 
             "clean_up_removes_cards": event_state.internal_state & 2 != 0,
         })),
         EventId::WeMeetAgain if event_state.current_screen == 0 => {
-            let potion_slot = ((event_state.internal_state >> 16) & 0xFF) as usize;
+            let potion_slot = ((event_state.internal_state >> 8) & 0xFF) as usize;
             let gold_amount = event_state.internal_state & 0xFF;
-            let card_idx = ((event_state.internal_state >> 8) & 0xFF) as usize;
             Some(json!({
                 "potion_slot": if potion_slot == 0xFF { None } else { Some(potion_slot) },
                 "gold_amount": gold_amount,
-                "card_uuid": if card_idx == 0xFF {
-                    None
-                } else {
-                    run_state.master_deck.get(card_idx).map(|card| card.uuid)
-                },
+                "card_uuid": event_state.extra_data.first().copied().filter(|&uuid| uuid >= 0).map(|uuid| uuid as u32),
             }))
         }
         EventId::Falling if event_state.current_screen == 1 => {
@@ -680,10 +730,10 @@ fn decode_designer_internal_state(event_semantics_state: &Value) -> Option<i32> 
     Some(adjust_upgrades_one | (clean_up_removes_cards << 1))
 }
 
-fn decode_we_meet_again_internal_state(
+fn decode_we_meet_again_state_fields(
     run_state: &RunState,
     event_semantics_state: &Value,
-) -> Option<i32> {
+) -> Option<(i32, Vec<i32>)> {
     let potion_slot = event_semantics_state
         .get("potion_slot")
         .and_then(|value| {
@@ -709,16 +759,11 @@ fn decode_we_meet_again_internal_state(
             }
         })
         .map(|uuid| uuid as u32);
-    let card_idx = card_uuid
-        .and_then(|uuid| {
-            run_state
-                .master_deck
-                .iter()
-                .position(|card| card.uuid == uuid)
-                .map(|idx| idx as i32)
-        })
-        .unwrap_or(0xFF);
-    Some(gold_amount | (card_idx << 8) | ((potion_slot as i32) << 16))
+    let card_uuid = card_uuid
+        .filter(|uuid| run_state.master_deck.iter().any(|card| card.uuid == *uuid))
+        .map(|uuid| uuid as i32)
+        .unwrap_or(-1);
+    Some((gold_amount | ((potion_slot as i32) << 8), vec![card_uuid]))
 }
 
 fn decode_falling_internal_state(
@@ -899,6 +944,9 @@ pub fn get_event_choices(run_state: &RunState) -> Vec<EventChoiceMeta> {
             EventId::TheJoust => {
                 crate::content::events::the_joust::get_choices(run_state, event_state)
             }
+            EventId::SecretPortal => {
+                crate::content::events::secret_portal::get_choices(run_state, event_state)
+            }
             EventId::Neow => crate::content::events::neow::get_choices(run_state, event_state),
         }
     } else {
@@ -917,6 +965,71 @@ mod tests {
         assert_eq!(event_id_from_name("Neow Event"), Some(EventId::Neow));
         assert_eq!(event_id_from_name("Liars Game"), Some(EventId::Ssssserpent));
         assert_eq!(event_id_from_name("Wing Statue"), Some(EventId::GoldenWing));
+        assert_eq!(
+            event_id_from_name("SecretPortal"),
+            Some(EventId::SecretPortal)
+        );
+    }
+
+    #[test]
+    fn event_id_from_name_accepts_exact_java_event_ids() {
+        let cases = [
+            ("Big Fish", EventId::BigFish),
+            ("The Cleric", EventId::Cleric),
+            ("Dead Adventurer", EventId::DeadAdventurer),
+            ("Golden Idol", EventId::GoldenIdol),
+            ("Golden Wing", EventId::GoldenWing),
+            ("World of Goop", EventId::WorldOfGoop),
+            ("Liars Game", EventId::Ssssserpent),
+            ("Living Wall", EventId::LivingWall),
+            ("Mushrooms", EventId::Mushrooms),
+            ("Scrap Ooze", EventId::ScrapOoze),
+            ("Shining Light", EventId::ShiningLight),
+            ("Addict", EventId::Addict),
+            ("Back to Basics", EventId::BackTotheBasics),
+            ("Beggar", EventId::Beggar),
+            ("Colosseum", EventId::Colosseum),
+            ("Cursed Tome", EventId::CursedTome),
+            ("Drug Dealer", EventId::DrugDealer),
+            ("Forgotten Altar", EventId::ForgottenAltar),
+            ("Ghosts", EventId::Ghosts),
+            ("Masked Bandits", EventId::MaskedBandits),
+            ("Nest", EventId::Nest),
+            ("The Library", EventId::TheLibrary),
+            ("The Mausoleum", EventId::Mausoleum),
+            ("Vampires", EventId::Vampires),
+            ("Falling", EventId::Falling),
+            ("MindBloom", EventId::MindBloom),
+            ("The Moai Head", EventId::MoaiHead),
+            ("Mysterious Sphere", EventId::MysteriousSphere),
+            ("SensoryStone", EventId::SensoryStone),
+            ("Tomb of Lord Red Mask", EventId::TombRedMask),
+            ("Winding Halls", EventId::WindingHalls),
+            ("Accursed Blacksmith", EventId::AccursedBlacksmith),
+            ("Bonfire Elementals", EventId::BonfireElementals),
+            ("Designer", EventId::Designer),
+            ("Duplicator", EventId::Duplicator),
+            ("FaceTrader", EventId::FaceTrader),
+            ("Fountain of Cleansing", EventId::FountainOfCurseCleansing),
+            ("Knowing Skull", EventId::KnowingSkull),
+            ("Lab", EventId::Lab),
+            ("N'loth", EventId::Nloth),
+            ("NoteForYourself", EventId::NoteForYourself),
+            ("SecretPortal", EventId::SecretPortal),
+            ("The Joust", EventId::TheJoust),
+            ("WeMeetAgain", EventId::WeMeetAgain),
+            ("The Woman in Blue", EventId::WomanInBlue),
+            ("Match and Keep!", EventId::MatchAndKeep),
+            ("Wheel of Change", EventId::GremlinWheelGame),
+            ("Golden Shrine", EventId::GoldenShrine),
+            ("Transmorgrifier", EventId::Transmorgrifier),
+            ("Purifier", EventId::Purifier),
+            ("Upgrade Shrine", EventId::UpgradeShrine),
+        ];
+
+        for (java_id, expected) in cases {
+            assert_eq!(event_id_from_name(java_id), Some(expected), "{java_id}");
+        }
     }
 
     #[test]
@@ -955,14 +1068,13 @@ mod tests {
             CardId::PommelStrike,
             90_101,
         ));
-        let card_idx = rs.master_deck.len() - 1;
         let event_state = EventState {
             id: EventId::WeMeetAgain,
             current_screen: 0,
-            internal_state: 75 | ((card_idx as i32) << 8),
+            internal_state: 75,
             completed: false,
             combat_pending: false,
-            extra_data: Vec::new(),
+            extra_data: vec![90_101],
         };
 
         let semantics = event_semantics_state(&rs, &event_state).unwrap();
@@ -976,6 +1088,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(rebuilt.internal_state, event_state.internal_state);
+        assert_eq!(rebuilt.extra_data, event_state.extra_data);
     }
 
     #[test]

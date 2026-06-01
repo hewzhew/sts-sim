@@ -1,8 +1,10 @@
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
     use crate::content::cards::{get_card_definition, CardId, CardType};
+    use crate::content::relics::RelicId;
     let mut upgradable_indices: Vec<usize> = run_state
         .master_deck
         .iter()
@@ -19,8 +21,13 @@ pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
             &mut upgradable_indices,
             &mut run_state.rng_pool.misc_rng,
         );
-        for i in 0..2.min(upgradable_indices.len()) {
-            run_state.master_deck[upgradable_indices[i]].upgrades += 1;
+        let selected_uuids: Vec<u32> = upgradable_indices
+            .iter()
+            .take(2)
+            .map(|&idx| run_state.master_deck[idx].uuid)
+            .collect();
+        for uuid in selected_uuids {
+            run_state.upgrade_card_with_source(uuid, DomainEventSource::Relic(RelicId::WarPaint));
         }
     }
     None

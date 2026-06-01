@@ -1,4 +1,4 @@
-use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType};
+use crate::runtime::action::{Action, ActionInfo, AddTo, DamageType, NO_SOURCE};
 use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
@@ -11,7 +11,7 @@ pub fn at_turn_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
 
     actions.push(ActionInfo {
         action: Action::DamageAllEnemies {
-            source: 0,
+            source: NO_SOURCE,
             damages: damages.into(),
             damage_type: DamageType::Thorns,
             is_modified: false,

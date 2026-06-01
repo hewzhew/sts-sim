@@ -18,6 +18,61 @@ const DOUBLE_STRIKE: u8 = 2;
 const LIFE_SUCK: u8 = 3;
 const STUNNED: u8 = 4;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn first_roll_marks_shelled_parasite_first_move_false_like_java_get_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        let parasite = crate::test_support::test_monster(EnemyId::ShelledParasite);
+        state.entities.monsters = vec![parasite];
+
+        crate::engine::action_handlers::execute_action(
+            Action::RollMonsterMove { monster_id: 1 },
+            &mut state,
+        );
+
+        let parasite = &state.entities.monsters[0];
+        assert!(
+            parasite.planned_move_id() == DOUBLE_STRIKE || parasite.planned_move_id() == LIFE_SUCK,
+            "Java ShelledParasite.getMove rolls Double Strike or Life Suck on the first non-A17 move"
+        );
+        assert!(
+            !parasite.shelled_parasite.first_move,
+            "Java ShelledParasite.getMove clears firstMove while rolling the opening move"
+        );
+    }
+
+    #[test]
+    fn stunned_turn_sets_fell_then_still_rolls_like_java_take_turn() {
+        let mut state = crate::test_support::blank_test_combat();
+        let parasite = crate::test_support::test_monster(EnemyId::ShelledParasite);
+        let plan = stunned_plan();
+
+        let actions = ShelledParasite::take_turn_plan(&mut state, &parasite, &plan);
+
+        assert!(
+            matches!(
+                actions.first(),
+                Some(Action::SetMonsterMove {
+                    next_move_byte: FELL,
+                    ..
+                })
+            ),
+            "Java ShelledParasite.takeTurn(STUNNED) calls setMove(FELL) before queuing RollMoveAction"
+        );
+        assert!(
+            matches!(
+                actions.last(),
+                Some(Action::RollMonsterMove { monster_id: 1 })
+            ),
+            "Java ShelledParasite.takeTurn always queues RollMoveAction after the STUNNED case"
+        );
+    }
+}
+
 enum ShelledParasiteTurn<'a> {
     Fell(&'a AttackSpec, &'a ApplyPowerStep),
     DoubleStrike(&'a AttackSpec),
@@ -243,6 +298,19 @@ impl MonsterBehavior for ShelledParasite {
         plan_from_num(rng, entity, ascension_level, num)
     }
 
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if current_first_move(entity) {
+            vec![parasite_runtime_update(entity, Some(false))]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
         plan_for(entity.planned_move_id(), state.meta.ascension_level)
     }
@@ -267,15 +335,12 @@ impl MonsterBehavior for ShelledParasite {
                 damage_type: DamageType::Normal,
                 is_modified: false,
             })],
-            ShelledParasiteTurn::Stunned => {
-                return vec![set_next_move_action(
-                    entity,
-                    fell_plan(_state.meta.ascension_level),
-                )];
-            }
+            ShelledParasiteTurn::Stunned => vec![set_next_move_action(
+                entity,
+                fell_plan(_state.meta.ascension_level),
+            )],
         };
 
-        actions.push(parasite_runtime_update(entity, Some(false)));
         actions.push(Action::RollMonsterMove {
             monster_id: entity.id,
         });

@@ -1,5 +1,13 @@
 # Live Comm Launcher
 
+This is legacy Java bridge tooling. The current boundary is fixture capture and
+historical investigation only; do not treat this launcher as the active AI,
+search, or workbench path.
+
+See
+[docs/live_comm/LEGACY_FIXTURE_ONLY.md](D:\rust\sts_simulator\docs\live_comm\LEGACY_FIXTURE_ONLY.md)
+before reviving or extending this stack.
+
 Use this wrapper so `CommunicationMod` does not need a new command in
 `config.properties` every time the Rust-side `live_comm` args change.
 

@@ -4,7 +4,7 @@ use crate::content::monsters::exordium::{
 };
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     AttackSpec, DamageKind, DebuffSpec, DefendSpec, EffectStrength, MonsterMoveSpec,
@@ -156,10 +156,34 @@ fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
 }
 
 fn used_mega_debuff(entity: &MonsterEntity) -> bool {
-    entity
-        .move_history()
-        .iter()
-        .any(|&move_id| move_id == MEGA_DEBUFF)
+    assert!(
+        entity.writhing_mass.protocol_seeded,
+        "writhing mass runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.writhing_mass.used_mega_debuff
+}
+
+fn first_move(entity: &MonsterEntity) -> bool {
+    assert!(
+        entity.writhing_mass.protocol_seeded,
+        "writhing mass runtime truth must be protocol-seeded or factory-seeded"
+    );
+    entity.writhing_mass.first_move
+}
+
+fn writhing_mass_runtime_update(
+    entity: &MonsterEntity,
+    first_move: Option<bool>,
+    used_mega_debuff: Option<bool>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::WrithingMass {
+            first_move,
+            used_mega_debuff,
+            protocol_seeded: Some(true),
+        },
+    }
 }
 
 fn roll_move_recursive(
@@ -168,7 +192,7 @@ fn roll_move_recursive(
     ascension_level: u8,
     num: i32,
 ) -> MonsterTurnPlan {
-    if entity.move_history().is_empty() {
+    if first_move(entity) {
         return if num < 33 {
             multi_hit_plan(ascension_level)
         } else if num < 66 {
@@ -231,6 +255,19 @@ impl MonsterBehavior for WrithingMass {
         roll_move_recursive(rng, entity, ascension_level, num)
     }
 
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if first_move(entity) {
+            vec![writhing_mass_runtime_update(entity, Some(false), None)]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn use_pre_battle_actions(
         state: &mut CombatState,
         entity: &MonsterEntity,
@@ -243,7 +280,7 @@ impl MonsterBehavior for WrithingMass {
                 source: entity.id,
                 target: entity.id,
                 power_id: PowerId::Reactive,
-                amount: 1,
+                amount: -1,
             },
             Action::ApplyPower {
                 source: entity.id,
@@ -281,9 +318,12 @@ impl MonsterBehavior for WrithingMass {
                 actions.push(apply_power_action(entity, vulnerable));
                 actions
             }
-            (MEGA_DEBUFF, []) => vec![Action::AddCardToMasterDeck {
-                card_id: CardId::Parasite,
-            }],
+            (MEGA_DEBUFF, []) => vec![
+                writhing_mass_runtime_update(entity, None, Some(true)),
+                Action::AddCardToMasterDeck {
+                    card_id: CardId::Parasite,
+                },
+            ],
             (move_id, steps) => {
                 panic!("writhing mass plan/steps mismatch: {} {:?}", move_id, steps)
             }
@@ -293,5 +333,129 @@ impl MonsterBehavior for WrithingMass {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn mega_debuff_eligibility_uses_execution_flag_not_move_history() {
+        let mut mass = crate::test_support::test_monster(EnemyId::WrithingMass);
+        mass.writhing_mass.first_move = false;
+        mass.move_history_mut().push_back(MEGA_DEBUFF);
+        mass.move_history_mut().push_back(BIG_HIT);
+        mass.writhing_mass.used_mega_debuff = false;
+
+        let plan =
+            <WrithingMass as MonsterBehavior>::roll_move_plan(&mut StsRng::new(0), &mass, 20, 15);
+
+        assert_eq!(
+            plan.move_id, MEGA_DEBUFF,
+            "Java only sets usedMegaDebuff when Parasite actually executes; a Reactive reroll through move 4 must not consume it"
+        );
+    }
+
+    #[test]
+    fn mega_debuff_execution_marks_runtime_state_before_parasite() {
+        let mut state = crate::test_support::combat_with_monsters(vec![]);
+        let mut mass = crate::test_support::test_monster(EnemyId::WrithingMass);
+        mass.id = 42;
+
+        let actions = <WrithingMass as MonsterBehavior>::take_turn_plan(
+            &mut state,
+            &mass,
+            &mega_debuff_plan(),
+        );
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::UpdateMonsterRuntime {
+                    monster_id: 42,
+                    patch: MonsterRuntimePatch::WrithingMass {
+                        first_move: None,
+                        used_mega_debuff: Some(true),
+                        protocol_seeded: Some(true),
+                    },
+                },
+                Action::AddCardToMasterDeck {
+                    card_id: CardId::Parasite,
+                },
+                Action::RollMonsterMove { monster_id: 42 },
+            ],
+            "Java sets usedMegaDebuff=true inside takeTurn before queuing AddCardToDeckAction"
+        );
+    }
+
+    #[test]
+    fn first_move_uses_runtime_flag_not_empty_history() {
+        let mut mass = crate::test_support::test_monster(EnemyId::WrithingMass);
+        mass.writhing_mass.first_move = false;
+        mass.move_history_mut().clear();
+
+        let plan =
+            <WrithingMass as MonsterBehavior>::roll_move_plan(&mut StsRng::new(0), &mass, 20, 5);
+
+        assert_eq!(
+            plan.move_id, BIG_HIT,
+            "post-opening Writhing Mass must use Java firstMove, not empty history"
+        );
+    }
+
+    #[test]
+    fn opening_roll_clears_first_move_runtime_flag() {
+        let mass = crate::test_support::test_monster(EnemyId::WrithingMass);
+        let plan =
+            <WrithingMass as MonsterBehavior>::roll_move_plan(&mut StsRng::new(0), &mass, 20, 50);
+
+        let actions = WrithingMass::on_roll_move(20, &mass, 50, &plan);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::WrithingMass {
+                    first_move: Some(false),
+                    used_mega_debuff: None,
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn pre_battle_powers_use_java_amounts() {
+        let mut state = crate::test_support::combat_with_monsters(vec![]);
+        let mut mass = crate::test_support::test_monster(EnemyId::WrithingMass);
+        mass.id = 42;
+
+        let actions = <WrithingMass as MonsterBehavior>::use_pre_battle_actions(
+            &mut state,
+            &mass,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::ApplyPower {
+                    source: 42,
+                    target: 42,
+                    power_id: PowerId::Reactive,
+                    amount: -1,
+                },
+                Action::ApplyPower {
+                    source: 42,
+                    target: 42,
+                    power_id: PowerId::Malleable,
+                    amount: 3,
+                },
+            ],
+            "Java ReactivePower inherits AbstractPower.amount == -1; MalleablePower(this) starts at 3"
+        );
     }
 }

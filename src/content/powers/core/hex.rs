@@ -16,6 +16,7 @@ pub fn on_card_played(
             card_id: crate::content::cards::CardId::Dazed,
             amount: power_amount as u8,
             random_spot: true,
+            to_bottom: false,
             upgraded: false,
         });
     }

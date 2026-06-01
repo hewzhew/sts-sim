@@ -1,5 +1,5 @@
-use crate::runtime::action::{ActionInfo, AddTo};
-use crate::runtime::combat::CombatState;
+use crate::content::relics::RelicState;
+use crate::runtime::action::{Action, ActionInfo, AddTo};
 use smallvec::SmallVec;
 
 /// Gambling Chip: At the start of each combat, after drawing cards,
@@ -9,25 +9,26 @@ use smallvec::SmallVec;
 ///   - activated flag ensures it only fires on the first turn.
 ///   - addToBot(GamblingChipAction) which opens hand select to discard any number, then draw that many.
 ///
-/// In our engine, at_turn_start hooks fire AFTER DrawCards(5) has been queued,
-/// so the hand will already be drawn when this executes.
-pub fn at_turn_start(
-    state: &CombatState,
-    _player: &crate::runtime::combat::PlayerEntity,
-) -> SmallVec<[ActionInfo; 4]> {
+pub fn at_battle_start_pre_draw(relic: &mut RelicState) {
+    relic.used_up = false;
+}
+
+pub fn at_turn_start_post_draw(relic: &mut RelicState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
-    // Java: activated flag — only fires on the first turn of combat
-    if state.turn.turn_count == 1 {
-        actions.push(ActionInfo {
-            action: crate::runtime::action::Action::SuspendForHandSelect {
-                min: 0,
-                max: 99,
-                can_cancel: true,
-                filter: crate::state::HandSelectFilter::Any,
-                reason: crate::state::HandSelectReason::GamblingChip,
-            },
-            insertion_mode: AddTo::Bottom, // Java: addToBot
-        });
+    if relic.used_up {
+        return actions;
     }
+
+    relic.used_up = true;
+    actions.push(ActionInfo {
+        action: Action::SuspendForHandSelect {
+            min: 0,
+            max: 99,
+            can_cancel: true,
+            filter: crate::state::HandSelectFilter::Any,
+            reason: crate::state::HandSelectReason::GamblingChip,
+        },
+        insertion_mode: AddTo::Bottom, // Java: addToBot
+    });
     actions
 }

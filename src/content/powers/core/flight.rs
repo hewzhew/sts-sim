@@ -27,6 +27,7 @@ pub fn on_attacked(
     owner: EntityId,
     damage: i32,
     source: EntityId,
+    damage_type: DamageType,
     amount: i32,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
@@ -37,12 +38,17 @@ pub fn on_attacked(
         .find(|m| m.id == owner)
         .is_some_and(|m| m.current_hp > 0 && !m.is_dying);
 
-    if damage > 0 && amount > 0 && owner_survived && source != NO_SOURCE {
-        actions.push(Action::ApplyPower {
-            source: owner,
+    if damage > 0
+        && amount > 0
+        && owner_survived
+        && source != NO_SOURCE
+        && damage_type != DamageType::HpLoss
+        && damage_type != DamageType::Thorns
+    {
+        actions.push(Action::ReducePower {
             target: owner,
             power_id: crate::content::powers::PowerId::Flight,
-            amount: -1,
+            amount: 1,
         });
     }
 
@@ -75,6 +81,104 @@ pub fn at_turn_start(
         }]
     } else {
         smallvec::smallvec![]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_attacked;
+    use crate::content::monsters::EnemyId;
+    use crate::content::powers::{store, PowerId};
+    use crate::engine::action_handlers::execute_action;
+    use crate::runtime::action::{Action, DamageType};
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    fn flight_power(amount: i32) -> Power {
+        Power {
+            power_type: PowerId::Flight,
+            instance_id: None,
+            amount,
+            extra_data: amount,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
+
+    #[test]
+    fn flight_on_attacked_uses_reduce_power_so_zero_triggers_byrd_grounded_state() {
+        let mut byrd = crate::test_support::test_monster(EnemyId::Byrd);
+        byrd.id = 1;
+        byrd.current_hp = 10;
+        byrd.byrd.is_flying = true;
+        let mut state = crate::test_support::combat_with_monsters(vec![byrd]);
+        store::set_powers_for(&mut state, 1, vec![flight_power(1)]);
+
+        let actions = on_attacked(&state, 1, 1, 0, DamageType::Normal, 1);
+
+        assert_eq!(
+            actions.as_slice(),
+            &[Action::ReducePower {
+                target: 1,
+                power_id: PowerId::Flight,
+                amount: 1,
+            }]
+        );
+
+        execute_action(actions[0].clone(), &mut state);
+        while let Some(action) = state.engine.action_queue.pop_front() {
+            execute_action(action, &mut state);
+        }
+
+        let byrd = &state.entities.monsters[0];
+        assert!(!byrd.byrd.is_flying);
+        assert_eq!(byrd.planned_move_id(), 4);
+        assert!(!store::has_power(&state, 1, PowerId::Flight));
+    }
+
+    #[test]
+    fn flight_on_attacked_ignores_non_surviving_damage_like_java_will_live_guard() {
+        let mut byrd = crate::test_support::test_monster(EnemyId::Byrd);
+        byrd.id = 1;
+        byrd.current_hp = 0;
+        let state = crate::test_support::combat_with_monsters(vec![byrd]);
+
+        assert!(
+            on_attacked(&state, 1, 1, 0, DamageType::Normal, 1).is_empty(),
+            "Rust calls this hook after damage; zero remaining HP mirrors Java willLive=false"
+        );
+    }
+
+    #[test]
+    fn flight_on_attacked_is_not_called_for_thorns_or_hp_loss_damage() {
+        let byrd = crate::test_support::test_monster(EnemyId::Byrd);
+        let state = crate::test_support::combat_with_monsters(vec![byrd]);
+
+        assert_eq!(
+            crate::content::powers::resolve_power_on_attacked(
+                PowerId::Flight,
+                &state,
+                1,
+                1,
+                0,
+                DamageType::HpLoss,
+                1,
+            )
+            .len(),
+            0
+        );
+        assert_eq!(
+            crate::content::powers::resolve_power_on_attacked(
+                PowerId::Flight,
+                &state,
+                1,
+                1,
+                0,
+                DamageType::Thorns,
+                1,
+            )
+            .len(),
+            0
+        );
     }
 }
 

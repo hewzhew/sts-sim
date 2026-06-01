@@ -1,50 +1,53 @@
 # Docs Index
 
-This directory is split between active entrypoints and dated working notes.
+This directory is split between current entrypoints and historical notes.
 
 ## Read These First
 
 - [../README.md](../README.md)
-  - current high-level project status
+- [AI_DIRECTION.md](AI_DIRECTION.md)
 - [REPOSITORY_MAP.md](REPOSITORY_MAP.md)
-  - ownership map and active repo surfaces
 - [LAYER_BOUNDARIES.md](LAYER_BOUNDARIES.md)
-  - hard dependency direction for `core / integration / app`
 - [TEST_ORACLE_STRATEGY.md](TEST_ORACLE_STRATEGY.md)
-  - oracle discipline for correctness-sensitive tests
+- [CODEX_CLI_RESUME.md](CODEX_CLI_RESUME.md)
+- [NEXT_AI_HANDOFF.md](NEXT_AI_HANDOFF.md)
 
 Then branch by task:
 
-- `live_comm` / parity / run archives:
+- LLM controller / demo route:
+  - [LLM_INTEGRATION_HANDOFF.md](LLM_INTEGRATION_HANDOFF.md)
+  - [../tools/llm/README.md](../tools/llm/README.md)
+- Java-source-backed mechanics parity:
+  - [MECHANICS_ACCEPTANCE_STANDARD.md](MECHANICS_ACCEPTANCE_STANDARD.md)
+  - [MECHANICS_AUDIT_LEDGER.md](MECHANICS_AUDIT_LEDGER.md)
+  - [JAVA_SOURCE_MAP.md](JAVA_SOURCE_MAP.md)
+  - [JAVA_MECHANICS_DEBUG_HANDOFF.md](JAVA_MECHANICS_DEBUG_HANDOFF.md)
+- legacy `live_comm` / parity / fixture capture:
   - [live_comm/README.md](live_comm/README.md)
+  - [live_comm/LEGACY_FIXTURE_ONLY.md](live_comm/LEGACY_FIXTURE_ONLY.md)
   - [live_comm/LIVE_COMM_RUNBOOK.md](live_comm/LIVE_COMM_RUNBOOK.md)
   - [live_comm/LIVE_COMM_PARITY_WORKFLOW.md](live_comm/LIVE_COMM_PARITY_WORKFLOW.md)
-- protocol / importer / CommunicationMod:
-  - [protocol/README.md](protocol/README.md)
-  - [protocol/PROTOCOL_TRUTH_RULES.md](protocol/PROTOCOL_TRUTH_RULES.md)
-  - [protocol/STATE_SYNC_STATUS.md](protocol/STATE_SYNC_STATUS.md)
-- testing / fixtures / scenario work:
+- testing / start-spec fixture work:
   - [testing/README.md](testing/README.md)
   - [BUGFIX_WORKFLOW.md](BUGFIX_WORKFLOW.md)
 - local debug binary usage:
   - [PLAY_GUIDE.md](PLAY_GUIDE.md)
-- learning and RL-facing experiments:
-  - [RL_READINESS_CHECKLIST.md](RL_READINESS_CHECKLIST.md)
-  - [design/README.md](design/README.md)
+- current AI/eval infrastructure:
   - [../tools/learning/README.md](../tools/learning/README.md)
+  - [decision_records/README.md](decision_records/README.md)
 
 ## Directory Roles
 
 - root `docs/`
   - repo-wide rules and default entry docs
 - `docs/live_comm/`
-  - runbooks, mode selection, parity workflow, manual scenario capture
-- `docs/protocol/`
-  - protocol truth rules, importer status, truth samples, test matrices
+  - legacy bridge notes and future adapter boundary
 - `docs/testing/`
-  - testing workflow and fixture/platform notes
+  - active testing workflow and start-spec notes
 - `docs/design/`
-  - active design docs and experiment contracts
+  - engine and runtime design notes
+- `docs/decision_records/`
+  - short current decisions that prevent repeating invalidated experiment paths
 - `docs/audits/`
   - dated investigations and validation reports
 - `docs/archive/`
@@ -54,11 +57,7 @@ Then branch by task:
 
 ## Canonical Versus Historical
 
-Use this rule when reading docs:
-
 - if a file is linked from an active `README.md`, treat it as current workflow
-- if a file lives under `audits/` or `archive/`, treat it as historical context unless a current doc explicitly promotes it
-- if a dated note disagrees with the root `README`, protocol docs, or live-comm runbook, the dated note loses
-
-Root `docs/` should stay small. If a document is mainly a topic-specific runbook,
-deep design thread, or one-off investigation, it belongs in a subdirectory.
+- if a file lives under `audits/` or `archive/`, treat it as historical context
+- if a dated note disagrees with the root `README`, `AI_DIRECTION.md`, or
+  live-comm boundary docs, the current entrypoint wins

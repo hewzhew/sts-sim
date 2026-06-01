@@ -54,6 +54,31 @@ fn tackle_damage(asc: u8) -> i32 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn first_roll_marks_hexaghost_activated_like_java_get_move() {
+        let mut state = crate::test_support::blank_test_combat();
+        let hexaghost = crate::test_support::test_monster(EnemyId::Hexaghost);
+        state.entities.monsters = vec![hexaghost];
+
+        crate::engine::action_handlers::execute_action(
+            Action::RollMonsterMove { monster_id: 1 },
+            &mut state,
+        );
+
+        let hexaghost = &state.entities.monsters[0];
+        assert_eq!(hexaghost.planned_move_id(), ACTIVATE);
+        assert!(
+            hexaghost.hexaghost.activated,
+            "Java Hexaghost.getMove sets activated=true while rolling the opening ACTIVATE move, before the ACTIVATE turn executes"
+        );
+    }
+}
+
 fn inferno_damage(asc: u8) -> i32 {
     if asc >= 4 {
         3
@@ -285,6 +310,28 @@ impl MonsterBehavior for Hexaghost {
             entity.hexaghost.divider_damage,
             entity.hexaghost.burn_upgraded,
         )
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if !entity.hexaghost.activated && plan.move_id == ACTIVATE {
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: entity.id,
+                patch: MonsterRuntimePatch::Hexaghost {
+                    activated: Some(true),
+                    orb_active_count: None,
+                    burn_upgraded: None,
+                    divider_damage: None,
+                    clear_divider_damage: false,
+                },
+            }]
+        } else {
+            Vec::new()
+        }
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {

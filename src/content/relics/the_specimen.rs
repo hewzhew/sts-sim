@@ -28,7 +28,7 @@ pub fn on_monster_death(
             .entities
             .monsters
             .iter()
-            .filter(|m| m.id != dead_monster_id && m.current_hp > 0 && !m.is_dying && !m.is_escaped)
+            .filter(|m| m.id != dead_monster_id && m.is_random_target_candidate())
             .collect();
         if let Some(target) = alive.first() {
             actions.push(ActionInfo {

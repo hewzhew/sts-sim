@@ -1,6 +1,7 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 const DAMAGE: i32 = 7;
 const MIN_GOLD: i32 = 50;
@@ -10,12 +11,18 @@ const REQUIRED_DAMAGE: i32 = 10;
 fn has_high_damage_card(run_state: &RunState) -> bool {
     run_state.master_deck.iter().any(|c| {
         let def = crate::content::cards::get_card_definition(c.id);
-        def.base_damage >= REQUIRED_DAMAGE
+        def.card_type == crate::content::cards::CardType::Attack
+            && c.base_damage_override
+                .unwrap_or(def.base_damage + i32::from(c.upgrades) * def.upgrade_damage)
+                >= REQUIRED_DAMAGE
     })
 }
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
-    if event_state.current_screen >= 1 {
+    if event_state.current_screen == 1 {
+        return vec![EventChoiceMeta::new("[Proceed]")];
+    }
+    if event_state.current_screen >= 2 {
         return vec![EventChoiceMeta::new("[Leave]")];
     }
 
@@ -51,31 +58,43 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
         0 => {
             match choice_idx {
                 0 => {
-                    // Remove card: take damage, then purge
-                    run_state.current_hp = (run_state.current_hp - DAMAGE).max(0);
+                    // Java first applies damage and moves to the PURGE screen.
+                    // A second button press opens the grid select.
+                    super::apply_player_default_damage(
+                        run_state,
+                        DAMAGE,
+                        super::EventDamageOwner::Player,
+                        DomainEventSource::Event(EventId::GoldenWing),
+                    );
                     event_state.current_screen = 1;
-                    run_state.event_state = Some(event_state);
-                    *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
-                        reason: RunPendingChoiceReason::Purge,
-                        min_choices: 1,
-                        max_choices: 1,
-                        return_state: Box::new(EngineState::EventRoom),
-                    });
-                    return;
                 }
                 1 => {
                     // Attack: gain gold
                     if has_high_damage_card(run_state) {
                         let gold = run_state.rng_pool.misc_rng.random_range(MIN_GOLD, MAX_GOLD);
-                        run_state.gold += gold;
+                        run_state.change_gold_with_source(
+                            gold,
+                            DomainEventSource::Event(EventId::GoldenWing),
+                        );
+                        event_state.current_screen = 2;
                     }
-                    event_state.current_screen = 1;
                 }
                 _ => {
                     // Leave
-                    event_state.current_screen = 1;
+                    event_state.current_screen = 2;
                 }
             }
+        }
+        1 => {
+            event_state.current_screen = 2;
+            run_state.event_state = Some(event_state);
+            *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+                reason: RunPendingChoiceReason::PurgeNonBottled,
+                min_choices: 1,
+                max_choices: 1,
+                return_state: Box::new(EngineState::EventRoom),
+            });
+            return;
         }
         _ => {
             event_state.completed = true;
@@ -83,4 +102,183 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::engine::run_loop::tick_run;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{
+        DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
+        SelectionTargetRef,
+    };
+
+    fn golden_wing_run() -> RunState {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 20;
+        run_state.max_hp = 80;
+        run_state.event_state = Some(EventState::new(EventId::GoldenWing));
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    fn deck_card(id: CardId, uuid: u32) -> CombatCard {
+        CombatCard::new(id, uuid)
+    }
+
+    #[test]
+    fn remove_path_damage_uses_event_source_before_purge_selection() {
+        let mut run_state = golden_wing_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 13);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -7,
+                current_hp: 13,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::GoldenWing),
+            }
+        )));
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(
+            run_state.event_state.as_ref().unwrap().current_screen,
+            1,
+            "Java GoldenWing enters PURGE first; the next button press opens the deck picker"
+        );
+    }
+
+    #[test]
+    fn remove_path_damage_respects_tungsten_rod_like_java_player_damage() {
+        let mut run_state = golden_wing_run();
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 14);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -6,
+                current_hp: 14,
+                max_hp: 80,
+                source: DomainEventSource::Event(EventId::GoldenWing),
+            }
+        )));
+    }
+
+    #[test]
+    fn remove_path_selection_excludes_bottled_and_unpurgeable_cards_like_java() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck = vec![
+            deck_card(CardId::Strike, 101),
+            deck_card(CardId::Defend, 102),
+            deck_card(CardId::AscendersBane, 103),
+        ];
+        let mut bottle = RelicState::new(RelicId::BottledFlame);
+        bottle.amount = 101;
+        run_state.relics.push(bottle);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::RunPendingChoice(choice) = engine_state else {
+            panic!("Golden Wing remove path should open deck purge selection");
+        };
+        assert_eq!(choice.reason, RunPendingChoiceReason::PurgeNonBottled);
+        let request = choice.selection_request(&run_state);
+        assert_eq!(request.reason, SelectionReason::Purge);
+        assert_eq!(
+            request.targets,
+            vec![SelectionTargetRef::CardUuid(102)],
+            "Java opens CardGroup.getGroupWithoutBottledCards(masterDeck.getPurgeableCards())"
+        );
+    }
+
+    #[test]
+    fn remove_path_removes_selected_card_with_event_source() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101)];
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let mut combat_state = None;
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitSelection(SelectionResolution {
+                scope: SelectionScope::Deck,
+                selected: vec![SelectionTargetRef::CardUuid(101)],
+            })),
+        ));
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 2);
+        assert!(run_state.master_deck.is_empty());
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::Event(EventId::GoldenWing),
+            } if card.id == CardId::Strike && card.uuid == 101
+        )));
+    }
+
+    #[test]
+    fn attack_option_uses_upgraded_master_deck_base_damage_like_java() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck.clear();
+        let mut pommel = CombatCard::new(CardId::PommelStrike, 99);
+        pommel.upgrades = 1;
+        run_state.master_deck.push(pommel);
+
+        let choices = super::get_choices(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert!(
+            !choices[1].disabled,
+            "Java CardHelper.hasCardWithXDamage checks the card instance baseDamage after upgrade"
+        );
+    }
+
+    #[test]
+    fn attack_option_does_not_count_non_attack_base_damage() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck.clear();
+        let mut defend = CombatCard::new(CardId::Defend, 100);
+        defend.base_damage_override = Some(super::REQUIRED_DAMAGE);
+        run_state.master_deck.push(defend);
+
+        let choices = super::get_choices(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert!(choices[1].disabled);
+    }
+
+    #[test]
+    fn disabled_attack_option_does_not_advance_or_grant_gold() {
+        let mut run_state = golden_wing_run();
+        run_state.master_deck.clear();
+        let starting_gold = run_state.gold;
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.gold, starting_gold);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 0);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        assert!(run_state.take_emitted_events().is_empty());
+    }
 }

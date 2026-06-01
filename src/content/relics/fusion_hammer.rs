@@ -1,17 +1,8 @@
-use crate::runtime::combat::CombatState;
-use crate::content::relics::RelicState;
-use smallvec::SmallVec;
-use crate::runtime::action::{Action, ActionInfo, AddTo};
-
-/// Fusion Hammer
-/// Boss Relic
-/// Gain 1 Energy at the start of each turn. You can no longer Smith at Rest Sites.
-/// 
-/// Energy is handled via `energy_master` increment at onEquip.
-/// Rest Site restriction handled via `RunState`.
-pub fn out_of_combat() {}
-
-
-
-
-
+//! Fusion Hammer has no combat hook.
+//!
+//! Java semantics:
+//! - `onEquip`/`onUnequip` adjust `energyMaster`.
+//! - `canUseCampfireOption` disables the normal `SmithOption` only.
+//!
+//! Rust handles those in `energy_master_delta` and
+//! `campfire_handler::get_available_options`.

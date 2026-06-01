@@ -1,0 +1,78 @@
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug)]
+pub struct CombatSearchV2Config {
+    pub max_nodes: usize,
+    pub max_actions_per_line: usize,
+    pub max_engine_steps_per_action: usize,
+    pub wall_time: Option<Duration>,
+    pub input_label: Option<String>,
+    pub potion_policy: CombatSearchV2PotionPolicy,
+    pub max_potions_used: Option<u32>,
+    pub rollout_policy: CombatSearchV2RolloutPolicy,
+    pub rollout_max_evaluations: usize,
+    pub rollout_max_actions: usize,
+}
+
+impl Default for CombatSearchV2Config {
+    fn default() -> Self {
+        Self {
+            max_nodes: 50_000,
+            max_actions_per_line: 200,
+            max_engine_steps_per_action: 250,
+            wall_time: None,
+            input_label: None,
+            potion_policy: CombatSearchV2PotionPolicy::Never,
+            max_potions_used: None,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            rollout_max_evaluations: super::super::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
+            rollout_max_actions: super::super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2PotionPolicy {
+    Never,
+    #[serde(alias = "all_legal_potion_actions")]
+    All,
+    #[serde(alias = "semantic_budgeted_potion_actions")]
+    SemanticBudgeted,
+}
+
+impl CombatSearchV2PotionPolicy {
+    pub(in crate::ai::combat_search_v2) fn label(self) -> &'static str {
+        match self {
+            CombatSearchV2PotionPolicy::Never => "never",
+            CombatSearchV2PotionPolicy::All => "all_legal_potion_actions",
+            CombatSearchV2PotionPolicy::SemanticBudgeted => "semantic_budgeted_potion_actions",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2RolloutPolicy {
+    Disabled,
+    ConservativeNoPotion,
+    PhaseAwareNoPotion,
+}
+
+impl Default for CombatSearchV2RolloutPolicy {
+    fn default() -> Self {
+        Self::ConservativeNoPotion
+    }
+}
+
+impl CombatSearchV2RolloutPolicy {
+    pub fn label(self) -> &'static str {
+        match self {
+            CombatSearchV2RolloutPolicy::Disabled => "disabled",
+            CombatSearchV2RolloutPolicy::ConservativeNoPotion => "conservative_no_potion",
+            CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => "phase_aware_no_potion",
+        }
+    }
+}

@@ -13,7 +13,9 @@
 ///
 /// Seeded via `murmurHash3(seed)` exactly as in Java. Every public method
 /// increments `counter` to enable RNG consumption tracking.
-#[derive(Clone, Debug, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StsRng {
     pub seed0: u64,
     pub seed1: u64,
@@ -40,6 +42,18 @@ impl StsRng {
             rng.random(999);
         }
         rng
+    }
+
+    /// Advance to a target counter using Java `Random.setCounter` semantics.
+    ///
+    /// Java does not assign the counter directly. It repeatedly calls
+    /// `randomBoolean()` until the target counter is reached, which advances the
+    /// underlying RNG state as well as the public counter.
+    pub fn advance_counter_to(&mut self, target_counter: u32) {
+        while self.counter < target_counter {
+            self.counter += 1;
+            let _ = self.next_boolean();
+        }
     }
 
     // ── Core xorshift128+ ──────────────────────────────────────────────
@@ -237,7 +251,7 @@ fn murmur_hash3(mut x: u64) -> u64 {
 ///
 /// Used exclusively by `Collections.shuffle(list, new Random(seed))` in the
 /// Java engine. This is NOT the game's primary PRNG.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct JavaUtilRandom {
     seed: u64,
 }
@@ -297,7 +311,8 @@ pub fn shuffle_with_random_long<T>(items: &mut [T], game_rng: &mut StsRng) {
 
 // ─── RNG Pool ────────────────────────────────────────────────────────────────
 
-/// All 12 RNG streams used by the Java engine.
+/// All RNG streams used by the Java engine plus one isolated deterministic
+/// stand-in for mechanical uses of LibGDX `MathUtils.random`.
 ///
 /// Seven are persistent across floors (seeded once at run start):
 ///   `monster_rng`, `event_rng`, `merchant_rng`, `card_rng`,
@@ -305,7 +320,12 @@ pub fn shuffle_with_random_long<T>(items: &mut [T], game_rng: &mut StsRng) {
 ///
 /// Five are re-seeded per floor via `generate_floor_seeds()`:
 ///   `monster_hp_rng`, `ai_rng`, `shuffle_rng`, `card_random_rng`, `misc_rng`
-#[derive(Clone, Debug, PartialEq)]
+///
+/// `math_rng` is not a normal STS dungeon RNG stream. It exists because a few
+/// Java mechanical outcomes incorrectly use LibGDX `MathUtils.random`, whose
+/// global state is also consumed by UI effects. The simulator consumes
+/// `math_rng` only for those mechanical outcomes, never for UI-only effects.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RngPool {
     // Persistent (run-level)
     pub monster_rng: StsRng,
@@ -321,6 +341,8 @@ pub struct RngPool {
     pub shuffle_rng: StsRng,
     pub card_random_rng: StsRng,
     pub misc_rng: StsRng,
+    // Simulator-owned isolation for mechanically relevant MathUtils.random.
+    pub math_rng: StsRng,
 }
 
 impl Default for RngPool {
@@ -345,6 +367,7 @@ impl RngPool {
             shuffle_rng: StsRng::new(seed),
             card_random_rng: StsRng::new(seed),
             misc_rng: StsRng::new(seed),
+            math_rng: StsRng::new(seed),
         }
     }
 
@@ -364,5 +387,29 @@ impl RngPool {
         self.shuffle_rng = StsRng::new(floor_seed);
         self.card_random_rng = StsRng::new(floor_seed);
         self.misc_rng = StsRng::new(floor_seed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StsRng;
+
+    #[test]
+    fn advance_counter_to_matches_java_set_counter_random_boolean_consumption() {
+        let mut actual = StsRng::new(42);
+        let mut expected = actual.clone();
+
+        actual.advance_counter_to(250);
+        for _ in 0..250 {
+            let _ = expected.random_boolean();
+        }
+
+        assert_eq!(actual, expected);
+
+        actual.advance_counter_to(100);
+        assert_eq!(
+            actual, expected,
+            "Java Random.setCounter does not rewind when the counter is already past the target"
+        );
     }
 }

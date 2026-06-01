@@ -7,17 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-$commands = @(
-    "cargo test --test protocol_truth_samples",
-    "cargo test --test state_sync_strictness",
-    "cargo test --test stasis_behavior",
-    "cargo test --test layer_boundaries",
-    "cargo test --test combat_case_driver"
-)
-
-if ($IncludeParity) {
-    $commands += "cargo test --test live_comm_replay_driver"
-}
+$commands = @("cargo test --quiet")
 
 Write-Host "High-value correctness suite" -ForegroundColor Cyan
 Write-Host "Repo: $repoRoot"
@@ -25,6 +15,11 @@ Write-Host ""
 Write-Host "Commands:"
 foreach ($command in $commands) {
     Write-Host "  $command"
+}
+
+if ($IncludeParity) {
+    Write-Host ""
+    Write-Host "IncludeParity is currently compatibility-only: live_comm parity drivers are retired until the adapter is rebuilt." -ForegroundColor DarkYellow
 }
 
 if ($DryRun) {

@@ -1,7 +1,7 @@
 use super::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
+use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 use crate::semantics::combat::{
     ApplyPowerStep, AttackSpec, AttackStep, DamageKind, DebuffSpec, EffectStrength,
@@ -128,8 +128,30 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
     )
 }
 
-fn has_used_entangle(entity: &MonsterEntity) -> bool {
-    entity.move_history().contains(&ENTANGLE)
+fn runtime(entity: &MonsterEntity) -> (bool, bool) {
+    assert!(
+        entity.slaver_red.protocol_seeded,
+        "red slaver runtime truth must be protocol-seeded or factory-seeded"
+    );
+    (
+        entity.slaver_red.first_turn,
+        entity.slaver_red.used_entangle,
+    )
+}
+
+fn red_slaver_runtime_update(
+    entity: &MonsterEntity,
+    first_turn: Option<bool>,
+    used_entangle: Option<bool>,
+) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::SlaverRed {
+            first_turn,
+            used_entangle,
+            protocol_seeded: Some(true),
+        },
+    }
 }
 
 fn decode_turn<'a>(plan: &'a MonsterTurnPlan) -> SlaverRedTurn<'a> {
@@ -185,13 +207,14 @@ impl MonsterBehavior for SlaverRed {
         asc: u8,
         num: i32,
     ) -> MonsterTurnPlan {
-        if entity.move_history().is_empty() {
+        let (first_turn, used_entangle) = runtime(entity);
+        if first_turn {
             return stab_plan(asc);
         }
-        if num >= 75 && !has_used_entangle(entity) {
+        if num >= 75 && !used_entangle {
             return entangle_plan();
         }
-        if num >= 55 && has_used_entangle(entity) && !last_two_moves(entity, STAB) {
+        if num >= 55 && used_entangle && !last_two_moves(entity, STAB) {
             return stab_plan(asc);
         }
         if asc >= 17 {
@@ -206,6 +229,20 @@ impl MonsterBehavior for SlaverRed {
         stab_plan(asc)
     }
 
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        _plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        let (first_turn, _) = runtime(entity);
+        if first_turn {
+            vec![red_slaver_runtime_update(entity, Some(false), None)]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
         plan_for(entity.planned_move_id(), state.meta.ascension_level)
     }
@@ -217,7 +254,10 @@ impl MonsterBehavior for SlaverRed {
     ) -> Vec<Action> {
         let mut actions = match decode_turn(plan) {
             SlaverRedTurn::Stab(attack) => attack_actions(entity.id, PLAYER, attack),
-            SlaverRedTurn::Entangle(entangle) => vec![apply_power_action(entity, entangle)],
+            SlaverRedTurn::Entangle(entangle) => vec![
+                red_slaver_runtime_update(entity, None, Some(true)),
+                apply_power_action(entity, entangle),
+            ],
             SlaverRedTurn::Scrape(attack, vulnerable) => {
                 let mut actions = attack_actions(entity.id, PLAYER, attack);
                 actions.push(apply_power_action(entity, vulnerable));
@@ -228,5 +268,162 @@ impl MonsterBehavior for SlaverRed {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SlaverRed, ENTANGLE, SCRAPE, STAB};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
+    use crate::semantics::combat::{MonsterMoveSpec, MoveStep};
+
+    fn red_slaver_with_runtime(
+        history: &[u8],
+        first_turn: bool,
+        used_entangle: bool,
+    ) -> crate::runtime::combat::MonsterEntity {
+        let mut monster = crate::testing::support::test_monster(EnemyId::SlaverRed);
+        monster.move_history_mut().extend(history.iter().copied());
+        monster.slaver_red.first_turn = first_turn;
+        monster.slaver_red.used_entangle = used_entangle;
+        monster
+    }
+
+    #[test]
+    fn red_slaver_roll_logic_uses_explicit_java_private_flags() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+
+        let first = red_slaver_with_runtime(&[], true, false);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &first, 0, 99).move_id,
+            STAB,
+            "Java firstTurn forces Stab before considering the random roll"
+        );
+
+        let after_first_stab = red_slaver_with_runtime(&[STAB], false, false);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_first_stab, 0, 75).move_id,
+            ENTANGLE,
+            "Java uses Entangle once when num >= 75 and usedEntangle is false"
+        );
+
+        let after_entangle = red_slaver_with_runtime(&[STAB, ENTANGLE], false, true);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_entangle, 0, 55).move_id,
+            STAB,
+            "Java post-Entangle high roll prefers Stab unless the last two moves were Stab"
+        );
+
+        let after_entangle_and_two_stabs =
+            red_slaver_with_runtime(&[STAB, ENTANGLE, STAB, STAB], false, true);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_entangle_and_two_stabs, 0, 99).move_id,
+            SCRAPE,
+            "Java falls through to Scrape when post-Entangle Stab is blocked by lastTwoMoves"
+        );
+    }
+
+    #[test]
+    fn red_slaver_used_entangle_is_private_runtime_not_truncated_history() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let monster = red_slaver_with_runtime(&[STAB], false, true);
+
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &monster, 0, 99).move_id,
+            STAB,
+            "Java uses private usedEntangle; live imports with truncated moveHistory must not allow Entangle again"
+        );
+    }
+
+    #[test]
+    fn red_slaver_first_turn_is_private_runtime_not_empty_history() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+        let monster = red_slaver_with_runtime(&[], false, false);
+
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &monster, 17, 0).move_id,
+            SCRAPE,
+            "Java uses private firstTurn; empty imported history alone must not force first-turn Stab"
+        );
+    }
+
+    #[test]
+    fn red_slaver_a17_scrape_cannot_repeat_immediately_like_java() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+
+        let after_scrape = red_slaver_with_runtime(&[STAB, SCRAPE], false, false);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_scrape, 17, 0).move_id,
+            STAB,
+            "Java A17+ checks lastMove(Scrape), not lastTwoMoves(Scrape)"
+        );
+
+        let after_non_scrape = red_slaver_with_runtime(&[STAB, STAB], false, false);
+        assert_eq!(
+            SlaverRed::roll_move_plan(&mut rng, &after_non_scrape, 17, 0).move_id,
+            SCRAPE
+        );
+    }
+
+    #[test]
+    fn red_slaver_take_turn_actions_preserve_java_order_and_amounts() {
+        let mut state = crate::testing::support::blank_test_combat();
+        state.meta.ascension_level = 17;
+        let monster = crate::testing::support::test_monster(EnemyId::SlaverRed);
+
+        let entangle_actions =
+            SlaverRed::take_turn_plan(&mut state, &monster, &super::entangle_plan());
+        assert!(matches!(
+            entangle_actions.as_slice(),
+            [
+                Action::UpdateMonsterRuntime {
+                    monster_id: 1,
+                    patch: crate::runtime::action::MonsterRuntimePatch::SlaverRed {
+                        first_turn: None,
+                        used_entangle: Some(true),
+                        protocol_seeded: Some(true),
+                    },
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Entangle,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        let scrape_actions =
+            SlaverRed::take_turn_plan(&mut state, &monster, &super::scrape_plan(17));
+        assert!(matches!(
+            scrape_actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 9,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Vulnerable,
+                    amount: 2,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        assert!(matches!(
+            super::entangle_plan().summary_spec(),
+            MonsterMoveSpec::StrongDebuff(_)
+        ));
+        assert!(matches!(
+            super::scrape_plan(17).steps.as_slice(),
+            [MoveStep::Attack(_), MoveStep::ApplyPower(_)]
+        ));
     }
 }

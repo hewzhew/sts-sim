@@ -1,4 +1,4 @@
-use super::{apply_power_action, attack_actions, set_next_move_action, PLAYER};
+use super::{apply_power_action, attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 use crate::runtime::action::Action;
@@ -164,13 +164,108 @@ impl MonsterBehavior for GremlinFat {
                 if let Some(frail) = frail {
                     actions.push(apply_power_action(entity, frail));
                 }
-                actions.push(set_next_move_action(
-                    entity,
-                    blunt_plan(_state.meta.ascension_level),
-                ));
+                actions.push(Action::RollMonsterMove {
+                    monster_id: entity.id,
+                });
                 actions
             }
-            GremlinFatTurn::Escape => vec![Action::Escape { target: entity.id }],
+            GremlinFatTurn::Escape => vec![
+                Action::Escape { target: entity.id },
+                super::set_next_move_action(entity, escape_plan()),
+            ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{blunt_plan, GremlinFat};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn blunt_rerolls_like_java_even_when_move_is_deterministic() {
+        // GremlinFat.java queues RollMoveAction after BLUNT when not escaping.
+        // That consumes aiRng.random(99); replacing it with SetMonsterMove shifts
+        // later monster RNG even though getMove always chooses BLUNT.
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinFat);
+        let actions = GremlinFat::take_turn_plan(&mut state, &entity, &blunt_plan(0));
+
+        assert!(matches!(
+            actions.last(),
+            Some(Action::RollMonsterMove { monster_id: 1 })
+        ));
+    }
+
+    #[test]
+    fn escape_turn_queues_escape_intent_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinFat);
+        let actions = GremlinFat::take_turn_plan(&mut state, &entity, &super::escape_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::Escape { .. },
+                Action::SetMonsterMove {
+                    next_move_byte: super::ESCAPE,
+                    ..
+                }
+            ]
+        ));
+    }
+
+    #[test]
+    fn blunt_action_order_and_a17_frail_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinFat);
+
+        let a16 = GremlinFat::take_turn_plan(&mut state, &entity, &blunt_plan(16));
+        assert!(matches!(
+            a16.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 5,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        let a17 = GremlinFat::take_turn_plan(&mut state, &entity, &blunt_plan(17));
+        assert!(matches!(
+            a17.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 5,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Frail,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
     }
 }

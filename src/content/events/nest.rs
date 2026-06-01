@@ -1,7 +1,8 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
@@ -37,21 +38,21 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                     } else {
                         99
                     };
-                    run_state.gold += gold_gain;
+                    run_state.change_gold_with_source(
+                        gold_gain,
+                        DomainEventSource::Event(EventId::Nest),
+                    );
                     event_state.current_screen = 2;
                 }
                 _ => {
-                    // Join cult: 6 damage (DEFAULT type — Tungsten Rod reduces by 1) + Ritual Dagger
-                    let mut dmg = 6;
-                    if run_state
-                        .relics
-                        .iter()
-                        .any(|r| r.id == crate::content::relics::RelicId::TungstenRod)
-                    {
-                        dmg -= 1;
-                    }
-                    run_state.current_hp = (run_state.current_hp - dmg).max(0);
-                    run_state.add_card_to_deck(CardId::RitualDagger);
+                    // Join cult: Java DamageInfo(null, 6), then Ritual Dagger.
+                    super::apply_player_default_damage(
+                        run_state,
+                        6,
+                        super::EventDamageOwner::None,
+                        DomainEventSource::Event(EventId::Nest),
+                    );
+                    super::obtain_event_card(run_state, EventId::Nest, CardId::RitualDagger);
                     event_state.current_screen = 2;
                 }
             }
@@ -62,4 +63,137 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    fn nest_run(current_hp: i32) -> RunState {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = current_hp;
+        let mut event_state = EventState::new(EventId::Nest);
+        event_state.current_screen = 1;
+        run_state.event_state = Some(event_state);
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    #[test]
+    fn steal_gold_uses_event_source() {
+        let mut run_state = nest_run(50);
+        run_state.gold = 0;
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.gold, 99);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::GoldChanged {
+                delta: 99,
+                new_total: 99,
+                source: DomainEventSource::Event(EventId::Nest),
+            }
+        )));
+    }
+
+    #[test]
+    fn join_cult_damage_and_ritual_dagger_use_event_source() {
+        let mut run_state = nest_run(20);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.current_hp, 14);
+        assert!(run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::RitualDagger));
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -6,
+                current_hp: 14,
+                source: DomainEventSource::Event(EventId::Nest),
+                ..
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                card,
+                source: DomainEventSource::Event(EventId::Nest),
+            } if card.id == CardId::RitualDagger
+        )));
+    }
+
+    #[test]
+    fn join_cult_damage_applies_tungsten_rod() {
+        let mut run_state = nest_run(20);
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.current_hp, 15);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -5,
+                current_hp: 15,
+                source: DomainEventSource::Event(EventId::Nest),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn join_cult_damage_resolves_before_delayed_ritual_dagger_obtain() {
+        let mut run_state = nest_run(20);
+        run_state.gold = 0;
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.current_hp, 14);
+        assert_eq!(run_state.gold, 9);
+        let labels = run_state
+            .take_emitted_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                DomainEvent::HpChanged {
+                    delta: -6,
+                    source: DomainEventSource::Event(EventId::Nest),
+                    ..
+                } => Some("hp_loss"),
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::Nest),
+                    ..
+                } => Some("ceramic_fish_gold"),
+                DomainEvent::CardObtained {
+                    card,
+                    source: DomainEventSource::Event(EventId::Nest),
+                } if card.id == CardId::RitualDagger => Some("ritual_dagger_obtained"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec!["hp_loss", "ceramic_fish_gold", "ritual_dagger_obtained"],
+            "Java Nest applies DamageInfo(null, 6) before the delayed Ritual Dagger ShowCardAndObtainEffect resolves"
+        );
+    }
 }

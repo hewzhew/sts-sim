@@ -2,37 +2,48 @@ use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::state::events::EventId;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum SelectionScope {
     Hand,
     Deck,
     Grid,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum SelectionReason {
     Upgrade,
     Purge,
     Transform,
     TransformUpgraded,
     Duplicate,
+    BottleFlame,
+    BottleLightning,
+    BottleTornado,
     Exhaust,
     Discard,
     Retain,
     PutOnDrawPile,
     PutToBottomOfDraw,
+    Setup,
     Copy,
+    Nightmare,
     GamblingChip,
     MoveToDrawPile,
     Exhume,
+    DrawPileToHand,
     SkillFromDeckToHand,
     AttackFromDeckToHand,
     DiscardToHand,
+    DiscardToHandNoCostChange,
+    DiscardToHandRetain,
+    Omniscience,
+    Recycle,
     Discovery,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum SelectionConstraint {
     Exactly(usize),
     Between { min: usize, max: usize },
@@ -75,12 +86,12 @@ impl SelectionConstraint {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum SelectionTargetRef {
     CardUuid(u32),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct SelectionRequest {
     pub scope: SelectionScope,
     pub reason: SelectionReason,
@@ -89,15 +100,17 @@ pub struct SelectionRequest {
     pub targets: Vec<SelectionTargetRef>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct SelectionResolution {
     pub scope: SelectionScope,
     pub selected: Vec<SelectionTargetRef>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum DomainEventSource {
     Event(EventId),
+    Relic(RelicId),
+    Potion(PotionId),
     CampfireSmith,
     CampfireToke,
     Selection(SelectionReason),
@@ -107,7 +120,7 @@ pub enum DomainEventSource {
     BossRelicChoice,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct DomainCardSnapshot {
     pub id: CardId,
     pub upgrades: u8,
@@ -121,7 +134,7 @@ impl DomainCardSnapshot {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum DomainEvent {
     RelicObtained {
         relic_id: RelicId,
@@ -149,6 +162,11 @@ pub enum DomainEvent {
         source: DomainEventSource,
     },
     PotionObtained {
+        potion_id: PotionId,
+        slot: usize,
+        source: DomainEventSource,
+    },
+    PotionLost {
         potion_id: PotionId,
         slot: usize,
         source: DomainEventSource,
@@ -183,21 +201,21 @@ pub enum DomainEvent {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum EngineDiagnosticSeverity {
     Info,
     Warning,
     Error,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum EngineDiagnosticClass {
     Normalization,
     Suspicious,
     Broken,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct EngineDiagnostic {
     pub severity: EngineDiagnosticSeverity,
     pub class: EngineDiagnosticClass,

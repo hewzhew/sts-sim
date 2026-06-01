@@ -1,6 +1,29 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::Corruption,
+        name: "Corruption",
+        card_type: CardType::Power,
+        rarity: CardRarity::Rare,
+        cost: 3,
+        base_damage: 0,
+        base_block: 0,
+        base_magic: 3,
+        target: CardTarget::SelfTarget,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 0,
+        upgrade_block: 0,
+        upgrade_magic: 0,
+    }
+}
 
 pub fn corruption_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
@@ -21,7 +44,8 @@ pub fn corruption_play(state: &CombatState, _card: &CombatCard) -> SmallVec<[Act
     actions
 }
 
-/// Mimics `ApplyPowerAction.java` line 43: Immediately reduces all skill costs in all piles
+/// Mimics `ApplyPowerAction.java`: immediately reduces all skill costs in the
+/// four Java player card groups scanned by the Corruption special case.
 pub fn corruption_on_apply(state: &mut CombatState) {
     let is_skill = |id| {
         crate::content::cards::get_card_definition(id).card_type
@@ -34,11 +58,9 @@ pub fn corruption_on_apply(state: &mut CombatState) {
         .chain(state.zones.draw_pile.iter_mut())
         .chain(state.zones.discard_pile.iter_mut())
         .chain(state.zones.exhaust_pile.iter_mut())
-        .chain(state.zones.limbo.iter_mut())
     {
         if is_skill(c.id) {
-            c.cost_modifier -= 9;
-            c.cost_for_turn = Some(0);
+            c.modify_cost_for_combat_java(-9);
         }
     }
 }
@@ -48,7 +70,7 @@ pub fn corruption_on_apply(state: &mut CombatState) {
 pub fn corruption_on_card_draw(_state: &CombatState, card: &mut CombatCard) {
     let def = crate::content::cards::get_card_definition(card.id);
     if def.card_type == crate::content::cards::CardType::Skill {
-        card.cost_for_turn = Some(0);
+        card.set_cost_for_turn_java(0);
     }
 }
 

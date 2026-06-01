@@ -2,6 +2,7 @@ use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, ActionInfo};
 use crate::runtime::combat::{CombatState, MonsterEntity, MonsterId, Power};
 use crate::semantics::combat::MonsterTurnPlan;
+use serde::{Deserialize, Serialize};
 
 pub mod beyond;
 pub mod city;
@@ -105,7 +106,7 @@ pub trait MonsterBehavior {
 }
 
 /// Identifiers for mapping specific AI routines.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum EnemyId {
     JawWorm,
     Cultist,
@@ -175,6 +176,23 @@ pub enum EnemyId {
 }
 
 impl EnemyId {
+    pub fn is_boss(self) -> bool {
+        matches!(
+            self,
+            EnemyId::SlimeBoss
+                | EnemyId::Hexaghost
+                | EnemyId::TheGuardian
+                | EnemyId::BronzeAutomaton
+                | EnemyId::TheCollector
+                | EnemyId::Champ
+                | EnemyId::AwakenedOne
+                | EnemyId::TimeEater
+                | EnemyId::Donu
+                | EnemyId::Deca
+                | EnemyId::CorruptHeart
+        )
+    }
+
     pub fn from_id(id: MonsterId) -> Option<Self> {
         // Current stub mapper. In the future MonsterId will likely map safely to EnemyId or just BE EnemyId.
         match id {
@@ -318,7 +336,7 @@ impl EnemyId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum PreBattleLegacyRng {
     Misc,
     MonsterHp,
@@ -560,16 +578,16 @@ pub fn get_hp_range(id: EnemyId, ascension_level: u8) -> (i32, i32) {
         }
         EnemyId::LouseNormal => {
             if asc_hp {
-                (12, 17)
+                (11, 16)
             } else {
-                (11, 15)
+                (10, 15)
             }
         }
         EnemyId::LouseDefensive => {
             if asc_hp {
-                (12, 17)
+                (12, 18)
             } else {
-                (11, 15)
+                (11, 17)
             }
         }
         EnemyId::SpikeSlimeS => {
@@ -975,5 +993,21 @@ pub fn get_hp_range(id: EnemyId, ascension_level: u8) -> (i32, i32) {
                 (750, 750)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{get_hp_range, EnemyId};
+
+    #[test]
+    fn louse_hp_ranges_match_java_sources() {
+        // Java sources:
+        // LouseNormal.java: setHp(10, 15), ascension >= 7 setHp(11, 16).
+        // LouseDefensive.java: setHp(11, 17), ascension >= 7 setHp(12, 18).
+        assert_eq!(get_hp_range(EnemyId::LouseNormal, 0), (10, 15));
+        assert_eq!(get_hp_range(EnemyId::LouseNormal, 7), (11, 16));
+        assert_eq!(get_hp_range(EnemyId::LouseDefensive, 0), (11, 17));
+        assert_eq!(get_hp_range(EnemyId::LouseDefensive, 7), (12, 18));
     }
 }

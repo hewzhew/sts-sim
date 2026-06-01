@@ -1,4 +1,5 @@
-use crate::state::core::{EngineState, EventCombatState, PostCombatReturn};
+use crate::content::monsters::factory::EncounterId;
+use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
 
@@ -29,15 +30,20 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     event_state.current_screen = 1;
                 }
                 _ => {
-                    // Leave
-                    event_state.completed = true;
+                    // Java first moves to END text, then opens the map on the
+                    // next click.
+                    event_state.current_screen = 2;
                 }
             }
         }
         1 => {
             // Fight! Set up rewards and enter event combat.
-            // Java: miscRng.random(45, 55) for gold, returnRandomScreenlessRelic(RARE) for relic
-            let gold = run_state.rng_pool.misc_rng.random_range(45, 55);
+            // Java: daily uses miscRng.random(50), ordinary runs use miscRng.random(45, 55).
+            let gold = if run_state.is_daily_run {
+                run_state.rng_pool.misc_rng.random(50)
+            } else {
+                run_state.rng_pool.misc_rng.random_range(45, 55)
+            };
             let mut rewards = crate::rewards::state::RewardState::new();
             rewards
                 .items
@@ -53,13 +59,14 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             run_state.event_state = Some(event_state);
 
             // Transition to event combat
-            *engine_state = EngineState::EventCombat(EventCombatState {
+            *engine_state = EngineState::CombatStart(CombatStartRequest::event(
+                EncounterId::TwoOrbWalkers,
                 rewards,
-                reward_allowed: true,
-                no_cards_in_rewards: false,
-                post_combat_return: PostCombatReturn::MapNavigation,
-                encounter_key: "2 Orb Walkers",
-            });
+                true,
+                false,
+                false,
+                PostCombatReturn::MapNavigation,
+            ));
             return;
         }
         _ => {
@@ -68,4 +75,116 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::relics::RelicId;
+    use crate::state::core::CombatContext;
+
+    #[test]
+    fn leave_path_preserves_java_end_screen_before_map() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(EventState::new(
+            crate::state::events::EventId::MysteriousSphere,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let event_state = run_state.event_state.as_ref().unwrap();
+        assert_eq!(event_state.current_screen, 2);
+        assert!(!event_state.completed);
+        assert!(matches!(engine_state, EngineState::EventRoom));
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(run_state.event_state.as_ref().unwrap().completed);
+    }
+
+    #[test]
+    fn fight_path_generates_java_event_rewards_before_event_combat() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(EventState::new(
+            crate::state::events::EventId::MysteriousSphere,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("confirmed Mysterious Sphere fight should request CombatStart");
+        };
+        assert_eq!(request.encounter_id, EncounterId::TwoOrbWalkers);
+        let CombatContext::Event(combat) = request.context else {
+            panic!("confirmed Mysterious Sphere fight should carry event combat context");
+        };
+        assert!(combat.reward_allowed);
+        assert!(combat
+            .rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, crate::rewards::state::RewardItem::Gold { amount } if (45..=55).contains(amount))));
+        assert!(combat
+            .rewards
+            .items
+            .iter()
+            .any(|item| matches!(item, crate::rewards::state::RewardItem::Relic { .. })));
+    }
+
+    #[test]
+    fn daily_fight_reward_uses_java_daily_gold_roll() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.is_daily_run = true;
+        let mut expected_rng = run_state.rng_pool.misc_rng.clone();
+        let expected_gold = expected_rng.random(50);
+        run_state.event_state = Some(EventState::new(
+            crate::state::events::EventId::MysteriousSphere,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("confirmed Mysterious Sphere fight should request CombatStart");
+        };
+        let CombatContext::Event(combat) = request.context else {
+            panic!("confirmed Mysterious Sphere fight should carry event combat context");
+        };
+        assert!(combat.rewards.items.iter().any(|item| matches!(
+            item,
+            crate::rewards::state::RewardItem::Gold { amount } if *amount == expected_gold
+        )));
+    }
+
+    #[test]
+    fn fight_reward_uses_rare_screenless_relic_pool() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.rare_relic_pool = vec![RelicId::Mango];
+        run_state.event_state = Some(EventState::new(
+            crate::state::events::EventId::MysteriousSphere,
+        ));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("confirmed Mysterious Sphere fight should request CombatStart");
+        };
+        let CombatContext::Event(combat) = request.context else {
+            panic!("confirmed Mysterious Sphere fight should carry event combat context");
+        };
+        assert!(combat.rewards.items.iter().any(|item| matches!(
+            item,
+            crate::rewards::state::RewardItem::Relic {
+                relic_id: RelicId::Mango
+            }
+        )));
+    }
 }

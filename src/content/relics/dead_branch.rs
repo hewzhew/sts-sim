@@ -5,17 +5,24 @@ use crate::runtime::combat::CombatState;
 /// Dead Branch: Whenever you Exhaust a card, add a random card to your hand.
 /// Java: MakeTempCardInHandAction(returnTrulyRandomCardInCombat().makeCopy())
 pub fn on_exhaust(
-    _state: &CombatState,
+    state: &mut CombatState,
     _relic: &mut RelicState,
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
-    // Java: returnTrulyRandomCardInCombat() — no type filter, no cost override
-    actions.push(ActionInfo {
-        action: Action::MakeRandomCardInHand {
-            card_type: None, // No type filter — any card type
-            cost_for_turn: None,
-        },
-        insertion_mode: AddTo::Bottom,
-    });
+    if state.are_monsters_basically_dead_java() {
+        return actions;
+    }
+
+    if let Some(card) = crate::content::cards::make_random_class_card_copy_for_combat(state, None) {
+        let mut card = card;
+        crate::content::cards::apply_master_reality_to_generated_card(&mut card, state, 1);
+        actions.push(ActionInfo {
+            action: Action::MakeConstructedCopyInHand {
+                original: Box::new(card),
+                amount: 1,
+            },
+            insertion_mode: AddTo::Bottom,
+        });
+    }
     actions
 }

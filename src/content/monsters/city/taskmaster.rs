@@ -16,6 +16,97 @@ pub struct Taskmaster;
 
 const SCOURING_WHIP: u8 = 2;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+
+    #[test]
+    fn roll_move_is_always_scouring_whip_like_java_get_move() {
+        let taskmaster = crate::test_support::test_monster(EnemyId::Taskmaster);
+
+        let low_roll =
+            Taskmaster::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &taskmaster, 0, 0);
+        let high_roll = Taskmaster::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &taskmaster,
+            18,
+            99,
+        );
+
+        assert_eq!(low_roll.move_id, SCOURING_WHIP);
+        assert_eq!(high_roll.move_id, SCOURING_WHIP);
+    }
+
+    #[test]
+    fn scouring_whip_wound_count_follows_java_ascension_thresholds() {
+        assert_eq!(wound_count(0), 1);
+        assert_eq!(wound_count(3), 2);
+        assert_eq!(wound_count(17), 2);
+        assert_eq!(wound_count(18), 3);
+    }
+
+    #[test]
+    fn scouring_whip_queues_damage_wounds_strength_and_roll_like_java_a18() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 18;
+        let taskmaster = crate::test_support::test_monster(EnemyId::Taskmaster);
+
+        let actions = Taskmaster::take_turn_plan(&mut state, &taskmaster, &whip_plan(18));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 7,
+                    ..
+                },
+                Action::MakeTempCardInDiscard {
+                    card_id: CardId::Wound,
+                    amount: 3,
+                    upgraded: false
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Strength,
+                    amount: 1
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn scouring_whip_below_a18_skips_strength_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 17;
+        let taskmaster = crate::test_support::test_monster(EnemyId::Taskmaster);
+
+        let actions = Taskmaster::take_turn_plan(&mut state, &taskmaster, &whip_plan(17));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 7,
+                    ..
+                },
+                Action::MakeTempCardInDiscard {
+                    card_id: CardId::Wound,
+                    amount: 2,
+                    upgraded: false
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+}
+
 fn whip_damage() -> i32 {
     7
 }

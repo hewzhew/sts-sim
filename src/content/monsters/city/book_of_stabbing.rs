@@ -110,7 +110,7 @@ impl MonsterBehavior for BookOfStabbing {
             source: entity.id,
             target: entity.id,
             power_id: PowerId::PainfulStabs,
-            amount: 1,
+            amount: -1,
         }]
     }
 
@@ -185,5 +185,118 @@ impl MonsterBehavior for BookOfStabbing {
         });
         let _ = state;
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::{EnemyId, MonsterBehavior, PreBattleLegacyRng};
+
+    #[test]
+    fn pre_battle_applies_painful_stabs_sentinel_amount_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let book = crate::test_support::test_monster(EnemyId::BookOfStabbing);
+
+        let actions =
+            BookOfStabbing::use_pre_battle_actions(&mut state, &book, PreBattleLegacyRng::Misc);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::PainfulStabs,
+                amount: -1
+            }]
+        ));
+    }
+
+    #[test]
+    fn stab_roll_increments_count_before_visible_hit_count_like_java() {
+        let state = crate::test_support::blank_test_combat();
+        let mut book = crate::test_support::test_monster(EnemyId::BookOfStabbing);
+        book.book_of_stabbing.stab_count = 1;
+        book.move_history_mut().clear();
+
+        let plan = BookOfStabbing::roll_move_plan(
+            &mut state.rng.ai_rng.clone(),
+            &book,
+            state.meta.ascension_level,
+            50,
+        );
+        let setup = BookOfStabbing::on_roll_move(state.meta.ascension_level, &book, 50, &plan);
+
+        assert_eq!(plan.move_id, STAB);
+        assert!(matches!(
+            plan.steps.as_slice(),
+            [MoveStep::Attack(AttackStep {
+                attack: AttackSpec { hits: 2, .. },
+                ..
+            })]
+        ));
+        assert!(matches!(
+            setup.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::BookOfStabbing {
+                    stab_count: Some(2),
+                    protocol_seeded: Some(true)
+                }
+            }]
+        ));
+    }
+
+    #[test]
+    fn a18_big_stab_roll_still_increments_future_stab_count_like_java() {
+        let state = crate::test_support::blank_test_combat();
+        let mut book = crate::test_support::test_monster(EnemyId::BookOfStabbing);
+        book.book_of_stabbing.stab_count = 2;
+        book.move_history_mut().clear();
+
+        let plan = BookOfStabbing::roll_move_plan(&mut state.rng.ai_rng.clone(), &book, 18, 5);
+        let a18_setup = BookOfStabbing::on_roll_move(18, &book, 5, &plan);
+        let lower_setup = BookOfStabbing::on_roll_move(17, &book, 5, &plan);
+
+        assert_eq!(plan.move_id, BIG_STAB);
+        assert!(matches!(
+            a18_setup.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::BookOfStabbing {
+                    stab_count: Some(3),
+                    ..
+                },
+                ..
+            }]
+        ));
+        assert!(matches!(
+            lower_setup.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::BookOfStabbing {
+                    stab_count: Some(2),
+                    ..
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn stab_take_turn_uses_locked_count_then_rolls_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let book = crate::test_support::test_monster(EnemyId::BookOfStabbing);
+
+        let actions = BookOfStabbing::take_turn_plan(&mut state, &book, &stab_plan(3, 4));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack { base_damage: 7, .. },
+                Action::MonsterAttack { base_damage: 7, .. },
+                Action::MonsterAttack { base_damage: 7, .. },
+                Action::MonsterAttack { base_damage: 7, .. },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
     }
 }

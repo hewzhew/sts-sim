@@ -85,14 +85,14 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 0 => {
                     // Potion: take potionCost damage, get potion, ++potionCost
                     let cost = potion_cost(event_state.internal_state);
-                    run_state.change_hp_with_source(-cost, source);
+                    super::apply_player_hp_loss_damage(run_state, cost, source);
                     inc_potion(&mut event_state.internal_state);
                     if !run_state
                         .relics
                         .iter()
                         .any(|relic| relic.id == crate::content::relics::RelicId::Sozu)
                     {
-                        let pid = run_state.random_potion();
+                        let pid = run_state.random_potion_flat();
                         let potion = crate::content::potions::Potion::new(
                             pid,
                             20000 + potion_n(event_state.internal_state) as u32,
@@ -104,7 +104,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 1 => {
                     // Gold: take goldCost damage, gain 90g, ++goldCost
                     let cost = gold_cost(event_state.internal_state);
-                    run_state.change_hp_with_source(-cost, source);
+                    super::apply_player_hp_loss_damage(run_state, cost, source);
                     inc_gold(&mut event_state.internal_state);
                     run_state.change_gold_with_source(GOLD_REWARD, source);
                     // Stay on ASK screen
@@ -112,16 +112,16 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 2 => {
                     // Card: take cardCost damage, get colorless card, ++cardCost
                     let cost = card_cost(event_state.internal_state);
-                    run_state.change_hp_with_source(-cost, source);
+                    super::apply_player_hp_loss_damage(run_state, cost, source);
                     inc_card(&mut event_state.internal_state);
                     let card_id = run_state
                         .random_colorless_card(crate::content::cards::CardRarity::Uncommon);
-                    run_state.add_card_to_deck_with_upgrades_from(card_id, 0, source);
+                    super::obtain_event_card(run_state, EventId::KnowingSkull, card_id);
                     // Stay on ASK screen
                 }
                 _ => {
                     // Leave: take fixed 6 damage, transition to COMPLETE
-                    run_state.change_hp_with_source(-BASE_COST, source);
+                    super::apply_player_hp_loss_damage(run_state, BASE_COST, source);
                     event_state.current_screen = 2;
                 }
             }
@@ -132,4 +132,166 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::state::selection::DomainEvent;
+
+    fn skull_run() -> RunState {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.current_hp = 30;
+        run_state.max_hp = 80;
+        run_state.gold = 0;
+        run_state.event_state = Some(EventState {
+            id: EventId::KnowingSkull,
+            current_screen: 1,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    #[test]
+    fn potion_reward_hp_loss_respects_tungsten_and_increments_only_potion_cost() {
+        let mut run_state = skull_run();
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        run_state.relics.push(RelicState::new(RelicId::Sozu));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.current_hp, 25);
+        let event_state = run_state.event_state.as_ref().unwrap();
+        assert_eq!(event_state.current_screen, 1);
+        assert_eq!(potion_cost(event_state.internal_state), 7);
+        assert_eq!(gold_cost(event_state.internal_state), 6);
+        assert_eq!(card_cost(event_state.internal_state), 6);
+    }
+
+    #[test]
+    fn potion_reward_without_sozu_uses_flat_potion_helper_rng() {
+        let mut run_state = skull_run();
+        let potion_rng_before = run_state.rng_pool.potion_rng.counter;
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(
+            run_state.rng_pool.potion_rng.counter,
+            potion_rng_before + 1,
+            "Java Knowing Skull uses PotionHelper.getRandomPotion(), not rarity-weighted returnRandomPotion"
+        );
+        assert!(run_state.potions.iter().any(|slot| slot.is_some()));
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 1);
+    }
+
+    #[test]
+    fn gold_reward_hp_loss_respects_tungsten_then_grants_gold() {
+        let mut run_state = skull_run();
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(run_state.current_hp, 25);
+        assert_eq!(run_state.gold, 90);
+        let event_state = run_state.event_state.as_ref().unwrap();
+        assert_eq!(gold_cost(event_state.internal_state), 7);
+        let events = run_state.take_emitted_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::HpChanged {
+                delta: -5,
+                source: DomainEventSource::Event(EventId::KnowingSkull),
+                ..
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DomainEvent::GoldChanged {
+                delta: 90,
+                source: DomainEventSource::Event(EventId::KnowingSkull),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn card_reward_hp_loss_and_random_colorless_card_use_event_source() {
+        let mut run_state = skull_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        assert_eq!(run_state.current_hp, 24);
+        let event_state = run_state.event_state.as_ref().unwrap();
+        assert_eq!(event_state.current_screen, 1);
+        assert_eq!(potion_cost(event_state.internal_state), 6);
+        assert_eq!(gold_cost(event_state.internal_state), 6);
+        assert_eq!(card_cost(event_state.internal_state), 7);
+        assert!(run_state.take_emitted_events().iter().any(|event| matches!(
+            event,
+            DomainEvent::CardObtained {
+                source: DomainEventSource::Event(EventId::KnowingSkull),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn card_reward_hp_loss_resolves_before_delayed_card_obtain_hooks() {
+        let mut run_state = skull_run();
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        assert_eq!(run_state.current_hp, 24);
+        assert_eq!(run_state.gold, 9);
+        let labels = run_state
+            .take_emitted_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                DomainEvent::HpChanged {
+                    delta: -6,
+                    source: DomainEventSource::Event(EventId::KnowingSkull),
+                    ..
+                } => Some("hp_loss"),
+                DomainEvent::GoldChanged {
+                    delta: 9,
+                    source: DomainEventSource::Event(EventId::KnowingSkull),
+                    ..
+                } => Some("ceramic_fish_gold"),
+                DomainEvent::CardObtained {
+                    source: DomainEventSource::Event(EventId::KnowingSkull),
+                    ..
+                } => Some("card_obtained"),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec!["hp_loss", "ceramic_fish_gold", "card_obtained"],
+            "Java KnowingSkull card reward pays HP first, then delayed ShowCardAndObtainEffect runs onObtainCard before Soul.obtain"
+        );
+    }
+
+    #[test]
+    fn leave_hp_loss_respects_tungsten_and_moves_to_complete_screen() {
+        let mut run_state = skull_run();
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 3);
+
+        assert_eq!(run_state.current_hp, 25);
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 2);
+    }
 }

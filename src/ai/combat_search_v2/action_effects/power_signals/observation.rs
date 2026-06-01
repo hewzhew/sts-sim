@@ -1,0 +1,77 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::content::powers::PowerId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatCard, CombatState};
+
+#[derive(Default)]
+pub(super) struct RawPowerEffects {
+    pub(super) enemy_strength_down_by_target: BTreeMap<usize, i32>,
+    pub(super) enemy_strength_gain_by_target: BTreeMap<usize, i32>,
+    pub(super) shackled_targets: BTreeSet<usize>,
+    pub(super) reactive_player_hp_loss: i32,
+    pub(super) reactive_player_block: i32,
+    pub(super) reactive_enemy_damage: i32,
+    pub(super) reactive_bad_draw_cards: i32,
+    pub(super) reactive_forced_turn_end: bool,
+    pub(super) enemy_weak: i32,
+    pub(super) enemy_vulnerable: i32,
+}
+
+pub(super) fn observe_card_power_effects(
+    combat: &CombatState,
+    card: &CombatCard,
+    actions: impl IntoIterator<Item = Action>,
+) -> RawPowerEffects {
+    let mut raw = RawPowerEffects::default();
+    for action in actions {
+        observe_power_action(&mut raw, action);
+    }
+    super::reactive_observation::observe_card_play_reactive_power_actions(combat, card, &mut raw);
+    raw
+}
+
+pub(super) fn observe_power_action(raw: &mut RawPowerEffects, action: Action) {
+    match action {
+        Action::ApplyPower {
+            target,
+            power_id,
+            amount,
+            ..
+        }
+        | Action::ApplyPowerDetailed {
+            target,
+            power_id,
+            amount,
+            ..
+        }
+        | Action::ApplyPowerWithPayload {
+            target,
+            power_id,
+            amount,
+            ..
+        } => observe_apply_power(raw, target, power_id, amount),
+        _ => {}
+    }
+}
+
+fn observe_apply_power(raw: &mut RawPowerEffects, target: usize, power_id: PowerId, amount: i32) {
+    match power_id {
+        PowerId::Strength if amount < 0 => {
+            *raw.enemy_strength_down_by_target.entry(target).or_default() += -amount;
+        }
+        PowerId::Strength if amount > 0 => {
+            *raw.enemy_strength_gain_by_target.entry(target).or_default() += amount;
+        }
+        PowerId::Shackled if amount > 0 => {
+            raw.shackled_targets.insert(target);
+        }
+        PowerId::Weak if amount > 0 => {
+            raw.enemy_weak = raw.enemy_weak.saturating_add(amount);
+        }
+        PowerId::Vulnerable if amount > 0 => {
+            raw.enemy_vulnerable = raw.enemy_vulnerable.saturating_add(amount);
+        }
+        _ => {}
+    }
+}

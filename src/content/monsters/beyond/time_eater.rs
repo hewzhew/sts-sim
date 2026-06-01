@@ -5,8 +5,8 @@ use crate::content::monsters::exordium::{
 };
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
-use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatState, MonsterEntity};
+use crate::runtime::action::{Action, MonsterRuntimePatch};
+use crate::runtime::combat::{CombatState, MonsterEntity, TimeEaterRuntimeState};
 use crate::semantics::combat::{
     AddCardStep, ApplyPowerStep, AttackSpec, AttackStep, BlockStep, DamageKind, DebuffSpec,
     DefendSpec, EffectStrength, HealSpec, MonsterMoveSpec, MonsterTurnPlan, MoveStep, MoveTarget,
@@ -20,6 +20,252 @@ const REVERBERATE: u8 = 2;
 const RIPPLE: u8 = 3;
 const HEAD_SLAM: u8 = 4;
 const HASTE: u8 = 5;
+
+pub fn initialize_runtime_state(entity: &mut MonsterEntity) {
+    entity.time_eater = TimeEaterRuntimeState {
+        protocol_seeded: true,
+        used_haste: false,
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn haste_heal_amount_is_read_at_execution_time_like_java() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.id = 1;
+        time_eater.max_hp = 456;
+        time_eater.current_hp = 220;
+        let plan = haste_plan(&time_eater, 19);
+
+        time_eater.current_hp = 100;
+        let mut state = crate::test_support::combat_with_monsters(vec![time_eater.clone()]);
+
+        let actions = TimeEater::take_turn_plan(&mut state, &time_eater, &plan);
+
+        assert!(matches!(
+            actions
+                .iter()
+                .find(|action| matches!(action, Action::Heal { .. })),
+            Some(Action::Heal {
+                target: 1,
+                amount: 128
+            })
+        ));
+    }
+
+    #[test]
+    fn haste_visible_spec_does_not_freeze_hidden_heal_amount() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.max_hp = 456;
+        time_eater.current_hp = 220;
+
+        let plan = haste_plan(&time_eater, 19);
+
+        assert_eq!(
+            plan.visible_spec,
+            Some(MonsterMoveSpec::Heal(HealSpec {
+                target: MoveTarget::SelfTarget,
+                amount: 0,
+            }))
+        );
+    }
+
+    #[test]
+    fn haste_selection_marks_private_used_haste_during_roll() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.max_hp = 456;
+        time_eater.current_hp = 200;
+
+        let plan = TimeEater::roll_move_plan(&mut StsRng::new(0), &time_eater, 0, 0);
+        let actions = TimeEater::on_roll_move(0, &time_eater, 0, &plan);
+
+        assert_eq!(plan.move_id, HASTE);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::UpdateMonsterRuntime {
+                patch: MonsterRuntimePatch::TimeEater {
+                    used_haste: Some(true),
+                    protocol_seeded: Some(true),
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn imported_used_haste_true_with_empty_history_does_not_force_haste() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.max_hp = 456;
+        time_eater.current_hp = 200;
+        time_eater.time_eater.used_haste = true;
+        time_eater.move_history_mut().clear();
+
+        let plan = TimeEater::roll_move_plan(&mut StsRng::new(0), &time_eater, 0, 0);
+
+        assert_eq!(
+            plan.move_id, REVERBERATE,
+            "Java gates Haste on private usedHaste, not move history"
+        );
+    }
+
+    #[test]
+    fn reverberate_blocked_by_last_two_moves_consumes_java_range_reroll() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.time_eater.used_haste = true;
+        time_eater
+            .move_history_mut()
+            .extend([REVERBERATE, REVERBERATE]);
+        let mut rng = StsRng::new(0);
+
+        let plan = TimeEater::roll_move_plan(&mut rng, &time_eater, 0, 0);
+
+        assert_ne!(plan.move_id, REVERBERATE);
+        assert_eq!(
+            rng.counter, 1,
+            "Java TimeEater.getMove rerolls with aiRng.random(50, 99) when Reverberate is blocked by lastTwoMoves"
+        );
+    }
+
+    #[test]
+    fn head_slam_repeat_branch_consumes_java_boolean_chance() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.time_eater.used_haste = true;
+        time_eater.move_history_mut().push_back(HEAD_SLAM);
+        let mut rng = StsRng::new(0);
+
+        let plan = TimeEater::roll_move_plan(&mut rng, &time_eater, 0, 50);
+
+        assert_ne!(plan.move_id, HEAD_SLAM);
+        assert_eq!(
+            rng.counter, 1,
+            "Java TimeEater.getMove consumes aiRng.randomBoolean(0.66f) when Head Slam is blocked by lastMove"
+        );
+    }
+
+    #[test]
+    fn ripple_repeat_branch_consumes_java_random_74_reroll() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.time_eater.used_haste = true;
+        time_eater.move_history_mut().push_back(RIPPLE);
+        let mut rng = StsRng::new(0);
+
+        let plan = TimeEater::roll_move_plan(&mut rng, &time_eater, 0, 99);
+
+        assert_eq!(
+            rng.counter, 1,
+            "Java TimeEater.getMove rerolls with aiRng.random(74) when Ripple is blocked by lastMove"
+        );
+        assert!(matches!(
+            plan.move_id,
+            REVERBERATE | RIPPLE | HEAD_SLAM | HASTE
+        ));
+    }
+
+    #[test]
+    fn ripple_a19_queues_block_vulnerable_weak_frail_then_roll_like_java() {
+        let time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        let mut state = crate::test_support::combat_with_monsters(vec![time_eater.clone()]);
+
+        let actions = TimeEater::take_turn_plan(&mut state, &time_eater, &ripple_plan(19));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::GainBlock {
+                    target: 1,
+                    amount: 20,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Vulnerable,
+                    amount: 1,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::Frail,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+
+    #[test]
+    fn head_slam_a19_queues_damage_draw_reduction_slimed_then_roll_like_java() {
+        let time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        let mut state = crate::test_support::combat_with_monsters(vec![time_eater.clone()]);
+
+        let actions = TimeEater::take_turn_plan(&mut state, &time_eater, &head_slam_plan(19));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: PLAYER,
+                    base_damage: 32,
+                    ..
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: PLAYER,
+                    power_id: PowerId::DrawReduction,
+                    amount: 1,
+                },
+                Action::MakeTempCardInDiscard {
+                    card_id: CardId::Slimed,
+                    amount: 2,
+                    upgraded: false,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+
+    #[test]
+    fn haste_a19_queues_cleanse_shackled_heal_block_then_roll_like_java() {
+        let mut time_eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        time_eater.max_hp = 480;
+        time_eater.current_hp = 100;
+        let mut state = crate::test_support::combat_with_monsters(vec![time_eater.clone()]);
+
+        let actions =
+            TimeEater::take_turn_plan(&mut state, &time_eater, &haste_plan(&time_eater, 19));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::RemoveAllDebuffs { target: 1 },
+                Action::RemovePower {
+                    target: 1,
+                    power_id: PowerId::Shackled,
+                },
+                Action::Heal {
+                    target: 1,
+                    amount: 140,
+                },
+                Action::GainBlock {
+                    target: 1,
+                    amount: 32,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+}
 
 fn reverberate_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 4 {
@@ -53,8 +299,22 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
     )
 }
 
-fn used_haste(entity: &MonsterEntity) -> bool {
-    entity.move_history().contains(&HASTE)
+fn runtime(entity: &MonsterEntity) -> &TimeEaterRuntimeState {
+    assert!(
+        entity.time_eater.protocol_seeded,
+        "time eater runtime truth must be protocol-seeded or factory-seeded"
+    );
+    &entity.time_eater
+}
+
+fn time_eater_runtime_update(entity: &MonsterEntity, used_haste: Option<bool>) -> Action {
+    Action::UpdateMonsterRuntime {
+        monster_id: entity.id,
+        patch: MonsterRuntimePatch::TimeEater {
+            used_haste,
+            protocol_seeded: Some(true),
+        },
+    }
 }
 
 fn reverberate_plan(ascension_level: u8) -> MonsterTurnPlan {
@@ -157,7 +417,7 @@ fn head_slam_plan(ascension_level: u8) -> MonsterTurnPlan {
     )
 }
 
-fn haste_plan(entity: &MonsterEntity, ascension_level: u8) -> MonsterTurnPlan {
+fn haste_plan(_entity: &MonsterEntity, ascension_level: u8) -> MonsterTurnPlan {
     let mut steps = smallvec![
         MoveStep::Utility(UtilityStep::RemoveAllDebuffs {
             target: MoveTarget::SelfTarget,
@@ -167,13 +427,10 @@ fn haste_plan(entity: &MonsterEntity, ascension_level: u8) -> MonsterTurnPlan {
             power_id: PowerId::Shackled,
         }),
     ];
-    let heal_amount = haste_heal_amount(entity);
-    if heal_amount > 0 {
-        steps.push(MoveStep::Heal(crate::semantics::combat::HealStep {
-            target: MoveTarget::SelfTarget,
-            amount: heal_amount,
-        }));
-    }
+    steps.push(MoveStep::Heal(crate::semantics::combat::HealStep {
+        target: MoveTarget::SelfTarget,
+        amount: 0,
+    }));
     if ascension_level >= 19 {
         steps.push(MoveStep::GainBlock(BlockStep {
             target: MoveTarget::SelfTarget,
@@ -185,7 +442,7 @@ fn haste_plan(entity: &MonsterEntity, ascension_level: u8) -> MonsterTurnPlan {
         steps,
         MonsterMoveSpec::Heal(HealSpec {
             target: MoveTarget::SelfTarget,
-            amount: heal_amount,
+            amount: 0,
         }),
     )
 }
@@ -251,10 +508,23 @@ impl MonsterBehavior for TimeEater {
         ascension_level: u8,
         num: i32,
     ) -> MonsterTurnPlan {
-        if entity.current_hp < entity.max_hp / 2 && !used_haste(entity) {
+        if entity.current_hp < entity.max_hp / 2 && !runtime(entity).used_haste {
             return haste_plan(entity, ascension_level);
         }
         recursive_plan(rng, entity, ascension_level, num)
+    }
+
+    fn on_roll_move(
+        _ascension_level: u8,
+        entity: &MonsterEntity,
+        _num: i32,
+        plan: &MonsterTurnPlan,
+    ) -> Vec<Action> {
+        if plan.move_id == HASTE && !runtime(entity).used_haste {
+            vec![time_eater_runtime_update(entity, Some(true))]
+        } else {
+            Vec::new()
+        }
     }
 
     fn turn_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPlan {
@@ -333,11 +603,16 @@ impl MonsterBehavior for TimeEater {
                         ) => actions.push(remove_power_action(entity, step)),
                         MoveStep::Heal(crate::semantics::combat::HealStep {
                             target: MoveTarget::SelfTarget,
-                            amount,
-                        }) => actions.push(Action::Heal {
-                            target: entity.id,
-                            amount: *amount,
-                        }),
+                            ..
+                        }) => {
+                            let amount = haste_heal_amount(entity);
+                            if amount > 0 {
+                                actions.push(Action::Heal {
+                                    target: entity.id,
+                                    amount,
+                                });
+                            }
+                        }
                         MoveStep::GainBlock(
                             block @ BlockStep {
                                 target: MoveTarget::SelfTarget,

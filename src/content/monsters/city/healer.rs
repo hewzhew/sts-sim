@@ -15,6 +15,61 @@ const ATTACK: u8 = 1;
 const HEAL: u8 = 2;
 const BUFF: u8 = 3;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn heal_roll_counts_zero_hp_non_dying_allies_like_java_need_to_heal() {
+        let healer = crate::test_support::test_monster(EnemyId::Healer);
+        let mut ally = crate::test_support::test_monster(EnemyId::Centurion);
+        ally.id = 2;
+        ally.current_hp = 0;
+        ally.is_dying = false;
+        ally.is_escaped = false;
+        let monsters = vec![healer.clone(), ally];
+
+        let plan = Healer::roll_move_custom_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &healer,
+            0,
+            0,
+            &monsters,
+        );
+
+        assert_eq!(plan.move_id, HEAL);
+    }
+
+    #[test]
+    fn heal_turn_targets_zero_hp_non_dying_allies_like_java_loop() {
+        let healer = crate::test_support::test_monster(EnemyId::Healer);
+        let mut ally = crate::test_support::test_monster(EnemyId::Centurion);
+        ally.id = 2;
+        ally.current_hp = 0;
+        ally.is_dying = false;
+        ally.is_escaped = false;
+        let mut state = crate::test_support::combat_with_monsters(vec![healer.clone(), ally]);
+
+        let actions = Healer::take_turn_plan(&mut state, &healer, &heal_plan(0));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::Heal {
+                    target: 1,
+                    amount: 16
+                },
+                Action::Heal {
+                    target: 2,
+                    amount: 16
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+}
+
 enum HealerTurn<'a> {
     Attack(&'a AttackSpec, &'a ApplyPowerStep),
     Heal(&'a HealStep),

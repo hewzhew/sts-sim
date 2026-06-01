@@ -4,25 +4,21 @@ use smallvec::SmallVec;
 pub struct HornCleat;
 
 impl HornCleat {
-    pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
-        let mut actions = SmallVec::new();
-        // Native reset for per-battle turn counters
-        actions.push(ActionInfo {
-            action: Action::UpdateRelicCounter {
-                relic_id: crate::content::relics::RelicId::HornCleat,
-                counter: 0,
-            },
-            insertion_mode: AddTo::Bottom,
-        });
-        actions
+    pub fn at_battle_start(relic_state: &mut crate::content::relics::RelicState) {
+        relic_state.counter = 0;
     }
 
-    pub fn at_turn_start(counter: i32) -> SmallVec<[ActionInfo; 4]> {
+    pub fn at_turn_start(
+        relic_state: &mut crate::content::relics::RelicState,
+    ) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
-        let current = if counter == -1 { 0 } else { counter };
+        if relic_state.counter < 0 {
+            return actions;
+        }
 
-        // At start of 2nd turn
-        if current == 1 {
+        relic_state.counter += 1;
+
+        if relic_state.counter == 2 {
             actions.push(ActionInfo {
                 action: Action::GainBlock {
                     target: 0,
@@ -30,18 +26,13 @@ impl HornCleat {
                 },
                 insertion_mode: AddTo::Bottom,
             });
-        }
-
-        if current < 2 {
-            // Keep incrementing internally so counter represents current_turn mapped accurately.
-            actions.push(ActionInfo {
-                action: Action::UpdateRelicCounter {
-                    relic_id: crate::content::relics::RelicId::HornCleat,
-                    counter: current + 1,
-                },
-                insertion_mode: AddTo::Bottom,
-            });
+            relic_state.counter = -1;
         }
         actions
+    }
+
+    pub fn on_victory(relic_state: &mut crate::content::relics::RelicState) {
+        relic_state.counter = -1;
+        relic_state.used_up = false;
     }
 }

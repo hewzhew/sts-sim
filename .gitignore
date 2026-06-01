@@ -1,10 +1,12 @@
 # Rust (all nested target dirs too)
 /target/
 **/target/
+/target_codex*/
 
 # Python
 **/__pycache__/
 *.pyc
+.venv-ai/
 
 # Generated outputs (re-generate with tools)
 tools/source_extractor/output/

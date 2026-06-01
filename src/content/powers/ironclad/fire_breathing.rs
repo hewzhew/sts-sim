@@ -1,11 +1,11 @@
 use crate::content::cards::{get_card_definition, CardType};
-use crate::runtime::action::{repeated_damage_matrix, Action, DamageType};
+use crate::runtime::action::{repeated_damage_matrix, Action, DamageType, NO_SOURCE};
 use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 pub fn on_card_drawn(
     state: &CombatState,
-    owner: crate::core::EntityId,
+    _owner: crate::core::EntityId,
     card_id: crate::content::cards::CardId,
     amount: i32,
 ) -> SmallVec<[Action; 2]> {
@@ -13,9 +13,9 @@ pub fn on_card_drawn(
     let def = get_card_definition(card_id);
     if def.card_type == CardType::Status || def.card_type == CardType::Curse {
         actions.push(Action::DamageAllEnemies {
-            source: owner,
+            source: NO_SOURCE,
             damages: repeated_damage_matrix(state.entities.monsters.len(), amount),
-            damage_type: DamageType::Normal,
+            damage_type: DamageType::Thorns,
             is_modified: false,
         });
     }

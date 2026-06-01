@@ -8,6 +8,7 @@ pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
             pool: crate::runtime::action::CardRewardPool::Colorless,
             destination: crate::runtime::action::CardDestination::Hand,
             can_skip: false,
+            skip_if_monsters_basically_dead: false,
         },
         insertion_mode: crate::runtime::action::AddTo::Bottom,
     });

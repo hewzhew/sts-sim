@@ -1,3 +1,4 @@
+use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::EngineState;
 use crate::state::events::{EventChoiceMeta, EventState};
 use crate::state::run::RunState;
@@ -18,11 +19,7 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
     ))]
 }
 
-pub fn handle_choice(
-    _engine_state: &mut EngineState,
-    run_state: &mut RunState,
-    _choice_idx: usize,
-) {
+pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _choice_idx: usize) {
     let mut event_state = run_state.event_state.take().unwrap();
 
     match event_state.current_screen {
@@ -33,13 +30,16 @@ pub fn handle_choice(
             } else {
                 3
             };
-            // Add random potions to the potion inventory
-            for i in 0..potion_count {
-                let pid = run_state.random_potion();
-                let potion = crate::content::potions::Potion::new(pid, 10000 + i as u32);
-                run_state.obtain_potion(potion);
+            // Java adds potion RewardItems and opens the combat reward screen.
+            let mut rewards = RewardState::new();
+            for _ in 0..potion_count {
+                let pid = run_state.random_potion_flat();
+                rewards.items.push(RewardItem::Potion { potion_id: pid });
             }
             event_state.current_screen = 1;
+            run_state.event_state = Some(event_state);
+            *engine_state = EngineState::RewardScreen(rewards);
+            return;
         }
         _ => {
             event_state.completed = true;
@@ -47,4 +47,67 @@ pub fn handle_choice(
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_choice;
+    use crate::rewards::state::RewardItem;
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+
+    fn lab_run(ascension_level: u8) -> RunState {
+        let mut run_state = RunState::new(1, ascension_level, false, "Ironclad");
+        run_state.event_state = Some(EventState::new(EventId::Lab));
+        run_state.emitted_events.clear();
+        run_state
+    }
+
+    #[test]
+    fn lab_opens_three_potion_rewards_without_directly_filling_inventory() {
+        let mut run_state = lab_run(0);
+        let starting_potions = run_state.potions.clone();
+        let potion_rng_before = run_state.rng_pool.potion_rng.counter;
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(run_state.potions, starting_potions);
+        assert_eq!(
+            run_state.rng_pool.potion_rng.counter,
+            potion_rng_before + 3,
+            "Java Lab uses PotionHelper.getRandomPotion(), one flat potionRng index per reward"
+        );
+        assert!(run_state.take_emitted_events().is_empty());
+        match engine_state {
+            EngineState::RewardScreen(rewards) => {
+                assert_eq!(rewards.items.len(), 3);
+                assert!(rewards
+                    .items
+                    .iter()
+                    .all(|item| matches!(item, RewardItem::Potion { .. })));
+            }
+            other => panic!("expected reward screen, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lab_ascension_fifteen_opens_two_potion_rewards() {
+        let mut run_state = lab_run(15);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        match engine_state {
+            EngineState::RewardScreen(rewards) => {
+                assert_eq!(rewards.items.len(), 2);
+                assert!(rewards
+                    .items
+                    .iter()
+                    .all(|item| matches!(item, RewardItem::Potion { .. })));
+            }
+            other => panic!("expected reward screen, got {other:?}"),
+        }
+    }
 }

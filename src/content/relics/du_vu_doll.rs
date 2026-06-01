@@ -1,27 +1,17 @@
 use crate::content::relics::RelicState;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
-use crate::runtime::combat::CombatState;
+use crate::runtime::combat::{CombatCard, CombatState};
+use crate::state::core::EngineState;
+use crate::state::run::RunState;
 
 /// Du-Vu Doll: At the start of each combat, gain 1 Strength for each Curse in your deck.
 /// Java: atBattleStart() → count curses in masterDeck → applyPower(Strength, count)
-/// We count curses from the draw_pile + discard_pile + hand (all combat cards) since
-/// master_deck is not accessible from CombatState. The draw_pile at combat start IS the master_deck.
 pub fn at_battle_start(
-    state: &CombatState,
-    _relic: &mut RelicState,
+    _state: &CombatState,
+    relic: &mut RelicState,
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
-
-    // Count curses in draw pile (which at combat start contains the full deck)
-    let curse_count = state
-        .zones
-        .draw_pile
-        .iter()
-        .filter(|c| {
-            let def = crate::content::cards::get_card_definition(c.id);
-            def.card_type == crate::content::cards::CardType::Curse
-        })
-        .count() as i32;
+    let curse_count = relic.counter;
 
     if curse_count > 0 {
         actions.push(ActionInfo {
@@ -35,4 +25,27 @@ pub fn at_battle_start(
         });
     }
     actions
+}
+
+pub fn on_equip(run_state: &mut RunState) -> Option<EngineState> {
+    refresh_counters_from_deck(&run_state.master_deck, &mut run_state.relics);
+    None
+}
+
+pub fn refresh_counters_from_deck(deck: &[CombatCard], relics: &mut [RelicState]) {
+    let curse_count = curse_count_in_deck(deck);
+    for relic in relics {
+        if relic.id == crate::content::relics::RelicId::DuVuDoll {
+            relic.counter = curse_count;
+        }
+    }
+}
+
+pub fn curse_count_in_deck(deck: &[CombatCard]) -> i32 {
+    deck.iter()
+        .filter(|card| {
+            crate::content::cards::get_card_definition(card.id).card_type
+                == crate::content::cards::CardType::Curse
+        })
+        .count() as i32
 }

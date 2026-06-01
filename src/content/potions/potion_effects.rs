@@ -1,7 +1,9 @@
 use super::PotionId;
+use crate::content::cards::make_constructed_temp_card_in_hand_action;
 use crate::content::powers::PowerId;
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType, NO_SOURCE};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
 /// Player entity ID constant
@@ -19,13 +21,14 @@ fn bottom(actions: &mut SmallVec<[ActionInfo; 4]>, action: Action) {
 /// `target_idx`: Some(enemy_entity_id) for targeted/thrown potions, None for self.
 /// `potency`: the effective potency (base * SacredBark multiplier).
 pub fn get_potion_actions(
-    enemy_count: usize,
+    state: &CombatState,
     potion: PotionId,
     target_idx: Option<usize>,
     potency: i32,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let target = target_idx.unwrap_or(0) as EntityId;
+    let enemy_count = state.entities.monsters.len();
 
     match potion {
         // ────────────── Common (20) ──────────────
@@ -105,12 +108,15 @@ pub fn get_potion_actions(
             );
         }
         PotionId::BloodPotion => {
-            // Heal for potency% of Max HP. Negative sentinel triggers maxHP% calculation in handler.
+            // Java computes the percent heal when the potion is used and queues
+            // a HealAction with that fixed amount. Unlike Fairy Potion, Blood
+            // Potion does not clamp the amount to at least 1.
+            let amount = (state.entities.player.max_hp as f32 * (potency as f32 / 100.0)) as i32;
             bottom(
                 &mut actions,
                 Action::Heal {
                     target: PLAYER,
-                    amount: -(potency),
+                    amount,
                 },
             );
         }
@@ -207,7 +213,9 @@ pub fn get_potion_actions(
                 Action::SuspendForDiscovery {
                     colorless: false,
                     card_type: Some(crate::content::cards::CardType::Attack),
+                    amount: potency.max(0) as u8,
                     cost_for_turn: Some(0),
+                    can_skip: true,
                 },
             );
         }
@@ -218,7 +226,9 @@ pub fn get_potion_actions(
                 Action::SuspendForDiscovery {
                     colorless: false,
                     card_type: Some(crate::content::cards::CardType::Skill),
+                    amount: potency.max(0) as u8,
                     cost_for_turn: Some(0),
+                    can_skip: true,
                 },
             );
         }
@@ -231,7 +241,9 @@ pub fn get_potion_actions(
                 Action::SuspendForDiscovery {
                     colorless: false,
                     card_type: Some(crate::content::cards::CardType::Power),
+                    amount: potency.max(0) as u8,
                     cost_for_turn: Some(0),
+                    can_skip: true,
                 },
             );
         }
@@ -244,7 +256,9 @@ pub fn get_potion_actions(
                 Action::SuspendForDiscovery {
                     colorless: true,
                     card_type: None,
+                    amount: potency.max(0) as u8,
                     cost_for_turn: Some(0),
+                    can_skip: false,
                 },
             );
         }
@@ -252,11 +266,12 @@ pub fn get_potion_actions(
             // Add 2 Miracles to hand (Watcher)
             bottom(
                 &mut actions,
-                Action::MakeTempCardInHand {
-                    card_id: crate::content::cards::CardId::Miracle,
-                    amount: potency as u8,
-                    upgraded: false,
-                },
+                make_constructed_temp_card_in_hand_action(
+                    crate::content::cards::CardId::Miracle,
+                    potency as u8,
+                    false,
+                    state,
+                ),
             );
         }
         PotionId::BlessingOfTheForge => {
@@ -314,6 +329,9 @@ pub fn get_potion_actions(
             );
         }
         PotionId::DistilledChaosPotion => {
+            // Action::UsePotion handles this statefully so Java's
+            // getRandomMonster(cardRandomRng) target rolls happen when the
+            // potion is used, before any queued PlayTopCardAction executes.
             // Java adds one PlayTopCardAction per potency. Each action takes the
             // current top card when it executes, then appends that card to the
             // normal card queue.
@@ -344,11 +362,12 @@ pub fn get_potion_actions(
             // Java: creates UPGRADED Shiv, then MakeTempCardInHandAction(shiv, potency)
             bottom(
                 &mut actions,
-                Action::MakeTempCardInHand {
-                    card_id: crate::content::cards::CardId::Shiv,
-                    amount: potency as u8,
-                    upgraded: true,
-                },
+                make_constructed_temp_card_in_hand_action(
+                    crate::content::cards::CardId::Shiv,
+                    potency as u8,
+                    true,
+                    state,
+                ),
             );
         }
         PotionId::PotionOfCapacity => {
@@ -362,7 +381,7 @@ pub fn get_potion_actions(
                 &mut actions,
                 Action::SuspendForGridSelect {
                     source_pile: crate::state::PileType::Discard,
-                    min: 1,
+                    min: potency as u8,
                     max: potency as u8,
                     can_cancel: false,
                     filter: crate::state::GridSelectFilter::Any,
@@ -478,6 +497,9 @@ pub fn get_potion_actions(
             bottom(&mut actions, Action::EnterStance("Divinity".to_string()));
         }
         PotionId::EssenceOfDarkness => {
+            // Action::UsePotion handles this statefully because Java
+            // EssenceOfDarknessAction channels `potency` Dark orbs once for
+            // each current orb slot, not just `potency` total.
             for _ in 0..potency.max(0) {
                 bottom(
                     &mut actions,

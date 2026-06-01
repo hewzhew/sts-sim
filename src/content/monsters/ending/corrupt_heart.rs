@@ -20,6 +20,171 @@ const DEBILITATE: u8 = 3;
 const GAIN_ONE_STRENGTH: u8 = 4;
 const DEBUFF_AMOUNT: i32 = 2;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::{EnemyId, PreBattleLegacyRng};
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    fn power(power_type: PowerId, amount: i32) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
+
+    #[test]
+    fn pre_battle_invincible_and_beat_of_death_use_java_asc19_gate() {
+        let mut heart = crate::test_support::test_monster(EnemyId::CorruptHeart);
+        heart.id = 1;
+        let mut low = crate::test_support::combat_with_monsters(vec![heart.clone()]);
+        low.meta.ascension_level = 18;
+
+        let low_actions =
+            CorruptHeart::use_pre_battle_actions(&mut low, &heart, PreBattleLegacyRng::Misc);
+
+        assert_eq!(
+            low_actions,
+            vec![
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Invincible,
+                    amount: 300,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::BeatOfDeath,
+                    amount: 1,
+                },
+            ]
+        );
+
+        let mut high = crate::test_support::combat_with_monsters(vec![heart.clone()]);
+        high.meta.ascension_level = 19;
+
+        let high_actions =
+            CorruptHeart::use_pre_battle_actions(&mut high, &heart, PreBattleLegacyRng::Misc);
+
+        assert_eq!(
+            high_actions,
+            vec![
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Invincible,
+                    amount: 200,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::BeatOfDeath,
+                    amount: 2,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn first_roll_sets_debilitate_and_only_clears_first_move_like_java() {
+        let mut heart = crate::test_support::test_monster(EnemyId::CorruptHeart);
+        heart.id = 1;
+        heart.corrupt_heart.first_move = true;
+        heart.corrupt_heart.move_count = 7;
+
+        let plan =
+            CorruptHeart::roll_move_plan(&mut crate::runtime::rng::StsRng::new(0), &heart, 20, 0);
+        let actions = CorruptHeart::on_roll_move(20, &heart, 0, &plan);
+
+        assert_eq!(plan.move_id, DEBILITATE);
+        assert_eq!(
+            actions,
+            vec![Action::UpdateMonsterRuntime {
+                monster_id: 1,
+                patch: MonsterRuntimePatch::CorruptHeart {
+                    first_move: Some(false),
+                    move_count: None,
+                    buff_count: None,
+                    blood_hit_count: None,
+                    protocol_seeded: Some(true),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn painful_stabs_followup_uses_java_sentinel_amount() {
+        let mut heart = crate::test_support::test_monster(EnemyId::CorruptHeart);
+        heart.id = 1;
+        heart.corrupt_heart.buff_count = 2;
+        let plan = buff_plan(&heart, 2);
+        let mut state = crate::test_support::combat_with_monsters(vec![heart.clone()]);
+
+        let actions = CorruptHeart::take_turn_plan(&mut state, &heart, &plan);
+
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::PainfulStabs,
+                amount: -1,
+            }
+        )));
+    }
+
+    #[test]
+    fn buff_turn_updates_private_buff_count_before_queued_powers_execute() {
+        let mut heart = crate::test_support::test_monster(EnemyId::CorruptHeart);
+        heart.id = 1;
+        heart.corrupt_heart.buff_count = 1;
+        heart.set_planned_move_id(GAIN_ONE_STRENGTH);
+        let mut state = crate::test_support::combat_with_monsters(vec![heart.clone()]);
+        crate::content::powers::store::set_powers_for(
+            &mut state,
+            1,
+            vec![power(PowerId::Strength, -3)],
+        );
+
+        let plan = CorruptHeart::turn_plan(&state, &heart);
+        let actions = CorruptHeart::take_turn_plan(&mut state, &heart, &plan);
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::UpdateMonsterRuntime {
+                    monster_id: 1,
+                    patch: MonsterRuntimePatch::CorruptHeart {
+                        first_move: None,
+                        move_count: None,
+                        buff_count: Some(2),
+                        blood_hit_count: None,
+                        protocol_seeded: Some(true),
+                    },
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Strength,
+                    amount: 5,
+                },
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::BeatOfDeath,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        );
+    }
+}
+
 fn echo_attack_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 4 {
         45
@@ -28,7 +193,7 @@ fn echo_attack_damage(ascension_level: u8) -> i32 {
     }
 }
 
-fn blood_hit_count(ascension_level: u8) -> u8 {
+fn initial_blood_hit_count(ascension_level: u8) -> u8 {
     if ascension_level >= 4 {
         15
     } else {
@@ -36,11 +201,24 @@ fn blood_hit_count(ascension_level: u8) -> u8 {
     }
 }
 
-fn current_runtime(entity: &MonsterEntity) -> (bool, u8, u8) {
+pub fn initialize_runtime_state(entity: &mut MonsterEntity, ascension_level: u8) {
+    entity.corrupt_heart.protocol_seeded = true;
+    entity.corrupt_heart.first_move = true;
+    entity.corrupt_heart.move_count = 0;
+    entity.corrupt_heart.buff_count = 0;
+    entity.corrupt_heart.blood_hit_count = initial_blood_hit_count(ascension_level);
+}
+
+fn current_runtime(entity: &MonsterEntity) -> (bool, u8, u8, u8) {
+    assert!(
+        entity.corrupt_heart.protocol_seeded,
+        "CorruptHeart runtime must be factory/protocol seeded before semantic use"
+    );
     (
         entity.corrupt_heart.first_move,
         entity.corrupt_heart.move_count,
         entity.corrupt_heart.buff_count,
+        entity.corrupt_heart.blood_hit_count,
     )
 }
 
@@ -49,6 +227,7 @@ fn corrupt_heart_runtime_update(
     first_move: Option<bool>,
     move_count: Option<u8>,
     buff_count: Option<u8>,
+    blood_hit_count: Option<u8>,
 ) -> Action {
     Action::UpdateMonsterRuntime {
         monster_id: entity.id,
@@ -56,6 +235,7 @@ fn corrupt_heart_runtime_update(
             first_move,
             move_count,
             buff_count,
+            blood_hit_count,
             protocol_seeded: Some(true),
         },
     }
@@ -134,12 +314,12 @@ fn debilitate_plan() -> MonsterTurnPlan {
     )
 }
 
-fn blood_shots_plan(ascension_level: u8) -> MonsterTurnPlan {
+fn blood_shots_plan(hit_count: u8) -> MonsterTurnPlan {
     MonsterTurnPlan::from_spec(
         BLOOD_SHOTS,
         MonsterMoveSpec::Attack(AttackSpec {
             base_damage: 2,
-            hits: blood_hit_count(ascension_level),
+            hits: hit_count,
             damage_kind: DamageKind::Normal,
         }),
     )
@@ -179,7 +359,7 @@ fn buff_followup_step(buff_count: u8) -> MoveStep {
         2 => MoveStep::ApplyPower(ApplyPowerStep {
             target: MoveTarget::SelfTarget,
             power_id: PowerId::PainfulStabs,
-            amount: 1,
+            amount: -1,
             effect: PowerEffectKind::Buff,
             visible_strength: EffectStrength::Normal,
         }),
@@ -201,7 +381,7 @@ fn buff_followup_step(buff_count: u8) -> MoveStep {
 }
 
 fn buff_plan(entity: &MonsterEntity, strength_amount: i32) -> MonsterTurnPlan {
-    let (_, _, buff_count) = current_runtime(entity);
+    let (_, _, buff_count, _) = current_runtime(entity);
     MonsterTurnPlan::with_visible_spec(
         GAIN_ONE_STRENGTH,
         smallvec![
@@ -232,7 +412,10 @@ fn turn_buff_plan(state: &CombatState, entity: &MonsterEntity) -> MonsterTurnPla
 fn plan_for(state: &CombatState, entity: &MonsterEntity, move_id: u8) -> MonsterTurnPlan {
     match move_id {
         DEBILITATE => debilitate_plan(),
-        BLOOD_SHOTS => blood_shots_plan(state.meta.ascension_level),
+        BLOOD_SHOTS => {
+            let (_, _, _, blood_hit_count) = current_runtime(entity);
+            blood_shots_plan(blood_hit_count)
+        }
         ECHO_ATTACK => echo_attack_plan(state.meta.ascension_level),
         GAIN_ONE_STRENGTH => turn_buff_plan(state, entity),
         _ => MonsterTurnPlan::unknown(move_id),
@@ -271,7 +454,7 @@ impl MonsterBehavior for CorruptHeart {
         ascension_level: u8,
         _num: i32,
     ) -> MonsterTurnPlan {
-        let (first_move, move_count, _) = current_runtime(entity);
+        let (first_move, move_count, _, blood_hit_count) = current_runtime(entity);
         if first_move {
             return debilitate_plan();
         }
@@ -279,7 +462,7 @@ impl MonsterBehavior for CorruptHeart {
         match move_count % 3 {
             0 => {
                 if rng.random_boolean() {
-                    blood_shots_plan(ascension_level)
+                    blood_shots_plan(blood_hit_count)
                 } else {
                     echo_attack_plan(ascension_level)
                 }
@@ -288,7 +471,7 @@ impl MonsterBehavior for CorruptHeart {
                 if !last_move(entity, ECHO_ATTACK) {
                     echo_attack_plan(ascension_level)
                 } else {
-                    blood_shots_plan(ascension_level)
+                    blood_shots_plan(blood_hit_count)
                 }
             }
             _ => roll_buff_plan(entity),
@@ -301,15 +484,16 @@ impl MonsterBehavior for CorruptHeart {
         _num: i32,
         _plan: &MonsterTurnPlan,
     ) -> Vec<Action> {
-        let (first_move, move_count, buff_count) = current_runtime(entity);
+        let (first_move, move_count, buff_count, _) = current_runtime(entity);
         vec![if first_move {
-            corrupt_heart_runtime_update(entity, Some(false), None, None)
+            corrupt_heart_runtime_update(entity, Some(false), None, None, None)
         } else {
             corrupt_heart_runtime_update(
                 entity,
                 None,
                 Some(move_count.saturating_add(1)),
                 Some(buff_count),
+                None,
             )
         }]
     }
@@ -348,16 +532,17 @@ impl MonsterBehavior for CorruptHeart {
                 GAIN_ONE_STRENGTH,
                 [MoveStep::ApplyPower(strength_step), MoveStep::ApplyPower(followup_step)],
             ) => {
-                let (_, _, buff_count) = current_runtime(entity);
+                let (_, _, buff_count, _) = current_runtime(entity);
                 vec![
-                    apply_power_action(entity, strength_step),
-                    apply_power_action(entity, followup_step),
                     corrupt_heart_runtime_update(
                         entity,
                         None,
                         None,
                         Some(buff_count.saturating_add(1)),
+                        None,
                     ),
+                    apply_power_action(entity, strength_step),
+                    apply_power_action(entity, followup_step),
                 ]
             }
             (_, []) => panic!("corrupt heart plan missing locked truth: {}", plan.move_id),

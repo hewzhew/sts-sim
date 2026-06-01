@@ -1,4 +1,4 @@
-use crate::content::relics::{RelicId, RelicState};
+use crate::content::relics::RelicId;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -53,15 +53,18 @@ pub fn handle(
                     .iter()
                     .any(|r| r.id == RelicId::DreamCatcher)
                 {
-                    let cards = crate::rewards::generator::generate_card_reward(
+                    let cards = crate::state::rewards::generator::generate_card_reward(
                         run_state,
-                        crate::rewards::generator::adjusted_card_reward_choice_count(run_state, 3),
+                        crate::state::rewards::generator::adjusted_card_reward_choice_count(
+                            run_state, 3,
+                        ),
+                        false,
                         false,
                     );
-                    let mut reward_state = crate::rewards::state::RewardState::new();
+                    let mut reward_state = crate::state::rewards::RewardState::new();
                     reward_state
                         .items
-                        .push(crate::rewards::state::RewardItem::Card { cards });
+                        .push(crate::state::rewards::RewardItem::Card { cards });
                     *engine_state = EngineState::RewardScreen(reward_state);
                     return true;
                 }
@@ -81,10 +84,10 @@ pub fn handle(
             CampfireChoice::Dig => {
                 // Shovel: Java → Dig grants relic via reward screen (AbstractRoom.addRelicToRewards)
                 let id = run_state.random_relic();
-                let mut reward_state = crate::rewards::state::RewardState::new();
+                let mut reward_state = crate::state::rewards::RewardState::new();
                 reward_state
                     .items
-                    .push(crate::rewards::state::RewardItem::Relic { relic_id: id });
+                    .push(crate::state::rewards::RewardItem::Relic { relic_id: id });
                 *engine_state = EngineState::RewardScreen(reward_state);
             }
 
@@ -99,14 +102,11 @@ pub fn handle(
             }
 
             CampfireChoice::Toke(idx) => {
-                // Peace Pipe: remove a card from master_deck.
-                // Java: Toke filters out bottled cards — cards attached to
-                // BottledFlame / BottledLightning / BottledTornado are not removable.
-                // Currently CombatCard lacks bottled flags; once added, filter here.
                 if idx < run_state.master_deck.len() {
-                    // Guard: skip bottled cards (when tracking is implemented)
                     let card = &run_state.master_deck[idx];
-                    if !is_card_bottled(card, &run_state.relics) {
+                    if crate::state::core::master_deck_card_is_purgeable(card)
+                        && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
+                    {
                         let uuid = card.uuid;
                         run_state.remove_card_from_deck_with_source(
                             uuid,
@@ -130,9 +130,12 @@ pub fn handle(
 #[cfg(test)]
 mod tests {
     use super::handle;
+    use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::combat::CombatCard;
     use crate::state::core::{CampfireChoice, ClientInput, EngineState};
     use crate::state::run::RunState;
+    use crate::state::selection::{DomainEvent, DomainEventSource};
 
     #[test]
     fn dream_catcher_reward_respects_question_card() {
@@ -154,33 +157,132 @@ mod tests {
 
         match engine_state {
             EngineState::RewardScreen(ref reward_state) => match &reward_state.items[0] {
-                crate::rewards::state::RewardItem::Card { cards } => assert_eq!(cards.len(), 4),
+                crate::state::rewards::RewardItem::Card { cards } => assert_eq!(cards.len(), 4),
                 other => panic!("expected card reward, got {other:?}"),
             },
             other => panic!("expected reward screen, got {other:?}"),
         }
     }
-}
 
-/// Check if a card is bottled (attached to BottledFlame/Lightning/Tornado).
-/// Java stores the card UUID in the relic's `misc` field; our RelicState uses `amount` for this.
-/// For now: RelicState.amount stores the bottled card's UUID.
-/// A value of 0 means no card is bottled (since UUIDs start at 1).
-fn is_card_bottled(card: &crate::runtime::combat::CombatCard, relics: &[RelicState]) -> bool {
-    if card.uuid == 0 {
-        return false;
-    } // UUID 0 = not a real bottled target
-    for relic in relics {
-        match relic.id {
-            RelicId::BottledFlame | RelicId::BottledLightning | RelicId::BottledTornado => {
-                if relic.amount == card.uuid as i32 {
-                    return true;
-                }
-            }
-            _ => {}
-        }
+    #[test]
+    fn regal_pillow_adds_to_rest_heal_but_mark_of_bloom_blocks_it() {
+        let mut engine_state = EngineState::Campfire;
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 20;
+        run_state.max_hp = 80;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::RegalPillow));
+
+        assert!(handle(
+            &mut engine_state,
+            &mut run_state,
+            Some(ClientInput::CampfireOption(CampfireChoice::Rest))
+        ));
+        assert_eq!(run_state.current_hp, 59);
+        assert!(matches!(engine_state, EngineState::MapNavigation));
+
+        let mut blocked_engine = EngineState::Campfire;
+        let mut blocked = RunState::new(1, 0, false, "Ironclad");
+        blocked.current_hp = 20;
+        blocked.max_hp = 80;
+        blocked.relics.clear();
+        blocked.relics.push(RelicState::new(RelicId::RegalPillow));
+        blocked
+            .relics
+            .push(RelicState::new(RelicId::MarkOfTheBloom));
+
+        assert!(handle(
+            &mut blocked_engine,
+            &mut blocked,
+            Some(ClientInput::CampfireOption(CampfireChoice::Rest))
+        ));
+        assert_eq!(blocked.current_hp, 20);
+        assert!(matches!(blocked_engine, EngineState::MapNavigation));
     }
-    false
+
+    #[test]
+    fn peace_pipe_toke_option_uses_java_non_bottled_purgeable_gate() {
+        let mut blocked = RunState::new(1, 0, false, "Ironclad");
+        blocked.master_deck = vec![
+            CombatCard::new(CardId::AscendersBane, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ];
+        blocked.relics.clear();
+        blocked.relics.push(RelicState::new(RelicId::PeacePipe));
+        let mut bottle = RelicState::new(RelicId::BottledLightning);
+        bottle.amount = 12;
+        blocked.relics.push(bottle);
+
+        assert!(
+            !super::get_available_options(&blocked)
+                .iter()
+                .any(|choice| matches!(choice, CampfireChoice::Toke(_))),
+            "Java PeacePipe.addCampfireOption disables Toke when getGroupWithoutBottledCards(getPurgeableCards()) is empty"
+        );
+
+        let mut allowed = blocked;
+        allowed
+            .master_deck
+            .push(CombatCard::new(CardId::Strike, 13));
+
+        assert!(super::get_available_options(&allowed)
+            .iter()
+            .any(|choice| matches!(choice, CampfireChoice::Toke(_))));
+    }
+
+    #[test]
+    fn campfire_toke_rejects_unpurgeable_and_bottled_direct_indices() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::AscendersBane, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ];
+        run_state.relics.clear();
+        let mut bottle = RelicState::new(RelicId::BottledLightning);
+        bottle.amount = 12;
+        run_state.relics.push(bottle);
+        run_state.emitted_events.clear();
+
+        let mut engine_state = EngineState::Campfire;
+        assert!(handle(
+            &mut engine_state,
+            &mut run_state,
+            Some(ClientInput::CampfireOption(CampfireChoice::Toke(1)))
+        ));
+        assert_eq!(run_state.master_deck.len(), 3);
+
+        engine_state = EngineState::Campfire;
+        assert!(handle(
+            &mut engine_state,
+            &mut run_state,
+            Some(ClientInput::CampfireOption(CampfireChoice::Toke(2)))
+        ));
+        assert_eq!(run_state.master_deck.len(), 3);
+
+        engine_state = EngineState::Campfire;
+        assert!(handle(
+            &mut engine_state,
+            &mut run_state,
+            Some(ClientInput::CampfireOption(CampfireChoice::Toke(0)))
+        ));
+        assert_eq!(
+            run_state
+                .master_deck
+                .iter()
+                .map(|card| (card.id, card.uuid))
+                .collect::<Vec<_>>(),
+            vec![(CardId::AscendersBane, 11), (CardId::Defend, 12)]
+        );
+        assert!(matches!(engine_state, EngineState::MapNavigation));
+        assert!(run_state.emitted_events.iter().any(|event| matches!(
+            event,
+            DomainEvent::CardRemoved {
+                card,
+                source: DomainEventSource::CampfireToke,
+            } if card.id == CardId::Strike && card.uuid == 10
+        )));
+    }
 }
 
 /// Dispatch card pool by player class and rarity.
@@ -264,12 +366,7 @@ pub fn get_available_options(run_state: &RunState) -> Vec<CampfireChoice> {
                 options.push(CampfireChoice::Dig);
             }
             RelicId::PeacePipe => {
-                // Only offer Toke if there are non-bottled removable cards
-                let has_removable = run_state
-                    .master_deck
-                    .iter()
-                    .any(|c| !is_card_bottled(c, &run_state.relics));
-                if has_removable {
+                if crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state) {
                     options.push(CampfireChoice::Toke(0)); // Index 0 placeholder
                 }
             }

@@ -15,7 +15,6 @@ pub mod centennial_puzzle;
 pub mod champion_belt;
 pub mod charons_ashes;
 pub mod clockwork_souvenir;
-pub mod dark_blood;
 pub mod dodecahedron;
 pub mod fossilized_helix;
 pub mod girya;
@@ -78,7 +77,6 @@ pub mod frozen_egg;
 pub mod frozen_eye;
 pub mod gambling_chip;
 pub mod ginger;
-pub mod gold_plated_cables;
 pub mod golden_eye;
 pub mod golden_idol;
 pub mod gremlin_mask;
@@ -109,6 +107,7 @@ pub mod pen_nib;
 pub mod potion_belt;
 pub mod preserved_insect;
 pub mod question_card;
+pub mod red_circlet;
 pub mod red_mask;
 pub mod sacred_bark;
 pub mod self_forming_clay;
@@ -173,7 +172,12 @@ pub mod waffle;
 pub mod war_paint;
 pub mod whetstone;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg(test)]
+mod tests;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum RelicTier {
     Starter,
     Common,
@@ -186,7 +190,7 @@ pub enum RelicTier {
     Deprecated,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Serialize)]
 pub enum RelicId {
     Abacus,
     Akabeko,
@@ -228,7 +232,6 @@ pub enum RelicId {
     CultistMask,
     CursedKey,
     Damaru,
-    DarkBlood,
     DarkstonePeriapt,
     DataDisk,
     DeadBranch,
@@ -317,6 +320,7 @@ pub enum RelicId {
     PrismaticShard,
     PureWater,
     QuestionCard,
+    RedCirclet,
     RedMask,
     RedSkull,
     RegalPillow,
@@ -372,7 +376,7 @@ pub enum RelicId {
     WristBlade,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct RelicState {
     pub id: RelicId,
     pub counter: i32,
@@ -392,11 +396,14 @@ impl RelicState {
             | RelicId::Nunchaku
             | RelicId::InkBottle
             | RelicId::IncenseBurner
+            | RelicId::Girya
             | RelicId::HappyFlower
             | RelicId::Sundial
             | RelicId::OrnamentalFan
             | RelicId::StoneCalendar
+            | RelicId::Inserter
             | RelicId::TinyChest => counter = 0,
+            RelicId::Circlet => counter = 1,
             _ => {}
         }
 
@@ -414,7 +421,7 @@ pub fn get_relic_tier(id: RelicId) -> RelicTier {
     use RelicId::*;
     match id {
         // Starter
-        BurningBlood | CrackedCore | PureWater | SnakeRing | DarkBlood => RelicTier::Starter,
+        BurningBlood | CrackedCore | PureWater | SnakeRing => RelicTier::Starter,
         // Common (shared)
         Akabeko | Anchor | AncientTeaSet | ArtOfWar | BagOfMarbles | BagOfPreparation
         | BloodVial | Boot | BronzeScales | CentennialPuzzle | CeramicFish | DreamCatcher
@@ -426,10 +433,11 @@ pub fn get_relic_tier(id: RelicId) -> RelicTier {
         Damaru | DataDisk | RedSkull | SneckoSkull => RelicTier::Common,
         // Uncommon (shared)
         BlueCandle | BottledFlame | BottledLightning | BottledTornado | Courier
-        | DarkstonePeriapt | EternalFeather | FrozenEgg | GremlinHorn | HornCleat | InkBottle
-        | Kunai | LetterOpener | Matryoshka | MeatOnTheBone | MercuryHourglass | MoltenEgg
-        | MummifiedHand | OrnamentalFan | Pantograph | Pear | QuestionCard | Shuriken
-        | SingingBowl | StrikeDummy | Sundial | ToxicEgg | WhiteBeastStatue => RelicTier::Uncommon,
+        | DarkstonePeriapt | DiscerningMonocle | EternalFeather | FrozenEgg | GremlinHorn
+        | HornCleat | InkBottle | Kunai | LetterOpener | Matryoshka | MeatOnTheBone
+        | MercuryHourglass | MoltenEgg | MummifiedHand | OrnamentalFan | Pantograph | Pear
+        | QuestionCard | Shuriken | SingingBowl | StrikeDummy | Sundial | ToxicEgg
+        | WhiteBeastStatue => RelicTier::Uncommon,
         // Uncommon (class-specific)
         Duality | GoldPlatedCables | NinjaScroll | PaperCrane | PaperFrog | SelfFormingClay
         | SymbioticVirus | TeardropLocket => RelicTier::Uncommon,
@@ -454,41 +462,18 @@ pub fn get_relic_tier(id: RelicId) -> RelicTier {
             RelicTier::Boss
         }
         // Shop (shared)
-        Abacus | Cauldron | ChemicalX | ClockworkSouvenir | DiscerningMonocle | DollysMirror
-        | FrozenEye | HandDrill | MedicalKit | MembershipCard | OrangePellets | Orrery
-        | PrismaticShard | Sling | StrangeSpoon | Toolbox | Waffle => RelicTier::Shop,
+        Abacus | Cauldron | ChemicalX | ClockworkSouvenir | DollysMirror | FrozenEye
+        | HandDrill | MedicalKit | MembershipCard | OrangePellets | Orrery | PrismaticShard
+        | Sling | StrangeSpoon | Toolbox | Waffle => RelicTier::Shop,
         // Shop (class-specific)
         Brimstone | Melange | RunicCapacitor | TwistedFunnel => RelicTier::Shop,
         // Special / Event (never in relic pools)
         BloodyIdol | Circlet | CultistMask | Enchiridion | FaceOfCleric | GoldenIdol
         | GremlinMask | MarkOfTheBloom | MutagenicStrength | Necronomicon | NeowsLament
-        | NilrysCodex | NlothsGift | NlothsMask | OddMushroom | RedMask | SpiritPoop
-        | SsserpentHead | WarpedTongs => RelicTier::Special,
-        // Fallback
-        _ => RelicTier::Special,
-    }
-}
-
-/// Indicates which player class a relic belongs to.
-/// Shared relics return None. Class-specific relics return Some(class_name).
-fn relic_class(id: RelicId) -> Option<&'static str> {
-    use RelicId::*;
-    match id {
-        // Red (Ironclad)
-        BlackBlood | Brimstone | BurningBlood | ChampionBelt | CharonsAshes | DarkBlood
-        | MagicFlower | MarkOfPain | PaperFrog | RedSkull | RunicCube | SelfFormingClay => {
-            Some("Ironclad")
-        }
-        // Green (Silent)
-        HoveringKite | NinjaScroll | PaperCrane | RingOfTheSerpent | SnakeRing | SneckoSkull
-        | TheSpecimen | Tingsha | ToughBandages | TwistedFunnel | WristBlade => Some("Silent"),
-        // Blue (Defect)
-        CrackedCore | DataDisk | EmotionChip | FrozenCore | GoldPlatedCables | Inserter
-        | NuclearBattery | RunicCapacitor | SymbioticVirus => Some("Defect"),
-        // Purple (Watcher)
-        CloakClasp | Damaru | Duality | GoldenEye | HolyWater | Melange | PureWater
-        | TeardropLocket | VioletLotus => Some("Watcher"),
-        _ => None,
+        | NilrysCodex | NlothsGift | NlothsMask | OddMushroom | RedCirclet | RedMask
+        | SpiritPoop | SsserpentHead | WarpedTongs => RelicTier::Special,
+        // Deprecated Java relics are source-backed but not reachable through normal pools.
+        Dodecahedron => RelicTier::Deprecated,
     }
 }
 
@@ -497,201 +482,216 @@ fn relic_class(id: RelicId) -> Option<&'static str> {
 /// Mirrors Java's `RelicLibrary.populateRelicPool(pool, tier, playerClass)`.
 pub fn build_relic_pool(tier: RelicTier, player_class: &str) -> Vec<RelicId> {
     use RelicId::*;
-    // All known RelicIds — iterate and filter
-    const ALL_RELICS: &[RelicId] = &[
-        Abacus,
-        Akabeko,
-        Anchor,
-        AncientTeaSet,
-        ArtOfWar,
-        Astrolabe,
-        BagOfMarbles,
-        BagOfPreparation,
-        BirdFacedUrn,
-        BlackBlood,
-        BlackStar,
-        BloodVial,
-        BloodyIdol,
-        BlueCandle,
-        Boot,
-        BottledFlame,
-        BottledLightning,
-        BottledTornado,
-        Brimstone,
-        BronzeScales,
-        BurningBlood,
-        BustedCrown,
-        Calipers,
-        CallingBell,
-        CaptainsWheel,
-        Cauldron,
-        CentennialPuzzle,
-        CeramicFish,
-        ChampionBelt,
-        CharonsAshes,
-        ChemicalX,
-        Circlet,
-        CloakClasp,
-        ClockworkSouvenir,
-        CoffeeDripper,
-        Courier,
-        CrackedCore,
-        CultistMask,
-        CursedKey,
-        Damaru,
-        DarkBlood,
-        DarkstonePeriapt,
-        DataDisk,
-        DeadBranch,
-        Dodecahedron,
-        DiscerningMonocle,
-        DollysMirror,
-        DreamCatcher,
-        DuVuDoll,
-        Duality,
-        Ectoplasm,
-        EmotionChip,
-        EmptyCage,
-        Enchiridion,
-        EternalFeather,
-        FaceOfCleric,
-        FossilizedHelix,
-        FrozenCore,
-        FrozenEgg,
-        FrozenEye,
-        FusionHammer,
-        GamblingChip,
-        Ginger,
-        Girya,
-        GoldPlatedCables,
-        GoldenEye,
-        GoldenIdol,
-        GremlinHorn,
-        GremlinMask,
-        HandDrill,
-        HappyFlower,
-        HolyWater,
-        HornCleat,
-        HoveringKite,
-        IceCream,
-        IncenseBurner,
-        InkBottle,
-        Inserter,
-        JuzuBracelet,
-        Kunai,
-        Lantern,
-        LetterOpener,
-        LizardTail,
-        MagicFlower,
-        Mango,
-        MarkOfPain,
-        MarkOfTheBloom,
-        Matryoshka,
-        MawBank,
-        MealTicket,
-        MeatOnTheBone,
-        MedicalKit,
-        Melange,
-        MembershipCard,
-        MercuryHourglass,
-        MoltenEgg,
-        MummifiedHand,
-        MutagenicStrength,
-        Necronomicon,
-        NeowsLament,
-        NilrysCodex,
-        NinjaScroll,
-        NlothsGift,
-        NlothsMask,
-        NuclearBattery,
-        Nunchaku,
-        OddMushroom,
-        OddlySmoothStone,
-        OldCoin,
-        Omamori,
-        OrangePellets,
-        Orichalcum,
-        OrnamentalFan,
-        Orrery,
-        PandorasBox,
-        Pantograph,
-        PaperCrane,
-        PaperFrog,
-        PeacePipe,
-        Pear,
-        PenNib,
-        PhilosopherStone,
-        Pocketwatch,
-        PotionBelt,
-        PrayerWheel,
-        PreservedInsect,
-        PrismaticShard,
-        PureWater,
-        QuestionCard,
-        RedMask,
-        RedSkull,
-        RegalPillow,
-        RingOfTheSerpent,
-        RunicCapacitor,
-        RunicCube,
-        RunicDome,
-        RunicPyramid,
-        SacredBark,
-        SelfFormingClay,
-        Shovel,
-        Shuriken,
-        SingingBowl,
-        SlaversCollar,
-        Sling,
-        SmilingMask,
-        SnakeRing,
-        SneckoEye,
-        SneckoSkull,
-        Sozu,
+    // Relics registered by Java's RelicLibrary.initialize(), in Java HashMap
+    // entrySet traversal order. Source-present but unregistered relics, such as
+    // Discerning Monocle, must not enter pools.
+    const SHARED_RELICS_JAVA_HASHMAP_ORDER: &[RelicId] = &[
         SpiritPoop,
-        SsserpentHead,
-        StoneCalendar,
-        StrangeSpoon,
-        Strawberry,
-        StrikeDummy,
-        Sundial,
-        SymbioticVirus,
-        TeardropLocket,
-        TheSpecimen,
-        ThreadAndNeedle,
-        Tingsha,
-        TinyChest,
-        TinyHouse,
-        Toolbox,
-        Torii,
-        ToughBandages,
-        ToxicEgg,
-        ToyOrnithopter,
-        TungstenRod,
-        Turnip,
-        TwistedFunnel,
-        UnceasingTop,
-        Vajra,
-        VelvetChoker,
-        VioletLotus,
-        Waffle,
-        WarPaint,
-        WarpedTongs,
+        Ginger,
         Whetstone,
-        WhiteBeastStatue,
+        BottledTornado,
+        Boot,
+        Sling,
+        OldCoin,
+        BloodVial,
+        Sundial,
+        MealTicket,
+        FusionHammer,
+        HandDrill,
+        Necronomicon,
+        Kunai,
+        Pear,
+        BlueCandle,
+        VelvetChoker,
+        EternalFeather,
+        PenNib,
+        Akabeko,
+        RunicDome,
+        SlaversCollar,
+        BirdFacedUrn,
+        MutagenicStrength,
+        SneckoEye,
+        PandorasBox,
+        CultistMask,
+        StrikeDummy,
+        UnceasingTop,
+        Lantern,
+        RegalPillow,
+        SingingBowl,
+        Torii,
+        GremlinMask,
+        StoneCalendar,
+        BagOfPreparation,
+        AncientTeaSet,
+        CursedKey,
+        SmilingMask,
+        Matryoshka,
+        Shovel,
+        Toolbox,
         WingBoots,
+        ChemicalX,
+        InkBottle,
+        PotionBelt,
+        Waffle,
+        NeowsLament,
+        GoldenIdol,
+        ThreadAndNeedle,
+        Courier,
+        PreservedInsect,
+        Omamori,
+        FrozenEgg,
+        MawBank,
+        BustedCrown,
+        OrnamentalFan,
+        BloodyIdol,
+        Orrery,
+        Ectoplasm,
+        Turnip,
+        ArtOfWar,
+        BottledLightning,
+        ToyOrnithopter,
+        IceCream,
+        MarkOfTheBloom,
+        Calipers,
+        TinyHouse,
+        GremlinHorn,
+        NilrysCodex,
+        CeramicFish,
+        Vajra,
+        Sozu,
+        CentennialPuzzle,
+        LizardTail,
+        HornCleat,
+        FaceOfCleric,
+        DollysMirror,
+        Strawberry,
+        PhilosopherStone,
+        PrayerWheel,
+        ToxicEgg,
+        Girya,
+        HappyFlower,
+        Astrolabe,
+        DeadBranch,
+        OddlySmoothStone,
+        LetterOpener,
+        WarPaint,
+        QuestionCard,
+        WarpedTongs,
+        DuVuDoll,
+        OrangePellets,
+        BottledFlame,
+        Shuriken,
+        BronzeScales,
+        MoltenEgg,
+        BlackStar,
+        NlothsGift,
+        MeatOnTheBone,
+        NlothsMask,
+        Pocketwatch,
+        DarkstonePeriapt,
+        SacredBark,
+        Enchiridion,
+        Mango,
+        IncenseBurner,
+        JuzuBracelet,
+        EmptyCage,
+        PrismaticShard,
+        ClockworkSouvenir,
+        FrozenEye,
+        SsserpentHead,
+        DreamCatcher,
+        Nunchaku,
+        Abacus,
+        MummifiedHand,
+        GamblingChip,
+        Pantograph,
+        TinyChest,
+        RedMask,
+        RunicPyramid,
+        OddMushroom,
+        Orichalcum,
+        MedicalKit,
+        WhiteBeastStatue,
+        MercuryHourglass,
+        CallingBell,
+        PeacePipe,
+        Cauldron,
+        StrangeSpoon,
+        Anchor,
+        CaptainsWheel,
+        BagOfMarbles,
+        CoffeeDripper,
+        MembershipCard,
+        FossilizedHelix,
+        TungstenRod,
+    ];
+    const IRONCLAD_RELICS_JAVA_HASHMAP_ORDER: &[RelicId] = &[
+        Brimstone,
+        SelfFormingClay,
+        BlackBlood,
+        MagicFlower,
+        CharonsAshes,
+        MarkOfPain,
+        ChampionBelt,
+        BurningBlood,
+        RedSkull,
+        PaperFrog,
+        RunicCube,
+    ];
+    const SILENT_RELICS_JAVA_HASHMAP_ORDER: &[RelicId] = &[
+        TwistedFunnel,
+        ToughBandages,
+        TheSpecimen,
         WristBlade,
+        NinjaScroll,
+        HoveringKite,
+        Tingsha,
+        SneckoSkull,
+        PaperCrane,
+        RingOfTheSerpent,
+        SnakeRing,
+    ];
+    const DEFECT_RELICS_JAVA_HASHMAP_ORDER: &[RelicId] = &[
+        DataDisk,
+        EmotionChip,
+        Inserter,
+        RunicCapacitor,
+        CrackedCore,
+        SymbioticVirus,
+        FrozenCore,
+        GoldPlatedCables,
+        NuclearBattery,
+    ];
+    const WATCHER_RELICS_JAVA_HASHMAP_ORDER: &[RelicId] = &[
+        Damaru,
+        HolyWater,
+        Melange,
+        Duality,
+        VioletLotus,
+        CloakClasp,
+        TeardropLocket,
+        PureWater,
+        GoldenEye,
     ];
 
     let mut pool = Vec::new();
-    for &relic in ALL_RELICS {
+    for &relic in SHARED_RELICS_JAVA_HASHMAP_ORDER {
         if get_relic_tier(relic) != tier {
             continue;
         }
-        match relic_class(relic) {
-            None => pool.push(relic),                         // Shared: always include
-            Some(c) if c == player_class => pool.push(relic), // Matching class
-            _ => {}                                           // Different class: skip
+        pool.push(relic);
+    }
+
+    let class_relics = match player_class {
+        "Ironclad" => IRONCLAD_RELICS_JAVA_HASHMAP_ORDER,
+        "Silent" => SILENT_RELICS_JAVA_HASHMAP_ORDER,
+        "Defect" => DEFECT_RELICS_JAVA_HASHMAP_ORDER,
+        "Watcher" => WATCHER_RELICS_JAVA_HASHMAP_ORDER,
+        _ => &[],
+    };
+    for &relic in class_relics {
+        if get_relic_tier(relic) == tier {
+            pool.push(relic);
         }
     }
     pool
@@ -718,7 +718,7 @@ pub fn energy_master_delta(id: RelicId) -> u8 {
 /// current combat context.
 pub fn restore_combat_energy_master(state: &mut crate::runtime::combat::CombatState) {
     let mut energy_master: u8 = 3;
-    let is_elite_or_boss = state.meta.is_elite_fight || state.meta.is_boss_fight;
+    let is_elite_or_boss = crate::content::relics::slavers_collar::is_elite_or_boss_combat(state);
 
     for relic in state.entities.player.relics.iter_mut() {
         energy_master = energy_master.saturating_add(energy_master_delta(relic.id));
@@ -864,12 +864,11 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::GamblingChip => {
             sub.at_battle_start_pre_draw = true;
+            sub.at_turn_start_post_draw = true;
         }
         RelicId::Ginger => sub.on_receive_power_modify = true,
         RelicId::Turnip => sub.on_receive_power_modify = true,
-        RelicId::GoldPlatedCables => {
-            sub.at_end_of_turn = true;
-        }
+        RelicId::GoldPlatedCables => {}
         RelicId::GoldenEye => sub.on_scry = true,
         RelicId::GoldenIdol => {
             // Gold multiplier passive
@@ -899,8 +898,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::FrozenEgg => {}
         RelicId::FrozenEye => {}
-        RelicId::DarkBlood => sub.on_victory = true,
-        RelicId::Dodecahedron => sub.at_battle_start = true,
+        RelicId::Dodecahedron => sub.at_turn_start = true,
         RelicId::FossilizedHelix => sub.at_battle_start = true,
         RelicId::Girya => sub.at_battle_start = true,
         RelicId::GremlinHorn => sub.on_monster_death = true,
@@ -908,6 +906,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::HornCleat => {
             sub.at_battle_start = true;
             sub.at_turn_start = true;
+            sub.on_victory = true;
         }
         RelicId::Inserter => sub.at_turn_start = true,
         RelicId::Kunai => {
@@ -969,12 +968,16 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         RelicId::Sozu => {}       // Passive — blocks potion obtaining
         RelicId::RunicCube => sub.on_lose_hp = true,
         RelicId::PureWater => sub.at_battle_start_pre_draw = true,
-        RelicId::SymbioticVirus => sub.at_pre_battle = true, // Java: atPreBattle → channelOrb(Dark)
+        RelicId::SymbioticVirus => sub.at_pre_battle = true, // Java: atPreBattle -> channelOrb(Dark)
         RelicId::TeardropLocket => sub.at_battle_start = true, // start combat in calm
         RelicId::VioletLotus => sub.on_change_stance = true, // obtaining
-        RelicId::UnceasingTop => {}                          // Engine loop evaluated natively
+        RelicId::UnceasingTop => {
+            sub.at_pre_battle = true;
+            sub.at_turn_start = true;
+        }
         RelicId::Vajra => sub.at_battle_start = true,
         RelicId::WhiteBeastStatue => {} // Passive out of combat
+        RelicId::RedCirclet => {}       // Java boss-pool-empty fallback, no hooks
         RelicId::RedMask => sub.at_battle_start = true,
         // P1 High-Impact Relics
         RelicId::PhilosopherStone => {
@@ -993,6 +996,7 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
         }
         RelicId::LetterOpener => {
             sub.on_use_card = true;
+            sub.at_turn_start = true;
             sub.on_victory = true;
         }
         RelicId::ToughBandages => sub.on_discard = true,
@@ -1010,30 +1014,41 @@ pub fn get_relic_subscriptions(id: RelicId) -> RelicSubscriptions {
             sub.on_victory = true;
         }
         RelicId::Sundial => sub.on_shuffle = true,
-        RelicId::WarpedTongs => sub.at_turn_start = true,
-        RelicId::TungstenRod => {
-            sub.on_lose_hp = true;
-            sub.on_lose_hp_last = true;
-        }
+        RelicId::WarpedTongs => sub.at_turn_start_post_draw = true,
+        RelicId::TungstenRod => sub.on_lose_hp_last = true,
         // Remaining P1 Relics
         RelicId::Necronomicon => {
             sub.on_use_card = true;
             sub.at_turn_start = true;
         }
-        RelicId::VelvetChoker => {} // Passive — engine checks can_play_card
-        RelicId::OrangePellets => sub.on_use_card = true,
+        RelicId::VelvetChoker => {
+            sub.at_battle_start = true;
+            sub.at_turn_start = true;
+            sub.on_use_card = true;
+            sub.on_victory = true;
+        }
+        RelicId::OrangePellets => {
+            sub.at_turn_start = true;
+            sub.on_use_card = true;
+        }
         RelicId::Sling => sub.at_battle_start = true,
         RelicId::WristBlade => {} // Passive — damage calc checks
         RelicId::PaperCrane => {} // Passive — damage calc constant
-        RelicId::RedSkull => sub.at_battle_start = true,
+        RelicId::RedSkull => {
+            sub.at_battle_start = true;
+            sub.on_victory = true;
+        }
         RelicId::TheSpecimen => sub.on_monster_death = true,
         RelicId::Matryoshka => {} // Passive — treasure room check
         RelicId::SlaversCollar => {
             sub.at_battle_start = true;
             sub.on_victory = true;
         } // Java: beforeEnergyPrep
-        RelicId::RunicCapacitor => sub.at_pre_battle = true, // Java: atBattleStart → IncreaseMaxOrb(3)
-        RelicId::NilrysCodex => sub.at_end_of_turn = true,   // Java: onPlayerEndTurn → CodexAction
+        RelicId::RunicCapacitor => {
+            sub.at_pre_battle = true;
+            sub.at_turn_start = true;
+        }
+        RelicId::NilrysCodex => sub.at_end_of_turn = true, // Java: onPlayerEndTurn → CodexAction
         RelicId::Toolbox => sub.at_battle_start_pre_draw = true, // Java: atBattleStartPreDraw → ChooseOneColorless
         _ => {}
     }

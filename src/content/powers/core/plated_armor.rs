@@ -31,11 +31,10 @@ pub fn on_hp_lost(
         && source.is_some()
         && source != Some(owner)
     {
-        actions.push(Action::ApplyPower {
-            source: owner,
+        actions.push(Action::ReducePower {
             target: owner,
             power_id: PowerId::PlatedArmor,
-            amount: -1,
+            amount: 1,
         });
     }
     actions
@@ -56,4 +55,63 @@ pub fn on_remove(_state: &CombatState, owner: EntityId) -> smallvec::SmallVec<[A
         }
     }
     actions
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_hp_lost;
+    use crate::content::monsters::EnemyId;
+    use crate::content::powers::{store, PowerId};
+    use crate::engine::action_handlers::execute_action;
+    use crate::runtime::action::{Action, DamageType};
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    fn plated_armor(amount: i32) -> Power {
+        Power {
+            power_type: PowerId::PlatedArmor,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
+
+    #[test]
+    fn plated_armor_hp_loss_uses_reduce_power_so_shelled_parasite_break_triggers() {
+        let mut parasite = crate::test_support::test_monster(EnemyId::ShelledParasite);
+        parasite.id = 1;
+        let mut state = crate::test_support::combat_with_monsters(vec![parasite]);
+        store::set_powers_for(&mut state, 1, vec![plated_armor(1)]);
+
+        let actions = on_hp_lost(&state, 1, 1, Some(0), DamageType::Normal);
+
+        assert_eq!(
+            actions.as_slice(),
+            &[Action::ReducePower {
+                target: 1,
+                power_id: PowerId::PlatedArmor,
+                amount: 1,
+            }]
+        );
+
+        execute_action(actions[0].clone(), &mut state);
+        while let Some(action) = state.engine.action_queue.pop_front() {
+            execute_action(action, &mut state);
+        }
+
+        assert_eq!(state.entities.monsters[0].planned_move_id(), 4);
+        assert!(!store::has_power(&state, 1, PowerId::PlatedArmor));
+    }
+
+    #[test]
+    fn plated_armor_hp_loss_ignores_thorns_hp_loss_and_self_source_like_java() {
+        let parasite = crate::test_support::test_monster(EnemyId::ShelledParasite);
+        let state = crate::test_support::combat_with_monsters(vec![parasite]);
+
+        assert!(on_hp_lost(&state, 1, 1, Some(0), DamageType::Thorns).is_empty());
+        assert!(on_hp_lost(&state, 1, 1, Some(0), DamageType::HpLoss).is_empty());
+        assert!(on_hp_lost(&state, 1, 1, Some(1), DamageType::Normal).is_empty());
+        assert!(on_hp_lost(&state, 1, 1, None, DamageType::Normal).is_empty());
+    }
 }

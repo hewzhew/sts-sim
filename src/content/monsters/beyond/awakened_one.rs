@@ -19,7 +19,191 @@ const DARK_ECHO: u8 = 5;
 const SLUDGE: u8 = 6;
 const TACKLE: u8 = 8;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::content::powers::store;
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    fn power(power_type: PowerId, amount: i32) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
+
+    #[test]
+    fn pre_battle_powers_match_java_amounts_and_order() {
+        let awakened = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        let mut state = crate::test_support::combat_with_monsters(vec![awakened.clone()]);
+        state.meta.ascension_level = 19;
+
+        let actions = AwakenedOne::use_pre_battle_actions(
+            &mut state,
+            &awakened,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::ApplyPower {
+                    source: awakened.id,
+                    target: awakened.id,
+                    power_id: PowerId::Regen,
+                    amount: 15,
+                },
+                Action::ApplyPower {
+                    source: awakened.id,
+                    target: awakened.id,
+                    power_id: PowerId::Curiosity,
+                    amount: 2,
+                },
+                Action::ApplyPower {
+                    source: awakened.id,
+                    target: awakened.id,
+                    power_id: PowerId::Unawakened,
+                    amount: -1,
+                },
+                Action::ApplyPower {
+                    source: awakened.id,
+                    target: awakened.id,
+                    power_id: PowerId::Strength,
+                    amount: 2,
+                },
+            ],
+            "Java queues Regenerate, Curiosity, Unawakened(sentinel -1), then A4+ Strength"
+        );
+    }
+
+    #[test]
+    fn final_death_escapes_zero_hp_or_escaped_cultists_like_java() {
+        let awakened = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        let mut cultist = crate::test_support::test_monster(EnemyId::Cultist);
+        cultist.id = 2;
+        cultist.current_hp = 0;
+        cultist.is_dying = false;
+        cultist.is_escaped = true;
+        let mut state = crate::test_support::combat_with_monsters(vec![awakened.clone(), cultist]);
+
+        let actions = AwakenedOne::on_death(&mut state, &awakened);
+
+        assert!(matches!(actions.as_slice(), [Action::Escape { target: 2 }]));
+    }
+
+    #[test]
+    fn first_phase_death_immediately_sets_rebirth_state_and_queues_java_set_move() {
+        let mut awakened = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        awakened.id = 7;
+        awakened.current_hp = 1;
+        awakened.max_hp = 300;
+        awakened.set_planned_move_id(SLASH);
+        awakened.move_history_mut().push_back(SLASH);
+        let mut state = crate::test_support::combat_with_monsters(vec![awakened]);
+        store::set_powers_for(
+            &mut state,
+            7,
+            vec![
+                power(PowerId::Regen, 10),
+                power(PowerId::Curiosity, 1),
+                power(PowerId::Unawakened, -1),
+                power(PowerId::Shackled, -8),
+                power(PowerId::Weak, 2),
+                power(PowerId::Strength, 2),
+            ],
+        );
+        state.queue_action_back(Action::GainBlock {
+            target: 0,
+            amount: 1,
+        });
+
+        crate::engine::action_handlers::damage::handle_damage(
+            crate::runtime::action::DamageInfo {
+                source: PLAYER,
+                target: 7,
+                base: 1,
+                output: 1,
+                damage_type: crate::runtime::action::DamageType::Normal,
+                is_modified: true,
+            },
+            &mut state,
+        );
+
+        let reborn = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == 7)
+            .unwrap();
+        assert_eq!(reborn.current_hp, 0);
+        assert!(!reborn.is_dying);
+        assert!(reborn.half_dead);
+        assert!(!reborn.awakened_one.form1);
+        assert!(reborn.awakened_one.first_turn);
+        assert_eq!(reborn.planned_move_id(), REBIRTH);
+        assert_eq!(
+            reborn
+                .move_history()
+                .iter()
+                .filter(|&&m| m == REBIRTH)
+                .count(),
+            1
+        );
+
+        let remaining_power_ids = store::powers_for(&state, 7)
+            .unwrap()
+            .iter()
+            .map(|power| power.power_type)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            remaining_power_ids,
+            vec![PowerId::Regen, PowerId::Strength],
+            "Java removes debuffs, Curiosity, Unawakened, and Shackled immediately during first-phase death"
+        );
+
+        assert_eq!(state.pop_next_action(), Some(Action::ClearCardQueue));
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::GainBlock {
+                target: 0,
+                amount: 1,
+            }),
+            "Java addToTop(ClearCardQueueAction) runs before pre-existing queued bottom actions"
+        );
+        let set_move = state.pop_next_action().expect("queued SetMoveAction");
+        assert!(matches!(
+            set_move,
+            Action::SetMonsterMove {
+                monster_id: 7,
+                next_move_byte: REBIRTH,
+                ..
+            }
+        ));
+        crate::engine::action_handlers::execute_action(set_move, &mut state);
+        let reborn = state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == 7)
+            .unwrap();
+        assert_eq!(
+            reborn.move_history().iter().filter(|&&m| m == REBIRTH).count(),
+            2,
+            "Java damage() calls setMove(REBIRTH) immediately and also queues SetMoveAction(REBIRTH)"
+        );
+    }
+}
+
 fn current_runtime(entity: &MonsterEntity) -> (bool, bool) {
+    assert!(
+        entity.awakened_one.protocol_seeded,
+        "awakened one runtime truth must be protocol-seeded or factory-seeded"
+    );
     (entity.awakened_one.form1, entity.awakened_one.first_turn)
 }
 
@@ -174,7 +358,7 @@ impl MonsterBehavior for AwakenedOne {
                 source: entity.id,
                 target: entity.id,
                 power_id: PowerId::Unawakened,
-                amount: 1,
+                amount: -1,
             },
         ];
         if ascension_level >= 4 {
@@ -299,8 +483,6 @@ impl MonsterBehavior for AwakenedOne {
             .filter(|monster| {
                 monster.id != entity.id
                     && !monster.is_dying
-                    && !monster.is_escaped
-                    && monster.current_hp > 0
                     && crate::content::monsters::EnemyId::from_id(monster.monster_type)
                         == Some(crate::content::monsters::EnemyId::Cultist)
             })

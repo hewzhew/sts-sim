@@ -1,5 +1,5 @@
 use crate::content::cards::CardId;
-use crate::content::monsters::exordium::{add_card_action, attack_actions, PLAYER};
+use crate::content::monsters::exordium::{attack_actions, PLAYER};
 use crate::content::monsters::MonsterBehavior;
 use crate::content::powers::PowerId;
 use crate::runtime::action::Action;
@@ -153,11 +153,13 @@ impl MonsterBehavior for OrbWalker {
             (CLAW, [MoveStep::Attack(attack)]) => attack_actions(entity.id, PLAYER, &attack.attack),
             (
                 LASER,
-                [MoveStep::Attack(attack), MoveStep::AddCard(discard_burn), MoveStep::AddCard(draw_burn)],
+                [MoveStep::Attack(attack), MoveStep::AddCard(_discard_burn), MoveStep::AddCard(_draw_burn)],
             ) => {
                 let mut actions = attack_actions(entity.id, PLAYER, &attack.attack);
-                actions.push(add_card_action(discard_burn));
-                actions.push(add_card_action(draw_burn));
+                actions.push(Action::MakeTempCardInDiscardAndDeck {
+                    card_id: CardId::Burn,
+                    amount: 1,
+                });
                 actions
             }
             (move_id, steps) => panic!("orb walker plan/steps mismatch: {} {:?}", move_id, steps),
@@ -166,5 +168,131 @@ impl MonsterBehavior for OrbWalker {
             monster_id: entity.id,
         });
         actions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{laser_plan, OrbWalker, CLAW, LASER};
+    use crate::content::cards::CardId;
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn laser_uses_java_discard_and_deck_action_not_two_expanded_add_cards() {
+        let mut state = crate::test_support::blank_test_combat();
+        let walker = crate::test_support::test_monster(EnemyId::OrbWalker);
+
+        let actions = OrbWalker::take_turn_plan(&mut state, &walker, &laser_plan(0));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack { source: 1, .. },
+                Action::MakeTempCardInDiscardAndDeck {
+                    card_id: CardId::Burn,
+                    amount: 1
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn pre_battle_generic_strength_up_uses_java_ascension_gate() {
+        let mut walker = crate::test_support::test_monster(EnemyId::OrbWalker);
+        walker.id = 77;
+
+        let mut low = crate::test_support::blank_test_combat();
+        low.meta.ascension_level = 16;
+        let low_actions = OrbWalker::use_pre_battle_actions(
+            &mut low,
+            &walker,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+        assert_eq!(
+            low_actions,
+            vec![Action::ApplyPower {
+                source: 77,
+                target: 77,
+                power_id: PowerId::GenericStrengthUp,
+                amount: 3,
+            }]
+        );
+
+        let mut high = crate::test_support::blank_test_combat();
+        high.meta.ascension_level = 17;
+        let high_actions = OrbWalker::use_pre_battle_actions(
+            &mut high,
+            &walker,
+            crate::content::monsters::PreBattleLegacyRng::Misc,
+        );
+        assert_eq!(
+            high_actions,
+            vec![Action::ApplyPower {
+                source: 77,
+                target: 77,
+                power_id: PowerId::GenericStrengthUp,
+                amount: 5,
+            }],
+            "Java OrbWalker applies GenericStrengthUpPower 5 only at A17+"
+        );
+    }
+
+    #[test]
+    fn get_move_uses_java_last_two_move_gates_without_rerolling() {
+        let mut walker = crate::test_support::test_monster(EnemyId::OrbWalker);
+
+        let plan =
+            <OrbWalker as MonsterBehavior>::roll_move_plan(&mut StsRng::new(0), &walker, 20, 39);
+        assert_eq!(plan.move_id, CLAW);
+
+        walker.move_history_mut().push_back(CLAW);
+        walker.move_history_mut().push_back(CLAW);
+        let plan =
+            <OrbWalker as MonsterBehavior>::roll_move_plan(&mut StsRng::new(0), &walker, 20, 39);
+        assert_eq!(
+            plan.move_id, LASER,
+            "Java low roll falls through to Laser after lastTwoMoves(CLAW)"
+        );
+
+        walker.move_history_mut().clear();
+        walker.move_history_mut().push_back(LASER);
+        walker.move_history_mut().push_back(LASER);
+        let plan =
+            <OrbWalker as MonsterBehavior>::roll_move_plan(&mut StsRng::new(0), &walker, 20, 40);
+        assert_eq!(
+            plan.move_id, CLAW,
+            "Java high roll falls through to Claw after lastTwoMoves(LASER)"
+        );
+    }
+
+    #[test]
+    fn laser_at_a2_queues_damage_burn_and_roll_in_java_order() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut walker = crate::test_support::test_monster(EnemyId::OrbWalker);
+        walker.id = 77;
+
+        let actions = OrbWalker::take_turn_plan(&mut state, &walker, &laser_plan(2));
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::MonsterAttack {
+                    source: 77,
+                    target: crate::content::monsters::exordium::PLAYER,
+                    base_damage: 11,
+                    damage_kind: crate::semantics::combat::DamageKind::Normal,
+                },
+                Action::MakeTempCardInDiscardAndDeck {
+                    card_id: CardId::Burn,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 77 },
+            ],
+            "Java Laser queues DamageAction, MakeTempCardInDiscardAndDeckAction(Burn), then RollMoveAction"
+        );
     }
 }

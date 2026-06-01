@@ -165,3 +165,95 @@ impl MonsterBehavior for FungiBeast {
         actions
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{FungiBeast, BITE, GROW};
+    use crate::content::monsters::{EnemyId, MonsterBehavior, PreBattleLegacyRng};
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
+
+    fn fungi_with_history(history: &[u8]) -> crate::runtime::combat::MonsterEntity {
+        let mut monster = crate::testing::support::test_monster(EnemyId::FungiBeast);
+        monster.move_history_mut().extend(history.iter().copied());
+        monster
+    }
+
+    #[test]
+    fn fungi_beast_roll_logic_matches_java_history_branches() {
+        let mut rng = crate::runtime::rng::StsRng::new(1);
+
+        let no_history = fungi_with_history(&[]);
+        assert_eq!(
+            FungiBeast::roll_move_plan(&mut rng, &no_history, 0, 59).move_id,
+            BITE,
+            "Java low roll bites unless lastTwoMoves(BITE) blocks it"
+        );
+
+        let two_bites = fungi_with_history(&[BITE, BITE]);
+        assert_eq!(
+            FungiBeast::roll_move_plan(&mut rng, &two_bites, 0, 59).move_id,
+            GROW
+        );
+
+        let previous_grow = fungi_with_history(&[GROW]);
+        assert_eq!(
+            FungiBeast::roll_move_plan(&mut rng, &previous_grow, 0, 60).move_id,
+            BITE,
+            "Java high roll bites if the previous move was Grow"
+        );
+
+        let previous_bite = fungi_with_history(&[BITE]);
+        assert_eq!(
+            FungiBeast::roll_move_plan(&mut rng, &previous_bite, 0, 60).move_id,
+            GROW
+        );
+    }
+
+    #[test]
+    fn fungi_beast_prebattle_spore_cloud_and_grow_amounts_match_java() {
+        let mut state = crate::testing::support::blank_test_combat();
+        let monster = crate::testing::support::test_monster(EnemyId::FungiBeast);
+
+        let actions =
+            FungiBeast::use_pre_battle_actions(&mut state, &monster, PreBattleLegacyRng::Misc);
+        assert_eq!(
+            actions,
+            vec![Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::SporeCloud,
+                amount: 2,
+            }],
+            "Java FungiBeast.usePreBattleAction applies SporeCloudPower(this, 2)"
+        );
+
+        let grow_a1 = FungiBeast::take_turn_plan(&mut state, &monster, &super::grow_plan(1));
+        assert!(matches!(
+            grow_a1.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Strength,
+                    amount: 3,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        let grow_a17 = FungiBeast::take_turn_plan(&mut state, &monster, &super::grow_plan(17));
+        assert!(matches!(
+            grow_a17.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: 1,
+                    power_id: PowerId::Strength,
+                    amount: 5,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+}

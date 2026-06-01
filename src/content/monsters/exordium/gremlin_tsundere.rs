@@ -100,7 +100,10 @@ fn alive_monster_count(state: &CombatState) -> usize {
         .entities
         .monsters
         .iter()
-        .filter(|monster| !monster.is_dying && !monster.is_escaped && monster.current_hp > 0)
+        // Java counts monsters that are not isDying and not isEscaping. It
+        // does not check currentHealth here, so a zero-HP monster awaiting the
+        // queued death path still affects this immediate branch.
+        .filter(|monster| !monster.is_dying && !monster.is_escaped)
         .count()
 }
 
@@ -125,13 +128,16 @@ impl MonsterBehavior for GremlinTsundere {
     ) -> Vec<Action> {
         match decode_turn(plan) {
             GremlinTsundereTurn::Protect(block) => {
-                let mut actions = vec![gain_block_random_monster_action(entity, block)];
                 let next_plan = if alive_monster_count(state) > 1 {
                     protect_plan(state.meta.ascension_level)
                 } else {
                     bash_plan(state.meta.ascension_level)
                 };
-                actions.push(set_next_move_action(entity, next_plan));
+                // Java calls setMove(...) synchronously after queueing
+                // GainBlockRandomMonsterAction, so the next intent is updated
+                // before that queued action can execute.
+                let mut actions = vec![set_next_move_action(entity, next_plan)];
+                actions.push(gain_block_random_monster_action(entity, block));
                 actions
             }
             GremlinTsundereTurn::Bash(attack) => {
@@ -142,7 +148,111 @@ impl MonsterBehavior for GremlinTsundere {
                 ));
                 actions
             }
-            GremlinTsundereTurn::Escape => vec![Action::Escape { target: entity.id }],
+            GremlinTsundereTurn::Escape => vec![
+                Action::Escape { target: entity.id },
+                set_next_move_action(entity, escape_plan()),
+            ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bash_plan, escape_plan, protect_plan, GremlinTsundere};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn protect_followup_counts_zero_hp_not_yet_dying_monsters_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let mut tsundere = crate::test_support::test_monster(EnemyId::GremlinTsundere);
+        tsundere.id = 10;
+        let mut pending_death = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+        pending_death.id = 11;
+        pending_death.current_hp = 0;
+        pending_death.is_dying = false;
+        state.entities.monsters = vec![tsundere.clone(), pending_death];
+
+        let actions = GremlinTsundere::take_turn_plan(&mut state, &tsundere, &protect_plan(0));
+
+        assert!(matches!(
+            actions.first(),
+            Some(Action::SetMonsterMove {
+                monster_id: 10,
+                next_move_byte: 1,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn escape_turn_queues_escape_intent_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinTsundere);
+
+        let actions = GremlinTsundere::take_turn_plan(&mut state, &entity, &escape_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::Escape { .. },
+                Action::SetMonsterMove {
+                    next_move_byte: super::ESCAPE,
+                    ..
+                }
+            ]
+        ));
+    }
+
+    #[test]
+    fn protect_block_amount_and_solo_followup_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 17;
+        let mut tsundere = crate::test_support::test_monster(EnemyId::GremlinTsundere);
+        tsundere.id = 10;
+        state.entities.monsters = vec![tsundere.clone()];
+
+        let actions = GremlinTsundere::take_turn_plan(&mut state, &tsundere, &protect_plan(17));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::SetMonsterMove {
+                    monster_id: 10,
+                    next_move_byte: super::BASH,
+                    ..
+                },
+                Action::GainBlockRandomMonster {
+                    source: 10,
+                    amount: 11,
+                },
+            ]
+        ));
+    }
+
+    #[test]
+    fn bash_damage_and_followup_setmove_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 2;
+        let entity = crate::test_support::test_monster(EnemyId::GremlinTsundere);
+
+        let actions = GremlinTsundere::take_turn_plan(&mut state, &entity, &bash_plan(2));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 8,
+                    ..
+                },
+                Action::SetMonsterMove {
+                    monster_id: 1,
+                    next_move_byte: super::BASH,
+                    ..
+                },
+            ]
+        ));
     }
 }

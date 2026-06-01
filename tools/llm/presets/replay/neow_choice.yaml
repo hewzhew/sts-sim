@@ -1,0 +1,42 @@
+name: neow_choice
+purpose: replay
+replay_source: deterministic_seed_42_neow_start
+description: >
+  Local replay-style smoke for inspecting Neow event action semantics. It is
+  intended to verify Rust runtime semantic export, not controller quality.
+script: tools/llm/llm_full_run_controller.py
+args:
+  provider: mock
+  run_mode: llm_live_controller
+  agent_mode: planner
+  combat_search_engine: off
+  context_ablation: mechanics_plus_strategy_hints
+  trace_level: full
+  journal_format: events
+  watch_decisions: true
+  watch_max_candidates: 8
+  seed: 42
+  ascension: 0
+  class: ironclad
+  steps: 4
+  out: auto
+limits:
+  max_llm_calls: 0
+  max_steps: 4
+  max_wall_seconds: 120
+  allow_long_run: false
+claims:
+  benchmark_claim: false
+  policy_quality_claim: false
+  winrate_claim: false
+  purpose_statement: neow_action_semantics_replay
+artifacts:
+  run_dir: auto
+  events: events.jsonl
+  summary: summary.json
+  stdout: stdout.log
+  stderr: stderr.log
+  command: command.txt
+  resolved_config: resolved_config.yaml
+hypothesis: null
+acceptance_criteria: []

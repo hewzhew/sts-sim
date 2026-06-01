@@ -375,7 +375,7 @@ fn last_two_moves(entity: &MonsterEntity, move_id: u8) -> bool {
 }
 
 fn roll_chance(rng: &mut crate::runtime::rng::StsRng, percent: i32) -> bool {
-    rng.random_range(0, 99) < percent
+    rng.random_boolean_chance(percent as f32 / 100.0)
 }
 
 fn execute_steps(entity: &MonsterEntity, plan: &MonsterTurnPlan) -> Vec<Action> {
@@ -394,7 +394,10 @@ fn execute_steps(entity: &MonsterEntity, plan: &MonsterTurnPlan) -> Vec<Action> 
                 actions.push(apply_power_action(entity, apply_power))
             }
             MoveStep::AddCard(add_card) => actions.push(add_card_action(add_card)),
-            MoveStep::Suicide => actions.push(Action::Suicide { target: entity.id }),
+            MoveStep::Suicide => actions.push(Action::Suicide {
+                target: entity.id,
+                trigger_relics: false,
+            }),
             MoveStep::SpawnMonster(step) => actions.push(spawn_action(entity, step)),
             other => panic!("acid slime step unsupported in execution: {:?}", other),
         }
@@ -427,7 +430,7 @@ impl MonsterBehavior for AcidSlimeL {
             source: entity.id,
             target: entity.id,
             power_id: PowerId::Split,
-            amount: 1,
+            amount: -1,
         }]
     }
 
@@ -515,5 +518,359 @@ impl MonsterBehavior for AcidSlimeS {
             [] => panic!("acid slime S plan missing locked truth"),
             steps => panic!("acid slime S plan/steps mismatch: {:?}", steps),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        roll_chance, AcidSlimeL, AcidSlimeM, AcidSlimeS, NORMAL_TACKLE, WEAK_LICK, WOUND_TACKLE,
+    };
+    use crate::content::cards::CardId;
+    use crate::content::monsters::{EnemyId, MonsterBehavior, PreBattleLegacyRng};
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
+    use crate::runtime::rng::StsRng;
+
+    #[test]
+    fn percent_roll_uses_java_random_boolean_chance_not_integer_roll() {
+        for seed in 0..128 {
+            for percent in [40, 50, 60] {
+                let mut actual = StsRng::new(seed);
+                let mut expected = actual.clone();
+
+                let actual_result = roll_chance(&mut actual, percent);
+                let expected_result = expected.random_boolean_chance(percent as f32 / 100.0);
+
+                assert_eq!(
+                    actual_result, expected_result,
+                    "seed {seed} percent {percent} should follow Java randomBoolean(float)"
+                );
+                assert_eq!(
+                    actual, expected,
+                    "seed {seed} percent {percent} should leave identical RNG state"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn split_power_prebattle_uses_java_sentinel_amount() {
+        for (enemy_id, amount) in [
+            (
+                EnemyId::AcidSlimeL,
+                split_power_amount::<AcidSlimeL>(EnemyId::AcidSlimeL),
+            ),
+            (
+                EnemyId::SpikeSlimeL,
+                split_power_amount::<crate::content::monsters::exordium::spike_slime::SpikeSlimeL>(
+                    EnemyId::SpikeSlimeL,
+                ),
+            ),
+            (
+                EnemyId::SlimeBoss,
+                split_power_amount::<crate::content::monsters::exordium::slime_boss::SlimeBoss>(
+                    EnemyId::SlimeBoss,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                amount, -1,
+                "{enemy_id:?} SplitPower should match Java SplitPower.amount = -1"
+            );
+        }
+    }
+
+    fn split_power_amount<T: MonsterBehavior>(enemy_id: EnemyId) -> i32 {
+        let mut state = crate::test_support::blank_test_combat();
+        let monster = crate::test_support::test_monster(enemy_id);
+        let actions = T::use_pre_battle_actions(&mut state, &monster, PreBattleLegacyRng::Misc);
+        match actions.as_slice() {
+            [Action::ApplyPower {
+                power_id: PowerId::Split,
+                amount,
+                ..
+            }] => *amount,
+            other => panic!("expected one Split ApplyPower action, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn medium_acid_slime_roll_logic_matches_java_a17_branches_and_rng() {
+        let mut slime = crate::test_support::test_monster(EnemyId::AcidSlimeM);
+        let mut rng = StsRng::new(101);
+
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut rng, &slime, 17, 39).move_id,
+            WOUND_TACKLE,
+            "Java A17+ num < 40 opens Wound Tackle unless lastTwoMoves(WOUND_TACKLE)"
+        );
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut rng, &slime, 17, 79).move_id,
+            NORMAL_TACKLE,
+            "Java A17+ 40 <= num < 80 opens Normal Tackle unless lastTwoMoves(NORMAL_TACKLE)"
+        );
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut rng, &slime, 17, 80).move_id,
+            WEAK_LICK,
+            "Java A17+ high rolls Weak Lick unless lastMove(WEAK_LICK)"
+        );
+
+        slime
+            .move_history_mut()
+            .extend([WOUND_TACKLE, WOUND_TACKLE]);
+        let mut actual = StsRng::new(202);
+        let mut expected_rng = actual.clone();
+        let expected = if expected_rng.random_boolean() {
+            NORMAL_TACKLE
+        } else {
+            WEAK_LICK
+        };
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut actual, &slime, 17, 39).move_id,
+            expected,
+            "Java A17+ Wound repeat guard consumes aiRng.randomBoolean()"
+        );
+        assert_eq!(actual, expected_rng);
+
+        slime.move_history_mut().clear();
+        slime
+            .move_history_mut()
+            .extend([NORMAL_TACKLE, NORMAL_TACKLE]);
+        let mut actual = StsRng::new(303);
+        let mut expected_rng = actual.clone();
+        let expected = if expected_rng.random_boolean_chance(0.5) {
+            WOUND_TACKLE
+        } else {
+            WEAK_LICK
+        };
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut actual, &slime, 17, 79).move_id,
+            expected,
+            "Java A17+ Normal repeat guard consumes aiRng.randomBoolean(0.5f)"
+        );
+        assert_eq!(actual, expected_rng);
+
+        slime.move_history_mut().clear();
+        slime.move_history_mut().push_back(WEAK_LICK);
+        let mut actual = StsRng::new(404);
+        let mut expected_rng = actual.clone();
+        let expected = if expected_rng.random_boolean_chance(0.4) {
+            WOUND_TACKLE
+        } else {
+            NORMAL_TACKLE
+        };
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut actual, &slime, 17, 80).move_id,
+            expected,
+            "Java A17+ Weak repeat guard consumes aiRng.randomBoolean(0.4f)"
+        );
+        assert_eq!(actual, expected_rng);
+    }
+
+    #[test]
+    fn medium_acid_slime_roll_logic_matches_java_pre_a17_branches_and_rng() {
+        let mut slime = crate::test_support::test_monster(EnemyId::AcidSlimeM);
+        let mut rng = StsRng::new(111);
+
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut rng, &slime, 16, 29).move_id,
+            WOUND_TACKLE
+        );
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut rng, &slime, 16, 69).move_id,
+            NORMAL_TACKLE
+        );
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut rng, &slime, 16, 70).move_id,
+            WEAK_LICK
+        );
+
+        slime
+            .move_history_mut()
+            .extend([WOUND_TACKLE, WOUND_TACKLE]);
+        let mut actual = StsRng::new(222);
+        let mut expected_rng = actual.clone();
+        let expected = if expected_rng.random_boolean() {
+            NORMAL_TACKLE
+        } else {
+            WEAK_LICK
+        };
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut actual, &slime, 16, 29).move_id,
+            expected
+        );
+        assert_eq!(actual, expected_rng);
+
+        slime.move_history_mut().clear();
+        slime.move_history_mut().push_back(NORMAL_TACKLE);
+        let mut actual = StsRng::new(333);
+        let mut expected_rng = actual.clone();
+        let expected = if expected_rng.random_boolean_chance(0.4) {
+            WOUND_TACKLE
+        } else {
+            WEAK_LICK
+        };
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut actual, &slime, 16, 69).move_id,
+            expected
+        );
+        assert_eq!(actual, expected_rng);
+
+        slime.move_history_mut().clear();
+        slime.move_history_mut().extend([WEAK_LICK, WEAK_LICK]);
+        let mut actual = StsRng::new(444);
+        let mut expected_rng = actual.clone();
+        let expected = if expected_rng.random_boolean_chance(0.4) {
+            WOUND_TACKLE
+        } else {
+            NORMAL_TACKLE
+        };
+        assert_eq!(
+            AcidSlimeM::roll_move_plan(&mut actual, &slime, 16, 70).move_id,
+            expected
+        );
+        assert_eq!(actual, expected_rng);
+    }
+
+    #[test]
+    fn medium_acid_slime_take_turn_actions_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 2;
+        let entity = crate::test_support::test_monster(EnemyId::AcidSlimeM);
+
+        let wound = AcidSlimeM::take_turn_plan(
+            &mut state,
+            &entity,
+            &super::medium_plan_for(WOUND_TACKLE, 2),
+        );
+        assert!(matches!(
+            wound.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 8,
+                    ..
+                },
+                Action::MakeTempCardInDiscard {
+                    card_id: CardId::Slimed,
+                    amount: 1,
+                    upgraded: false,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        let normal = AcidSlimeM::take_turn_plan(
+            &mut state,
+            &entity,
+            &super::medium_plan_for(NORMAL_TACKLE, 2),
+        );
+        assert!(matches!(
+            normal.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 12,
+                    ..
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+
+        let weak =
+            AcidSlimeM::take_turn_plan(&mut state, &entity, &super::medium_plan_for(WEAK_LICK, 2));
+        assert!(matches!(
+            weak.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::RollMonsterMove { monster_id: 1 },
+            ]
+        ));
+    }
+
+    #[test]
+    fn small_acid_slime_roll_logic_matches_java_a17_and_random_boolean() {
+        let mut slime = crate::test_support::test_monster(EnemyId::AcidSlimeS);
+        let mut rng = StsRng::new(12);
+
+        assert_eq!(
+            AcidSlimeS::roll_move_plan(&mut rng, &slime, 17, 99).move_id,
+            NORMAL_TACKLE,
+            "Java A17+ Small Acid Slime opens with Debuff unless lastTwoMoves(Tackle)"
+        );
+
+        slime
+            .move_history_mut()
+            .extend([WOUND_TACKLE, WOUND_TACKLE]);
+        assert_eq!(
+            AcidSlimeS::roll_move_plan(&mut rng, &slime, 17, 99).move_id,
+            WOUND_TACKLE
+        );
+
+        let mut random_actual = StsRng::new(44);
+        let mut random_expected = random_actual.clone();
+        slime.move_history_mut().clear();
+        let expected = if random_expected.random_boolean() {
+            WOUND_TACKLE
+        } else {
+            NORMAL_TACKLE
+        };
+        assert_eq!(
+            AcidSlimeS::roll_move_plan(&mut random_actual, &slime, 16, 0).move_id,
+            expected,
+            "Below A17 Java uses aiRng.randomBoolean() between Tackle and Debuff"
+        );
+        assert_eq!(random_actual, random_expected);
+    }
+
+    #[test]
+    fn small_acid_slime_take_turn_switches_move_without_rollmove_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 2;
+        let entity = crate::test_support::test_monster(EnemyId::AcidSlimeS);
+
+        let tackle = AcidSlimeS::take_turn_plan(&mut state, &entity, &super::small_tackle_plan(2));
+        assert!(matches!(
+            tackle.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 4,
+                    ..
+                },
+                Action::SetMonsterMove {
+                    monster_id: 1,
+                    next_move_byte: NORMAL_TACKLE,
+                    ..
+                },
+            ]
+        ));
+
+        let debuff = AcidSlimeS::take_turn_plan(&mut state, &entity, &super::small_debuff_plan());
+        assert!(matches!(
+            debuff.as_slice(),
+            [
+                Action::ApplyPower {
+                    source: 1,
+                    target: 0,
+                    power_id: PowerId::Weak,
+                    amount: 1,
+                },
+                Action::SetMonsterMove {
+                    monster_id: 1,
+                    next_move_byte: WOUND_TACKLE,
+                    ..
+                },
+            ]
+        ));
     }
 }

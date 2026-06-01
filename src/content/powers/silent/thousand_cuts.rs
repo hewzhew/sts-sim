@@ -9,12 +9,11 @@ pub fn on_after_card_played(
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::SmallVec::new();
     if amount > 0 {
-        // Java: ThousandCutsPower.onAfterCardPlayed
-        // addToBot(new DamageAllEnemiesAction(null, DamageInfo.createDamageMatrix(this.amount, true), DamageInfo.DamageType.NORMAL, AbstractGameAction.AttackEffect.NONE));
+        // Java: ThousandCutsPower.onAfterCardPlayed queues DamageType.THORNS.
         actions.push(Action::DamageAllEnemies {
             source: owner,
             damages: repeated_damage_matrix(state.entities.monsters.len(), amount),
-            damage_type: crate::runtime::action::DamageType::Normal,
+            damage_type: crate::runtime::action::DamageType::Thorns,
             is_modified: false,
         });
     }

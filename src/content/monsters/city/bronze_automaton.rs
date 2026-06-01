@@ -17,8 +17,191 @@ const HYPER_BEAM: u8 = 2;
 const STUNNED: u8 = 3;
 const SPAWN_ORBS: u8 = 4;
 const BOOST: u8 = 5;
-const LEFT_ORB_OFFSET: i32 = -167;
-const RIGHT_ORB_OFFSET: i32 = 166;
+const LEFT_ORB_DRAW_X: i32 = -300;
+const RIGHT_ORB_DRAW_X: i32 = 200;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+
+    #[test]
+    fn spawn_orbs_uses_java_absolute_draw_positions() {
+        let mut state = crate::test_support::blank_test_combat();
+        let automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        let actions = BronzeAutomaton::take_turn_plan(&mut state, &automaton, &spawn_orbs_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::SpawnMonsterSmart {
+                    monster_id: EnemyId::BronzeOrb,
+                    logical_position: LEFT_ORB_DRAW_X,
+                    protocol_draw_x: Some(LEFT_ORB_DRAW_X),
+                    ..
+                },
+                Action::SpawnMonsterSmart {
+                    monster_id: EnemyId::BronzeOrb,
+                    logical_position: RIGHT_ORB_DRAW_X,
+                    protocol_draw_x: Some(RIGHT_ORB_DRAW_X),
+                    ..
+                },
+                Action::RollMonsterMove { monster_id: 1 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn death_cleanup_suicides_zero_hp_or_escaped_non_dying_minions_like_java() {
+        let automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        let mut orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+        orb.id = 2;
+        orb.current_hp = 0;
+        orb.is_dying = false;
+        orb.is_escaped = true;
+        let mut state = crate::test_support::combat_with_monsters(vec![automaton.clone(), orb]);
+
+        let actions = BronzeAutomaton::on_death(&mut state, &automaton);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Suicide {
+                target: 2,
+                trigger_relics: true,
+            }]
+        ));
+    }
+
+    #[test]
+    fn death_cleanup_suicides_minions_in_java_add_to_top_order() {
+        let automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        let mut first_orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+        first_orb.id = 2;
+        let mut second_orb = crate::test_support::test_monster(EnemyId::BronzeOrb);
+        second_orb.id = 3;
+        let mut state = crate::test_support::combat_with_monsters(vec![
+            automaton.clone(),
+            first_orb,
+            second_orb,
+        ]);
+
+        let actions = BronzeAutomaton::on_death(&mut state, &automaton);
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::Suicide {
+                    target: 3,
+                    trigger_relics: true,
+                },
+                Action::Suicide {
+                    target: 2,
+                    trigger_relics: true,
+                },
+            ],
+            "Java BronzeAutomaton.die adds VFX/Suicide/Hide cleanup with addToTop while iterating forward, so later minions' SuicideAction executes first"
+        );
+    }
+
+    #[test]
+    fn roll_move_first_turn_and_hyper_beam_counter_match_java_get_move() {
+        let mut automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+
+        let first_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            0,
+            99,
+        );
+        assert_eq!(first_plan.move_id, SPAWN_ORBS);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(0, &automaton, 99, &first_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(0))],
+            "Java firstTurn branch clears firstTurn but does not increment numTurns"
+        );
+
+        automaton.bronze_automaton.first_turn = false;
+        automaton.bronze_automaton.num_turns = 4;
+        let beam_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            4,
+            0,
+        );
+        assert_eq!(beam_plan.move_id, HYPER_BEAM);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(4, &automaton, 0, &beam_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(0))],
+            "Java numTurns == 4 branch sets Hyper Beam and immediately resets numTurns to 0"
+        );
+    }
+
+    #[test]
+    fn post_hyper_beam_branch_does_not_increment_counter_like_java() {
+        let mut automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        automaton.bronze_automaton.first_turn = false;
+        automaton.bronze_automaton.num_turns = 2;
+        automaton.move_history_mut().push_back(HYPER_BEAM);
+
+        let low_ascension_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            18,
+            0,
+        );
+        assert_eq!(low_ascension_plan.move_id, STUNNED);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(18, &automaton, 0, &low_ascension_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(2))]
+        );
+
+        let a19_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            19,
+            0,
+        );
+        assert_eq!(a19_plan.move_id, BOOST);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(19, &automaton, 0, &a19_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(2))],
+            "Java lastMove(HYPER_BEAM) returns before ++numTurns on both STUN and A19 Boost branches"
+        );
+    }
+
+    #[test]
+    fn flail_and_normal_boost_increment_hyper_counter_like_java() {
+        let mut automaton = crate::test_support::test_monster(EnemyId::BronzeAutomaton);
+        automaton.bronze_automaton.first_turn = false;
+        automaton.bronze_automaton.num_turns = 1;
+        automaton.move_history_mut().push_back(SPAWN_ORBS);
+
+        let flail_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            0,
+            0,
+        );
+        assert_eq!(flail_plan.move_id, FLAIL);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(0, &automaton, 0, &flail_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(2))]
+        );
+
+        automaton.move_history_mut().clear();
+        let boost_plan = BronzeAutomaton::roll_move_plan(
+            &mut crate::runtime::rng::StsRng::new(0),
+            &automaton,
+            0,
+            0,
+        );
+        assert_eq!(boost_plan.move_id, BOOST);
+        assert_eq!(
+            BronzeAutomaton::on_roll_move(0, &automaton, 0, &boost_plan),
+            vec![automaton_runtime_update(&automaton, Some(false), Some(2))]
+        );
+    }
+}
 
 fn flail_damage(ascension_level: u8) -> i32 {
     if ascension_level >= 4 {
@@ -151,13 +334,6 @@ fn last_move(entity: &MonsterEntity, move_id: u8) -> bool {
     entity.move_history().back().copied() == Some(move_id)
 }
 
-fn automaton_draw_x(state: &CombatState, entity: &MonsterEntity) -> i32 {
-    state
-        .monster_protocol_identity(entity.id)
-        .and_then(|identity| identity.draw_x)
-        .unwrap_or(entity.logical_position)
-}
-
 fn spawn_orb_action(draw_x: i32) -> Action {
     Action::SpawnMonsterSmart {
         monster_id: crate::content::monsters::EnemyId::BronzeOrb,
@@ -245,10 +421,9 @@ impl MonsterBehavior for BronzeAutomaton {
     ) -> Vec<Action> {
         match plan.move_id {
             SPAWN_ORBS => {
-                let center = automaton_draw_x(state, entity);
                 vec![
-                    spawn_orb_action(center + LEFT_ORB_OFFSET),
-                    spawn_orb_action(center + RIGHT_ORB_OFFSET),
+                    spawn_orb_action(LEFT_ORB_DRAW_X),
+                    spawn_orb_action(RIGHT_ORB_DRAW_X),
                     Action::RollMonsterMove {
                         monster_id: entity.id,
                     },
@@ -314,13 +489,12 @@ impl MonsterBehavior for BronzeAutomaton {
             .entities
             .monsters
             .iter()
-            .filter(|monster| {
-                monster.id != entity.id
-                    && !monster.is_dying
-                    && !monster.is_escaped
-                    && monster.current_hp > 0
+            .filter(|monster| monster.id != entity.id && !monster.is_dying)
+            .rev()
+            .map(|monster| Action::Suicide {
+                target: monster.id,
+                trigger_relics: true,
             })
-            .map(|monster| Action::Suicide { target: monster.id })
             .collect()
     }
 }

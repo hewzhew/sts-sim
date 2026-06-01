@@ -11,7 +11,7 @@ pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
             power_id: crate::content::powers::PowerId::PlatedArmor,
             amount: 4,
         },
-        insertion_mode: AddTo::Bottom,
+        insertion_mode: AddTo::Top,
     });
     actions
 }

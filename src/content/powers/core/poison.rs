@@ -10,17 +10,8 @@ pub fn at_turn_start(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action
         }];
     }
 
-    smallvec::smallvec![
-        Action::LoseHp {
-            target: owner,
-            amount,
-            triggers_rupture: false,
-        },
-        Action::ApplyPower {
-            source: owner,
-            target: owner,
-            power_id: PowerId::Poison,
-            amount: -1,
-        },
-    ]
+    smallvec::smallvec![Action::PoisonLoseHp {
+        target: owner,
+        amount,
+    }]
 }

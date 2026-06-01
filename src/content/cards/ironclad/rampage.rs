@@ -1,6 +1,29 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
+
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::Rampage,
+        name: "Rampage",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Uncommon,
+        cost: 1,
+        base_damage: 8,
+        base_block: 0,
+        base_magic: 5,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: false,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 0,
+        upgrade_block: 0,
+        upgrade_magic: 3,
+    }
+}
 
 pub fn rampage_play(
     _state: &CombatState,
@@ -9,8 +32,9 @@ pub fn rampage_play(
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Rampage requires a valid target!");
     let mut actions = smallvec::SmallVec::new();
-    let damage = card.base_damage_mut;
-    let increase_amount = card.base_magic_num_mut;
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, _state, Some(target));
+    let damage = evaluated.base_damage_mut;
+    let increase_amount = evaluated.base_magic_num_mut;
 
     actions.push(ActionInfo {
         action: Action::Damage(DamageInfo {
@@ -26,7 +50,7 @@ pub fn rampage_play(
 
     actions.push(ActionInfo {
         action: Action::ModifyCardDamage {
-            card_uuid: card.uuid,
+            card_uuid: evaluated.uuid,
             amount: increase_amount,
         },
         insertion_mode: AddTo::Bottom,

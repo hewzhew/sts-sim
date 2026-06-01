@@ -1,25 +1,49 @@
+use crate::content::cards::{CardDefinition, CardId, CardRarity, CardTarget, CardType};
 use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;
 
+pub fn definition() -> CardDefinition {
+    CardDefinition {
+        id: CardId::FiendFire,
+        name: "Fiend Fire",
+        card_type: CardType::Attack,
+        rarity: CardRarity::Rare,
+        cost: 2,
+        base_damage: 7,
+        base_block: 0,
+        base_magic: 0,
+        target: CardTarget::Enemy,
+        is_multi_damage: false,
+        exhaust: true,
+        ethereal: false,
+        innate: false,
+        tags: &[],
+        upgrade_damage: 3,
+        upgrade_block: 0,
+        upgrade_magic: 0,
+    }
+}
+
 pub fn fiend_fire_play(
-    _state: &CombatState,
+    state: &CombatState,
     card: &CombatCard,
     target: Option<EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Fiend Fire requires a valid target!");
+    let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));
     smallvec::smallvec![ActionInfo {
         action: Action::FiendFire {
             target,
             damage_info: DamageInfo {
                 source: 0,
                 target,
-                base: card.base_damage_mut,
-                output: card.base_damage_mut,
+                base: evaluated.base_damage_mut,
+                output: evaluated.base_damage_mut,
                 damage_type: DamageType::Normal,
                 is_modified: false,
-            }
+            },
         },
         insertion_mode: AddTo::Bottom,
     }]

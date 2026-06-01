@@ -159,20 +159,14 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             match choice_idx {
                 0 => {
                     // Run: obtain Injury curse
-                    run_state.add_card_to_deck(CardId::Injury);
+                    super::obtain_event_card(run_state, EventId::GoldenIdol, CardId::Injury);
                 }
                 1 => {
-                    // Fight: take damage (DEFAULT type — Tungsten Rod reduces by 1)
-                    let mut damage = calc_damage(run_state);
-                    if run_state
-                        .relics
-                        .iter()
-                        .any(|r| r.id == RelicId::TungstenRod)
-                    {
-                        damage = (damage - 1).max(0);
-                    }
-                    run_state.change_hp_with_source(
-                        -damage,
+                    // Java uses DamageInfo(null, damage): normal ownerless damage.
+                    super::apply_player_default_damage(
+                        run_state,
+                        calc_damage(run_state),
+                        super::EventDamageOwner::None,
                         DomainEventSource::Event(EventId::GoldenIdol),
                     );
                 }
@@ -193,4 +187,78 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
     }
 
     run_state.event_state = Some(event_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::relics::RelicState;
+    use crate::state::selection::DomainEvent;
+
+    #[test]
+    fn trap_damage_uses_java_ownerless_default_damage_hooks() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.max_hp = 20;
+        run_state.current_hp = 20;
+        run_state.event_state = Some(EventState::new(EventId::GoldenIdol));
+        run_state.event_state.as_mut().unwrap().current_screen = 1;
+        run_state.relics.push(RelicState::new(RelicId::Torii));
+        run_state.relics.push(RelicState::new(RelicId::TungstenRod));
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(
+            run_state.current_hp, 16,
+            "Java DamageInfo(null, 5) skips Torii but Tungsten reduces HP loss by 1"
+        );
+        assert_eq!(run_state.event_state.as_ref().unwrap().current_screen, 2);
+    }
+
+    #[test]
+    fn run_trap_runs_obtain_hooks_before_injury_obtained_event() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.max_hp = 80;
+        run_state.current_hp = 80;
+        run_state.relics.push(RelicState::new(RelicId::CeramicFish));
+        run_state.event_state = Some(EventState::new(EventId::GoldenIdol));
+        run_state.event_state.as_mut().unwrap().current_screen = 1;
+        run_state.emitted_events.clear();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let events = run_state.take_emitted_events();
+        let fish_gold_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::GoldChanged {
+                        delta: 9,
+                        source: DomainEventSource::Event(EventId::GoldenIdol),
+                        ..
+                    }
+                )
+            })
+            .expect("Ceramic Fish should run when Golden Idol's Injury is obtained");
+        let obtained_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    DomainEvent::CardObtained {
+                        card,
+                        source: DomainEventSource::Event(EventId::GoldenIdol),
+                    } if card.id == CardId::Injury
+                )
+            })
+            .expect("Golden Idol should obtain Injury through ShowCardAndObtainEffect");
+
+        assert!(
+            fish_gold_pos < obtained_pos,
+            "Java GoldenIdol trap queues ShowCardAndObtainEffect for Injury; that effect runs onObtainCard before Soul.obtain"
+        );
+    }
 }

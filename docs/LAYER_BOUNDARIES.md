@@ -5,40 +5,32 @@ This file defines the hard dependency direction for `src/`.
 ## Layers
 
 - `core`
-  - runtime truth and RL-facing semantics
+  - runtime truth and game semantics
   - `src/runtime/`
-  - `src/semantics/`
-  - `src/projection/`
   - `src/content/`
   - `src/core/`
   - `src/engine/`
-  - `src/map/`
-  - `src/rewards/`
   - `src/state/`
 - `integration`
-  - protocol mapping, replay, sync, fixtures, and analysis helpers around the runtime
-  - `src/diff/`
-  - `src/protocol/`
+  - fixture import, eval surfaces, and analysis helpers around the runtime
   - `src/testing/`
-  - `src/verification/`
-- `app`
-  - search, policy, CLI, coverage, and higher-level workbenches that consume core/integration
-  - `src/bot/`
-  - `src/cli/`
+  - `src/eval/`
+- `entrypoints`
+  - thin CLI binaries that consume core/integration
   - `src/bin/`
 
 ## Allowed Dependency Direction
 
 - `core`
 - `integration -> core`
-- `app -> core`
-- `app -> integration`
+- `entrypoints -> core`
+- `entrypoints -> integration`
 
 ## Forbidden Dependency Direction
 
 - `core -> integration`
-- `core -> app`
-- `integration -> app`
+- `core -> entrypoints`
+- `integration -> entrypoints`
 
 ## Current Ownership Notes
 
@@ -47,45 +39,35 @@ This file defines the hard dependency direction for `src/`.
   - `runtime::action`
   - `runtime::combat`
   - `runtime::rng`
-- `semantics`
-  - explicit truth-side action and move specs derived from engine/runtime state
-- `projection`
-  - preview/audit views derived from truth-side specs
+- `runtime::combat`
+  - `state`: combat container state, turn runtime, queues, zones, counters
+  - `entities`: player/monster entity records and monster intent surface
+  - `monster_runtime`: per-monster private runtime fields
+  - `card`: combat card identity, cost, and transient stat state
+  - `power`: combat-owned power payload/runtime records
+  - `combat_methods`: state methods that coordinate these records
+- `runtime::monster_move`
+  - runtime monster move-plan structs used by content, action execution, and
+    AI-facing projections
+- `state::events`
+  - event state, event selection context, event pools, and event-room roll
+    generation
+- `state::map`
+  - run map graph, room nodes, map progress, and map generation
+- `sim`
+  - AI-facing simulator views, legal action helpers, and projection helpers
 - `fixtures`
-  - integration-only fixture/spec assembly
+  - integration-only start-spec assembly
   - exported from `lib.rs` as `sts_simulator::fixtures`
-- `testing::harness`
-  - integration-side analysis helpers
-  - currently `hexaghost_value`
-- `bot::harness`
-  - app-layer workbenches and bot-coupled validation surfaces
-  - `boss_validation`
-  - `combat_env`
-  - `combat_lab`
-  - `combat_policy`
-- `bot::coverage_signatures`
-  - bot-side shared signature extraction for coverage/curiosity and live combat logging
-- `cli::coverage_tools`
-  - offline replay/live-comm coverage record extraction and report output for devtool flows
-- `diff::protocol`
-  - thin protocol-facing facade over mapping, parsing, and snapshot shaping
-- `diff::replay`
-  - thin facade over replay execution, inspection, and comparator surfaces
-- `diff::state_sync`
-  - thin facade over protocol -> runtime state construction and sync
-  - must behave as a strict importer for migrated `runtime_state` slices, not as
-    a shadow-state repair layer
-- `verification`
-  - integration-side facade for replay/reconstruction consumers that should not
-    reach into `diff::*` internals directly
-  - current first slice: `verification::combat`
-- `protocol`
-  - integration-side Java/protocol adapter facade
-  - `protocol::java`
+- `testing::support`
+  - test-only local combat builders
+- `live_comm`
+  - legacy external bridge tooling; not active unless rebuilt under
+    `docs/live_comm/LEGACY_FIXTURE_ONLY.md`
 
 ## Enforcement
 
-- `tests/layer_boundaries.rs`
-  - blocks `core -> integration/app`
-  - blocks `integration -> app`
+- no active boundary test is currently checked in
+- a future boundary test should block `core -> integration/entrypoints` and
+  `integration -> entrypoints`
 - Any new exception should be treated as a structural regression, not as a casual import choice.

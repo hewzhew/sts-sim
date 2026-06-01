@@ -73,3 +73,30 @@ impl MonsterBehavior for BanditPointy {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{pointy_special_plan, BanditPointy};
+    use crate::content::monsters::{EnemyId, MonsterBehavior};
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn pointy_special_queues_two_damage_actions_before_setmove_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::BanditPointy);
+
+        let actions = BanditPointy::take_turn_plan(&mut state, &entity, &pointy_special_plan(0));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack { base_damage: 5, .. },
+                Action::MonsterAttack { base_damage: 5, .. },
+                Action::SetMonsterMove {
+                    next_move_byte: super::POINTY_SPECIAL,
+                    ..
+                }
+            ]
+        ));
+    }
+}

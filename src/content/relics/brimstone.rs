@@ -8,7 +8,9 @@ impl Brimstone {
     pub fn at_turn_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
 
-        // Give player 2 strength
+        // Java calls addToTop for the player strength, then addToTop once per
+        // monster in monster-list order. The shared queue helper performs the
+        // Java addToTop reversal when these ActionInfo records are inserted.
         actions.push(ActionInfo {
             action: Action::ApplyPower {
                 source: state.entities.player.id,
@@ -16,22 +18,19 @@ impl Brimstone {
                 power_id: crate::content::powers::PowerId::Strength,
                 amount: 2,
             },
-            insertion_mode: AddTo::Bottom,
+            insertion_mode: AddTo::Top,
         });
 
-        // Give all enemies 1 strength
         for monster in &state.entities.monsters {
-            if !monster.is_escaped && !monster.is_dying {
-                actions.push(ActionInfo {
-                    action: Action::ApplyPower {
-                        source: state.entities.player.id,
-                        target: monster.id,
-                        power_id: crate::content::powers::PowerId::Strength,
-                        amount: 1,
-                    },
-                    insertion_mode: AddTo::Top,
-                });
-            }
+            actions.push(ActionInfo {
+                action: Action::ApplyPower {
+                    source: monster.id,
+                    target: monster.id,
+                    power_id: crate::content::powers::PowerId::Strength,
+                    amount: 1,
+                },
+                insertion_mode: AddTo::Top,
+            });
         }
 
         actions

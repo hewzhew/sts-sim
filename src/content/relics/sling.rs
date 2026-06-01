@@ -1,10 +1,14 @@
 use crate::runtime::action::{Action, ActionInfo, AddTo};
+use crate::runtime::combat::CombatState;
 use smallvec::SmallVec;
 
-/// Sling: At the start of each combat, if it is your first turn, gain 2 Strength.
-/// (Effectively an at_battle_start relic.)
-pub fn at_battle_start() -> SmallVec<[ActionInfo; 4]> {
+/// Sling: at battle start, gain 2 Strength only in elite combats.
+pub fn at_battle_start(state: &CombatState) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
+    if !state.meta.is_elite_fight {
+        return actions;
+    }
+
     actions.push(ActionInfo {
         action: Action::ApplyPower {
             source: 0,

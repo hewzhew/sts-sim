@@ -38,19 +38,19 @@ source alone.
 Examples:
 
 - `manual scenario` live spot-checks
-- `protocol truth samples`
 - targeted `CommunicationMod` captures
 
 Use this for:
 
-- protocol truth fixtures
+- one-off source confirmation
 - exact hidden-state snapshots
 - behavior cases that need observable Java sequencing
 
-Primary entrypoints:
+Current status:
 
-- [live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
-- [protocol/MANUAL_SCENARIO_SAMPLE_INDEX.md](protocol/MANUAL_SCENARIO_SAMPLE_INDEX.md)
+- the old checked-in protocol sample importer has been removed
+- live runtime evidence can still inform a targeted Rust behavior test
+- do not rebuild case/scenario/state-sync fixtures as the default evidence path
 
 ### 3. Differential Oracle
 
@@ -59,19 +59,20 @@ manually writing exact expected values first.
 
 Examples:
 
-- replay parity
-- live-comm parity checks
+- reduced replay parity from checked-in fixtures
+- historical live-comm parity checks
 
 Use this for:
 
 - state parity
-- replay consistency
+- replay consistency after a future adapter exists
 - identifying which field or transition diverged
 
 Primary entrypoints:
 
-- `tests/live_comm_replay_driver.rs`
+- `cargo test --quiet`
 - [live_comm/LIVE_COMM_PARITY_WORKFLOW.md](live_comm/LIVE_COMM_PARITY_WORKFLOW.md)
+  - historical reference only; live-comm parity is retired unless rebuilt
 
 ### 4. Invariant Oracle
 
@@ -130,7 +131,8 @@ When you need external evidence, the default order is:
 2. use `tools/sts_tool` to accelerate source tracing when the logic is scattered
 3. capture or confirm with `manual scenario` / live spot-check if behavior still
    needs runtime evidence
-4. encode the result as a protocol truth sample, behavior test, or parity check
+4. encode the result as a targeted Rust behavior test or a future explicit
+   oracle fixture
 
 `tools/sts_tool` should be treated as a normal investigation entrypoint, not a
 buried optional utility:
@@ -149,8 +151,8 @@ Example:
 ```rust
 // Oracle: Java source + live runtime sample
 // Evidence:
-// - docs/protocol/GUARDIAN_THRESHOLD_TEST_MATRIX.md
-// - tests/protocol_truth_samples/guardian_threshold/frame.json
+// - Java source file/path and relevant method
+// - captured run/log identifier if runtime evidence was needed
 ```
 
 This is intentionally repetitive. The goal is to make the oracle visible in the

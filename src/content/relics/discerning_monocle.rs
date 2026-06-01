@@ -1,6 +1,7 @@
-/// DiscerningMonocle — Shop-specific relic.
-/// Java: onEnterRoom(ShopRoom) → cosmetic pulse. MULTIPLIER = 0.8f.
-/// Actual effect: 20% shop discount, applied in RunState::generate_shop() price chain.
+/// DiscerningMonocle.
+/// Java source only pulses when entering ShopRoom. Its `MULTIPLIER = 0.8f`
+/// constant is not referenced by the vanilla shop price code in this source
+/// tree, so the headless simulator must not invent a discount here.
 pub fn on_equip() {
-    // No combat hook. Price modifier is applied in generate_shop().
+    // No gameplay hook.
 }

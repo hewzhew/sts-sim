@@ -1,4 +1,5 @@
-use crate::state::core::EngineState;
+use crate::content::monsters::factory::EncounterId;
+use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
 use crate::state::events::{EventChoiceMeta, EventId, EventState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -9,6 +10,8 @@ use crate::state::selection::DomainEventSource;
 // bits[12..13] = reward0 type (0=Gold, 1=Nothing, 2=Relic)
 // bits[14..15] = reward1 type
 // bits[16..17] = reward2 type
+// bits[18..19] = enemy (0=3 Sentries, 1=Gremlin Nob, 2=Lagavulin Event)
+// bits[20..25] = combat gold reward rolled when the fight is revealed
 
 const GOLD_REWARD: i32 = 30;
 const CHANCE_RAMP: i32 = 25;
@@ -22,6 +25,12 @@ fn encounter_chance(s: i32) -> i32 {
 fn reward_type(s: i32, idx: i32) -> i32 {
     (s >> (12 + idx * 2)) & 0x3
 }
+fn enemy_type(s: i32) -> i32 {
+    (s >> 18) & 0x3
+}
+fn combat_gold_reward(s: i32) -> i32 {
+    (s >> 20) & 0x3F
+}
 
 fn set_num_rewards(s: &mut i32, n: i32) {
     *s = (*s & !0xF) | (n & 0xF);
@@ -31,6 +40,20 @@ fn set_encounter_chance(s: &mut i32, c: i32) {
 }
 fn set_reward_types(s: &mut i32, r0: i32, r1: i32, r2: i32) {
     *s = (*s & !(0x3F << 12)) | ((r0 & 0x3) << 12) | ((r1 & 0x3) << 14) | ((r2 & 0x3) << 16);
+}
+fn set_enemy_type(s: &mut i32, enemy: i32) {
+    *s = (*s & !(0x3 << 18)) | ((enemy & 0x3) << 18);
+}
+fn set_combat_gold_reward(s: &mut i32, gold: i32) {
+    *s = (*s & !(0x3F << 20)) | ((gold & 0x3F) << 20);
+}
+
+fn encounter_id_for_enemy(enemy: i32) -> EncounterId {
+    match enemy {
+        0 => EncounterId::ThreeSentries,
+        1 => EncounterId::GremlinNob,
+        _ => EncounterId::LagavulinEvent,
+    }
 }
 
 pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
@@ -61,44 +84,17 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     let roll = run_state.rng_pool.misc_rng.random_range(0, 99);
                     if roll < chance {
                         // Combat!
-                        // Java: addGoldToRewards(25-35) + remaining rewards via addGoldToRewards/addRelicToRewards
-                        let mut rewards = crate::rewards::state::RewardState::new();
-                        // Pre-combat gold reward (Java: miscRng.random(25, 35))
-                        let combat_gold = run_state.rng_pool.misc_rng.random_range(25, 35);
-                        rewards.items.push(crate::rewards::state::RewardItem::Gold {
-                            amount: combat_gold,
-                        });
-                        // Remaining unclaimed search rewards
-                        let n = num_rewards(event_state.internal_state) as usize;
-                        for i in n..3 {
-                            let rt = reward_type(event_state.internal_state, i as i32);
-                            match rt {
-                                0 => rewards.items.push(crate::rewards::state::RewardItem::Gold {
-                                    amount: GOLD_REWARD,
-                                }),
-                                2 => {
-                                    let relic_id = run_state.random_relic();
-                                    rewards
-                                        .items
-                                        .push(crate::rewards::state::RewardItem::Relic {
-                                            relic_id,
-                                        });
-                                }
-                                _ => {}
-                            }
-                        }
-                        event_state.current_screen = 2;
-                        event_state.completed = true;
+                        // Java first reveals the fight and adds the 25-35 gold
+                        // reward. Remaining corpse rewards are added on the next
+                        // click immediately before enterCombat().
+                        let combat_gold = if run_state.is_daily_run {
+                            run_state.rng_pool.misc_rng.random(30)
+                        } else {
+                            run_state.rng_pool.misc_rng.random_range(25, 35)
+                        };
+                        set_combat_gold_reward(&mut event_state.internal_state, combat_gold);
+                        event_state.current_screen = 1;
                         run_state.event_state = Some(event_state);
-                        *engine_state =
-                            EngineState::EventCombat(crate::state::core::EventCombatState {
-                                rewards,
-                                reward_allowed: true,
-                                no_cards_in_rewards: false,
-                                post_combat_return:
-                                    crate::state::core::PostCombatReturn::MapNavigation,
-                                encounter_key: "Dead Adventurer",
-                            });
                         return;
                     }
                     // Safe loot
@@ -123,12 +119,55 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
             }
         }
+        1 => {
+            let rewards = build_combat_rewards(run_state, event_state.internal_state);
+            let encounter_id = encounter_id_for_enemy(enemy_type(event_state.internal_state));
+            event_state.current_screen = 2;
+            event_state.completed = true;
+            run_state.event_state = Some(event_state);
+            *engine_state = EngineState::CombatStart(CombatStartRequest::event(
+                encounter_id,
+                rewards,
+                true,
+                false,
+                true,
+                PostCombatReturn::MapNavigation,
+            ));
+            return;
+        }
         _ => {
             event_state.completed = true;
         }
     }
 
     run_state.event_state = Some(event_state);
+}
+
+fn build_combat_rewards(
+    run_state: &mut RunState,
+    internal_state: i32,
+) -> crate::rewards::state::RewardState {
+    let mut rewards = crate::rewards::state::RewardState::new();
+    rewards.items.push(crate::rewards::state::RewardItem::Gold {
+        amount: combat_gold_reward(internal_state),
+    });
+    let n = num_rewards(internal_state) as usize;
+    for i in n..3 {
+        let rt = reward_type(internal_state, i as i32);
+        match rt {
+            0 => rewards.items.push(crate::rewards::state::RewardItem::Gold {
+                amount: GOLD_REWARD,
+            }),
+            2 => {
+                let relic_id = run_state.random_relic();
+                rewards
+                    .items
+                    .push(crate::rewards::state::RewardItem::Relic { relic_id });
+            }
+            _ => {}
+        }
+    }
+    rewards
 }
 
 fn apply_reward(run_state: &mut RunState, reward_type: i32) {
@@ -141,7 +180,7 @@ fn apply_reward(run_state: &mut RunState, reward_type: i32) {
         } // Gold
         2 => {
             // Relic
-            let relic_id = run_state.random_relic();
+            let relic_id = run_state.random_screenless_relic_reward();
             let _ = run_state.obtain_relic_with_source(
                 relic_id,
                 EngineState::EventRoom,
@@ -163,9 +202,140 @@ pub fn init_dead_adventurer_state(run_state: &mut RunState) -> i32 {
     // Java: Collections.shuffle(rewards, new Random(miscRng.randomLong()))
     let mut rewards = [0i32, 1, 2];
     crate::runtime::rng::shuffle_with_random_long(&mut rewards, &mut run_state.rng_pool.misc_rng);
+    // Java constructor also chooses which elite encounter is in the corpse.
+    let enemy = run_state.rng_pool.misc_rng.random_range(0, 2);
     let mut s = 0i32;
     set_num_rewards(&mut s, 0);
     set_encounter_chance(&mut s, base_chance);
     set_reward_types(&mut s, rewards[0], rewards[1], rewards[2]);
+    set_enemy_type(&mut s, enemy);
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        combat_gold_reward, encounter_id_for_enemy, enemy_type, init_dead_adventurer_state,
+        set_encounter_chance, set_enemy_type, set_num_rewards, set_reward_types,
+    };
+    use crate::content::monsters::factory::EncounterId;
+    use crate::state::core::{CombatContext, EngineState, PostCombatReturn};
+    use crate::state::events::{EventId, EventState};
+    use crate::state::run::RunState;
+
+    #[test]
+    fn init_consumes_java_enemy_roll_and_stores_enemy_in_state() {
+        let mut expected = RunState::new(1, 0, false, "Ironclad");
+        let mut rewards = [0i32, 1, 2];
+        crate::runtime::rng::shuffle_with_random_long(
+            &mut rewards,
+            &mut expected.rng_pool.misc_rng,
+        );
+        let expected_enemy = expected.rng_pool.misc_rng.random_range(0, 2);
+
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let state = init_dead_adventurer_state(&mut run_state);
+
+        assert_eq!(enemy_type(state), expected_enemy);
+    }
+
+    #[test]
+    fn combat_trigger_first_stops_on_java_fight_prompt() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut internal_state = 0;
+        set_num_rewards(&mut internal_state, 0);
+        set_encounter_chance(&mut internal_state, 100);
+        set_reward_types(&mut internal_state, 1, 1, 1);
+        set_enemy_type(&mut internal_state, 0);
+        run_state.event_state = Some(EventState {
+            id: EventId::DeadAdventurer,
+            current_screen: 0,
+            internal_state,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        let mut engine_state = EngineState::EventRoom;
+
+        super::handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(matches!(engine_state, EngineState::EventRoom));
+        let event_state = run_state.event_state.as_ref().unwrap();
+        assert_eq!(event_state.current_screen, 1);
+        assert!((25..=35).contains(&combat_gold_reward(event_state.internal_state)));
+    }
+
+    #[test]
+    fn daily_combat_trigger_uses_java_daily_gold_roll() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.is_daily_run = true;
+        let mut expected_rng = run_state.rng_pool.misc_rng.clone();
+        let _fight_roll = expected_rng.random_range(0, 99);
+        let expected_gold = expected_rng.random(30);
+
+        let mut internal_state = 0;
+        set_num_rewards(&mut internal_state, 0);
+        set_encounter_chance(&mut internal_state, 100);
+        set_reward_types(&mut internal_state, 1, 1, 1);
+        set_enemy_type(&mut internal_state, 0);
+        run_state.event_state = Some(EventState {
+            id: EventId::DeadAdventurer,
+            current_screen: 0,
+            internal_state,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        let mut engine_state = EngineState::EventRoom;
+
+        super::handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert_eq!(
+            combat_gold_reward(run_state.event_state.as_ref().unwrap().internal_state),
+            expected_gold,
+            "Java daily Dead Adventurer uses miscRng.random(30), not random(25, 35)"
+        );
+    }
+
+    #[test]
+    fn fight_prompt_enters_combat_with_stored_java_enemy_key() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut internal_state = 0;
+        set_num_rewards(&mut internal_state, 0);
+        set_encounter_chance(&mut internal_state, 100);
+        set_reward_types(&mut internal_state, 1, 1, 1);
+        set_enemy_type(&mut internal_state, 0);
+        run_state.event_state = Some(EventState {
+            id: EventId::DeadAdventurer,
+            current_screen: 0,
+            internal_state,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        let mut engine_state = EngineState::EventRoom;
+
+        super::handle_choice(&mut engine_state, &mut run_state, 0);
+        super::handle_choice(&mut engine_state, &mut run_state, 0);
+
+        let EngineState::CombatStart(request) = engine_state else {
+            panic!("fight prompt should request CombatStart");
+        };
+        assert_eq!(request.encounter_id, EncounterId::ThreeSentries);
+        let CombatContext::Event(combat) = request.context else {
+            panic!("fight prompt should carry event combat context");
+        };
+        assert!(matches!(
+            combat.post_combat_return,
+            PostCombatReturn::MapNavigation
+        ));
+        assert!(combat.elite_trigger);
+    }
+
+    #[test]
+    fn enemy_mapping_matches_java_get_monster_cases() {
+        assert_eq!(encounter_id_for_enemy(0), EncounterId::ThreeSentries);
+        assert_eq!(encounter_id_for_enemy(1), EncounterId::GremlinNob);
+        assert_eq!(encounter_id_for_enemy(2), EncounterId::LagavulinEvent);
+    }
 }

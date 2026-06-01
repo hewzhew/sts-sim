@@ -7,14 +7,26 @@ use smallvec::{smallvec, SmallVec};
 pub fn on_hp_lost(state: &CombatState, owner: EntityId, _amount: i32) -> SmallVec<[Action; 2]> {
     let mut actions = smallvec![];
 
-    // Split triggers when HP drops to or below 50%
+    // Java large slimes and Slime Boss run this from `damage()` after
+    // `super.damage(info)`: the split interrupt only fires when the monster is
+    // not dying, is at or below half HP, and is not already on the split move.
     if let Some(monster) = state.entities.monsters.iter().find(|m| m.id == owner) {
-        if monster.current_hp <= monster.max_hp / 2 && monster.planned_move_id() != 3 {
-            let plan = match EnemyId::from_id(monster.monster_type) {
+        if !monster.is_dying
+            && monster.current_hp <= monster.max_hp / 2
+            && monster.planned_move_id() != 3
+        {
+            let enemy_id = EnemyId::from_id(monster.monster_type);
+            let plan = match enemy_id {
                 Some(EnemyId::AcidSlimeL) => {
+                    if crate::content::monsters::exordium::large_slime_split_triggered(monster) {
+                        return actions;
+                    }
                     crate::content::monsters::exordium::acid_slime::split_plan(EnemyId::AcidSlimeM)
                 }
                 Some(EnemyId::SpikeSlimeL) => {
+                    if crate::content::monsters::exordium::large_slime_split_triggered(monster) {
+                        return actions;
+                    }
                     crate::content::monsters::exordium::spike_slime::split_plan()
                 }
                 Some(EnemyId::SlimeBoss) => {
@@ -28,6 +40,13 @@ pub fn on_hp_lost(state: &CombatState, owner: EntityId, _amount: i32) -> SmallVe
                 planned_steps: plan.steps,
                 planned_visible_spec: plan.visible_spec,
             });
+            if matches!(enemy_id, Some(EnemyId::AcidSlimeL | EnemyId::SpikeSlimeL)) {
+                actions.push(
+                    crate::content::monsters::exordium::mark_large_slime_split_triggered_action(
+                        monster,
+                    ),
+                );
+            }
         }
     }
 

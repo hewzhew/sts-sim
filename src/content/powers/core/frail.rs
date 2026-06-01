@@ -15,12 +15,19 @@ pub fn at_end_of_round(
     just_applied: bool,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
-    if amount > 0 && !just_applied {
-        actions.push(Action::ApplyPower {
-            source: owner,
+    if just_applied {
+        return actions;
+    }
+    if amount == 0 {
+        actions.push(Action::RemovePower {
             target: owner,
             power_id: PowerId::Frail,
-            amount: -1,
+        });
+    } else {
+        actions.push(Action::ReducePower {
+            target: owner,
+            power_id: PowerId::Frail,
+            amount: 1,
         });
     }
     actions

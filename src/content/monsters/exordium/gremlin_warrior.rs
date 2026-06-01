@@ -124,7 +124,95 @@ impl MonsterBehavior for GremlinWarrior {
                 ));
                 actions
             }
-            GremlinWarriorTurn::Escape => vec![Action::Escape { target: entity.id }],
+            GremlinWarriorTurn::Escape => vec![
+                Action::Escape { target: entity.id },
+                set_next_move_action(entity, escape_plan()),
+            ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{escape_plan, scratch_plan, GremlinWarrior};
+    use crate::content::monsters::{EnemyId, MonsterBehavior, PreBattleLegacyRng};
+    use crate::content::powers::PowerId;
+    use crate::runtime::action::Action;
+
+    #[test]
+    fn prebattle_angry_amount_matches_java_a17_threshold() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+
+        state.meta.ascension_level = 16;
+        let actions =
+            GremlinWarrior::use_pre_battle_actions(&mut state, &entity, PreBattleLegacyRng::Misc);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Anger,
+                amount: 1,
+            }]
+        ));
+
+        state.meta.ascension_level = 17;
+        let actions =
+            GremlinWarrior::use_pre_battle_actions(&mut state, &entity, PreBattleLegacyRng::Misc);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Anger,
+                amount: 2,
+            }]
+        ));
+    }
+
+    #[test]
+    fn scratch_damage_and_followup_setmove_match_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.meta.ascension_level = 2;
+        let entity = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+
+        let actions = GremlinWarrior::take_turn_plan(&mut state, &entity, &scratch_plan(2));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::MonsterAttack {
+                    source: 1,
+                    target: 0,
+                    base_damage: 5,
+                    ..
+                },
+                Action::SetMonsterMove {
+                    monster_id: 1,
+                    next_move_byte: super::SCRATCH,
+                    ..
+                },
+            ]
+        ));
+    }
+
+    #[test]
+    fn escape_turn_queues_escape_intent_like_java() {
+        let mut state = crate::test_support::blank_test_combat();
+        let entity = crate::test_support::test_monster(EnemyId::GremlinWarrior);
+
+        let actions = GremlinWarrior::take_turn_plan(&mut state, &entity, &escape_plan());
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::Escape { .. },
+                Action::SetMonsterMove {
+                    next_move_byte: super::ESCAPE,
+                    ..
+                }
+            ]
+        ));
     }
 }

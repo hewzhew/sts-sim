@@ -173,9 +173,6 @@ impl MonsterBehavior for Lagavulin {
         if !entity.lagavulin.is_out {
             return idle_plan();
         }
-        if entity.move_history().is_empty() {
-            return debuff_plan(ascension_level);
-        }
         if entity.lagavulin.debuff_turn_count < 2 {
             if last_two_moves_are_attack(entity) {
                 debuff_plan(ascension_level)
@@ -202,7 +199,7 @@ impl MonsterBehavior for Lagavulin {
         let (_hp_rng, _ascension_level) =
             crate::content::monsters::legacy_pre_battle_rng(state, legacy_rng);
         if entity.lagavulin.is_out {
-            Vec::new()
+            vec![set_next_move_action(entity, debuff_plan(_ascension_level))]
         } else {
             vec![
                 gain_block_action(
@@ -384,6 +381,7 @@ mod tests {
                 instance_id: None,
                 amount: 12,
                 extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
                 just_applied: false,
             }],
         );
@@ -423,5 +421,44 @@ mod tests {
         assert!(combat.entities.monsters[0].lagavulin.is_out_triggered);
         assert!(combat.entities.monsters[0].lagavulin.is_out);
         assert_eq!(combat.entities.monsters[0].planned_move_id(), 4);
+    }
+
+    #[test]
+    fn awake_lagavulin_initial_roll_and_prebattle_match_java_order() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut lagavulin = crate::test_support::test_monster(EnemyId::Lagavulin);
+        lagavulin.lagavulin.is_out = true;
+        lagavulin.lagavulin.is_out_triggered = true;
+
+        let initial_roll =
+            <super::Lagavulin as crate::content::monsters::MonsterBehavior>::roll_move_plan(
+                &mut combat.rng.ai_rng,
+                &lagavulin,
+                0,
+                0,
+            );
+        assert_eq!(
+            initial_roll.move_id, super::STRONG_ATK,
+            "Java init() rolls attack before non-asleep Lagavulin usePreBattleAction overrides to debuff"
+        );
+
+        lagavulin.set_planned_move_id(initial_roll.move_id);
+        lagavulin.set_planned_steps(initial_roll.steps);
+        lagavulin.set_planned_visible_spec(initial_roll.visible_spec);
+        lagavulin.move_history_mut().push_back(initial_roll.move_id);
+
+        let pre_battle =
+            <super::Lagavulin as crate::content::monsters::MonsterBehavior>::use_pre_battle_actions(
+                &mut combat,
+                &lagavulin,
+                crate::content::monsters::PreBattleLegacyRng::Misc,
+            );
+        assert!(matches!(
+            pre_battle.as_slice(),
+            [crate::runtime::action::Action::SetMonsterMove {
+                next_move_byte: super::DEBUFF,
+                ..
+            }]
+        ));
     }
 }

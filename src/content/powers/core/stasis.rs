@@ -9,32 +9,18 @@ pub fn on_death(
     card_uuid: i32,
 ) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::SmallVec::new();
-    let Some(card) = state
+    if !state
         .zones
         .limbo
         .iter()
-        .find(|card| card.uuid == card_uuid as u32)
-        .cloned()
-    else {
+        .any(|card| card.uuid == card_uuid as u32)
+    {
         return actions;
-    };
-
-    // Java StasisPower returns a fresh copy of the captured card to hand, or to
-    // discard if hand is full, then the stasis-held runtime copy ceases to exist.
-    if state.zones.hand.len() < 10 {
-        actions.push(Action::MakeCopyInHand {
-            original: Box::new(card),
-            amount: 1,
-        });
-    } else {
-        actions.push(Action::MakeCopyInDiscard {
-            original: Box::new(card),
-            amount: 1,
-        });
     }
-    actions.push(Action::RemoveCardFromPile {
+
+    actions.push(Action::ReturnStasisCard {
         card_uuid: card_uuid as u32,
-        from: crate::state::PileType::Limbo,
+        to_hand: state.zones.hand.len() != 10,
     });
     actions
 }

@@ -10,11 +10,10 @@ pub fn on_card_draw(state: &mut CombatState, card: &mut CombatCard) {
         && def.card_type != crate::content::cards::CardType::Curse
     {
         let new_cost = state.rng.card_random_rng.random(3) as u8;
-        card.cost_for_turn = Some(new_cost);
         card.free_to_play_once = false;
-        // In STS, cost also gets mapped over, but dynamically evaluated cards in combat will use cost_for_turn.
-        // We set cost_modifier so that absolute get_cost() reflects the permanent cost change in combat.
-        card.cost_modifier = new_cost as i8 - def.cost as i8;
+        // Java Snecko-style randomization changes the combat copy cost and the
+        // visible turn cost together.
+        card.set_combat_and_turn_cost_java(new_cost as i32);
     }
 }
 

@@ -115,10 +115,19 @@ pub fn generate_encounter_lists(
         1 => generate_exordium(&mut monster_list, &mut elite_list, monster_rng),
         2 => generate_the_city(&mut monster_list, &mut elite_list, monster_rng),
         3 => generate_the_beyond(&mut monster_list, &mut elite_list, monster_rng),
-        _ => generate_exordium(&mut monster_list, &mut elite_list, monster_rng),
+        4 => generate_the_ending(&mut monster_list, &mut elite_list),
+        _ => {}
     }
 
     (monster_list, elite_list)
+}
+
+fn generate_the_ending(monster_list: &mut Vec<EncounterId>, elite_list: &mut Vec<EncounterId>) {
+    // Java: TheEnding.generateMonsters() fills both normal and elite lists with
+    // Shield and Spear. The fixed Act 4 map uses the elite room, but both lists
+    // are populated in the source.
+    monster_list.extend([EncounterId::ShieldAndSpear; 3]);
+    elite_list.extend([EncounterId::ShieldAndSpear; 3]);
 }
 
 // ============================================================================
@@ -450,35 +459,489 @@ fn beyond_exclusions(monster_list: &[EncounterId]) -> Vec<EncounterId> {
     }
 }
 
-/// Generate the boss list for the given act.
-/// Java: initializeBoss() in Exordium/TheCity/TheBeyond.
-/// Shuffles 3 bosses with `Collections.shuffle(bossList, new Random(monsterRng.randomLong()))`.
-/// For the simulator we always take the "all bosses seen" path (shuffle all 3).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BossSeenState {
+    pub guardian: bool,
+    pub hexaghost: bool,
+    pub slime_boss: bool,
+    pub champ: bool,
+    pub automaton: bool,
+    pub collector: bool,
+    pub awakened_one: bool,
+    pub donu_and_deca: bool,
+    pub time_eater: bool,
+}
+
+impl BossSeenState {
+    pub const fn all_seen() -> Self {
+        Self {
+            guardian: true,
+            hexaghost: true,
+            slime_boss: true,
+            champ: true,
+            automaton: true,
+            collector: true,
+            awakened_one: true,
+            donu_and_deca: true,
+            time_eater: true,
+        }
+    }
+
+    #[cfg(test)]
+    const fn none_seen() -> Self {
+        Self {
+            guardian: false,
+            hexaghost: false,
+            slime_boss: false,
+            champ: false,
+            automaton: false,
+            collector: false,
+            awakened_one: false,
+            donu_and_deca: false,
+            time_eater: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BossGenerationSettings {
+    pub is_daily_run: bool,
+    pub is_demo: bool,
+    pub seen: BossSeenState,
+}
+
+impl BossGenerationSettings {
+    pub const fn standard_all_seen() -> Self {
+        Self {
+            is_daily_run: false,
+            is_demo: false,
+            seen: BossSeenState::all_seen(),
+        }
+    }
+}
+
+fn shuffle_bosses(bosses: &mut [EncounterId], monster_rng: &mut StsRng) {
+    crate::runtime::rng::shuffle_with_random_long(bosses, monster_rng);
+}
+
+fn duplicate_single_boss_or_fallback(
+    bosses: &mut Vec<EncounterId>,
+    fallback: &[EncounterId],
+    monster_rng: &mut StsRng,
+) {
+    if bosses.len() == 1 {
+        bosses.push(bosses[0]);
+    } else if bosses.is_empty() {
+        bosses.extend_from_slice(fallback);
+        shuffle_bosses(bosses, monster_rng);
+    }
+}
+
+fn initialize_exordium_bosses(
+    settings: BossGenerationSettings,
+    monster_rng: &mut StsRng,
+) -> Vec<EncounterId> {
+    let fallback = [
+        EncounterId::TheGuardian,
+        EncounterId::Hexaghost,
+        EncounterId::SlimeBoss,
+    ];
+    let mut bosses = Vec::new();
+    if settings.is_daily_run {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    } else if !settings.seen.guardian {
+        bosses.push(EncounterId::TheGuardian);
+    } else if !settings.seen.hexaghost {
+        bosses.push(EncounterId::Hexaghost);
+    } else if !settings.seen.slime_boss {
+        bosses.push(EncounterId::SlimeBoss);
+    } else {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    }
+
+    duplicate_single_boss_or_fallback(&mut bosses, &fallback, monster_rng);
+
+    if settings.is_demo {
+        bosses.clear();
+        bosses.push(EncounterId::Hexaghost);
+    }
+
+    bosses
+}
+
+fn initialize_city_bosses(
+    settings: BossGenerationSettings,
+    monster_rng: &mut StsRng,
+) -> Vec<EncounterId> {
+    let fallback = [
+        EncounterId::Automaton,
+        EncounterId::Collector,
+        EncounterId::TheChamp,
+    ];
+    let mut bosses = Vec::new();
+    if settings.is_daily_run {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    } else if !settings.seen.champ {
+        bosses.push(EncounterId::TheChamp);
+    } else if !settings.seen.automaton {
+        bosses.push(EncounterId::Automaton);
+    } else if !settings.seen.collector {
+        bosses.push(EncounterId::Collector);
+    } else {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    }
+
+    duplicate_single_boss_or_fallback(&mut bosses, &fallback, monster_rng);
+    bosses
+}
+
+fn initialize_beyond_bosses(
+    settings: BossGenerationSettings,
+    monster_rng: &mut StsRng,
+) -> Vec<EncounterId> {
+    let fallback = [
+        EncounterId::AwakenedOne,
+        EncounterId::TimeEater,
+        EncounterId::DonuAndDeca,
+    ];
+    let mut bosses = Vec::new();
+    if settings.is_daily_run {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    } else if !settings.seen.awakened_one {
+        bosses.push(EncounterId::AwakenedOne);
+    } else if !settings.seen.donu_and_deca {
+        bosses.push(EncounterId::DonuAndDeca);
+    } else if !settings.seen.time_eater {
+        bosses.push(EncounterId::TimeEater);
+    } else {
+        bosses.extend_from_slice(&fallback);
+        shuffle_bosses(&mut bosses, monster_rng);
+    }
+
+    duplicate_single_boss_or_fallback(&mut bosses, &fallback, monster_rng);
+    bosses
+}
+
+/// Generate the boss list for the given act under the simulator's standard
+/// profile: a normal, all-unlocked/all-bosses-seen run.
 pub fn generate_boss_list(
     act: u8,
     monster_rng: &mut crate::runtime::rng::StsRng,
 ) -> Vec<EncounterId> {
-    let mut bosses = match act {
-        1 => vec![
-            EncounterId::TheGuardian,
-            EncounterId::Hexaghost,
-            EncounterId::SlimeBoss,
-        ],
-        2 => vec![
-            EncounterId::Automaton,
-            EncounterId::Collector,
-            EncounterId::TheChamp,
-        ],
-        3 => vec![
-            EncounterId::AwakenedOne,
-            EncounterId::TimeEater,
-            EncounterId::DonuAndDeca,
+    generate_boss_list_with_settings(
+        act,
+        monster_rng,
+        BossGenerationSettings::standard_all_seen(),
+    )
+}
+
+/// Java: `initializeBoss()` in Exordium/TheCity/TheBeyond/TheEnding.
+///
+/// Non-daily runs force the first unseen boss in each act-specific unlock
+/// order. If exactly one boss is selected, Java duplicates it so the boss list
+/// has at least two entries. Once every boss in the act has been seen, or in
+/// daily runs, Java shuffles all three bosses with
+/// `Collections.shuffle(bossList, new Random(monsterRng.randomLong()))`.
+pub fn generate_boss_list_with_settings(
+    act: u8,
+    monster_rng: &mut crate::runtime::rng::StsRng,
+    settings: BossGenerationSettings,
+) -> Vec<EncounterId> {
+    match act {
+        1 => initialize_exordium_bosses(settings, monster_rng),
+        2 => initialize_city_bosses(settings, monster_rng),
+        3 => initialize_beyond_bosses(settings, monster_rng),
+        4 => vec![
+            EncounterId::TheHeart,
+            EncounterId::TheHeart,
+            EncounterId::TheHeart,
         ],
         _ => vec![],
-    };
+    }
+}
 
-    // Java: Collections.shuffle(bossList, new java.util.Random(monsterRng.randomLong()))
-    crate::runtime::rng::shuffle_with_random_long(&mut bosses, monster_rng);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    bosses
+    fn assert_java_normal_repeat_rule(monsters: &[EncounterId], first_strong_index: usize) {
+        for window in monsters.windows(2) {
+            assert_ne!(
+                window[0], window[1],
+                "Java normal encounter list rejects immediate repeats"
+            );
+        }
+        for (start, window) in monsters.windows(3).enumerate() {
+            let end = start + 2;
+            if end == first_strong_index {
+                continue;
+            }
+            assert_ne!(
+                window[0], window[2],
+                "Java normal encounter list rejects repeats from two encounters ago"
+            );
+        }
+    }
+
+    fn assert_java_elite_repeat_rule(elites: &[EncounterId]) {
+        for window in elites.windows(2) {
+            assert_ne!(
+                window[0], window[1],
+                "Java elite encounter list rejects immediate repeats"
+            );
+        }
+    }
+
+    fn assert_exordium_first_strong_exclusions(monsters: &[EncounterId]) {
+        let last_weak = monsters[2];
+        let first_strong = monsters[3];
+        assert!(
+            !match last_weak {
+                EncounterId::Looter => [EncounterId::ExordiumThugs].contains(&first_strong),
+                EncounterId::BlueSlaver => {
+                    [EncounterId::RedSlaver, EncounterId::ExordiumThugs].contains(&first_strong)
+                }
+                EncounterId::TwoLouse => [EncounterId::ThreeLouse].contains(&first_strong),
+                EncounterId::SmallSlimes => {
+                    [EncounterId::LargeSlime, EncounterId::LotsOfSlimes].contains(&first_strong)
+                }
+                _ => false,
+            },
+            "Java populateFirstStrongEnemy rerolls act-specific exclusions"
+        );
+    }
+
+    fn assert_city_first_strong_exclusions(monsters: &[EncounterId]) {
+        let last_weak = monsters[1];
+        let first_strong = monsters[2];
+        assert!(
+            !match last_weak {
+                EncounterId::SphericGuardian => {
+                    [EncounterId::SentryAndSphere].contains(&first_strong)
+                }
+                EncounterId::ThreeByrds => [EncounterId::ChosenAndByrds].contains(&first_strong),
+                EncounterId::ChosenAlone => {
+                    [EncounterId::ChosenAndByrds, EncounterId::CultistAndChosen]
+                        .contains(&first_strong)
+                }
+                _ => false,
+            },
+            "Java TheCity.generateExclusions rerolls the first strong encounter"
+        );
+    }
+
+    fn assert_beyond_first_strong_exclusions(monsters: &[EncounterId]) {
+        let last_weak = monsters[1];
+        let first_strong = monsters[2];
+        assert!(
+            !match last_weak {
+                EncounterId::ThreeDarklings =>
+                    [EncounterId::ThreeDarklings].contains(&first_strong),
+                EncounterId::OrbWalker => [EncounterId::OrbWalker].contains(&first_strong),
+                EncounterId::ThreeShapes => [EncounterId::FourShapes].contains(&first_strong),
+                _ => false,
+            },
+            "Java TheBeyond.generateExclusions rerolls the first strong encounter"
+        );
+    }
+
+    #[test]
+    fn first_strong_exclusion_tables_match_java_sources() {
+        assert_eq!(
+            exordium_exclusions(&[EncounterId::Looter]),
+            vec![EncounterId::ExordiumThugs]
+        );
+        assert_eq!(
+            exordium_exclusions(&[EncounterId::BlueSlaver]),
+            vec![EncounterId::RedSlaver, EncounterId::ExordiumThugs]
+        );
+        assert_eq!(
+            exordium_exclusions(&[EncounterId::TwoLouse]),
+            vec![EncounterId::ThreeLouse]
+        );
+        assert_eq!(
+            exordium_exclusions(&[EncounterId::SmallSlimes]),
+            vec![EncounterId::LargeSlime, EncounterId::LotsOfSlimes]
+        );
+        assert!(exordium_exclusions(&[EncounterId::JawWorm]).is_empty());
+        assert!(exordium_exclusions(&[EncounterId::Cultist]).is_empty());
+
+        assert_eq!(
+            city_exclusions(&[EncounterId::SphericGuardian]),
+            vec![EncounterId::SentryAndSphere]
+        );
+        assert_eq!(
+            city_exclusions(&[EncounterId::ThreeByrds]),
+            vec![EncounterId::ChosenAndByrds]
+        );
+        assert_eq!(
+            city_exclusions(&[EncounterId::ChosenAlone]),
+            vec![EncounterId::ChosenAndByrds, EncounterId::CultistAndChosen]
+        );
+        assert!(city_exclusions(&[EncounterId::ShellParasite]).is_empty());
+        assert!(city_exclusions(&[EncounterId::TwoThieves]).is_empty());
+
+        assert_eq!(
+            beyond_exclusions(&[EncounterId::ThreeDarklings]),
+            vec![EncounterId::ThreeDarklings]
+        );
+        assert_eq!(
+            beyond_exclusions(&[EncounterId::OrbWalker]),
+            vec![EncounterId::OrbWalker]
+        );
+        assert_eq!(
+            beyond_exclusions(&[EncounterId::ThreeShapes]),
+            vec![EncounterId::FourShapes]
+        );
+    }
+
+    #[test]
+    fn encounter_lists_preserve_java_generation_invariants() {
+        for seed in [1, 7, 17, 42, 5201, 99991] {
+            let mut rng = StsRng::new(seed);
+
+            let (act1_monsters, act1_elites) = generate_encounter_lists(1, &mut rng);
+            assert_eq!(act1_monsters.len(), 16);
+            assert_eq!(act1_elites.len(), 10);
+            assert_java_normal_repeat_rule(&act1_monsters, 3);
+            assert_java_elite_repeat_rule(&act1_elites);
+            assert_exordium_first_strong_exclusions(&act1_monsters);
+
+            let (act2_monsters, act2_elites) = generate_encounter_lists(2, &mut rng);
+            assert_eq!(act2_monsters.len(), 15);
+            assert_eq!(act2_elites.len(), 10);
+            assert_java_normal_repeat_rule(&act2_monsters, 2);
+            assert_java_elite_repeat_rule(&act2_elites);
+            assert_city_first_strong_exclusions(&act2_monsters);
+
+            let (act3_monsters, act3_elites) = generate_encounter_lists(3, &mut rng);
+            assert_eq!(act3_monsters.len(), 15);
+            assert_eq!(act3_elites.len(), 10);
+            assert_java_normal_repeat_rule(&act3_monsters, 2);
+            assert_java_elite_repeat_rule(&act3_elites);
+            assert_beyond_first_strong_exclusions(&act3_monsters);
+
+            let (act4_monsters, act4_elites) = generate_encounter_lists(4, &mut rng);
+            assert_eq!(act4_monsters, vec![EncounterId::ShieldAndSpear; 3]);
+            assert_eq!(act4_elites, vec![EncounterId::ShieldAndSpear; 3]);
+        }
+    }
+
+    #[test]
+    fn unknown_act_does_not_fall_back_to_exordium_encounter_lists() {
+        let mut rng = StsRng::new(7);
+
+        let (monsters, elites) = generate_encounter_lists(99, &mut rng);
+
+        assert!(monsters.is_empty());
+        assert!(elites.is_empty());
+    }
+
+    #[test]
+    fn boss_lists_preserve_java_seen_boss_unlock_order() {
+        let mut rng = StsRng::new(7);
+        let settings = BossGenerationSettings {
+            is_daily_run: false,
+            is_demo: false,
+            seen: BossSeenState::none_seen(),
+        };
+
+        assert_eq!(
+            generate_boss_list_with_settings(1, &mut rng, settings),
+            vec![EncounterId::TheGuardian, EncounterId::TheGuardian]
+        );
+        assert_eq!(
+            rng.counter, 0,
+            "Java does not call monsterRng.randomLong() when it forces a single unseen boss"
+        );
+
+        let mut seen = BossSeenState::none_seen();
+        seen.guardian = true;
+        let mut rng = StsRng::new(7);
+        assert_eq!(
+            generate_boss_list_with_settings(
+                1,
+                &mut rng,
+                BossGenerationSettings { seen, ..settings },
+            ),
+            vec![EncounterId::Hexaghost, EncounterId::Hexaghost]
+        );
+        assert_eq!(rng.counter, 0);
+
+        let mut rng = StsRng::new(7);
+        assert_eq!(
+            generate_boss_list_with_settings(2, &mut rng, settings),
+            vec![EncounterId::TheChamp, EncounterId::TheChamp]
+        );
+        assert_eq!(rng.counter, 0);
+
+        let mut rng = StsRng::new(7);
+        assert_eq!(
+            generate_boss_list_with_settings(3, &mut rng, settings),
+            vec![EncounterId::AwakenedOne, EncounterId::AwakenedOne]
+        );
+        assert_eq!(rng.counter, 0);
+    }
+
+    #[test]
+    fn boss_lists_shuffle_all_three_only_for_daily_or_all_seen_paths() {
+        let mut rng = StsRng::new(7);
+        let bosses = generate_boss_list_with_settings(
+            1,
+            &mut rng,
+            BossGenerationSettings::standard_all_seen(),
+        );
+        assert_eq!(bosses.len(), 3);
+        assert!(bosses.contains(&EncounterId::TheGuardian));
+        assert!(bosses.contains(&EncounterId::Hexaghost));
+        assert!(bosses.contains(&EncounterId::SlimeBoss));
+        assert_eq!(
+            rng.counter, 1,
+            "Java all-seen boss generation consumes one monsterRng.randomLong() for Collections.shuffle"
+        );
+
+        let mut rng = StsRng::new(7);
+        let bosses = generate_boss_list_with_settings(
+            2,
+            &mut rng,
+            BossGenerationSettings {
+                is_daily_run: true,
+                is_demo: false,
+                seen: BossSeenState::none_seen(),
+            },
+        );
+        assert_eq!(bosses.len(), 3);
+        assert!(bosses.contains(&EncounterId::Automaton));
+        assert!(bosses.contains(&EncounterId::Collector));
+        assert!(bosses.contains(&EncounterId::TheChamp));
+        assert_eq!(
+            rng.counter, 1,
+            "Java daily boss generation shuffles all bosses without checking UnlockTracker"
+        );
+    }
+
+    #[test]
+    fn exordium_demo_overrides_after_java_boss_generation_branch() {
+        let mut rng = StsRng::new(7);
+        let bosses = generate_boss_list_with_settings(
+            1,
+            &mut rng,
+            BossGenerationSettings {
+                is_daily_run: false,
+                is_demo: true,
+                seen: BossSeenState::all_seen(),
+            },
+        );
+
+        assert_eq!(bosses, vec![EncounterId::Hexaghost]);
+        assert_eq!(
+            rng.counter, 1,
+            "Java Exordium.initializeBoss runs the all-seen shuffle before Settings.isDemo clears the list"
+        );
+    }
 }
