@@ -172,6 +172,13 @@ fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String
 fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
         "disabled" | "off" | "none" => Ok(CombatSearchV2RolloutPolicy::Disabled),
+        "adaptive"
+        | "adaptive_no_potion"
+        | "adaptive-no-potion"
+        | "enemy_mechanics_adaptive_no_potion"
+        | "enemy-mechanics-adaptive-no-potion" => {
+            Ok(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion)
+        }
         "conservative" | "conservative_no_potion" | "conservative-no-potion" | "no_potion" => {
             Ok(CombatSearchV2RolloutPolicy::ConservativeNoPotion)
         }
@@ -182,7 +189,7 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
             Ok(CombatSearchV2RolloutPolicy::TurnBeamNoPotion)
         }
         _ => Err(format!(
-            "invalid rollout policy '{value}', expected disabled|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion"
+            "invalid rollout policy '{value}', expected disabled|enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion"
         )),
     }
 }

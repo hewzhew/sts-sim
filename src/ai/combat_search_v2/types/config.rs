@@ -29,7 +29,7 @@ impl Default for CombatSearchV2Config {
             input_label: None,
             potion_policy: CombatSearchV2PotionPolicy::Never,
             max_potions_used: None,
-            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            rollout_policy: CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion,
             rollout_max_evaluations: super::super::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
             rollout_max_actions: super::super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
             rollout_beam_width: super::super::rollout::DEFAULT_TURN_BEAM_WIDTH,
@@ -63,6 +63,8 @@ impl CombatSearchV2PotionPolicy {
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2RolloutPolicy {
     Disabled,
+    #[serde(alias = "adaptive_no_potion")]
+    EnemyMechanicsAdaptiveNoPotion,
     ConservativeNoPotion,
     PhaseAwareNoPotion,
     TurnBeamNoPotion,
@@ -70,7 +72,7 @@ pub enum CombatSearchV2RolloutPolicy {
 
 impl Default for CombatSearchV2RolloutPolicy {
     fn default() -> Self {
-        Self::ConservativeNoPotion
+        Self::EnemyMechanicsAdaptiveNoPotion
     }
 }
 
@@ -78,6 +80,9 @@ impl CombatSearchV2RolloutPolicy {
     pub fn label(self) -> &'static str {
         match self {
             CombatSearchV2RolloutPolicy::Disabled => "disabled",
+            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion => {
+                "enemy_mechanics_adaptive_no_potion"
+            }
             CombatSearchV2RolloutPolicy::ConservativeNoPotion => "conservative_no_potion",
             CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => "phase_aware_no_potion",
             CombatSearchV2RolloutPolicy::TurnBeamNoPotion => "turn_beam_no_potion",

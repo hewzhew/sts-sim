@@ -51,7 +51,9 @@ this map and extend an existing boundary when one already exists.
 - `rollout/`, `rollout_cache.rs`, `rollout_policy.rs`,
   `rollout_pending_choice.rs`, `rollout_scheduler.rs`, `rollout_value.rs`:
   estimate-only rollout behavior. Rollout output must remain labeled as
-  estimate evidence unless replayed into an exact search node.
+  estimate evidence unless replayed into an exact search node. The default
+  `enemy_mechanics_adaptive_no_potion` rollout currently uses phase-aware
+  rollout only for typed Guardian mechanics and otherwise stays conservative.
 
 ## Game-Mechanics State Facts
 

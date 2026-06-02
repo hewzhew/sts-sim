@@ -84,6 +84,26 @@ impl RolloutCache {
         self.evaluations = self.evaluations.saturating_add(1);
         let estimate = match self.policy {
             CombatSearchV2RolloutPolicy::Disabled => RolloutNodeEstimate::unevaluated(),
+            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion => {
+                match adaptive_no_potion_rollout_policy(node) {
+                    CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => {
+                        rollout::phase_aware_no_potion_rollout(
+                            node,
+                            stepper,
+                            config,
+                            self.max_actions,
+                            deadline,
+                        )
+                    }
+                    _ => rollout::conservative_no_potion_rollout(
+                        node,
+                        stepper,
+                        config,
+                        self.max_actions,
+                        deadline,
+                    ),
+                }
+            }
             CombatSearchV2RolloutPolicy::ConservativeNoPotion => {
                 rollout::conservative_no_potion_rollout(
                     node,
@@ -235,6 +255,7 @@ impl RolloutCache {
                 "unresolved rollout priority uses phase-adjusted enemy effort from phase_profile",
                 "high-fanout pending choices stop rollout estimates instead of selecting an arbitrary branch",
                 "small pending choices may be followed by rollout, but their actions are still exact simulator inputs and never terminal outcome records",
+                "enemy_mechanics_adaptive_no_potion uses phase-aware rollout only for typed Guardian mechanics and otherwise falls back to conservative_no_potion",
                 "turn_beam_no_potion uses turn-plan end states as an estimate-only beam and still reports no terminal outcome record",
             ],
         }
@@ -279,6 +300,59 @@ impl RolloutCache {
         {
             self.turn_beam_best_pv_len = estimate.actions_simulated;
             self.turn_beam_best_pv_terminal = Some(estimate.terminal);
+        }
+    }
+}
+
+pub(super) fn adaptive_no_potion_rollout_policy(node: &SearchNode) -> CombatSearchV2RolloutPolicy {
+    let profile = combat_search_phase_profile(&node.engine, &node.combat);
+    if profile.enemy_mechanics.guardian_open_count > 0
+        || profile.enemy_mechanics.guardian_defensive_count > 0
+    {
+        CombatSearchV2RolloutPolicy::PhaseAwareNoPotion
+    } else {
+        CombatSearchV2RolloutPolicy::ConservativeNoPotion
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    #[test]
+    fn adaptive_no_potion_rollout_uses_phase_aware_for_guardian_only() {
+        let mut guardian_combat = blank_test_combat();
+        guardian_combat.entities.monsters = vec![test_monster(EnemyId::TheGuardian)];
+
+        assert_eq!(
+            adaptive_no_potion_rollout_policy(&test_search_node(guardian_combat)),
+            CombatSearchV2RolloutPolicy::PhaseAwareNoPotion
+        );
+
+        let mut nob_combat = blank_test_combat();
+        nob_combat.entities.monsters = vec![test_monster(EnemyId::GremlinNob)];
+
+        assert_eq!(
+            adaptive_no_potion_rollout_policy(&test_search_node(nob_combat)),
+            CombatSearchV2RolloutPolicy::ConservativeNoPotion
+        );
+    }
+
+    fn test_search_node(combat: CombatState) -> SearchNode {
+        SearchNode {
+            engine: EngineState::CombatPlayerTurn,
+            combat,
+            actions: Vec::new(),
+            turn_prefix: TurnPrefixState::default(),
+            initial_hp: 80,
+            potions_used: 0,
+            potions_discarded: 0,
+            cards_played: 0,
+            potion_tactical_priority: 0,
+            last_turn_branch_priority: 0,
+            rollout_estimate: RolloutNodeEstimate::unevaluated(),
         }
     }
 }
