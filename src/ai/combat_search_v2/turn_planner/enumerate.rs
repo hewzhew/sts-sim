@@ -4,7 +4,7 @@ use std::time::Instant;
 use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
 
 use super::super::rollout_pending_choice::RolloutPendingChoiceProgress;
-use super::super::value::combat_eval_from_rollout_estimate;
+use super::super::value::{combat_eval_from_rollout_estimate, CombatEvalV2};
 use super::super::*;
 use super::types::{
     TurnPlanBucket, TurnPlanEnumeration, TurnPlanStopReason, TurnPlanV1, TurnPlannerConfigV1,
@@ -22,6 +22,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
     }
 
     let root_action_len = root.actions.len();
+    let root_eval = root_eval(root);
     let mut seen = HashSet::new();
     seen.insert(combat_exact_state_key(&root.engine, &root.combat));
 
@@ -40,6 +41,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                 node,
                 root_action_len,
                 TurnPlanStopReason::Terminal,
+                root_eval,
             ));
             continue;
         }
@@ -55,6 +57,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                 node,
                 root_action_len,
                 TurnPlanStopReason::NoLegalActions,
+                root_eval,
             ));
             continue;
         }
@@ -103,6 +106,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                     child,
                     root_action_len,
                     TurnPlanStopReason::EngineStepLimit,
+                    root_eval,
                 ));
             } else if transition.is_same_turn() {
                 let key = combat_exact_state_key(&child.engine, &child.combat);
@@ -116,6 +120,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                     child,
                     root_action_len,
                     stop_reason_for_transition(transition),
+                    root_eval,
                 ));
             }
         }
@@ -129,6 +134,7 @@ fn plan_from_node(
     mut node: SearchNode,
     root_action_len: usize,
     stop_reason: TurnPlanStopReason,
+    root_eval: CombatEvalV2,
 ) -> TurnPlanV1 {
     let pending_choice_progress = pending_choice_progress_for_plan(&node, stop_reason);
     let estimate = RolloutNodeEstimate::from_node(
@@ -144,9 +150,20 @@ fn plan_from_node(
         actions: node.actions[root_action_len..].to_vec(),
         end_node: node,
         stop_reason,
-        bucket: TurnPlanBucket::from_eval_and_stop(eval, stop_reason),
+        bucket: TurnPlanBucket::from_root_and_eval(root_eval, eval, stop_reason),
         eval,
     }
+}
+
+fn root_eval(root: &SearchNode) -> CombatEvalV2 {
+    let estimate = RolloutNodeEstimate::from_node(
+        root,
+        0,
+        RolloutStopReason::MaxActions,
+        None,
+        RolloutPendingChoiceProgress::default(),
+    );
+    combat_eval_from_rollout_estimate(estimate)
 }
 
 fn stop_reason_for_transition(transition: TurnBranchTransition) -> TurnPlanStopReason {

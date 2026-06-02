@@ -3,6 +3,7 @@ use super::{diagnostics::TurnPlanDiagnosticsCollector, enumerate::enumerate_turn
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatCard, CombatState};
+use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper,
 };
@@ -12,6 +13,7 @@ use crate::test_support::{blank_test_combat, test_monster};
 enum TestTurnMode {
     PlayThenEnd,
     DirectNextTurnOutcomes,
+    DangerRepairOutcomes,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -49,6 +51,17 @@ impl CombatStepper for TestTurnStepper {
                     target: Some(1),
                 })
                 .collect(),
+            TestTurnMode::DangerRepairOutcomes => position
+                .combat
+                .zones
+                .hand
+                .iter()
+                .enumerate()
+                .map(|(card_index, _)| ClientInput::PlayCard {
+                    card_index,
+                    target: Some(1),
+                })
+                .collect(),
         }
     }
 
@@ -73,6 +86,9 @@ impl CombatStepper for TestTurnStepper {
             }
             (TestTurnMode::DirectNextTurnOutcomes, ClientInput::PlayCard { card_index, .. }) => {
                 apply_direct_outcome(card_index, &mut combat);
+            }
+            (TestTurnMode::DangerRepairOutcomes, ClientInput::PlayCard { card_index, .. }) => {
+                apply_danger_repair_outcome(card_index, &mut combat);
             }
             _ => {}
         }
@@ -169,6 +185,44 @@ fn turn_planner_retains_different_objective_buckets_before_filling_overall() {
 }
 
 #[test]
+fn turn_planner_classifies_repaired_danger_as_survival_plan() {
+    let mut combat = test_combat_with_hand(2);
+    combat.entities.player.current_hp = 10;
+    combat.entities.player.block = 0;
+    combat.entities.monsters[0].set_planned_visible_spec(Some(MonsterMoveSpec::Attack(
+        AttackSpec {
+            base_damage: 20,
+            hits: 1,
+            damage_kind: DamageKind::Normal,
+        },
+    )));
+    let root = test_node(combat);
+    let plans = enumerate_turn_plans(
+        &root,
+        &TestTurnStepper {
+            mode: TestTurnMode::DangerRepairOutcomes,
+        },
+        &TurnPlannerConfigV1 {
+            max_end_states: 2,
+            per_bucket_limit: 1,
+            ..TurnPlannerConfigV1::default()
+        },
+        None,
+    );
+
+    let repair_plan = plans
+        .plans
+        .iter()
+        .find(|plan| {
+            plan.actions.first().is_some_and(|action| {
+                matches!(action.input, ClientInput::PlayCard { card_index: 0, .. })
+            })
+        })
+        .expect("danger-repair plan should be retained");
+    assert_eq!(repair_plan.bucket, TurnPlanBucket::Survival);
+}
+
+#[test]
 fn turn_plan_diagnostics_reports_root_plan_preview_without_behavior_claim() {
     let root = test_node(test_combat_with_hand(3));
     let mut collector = TurnPlanDiagnosticsCollector::default();
@@ -216,6 +270,24 @@ fn apply_direct_outcome(card_index: usize, combat: &mut CombatState) {
             combat.entities.player.current_hp = 4;
             combat.entities.player.block = 0;
             combat.entities.monsters[0].current_hp = 180;
+        }
+        _ => {}
+    }
+    combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
+}
+
+fn apply_danger_repair_outcome(card_index: usize, combat: &mut CombatState) {
+    move_hand_card_to_discard(card_index, combat);
+    match card_index {
+        0 => {
+            combat.entities.player.current_hp = 10;
+            combat.entities.player.block = 25;
+            combat.entities.monsters[0].current_hp = 190;
+        }
+        1 => {
+            combat.entities.player.current_hp = 10;
+            combat.entities.player.block = 0;
+            combat.entities.monsters[0].current_hp = 30;
         }
         _ => {}
     }

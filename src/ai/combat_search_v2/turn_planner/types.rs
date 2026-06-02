@@ -70,6 +70,26 @@ pub(in crate::ai::combat_search_v2) enum TurnPlanBucket {
 }
 
 impl TurnPlanBucket {
+    pub(in crate::ai::combat_search_v2) fn from_root_and_eval(
+        root_eval: CombatEvalV2,
+        eval: CombatEvalV2,
+        stop_reason: TurnPlanStopReason,
+    ) -> Self {
+        let bucket = Self::from_eval_and_stop(eval, stop_reason);
+        if matches!(
+            bucket,
+            Self::TerminalWin | Self::TerminalLoss | Self::Boundary
+        ) {
+            return bucket;
+        }
+        if survival_bucket_is_danger(root_eval.survival_bucket())
+            && !survival_bucket_is_danger(eval.survival_bucket())
+        {
+            return Self::Survival;
+        }
+        bucket
+    }
+
     pub(in crate::ai::combat_search_v2) fn from_eval_and_stop(
         eval: CombatEvalV2,
         stop_reason: TurnPlanStopReason,
@@ -122,6 +142,15 @@ impl TurnPlanBucket {
             Self::Boundary => "boundary",
         }
     }
+}
+
+fn survival_bucket_is_danger(bucket: CombatEvalSurvivalBucket) -> bool {
+    matches!(
+        bucket,
+        CombatEvalSurvivalBucket::DeadOrForcedLoss
+            | CombatEvalSurvivalBucket::LethalVisible
+            | CombatEvalSurvivalBucket::Critical
+    )
 }
 
 impl TurnPlanStopReason {
