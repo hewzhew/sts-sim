@@ -35,6 +35,15 @@ fn card_by_uuid(run_state: &RunState, uuid: u32) -> Option<&crate::runtime::comb
     run_state.master_deck.iter().find(|card| card.uuid == uuid)
 }
 
+fn card_label(card: &crate::runtime::combat::CombatCard) -> String {
+    let name = crate::content::cards::get_card_definition(card.id).name;
+    if card.upgrades == 0 {
+        name.to_string()
+    } else {
+        format!("{name}+{}", card.upgrades)
+    }
+}
+
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
@@ -42,9 +51,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
             let gold_amt = gold_amount(event_state);
             let has_gold = gold_amt > 0;
             let card_uuid = card_uuid(event_state);
-            let has_card = card_uuid
-                .and_then(|uuid| card_by_uuid(run_state, uuid))
-                .is_some();
+            let selected_card = card_uuid.and_then(|uuid| card_by_uuid(run_state, uuid));
 
             vec![
                 if has_potion {
@@ -115,9 +122,12 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         },
                     )
                 },
-                if has_card {
+                if let Some(card) = selected_card {
                     EventOption::new(
-                        EventChoiceMeta::new("[Give Card] Remove a card. Obtain a Relic."),
+                        EventChoiceMeta::new(format!(
+                            "[Give Card] Give {}. Obtain a Relic.",
+                            card_label(card)
+                        )),
                         EventOptionSemantics {
                             action: EventActionKind::Trade,
                             effects: vec![
@@ -399,6 +409,28 @@ mod tests {
                 EventEffect::ObtainRelic { .. }
             ]
         ));
+    }
+
+    #[test]
+    fn card_trade_option_names_the_requested_card() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.master_deck = vec![CombatCard::new(CardId::ShrugItOff, 11)];
+        let event_state = EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: NO_POTION_SLOT << 8,
+            completed: false,
+            combat_pending: false,
+            extra_data: vec![11],
+        };
+
+        let options = get_options(&rs, &event_state);
+
+        assert!(
+            options[2].ui.text.contains("Shrug It Off"),
+            "Java shows the exact requested card in the button text: {:?}",
+            options[2].ui.text
+        );
     }
 
     #[test]

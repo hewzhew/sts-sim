@@ -45,6 +45,7 @@ pub enum KnownEffect {
     ObtainSpecificCurse { count: usize, card: CardId },
     ObtainKey(RunKey),
     RemoveCard { count: usize },
+    RemoveSpecificCard { count: usize, card: CardId },
     UpgradeCard { count: usize },
     UpgradeAllCards,
     TransformCard { count: usize },
@@ -339,6 +340,13 @@ impl KnownEffect {
             }
             KnownEffect::ObtainKey(key) => format!("obtain {} key", key.brief()),
             KnownEffect::RemoveCard { count } => format!("remove {count} card"),
+            KnownEffect::RemoveSpecificCard { count, card } => {
+                if *count == 1 {
+                    format!("remove specific card {}", card_label(*card, 0))
+                } else {
+                    format!("remove {count} specific card {}", card_label(*card, 0))
+                }
+            }
             KnownEffect::UpgradeCard { count } => format!("upgrade {count} card"),
             KnownEffect::UpgradeAllCards => "upgrade all upgradeable cards".to_string(),
             KnownEffect::TransformCard { count } => format!("transform {count} card"),
@@ -624,8 +632,15 @@ fn push_effect_resolution(
                 visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
             }),
         },
-        EventEffect::RemoveCard { count, .. } => {
-            known_effects.push(KnownEffect::RemoveCard { count: *count });
+        EventEffect::RemoveCard { count, kind, .. } => {
+            if let EventCardKind::Specific(card) = kind {
+                known_effects.push(KnownEffect::RemoveSpecificCard {
+                    count: *count,
+                    card: *card,
+                });
+            } else {
+                known_effects.push(KnownEffect::RemoveCard { count: *count });
+            }
         }
         EventEffect::UpgradeCard { count } if *count == usize::MAX => {
             known_effects.push(KnownEffect::UpgradeAllCards);
@@ -870,5 +885,32 @@ mod tests {
 
         assert_eq!(note, "upgrade all upgradeable cards");
         assert!(!note.contains(&usize::MAX.to_string()));
+    }
+
+    #[test]
+    fn specific_remove_card_effect_names_the_card() {
+        let option = EventOption::new(
+            EventChoiceMeta::new("[Give Card] Give Shrug It Off. Obtain a Relic."),
+            EventOptionSemantics {
+                action: EventActionKind::Trade,
+                effects: vec![EventEffect::RemoveCard {
+                    count: 1,
+                    target_uuid: Some(11),
+                    kind: EventCardKind::Specific(CardId::ShrugItOff),
+                }],
+                constraints: Vec::new(),
+                transition: EventOptionTransition::AdvanceScreen,
+                repeatable: false,
+                terminal: false,
+            },
+        );
+
+        let resolution =
+            CandidateResolution::from_event_option(&option).expect("effect should resolve");
+        let note = resolution
+            .main_note()
+            .expect("specific remove should produce a visible note");
+
+        assert_eq!(note, "remove specific card Shrug It Off");
     }
 }
