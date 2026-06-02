@@ -8,8 +8,8 @@ use super::render::render_run_control_state;
 use super::session::RunControlSession;
 use super::session_trace::{
     session_trace_boundary_fingerprint, SessionTraceBoundaryFingerprintV1, SessionTraceCandidateV1,
-    SessionTraceSelectionResolution, SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME,
-    SESSION_TRACE_SCHEMA_VERSION,
+    SessionTraceRecorder, SessionTraceSelectionResolution, SessionTraceStepSourceV1,
+    SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME, SESSION_TRACE_SCHEMA_VERSION,
 };
 use super::view_model::build_run_control_view_model;
 
@@ -77,9 +77,9 @@ pub fn load_session_trace_v1(path: &Path) -> Result<SessionTraceV1, String> {
             trace.schema_name
         ));
     }
-    if trace.schema_version != SESSION_TRACE_SCHEMA_VERSION {
+    if !(6..=SESSION_TRACE_SCHEMA_VERSION).contains(&trace.schema_version) {
         return Err(format!(
-            "unsupported trace schema version {}, expected {SESSION_TRACE_SCHEMA_VERSION}",
+            "unsupported trace schema version {}, expected 6..={SESSION_TRACE_SCHEMA_VERSION}",
             trace.schema_version
         ));
     }
@@ -90,6 +90,15 @@ pub fn replay_session_trace(
     session: &mut RunControlSession,
     trace: &SessionTraceV1,
     options: SessionTraceReplayOptions,
+) -> SessionTraceReplayReport {
+    replay_session_trace_with_recorder(session, trace, options, None)
+}
+
+pub fn replay_session_trace_with_recorder(
+    session: &mut RunControlSession,
+    trace: &SessionTraceV1,
+    options: SessionTraceReplayOptions,
+    mut recorder: Option<&mut SessionTraceRecorder>,
 ) -> SessionTraceReplayReport {
     let max_steps = options.max_steps.unwrap_or(trace.steps.len());
     let mut applied_steps = Vec::new();
@@ -141,23 +150,29 @@ pub fn replay_session_trace(
                 };
             }
         };
+        let pending_recording = recorder
+            .as_ref()
+            .map(|_| SessionTraceRecorder::prepare_step(session, &command_line, &command));
 
-        if let Err(error) = session.apply_command(command) {
-            return SessionTraceReplayReport {
-                trace_step_count: trace.steps.len(),
-                applied_steps,
-                order_drift_steps,
-                stop: SessionTraceReplayStop::CommandFailed {
-                    step_index: step.step_index,
-                    command_line,
-                    error,
-                },
-            };
-        }
+        let outcome = match session.apply_command(command) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                return SessionTraceReplayReport {
+                    trace_step_count: trace.steps.len(),
+                    applied_steps,
+                    order_drift_steps,
+                    stop: SessionTraceReplayStop::CommandFailed {
+                        step_index: step.step_index,
+                        command_line,
+                        error,
+                    },
+                };
+            }
+        };
 
         applied_steps.push(SessionTraceReplayAppliedStep {
             step_index: step.step_index,
-            command_line,
+            command_line: command_line.clone(),
             selected_label: step
                 .selected_candidate
                 .as_ref()
@@ -177,6 +192,43 @@ pub fn replay_session_trace(
                 order_drift_steps,
                 stop: SessionTraceReplayStop::Drift(drift),
             };
+        }
+
+        if let Some(recorder) = recorder.as_deref_mut() {
+            let Some(action_result) = outcome.action_result.as_ref() else {
+                return SessionTraceReplayReport {
+                    trace_step_count: trace.steps.len(),
+                    applied_steps,
+                    order_drift_steps,
+                    stop: SessionTraceReplayStop::CommandFailed {
+                        step_index: step.step_index,
+                        command_line,
+                        error: "recorded replay step did not produce an action result".to_string(),
+                    },
+                };
+            };
+            if let Some(pending) = pending_recording {
+                if let Err(error) = recorder.record_action_step_with_source(
+                    pending,
+                    session,
+                    action_result,
+                    &outcome.trace_annotations,
+                    SessionTraceStepSourceV1::ReplayVerified {
+                        source_trace_step_index: step.step_index,
+                    },
+                ) {
+                    return SessionTraceReplayReport {
+                        trace_step_count: trace.steps.len(),
+                        applied_steps,
+                        order_drift_steps,
+                        stop: SessionTraceReplayStop::CommandFailed {
+                            step_index: step.step_index,
+                            command_line,
+                            error,
+                        },
+                    };
+                }
+            }
         }
     }
 
@@ -393,7 +445,7 @@ mod tests {
 
     use super::*;
     use crate::eval::run_control::{
-        parse_run_control_command, RunControlConfig, SessionTraceRecorder,
+        parse_run_control_command, RunControlConfig, SessionTraceRecorder, SessionTraceStepSourceV1,
     };
 
     fn one_step_trace(command_line: &str) -> SessionTraceV1 {
@@ -444,6 +496,33 @@ mod tests {
             })
         ));
         assert_eq!(session.decision_step, 0);
+    }
+
+    #[test]
+    fn replay_trace_can_record_replayed_prefix_into_new_trace() {
+        let trace = one_step_trace("0");
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let path = unique_temp_path("trace_replay_recording").join("trace.json");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+
+        let report = replay_session_trace_with_recorder(
+            &mut session,
+            &trace,
+            SessionTraceReplayOptions::default(),
+            Some(&mut recorder),
+        );
+
+        assert!(matches!(report.stop, SessionTraceReplayStop::TraceEnd));
+        assert_eq!(recorder.trace().steps.len(), 1);
+        assert_eq!(
+            recorder.trace().steps[0].step_source,
+            SessionTraceStepSourceV1::ReplayVerified {
+                source_trace_step_index: 0
+            }
+        );
+        assert!(path.exists());
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     fn unique_temp_path(prefix: &str) -> PathBuf {

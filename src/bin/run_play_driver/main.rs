@@ -1,11 +1,14 @@
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
+use blake2::{Blake2b512, Digest};
 use clap::{Parser, ValueEnum};
 use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use sts_simulator::eval::run_control::{
     canonical_player_class, load_session_trace_v1, render_run_control_state,
-    render_session_trace_replay_report, replay_session_trace, AutoCombatCaptureConfig,
-    RewardAutomationConfig, RunControlConfig, RunControlSession, SessionTraceRecorder,
+    render_session_trace_replay_report, replay_session_trace_with_recorder,
+    AutoCombatCaptureConfig, RewardAutomationConfig, RunControlConfig, RunControlSession,
+    SessionTraceLineageRoleV1, SessionTraceLineageV1, SessionTraceRecorder,
     SessionTraceReplayOptions, SessionTraceV1,
 };
 
@@ -32,6 +35,12 @@ struct Args {
 
     #[arg(long)]
     replay_trace: Option<PathBuf>,
+
+    #[arg(long)]
+    continue_trace: Option<PathBuf>,
+
+    #[arg(long)]
+    branch: Option<String>,
 
     #[arg(long)]
     replay_steps: Option<usize>,
@@ -82,9 +91,18 @@ impl CliPlayerClass {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let replay_trace = args
-        .replay_trace
+    if args.replay_trace.is_some() && args.continue_trace.is_some() {
+        return Err("--replay-trace and --continue-trace cannot be used together".into());
+    }
+    let replay_trace_path = args
+        .continue_trace
         .as_ref()
+        .or(args.replay_trace.as_ref())
+        .cloned();
+    let replay_trace = args
+        .continue_trace
+        .as_ref()
+        .or(args.replay_trace.as_ref())
         .map(|path| load_session_trace_v1(path))
         .transpose()?;
     let config = run_config_from_args(&args, replay_trace.as_ref())?;
@@ -92,15 +110,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_steps: args.replay_steps,
     };
     let mut session = RunControlSession::new(config);
+    let trace_path = trace_output_path(&args)?;
+    if let (Some(source), Some(output)) = (replay_trace_path.as_ref(), trace_path.as_ref()) {
+        if source == output {
+            return Err(format!(
+                "refusing to write continuation trace over source trace: {}",
+                output.display()
+            )
+            .into());
+        }
+    }
+    let lineage = match (replay_trace_path.as_ref(), trace_path.as_ref()) {
+        (Some(source), Some(_)) => Some(SessionTraceLineageV1 {
+            role: SessionTraceLineageRoleV1::Continuation,
+            parent_trace_path: source.display().to_string(),
+            parent_trace_hash: file_hash(source)?,
+        }),
+        _ => None,
+    };
+    let mut trace = trace_path
+        .as_ref()
+        .map(|path| SessionTraceRecorder::new_with_lineage(path.clone(), &session, lineage));
 
     println!("{}", render_run_control_state(&session));
-    if let (Some(path), Some(trace)) = (args.replay_trace.as_ref(), replay_trace.as_ref()) {
+    if let Some(path) = trace_path.as_ref() {
+        println!("recording trace: {}", path.display());
+    }
+    if let (Some(path), Some(replay_trace)) = (replay_trace_path.as_ref(), replay_trace.as_ref()) {
         println!(
             "replaying trace {} ({} recorded step(s)); long recorded automation may take a few seconds",
             path.display(),
-            trace.steps.len()
+            replay_trace.steps.len()
         );
-        let report = replay_session_trace(&mut session, trace, replay_options);
+        let report = replay_session_trace_with_recorder(
+            &mut session,
+            replay_trace,
+            replay_options,
+            trace.as_mut(),
+        );
         println!("{}", render_session_trace_replay_report(&report, &session));
     }
 
@@ -143,11 +190,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "combat search potion defaults: potion={potion_policy} max_potions={max_potions}; command-local potion/max_potions override them"
         );
     }
-
-    let mut trace = args
-        .trace
-        .as_ref()
-        .map(|path| SessionTraceRecorder::new(path.clone(), &session));
 
     if let Some(script) = args.script.as_ref() {
         run_script(&mut session, script.as_path(), trace.as_mut())?;
@@ -208,6 +250,74 @@ fn run_config_from_args(
     })
 }
 
+fn trace_output_path(args: &Args) -> Result<Option<PathBuf>, String> {
+    match (args.trace.as_ref(), args.continue_trace.as_ref()) {
+        (Some(path), _) => Ok(Some(path.clone())),
+        (None, Some(parent)) => Ok(Some(default_continue_trace_path(
+            parent,
+            args.branch.as_deref(),
+        ))),
+        (None, None) => Ok(None),
+    }
+}
+
+fn default_continue_trace_path(parent: &Path, branch: Option<&str>) -> PathBuf {
+    let parent_dir = parent.parent().unwrap_or_else(|| Path::new(""));
+    let stem = parent
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("trace");
+    let base = stem.strip_suffix(".trace").unwrap_or(stem);
+    let branch = branch
+        .map(sanitize_branch_name)
+        .filter(|branch| !branch.is_empty())
+        .unwrap_or_else(|| "continue".to_string());
+    let suffix = current_trace_suffix();
+    parent_dir.join(format!("{base}.{branch}.{suffix}.trace.json"))
+}
+
+fn sanitize_branch_name(raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+fn current_trace_suffix() -> String {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    seconds.to_string()
+}
+
+fn file_hash(path: &Path) -> Result<String, String> {
+    let payload = fs::read(path).map_err(|err| err.to_string())?;
+    let mut hasher = Blake2b512::new();
+    hasher.update(&payload);
+    let digest = hasher.finalize();
+    Ok(hex_lower(&digest[..32]))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write;
+        let _ = write!(&mut out, "{byte:02x}");
+    }
+    out
+}
+
 fn parse_cli_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
         "never" => Ok(CombatSearchV2PotionPolicy::Never),
@@ -242,6 +352,8 @@ mod tests {
             final_act: false,
             script: None,
             replay_trace: None,
+            continue_trace: None,
+            branch: None,
             replay_steps: None,
             trace: None,
             auto_capture_combat: false,
@@ -293,5 +405,20 @@ mod tests {
         assert_eq!(config.seed, 1);
         assert_eq!(config.ascension_level, 2);
         assert_eq!(config.player_class, "Defect");
+    }
+
+    #[test]
+    fn default_continue_trace_path_stays_next_to_parent_and_names_branch() {
+        let parent = PathBuf::from("tools/artifacts/traces/seed590.trace.json");
+
+        let path = default_continue_trace_path(&parent, Some("act1 event path"));
+
+        assert_eq!(path.parent(), parent.parent());
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("path should have utf8 file name");
+        assert!(file_name.starts_with("seed590.act1_event_path."));
+        assert!(file_name.ends_with(".trace.json"));
     }
 }

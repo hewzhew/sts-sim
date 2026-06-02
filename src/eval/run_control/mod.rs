@@ -57,15 +57,17 @@ pub use session::{
 };
 pub use session_trace::{
     SessionTraceArtifactKind, SessionTraceArtifactRefV1, SessionTraceBoundaryFingerprintV1,
-    SessionTraceCandidateV1, SessionTraceCombatFingerprintV1, SessionTraceRecorder,
-    SessionTraceRewardAutomationV1, SessionTraceRunConfigV1, SessionTraceSelectionResolution,
+    SessionTraceCandidateV1, SessionTraceCombatFingerprintV1, SessionTraceLineageRoleV1,
+    SessionTraceLineageV1, SessionTraceRecorder, SessionTraceRewardAutomationV1,
+    SessionTraceRunConfigV1, SessionTraceSelectionResolution, SessionTraceStepSourceV1,
     SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME, SESSION_TRACE_SCHEMA_VERSION,
 };
 pub use trace_annotation::RunControlTraceAnnotationV1;
 pub use trace_replay::{
     load_session_trace_v1, render_session_trace_replay_report, replay_session_trace,
-    SessionTraceReplayAppliedStep, SessionTraceReplayDrift, SessionTraceReplayDriftPhase,
-    SessionTraceReplayOptions, SessionTraceReplayReport, SessionTraceReplayStop,
+    replay_session_trace_with_recorder, SessionTraceReplayAppliedStep, SessionTraceReplayDrift,
+    SessionTraceReplayDriftPhase, SessionTraceReplayOptions, SessionTraceReplayReport,
+    SessionTraceReplayStop,
 };
 pub use transition_report::{
     ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,

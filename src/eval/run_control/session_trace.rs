@@ -12,7 +12,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 6;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -22,6 +22,8 @@ pub struct SessionTraceV1 {
     pub label_role: String,
     pub trainable_as_action_label: bool,
     pub policy_quality_claim: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<SessionTraceLineageV1>,
     pub run_config: SessionTraceRunConfigV1,
     pub steps: Vec<SessionTraceStepV1>,
     pub artifact_refs: Vec<SessionTraceArtifactRefV1>,
@@ -35,11 +37,26 @@ impl SessionTraceV1 {
             label_role: "diagnostic_not_teacher_label".to_string(),
             trainable_as_action_label: false,
             policy_quality_claim: false,
+            lineage: None,
             run_config: SessionTraceRunConfigV1::from_session(session),
             steps: Vec::new(),
             artifact_refs: Vec::new(),
         }
     }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionTraceLineageV1 {
+    pub role: SessionTraceLineageRoleV1,
+    pub parent_trace_path: String,
+    pub parent_trace_hash: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionTraceLineageRoleV1 {
+    Continuation,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -80,6 +97,8 @@ impl SessionTraceRunConfigV1 {
 #[serde(deny_unknown_fields)]
 pub struct SessionTraceStepV1 {
     pub step_index: usize,
+    #[serde(default)]
+    pub step_source: SessionTraceStepSourceV1,
     pub raw_command_line: String,
     pub decision_step_before: u64,
     pub decision_step_after: u64,
@@ -92,6 +111,19 @@ pub struct SessionTraceStepV1 {
     pub selection_resolution: SessionTraceSelectionResolution,
     pub annotations: Vec<RunControlTraceAnnotationV1>,
     pub action_result: ActionResult,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SessionTraceStepSourceV1 {
+    ManualOrAutomation,
+    ReplayVerified { source_trace_step_index: usize },
+}
+
+impl Default for SessionTraceStepSourceV1 {
+    fn default() -> Self {
+        Self::ManualOrAutomation
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -202,10 +234,17 @@ pub struct SessionTraceRecorder {
 
 impl SessionTraceRecorder {
     pub fn new(path: PathBuf, session: &RunControlSession) -> Self {
-        Self {
-            path,
-            trace: SessionTraceV1::new(session),
-        }
+        Self::new_with_lineage(path, session, None)
+    }
+
+    pub fn new_with_lineage(
+        path: PathBuf,
+        session: &RunControlSession,
+        lineage: Option<SessionTraceLineageV1>,
+    ) -> Self {
+        let mut trace = SessionTraceV1::new(session);
+        trace.lineage = lineage;
+        Self { path, trace }
     }
 
     pub fn prepare_step(
@@ -241,6 +280,23 @@ impl SessionTraceRecorder {
         action_result: &ActionResult,
         annotations: &[RunControlTraceAnnotationV1],
     ) -> Result<(), String> {
+        self.record_action_step_with_source(
+            pending,
+            session_after,
+            action_result,
+            annotations,
+            SessionTraceStepSourceV1::ManualOrAutomation,
+        )
+    }
+
+    pub(in crate::eval::run_control) fn record_action_step_with_source(
+        &mut self,
+        pending: SessionTracePendingStep,
+        session_after: &RunControlSession,
+        action_result: &ActionResult,
+        annotations: &[RunControlTraceAnnotationV1],
+        step_source: SessionTraceStepSourceV1,
+    ) -> Result<(), String> {
         let raw_command_line = pending.raw_command_line.clone();
         let decision_step_after = session_after.decision_step;
         let (selected_candidate, selection_resolution) = if pending.selected_candidate.is_some() {
@@ -250,6 +306,7 @@ impl SessionTraceRecorder {
         };
         let step = SessionTraceStepV1 {
             step_index: self.trace.steps.len(),
+            step_source,
             raw_command_line: pending.raw_command_line,
             decision_step_before: pending.decision_step_before,
             decision_step_after: session_after.decision_step,
