@@ -69,7 +69,7 @@ fn run_control_parser_accepts_case_artifact_commands() {
 fn run_control_parser_accepts_search_combat_options() {
     assert_eq!(
             parse_run_control_command(
-                "search-combat max_nodes=123 wall_ms=50 potion=semantic max_potions=1 rollout=turn_beam_no_potion rollouts=7 rollout_actions=11 beam=4 turn_plan=root_frontier_seed frontier=round_robin",
+                "search-combat max_nodes=123 wall_ms=50 max_hp_loss=12 potion=semantic max_potions=1 rollout=turn_beam_no_potion rollouts=7 rollout_actions=11 beam=4 turn_plan=root_frontier_seed frontier=round_robin",
             )
             .expect("search-combat should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
@@ -77,6 +77,7 @@ fn run_control_parser_accepts_search_combat_options() {
                 max_actions_per_line: None,
                 max_engine_steps_per_action: None,
                 wall_ms: Some(50),
+                max_hp_loss: Some(12),
                 potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
                 max_potions_used: Some(1),
                 rollout_policy: Some(CombatSearchV2RolloutPolicy::TurnBeamNoPotion),
@@ -121,6 +122,7 @@ fn run_control_parser_accepts_auto_step_options() {
                 max_actions_per_line: None,
                 max_engine_steps_per_action: None,
                 wall_ms: Some(50),
+                max_hp_loss: None,
                 potion_policy: None,
                 max_potions_used: None,
                 rollout_policy: None,
@@ -145,9 +147,12 @@ fn run_control_parser_accepts_auto_step_options() {
         })
     );
     assert_eq!(
-        parse_run_control_command("nr max_ops=9").expect("nr should parse"),
+        parse_run_control_command("nr max_ops=9 max_hp_loss=8").expect("nr should parse"),
         RunControlCommand::AutoStep(RunControlAutoStepOptions {
-            search: RunControlSearchCombatOptions::default(),
+            search: RunControlSearchCombatOptions {
+                max_hp_loss: Some(8),
+                ..Default::default()
+            },
             max_operations: Some(9),
             route: RunControlRouteAutomationMode::Planner,
         })

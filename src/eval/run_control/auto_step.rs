@@ -530,7 +530,7 @@ fn trim_search_rejection(message: &str) -> String {
     message
         .lines()
         .take_while(|line| !line.starts_with("===="))
-        .take(8)
+        .take(12)
         .collect::<Vec<_>>()
         .join("\n")
 }

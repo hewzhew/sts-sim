@@ -97,6 +97,7 @@ pub struct RunControlSearchCombatOptions {
     pub max_actions_per_line: Option<usize>,
     pub max_engine_steps_per_action: Option<usize>,
     pub wall_ms: Option<u64>,
+    pub max_hp_loss: Option<u32>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
     pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,

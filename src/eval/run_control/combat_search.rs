@@ -30,7 +30,7 @@ pub(super) fn apply_search_combat(
     if search_report_has_invalid_card_identity(&report) {
         let mut outcome = RunControlCommandOutcome::message(format!(
             "{}{}\n\n{}",
-            render_search_rejection(&report),
+            render_search_rejection(&report, "invalid_card_identity", None),
             render_saved_evidence_note(saved_evidence.as_deref()),
             super::render::render_run_control_state(session)
         ));
@@ -44,13 +44,32 @@ pub(super) fn apply_search_combat(
     else {
         let mut outcome = RunControlCommandOutcome::message(format!(
             "{}{}\n\n{}",
-            render_search_rejection(&report),
+            render_search_rejection(&report, "no_complete_winning_candidate", None),
             render_saved_evidence_note(saved_evidence.as_deref()),
             super::render::render_run_control_state(session)
         ));
         outcome.search_evidence_path = saved_evidence;
         return Ok(outcome);
     };
+    if let Some(max_hp_loss) = options.max_hp_loss {
+        if trajectory.hp_loss > max_hp_loss as i32 {
+            let mut outcome = RunControlCommandOutcome::message(format!(
+                "{}{}\n\n{}",
+                render_search_rejection(
+                    &report,
+                    "complete_winning_candidate_exceeds_hp_loss_limit",
+                    Some(format!(
+                        "candidate_hp_loss={} max_hp_loss={max_hp_loss}",
+                        trajectory.hp_loss
+                    )),
+                ),
+                render_saved_evidence_note(saved_evidence.as_deref()),
+                super::render::render_run_control_state(session)
+            ));
+            outcome.search_evidence_path = saved_evidence;
+            return Ok(outcome);
+        }
+    }
 
     verify_trajectory_replays_to_win(&start, &trajectory.actions, &config)?;
 
@@ -247,20 +266,49 @@ fn verify_trajectory_replays_to_win(
     }
 }
 
-fn render_search_rejection(report: &CombatSearchV2Report) -> String {
-    format!(
-        "Search combat did not modify state.\n  result=no_complete_winning_candidate\n  coverage_status={:?}\n  complete_trajectory_found={}\n  terminal_wins={}\n  nodes_expanded={}\n  nodes_generated={}\n  rollouts={} rollout_wins={} rollout_skips={}\n  reliability={}\n  coverage_reason={}",
-        report.outcome.coverage_status,
-        report.outcome.complete_trajectory_found,
-        report.stats.terminal_wins,
-        report.stats.nodes_expanded,
-        report.stats.nodes_generated,
-        report.rollout.evaluations,
-        report.rollout.terminal_wins,
-        report.rollout.budget_skips,
-        report.evidence_reliability.reliability,
-        report.outcome.coverage_reason
-    )
+fn render_search_rejection(
+    report: &CombatSearchV2Report,
+    result: &'static str,
+    detail: Option<String>,
+) -> String {
+    let mut lines = vec![
+        "Search combat did not modify state.".to_string(),
+        format!("  result={result}"),
+    ];
+    if let Some(detail) = detail {
+        lines.push(format!("  detail={detail}"));
+    }
+    if let Some(candidate) = report.best_complete_trajectory.as_ref() {
+        lines.push(format!(
+            "  best_complete_candidate terminal={:?} final_hp={} hp_loss={} turns={} cards_played={} potions_used={} actions={}",
+            candidate.terminal,
+            candidate.final_hp,
+            candidate.hp_loss,
+            candidate.turns,
+            candidate.cards_played,
+            candidate.potions_used,
+            candidate.actions.len()
+        ));
+    } else {
+        lines.push("  best_complete_candidate=none".to_string());
+    }
+    lines.extend([
+        format!("  coverage_status={:?}", report.outcome.coverage_status),
+        format!(
+            "  complete_trajectory_found={}",
+            report.outcome.complete_trajectory_found
+        ),
+        format!("  terminal_wins={}", report.stats.terminal_wins),
+        format!("  nodes_expanded={}", report.stats.nodes_expanded),
+        format!("  nodes_generated={}", report.stats.nodes_generated),
+        format!(
+            "  rollouts={} rollout_wins={} rollout_skips={}",
+            report.rollout.evaluations, report.rollout.terminal_wins, report.rollout.budget_skips
+        ),
+        format!("  reliability={}", report.evidence_reliability.reliability),
+        format!("  coverage_reason={}", report.outcome.coverage_reason),
+    ]);
+    lines.join("\n")
 }
 
 fn render_search_application(

@@ -35,6 +35,9 @@ pub(super) fn parse_search_combat_options(
             "wall_ms" | "ms" => {
                 options.wall_ms = Some(parse_u64_value(value, "wall_ms")?);
             }
+            "max_hp_loss" | "hp_loss" | "hp_loss_limit" => {
+                options.max_hp_loss = Some(parse_u32_value(value, "max_hp_loss")?);
+            }
             "potion" | "potion_policy" => {
                 options.potion_policy = Some(parse_potion_policy(value)?);
             }
