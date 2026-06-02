@@ -83,3 +83,20 @@ fn healer_profile_reports_support_enemy() {
     assert_eq!(profile.healer_support_count, 1);
     assert_eq!(profile.tracked_monsters, 1);
 }
+
+#[test]
+fn fungi_profile_reports_swarm_count() {
+    let mut combat = blank_test_combat();
+    let mut first = test_monster(EnemyId::FungiBeast);
+    first.id = 1;
+    let mut second = test_monster(EnemyId::FungiBeast);
+    second.id = 2;
+    let mut third = test_monster(EnemyId::FungiBeast);
+    third.id = 3;
+    combat.entities.monsters = vec![first, second, third];
+
+    let profile = enemy_mechanics_profile(&combat);
+
+    assert_eq!(profile.fungi_beast_count, 3);
+    assert_eq!(profile.tracked_monsters, 3);
+}

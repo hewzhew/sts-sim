@@ -22,6 +22,7 @@ pub(super) struct EnemyMechanicsProfileV1 {
     pub(super) gremlin_nob_enrage_count: usize,
     pub(super) gremlin_nob_anger_amount_total: i32,
     pub(super) sentry_dazed_pressure_count: usize,
+    pub(super) fungi_beast_count: usize,
     pub(super) healer_support_count: usize,
     pub(super) hexaghost_opening_pressure_count: usize,
     pub(super) bronze_automaton_count: usize,
@@ -93,6 +94,10 @@ pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsPro
                     profile.sentry_dazed_pressure_count += 1;
                 }
             }
+            EnemyId::FungiBeast => {
+                profile.tracked_monsters += 1;
+                profile.fungi_beast_count += 1;
+            }
             EnemyId::Healer => {
                 profile.tracked_monsters += 1;
                 profile.healer_support_count += 1;
@@ -154,6 +159,7 @@ pub(super) fn enemy_mechanics_profile_report(
         gremlin_nob_enrage_count: profile.gremlin_nob_enrage_count,
         gremlin_nob_anger_amount_total: profile.gremlin_nob_anger_amount_total,
         sentry_dazed_pressure_count: profile.sentry_dazed_pressure_count,
+        fungi_beast_count: profile.fungi_beast_count,
         healer_support_count: profile.healer_support_count,
         hexaghost_opening_pressure_count: profile.hexaghost_opening_pressure_count,
         bronze_automaton_count: profile.bronze_automaton_count,

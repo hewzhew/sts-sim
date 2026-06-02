@@ -330,16 +330,17 @@ fn should_seed_turn_plan_at_node(node: &SearchNode, config: &CombatSearchV2Confi
         return false;
     }
 
-    if config.turn_plan_policy.requires_support_enemy_gate() {
-        return support_enemy_turn_plan_seed_gate(node);
+    if config.turn_plan_policy.requires_tactical_enemy_gate() {
+        return tactical_enemy_turn_plan_seed_gate(node);
     }
 
     true
 }
 
-fn support_enemy_turn_plan_seed_gate(node: &SearchNode) -> bool {
+fn tactical_enemy_turn_plan_seed_gate(node: &SearchNode) -> bool {
     let profile = combat_search_phase_profile(&node.engine, &node.combat);
-    profile.enemy_mechanics.healer_support_count > 0 && living_enemy_count(&node.combat) >= 2
+    (profile.enemy_mechanics.healer_support_count > 0 && living_enemy_count(&node.combat) >= 2)
+        || profile.enemy_mechanics.fungi_beast_count >= 3
 }
 
 #[cfg(test)]

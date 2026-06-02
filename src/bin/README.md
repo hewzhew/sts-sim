@@ -60,8 +60,8 @@ Active binaries:
     command-local `max_nodes=`, `wall_ms=`, `max_hp_loss=`, `potion=`, and
     `max_potions=` override them.
     The default turn-plan policy is
-    `support_enemy_turn_boundary_frontier_seed`: exact same-turn end states are
-    seeded only for support-enemy multi-target fights; use
+    `tactical_enemy_turn_boundary_frontier_seed`: exact same-turn end states are
+    seeded only for typed tactical multi-enemy fights; use
     `turn_plan=diagnostic_only` to disable that gate for one command, or
     `turn_plan=turn_boundary_frontier_seed` for explicit broad experiments.
     Use command-local `max_hp_loss=off` to disable the hp-loss gate once.

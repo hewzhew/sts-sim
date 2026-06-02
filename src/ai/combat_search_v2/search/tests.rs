@@ -382,7 +382,7 @@ fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
     assert!(!diagnostic_only.outcome.complete_trajectory_found);
     assert_eq!(
         diagnostic_only.search_policy.turn_plan_policy,
-        "support_enemy_turn_boundary_frontier_seed"
+        "tactical_enemy_turn_boundary_frontier_seed"
     );
 
     let seeded = run_combat_search_v2_with_stepper(
@@ -417,18 +417,18 @@ fn config_and_turn_plan_policy_defaults_match() {
     );
     assert_eq!(
         CombatSearchV2TurnPlanPolicy::default().label(),
-        "support_enemy_turn_boundary_frontier_seed"
+        "tactical_enemy_turn_boundary_frontier_seed"
     );
 }
 
 #[test]
-fn support_enemy_turn_plan_seed_gate_requires_healer_pair() {
+fn tactical_enemy_turn_plan_seed_gate_requires_healer_pair() {
     let mut combat = blank_test_combat();
     let mut healer = test_monster(EnemyId::Healer);
     healer.id = 2;
     combat.entities.monsters = vec![healer];
 
-    assert!(!support_enemy_turn_plan_seed_gate(&test_search_node(
+    assert!(!tactical_enemy_turn_plan_seed_gate(&test_search_node(
         combat.clone()
     )));
 
@@ -436,7 +436,31 @@ fn support_enemy_turn_plan_seed_gate_requires_healer_pair() {
     centurion.id = 1;
     combat.entities.monsters.push(centurion);
 
-    assert!(support_enemy_turn_plan_seed_gate(&test_search_node(combat)));
+    assert!(tactical_enemy_turn_plan_seed_gate(&test_search_node(
+        combat
+    )));
+}
+
+#[test]
+fn tactical_enemy_turn_plan_seed_gate_allows_fungi_swarm() {
+    let mut combat = blank_test_combat();
+    let mut first = test_monster(EnemyId::FungiBeast);
+    first.id = 1;
+    let mut second = test_monster(EnemyId::FungiBeast);
+    second.id = 2;
+    combat.entities.monsters = vec![first, second];
+
+    assert!(!tactical_enemy_turn_plan_seed_gate(&test_search_node(
+        combat.clone()
+    )));
+
+    let mut third = test_monster(EnemyId::FungiBeast);
+    third.id = 3;
+    combat.entities.monsters.push(third);
+
+    assert!(tactical_enemy_turn_plan_seed_gate(&test_search_node(
+        combat
+    )));
 }
 
 fn test_search_node(combat: CombatState) -> SearchNode {

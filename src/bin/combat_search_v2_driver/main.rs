@@ -350,14 +350,22 @@ fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, S
         | "turn_boundary_frontier_seed"
         | "turn-boundary-seed"
         | "turn_boundary_seed" => Ok(CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed),
-        "support-enemy-turn-boundary-frontier-seed"
+        "tactical-enemy-turn-boundary-frontier-seed"
+        | "tactical_enemy_turn_boundary_frontier_seed"
+        | "tactical-turn-boundary-seed"
+        | "tactical_turn_boundary_seed"
+        | "tactical-seed"
+        | "tactical_seed"
+        | "support-enemy-turn-boundary-frontier-seed"
         | "support_enemy_turn_boundary_frontier_seed"
         | "support-turn-boundary-seed"
         | "support_turn_boundary_seed"
         | "support-seed"
-        | "support_seed" => Ok(CombatSearchV2TurnPlanPolicy::SupportEnemyTurnBoundaryFrontierSeed),
+        | "support_seed" => {
+            Ok(CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed)
+        }
         _ => Err(format!(
-            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|support_enemy_turn_boundary_frontier_seed"
+            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed"
         )),
     }
 }
@@ -402,11 +410,20 @@ mod tests {
     }
 
     #[test]
-    fn parse_turn_plan_policy_accepts_support_enemy_seed() {
+    fn parse_turn_plan_policy_accepts_tactical_enemy_seed() {
+        assert_eq!(
+            parse_turn_plan_policy("tactical_enemy_turn_boundary_frontier_seed")
+                .expect("policy should parse"),
+            CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed
+        );
+    }
+
+    #[test]
+    fn parse_turn_plan_policy_keeps_support_enemy_alias() {
         assert_eq!(
             parse_turn_plan_policy("support_enemy_turn_boundary_frontier_seed")
                 .expect("policy should parse"),
-            CombatSearchV2TurnPlanPolicy::SupportEnemyTurnBoundaryFrontierSeed
+            CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed
         );
     }
 

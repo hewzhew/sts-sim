@@ -33,7 +33,7 @@ impl Default for CombatSearchV2Config {
             rollout_max_evaluations: super::super::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
             rollout_max_actions: super::super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
             rollout_beam_width: super::super::rollout::DEFAULT_TURN_BEAM_WIDTH,
-            turn_plan_policy: CombatSearchV2TurnPlanPolicy::SupportEnemyTurnBoundaryFrontierSeed,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
             frontier_policy: CombatSearchV2FrontierPolicy::SingleQueue,
         }
     }
@@ -91,12 +91,13 @@ pub enum CombatSearchV2TurnPlanPolicy {
     DiagnosticOnly,
     RootFrontierSeed,
     TurnBoundaryFrontierSeed,
-    SupportEnemyTurnBoundaryFrontierSeed,
+    #[serde(alias = "support_enemy_turn_boundary_frontier_seed")]
+    TacticalEnemyTurnBoundaryFrontierSeed,
 }
 
 impl Default for CombatSearchV2TurnPlanPolicy {
     fn default() -> Self {
-        Self::SupportEnemyTurnBoundaryFrontierSeed
+        Self::TacticalEnemyTurnBoundaryFrontierSeed
     }
 }
 
@@ -106,8 +107,8 @@ impl CombatSearchV2TurnPlanPolicy {
             Self::DiagnosticOnly => "diagnostic_only",
             Self::RootFrontierSeed => "root_frontier_seed",
             Self::TurnBoundaryFrontierSeed => "turn_boundary_frontier_seed",
-            Self::SupportEnemyTurnBoundaryFrontierSeed => {
-                "support_enemy_turn_boundary_frontier_seed"
+            Self::TacticalEnemyTurnBoundaryFrontierSeed => {
+                "tactical_enemy_turn_boundary_frontier_seed"
             }
         }
     }
@@ -122,12 +123,12 @@ impl CombatSearchV2TurnPlanPolicy {
     pub(in crate::ai::combat_search_v2) fn seeds_turn_boundary_frontier(self) -> bool {
         matches!(
             self,
-            Self::TurnBoundaryFrontierSeed | Self::SupportEnemyTurnBoundaryFrontierSeed
+            Self::TurnBoundaryFrontierSeed | Self::TacticalEnemyTurnBoundaryFrontierSeed
         )
     }
 
-    pub(in crate::ai::combat_search_v2) fn requires_support_enemy_gate(self) -> bool {
-        matches!(self, Self::SupportEnemyTurnBoundaryFrontierSeed)
+    pub(in crate::ai::combat_search_v2) fn requires_tactical_enemy_gate(self) -> bool {
+        matches!(self, Self::TacticalEnemyTurnBoundaryFrontierSeed)
     }
 }
 
