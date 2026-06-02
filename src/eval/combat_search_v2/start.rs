@@ -21,6 +21,7 @@ pub struct CombatSearchV2RunOptions {
     pub max_actions_per_line: Option<usize>,
     pub max_engine_steps_per_action: Option<usize>,
     pub wall_ms: Option<u64>,
+    pub stop_on_win_hp_loss_at_most: Option<u32>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
     pub high_stakes_semantic_potions: bool,
@@ -44,7 +45,9 @@ impl CombatSearchV2RunOptions {
                 .max_engine_steps_per_action
                 .unwrap_or(defaults.max_engine_steps_per_action),
             wall_time: self.wall_ms.map(Duration::from_millis),
-            stop_on_win_hp_loss_at_most: defaults.stop_on_win_hp_loss_at_most,
+            stop_on_win_hp_loss_at_most: self
+                .stop_on_win_hp_loss_at_most
+                .or(defaults.stop_on_win_hp_loss_at_most),
             input_label: Some(input_label),
             potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
             max_potions_used: self.max_potions_used.or(defaults.max_potions_used),
@@ -218,5 +221,20 @@ mod tests {
 
         assert_eq!(config.potion_policy, CombatSearchV2PotionPolicy::Never);
         assert_eq!(config.max_potions_used, Some(0));
+    }
+
+    #[test]
+    fn run_options_accept_complete_win_hp_loss_gate() {
+        let options = CombatSearchV2RunOptions {
+            stop_on_win_hp_loss_at_most: Some(8),
+            ..CombatSearchV2RunOptions::default()
+        };
+
+        let config = options.to_search_config_for_position(
+            "test".to_string(),
+            &combat_position_with_flags(false, false),
+        );
+
+        assert_eq!(config.stop_on_win_hp_loss_at_most, Some(8));
     }
 }

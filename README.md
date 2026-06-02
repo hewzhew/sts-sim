@@ -132,6 +132,12 @@ Use explicit budgets when probing hard fights:
 cargo run --release --bin combat_search_v2_driver -- --combat-snapshot tools\artifacts\benchmarks\seed521_act1\captures\some_case.capture.json --max-nodes 500000 --wall-ms 30000
 ```
 
+Stop batch search after a good-enough exact win:
+
+```powershell
+cargo run --release --bin combat_search_v2_driver -- --benchmark-spec tools\artifacts\benchmarks\seed521_act1\benchmark.json --max-hp-loss 8
+```
+
 Potion branches are disabled unless explicitly requested:
 
 ```powershell
@@ -141,10 +147,14 @@ cargo run --release --bin combat_search_v2_driver -- --combat-snapshot tools\art
 Important search output concepts:
 
 - `Win` / `Loss` / `Unresolved` describe the reported terminal class.
-- `BudgetExhausted` or `DeadlineHit` means unresolved frontier remains.
+- `coverage_status=node_budget_limited` or `time_budget_limited` means
+  unresolved frontier remains.
+- `coverage_status=accepted_complete_candidate` means search stopped after an
+  exact complete win passed the configured hp-loss acceptance gate.
 - `complete_trajectory_found=false` means the search did not find an executable
   complete win under the given budget.
-- A budgeted complete win is useful evidence, but not an optimality proof.
+- A budgeted complete win is useful evidence, but it is not an exhaustive
+  best-line claim.
 
 ## Artifacts
 

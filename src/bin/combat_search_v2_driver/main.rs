@@ -47,6 +47,9 @@ struct Args {
     #[arg(long)]
     wall_ms: Option<u64>,
 
+    #[arg(long)]
+    max_hp_loss: Option<String>,
+
     #[arg(long, value_parser = parse_driver_potion_policy)]
     potion_policy: Option<DriverPotionPolicy>,
 
@@ -159,6 +162,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         write_or_print(args.output.as_ref(), &payload)?;
         return Ok(());
     }
+    let stop_on_win_hp_loss_at_most = match args.max_hp_loss.as_deref() {
+        Some(value) => parse_max_hp_loss(value)?,
+        None => None,
+    };
 
     let (potion_policy, high_stakes_semantic_potions) = match args.potion_policy {
         Some(DriverPotionPolicy::Search(policy)) => (Some(policy), false),
@@ -171,6 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_actions_per_line: args.max_actions_per_line,
         max_engine_steps_per_action: args.max_engine_steps_per_action,
         wall_ms: args.wall_ms,
+        stop_on_win_hp_loss_at_most,
         potion_policy,
         max_potions_used: args.max_potions_used,
         high_stakes_semantic_potions,
@@ -368,6 +376,15 @@ fn parse_driver_potion_policy(value: &str) -> Result<DriverPotionPolicy, String>
     }
 }
 
+fn parse_max_hp_loss(value: &str) -> Result<Option<u32>, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "off" | "none" | "disabled" => Ok(None),
+        _ => value.parse::<u32>().map(Some).map_err(|_| {
+            format!("invalid max hp loss '{value}', expected a non-negative integer or off")
+        }),
+    }
+}
+
 fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
         "diagnostic" | "diagnostic-only" | "diagnostic_only" | "off" => {
@@ -488,6 +505,15 @@ mod tests {
             parse_driver_potion_policy("semantic").expect("policy should parse"),
             DriverPotionPolicy::Search(CombatSearchV2PotionPolicy::SemanticBudgeted)
         );
+    }
+
+    #[test]
+    fn parse_max_hp_loss_accepts_integer_and_off() {
+        assert_eq!(
+            parse_max_hp_loss("8").expect("hp loss should parse"),
+            Some(8)
+        );
+        assert_eq!(parse_max_hp_loss("off").expect("off should parse"), None);
     }
 
     #[test]

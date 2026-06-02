@@ -23,6 +23,9 @@ Active binaries:
     without running search
   - `--potion-policy all --max-potions-used <N>`: allow potion branches while
     bounding potion resource use for budgeted search experiments
+  - `--max-hp-loss <N|off>`: stop once an exact complete winning candidate
+    with at most that hp loss is found; this is an acceptance gate for budgeted
+    batch runs, not an exhaustive best-line claim
   - `--benchmark-spec <path> --explain-case <case_id>`: diagnostic-only
     initial-decision microscope; reports the selected first action, current
     candidate ordering, and exact one-step consequences without writing
