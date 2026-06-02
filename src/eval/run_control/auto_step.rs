@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use crate::ai::combat_search_v2::{CombatSearchV2FrontierPolicy, CombatSearchV2TurnPlanPolicy};
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
 use super::commands::{
@@ -197,12 +196,6 @@ fn auto_search_options(
 ) -> RunControlSearchCombatOptions {
     if options.wall_ms.is_none() && session.search_wall_ms.is_none() {
         options.wall_ms = Some(DEFAULT_AUTO_SEARCH_WALL_MS);
-    }
-    if options.turn_plan_policy.is_none() {
-        options.turn_plan_policy = Some(CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed);
-    }
-    if options.frontier_policy.is_none() {
-        options.frontier_policy = Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
     }
     options
 }
@@ -552,7 +545,7 @@ mod tests {
     };
 
     #[test]
-    fn auto_search_options_use_stronger_automation_defaults_without_overriding_commands() {
+    fn auto_search_options_only_add_interactive_time_budget_without_strategy_overrides() {
         let session = RunControlSession::new(RunControlConfig {
             search_wall_ms: Some(30_000),
             ..RunControlConfig::default()
@@ -560,14 +553,8 @@ mod tests {
 
         let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
         assert_eq!(options.wall_ms, None);
-        assert_eq!(
-            options.turn_plan_policy,
-            Some(CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed)
-        );
-        assert_eq!(
-            options.frontier_policy,
-            Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets)
-        );
+        assert_eq!(options.turn_plan_policy, None);
+        assert_eq!(options.frontier_policy, None);
 
         let options = auto_search_options(
             &session,
