@@ -3,8 +3,10 @@ use std::path::PathBuf;
 use clap::{Parser, ValueEnum};
 use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use sts_simulator::eval::run_control::{
-    canonical_player_class, render_run_control_state, AutoCombatCaptureConfig, RunControlConfig,
-    RunControlSession, SessionTraceRecorder,
+    canonical_player_class, load_session_trace_v1, render_run_control_state,
+    render_session_trace_replay_report, replay_session_trace, AutoCombatCaptureConfig,
+    RewardAutomationConfig, RunControlConfig, RunControlSession, SessionTraceRecorder,
+    SessionTraceReplayOptions, SessionTraceV1,
 };
 
 mod terminal;
@@ -13,20 +15,26 @@ use terminal::{run_repl, run_script};
 #[derive(Parser, Debug)]
 #[command(about = "Thin simulator run/play driver with exact combat capture support")]
 struct Args {
-    #[arg(long, default_value_t = 1)]
-    seed: u64,
+    #[arg(long)]
+    seed: Option<u64>,
 
-    #[arg(long, default_value_t = 0)]
-    ascension: u8,
+    #[arg(long)]
+    ascension: Option<u8>,
 
-    #[arg(long, value_enum, default_value_t = CliPlayerClass::Ironclad)]
-    class: CliPlayerClass,
+    #[arg(long, value_enum)]
+    class: Option<CliPlayerClass>,
 
     #[arg(long)]
     final_act: bool,
 
     #[arg(long)]
     script: Option<PathBuf>,
+
+    #[arg(long)]
+    replay_trace: Option<PathBuf>,
+
+    #[arg(long)]
+    replay_steps: Option<usize>,
 
     #[arg(long)]
     trace: Option<PathBuf>,
@@ -74,25 +82,28 @@ impl CliPlayerClass {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let player_class = canonical_player_class(args.class.as_str())?;
-    let mut session = RunControlSession::new(RunControlConfig {
-        seed: args.seed,
-        ascension_level: args.ascension,
-        final_act: args.final_act,
-        player_class,
-        reward_automation: Default::default(),
-        auto_capture: AutoCombatCaptureConfig {
-            enabled: args.auto_capture_combat,
-            root: args.auto_capture_combat_root.clone(),
-        },
-        search_max_nodes: args.search_max_nodes,
-        search_wall_ms: args.search_wall_ms,
-        search_max_hp_loss: args.search_max_hp_loss,
-        search_potion_policy: args.search_potion_policy,
-        search_max_potions_used: args.search_max_potions_used,
-    });
+    let replay_trace = args
+        .replay_trace
+        .as_ref()
+        .map(|path| load_session_trace_v1(path))
+        .transpose()?;
+    let config = run_config_from_args(&args, replay_trace.as_ref())?;
+    let replay_options = SessionTraceReplayOptions {
+        max_steps: args.replay_steps,
+    };
+    let mut session = RunControlSession::new(config);
 
     println!("{}", render_run_control_state(&session));
+    if let (Some(path), Some(trace)) = (args.replay_trace.as_ref(), replay_trace.as_ref()) {
+        println!(
+            "replaying trace {} ({} recorded step(s)); long recorded automation may take a few seconds",
+            path.display(),
+            trace.steps.len()
+        );
+        let report = replay_session_trace(&mut session, trace, replay_options);
+        println!("{}", render_session_trace_replay_report(&report, &session));
+    }
+
     if args.auto_capture_combat {
         let root = args
             .auto_capture_combat_root
@@ -132,6 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "combat search potion defaults: potion={potion_policy} max_potions={max_potions}; command-local potion/max_potions override them"
         );
     }
+
     let mut trace = args
         .trace
         .as_ref()
@@ -143,6 +155,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         run_repl(&mut session, trace.as_mut())?;
     }
     Ok(())
+}
+
+fn run_config_from_args(
+    args: &Args,
+    replay_trace: Option<&SessionTraceV1>,
+) -> Result<RunControlConfig, String> {
+    let player_class = match args.class.as_ref() {
+        Some(class) => canonical_player_class(class.as_str())?,
+        None => replay_trace
+            .map(|trace| canonical_player_class(&trace.run_config.player_class))
+            .transpose()?
+            .unwrap_or("Ironclad"),
+    };
+    let reward_automation = replay_trace
+        .map(|trace| RewardAutomationConfig {
+            claim_gold: trace.run_config.reward_automation.claim_gold,
+            claim_potion_with_empty_slot: trace
+                .run_config
+                .reward_automation
+                .claim_potion_with_empty_slot,
+        })
+        .unwrap_or_default();
+
+    Ok(RunControlConfig {
+        seed: args
+            .seed
+            .or_else(|| replay_trace.map(|trace| trace.run_config.seed))
+            .unwrap_or(1),
+        ascension_level: args
+            .ascension
+            .or_else(|| replay_trace.map(|trace| trace.run_config.ascension_level))
+            .unwrap_or(0),
+        final_act: if args.final_act {
+            true
+        } else {
+            replay_trace
+                .map(|trace| trace.run_config.final_act)
+                .unwrap_or(false)
+        },
+        player_class,
+        reward_automation,
+        auto_capture: AutoCombatCaptureConfig {
+            enabled: args.auto_capture_combat,
+            root: args.auto_capture_combat_root.clone(),
+        },
+        search_max_nodes: args.search_max_nodes,
+        search_wall_ms: args.search_wall_ms,
+        search_max_hp_loss: args.search_max_hp_loss,
+        search_potion_policy: args.search_potion_policy,
+        search_max_potions_used: args.search_max_potions_used,
+    })
 }
 
 fn parse_cli_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
@@ -165,4 +228,70 @@ fn cli_potion_policy_label(policy: CombatSearchV2PotionPolicy) -> String {
         CombatSearchV2PotionPolicy::SemanticBudgeted => "semantic",
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_args() -> Args {
+        Args {
+            seed: None,
+            ascension: None,
+            class: None,
+            final_act: false,
+            script: None,
+            replay_trace: None,
+            replay_steps: None,
+            trace: None,
+            auto_capture_combat: false,
+            auto_capture_combat_root: None,
+            search_max_nodes: None,
+            search_wall_ms: None,
+            search_max_hp_loss: None,
+            search_potion_policy: None,
+            search_max_potions_used: None,
+        }
+    }
+
+    #[test]
+    fn replay_trace_config_fills_missing_cli_run_config() {
+        let session = RunControlSession::new(RunControlConfig {
+            seed: 590_093_712,
+            ascension_level: 12,
+            final_act: true,
+            player_class: "Silent",
+            ..RunControlConfig::default()
+        });
+        let trace = SessionTraceV1::new(&session);
+        let args = empty_args();
+
+        let config = run_config_from_args(&args, Some(&trace)).expect("config should build");
+
+        assert_eq!(config.seed, 590_093_712);
+        assert_eq!(config.ascension_level, 12);
+        assert_eq!(config.player_class, "Silent");
+        assert!(config.final_act);
+    }
+
+    #[test]
+    fn explicit_cli_run_config_overrides_replay_trace_config() {
+        let session = RunControlSession::new(RunControlConfig {
+            seed: 590_093_712,
+            ascension_level: 12,
+            player_class: "Silent",
+            ..RunControlConfig::default()
+        });
+        let trace = SessionTraceV1::new(&session);
+        let mut args = empty_args();
+        args.seed = Some(1);
+        args.ascension = Some(2);
+        args.class = Some(CliPlayerClass::Defect);
+
+        let config = run_config_from_args(&args, Some(&trace)).expect("config should build");
+
+        assert_eq!(config.seed, 1);
+        assert_eq!(config.ascension_level, 2);
+        assert_eq!(config.player_class, "Defect");
+    }
 }

@@ -23,6 +23,7 @@ mod selection_surface;
 mod session;
 mod session_trace;
 mod trace_annotation;
+mod trace_replay;
 mod transition_report;
 mod view_model;
 
@@ -61,6 +62,11 @@ pub use session_trace::{
     SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME, SESSION_TRACE_SCHEMA_VERSION,
 };
 pub use trace_annotation::RunControlTraceAnnotationV1;
+pub use trace_replay::{
+    load_session_trace_v1, render_session_trace_replay_report, replay_session_trace,
+    SessionTraceReplayAppliedStep, SessionTraceReplayDrift, SessionTraceReplayDriftPhase,
+    SessionTraceReplayOptions, SessionTraceReplayReport, SessionTraceReplayStop,
+};
 pub use transition_report::{
     ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,
     CardSnapshot as RunActionCardSnapshotV1, CombatPlayerResult as RunActionCombatPlayerResultV1,

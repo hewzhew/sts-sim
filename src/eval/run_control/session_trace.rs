@@ -227,7 +227,7 @@ impl SessionTraceRecorder {
             decision_step_before: session.decision_step,
             screen_title: view.header.title.clone(),
             decision_kind: decision_kind_from_title(&view.header.title),
-            before: boundary_fingerprint(session),
+            before: session_trace_boundary_fingerprint(session),
             visible_candidates: candidates,
             selected_candidate,
             selection_resolution,
@@ -256,7 +256,7 @@ impl SessionTraceRecorder {
             screen_title: pending.screen_title,
             decision_kind: pending.decision_kind,
             before: pending.before,
-            after: boundary_fingerprint(session_after),
+            after: session_trace_boundary_fingerprint(session_after),
             visible_candidates: pending.visible_candidates,
             selected_candidate,
             selection_resolution,
@@ -420,7 +420,9 @@ fn annotation_artifact_refs(
         .collect()
 }
 
-fn boundary_fingerprint(session: &RunControlSession) -> SessionTraceBoundaryFingerprintV1 {
+pub(in crate::eval::run_control) fn session_trace_boundary_fingerprint(
+    session: &RunControlSession,
+) -> SessionTraceBoundaryFingerprintV1 {
     let view = build_run_control_view_model(session);
     let candidates = view
         .candidates
