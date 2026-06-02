@@ -37,8 +37,8 @@ pub enum CombatSearchV2BenchmarkGateStatus {
 pub struct CombatSearchV2BenchmarkGateRequirements {
     pub require_complete_candidate_win_for_every_case: bool,
     pub require_no_complete_candidate_baseline_regression: bool,
-    pub treat_deadline_or_node_budget_as_warning: bool,
-    pub treat_missing_baseline_as_warning: bool,
+    pub coverage_limits_are_reported_not_gate_warnings: bool,
+    pub missing_baselines_are_reported_not_gate_warnings: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -117,7 +117,6 @@ struct CaseGateFacts<'a> {
     baseline_final_hp: Option<i32>,
     baseline_potions_used: Option<u32>,
     complete_candidate_verdict: Option<CombatSearchV2BaselineVerdict>,
-    has_baseline: bool,
     nodes_expanded: u64,
     nodes_generated: u64,
     nodes_to_first_win: Option<u64>,
@@ -190,12 +189,12 @@ pub fn build_combat_search_v2_benchmark_gate_report(
         schema_version: 2,
         gate_name: "combat_search_benchmark_gate",
         status,
-        policy: "fail on missing/non-winning complete candidate or complete-candidate baseline regression; warn on budget pressure, missing baselines, and diagnostic fanout risks",
+        policy: "fail on missing/non-winning complete candidate, complete-candidate baseline regression, or invalid card identity; coverage limits and diagnostics are reported without changing gate status",
         requirements: CombatSearchV2BenchmarkGateRequirements {
             require_complete_candidate_win_for_every_case: true,
             require_no_complete_candidate_baseline_regression: true,
-            treat_deadline_or_node_budget_as_warning: true,
-            treat_missing_baseline_as_warning: true,
+            coverage_limits_are_reported_not_gate_warnings: true,
+            missing_baselines_are_reported_not_gate_warnings: true,
         },
         summary: gate_summary,
         state_abstraction,
@@ -219,7 +218,6 @@ fn case_gate_facts(case: &CombatSearchV2BenchmarkCaseReport) -> CaseGateFacts<'_
             .baseline_comparison
             .as_ref()
             .map(|comparison| comparison.verdict),
-        has_baseline: baseline.is_some(),
         nodes_expanded: case.stats.nodes_expanded,
         nodes_generated: case.stats.nodes_generated,
         nodes_to_first_win: case.stats.nodes_to_first_win,
@@ -284,66 +282,11 @@ fn assess_case_facts(facts: CaseGateFacts<'_>) -> CombatSearchV2BenchmarkGateCas
         "complete_candidate_worse_than_baseline",
     );
 
-    push_warning_if(
+    push_failure_if(
         &mut status,
         &mut reasons,
-        facts.deadline_hit,
-        "deadline_hit",
-    );
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        facts.node_budget_hit,
-        "node_budget_hit",
-    );
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        !facts.has_baseline,
-        "missing_human_baseline",
-    );
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        facts.high_fanout_pending_choice_states > 0,
-        "high_fanout_pending_choice_observed",
-    );
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        facts.same_effect_turn_sequence_groups > 0,
-        "same_effect_turn_sequence_candidates_observed",
-    );
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        facts.same_effect_turn_sequence_groups == 0
-            && facts.order_sensitive_turn_sequence_groups > 0,
-        "order_sensitive_turn_sequence_boundary_observed",
-    );
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        facts.engine_step_limit_count > 0,
-        "engine_step_limit_observed",
-    );
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        facts.max_actions_cut_count > 0,
-        "max_action_line_cut_observed",
-    );
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        facts.potion_budget_cut_count > 0,
-        "potion_budget_cut_observed",
-    );
-    push_warning_if(
-        &mut status,
-        &mut reasons,
-        facts.duplicate_card_identity_states > 0 || facts.uuid_card_id_conflict_states > 0,
-        "card_identity_warning_observed",
+        facts.uuid_card_id_conflict_states > 0,
+        "invalid_card_identity_observed",
     );
 
     CombatSearchV2BenchmarkGateCase {
@@ -400,20 +343,6 @@ fn push_failure_if(
     }
 }
 
-fn push_warning_if(
-    status: &mut CombatSearchV2BenchmarkGateStatus,
-    reasons: &mut Vec<&'static str>,
-    condition: bool,
-    reason: &'static str,
-) {
-    if condition {
-        if *status == CombatSearchV2BenchmarkGateStatus::Pass {
-            *status = CombatSearchV2BenchmarkGateStatus::Warn;
-        }
-        reasons.push(reason);
-    }
-}
-
 fn primary_focus(facts: &CaseGateFacts<'_>) -> &'static str {
     if facts.best_complete_terminal.is_none()
         || matches!(
@@ -432,7 +361,7 @@ fn primary_focus(facts: &CaseGateFacts<'_>) -> &'static str {
         == Some(CombatSearchV2BaselineVerdict::BaselineBetter)
     {
         "value_outcome"
-    } else if facts.duplicate_card_identity_states > 0 || facts.uuid_card_id_conflict_states > 0 {
+    } else if facts.uuid_card_id_conflict_states > 0 {
         "state_integrity"
     } else if facts.high_fanout_pending_choice_states > 0 {
         "pending_choice"
@@ -440,10 +369,6 @@ fn primary_focus(facts: &CaseGateFacts<'_>) -> &'static str {
         "turn_sequence"
     } else if facts.order_sensitive_turn_sequence_groups > 0 {
         "state_abstraction_boundary"
-    } else if facts.deadline_hit || facts.node_budget_hit {
-        "budget_or_rollout"
-    } else if !facts.has_baseline {
-        "baseline_coverage"
     } else {
         "none"
     }
@@ -481,52 +406,40 @@ fn accumulate_gate_summary(
         &case.reasons,
         "complete_candidate_worse_than_baseline",
     );
-    count_reason(
-        &mut summary.missing_baseline_cases,
-        &case.reasons,
-        "missing_human_baseline",
-    );
-    count_reason(&mut summary.deadline_cases, &case.reasons, "deadline_hit");
-    count_reason(
-        &mut summary.node_budget_cases,
-        &case.reasons,
-        "node_budget_hit",
-    );
-    count_reason(
-        &mut summary.high_fanout_pending_choice_cases,
-        &case.reasons,
-        "high_fanout_pending_choice_observed",
-    );
-    count_reason(
-        &mut summary.same_effect_turn_sequence_cases,
-        &case.reasons,
-        "same_effect_turn_sequence_candidates_observed",
-    );
-    count_reason(
-        &mut summary.order_sensitive_turn_sequence_cases,
-        &case.reasons,
-        "order_sensitive_turn_sequence_boundary_observed",
-    );
-    count_reason(
-        &mut summary.engine_step_limit_cases,
-        &case.reasons,
-        "engine_step_limit_observed",
-    );
-    count_reason(
-        &mut summary.max_action_line_cut_cases,
-        &case.reasons,
-        "max_action_line_cut_observed",
-    );
-    count_reason(
-        &mut summary.potion_budget_cut_cases,
-        &case.reasons,
-        "potion_budget_cut_observed",
-    );
-    count_reason(
-        &mut summary.card_identity_warning_cases,
-        &case.reasons,
-        "card_identity_warning_observed",
-    );
+    if case.metrics.baseline_final_hp.is_none() {
+        summary.missing_baseline_cases += 1;
+    }
+    if case.metrics.deadline_hit {
+        summary.deadline_cases += 1;
+    }
+    if case.metrics.node_budget_hit {
+        summary.node_budget_cases += 1;
+    }
+    if case.metrics.high_fanout_pending_choice_states > 0 {
+        summary.high_fanout_pending_choice_cases += 1;
+    }
+    if case.metrics.same_effect_turn_sequence_groups > 0 {
+        summary.same_effect_turn_sequence_cases += 1;
+    }
+    if case.metrics.same_effect_turn_sequence_groups == 0
+        && case.metrics.order_sensitive_turn_sequence_groups > 0
+    {
+        summary.order_sensitive_turn_sequence_cases += 1;
+    }
+    if case.metrics.engine_step_limit_count > 0 {
+        summary.engine_step_limit_cases += 1;
+    }
+    if case.metrics.max_actions_cut_count > 0 {
+        summary.max_action_line_cut_cases += 1;
+    }
+    if case.metrics.potion_budget_cut_count > 0 {
+        summary.potion_budget_cut_cases += 1;
+    }
+    if case.metrics.duplicate_card_identity_states > 0
+        || case.metrics.uuid_card_id_conflict_states > 0
+    {
+        summary.card_identity_warning_cases += 1;
+    }
 }
 
 fn count_reason(count: &mut usize, reasons: &[&'static str], reason: &'static str) {
@@ -623,7 +536,6 @@ mod tests {
             baseline_final_hp: Some(10),
             baseline_potions_used: Some(0),
             complete_candidate_verdict: None,
-            has_baseline: true,
             nodes_expanded: 10,
             nodes_generated: 20,
             nodes_to_first_win: None,
@@ -651,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn gate_case_warns_on_budget_limited_candidate_win_without_failing() {
+    fn gate_case_passes_budget_limited_candidate_win_without_warning() {
         let case = assess_case_facts(CaseGateFacts {
             id: "case",
             coverage_status: SearchCoverageStatus::TimeBudgetLimited,
@@ -661,7 +573,6 @@ mod tests {
             baseline_final_hp: Some(15),
             baseline_potions_used: Some(0),
             complete_candidate_verdict: Some(CombatSearchV2BaselineVerdict::SearchBetter),
-            has_baseline: true,
             nodes_expanded: 10,
             nodes_generated: 20,
             nodes_to_first_win: Some(5),
@@ -683,8 +594,8 @@ mod tests {
             uuid_card_id_conflict_states: 0,
         });
 
-        assert_eq!(case.status, CombatSearchV2BenchmarkGateStatus::Warn);
-        assert!(case.reasons.contains(&"deadline_hit"));
+        assert_eq!(case.status, CombatSearchV2BenchmarkGateStatus::Pass);
+        assert!(!case.reasons.contains(&"deadline_hit"));
         assert!(!case
             .reasons
             .contains(&"complete_candidate_worse_than_baseline"));
@@ -699,17 +610,18 @@ mod tests {
         let same_effect = assess_case_facts(facts.clone());
 
         assert_eq!(same_effect.primary_focus, "turn_sequence");
-        assert!(same_effect
-            .reasons
-            .contains(&"same_effect_turn_sequence_candidates_observed"));
+        assert_eq!(same_effect.status, CombatSearchV2BenchmarkGateStatus::Pass);
+        assert!(same_effect.reasons.is_empty());
 
         facts.same_effect_turn_sequence_groups = 0;
         let order_sensitive = assess_case_facts(facts);
 
         assert_eq!(order_sensitive.primary_focus, "state_abstraction_boundary");
-        assert!(order_sensitive
-            .reasons
-            .contains(&"order_sensitive_turn_sequence_boundary_observed"));
+        assert_eq!(
+            order_sensitive.status,
+            CombatSearchV2BenchmarkGateStatus::Pass
+        );
+        assert!(order_sensitive.reasons.is_empty());
     }
 
     fn clean_warning_facts() -> CaseGateFacts<'static> {
@@ -722,7 +634,6 @@ mod tests {
             baseline_final_hp: Some(15),
             baseline_potions_used: Some(0),
             complete_candidate_verdict: Some(CombatSearchV2BaselineVerdict::SearchBetter),
-            has_baseline: true,
             nodes_expanded: 10,
             nodes_generated: 20,
             nodes_to_first_win: Some(5),

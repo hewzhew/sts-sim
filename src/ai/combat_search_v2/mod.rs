@@ -143,8 +143,7 @@ pub use action_facts::{
     CombatSearchV2ActionTargetFacts,
 };
 pub use baseline::{
-    compare_outcome_metrics, compare_trajectory_reports, CombatSearchV2OutcomeMetrics,
-    WHOLE_COMBAT_OUTCOME_CRITERIA,
+    compare_outcome_metrics, CombatSearchV2OutcomeMetrics, WHOLE_COMBAT_OUTCOME_CRITERIA,
 };
 pub use decision_microscope::{
     explain_combat_search_v2_initial_decision, CombatSearchV2ActionFactsReport,

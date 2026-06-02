@@ -29,50 +29,6 @@ impl CombatSearchV2OutcomeMetrics {
     }
 }
 
-pub fn compare_trajectory_reports(
-    search: Option<&CombatSearchV2TrajectoryReport>,
-    search_exhaustive: bool,
-    baseline: &CombatSearchV2TrajectoryReport,
-) -> serde_json::Value {
-    let Some(search) = search else {
-        return serde_json::json!({
-            "verdict": "inconclusive_no_search_complete_trajectory",
-            "basis": "whole_combat_outcome",
-        });
-    };
-    if !search_exhaustive || search.terminal == SearchTerminalLabel::Unresolved {
-        return serde_json::json!({
-            "verdict": "inconclusive_unresolved_search",
-            "basis": "whole_combat_outcome",
-            "reason": "search has unresolved frontier and cannot claim not-weaker-than-baseline",
-            "baseline_terminal": baseline.terminal,
-            "search_complete_candidate_terminal": search.terminal,
-        });
-    }
-
-    let ordering = compare_outcome_metrics(
-        CombatSearchV2OutcomeMetrics::from_trajectory(search),
-        CombatSearchV2OutcomeMetrics::from_trajectory(baseline),
-    );
-    serde_json::json!({
-        "verdict": match ordering {
-            Ordering::Greater => "search_better",
-            Ordering::Equal => "search_tied",
-            Ordering::Less => "baseline_better",
-        },
-        "basis": "whole_combat_outcome",
-        "criteria_order": WHOLE_COMBAT_OUTCOME_CRITERIA,
-        "search_terminal": search.terminal,
-        "baseline_terminal": baseline.terminal,
-        "search_final_hp": search.final_hp,
-        "baseline_final_hp": baseline.final_hp,
-        "search_potions_used": search.potions_used,
-        "baseline_potions_used": baseline.potions_used,
-        "search_turns": search.turns,
-        "baseline_turns": baseline.turns,
-    })
-}
-
 pub fn compare_outcome_metrics(
     left: CombatSearchV2OutcomeMetrics,
     right: CombatSearchV2OutcomeMetrics,

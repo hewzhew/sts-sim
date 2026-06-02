@@ -229,7 +229,6 @@ pub enum CombatSearchV2BaselineVerdict {
     SearchTied,
     BaselineBetter,
     Inconclusive,
-    InconclusiveUnresolvedSearch,
 }
 
 pub fn load_combat_search_v2_benchmark(
