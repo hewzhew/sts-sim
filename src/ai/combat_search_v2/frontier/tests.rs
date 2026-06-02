@@ -97,7 +97,7 @@ fn round_robin_frontier_queue_interleaves_survival_and_progress_lanes() {
             .push(test_action_trace(format!("progress-{index}")));
         push_frontier(&mut queue, progress, &mut next_sequence_id);
     }
-    let mut survival = evaluated_node(0, 40);
+    let mut survival = evaluated_node(0, 300);
     survival
         .actions
         .push(test_action_trace("survival".to_string()));
@@ -110,6 +110,34 @@ fn round_robin_frontier_queue_interleaves_survival_and_progress_lanes() {
         );
     }
     assert_eq!(queue.pop().unwrap().node.actions[0].action_key, "survival");
+}
+
+#[test]
+fn round_robin_frontier_gives_dangerous_race_progress_its_own_budget() {
+    let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
+    let mut next_sequence_id = 0;
+
+    for index in 0..32 {
+        let mut survival = evaluated_node(5, 300);
+        survival
+            .actions
+            .push(test_action_trace(format!("survival-{index}")));
+        push_frontier(&mut queue, survival, &mut next_sequence_id);
+    }
+    let mut dangerous_race = evaluated_node(-1, 40);
+    dangerous_race
+        .actions
+        .push(test_action_trace("dangerous-race".to_string()));
+    push_frontier(&mut queue, dangerous_race, &mut next_sequence_id);
+
+    let popped = (0..16)
+        .map(|_| queue.pop().unwrap().node.actions[0].action_key.clone())
+        .collect::<Vec<_>>();
+
+    assert!(
+        popped.iter().any(|key| key == "dangerous-race"),
+        "dangerous race progress should receive progress-lane budget; popped={popped:?}"
+    );
 }
 
 fn evaluated_node(survival_margin: i32, phase_adjusted_enemy_effort: i32) -> SearchNode {

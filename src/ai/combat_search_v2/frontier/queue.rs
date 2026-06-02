@@ -197,6 +197,16 @@ fn classify_lane(entry: &QueueEntry) -> FrontierLane {
     if eval.outcome_class() == CombatEvalOutcomeClass::Win {
         return FrontierLane::EstimatedWin;
     }
+    if eval.survival_bucket() != CombatEvalSurvivalBucket::DeadOrForcedLoss
+        && matches!(
+            eval.progress_bucket(),
+            CombatEvalProgressBucket::RaceFavored
+                | CombatEvalProgressBucket::LethalNextTurnLikely
+                | CombatEvalProgressBucket::LethalNow
+        )
+    {
+        return FrontierLane::Progress;
+    }
     if matches!(
         eval.survival_bucket(),
         CombatEvalSurvivalBucket::DeadOrForcedLoss
@@ -204,14 +214,6 @@ fn classify_lane(entry: &QueueEntry) -> FrontierLane {
             | CombatEvalSurvivalBucket::Critical
     ) {
         return FrontierLane::Survival;
-    }
-    if matches!(
-        eval.progress_bucket(),
-        CombatEvalProgressBucket::RaceFavored
-            | CombatEvalProgressBucket::LethalNextTurnLikely
-            | CombatEvalProgressBucket::LethalNow
-    ) {
-        return FrontierLane::Progress;
     }
     FrontierLane::Balanced
 }

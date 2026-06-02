@@ -50,8 +50,14 @@ fn should_seed_frontier(
     }
     if !matches!(
         bucket,
-        TurnPlanBucket::TerminalWin | TurnPlanBucket::Progress | TurnPlanBucket::Survival
+        TurnPlanBucket::TerminalWin
+            | TurnPlanBucket::Progress
+            | TurnPlanBucket::Survival
+            | TurnPlanBucket::Boundary
     ) {
+        return false;
+    }
+    if bucket == TurnPlanBucket::Boundary && stop_reason != TurnPlanStopReason::PendingChoice {
         return false;
     }
     !matches!(
@@ -79,6 +85,11 @@ mod tests {
         assert!(should_seed_frontier(
             TurnPlanBucket::Survival,
             TurnPlanStopReason::NextTurn,
+            1
+        ));
+        assert!(should_seed_frontier(
+            TurnPlanBucket::Boundary,
+            TurnPlanStopReason::PendingChoice,
             1
         ));
 
