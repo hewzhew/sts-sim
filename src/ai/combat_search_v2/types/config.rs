@@ -96,7 +96,7 @@ pub enum CombatSearchV2TurnPlanPolicy {
 
 impl Default for CombatSearchV2TurnPlanPolicy {
     fn default() -> Self {
-        Self::DiagnosticOnly
+        Self::SupportEnemyTurnBoundaryFrontierSeed
     }
 }
 

@@ -410,6 +410,18 @@ fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
 }
 
 #[test]
+fn config_and_turn_plan_policy_defaults_match() {
+    assert_eq!(
+        CombatSearchV2Config::default().turn_plan_policy,
+        CombatSearchV2TurnPlanPolicy::default()
+    );
+    assert_eq!(
+        CombatSearchV2TurnPlanPolicy::default().label(),
+        "support_enemy_turn_boundary_frontier_seed"
+    );
+}
+
+#[test]
 fn support_enemy_turn_plan_seed_gate_requires_healer_pair() {
     let mut combat = blank_test_combat();
     let mut healer = test_monster(EnemyId::Healer);
