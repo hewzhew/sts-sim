@@ -1,4 +1,5 @@
 use crate::content::potions::get_potion_definition;
+use crate::content::relics::RelicId;
 use crate::runtime::combat::{CombatCard, CombatState, Intent, Power};
 use crate::runtime::monster_move::MonsterMoveSpec;
 use crate::state::core::{EngineState, PendingChoice, PileType};
@@ -281,6 +282,9 @@ fn monster_intent_line(combat: &CombatState, monster_id: usize) -> String {
     else {
         return "unknown".to_string();
     };
+    if combat.entities.player.has_relic(RelicId::RunicDome) {
+        return "hidden (Runic Dome)".to_string();
+    }
     let observation = combat
         .runtime
         .monster_protocol
@@ -479,6 +483,8 @@ fn combat_potion_short_line(session: &RunControlSession) -> String {
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::CombatCard;
     use crate::runtime::monster_move::{AttackSpec, BuffSpec, DamageKind};
     use crate::state::core::{
@@ -507,6 +513,34 @@ mod tests {
         assert_eq!(rendered, "attack 8x2 (16), buff Strength +3");
         assert!(!rendered.contains("AttackSpec"));
         assert!(!rendered.contains("BuffSpec"));
+    }
+
+    #[test]
+    fn combat_screen_hides_enemy_intent_with_runic_dome() {
+        let mut session = RunControlSession::new(Default::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.id = 42;
+        monster.slot = 0;
+        combat.entities.monsters.push(monster);
+        combat.set_monster_protocol_visible_intent(42, Intent::Attack { damage: 7, hits: 1 });
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::RunicDome));
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        let rendered = crate::eval::run_control::render_run_control_state(&session);
+
+        assert!(rendered.contains("intent: hidden (Runic Dome)"));
+        assert!(!rendered.contains("intent: attack 7"));
     }
 
     #[test]
