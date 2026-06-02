@@ -85,6 +85,16 @@ impl CombatSearchPhaseProfileV1 {
             .saturating_add(self.enemy_mechanics.guardian_defensive_count)
             .saturating_add(self.enemy_mechanics.lagavulin_sleeping_count)
             .saturating_add(self.enemy_mechanics.lagavulin_waking_count)
+            .saturating_add(
+                self.enemy_mechanics
+                    .bronze_automaton_spawn_orbs_pending_count,
+            )
+            .saturating_add(
+                self.enemy_mechanics
+                    .bronze_automaton_hyper_beam_pending_count,
+            )
+            .saturating_add(self.enemy_mechanics.bronze_orb_stasis_pending_count)
+            .saturating_add(self.enemy_mechanics.bronze_orb_stasis_card_count)
     }
 }
 

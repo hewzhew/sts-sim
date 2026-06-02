@@ -1,16 +1,21 @@
 use super::enemy_phase_transition::EnemyPhaseTransitionHint;
 use super::phase_profile::CombatSearchPhaseProfileV1;
 use crate::content::cards::CardType;
+use crate::content::monsters::EnemyId;
 
 // Kept smaller than the main role gaps in action_priority; phase facts nudge nearby
 // ordering decisions without turning this module into an alternate policy.
 const PHASE_ROLE_ADJUSTMENT: i32 = 12;
+const STASIS_TARGET_SETUP_MAX: i32 = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct PhaseActionOrderingFacts {
     pub(super) card_type: CardType,
     pub(super) block: i32,
     pub(super) mitigation: i32,
+    pub(super) target_progress: i32,
+    pub(super) target_enemy_id: Option<EnemyId>,
+    pub(super) target_has_stasis_card: bool,
     pub(super) phase_transition: EnemyPhaseTransitionHint,
 }
 
@@ -38,6 +43,15 @@ pub(super) fn phase_action_ordering_hint(
         || profile.enemy_mechanics.guardian_mode_shift_pending_count > 0
     {
         hint.phase_survival = facts.block.saturating_add(facts.mitigation);
+    }
+    if facts.target_enemy_id == Some(EnemyId::BronzeOrb)
+        && facts.target_progress > 0
+        && (facts.target_has_stasis_card
+            || profile.enemy_mechanics.bronze_orb_stasis_pending_count > 0)
+    {
+        hint.phase_setup = hint
+            .phase_setup
+            .saturating_add(facts.target_progress.min(STASIS_TARGET_SETUP_MAX));
     }
 
     hint

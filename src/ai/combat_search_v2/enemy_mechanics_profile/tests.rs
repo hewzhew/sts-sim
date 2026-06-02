@@ -50,3 +50,23 @@ fn gremlin_nob_profile_reports_anger_amount() {
     assert_eq!(profile.gremlin_nob_enrage_count, 1);
     assert_eq!(profile.gremlin_nob_anger_amount_total, 2);
 }
+
+#[test]
+fn bronze_automaton_profile_reports_spawn_and_stasis_pressure() {
+    let mut combat = blank_test_combat();
+    let mut automaton = test_monster(EnemyId::BronzeAutomaton);
+    automaton.id = 1;
+    automaton.bronze_automaton.first_turn = true;
+    let mut orb = test_monster(EnemyId::BronzeOrb);
+    orb.id = 2;
+    orb.bronze_orb.used_stasis = false;
+    orb.set_planned_move_id(3);
+    combat.entities.monsters = vec![automaton, orb];
+
+    let profile = enemy_mechanics_profile(&combat);
+
+    assert_eq!(profile.bronze_automaton_count, 1);
+    assert_eq!(profile.bronze_automaton_spawn_orbs_pending_count, 1);
+    assert_eq!(profile.bronze_orb_count, 1);
+    assert_eq!(profile.bronze_orb_stasis_pending_count, 1);
+}

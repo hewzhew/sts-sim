@@ -53,6 +53,7 @@ fn should_seed_frontier(
         TurnPlanBucket::TerminalWin
             | TurnPlanBucket::Progress
             | TurnPlanBucket::Survival
+            | TurnPlanBucket::Setup
             | TurnPlanBucket::Boundary
     ) {
         return false;
@@ -92,12 +93,12 @@ mod tests {
             TurnPlanStopReason::PendingChoice,
             1
         ));
-
-        assert!(!should_seed_frontier(
+        assert!(should_seed_frontier(
             TurnPlanBucket::Setup,
             TurnPlanStopReason::NextTurn,
             1
         ));
+
         assert!(!should_seed_frontier(
             TurnPlanBucket::Balanced,
             TurnPlanStopReason::NextTurn,

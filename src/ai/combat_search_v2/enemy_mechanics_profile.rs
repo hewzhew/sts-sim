@@ -5,6 +5,9 @@ const SPLIT_MOVE_ID: u8 = 3;
 const SENTRY_BOLT_MOVE_ID: u8 = 3;
 const HEXAGHOST_DIVIDER_MOVE_ID: u8 = 1;
 const HEXAGHOST_ACTIVATE_MOVE_ID: u8 = 5;
+const BRONZE_AUTOMATON_HYPER_BEAM_MOVE_ID: u8 = 2;
+const BRONZE_AUTOMATON_SPAWN_ORBS_MOVE_ID: u8 = 4;
+const BRONZE_ORB_STASIS_MOVE_ID: u8 = 3;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct EnemyMechanicsProfileV1 {
@@ -20,6 +23,12 @@ pub(super) struct EnemyMechanicsProfileV1 {
     pub(super) gremlin_nob_anger_amount_total: i32,
     pub(super) sentry_dazed_pressure_count: usize,
     pub(super) hexaghost_opening_pressure_count: usize,
+    pub(super) bronze_automaton_count: usize,
+    pub(super) bronze_automaton_spawn_orbs_pending_count: usize,
+    pub(super) bronze_automaton_hyper_beam_pending_count: usize,
+    pub(super) bronze_orb_count: usize,
+    pub(super) bronze_orb_stasis_pending_count: usize,
+    pub(super) bronze_orb_stasis_card_count: usize,
 }
 
 pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsProfileV1 {
@@ -92,6 +101,32 @@ pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsPro
                     profile.hexaghost_opening_pressure_count += 1;
                 }
             }
+            EnemyId::BronzeAutomaton => {
+                profile.tracked_monsters += 1;
+                profile.bronze_automaton_count += 1;
+                if monster.bronze_automaton.first_turn
+                    || monster.planned_move_id() == BRONZE_AUTOMATON_SPAWN_ORBS_MOVE_ID
+                {
+                    profile.bronze_automaton_spawn_orbs_pending_count += 1;
+                }
+                if monster.bronze_automaton.num_turns >= 4
+                    || monster.planned_move_id() == BRONZE_AUTOMATON_HYPER_BEAM_MOVE_ID
+                {
+                    profile.bronze_automaton_hyper_beam_pending_count += 1;
+                }
+            }
+            EnemyId::BronzeOrb => {
+                profile.tracked_monsters += 1;
+                profile.bronze_orb_count += 1;
+                if !monster.bronze_orb.used_stasis
+                    && monster.planned_move_id() == BRONZE_ORB_STASIS_MOVE_ID
+                {
+                    profile.bronze_orb_stasis_pending_count += 1;
+                }
+                if store::has_power(combat, monster.id, PowerId::Stasis) {
+                    profile.bronze_orb_stasis_card_count += 1;
+                }
+            }
             _ => {}
         }
     }
@@ -115,6 +150,14 @@ pub(super) fn enemy_mechanics_profile_report(
         gremlin_nob_anger_amount_total: profile.gremlin_nob_anger_amount_total,
         sentry_dazed_pressure_count: profile.sentry_dazed_pressure_count,
         hexaghost_opening_pressure_count: profile.hexaghost_opening_pressure_count,
+        bronze_automaton_count: profile.bronze_automaton_count,
+        bronze_automaton_spawn_orbs_pending_count: profile
+            .bronze_automaton_spawn_orbs_pending_count,
+        bronze_automaton_hyper_beam_pending_count: profile
+            .bronze_automaton_hyper_beam_pending_count,
+        bronze_orb_count: profile.bronze_orb_count,
+        bronze_orb_stasis_pending_count: profile.bronze_orb_stasis_pending_count,
+        bronze_orb_stasis_card_count: profile.bronze_orb_stasis_card_count,
         notes: vec![
             "enemy mechanics profile exposes phase facts for value/rollout consumers",
             "this profile does not by itself score or prune search branches",

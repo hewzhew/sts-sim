@@ -24,6 +24,9 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
             card_type: CardType::Attack,
             block: 0,
             mitigation: 0,
+            target_progress: 6,
+            target_enemy_id: Some(EnemyId::Lagavulin),
+            target_has_stasis_card: false,
             phase_transition:
                 super::super::enemy_phase_transition::enemy_phase_transition_hint_for_input(
                     &combat,
@@ -40,6 +43,9 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
             card_type: CardType::Power,
             block: 0,
             mitigation: 0,
+            target_progress: 0,
+            target_enemy_id: None,
+            target_has_stasis_card: false,
             phase_transition:
                 super::super::enemy_phase_transition::enemy_phase_transition_hint_for_input(
                     &combat,
@@ -71,10 +77,52 @@ fn guardian_defensive_phase_records_survival_tiebreak() {
             card_type: CardType::Skill,
             block: 8,
             mitigation: 3,
+            target_progress: 0,
+            target_enemy_id: None,
+            target_has_stasis_card: false,
             phase_transition: EnemyPhaseTransitionHint::default(),
         },
     );
 
     assert_eq!(hint.phase_survival, 11);
     assert!(hint.has_signal());
+}
+
+#[test]
+fn bronze_orb_stasis_phase_rewards_attacking_stasis_orb() {
+    let mut combat = blank_test_combat();
+    let mut automaton = test_monster(EnemyId::BronzeAutomaton);
+    automaton.id = 1;
+    let mut orb = test_monster(EnemyId::BronzeOrb);
+    orb.id = 2;
+    orb.set_planned_move_id(3);
+    combat.entities.monsters = vec![automaton, orb];
+    let profile = combat_search_phase_profile(&EngineState::CombatPlayerTurn, &combat);
+
+    let orb_hint = phase_action_ordering_hint(
+        profile,
+        PhaseActionOrderingFacts {
+            card_type: CardType::Attack,
+            block: 0,
+            mitigation: 0,
+            target_progress: 9,
+            target_enemy_id: Some(EnemyId::BronzeOrb),
+            target_has_stasis_card: false,
+            phase_transition: EnemyPhaseTransitionHint::default(),
+        },
+    );
+    let boss_hint = phase_action_ordering_hint(
+        profile,
+        PhaseActionOrderingFacts {
+            card_type: CardType::Attack,
+            block: 0,
+            mitigation: 0,
+            target_progress: 9,
+            target_enemy_id: Some(EnemyId::BronzeAutomaton),
+            target_has_stasis_card: false,
+            phase_transition: EnemyPhaseTransitionHint::default(),
+        },
+    );
+
+    assert!(orb_hint.phase_setup > boss_hint.phase_setup);
 }

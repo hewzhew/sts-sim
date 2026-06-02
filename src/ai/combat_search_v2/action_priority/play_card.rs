@@ -5,6 +5,8 @@ use super::super::{enemy_phase_transition_hint_for_input, visible_incoming_damag
 use super::constants::*;
 use super::*;
 use crate::content::cards::{self, CardTarget, CardType};
+use crate::content::monsters::EnemyId;
+use crate::content::powers::{store, PowerId};
 use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 
@@ -42,6 +44,9 @@ pub(super) fn priority_for_play_card(
             card_type: def.card_type,
             block,
             mitigation,
+            target_progress,
+            target_enemy_id: target_enemy_id(combat, target),
+            target_has_stasis_card: target_has_stasis_card(combat, target),
             phase_transition,
         },
     );
@@ -160,4 +165,20 @@ fn monster_hp_with_block(combat: &CombatState, entity_id: usize) -> Option<i32> 
         .iter()
         .find(|monster| monster.id == entity_id && monster.is_alive_for_action())
         .map(|monster| monster.current_hp + monster.block)
+}
+
+fn target_enemy_id(combat: &CombatState, target: Option<usize>) -> Option<EnemyId> {
+    target
+        .and_then(|entity_id| {
+            combat
+                .entities
+                .monsters
+                .iter()
+                .find(|monster| monster.id == entity_id && monster.is_alive_for_action())
+        })
+        .and_then(|monster| EnemyId::from_id(monster.monster_type))
+}
+
+fn target_has_stasis_card(combat: &CombatState, target: Option<usize>) -> bool {
+    target.is_some_and(|entity_id| store::has_power(combat, entity_id, PowerId::Stasis))
 }
