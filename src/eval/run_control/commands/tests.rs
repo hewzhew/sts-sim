@@ -168,6 +168,19 @@ fn run_control_parser_accepts_auto_step_options() {
             ..Default::default()
         })
     );
+    assert_eq!(
+        parse_run_control_command("nr turn_plan=turn_boundary_frontier_seed frontier=round_robin")
+            .expect("turn-boundary auto search policy should parse"),
+        RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            route: RunControlRouteAutomationMode::Planner,
+            search: RunControlSearchCombatOptions {
+                turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed),
+                frontier_policy: Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    );
 }
 
 #[test]

@@ -63,7 +63,10 @@ Active binaries:
   - `n` / `next` / `advance-to-human-boundary [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic]`:
     advances routine or forced-safe screens, claims low-risk rewards, and uses
     combat search only when a complete winning candidate is available, then
-    stops at the next human strategic choice
+    stops at the next human strategic choice. Automated combat search defaults
+    to `turn_plan=turn_boundary_frontier_seed` and
+    `frontier=round_robin_eval_buckets`; pass command-local `turn_plan=` or
+    `frontier=` to override.
   - `n route=planner ...`: same guarded auto-step, but allows the route planner
     to choose map nodes; each route choice is tagged as
     `behavior_policy_not_teacher`

@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use crate::ai::combat_search_v2::{CombatSearchV2FrontierPolicy, CombatSearchV2TurnPlanPolicy};
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
 use super::commands::{
@@ -196,6 +197,12 @@ fn auto_search_options(
 ) -> RunControlSearchCombatOptions {
     if options.wall_ms.is_none() && session.search_wall_ms.is_none() {
         options.wall_ms = Some(DEFAULT_AUTO_SEARCH_WALL_MS);
+    }
+    if options.turn_plan_policy.is_none() {
+        options.turn_plan_policy = Some(CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed);
+    }
+    if options.frontier_policy.is_none() {
+        options.frontier_policy = Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
     }
     options
 }
@@ -539,12 +546,13 @@ fn trim_search_rejection(message: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::auto_search_options;
+    use crate::ai::combat_search_v2::{CombatSearchV2FrontierPolicy, CombatSearchV2TurnPlanPolicy};
     use crate::eval::run_control::{
         RunControlConfig, RunControlSearchCombatOptions, RunControlSession,
     };
 
     #[test]
-    fn auto_search_wall_time_uses_session_default_before_auto_fallback() {
+    fn auto_search_options_use_stronger_automation_defaults_without_overriding_commands() {
         let session = RunControlSession::new(RunControlConfig {
             search_wall_ms: Some(30_000),
             ..RunControlConfig::default()
@@ -552,15 +560,33 @@ mod tests {
 
         let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
         assert_eq!(options.wall_ms, None);
+        assert_eq!(
+            options.turn_plan_policy,
+            Some(CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed)
+        );
+        assert_eq!(
+            options.frontier_policy,
+            Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets)
+        );
 
         let options = auto_search_options(
             &session,
             RunControlSearchCombatOptions {
                 wall_ms: Some(500),
+                turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::DiagnosticOnly),
+                frontier_policy: Some(CombatSearchV2FrontierPolicy::SingleQueue),
                 ..RunControlSearchCombatOptions::default()
             },
         );
         assert_eq!(options.wall_ms, Some(500));
+        assert_eq!(
+            options.turn_plan_policy,
+            Some(CombatSearchV2TurnPlanPolicy::DiagnosticOnly)
+        );
+        assert_eq!(
+            options.frontier_policy,
+            Some(CombatSearchV2FrontierPolicy::SingleQueue)
+        );
 
         let session = RunControlSession::new(RunControlConfig::default());
         let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
