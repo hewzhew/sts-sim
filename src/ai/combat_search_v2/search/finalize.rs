@@ -16,6 +16,7 @@ pub(super) struct SearchFinishInput {
     pub(super) engine_step_limit_count: u64,
     pub(super) potion_budget_cut_count: u64,
     pub(super) exhausted: bool,
+    pub(super) accepted_complete_candidate: bool,
 }
 
 pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSearchV2Report {
@@ -34,10 +35,12 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         engine_step_limit_count,
         potion_budget_cut_count,
         exhausted,
+        accepted_complete_candidate,
     } = input;
 
-    let exhaustive = !exhausted && frontier.is_empty();
-    let coverage_status = coverage_status_for_finished_search(&stats, exhaustive);
+    let exhaustive = !accepted_complete_candidate && !exhausted && frontier.is_empty();
+    let coverage_status =
+        coverage_status_for_finished_search(&stats, exhaustive, accepted_complete_candidate);
     let coverage_reason = coverage_status_reason(coverage_status);
     let sample_states = frontier_sample_states(&frontier);
     let diagnostics = diagnostics.finish(SearchDiagnosticsFinish {
@@ -58,7 +61,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
 
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
-        schema_version: 5,
+        schema_version: 6,
         input_label: config.input_label,
         information_boundary: "engine_state_snapshot_truth_v0",
         search_policy: CombatSearchV2PolicyReport {
@@ -81,6 +84,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             max_actions_per_line: config.max_actions_per_line,
             max_engine_steps_per_action: config.max_engine_steps_per_action,
             wall_time_ms: config.wall_time.map(|duration| duration.as_millis()),
+            stop_on_win_hp_loss_at_most: config.stop_on_win_hp_loss_at_most,
             max_potions_used: config.max_potions_used,
             rollout_max_evaluations: config.rollout_max_evaluations,
             rollout_max_actions: config.rollout_max_actions,
@@ -134,8 +138,11 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
 fn coverage_status_for_finished_search(
     stats: &CombatSearchV2Stats,
     exhaustive: bool,
+    accepted_complete_candidate: bool,
 ) -> SearchCoverageStatus {
-    if stats.deadline_hit {
+    if accepted_complete_candidate {
+        SearchCoverageStatus::AcceptedCompleteCandidate
+    } else if stats.deadline_hit {
         SearchCoverageStatus::TimeBudgetLimited
     } else if stats.node_budget_hit {
         SearchCoverageStatus::NodeBudgetLimited
@@ -150,6 +157,9 @@ fn coverage_status_reason(coverage_status: SearchCoverageStatus) -> String {
     match coverage_status {
         SearchCoverageStatus::Exhaustive => {
             "frontier exhausted under the current exact-state search configuration".to_string()
+        }
+        SearchCoverageStatus::AcceptedCompleteCandidate => {
+            "stopped after finding a complete winning candidate within the configured hp-loss acceptance threshold".to_string()
         }
         SearchCoverageStatus::NodeBudgetLimited => {
             "node budget limit reached with frontier still open".to_string()

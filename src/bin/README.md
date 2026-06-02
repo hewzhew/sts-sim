@@ -77,6 +77,9 @@ Active binaries:
     same default search strategy as `sc`, with only an interactive wall-clock
     default added when no session or command budget is set. Pass command-local
     `turn_plan=` or `frontier=` only for explicit experiments.
+    When `max_hp_loss=N` is active, search may stop early after an exact
+    complete win within that loss limit; this is a practical acceptance gate,
+    not an optimality claim.
   - `n route=planner ...`: same guarded auto-step, but allows the route planner
     to choose map nodes; each route choice is tagged as
     `behavior_policy_not_teacher`

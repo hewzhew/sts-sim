@@ -144,6 +144,7 @@ pub struct CombatSearchV2BenchmarkSummary {
     pub complete_candidate_missing: usize,
     pub complete_trajectory_found: usize,
     pub coverage_exhaustive: usize,
+    pub coverage_accepted_complete_candidate: usize,
     pub coverage_node_budget_limited: usize,
     pub coverage_time_budget_limited: usize,
     pub coverage_frontier_open: usize,
@@ -310,7 +311,7 @@ pub fn run_combat_search_v2_benchmark(
 
     CombatSearchV2BenchmarkReport {
         schema_name: "CombatSearchV2BenchmarkReport",
-        schema_version: 2,
+        schema_version: 3,
         benchmark_name: loaded.name.clone(),
         min_trust_level: loaded.min_trust_level,
         case_count: cases.len(),
@@ -435,6 +436,9 @@ fn summarize_benchmark_cases(
         );
         match case.outcome.coverage_status {
             SearchCoverageStatus::Exhaustive => summary.coverage_exhaustive += 1,
+            SearchCoverageStatus::AcceptedCompleteCandidate => {
+                summary.coverage_accepted_complete_candidate += 1
+            }
             SearchCoverageStatus::NodeBudgetLimited => summary.coverage_node_budget_limited += 1,
             SearchCoverageStatus::TimeBudgetLimited => summary.coverage_time_budget_limited += 1,
             SearchCoverageStatus::FrontierOpen => summary.coverage_frontier_open += 1,

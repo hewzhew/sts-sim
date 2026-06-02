@@ -351,6 +351,7 @@ fn test_config() -> CombatSearchV2Config {
         max_actions_per_line: 100,
         max_engine_steps_per_action: 10,
         wall_time: None,
+        stop_on_win_hp_loss_at_most: None,
         input_label: None,
         potion_policy: CombatSearchV2PotionPolicy::Never,
         max_potions_used: None,

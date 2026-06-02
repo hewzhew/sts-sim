@@ -38,6 +38,7 @@ Help:
     n/next/advance-to-human-boundary [route=manual|planner] [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] [rollout=enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed] [frontier=single_queue|round_robin_eval_buckets] [save=case|path] [max_ops=N]
     nr/next-route = n route=planner
     If max_hp_loss is set, high-stakes auto combat first accepts a no-potion win under that limit before falling back to semantic potions.
+    max_hp_loss also lets search stop early after an exact complete win within that hp-loss limit; this is a practical acceptance gate, not an optimality claim.
     startup flags: --search-max-nodes N, --search-wall-ms N, and --search-max-hp-loss N set initial defaults for sc/n/nr
     sd/search-defaults changes those defaults inside the current session
     auto-reward

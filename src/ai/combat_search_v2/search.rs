@@ -77,6 +77,7 @@ pub fn run_combat_search_v2_with_stepper(
     let mut engine_step_limit_count = 0u64;
     let mut potion_budget_cut_count = 0u64;
     let mut exhausted = false;
+    let mut accepted_complete_candidate = false;
 
     while let Some(entry) = frontier.pop() {
         if stats.nodes_expanded as usize >= config.max_nodes {
@@ -102,6 +103,13 @@ pub fn run_combat_search_v2_with_stepper(
                     stats.nodes_to_first_win = Some(stats.nodes_generated);
                 }
                 remember_best_complete(&mut best_complete, node);
+                if best_complete
+                    .as_ref()
+                    .is_some_and(|best| accepted_complete_win(best, &config))
+                {
+                    accepted_complete_candidate = true;
+                    break;
+                }
                 continue;
             }
             SearchTerminalLabel::Loss => {
@@ -287,7 +295,19 @@ pub fn run_combat_search_v2_with_stepper(
         engine_step_limit_count,
         potion_budget_cut_count,
         exhausted,
+        accepted_complete_candidate,
     })
+}
+
+fn accepted_complete_win(node: &SearchNode, config: &CombatSearchV2Config) -> bool {
+    if terminal_label(&node.engine, &node.combat) != SearchTerminalLabel::Win {
+        return false;
+    }
+    let Some(limit) = config.stop_on_win_hp_loss_at_most else {
+        return false;
+    };
+    let hp_loss = (node.initial_hp - node.combat.entities.player.current_hp).max(0) as u32;
+    hp_loss <= limit
 }
 
 fn seed_turn_plan_frontier(

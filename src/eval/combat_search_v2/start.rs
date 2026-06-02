@@ -44,6 +44,7 @@ impl CombatSearchV2RunOptions {
                 .max_engine_steps_per_action
                 .unwrap_or(defaults.max_engine_steps_per_action),
             wall_time: self.wall_ms.map(Duration::from_millis),
+            stop_on_win_hp_loss_at_most: defaults.stop_on_win_hp_loss_at_most,
             input_label: Some(input_label),
             potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
             max_potions_used: self.max_potions_used.or(defaults.max_potions_used),

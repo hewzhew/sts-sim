@@ -22,6 +22,7 @@ pub(super) fn diagnosis_tags(
 
     match coverage_status {
         SearchCoverageStatus::Exhaustive => tags.push("frontier_exhausted"),
+        SearchCoverageStatus::AcceptedCompleteCandidate => tags.push("accepted_complete_candidate"),
         SearchCoverageStatus::NodeBudgetLimited => {
             if frontier_remaining_states > 0 {
                 tags.push("node_budget_limited_with_open_frontier");

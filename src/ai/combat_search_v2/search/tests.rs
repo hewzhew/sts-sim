@@ -242,6 +242,61 @@ impl CombatStepper for TwoTurnWinStepper {
     }
 }
 
+#[derive(Clone, Copy)]
+struct WinOrDelayStepper;
+
+impl CombatStepper for WinOrDelayStepper {
+    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        if !matches!(position.engine, EngineState::CombatPlayerTurn) {
+            return Vec::new();
+        }
+        vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            ClientInput::EndTurn,
+        ]
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        let mut combat = position.combat.clone();
+        let mut engine = position.engine.clone();
+        match input {
+            ClientInput::PlayCard { .. } => {
+                if let Some(monster) = combat.entities.monsters.first_mut() {
+                    monster.current_hp = 0;
+                }
+                engine = EngineState::GameOver(crate::state::core::RunResult::Victory);
+            }
+            ClientInput::EndTurn => {
+                combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
+                combat.entities.player.current_hp =
+                    combat.entities.player.current_hp.saturating_sub(1);
+            }
+            _ => {}
+        }
+        let position = CombatPosition::new(engine, combat);
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&position.engine, &position.combat),
+            alive: true,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
 #[test]
 fn max_potions_used_cuts_potion_branches_without_disabling_policy_all() {
     let mut combat = blank_test_combat();
@@ -282,6 +337,44 @@ fn max_potions_used_cuts_potion_branches_without_disabling_policy_all() {
             .as_ref()
             .map(|trajectory| trajectory.potions_used),
         Some(1)
+    );
+}
+
+#[test]
+fn hp_loss_acceptance_threshold_stops_after_good_enough_complete_win() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+        crate::content::cards::CardId::Strike,
+        100,
+    )];
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 20,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            stop_on_win_hp_loss_at_most: Some(0),
+            ..CombatSearchV2Config::default()
+        },
+        &WinOrDelayStepper,
+    );
+
+    assert_eq!(
+        report.outcome.coverage_status,
+        SearchCoverageStatus::AcceptedCompleteCandidate
+    );
+    assert!(report.outcome.complete_trajectory_found);
+    assert!(
+        report.stats.nodes_expanded < 20,
+        "search should stop before exhausting node budget after an accepted complete win"
+    );
+    assert_eq!(
+        report
+            .best_complete_trajectory
+            .as_ref()
+            .map(|trajectory| trajectory.hp_loss),
+        Some(0)
     );
 }
 

@@ -226,6 +226,7 @@ fn search_config(
     options: RunControlSearchCombatOptions,
 ) -> CombatSearchV2Config {
     let defaults = CombatSearchV2Config::default();
+    let stop_on_win_hp_loss_at_most = effective_hp_loss_limit(session, &options);
     CombatSearchV2Config {
         max_nodes: options
             .max_nodes
@@ -241,6 +242,7 @@ fn search_config(
             .wall_ms
             .or(session.search_wall_ms)
             .map(std::time::Duration::from_millis),
+        stop_on_win_hp_loss_at_most,
         input_label: Some(format!(
             "run_play_driver:search_combat:step{}",
             session.decision_step
@@ -500,6 +502,11 @@ mod tests {
             Some(12)
         );
         assert_eq!(
+            search_config(&session, RunControlSearchCombatOptions::default())
+                .stop_on_win_hp_loss_at_most,
+            Some(12)
+        );
+        assert_eq!(
             effective_hp_loss_limit(
                 &session,
                 &RunControlSearchCombatOptions {
@@ -510,6 +517,17 @@ mod tests {
             Some(4)
         );
         assert_eq!(
+            search_config(
+                &session,
+                RunControlSearchCombatOptions {
+                    max_hp_loss: Some(RunControlHpLossLimit::Limit(4)),
+                    ..RunControlSearchCombatOptions::default()
+                }
+            )
+            .stop_on_win_hp_loss_at_most,
+            Some(4)
+        );
+        assert_eq!(
             effective_hp_loss_limit(
                 &session,
                 &RunControlSearchCombatOptions {
@@ -517,6 +535,17 @@ mod tests {
                     ..RunControlSearchCombatOptions::default()
                 }
             ),
+            None
+        );
+        assert_eq!(
+            search_config(
+                &session,
+                RunControlSearchCombatOptions {
+                    max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+                    ..RunControlSearchCombatOptions::default()
+                }
+            )
+            .stop_on_win_hp_loss_at_most,
             None
         );
     }

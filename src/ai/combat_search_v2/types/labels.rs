@@ -12,6 +12,7 @@ pub enum SearchTerminalLabel {
 #[serde(rename_all = "snake_case")]
 pub enum SearchCoverageStatus {
     Exhaustive,
+    AcceptedCompleteCandidate,
     NodeBudgetLimited,
     TimeBudgetLimited,
     FrontierOpen,
