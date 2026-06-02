@@ -50,7 +50,7 @@ fn should_seed_frontier(
     }
     if !matches!(
         bucket,
-        TurnPlanBucket::TerminalWin | TurnPlanBucket::Progress
+        TurnPlanBucket::TerminalWin | TurnPlanBucket::Progress | TurnPlanBucket::Survival
     ) {
         return false;
     }
@@ -65,7 +65,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn frontier_seed_keeps_only_terminal_win_or_progress_plans() {
+    fn frontier_seed_keeps_terminal_progress_and_survival_plans() {
         assert!(should_seed_frontier(
             TurnPlanBucket::TerminalWin,
             TurnPlanStopReason::Terminal,
@@ -73,6 +73,11 @@ mod tests {
         ));
         assert!(should_seed_frontier(
             TurnPlanBucket::Progress,
+            TurnPlanStopReason::NextTurn,
+            1
+        ));
+        assert!(should_seed_frontier(
+            TurnPlanBucket::Survival,
             TurnPlanStopReason::NextTurn,
             1
         ));
@@ -84,11 +89,6 @@ mod tests {
         ));
         assert!(!should_seed_frontier(
             TurnPlanBucket::Balanced,
-            TurnPlanStopReason::NextTurn,
-            1
-        ));
-        assert!(!should_seed_frontier(
-            TurnPlanBucket::Survival,
             TurnPlanStopReason::NextTurn,
             1
         ));
