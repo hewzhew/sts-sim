@@ -1,7 +1,5 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use blake2::{Blake2b512, Digest};
 use clap::{Parser, ValueEnum};
 use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use sts_simulator::eval::run_control::{
@@ -13,7 +11,9 @@ use sts_simulator::eval::run_control::{
 };
 
 mod terminal;
+mod trace_cli;
 use terminal::{run_repl, run_script};
+use trace_cli::{file_hash, reject_same_trace_path, trace_output_path, validate_trace_args};
 
 #[derive(Parser, Debug)]
 #[command(about = "Thin simulator run/play driver with exact combat capture support")]
@@ -30,22 +30,38 @@ struct Args {
     #[arg(long)]
     final_act: bool,
 
-    #[arg(long)]
+    #[arg(long, value_name = "PATH", help = "Read commands from a script file")]
     script: Option<PathBuf>,
 
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Replay an existing SessionTraceV1 without choosing an automatic output path"
+    )]
     replay_trace: Option<PathBuf>,
 
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Replay a trace and record the verified prefix plus new steps into a continuation trace"
+    )]
     continue_trace: Option<PathBuf>,
 
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Name the auto-generated continuation trace branch; valid only with --continue-trace"
+    )]
     branch: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, help = "Only replay the first N recorded trace steps")]
     replay_steps: Option<usize>,
 
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Record successful state-changing commands to this SessionTraceV1 path"
+    )]
     trace: Option<PathBuf>,
 
     #[arg(long)]
@@ -91,9 +107,11 @@ impl CliPlayerClass {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    if args.replay_trace.is_some() && args.continue_trace.is_some() {
-        return Err("--replay-trace and --continue-trace cannot be used together".into());
-    }
+    validate_trace_args(
+        args.replay_trace.as_ref(),
+        args.continue_trace.as_ref(),
+        args.branch.as_deref(),
+    )?;
     let replay_trace_path = args
         .continue_trace
         .as_ref()
@@ -110,15 +128,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_steps: args.replay_steps,
     };
     let mut session = RunControlSession::new(config);
-    let trace_path = trace_output_path(&args)?;
+    let trace_path = trace_output_path(
+        args.trace.as_ref(),
+        args.continue_trace.as_ref(),
+        args.branch.as_deref(),
+    );
     if let (Some(source), Some(output)) = (replay_trace_path.as_ref(), trace_path.as_ref()) {
-        if source == output {
-            return Err(format!(
-                "refusing to write continuation trace over source trace: {}",
-                output.display()
-            )
-            .into());
-        }
+        reject_same_trace_path(source, output)?;
     }
     let lineage = match (replay_trace_path.as_ref(), trace_path.as_ref()) {
         (Some(source), Some(_)) => Some(SessionTraceLineageV1 {
@@ -250,74 +266,6 @@ fn run_config_from_args(
     })
 }
 
-fn trace_output_path(args: &Args) -> Result<Option<PathBuf>, String> {
-    match (args.trace.as_ref(), args.continue_trace.as_ref()) {
-        (Some(path), _) => Ok(Some(path.clone())),
-        (None, Some(parent)) => Ok(Some(default_continue_trace_path(
-            parent,
-            args.branch.as_deref(),
-        ))),
-        (None, None) => Ok(None),
-    }
-}
-
-fn default_continue_trace_path(parent: &Path, branch: Option<&str>) -> PathBuf {
-    let parent_dir = parent.parent().unwrap_or_else(|| Path::new(""));
-    let stem = parent
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("trace");
-    let base = stem.strip_suffix(".trace").unwrap_or(stem);
-    let branch = branch
-        .map(sanitize_branch_name)
-        .filter(|branch| !branch.is_empty())
-        .unwrap_or_else(|| "continue".to_string());
-    let suffix = current_trace_suffix();
-    parent_dir.join(format!("{base}.{branch}.{suffix}.trace.json"))
-}
-
-fn sanitize_branch_name(raw: &str) -> String {
-    raw.trim()
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>()
-        .split('_')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("_")
-}
-
-fn current_trace_suffix() -> String {
-    let seconds = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0);
-    seconds.to_string()
-}
-
-fn file_hash(path: &Path) -> Result<String, String> {
-    let payload = fs::read(path).map_err(|err| err.to_string())?;
-    let mut hasher = Blake2b512::new();
-    hasher.update(&payload);
-    let digest = hasher.finalize();
-    Ok(hex_lower(&digest[..32]))
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        use std::fmt::Write;
-        let _ = write!(&mut out, "{byte:02x}");
-    }
-    out
-}
-
 fn parse_cli_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
         "never" => Ok(CombatSearchV2PotionPolicy::Never),
@@ -405,20 +353,5 @@ mod tests {
         assert_eq!(config.seed, 1);
         assert_eq!(config.ascension_level, 2);
         assert_eq!(config.player_class, "Defect");
-    }
-
-    #[test]
-    fn default_continue_trace_path_stays_next_to_parent_and_names_branch() {
-        let parent = PathBuf::from("tools/artifacts/traces/seed590.trace.json");
-
-        let path = default_continue_trace_path(&parent, Some("act1 event path"));
-
-        assert_eq!(path.parent(), parent.parent());
-        let file_name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("path should have utf8 file name");
-        assert!(file_name.starts_with("seed590.act1_event_path."));
-        assert!(file_name.ends_with(".trace.json"));
     }
 }
