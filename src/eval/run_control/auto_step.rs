@@ -249,7 +249,8 @@ fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<St
                 capture_path,
                 ..
             } => Some(format!("auto capture: {case_id} -> {capture_path}")),
-            RunControlTraceAnnotationV1::RoutePlannerSelection { .. } => None,
+            RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+            | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => None,
         })
         .collect()
 }

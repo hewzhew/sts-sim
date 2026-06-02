@@ -4,14 +4,15 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::commands::parse_run_control_command;
+use super::commands::{parse_run_control_command, RunControlCommand};
 use super::render::render_run_control_state;
-use super::session::RunControlSession;
+use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::session_trace::{
     session_trace_boundary_fingerprint, SessionTraceBoundaryFingerprintV1, SessionTraceCandidateV1,
     SessionTraceRecorder, SessionTraceSelectionResolution, SessionTraceStepSourceV1,
     SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME, SESSION_TRACE_SCHEMA_VERSION,
 };
+use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::view_model::build_run_control_view_model;
 
 #[derive(Clone, Debug, Default)]
@@ -166,21 +167,24 @@ pub fn replay_session_trace_with_recorder(
             .as_ref()
             .map(|_| SessionTraceRecorder::prepare_step(session, &command_line, &command));
 
-        let outcome = match session.apply_command(command) {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                return SessionTraceReplayReport {
-                    trace_step_count: trace.steps.len(),
-                    applied_steps,
-                    order_drift_steps,
-                    non_blocking_drifts,
-                    stop: SessionTraceReplayStop::CommandFailed {
-                        step_index: step.step_index,
-                        command_line,
-                        error,
-                    },
-                };
-            }
+        let outcome = match try_replay_recorded_combat_trajectory(session, step, &command) {
+            Some(outcome) => outcome,
+            None => match session.apply_command(command) {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    return SessionTraceReplayReport {
+                        trace_step_count: trace.steps.len(),
+                        applied_steps,
+                        order_drift_steps,
+                        non_blocking_drifts,
+                        stop: SessionTraceReplayStop::CommandFailed {
+                            step_index: step.step_index,
+                            command_line,
+                            error,
+                        },
+                    };
+                }
+            },
         };
 
         applied_steps.push(SessionTraceReplayAppliedStep {
@@ -529,14 +533,79 @@ fn replay_stop_summary(stop: &SessionTraceReplayStop) -> String {
     }
 }
 
+fn try_replay_recorded_combat_trajectory(
+    session: &mut RunControlSession,
+    step: &SessionTraceStepV1,
+    command: &RunControlCommand,
+) -> Option<RunControlCommandOutcome> {
+    if !matches!(
+        command,
+        RunControlCommand::AutoStep(_) | RunControlCommand::SearchCombat(_)
+    ) {
+        return None;
+    }
+
+    let (source, action_count, actions) =
+        step.annotations
+            .iter()
+            .find_map(|annotation| match annotation {
+                RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+                    source,
+                    action_count,
+                    actions,
+                    ..
+                } => Some((source, action_count, actions)),
+                _ => None,
+            })?;
+    if actions.is_empty() || *action_count != actions.len() {
+        return None;
+    }
+
+    let mut trial = session.clone();
+    trial.mark_current_combat_search_resolved();
+    for action in actions {
+        if trial.apply_input(action.input.clone()).is_err() {
+            return None;
+        }
+    }
+
+    let after = session_trace_boundary_fingerprint(&trial);
+    if first_boundary_drift(
+        step.step_index,
+        SessionTraceReplayDriftPhase::After,
+        &step.after,
+        &after,
+    )
+    .is_some()
+    {
+        return None;
+    }
+
+    *session = trial;
+    let outcome = RunControlCommandOutcome::action(
+        format!(
+            "replayed recorded combat automation: {source} applied {} action(s)",
+            actions.len()
+        ),
+        step.action_result.clone(),
+    )
+    .with_trace_annotations(step.annotations.clone());
+    Some(outcome)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::eval::run_control::{
-        parse_run_control_command, RunControlConfig, SessionTraceRecorder, SessionTraceStepSourceV1,
+    use crate::eval::run_control::trace_annotation::{
+        CombatAutomationActionV1, RunControlTraceAnnotationV1,
     };
+    use crate::eval::run_control::{
+        parse_run_control_command, RunControlAutoStepOptions, RunControlCommand, RunControlConfig,
+        SessionTraceRecorder, SessionTraceStepSourceV1,
+    };
+    use crate::state::core::{ClientInput, EngineState};
 
     fn one_step_trace(command_line: &str) -> SessionTraceV1 {
         let mut session = RunControlSession::new(RunControlConfig::default());
@@ -655,6 +724,69 @@ mod tests {
     }
 
     #[test]
+    fn replay_trace_uses_recorded_combat_trajectory_for_auto_step() {
+        let mut recording_session = test_session_at_first_combat();
+        let command = RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            max_operations: Some(0),
+            ..Default::default()
+        });
+        let path = unique_temp_path("trace_replay_combat_trajectory").join("trace.json");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &recording_session);
+        let pending =
+            SessionTraceRecorder::prepare_step(&recording_session, "n max_ops=0", &command);
+        let outcome = recording_session
+            .apply_input(ClientInput::EndTurn)
+            .expect("recorded combat action should apply");
+        let action_result = outcome
+            .action_result
+            .as_ref()
+            .expect("combat input should produce an action result");
+        let annotations = vec![RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+            source: "test".to_string(),
+            action_count: 1,
+            actions: vec![CombatAutomationActionV1 {
+                step_index: 0,
+                action_key: "combat/end_turn".to_string(),
+                input: ClientInput::EndTurn,
+            }],
+            label_role: "simulator_generated_not_teacher_label".to_string(),
+        }];
+        recorder
+            .record_action_step(pending, &recording_session, action_result, &annotations)
+            .expect("trace step should save combat automation annotation");
+        let mut trace = recorder.trace().clone();
+        trace.steps[0].selected_candidate = None;
+        trace.steps[0].selection_resolution = SessionTraceSelectionResolution::Unresolved;
+        let expected_after = trace.steps[0].after.clone();
+        let mut replay_session = test_session_at_first_combat();
+
+        let report = replay_session_trace(
+            &mut replay_session,
+            &trace,
+            SessionTraceReplayOptions::default(),
+        );
+
+        assert!(matches!(report.stop, SessionTraceReplayStop::TraceEnd));
+        assert_eq!(report.applied_steps.len(), 1);
+        assert_eq!(
+            first_boundary_drift(
+                0,
+                SessionTraceReplayDriftPhase::After,
+                &expected_after,
+                &session_trace_boundary_fingerprint(&replay_session),
+            ),
+            None
+        );
+        assert_eq!(
+            combat_turn_count(&replay_session),
+            combat_turn_count(&recording_session),
+            "replay should apply the recorded combat input, not only accept the compact boundary"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn non_blocking_drift_render_is_summarized() {
         let drifts = (0..8)
             .map(|index| SessionTraceReplayDrift {
@@ -684,5 +816,22 @@ mod tests {
                 .as_nanos()
         ));
         path
+    }
+
+    fn test_session_at_first_combat() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.engine_state = EngineState::MapNavigation;
+        session
+            .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(1)))
+            .expect("map input should enter combat");
+        session
+    }
+
+    fn combat_turn_count(session: &RunControlSession) -> Option<u32> {
+        session
+            .active_combat
+            .as_ref()
+            .map(|active| active.combat_state.turn.turn_count)
     }
 }

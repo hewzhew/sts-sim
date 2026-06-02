@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+use crate::state::core::ClientInput;
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatAutomationActionV1 {
+    pub step_index: usize,
+    pub action_key: String,
+    pub input: ClientInput,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoutePlannerCandidateSummaryV1 {
@@ -34,6 +44,12 @@ pub enum RunControlTraceAnnotationV1 {
         case_id: String,
         capture_path: String,
         benchmark_manifest_path: String,
+        label_role: String,
+    },
+    CombatAutomationTrajectory {
+        source: String,
+        action_count: usize,
+        actions: Vec<CombatAutomationActionV1>,
         label_role: String,
     },
 }

@@ -14,6 +14,7 @@ use super::commands::{
 use super::registry::BenchmarkCasePaths;
 use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
 use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::trace_annotation::{CombatAutomationActionV1, RunControlTraceAnnotationV1};
 use super::transition_report::{
     action_result_from_transition, render_action_result, RunApplyStatus, RunVisibleSnapshot,
     TransitionAction,
@@ -103,9 +104,31 @@ pub(super) fn apply_search_combat(
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
-    let mut outcome = RunControlCommandOutcome::action(message, action_result);
+    let mut outcome =
+        RunControlCommandOutcome::action(message, action_result).with_trace_annotations(vec![
+            combat_automation_trace_annotation("search_combat", &applied),
+        ]);
     outcome.search_evidence_path = saved_evidence;
     Ok(outcome)
+}
+
+fn combat_automation_trace_annotation(
+    source: impl Into<String>,
+    actions: &[CombatSearchV2ActionTrace],
+) -> RunControlTraceAnnotationV1 {
+    RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+        source: source.into(),
+        action_count: actions.len(),
+        actions: actions
+            .iter()
+            .map(|action| CombatAutomationActionV1 {
+                step_index: action.step_index,
+                action_key: action.action_key.clone(),
+                input: action.input.clone(),
+            })
+            .collect(),
+        label_role: "simulator_generated_not_teacher_label".to_string(),
+    }
 }
 
 fn save_search_evidence_if_requested(
@@ -436,14 +459,17 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
-        effective_hp_loss_limit, high_stakes_search_options, next_available_evidence_path,
-        search_config,
+        combat_automation_trace_annotation, effective_hp_loss_limit, high_stakes_search_options,
+        next_available_evidence_path, search_config,
     };
-    use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+    use crate::ai::combat_search_v2::{CombatSearchV2ActionTrace, CombatSearchV2PotionPolicy};
+    use crate::eval::run_control::trace_annotation::RunControlTraceAnnotationV1;
     use crate::eval::run_control::{
         RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     };
-    use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
+    use crate::state::core::{
+        ActiveCombat, ClientInput, CombatContext, EngineState, RoomCombatContext,
+    };
     use crate::state::map::node::RoomType;
 
     fn session_with_active_combat(
@@ -488,6 +514,36 @@ mod tests {
         assert!(!next.exists());
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn combat_automation_trace_annotation_preserves_action_inputs() {
+        let annotation = combat_automation_trace_annotation(
+            "unit_test",
+            &[CombatSearchV2ActionTrace {
+                step_index: 7,
+                action_id: 3,
+                action_key: "combat/end_turn".to_string(),
+                action_debug: "EndTurn".to_string(),
+                input: ClientInput::EndTurn,
+            }],
+        );
+
+        let RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+            source,
+            action_count,
+            actions,
+            label_role,
+        } = annotation
+        else {
+            panic!("expected combat automation trajectory annotation")
+        };
+        assert_eq!(source, "unit_test");
+        assert_eq!(action_count, 1);
+        assert_eq!(actions[0].step_index, 7);
+        assert_eq!(actions[0].action_key, "combat/end_turn");
+        assert_eq!(actions[0].input, ClientInput::EndTurn);
+        assert_eq!(label_role, "simulator_generated_not_teacher_label");
     }
 
     #[test]

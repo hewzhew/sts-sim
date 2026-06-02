@@ -153,8 +153,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("recording trace: {}", path.display());
     }
     if let (Some(path), Some(replay_trace)) = (replay_trace_path.as_ref(), replay_trace.as_ref()) {
+        let replay_note = if trace_has_combat_automation(replay_trace) {
+            "fast combat replay available"
+        } else {
+            "recorded automation may rerun combat search and take a few seconds"
+        };
         println!(
-            "replaying trace {} ({} recorded step(s)); long recorded automation may take a few seconds",
+            "replaying trace {} ({} recorded step(s)); {replay_note}",
             path.display(),
             replay_trace.steps.len()
         );
@@ -213,6 +218,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         run_repl(&mut session, trace.as_mut())?;
     }
     Ok(())
+}
+
+fn trace_has_combat_automation(trace: &SessionTraceV1) -> bool {
+    trace.steps.iter().any(|step| {
+        step.annotations.iter().any(|annotation| {
+            matches!(
+                annotation,
+                sts_simulator::eval::run_control::RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+                    ..
+                }
+            )
+        })
+    })
 }
 
 fn run_config_from_args(

@@ -12,7 +12,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 7;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 8;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -472,7 +472,8 @@ fn annotation_artifact_refs(
                 search_evidence_path: None,
                 benchmark_manifest_path: Some(benchmark_manifest_path.clone()),
             }),
-            RunControlTraceAnnotationV1::RoutePlannerSelection { .. } => None,
+            RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+            | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => None,
         })
         .collect()
 }
