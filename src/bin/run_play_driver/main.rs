@@ -35,6 +35,9 @@ struct Args {
 
     #[arg(long)]
     auto_capture_combat_root: Option<PathBuf>,
+
+    #[arg(long)]
+    search_max_hp_loss: Option<u32>,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -69,6 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             enabled: args.auto_capture_combat,
             root: args.auto_capture_combat_root.clone(),
         },
+        search_max_hp_loss: args.search_max_hp_loss,
     });
 
     println!("{}", render_run_control_state(&session));
@@ -79,6 +83,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "tools/artifacts/benchmarks/seed<seed>_act<act>".to_string());
         println!("auto combat capture enabled: {root}");
+    }
+    if let Some(max_hp_loss) = args.search_max_hp_loss {
+        println!(
+            "combat search hp-loss gate enabled: default max_hp_loss={max_hp_loss}; use max_hp_loss=off on a command to disable it"
+        );
     }
     let mut trace = args
         .trace

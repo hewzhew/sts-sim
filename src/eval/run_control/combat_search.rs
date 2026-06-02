@@ -8,7 +8,9 @@ use crate::sim::combat::{
 };
 use crate::state::core::{EngineState, RunResult};
 
-use super::commands::{RunControlSearchCombatOptions, RunControlSearchEvidenceTarget};
+use super::commands::{
+    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
+};
 use super::registry::BenchmarkCasePaths;
 use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
 use super::session::{RunControlCommandOutcome, RunControlSession};
@@ -51,7 +53,7 @@ pub(super) fn apply_search_combat(
         outcome.search_evidence_path = saved_evidence;
         return Ok(outcome);
     };
-    if let Some(max_hp_loss) = options.max_hp_loss {
+    if let Some(max_hp_loss) = effective_hp_loss_limit(session, &options) {
         if trajectory.hp_loss > max_hp_loss as i32 {
             let mut outcome = RunControlCommandOutcome::message(format!(
                 "{}{}\n\n{}",
@@ -147,6 +149,17 @@ fn save_search_evidence_if_requested(
         report,
     )?;
     Ok(Some(path))
+}
+
+fn effective_hp_loss_limit(
+    session: &RunControlSession,
+    options: &RunControlSearchCombatOptions,
+) -> Option<u32> {
+    match options.max_hp_loss {
+        Some(RunControlHpLossLimit::Limit(limit)) => Some(limit),
+        Some(RunControlHpLossLimit::Unlimited) => None,
+        None => session.search_max_hp_loss,
+    }
 }
 
 fn search_report_has_invalid_card_identity(report: &CombatSearchV2Report) -> bool {
@@ -381,7 +394,10 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::next_available_evidence_path;
+    use super::{effective_hp_loss_limit, next_available_evidence_path};
+    use crate::eval::run_control::{
+        RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+    };
 
     #[test]
     fn search_evidence_path_does_not_overwrite_existing_file() {
@@ -406,5 +422,38 @@ mod tests {
         assert!(!next.exists());
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn hp_loss_limit_uses_session_default_and_command_override() {
+        let session = RunControlSession::new(RunControlConfig {
+            search_max_hp_loss: Some(12),
+            ..RunControlConfig::default()
+        });
+
+        assert_eq!(
+            effective_hp_loss_limit(&session, &RunControlSearchCombatOptions::default()),
+            Some(12)
+        );
+        assert_eq!(
+            effective_hp_loss_limit(
+                &session,
+                &RunControlSearchCombatOptions {
+                    max_hp_loss: Some(RunControlHpLossLimit::Limit(4)),
+                    ..RunControlSearchCombatOptions::default()
+                }
+            ),
+            Some(4)
+        );
+        assert_eq!(
+            effective_hp_loss_limit(
+                &session,
+                &RunControlSearchCombatOptions {
+                    max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+                    ..RunControlSearchCombatOptions::default()
+                }
+            ),
+            None
+        );
     }
 }

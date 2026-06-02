@@ -97,7 +97,7 @@ pub struct RunControlSearchCombatOptions {
     pub max_actions_per_line: Option<usize>,
     pub max_engine_steps_per_action: Option<usize>,
     pub wall_ms: Option<u64>,
-    pub max_hp_loss: Option<u32>,
+    pub max_hp_loss: Option<RunControlHpLossLimit>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
     pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
@@ -113,6 +113,12 @@ pub struct RunControlSearchCombatOptions {
 pub enum RunControlSearchEvidenceTarget {
     LastCaptureCase,
     Path(PathBuf),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RunControlHpLossLimit {
+    Limit(u32),
+    Unlimited,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

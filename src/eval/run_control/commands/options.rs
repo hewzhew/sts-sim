@@ -8,8 +8,8 @@ use crate::state::core::ClientInput;
 
 use super::super::reward_auto::{parse_on_off, parse_reward_automation_target};
 use super::{
-    RunControlAutoStepOptions, RunControlCommand, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
+    RunControlAutoStepOptions, RunControlCommand, RunControlHpLossLimit,
+    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
 };
 
 pub(super) fn parse_search_combat_options(
@@ -36,7 +36,7 @@ pub(super) fn parse_search_combat_options(
                 options.wall_ms = Some(parse_u64_value(value, "wall_ms")?);
             }
             "max_hp_loss" | "hp_loss" | "hp_loss_limit" => {
-                options.max_hp_loss = Some(parse_u32_value(value, "max_hp_loss")?);
+                options.max_hp_loss = Some(parse_hp_loss_limit(value)?);
             }
             "potion" | "potion_policy" => {
                 options.potion_policy = Some(parse_potion_policy(value)?);
@@ -71,6 +71,18 @@ pub(super) fn parse_search_combat_options(
         }
     }
     Ok(options)
+}
+
+fn parse_hp_loss_limit(value: &str) -> Result<RunControlHpLossLimit, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "off" | "none" | "unlimited" | "no_limit" | "no-limit" => {
+            Ok(RunControlHpLossLimit::Unlimited)
+        }
+        _ => Ok(RunControlHpLossLimit::Limit(parse_u32_value(
+            value,
+            "max_hp_loss",
+        )?)),
+    }
 }
 
 fn parse_search_evidence_target(value: &str) -> RunControlSearchEvidenceTarget {

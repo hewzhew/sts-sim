@@ -77,7 +77,7 @@ fn run_control_parser_accepts_search_combat_options() {
                 max_actions_per_line: None,
                 max_engine_steps_per_action: None,
                 wall_ms: Some(50),
-                max_hp_loss: Some(12),
+                max_hp_loss: Some(RunControlHpLossLimit::Limit(12)),
                 potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
                 max_potions_used: Some(1),
                 rollout_policy: Some(CombatSearchV2RolloutPolicy::TurnBeamNoPotion),
@@ -150,7 +150,7 @@ fn run_control_parser_accepts_auto_step_options() {
         parse_run_control_command("nr max_ops=9 max_hp_loss=8").expect("nr should parse"),
         RunControlCommand::AutoStep(RunControlAutoStepOptions {
             search: RunControlSearchCombatOptions {
-                max_hp_loss: Some(8),
+                max_hp_loss: Some(RunControlHpLossLimit::Limit(8)),
                 ..Default::default()
             },
             max_operations: Some(9),
@@ -160,6 +160,13 @@ fn run_control_parser_accepts_auto_step_options() {
     assert!(
         parse_run_control_command("nr route=manual").is_err(),
         "nr should not silently accept conflicting route mode"
+    );
+    assert_eq!(
+        parse_run_control_command("sc max_hp_loss=off").expect("hp-loss gate off should parse"),
+        RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
+            max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+            ..Default::default()
+        })
     );
 }
 
