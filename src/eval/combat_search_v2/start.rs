@@ -5,9 +5,9 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
-    run_combat_search_v2, CombatSearchV2Config, CombatSearchV2FrontierPolicy,
-    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TurnPlanPolicy,
+    high_stakes_semantic_potion_budget, run_combat_search_v2, CombatSearchV2Config,
+    CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2Report,
+    CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::combat_capture::load_combat_capture_v1;
@@ -23,6 +23,7 @@ pub struct CombatSearchV2RunOptions {
     pub wall_ms: Option<u64>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
+    pub high_stakes_semantic_potions: bool,
     pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
     pub rollout_max_evaluations: Option<usize>,
     pub rollout_max_actions: Option<usize>,
@@ -59,6 +60,23 @@ impl CombatSearchV2RunOptions {
             turn_plan_policy: self.turn_plan_policy.unwrap_or(defaults.turn_plan_policy),
             frontier_policy: self.frontier_policy.unwrap_or(defaults.frontier_policy),
         }
+    }
+
+    pub fn to_search_config_for_position(
+        &self,
+        input_label: String,
+        position: &CombatPosition,
+    ) -> CombatSearchV2Config {
+        let mut config = self.to_search_config(input_label);
+        if self.high_stakes_semantic_potions && self.potion_policy.is_none() {
+            if let Some(potion_budget) = high_stakes_semantic_potion_budget(&position.combat) {
+                config.potion_policy = CombatSearchV2PotionPolicy::SemanticBudgeted;
+                if self.max_potions_used.is_none() {
+                    config.max_potions_used = Some(potion_budget);
+                }
+            }
+        }
+        config
     }
 }
 
@@ -109,7 +127,95 @@ pub fn run_combat_search_v2_loaded_start(
         search_report: run_combat_search_v2(
             &loaded.position.engine,
             &loaded.position.combat,
-            options.to_search_config(loaded.label.clone()),
+            options.to_search_config_for_position(loaded.label.clone(), &loaded.position),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+
+    fn combat_position_with_flags(is_boss: bool, is_elite: bool) -> CombatPosition {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.meta.is_boss_fight = is_boss;
+        combat.meta.is_elite_fight = is_elite;
+        CombatPosition::new(crate::state::core::EngineState::CombatPlayerTurn, combat)
+    }
+
+    #[test]
+    fn run_options_auto_high_stakes_potions_enable_boss_semantic_budget() {
+        let options = CombatSearchV2RunOptions {
+            high_stakes_semantic_potions: true,
+            ..CombatSearchV2RunOptions::default()
+        };
+
+        let config = options.to_search_config_for_position(
+            "test".to_string(),
+            &combat_position_with_flags(true, false),
+        );
+
+        assert_eq!(
+            config.potion_policy,
+            CombatSearchV2PotionPolicy::SemanticBudgeted
+        );
+        assert_eq!(config.max_potions_used, Some(2));
+    }
+
+    #[test]
+    fn run_options_auto_high_stakes_potions_enable_elite_single_budget() {
+        let options = CombatSearchV2RunOptions {
+            high_stakes_semantic_potions: true,
+            ..CombatSearchV2RunOptions::default()
+        };
+
+        let config = options.to_search_config_for_position(
+            "test".to_string(),
+            &combat_position_with_flags(false, true),
+        );
+
+        assert_eq!(
+            config.potion_policy,
+            CombatSearchV2PotionPolicy::SemanticBudgeted
+        );
+        assert_eq!(config.max_potions_used, Some(1));
+    }
+
+    #[test]
+    fn run_options_auto_high_stakes_potions_leave_ordinary_combat_default() {
+        let options = CombatSearchV2RunOptions {
+            high_stakes_semantic_potions: true,
+            ..CombatSearchV2RunOptions::default()
+        };
+
+        let config = options.to_search_config_for_position(
+            "test".to_string(),
+            &combat_position_with_flags(false, false),
+        );
+
+        assert_eq!(
+            config.potion_policy,
+            CombatSearchV2Config::default().potion_policy
+        );
+        assert_eq!(config.max_potions_used, None);
+    }
+
+    #[test]
+    fn run_options_auto_high_stakes_potions_respect_explicit_policy() {
+        let options = CombatSearchV2RunOptions {
+            high_stakes_semantic_potions: true,
+            potion_policy: Some(CombatSearchV2PotionPolicy::Never),
+            max_potions_used: Some(0),
+            ..CombatSearchV2RunOptions::default()
+        };
+
+        let config = options.to_search_config_for_position(
+            "test".to_string(),
+            &combat_position_with_flags(true, false),
+        );
+
+        assert_eq!(config.potion_policy, CombatSearchV2PotionPolicy::Never);
+        assert_eq!(config.max_potions_used, Some(0));
     }
 }

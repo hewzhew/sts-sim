@@ -328,7 +328,7 @@ fn run_combat_search_v2_benchmark_case(
     let search_report = run_combat_search_v2(
         &case.start.position.engine,
         &case.start.position.combat,
-        options.to_search_config(case.start.label.clone()),
+        options.to_search_config_for_position(case.start.label.clone(), &case.start.position),
     );
     let baseline_comparison = case
         .baseline

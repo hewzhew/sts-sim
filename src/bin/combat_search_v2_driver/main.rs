@@ -47,8 +47,8 @@ struct Args {
     #[arg(long)]
     wall_ms: Option<u64>,
 
-    #[arg(long, value_parser = parse_potion_policy)]
-    potion_policy: Option<CombatSearchV2PotionPolicy>,
+    #[arg(long, value_parser = parse_driver_potion_policy)]
+    potion_policy: Option<DriverPotionPolicy>,
 
     #[arg(long)]
     max_potions_used: Option<u32>,
@@ -160,13 +160,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    let (potion_policy, high_stakes_semantic_potions) = match args.potion_policy {
+        Some(DriverPotionPolicy::Search(policy)) => (Some(policy), false),
+        Some(DriverPotionPolicy::HighStakesAuto) => (None, true),
+        None => (None, false),
+    };
+
     let options = CombatSearchV2RunOptions {
         max_nodes: args.max_nodes,
         max_actions_per_line: args.max_actions_per_line,
         max_engine_steps_per_action: args.max_engine_steps_per_action,
         wall_ms: args.wall_ms,
-        potion_policy: args.potion_policy,
+        potion_policy,
         max_potions_used: args.max_potions_used,
+        high_stakes_semantic_potions,
         rollout_policy: args.rollout_policy,
         rollout_max_evaluations: args.rollout_max_evaluations,
         rollout_max_actions: args.rollout_max_actions,
@@ -197,7 +204,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let decision = explain_combat_search_v2_initial_decision(
                 &case.start.position.engine,
                 &case.start.position.combat,
-                options.to_search_config(case.start.label.clone()),
+                options
+                    .to_search_config_for_position(case.start.label.clone(), &case.start.position),
             );
             serde_json::to_string_pretty(&serde_json::json!({
                 "schema_name": "CombatSearchV2BenchmarkDecisionMicroscopeReport",
@@ -331,16 +339,31 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
     }
 }
 
-fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DriverPotionPolicy {
+    Search(CombatSearchV2PotionPolicy),
+    HighStakesAuto,
+}
+
+fn parse_driver_potion_policy(value: &str) -> Result<DriverPotionPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
-        "never" => Ok(CombatSearchV2PotionPolicy::Never),
-        "all" | "all_legal_potion_actions" => Ok(CombatSearchV2PotionPolicy::All),
+        "never" => Ok(DriverPotionPolicy::Search(
+            CombatSearchV2PotionPolicy::Never,
+        )),
+        "all" | "all_legal_potion_actions" => {
+            Ok(DriverPotionPolicy::Search(CombatSearchV2PotionPolicy::All))
+        }
         "semantic"
         | "semantic-budgeted"
         | "semantic_budgeted"
-        | "semantic_budgeted_potion_actions" => Ok(CombatSearchV2PotionPolicy::SemanticBudgeted),
+        | "semantic_budgeted_potion_actions" => Ok(DriverPotionPolicy::Search(
+            CombatSearchV2PotionPolicy::SemanticBudgeted,
+        )),
+        "auto" | "high_stakes" | "high-stakes" | "high_stakes_semantic" => {
+            Ok(DriverPotionPolicy::HighStakesAuto)
+        }
         _ => Err(format!(
-            "invalid potion policy '{value}', expected never|all|semantic"
+            "invalid potion policy '{value}', expected never|all|semantic|auto"
         )),
     }
 }
@@ -448,6 +471,22 @@ mod tests {
             parse_rollout_policy("enemy_mechanics_adaptive_no_potion")
                 .expect("policy should parse"),
             CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
+        );
+    }
+
+    #[test]
+    fn parse_driver_potion_policy_accepts_auto_high_stakes() {
+        assert_eq!(
+            parse_driver_potion_policy("auto").expect("policy should parse"),
+            DriverPotionPolicy::HighStakesAuto
+        );
+    }
+
+    #[test]
+    fn parse_driver_potion_policy_keeps_explicit_semantic_policy() {
+        assert_eq!(
+            parse_driver_potion_policy("semantic").expect("policy should parse"),
+            DriverPotionPolicy::Search(CombatSearchV2PotionPolicy::SemanticBudgeted)
         );
     }
 

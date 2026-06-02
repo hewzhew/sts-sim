@@ -163,9 +163,6 @@ fn effective_hp_loss_limit(
     }
 }
 
-const HIGH_STAKES_BOSS_MAX_POTIONS_USED: u32 = 2;
-const HIGH_STAKES_ELITE_MAX_POTIONS_USED: u32 = 1;
-
 pub(in crate::eval::run_control) fn high_stakes_search_options(
     session: &RunControlSession,
     mut options: RunControlSearchCombatOptions,
@@ -186,13 +183,7 @@ pub(in crate::eval::run_control) fn active_combat_high_stakes_potion_budget(
     session: &RunControlSession,
 ) -> Option<u32> {
     let combat = &session.active_combat.as_ref()?.combat_state;
-    if combat.meta.is_boss_fight {
-        Some(HIGH_STAKES_BOSS_MAX_POTIONS_USED)
-    } else if combat.meta.is_elite_fight {
-        Some(HIGH_STAKES_ELITE_MAX_POTIONS_USED)
-    } else {
-        None
-    }
+    crate::ai::combat_search_v2::high_stakes_semantic_potion_budget(combat)
 }
 
 fn search_report_has_invalid_card_identity(report: &CombatSearchV2Report) -> bool {

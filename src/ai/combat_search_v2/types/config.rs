@@ -59,6 +59,21 @@ impl CombatSearchV2PotionPolicy {
     }
 }
 
+const HIGH_STAKES_BOSS_MAX_POTIONS_USED: u32 = 2;
+const HIGH_STAKES_ELITE_MAX_POTIONS_USED: u32 = 1;
+
+pub fn high_stakes_semantic_potion_budget(
+    combat: &crate::runtime::combat::CombatState,
+) -> Option<u32> {
+    if combat.meta.is_boss_fight {
+        Some(HIGH_STAKES_BOSS_MAX_POTIONS_USED)
+    } else if combat.meta.is_elite_fight {
+        Some(HIGH_STAKES_ELITE_MAX_POTIONS_USED)
+    } else {
+        None
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2RolloutPolicy {
