@@ -57,8 +57,31 @@ fn semantic_policy_rejects_block_potion_when_hand_can_cover_visible_damage() {
 }
 
 #[test]
-fn semantic_policy_keeps_block_potion_with_visible_incoming_loss() {
+fn semantic_policy_rejects_block_potion_with_only_ordinary_visible_incoming_loss() {
     let mut combat = blank_test_combat();
+    combat.entities.player.block = 0;
+    combat.entities.monsters = vec![attacking_monster()];
+    combat.entities.potions = vec![Some(Potion::new(PotionId::BlockPotion, 3))];
+
+    let decision = proposals::semantic_potion_gate_decision(
+        &combat,
+        &ClientInput::UsePotion {
+            potion_index: 0,
+            target: None,
+        },
+    );
+
+    assert!(!decision.allowed);
+    assert_eq!(
+        decision.reason,
+        decision::PotionGateReason::NoTacticalPressure
+    );
+}
+
+#[test]
+fn semantic_policy_keeps_block_potion_with_high_stakes_visible_incoming_loss() {
+    let mut combat = blank_test_combat();
+    combat.meta.is_elite_fight = true;
     combat.entities.player.block = 0;
     combat.entities.monsters = vec![attacking_monster()];
     combat.entities.potions = vec![Some(Potion::new(PotionId::BlockPotion, 3))];
@@ -106,8 +129,31 @@ fn semantic_policy_keeps_block_potion_when_visible_attack_is_lethal() {
 }
 
 #[test]
-fn semantic_policy_keeps_blood_potion_when_wounded_and_visible_damage_is_uncovered() {
+fn semantic_policy_rejects_blood_potion_when_only_ordinary_damage_is_uncovered() {
     let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 40;
+    combat.entities.monsters = vec![attacking_monster()];
+    combat.entities.potions = vec![Some(Potion::new(PotionId::BloodPotion, 3))];
+
+    let decision = proposals::semantic_potion_gate_decision(
+        &combat,
+        &ClientInput::UsePotion {
+            potion_index: 0,
+            target: None,
+        },
+    );
+
+    assert!(!decision.allowed);
+    assert_eq!(
+        decision.reason,
+        decision::PotionGateReason::NoTacticalPressure
+    );
+}
+
+#[test]
+fn semantic_policy_keeps_blood_potion_when_high_stakes_wounded_damage_is_uncovered() {
+    let mut combat = blank_test_combat();
+    combat.meta.is_elite_fight = true;
     combat.entities.player.current_hp = 40;
     combat.entities.monsters = vec![attacking_monster()];
     combat.entities.potions = vec![Some(Potion::new(PotionId::BloodPotion, 3))];
