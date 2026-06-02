@@ -61,6 +61,19 @@ fn anger_power_reports_enemy_strength_gain_for_skill_without_monster_special_cas
 }
 
 #[test]
+fn flex_reports_player_strength_gain_without_enemy_scaling_risk() {
+    let combat = blank_test_combat();
+    let flex = CombatCard::new(CardId::Flex, 10);
+
+    let summary = summarize_play_card_effects(&combat, &flex, None);
+
+    assert_eq!(summary.player_strength_gain, 2);
+    assert_eq!(summary.player_temporary_strength_gain, 2);
+    assert_eq!(summary.enemy_strength_gain, 0);
+    assert_eq!(summary.enemy_scaling_risk_score(), 0);
+}
+
+#[test]
 fn sharp_hide_reports_reactive_player_hp_loss_for_attack() {
     let mut combat = blank_test_combat();
     let mut guardian = test_monster(EnemyId::TheGuardian);

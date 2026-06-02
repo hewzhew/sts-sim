@@ -199,6 +199,74 @@ fn reactive_enemy_scaling_risk_orders_damage_before_nonlethal_skill_block() {
 }
 
 #[test]
+fn current_turn_strength_setup_orders_before_available_attack() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::Cultist);
+    monster.id = 1;
+    monster.current_hp = 50;
+    monster.max_hp = 50;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::Flex, 11),
+    ];
+    let choices = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+        ),
+    ];
+
+    let ordered = order_action_choices(&EngineState::CombatPlayerTurn, &combat, choices);
+
+    assert_eq!(ordered.choices[0].original_action_id, 1);
+    assert_eq!(
+        ordered.summary.first_role,
+        Some(ActionOrderingRole::CurrentTurnAttackSetup)
+    );
+}
+
+#[test]
+fn current_turn_strength_setup_requires_available_attack() {
+    let mut combat = blank_test_combat();
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 10),
+        CombatCard::new(CardId::Flex, 11),
+    ];
+    let choices = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+        ),
+    ];
+
+    let ordered = order_action_choices(&EngineState::CombatPlayerTurn, &combat, choices);
+
+    assert_eq!(ordered.choices[0].original_action_id, 0);
+    assert_eq!(ordered.summary.first_role, Some(ActionOrderingRole::Block));
+}
+
+#[test]
 fn split_trigger_risk_orders_safe_damage_first_without_dropping_actions() {
     let mut combat = blank_test_combat();
     let mut slime = test_monster(EnemyId::AcidSlimeL);

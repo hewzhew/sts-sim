@@ -5,6 +5,7 @@ pub(super) const ROLE_PREVENT_VISIBLE_LETHAL: i32 = 120;
 pub(super) const ROLE_SUSTAINED_MITIGATION: i32 = 95;
 pub(super) const ROLE_TACTICAL_POTION_BASE: i32 = 60;
 pub(super) const ROLE_PREVENT_HP_LOSS: i32 = 85;
+pub(super) const ROLE_CURRENT_TURN_ATTACK_SETUP: i32 = 80;
 pub(super) const ROLE_DEFERRED_SETUP: i32 = 75;
 pub(super) const ROLE_DAMAGE_PROGRESS: i32 = 60;
 pub(super) const ROLE_REACTIVE_RISK_PREVENT_HP_LOSS: i32 = 55;

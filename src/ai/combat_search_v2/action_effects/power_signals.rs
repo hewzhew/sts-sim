@@ -54,6 +54,8 @@ fn summarize_power_effects(combat: &CombatState, raw: RawPowerEffects) -> PlayCa
         reactive_forced_turn_end: raw.reactive_forced_turn_end,
         enemy_weak: raw.enemy_weak,
         enemy_vulnerable: raw.enemy_vulnerable,
+        player_strength_gain: raw.player_strength_gain,
+        player_temporary_strength_gain: raw.player_strength_gain.min(raw.player_lose_strength),
         ..PlayCardEffectSummary::default()
     };
 

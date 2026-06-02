@@ -158,6 +158,8 @@ fn immediate_and_mechanics_facts(
             enemy_vulnerable: effects.enemy_vulnerable,
             enemy_strength_gain: effects.enemy_strength_gain,
             visible_attack_pressure_hint: effects.visible_attack_pressure_hint,
+            player_strength_gain: effects.player_strength_gain,
+            player_temporary_strength_gain: effects.player_temporary_strength_gain,
             reactive_player_hp_loss: effects.reactive_player_hp_loss,
             reactive_player_block: effects.reactive_player_block,
             reactive_enemy_damage: effects.reactive_enemy_damage,

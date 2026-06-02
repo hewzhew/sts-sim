@@ -9,6 +9,8 @@ pub(super) struct RawPowerEffects {
     pub(super) enemy_strength_down_by_target: BTreeMap<usize, i32>,
     pub(super) enemy_strength_gain_by_target: BTreeMap<usize, i32>,
     pub(super) shackled_targets: BTreeSet<usize>,
+    pub(super) player_strength_gain: i32,
+    pub(super) player_lose_strength: i32,
     pub(super) reactive_player_hp_loss: i32,
     pub(super) reactive_player_block: i32,
     pub(super) reactive_enemy_damage: i32,
@@ -57,10 +59,16 @@ pub(super) fn observe_power_action(raw: &mut RawPowerEffects, action: Action) {
 
 fn observe_apply_power(raw: &mut RawPowerEffects, target: usize, power_id: PowerId, amount: i32) {
     match power_id {
-        PowerId::Strength if amount < 0 => {
+        PowerId::Strength if target == 0 && amount > 0 => {
+            raw.player_strength_gain = raw.player_strength_gain.saturating_add(amount);
+        }
+        PowerId::LoseStrength if target == 0 && amount > 0 => {
+            raw.player_lose_strength = raw.player_lose_strength.saturating_add(amount);
+        }
+        PowerId::Strength if target != 0 && amount < 0 => {
             *raw.enemy_strength_down_by_target.entry(target).or_default() += -amount;
         }
-        PowerId::Strength if amount > 0 => {
+        PowerId::Strength if target != 0 && amount > 0 => {
             *raw.enemy_strength_gain_by_target.entry(target).or_default() += amount;
         }
         PowerId::Shackled if amount > 0 => {

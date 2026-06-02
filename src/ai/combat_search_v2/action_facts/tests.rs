@@ -93,6 +93,28 @@ fn facts_report_nob_anger_from_reactive_power_without_card_tag() {
 }
 
 #[test]
+fn facts_report_player_strength_gain_without_enemy_scaling_risk() {
+    let mut combat = blank_test_combat();
+    combat.zones.hand = vec![CombatCard::new(CardId::Flex, 10)];
+
+    let facts = summarize_action_facts(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        &EngineCombatStepper,
+        250,
+    );
+
+    assert_eq!(facts.card.as_ref().map(|card| card.name), Some("Flex"));
+    assert_eq!(facts.mechanics.player_strength_gain, 2);
+    assert_eq!(facts.mechanics.player_temporary_strength_gain, 2);
+    assert_eq!(facts.mechanics.enemy_strength_gain, 0);
+}
+
+#[test]
 fn facts_report_dropkick_contextual_draw_and_energy_delta_from_simulator() {
     let mut combat = blank_test_combat();
     combat.zones.hand = vec![CombatCard::new(CardId::Dropkick, 10)];

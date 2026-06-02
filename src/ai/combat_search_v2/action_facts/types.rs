@@ -68,6 +68,8 @@ pub struct CombatSearchV2ActionMechanicsFacts {
     pub enemy_vulnerable: i32,
     pub enemy_strength_gain: i32,
     pub visible_attack_pressure_hint: i32,
+    pub player_strength_gain: i32,
+    pub player_temporary_strength_gain: i32,
     pub reactive_player_hp_loss: i32,
     pub reactive_player_block: i32,
     pub reactive_enemy_damage: i32,
