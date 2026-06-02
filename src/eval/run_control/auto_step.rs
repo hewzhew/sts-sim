@@ -116,6 +116,32 @@ pub(super) fn apply_guarded_auto_step(
                 applied.extend(auto_capture_summaries);
                 continue;
             }
+            let fallback_rejection = trim_search_rejection(&outcome.message);
+            if let Some(rescue_options) = auto_potion_rescue_options(session, &options.search) {
+                let rescue = super::combat_search::apply_search_combat(session, rescue_options)?;
+                if let Some(result) = rescue.action_result.as_ref() {
+                    applied.push(format!(
+                        "combat search(potion rescue): {}",
+                        result.chosen_label
+                    ));
+                    let auto_capture_summaries = auto_capture_summaries(&rescue.trace_annotations);
+                    trace_annotations.extend(rescue.trace_annotations);
+                    applied.extend(auto_capture_summaries);
+                    continue;
+                }
+                return finish_auto_step(
+                    session,
+                    &before,
+                    applied,
+                    trace_annotations,
+                    "combat search did not find an executable complete win",
+                    Some(combine_three_search_rejections(
+                        no_potion_rejection,
+                        fallback_rejection,
+                        trim_search_rejection(&rescue.message),
+                    )),
+                );
+            }
             return finish_auto_step(
                 session,
                 &before,
@@ -124,7 +150,7 @@ pub(super) fn apply_guarded_auto_step(
                 "combat search did not find an executable complete win",
                 Some(combine_search_rejections(
                     no_potion_rejection,
-                    trim_search_rejection(&outcome.message),
+                    fallback_rejection,
                 )),
             );
         }
@@ -259,6 +285,42 @@ fn auto_no_potion_first_options(
     no_potion.max_potions_used = Some(0);
     no_potion.evidence = None;
     Some(no_potion)
+}
+
+fn auto_potion_rescue_options(
+    session: &RunControlSession,
+    options: &RunControlSearchCombatOptions,
+) -> Option<RunControlSearchCombatOptions> {
+    if !auto_hp_loss_limit_is_set(session, options)
+        || options.potion_policy.is_some()
+        || session.search_potion_policy.is_some()
+        || options.max_potions_used.is_some()
+        || session.search_max_potions_used.is_some()
+        || !active_combat_has_usable_potion(session)
+    {
+        return None;
+    }
+
+    let mut rescue = options.clone();
+    if rescue.wall_ms.is_none() && session.search_wall_ms.is_none() {
+        rescue.wall_ms = Some(DEFAULT_AUTO_SEARCH_WALL_MS);
+    }
+    rescue.potion_policy = Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All);
+    rescue.max_potions_used =
+        Some(super::combat_search::active_combat_high_stakes_potion_budget(session).unwrap_or(1));
+    Some(rescue)
+}
+
+fn active_combat_has_usable_potion(session: &RunControlSession) -> bool {
+    session.active_combat.as_ref().is_some_and(|active| {
+        active
+            .combat_state
+            .entities
+            .potions
+            .iter()
+            .flatten()
+            .any(|potion| potion.can_use)
+    })
 }
 
 fn auto_hp_loss_limit_is_set(
@@ -637,6 +699,23 @@ fn combine_search_rejections(no_potion: Option<String>, fallback: String) -> Str
     }
 }
 
+fn combine_three_search_rejections(
+    no_potion: Option<String>,
+    fallback: String,
+    potion_rescue: String,
+) -> String {
+    let mut sections = Vec::new();
+    if let Some(no_potion) = no_potion {
+        sections.push(format!("No-potion attempt:\n{}", indent_block(&no_potion)));
+    }
+    sections.push(format!("Fallback attempt:\n{}", indent_block(&fallback)));
+    sections.push(format!(
+        "Potion rescue attempt:\n{}",
+        indent_block(&potion_rescue)
+    ));
+    sections.join("\n\n")
+}
+
 fn indent_block(text: &str) -> String {
     text.lines()
         .map(|line| format!("  {line}"))
@@ -647,12 +726,13 @@ fn indent_block(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_guarded_auto_step, auto_no_potion_first_options, auto_search_options,
-        high_stakes_auto_search_requires_hp_loss_gate,
+        apply_guarded_auto_step, auto_no_potion_first_options, auto_potion_rescue_options,
+        auto_search_options, high_stakes_auto_search_requires_hp_loss_gate,
     };
     use crate::ai::combat_search_v2::{
         CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
     };
+    use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
         RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions,
         RunControlSearchEvidenceTarget, RunControlSession,
@@ -904,5 +984,61 @@ mod tests {
             &session,
             &RunControlSearchCombatOptions::default()
         ));
+    }
+
+    #[test]
+    fn auto_potion_rescue_uses_one_potion_only_when_hp_loss_gate_is_set() {
+        let mut session = RunControlSession::new(RunControlConfig {
+            search_max_hp_loss: Some(8),
+            ..RunControlConfig::default()
+        });
+        session.engine_state = EngineState::CombatPlayerTurn;
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 42))];
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        let rescue =
+            auto_potion_rescue_options(&session, &RunControlSearchCombatOptions::default())
+                .expect("hp-loss-limited ordinary combat with potion should allow rescue attempt");
+
+        assert_eq!(rescue.wall_ms, Some(5_000));
+        assert_eq!(rescue.potion_policy, Some(CombatSearchV2PotionPolicy::All));
+        assert_eq!(rescue.max_potions_used, Some(1));
+    }
+
+    #[test]
+    fn auto_potion_rescue_respects_explicit_potion_policy_and_missing_gate() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::CombatPlayerTurn;
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 42))];
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        assert_eq!(
+            auto_potion_rescue_options(&session, &RunControlSearchCombatOptions::default()),
+            None
+        );
+
+        let blocked_by_explicit_policy = RunControlSearchCombatOptions {
+            max_hp_loss: Some(RunControlHpLossLimit::Limit(8)),
+            potion_policy: Some(CombatSearchV2PotionPolicy::Never),
+            ..RunControlSearchCombatOptions::default()
+        };
+        assert_eq!(
+            auto_potion_rescue_options(&session, &blocked_by_explicit_policy),
+            None
+        );
     }
 }

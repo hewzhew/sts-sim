@@ -39,6 +39,7 @@ Help:
     nr/next-route = n route=planner
     Boss/elite n/nr requires max_hp_loss=N or explicit max_hp_loss=off; this prevents auto-search from silently spending too much HP.
     If max_hp_loss is set, high-stakes auto combat first accepts a no-potion win under that limit before falling back to semantic potions.
+    If max_hp_loss is set and the no/default-potion line misses the limit, n/nr may try one bounded potion-rescue search unless potion/max_potions were explicitly set.
     max_hp_loss also lets search stop early after an exact complete win within that hp-loss limit; this is a practical acceptance gate, not an optimality claim.
     startup flags: --search-max-nodes N, --search-wall-ms N, and --search-max-hp-loss N set initial defaults for sc/n/nr
     sd/search-defaults changes those defaults inside the current session
