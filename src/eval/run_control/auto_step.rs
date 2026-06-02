@@ -16,8 +16,6 @@ use super::view_model::{build_run_control_view_model, DecisionCandidate, RunCont
 
 const DEFAULT_MAX_OPERATIONS: usize = 16;
 const DEFAULT_AUTO_SEARCH_WALL_MS: u64 = 5_000;
-const DEFAULT_AUTO_BOSS_MAX_POTIONS_USED: u32 = 2;
-const DEFAULT_AUTO_ELITE_MAX_POTIONS_USED: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AutoAdvanceClass {
@@ -223,24 +221,14 @@ fn auto_search_options(
     if options.wall_ms.is_none() && session.search_wall_ms.is_none() {
         options.wall_ms = Some(DEFAULT_AUTO_SEARCH_WALL_MS);
     }
-    if options.potion_policy.is_none() && session.search_potion_policy.is_none() {
-        let Some(auto_potion_budget) = active_combat_auto_potion_budget(session) else {
-            return options;
-        };
-        options.potion_policy =
-            Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
-        if options.max_potions_used.is_none() && session.search_max_potions_used.is_none() {
-            options.max_potions_used = Some(auto_potion_budget);
-        }
-    }
-    options
+    super::combat_search::high_stakes_search_options(session, options)
 }
 
 fn auto_no_potion_first_options(
     session: &RunControlSession,
     options: &RunControlSearchCombatOptions,
 ) -> Option<RunControlSearchCombatOptions> {
-    if active_combat_auto_potion_budget(session).is_none()
+    if super::combat_search::active_combat_high_stakes_potion_budget(session).is_none()
         || options.potion_policy.is_some()
         || session.search_potion_policy.is_some()
         || !auto_hp_loss_limit_is_set(session, options)
@@ -267,17 +255,6 @@ fn auto_hp_loss_limit_is_set(
         Some(RunControlHpLossLimit::Limit(_)) => true,
         Some(RunControlHpLossLimit::Unlimited) => false,
         None => session.search_max_hp_loss.is_some(),
-    }
-}
-
-fn active_combat_auto_potion_budget(session: &RunControlSession) -> Option<u32> {
-    let combat = &session.active_combat.as_ref()?.combat_state;
-    if combat.meta.is_boss_fight {
-        Some(DEFAULT_AUTO_BOSS_MAX_POTIONS_USED)
-    } else if combat.meta.is_elite_fight {
-        Some(DEFAULT_AUTO_ELITE_MAX_POTIONS_USED)
-    } else {
-        None
     }
 }
 
