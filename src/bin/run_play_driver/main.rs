@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
+use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use sts_simulator::eval::run_control::{
     canonical_player_class, render_run_control_state, AutoCombatCaptureConfig, RunControlConfig,
     RunControlSession, SessionTraceRecorder,
@@ -44,6 +45,12 @@ struct Args {
 
     #[arg(long)]
     search_max_hp_loss: Option<u32>,
+
+    #[arg(long, value_parser = parse_cli_potion_policy)]
+    search_potion_policy: Option<CombatSearchV2PotionPolicy>,
+
+    #[arg(long)]
+    search_max_potions_used: Option<u32>,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -81,6 +88,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         search_max_nodes: args.search_max_nodes,
         search_wall_ms: args.search_wall_ms,
         search_max_hp_loss: args.search_max_hp_loss,
+        search_potion_policy: args.search_potion_policy,
+        search_max_potions_used: args.search_max_potions_used,
     });
 
     println!("{}", render_run_control_state(&session));
@@ -110,6 +119,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "combat search budget defaults: max_nodes={max_nodes} wall_ms={wall_ms}; command-local max_nodes/wall_ms override them"
         );
     }
+    if args.search_potion_policy.is_some() || args.search_max_potions_used.is_some() {
+        let potion_policy = args
+            .search_potion_policy
+            .map(cli_potion_policy_label)
+            .unwrap_or_else(|| "default".to_string());
+        let max_potions = args
+            .search_max_potions_used
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "default".to_string());
+        println!(
+            "combat search potion defaults: potion={potion_policy} max_potions={max_potions}; command-local potion/max_potions override them"
+        );
+    }
     let mut trace = args
         .trace
         .as_ref()
@@ -121,4 +143,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         run_repl(&mut session, trace.as_mut())?;
     }
     Ok(())
+}
+
+fn parse_cli_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "never" => Ok(CombatSearchV2PotionPolicy::Never),
+        "all" | "all_legal_potion_actions" => Ok(CombatSearchV2PotionPolicy::All),
+        "semantic" | "semantic_budgeted" | "semantic_budgeted_potion_actions" => {
+            Ok(CombatSearchV2PotionPolicy::SemanticBudgeted)
+        }
+        _ => Err(format!(
+            "invalid potion policy '{value}', expected never|all|semantic"
+        )),
+    }
+}
+
+fn cli_potion_policy_label(policy: CombatSearchV2PotionPolicy) -> String {
+    match policy {
+        CombatSearchV2PotionPolicy::Never => "never",
+        CombatSearchV2PotionPolicy::All => "all",
+        CombatSearchV2PotionPolicy::SemanticBudgeted => "semantic",
+    }
+    .to_string()
 }

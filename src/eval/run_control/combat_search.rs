@@ -221,8 +221,14 @@ fn search_config(
             "run_play_driver:search_combat:step{}",
             session.decision_step
         )),
-        potion_policy: options.potion_policy.unwrap_or(defaults.potion_policy),
-        max_potions_used: options.max_potions_used.or(defaults.max_potions_used),
+        potion_policy: options
+            .potion_policy
+            .or(session.search_potion_policy)
+            .unwrap_or(defaults.potion_policy),
+        max_potions_used: options
+            .max_potions_used
+            .or(session.search_max_potions_used)
+            .or(defaults.max_potions_used),
         rollout_policy: options.rollout_policy.unwrap_or(defaults.rollout_policy),
         rollout_max_evaluations: options
             .rollout_max_evaluations
@@ -404,6 +410,7 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{effective_hp_loss_limit, next_available_evidence_path, search_config};
+    use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
     use crate::eval::run_control::{
         RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     };
@@ -488,5 +495,32 @@ mod tests {
         );
         assert_eq!(config.max_nodes, 90);
         assert_eq!(config.wall_time, Some(Duration::from_millis(12)));
+    }
+
+    #[test]
+    fn search_config_uses_session_potion_defaults_and_command_override() {
+        let session = RunControlSession::new(RunControlConfig {
+            search_potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
+            search_max_potions_used: Some(2),
+            ..RunControlConfig::default()
+        });
+
+        let config = search_config(&session, RunControlSearchCombatOptions::default());
+        assert_eq!(
+            config.potion_policy,
+            CombatSearchV2PotionPolicy::SemanticBudgeted
+        );
+        assert_eq!(config.max_potions_used, Some(2));
+
+        let config = search_config(
+            &session,
+            RunControlSearchCombatOptions {
+                potion_policy: Some(CombatSearchV2PotionPolicy::Never),
+                max_potions_used: Some(0),
+                ..RunControlSearchCombatOptions::default()
+            },
+        );
+        assert_eq!(config.potion_policy, CombatSearchV2PotionPolicy::Never);
+        assert_eq!(config.max_potions_used, Some(0));
     }
 }

@@ -55,18 +55,20 @@ Active binaries:
     still wins; budget/frontier coverage is reported separately. Use
     `max_hp_loss=N` to inspect but refuse high-loss complete candidates.
     Start `run_play_driver` with `--search-max-nodes N`, `--search-wall-ms N`,
-    or `--search-max-hp-loss N` to make those defaults for `sc`/`n`/`nr`;
-    command-local `max_nodes=`, `wall_ms=`, and `max_hp_loss=` override them.
+    `--search-max-hp-loss N`, `--search-potion-policy semantic`, or
+    `--search-max-potions-used N` to make those defaults for `sc`/`n`/`nr`;
+    command-local `max_nodes=`, `wall_ms=`, `max_hp_loss=`, `potion=`, and
+    `max_potions=` override them.
     Use command-local `max_hp_loss=off` to disable the hp-loss gate once.
     `potion=semantic max_potions=N` for semantic resource-bounded potion probes,
     or `potion=all max_potions=N` for a broader comparison.
   - `n` / `next` / `advance-to-human-boundary [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic]`:
     advances routine or forced-safe screens, claims low-risk rewards, and uses
     combat search only when a complete winning candidate is available, then
-    stops at the next human strategic choice. Automated combat search defaults
-    to `turn_plan=turn_boundary_frontier_seed` and
-    `frontier=round_robin_eval_buckets`; pass command-local `turn_plan=` or
-    `frontier=` to override.
+    stops at the next human strategic choice. Automated combat search uses the
+    same default search strategy as `sc`, with only an interactive wall-clock
+    default added when no session or command budget is set. Pass command-local
+    `turn_plan=` or `frontier=` only for explicit experiments.
   - `n route=planner ...`: same guarded auto-step, but allows the route planner
     to choose map nodes; each route choice is tagged as
     `behavior_policy_not_teacher`
