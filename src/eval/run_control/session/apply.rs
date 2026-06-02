@@ -105,6 +105,9 @@ impl RunControlSession {
             RunControlCommand::RegisterBenchmarkCase { root, case_id } => {
                 super::super::artifact_commands::apply_register_benchmark_case(root, case_id)
             }
+            RunControlCommand::SearchDefaults(command) => {
+                super::super::search_defaults::apply_search_defaults(self, command)
+            }
             RunControlCommand::SearchCombat(options) => {
                 super::super::combat_search::apply_search_combat(self, options)
             }

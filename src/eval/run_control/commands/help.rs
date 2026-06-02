@@ -12,6 +12,7 @@ Help:
     draw, discard, exhaust, actions, action <idx>
     sc/search-combat [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] [rollout=enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed] [save=case|path]
     sc/n/nr high-stakes default: boss combat uses semantic potions with max_potions=2, elite combat uses max_potions=1, unless potion/defaults override it
+    sd/search-defaults [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] sets session defaults for sc/n/nr; sd clear resets them
 
   Map/Event/Reward:
     rs/route-suggest = read-only route evidence; rg/route-go = execute selected route planner move; go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <idx...>
@@ -37,11 +38,12 @@ Help:
     n/next/advance-to-human-boundary [route=manual|planner] [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] [rollout=enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed] [frontier=single_queue|round_robin_eval_buckets] [save=case|path] [max_ops=N]
     nr/next-route = n route=planner
     If max_hp_loss is set, high-stakes auto combat first accepts a no-potion win under that limit before falling back to semantic potions.
-    startup flags: --search-max-nodes N, --search-wall-ms N, and --search-max-hp-loss N set defaults for sc/n/nr
+    startup flags: --search-max-nodes N, --search-wall-ms N, and --search-max-hp-loss N set initial defaults for sc/n/nr
+    sd/search-defaults changes those defaults inside the current session
     auto-reward
     auto-reward gold|potion|all on|off"
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "main | n=advance | nr=route-advance | deck | map=full-map | ms=route-summary | rs=route-suggest | rg=route-go | relics | potions | inspect <id> | auto-reward | details | raw | help"
+    "main | n=advance | nr=route-advance | deck | map=full-map | ms=route-summary | rs=route-suggest | rg=route-go | sd=search-defaults | relics | potions | inspect <id> | auto-reward | details | raw | help"
 }

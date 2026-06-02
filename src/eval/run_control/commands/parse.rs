@@ -5,7 +5,7 @@ use crate::state::core::{CampfireChoice, ClientInput};
 use super::options::{
     parse_auto_reward_command, parse_auto_step_command, parse_buy_command,
     parse_optional_usize_arg, parse_route_auto_step_command, parse_search_combat_options,
-    parse_u32_list, parse_usize_arg, parse_usize_list,
+    parse_search_defaults_command, parse_u32_list, parse_usize_arg, parse_usize_list,
 };
 use super::RunControlCommand;
 
@@ -69,6 +69,9 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
             parse_save_baseline_last_command(&rest)
         }
         "bench-add" => parse_bench_add_command(&rest),
+        "sd" | "search-defaults" | "search-default" | "search-config" => {
+            parse_search_defaults_command(&rest)
+        }
         "sc" | "search-combat" | "solve-combat" | "auto-combat" => {
             parse_search_combat_command(&rest)
         }

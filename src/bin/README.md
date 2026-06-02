@@ -59,6 +59,9 @@ Active binaries:
     `--search-max-potions-used N` to make those defaults for `sc`/`n`/`nr`;
     command-local `max_nodes=`, `wall_ms=`, `max_hp_loss=`, `potion=`, and
     `max_potions=` override them.
+    Inside a running REPL, use `sd` / `search-defaults` to inspect or update
+    the same session defaults, for example `sd max_hp_loss=8`,
+    `sd max_nodes=500000 wall_ms=30000`, or `sd clear`.
     The default turn-plan policy is
     `tactical_enemy_turn_boundary_frontier_seed`: exact same-turn end states are
     seeded only for typed tactical multi-enemy fights; use

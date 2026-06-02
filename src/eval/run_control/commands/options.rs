@@ -9,7 +9,8 @@ use crate::state::core::ClientInput;
 use super::super::reward_auto::{parse_on_off, parse_reward_automation_target};
 use super::{
     RunControlAutoStepOptions, RunControlCommand, RunControlHpLossLimit,
-    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
+    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSearchDefaultsCommand,
+    RunControlSearchEvidenceTarget,
 };
 
 pub(super) fn parse_search_combat_options(
@@ -113,6 +114,63 @@ pub(super) fn parse_auto_step_command(rest: &[&str]) -> Result<RunControlCommand
     }
     options.search = parse_search_combat_options(&search_tokens)?;
     Ok(RunControlCommand::AutoStep(options))
+}
+
+pub(super) fn parse_search_defaults_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    match rest {
+        [] | ["status"] => Ok(RunControlCommand::SearchDefaults(
+            RunControlSearchDefaultsCommand::Status,
+        )),
+        ["clear"] | ["reset"] => Ok(RunControlCommand::SearchDefaults(
+            RunControlSearchDefaultsCommand::Clear,
+        )),
+        _ => {
+            let options = parse_search_combat_options(rest)?;
+            validate_search_default_options(&options)?;
+            Ok(RunControlCommand::SearchDefaults(
+                RunControlSearchDefaultsCommand::Update(options),
+            ))
+        }
+    }
+}
+
+fn validate_search_default_options(options: &RunControlSearchCombatOptions) -> Result<(), String> {
+    let mut unsupported = Vec::new();
+    if options.max_actions_per_line.is_some() {
+        unsupported.push("max_actions_per_line");
+    }
+    if options.max_engine_steps_per_action.is_some() {
+        unsupported.push("max_engine_steps_per_action");
+    }
+    if options.rollout_policy.is_some() {
+        unsupported.push("rollout");
+    }
+    if options.rollout_max_evaluations.is_some() {
+        unsupported.push("rollouts");
+    }
+    if options.rollout_max_actions.is_some() {
+        unsupported.push("rollout_actions");
+    }
+    if options.rollout_beam_width.is_some() {
+        unsupported.push("beam");
+    }
+    if options.turn_plan_policy.is_some() {
+        unsupported.push("turn_plan");
+    }
+    if options.frontier_policy.is_some() {
+        unsupported.push("frontier");
+    }
+    if options.evidence.is_some() {
+        unsupported.push("save");
+    }
+    if unsupported.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "search-defaults only stores max_nodes, wall_ms, max_hp_loss, potion, and max_potions; unsupported: {}",
+            unsupported.join(", ")
+        ))
+    }
 }
 
 pub(super) fn parse_route_auto_step_command(rest: &[&str]) -> Result<RunControlCommand, String> {

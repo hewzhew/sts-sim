@@ -4,7 +4,8 @@ use crate::eval::run_control::decision_surface;
 use crate::eval::run_control::registry::BenchmarkCasePaths;
 use crate::eval::run_control::{
     render_run_control_details, render_run_control_state, CombatBaselineOutcomeV1,
-    RunControlCommand,
+    RunControlCommand, RunControlHpLossLimit, RunControlSearchCombatOptions,
+    RunControlSearchDefaultsCommand,
 };
 use crate::state::core::ClientInput;
 use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
@@ -12,6 +13,46 @@ use crate::state::map::state::MapState;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[test]
+fn search_defaults_command_updates_and_clears_session_defaults() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+
+    let outcome = session
+        .apply_command(RunControlCommand::SearchDefaults(
+            RunControlSearchDefaultsCommand::Update(RunControlSearchCombatOptions {
+                max_nodes: Some(123),
+                wall_ms: Some(50),
+                max_hp_loss: Some(RunControlHpLossLimit::Limit(12)),
+                potion_policy: Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never),
+                max_potions_used: Some(0),
+                ..Default::default()
+            }),
+        ))
+        .expect("search defaults update should apply");
+
+    assert!(outcome.message.contains("search defaults"));
+    assert_eq!(session.search_max_nodes, Some(123));
+    assert_eq!(session.search_wall_ms, Some(50));
+    assert_eq!(session.search_max_hp_loss, Some(12));
+    assert_eq!(
+        session.search_potion_policy,
+        Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never)
+    );
+    assert_eq!(session.search_max_potions_used, Some(0));
+
+    session
+        .apply_command(RunControlCommand::SearchDefaults(
+            RunControlSearchDefaultsCommand::Clear,
+        ))
+        .expect("search defaults clear should apply");
+
+    assert_eq!(session.search_max_nodes, None);
+    assert_eq!(session.search_wall_ms, None);
+    assert_eq!(session.search_max_hp_loss, None);
+    assert_eq!(session.search_potion_policy, None);
+    assert_eq!(session.search_max_potions_used, None);
+}
 
 #[test]
 fn run_control_capture_command_saves_active_combat_position() {

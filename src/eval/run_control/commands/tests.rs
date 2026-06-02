@@ -103,6 +103,38 @@ fn run_control_parser_accepts_search_combat_options() {
 }
 
 #[test]
+fn run_control_parser_accepts_search_default_settings() {
+    assert_eq!(
+        parse_run_control_command("search-defaults").expect("search defaults status should parse"),
+        RunControlCommand::SearchDefaults(RunControlSearchDefaultsCommand::Status)
+    );
+    assert_eq!(
+        parse_run_control_command(
+            "sd max_nodes=123 wall_ms=50 max_hp_loss=12 potion=semantic max_potions=1",
+        )
+        .expect("search defaults update should parse"),
+        RunControlCommand::SearchDefaults(RunControlSearchDefaultsCommand::Update(
+            RunControlSearchCombatOptions {
+                max_nodes: Some(123),
+                wall_ms: Some(50),
+                max_hp_loss: Some(RunControlHpLossLimit::Limit(12)),
+                potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
+                max_potions_used: Some(1),
+                ..Default::default()
+            }
+        ))
+    );
+    assert_eq!(
+        parse_run_control_command("sd clear").expect("search defaults clear should parse"),
+        RunControlCommand::SearchDefaults(RunControlSearchDefaultsCommand::Clear)
+    );
+    assert!(
+        parse_run_control_command("sd rollout=turn_beam_no_potion").is_err(),
+        "sd should reject search-combat fields that are not stored as session defaults"
+    );
+}
+
+#[test]
 fn run_control_parser_accepts_auto_step_options() {
     assert_eq!(
         parse_run_control_command("n").expect("n should parse"),

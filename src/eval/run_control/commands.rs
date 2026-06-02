@@ -69,6 +69,7 @@ pub enum RunControlCommand {
         root: PathBuf,
         case_id: String,
     },
+    SearchDefaults(RunControlSearchDefaultsCommand),
     SearchCombat(RunControlSearchCombatOptions),
     AutoStep(RunControlAutoStepOptions),
     RewardAutomationStatus,
@@ -89,6 +90,13 @@ pub enum RunControlCommand {
         target_slot_or_id: Option<usize>,
     },
     Input(ClientInput),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RunControlSearchDefaultsCommand {
+    Status,
+    Clear,
+    Update(RunControlSearchCombatOptions),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
