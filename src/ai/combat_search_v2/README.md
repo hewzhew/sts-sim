@@ -53,7 +53,8 @@ this map and extend an existing boundary when one already exists.
   estimate-only rollout behavior. Rollout output must remain labeled as
   estimate evidence unless replayed into an exact search node. The default
   `enemy_mechanics_adaptive_no_potion` rollout currently uses phase-aware
-  rollout only for typed Guardian mechanics and otherwise stays conservative.
+  rollout only for typed Guardian and Bronze Automaton mechanics and otherwise
+  stays conservative.
 
 ## Game-Mechanics State Facts
 
