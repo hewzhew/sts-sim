@@ -47,6 +47,22 @@ fn rollout_priority_does_not_rank_simulated_loss_above_unresolved_estimate() {
 }
 
 #[test]
+fn rollout_priority_prefers_progress_over_safer_margin_between_simulated_losses() {
+    let mut safer_stall = RolloutNodeEstimate::unevaluated();
+    safer_stall.evaluated = true;
+    safer_stall.terminal = SearchTerminalLabel::Loss;
+    safer_stall.final_hp = 0;
+    safer_stall.survival_margin = -1;
+    safer_stall.phase_adjusted_enemy_effort = 240;
+
+    let mut closer_race = safer_stall;
+    closer_race.survival_margin = -20;
+    closer_race.phase_adjusted_enemy_effort = 20;
+
+    assert!(rollout_priority_value(closer_race) > rollout_priority_value(safer_stall));
+}
+
+#[test]
 fn rollout_priority_uses_phase_adjusted_enemy_effort_for_unresolved_states() {
     let mut lower_effort = RolloutNodeEstimate::unevaluated();
     lower_effort.evaluated = true;

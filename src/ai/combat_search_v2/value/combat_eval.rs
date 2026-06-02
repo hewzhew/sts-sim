@@ -101,9 +101,8 @@ impl Ord for CombatEvalV2 {
             .cmp(&other.outcome)
             .then_with(|| self.evidence.cmp(&other.evidence))
             .then_with(|| match self.outcome {
-                CombatEvalOutcomeClass::Win | CombatEvalOutcomeClass::Loss => {
-                    self.compare_terminal(other)
-                }
+                CombatEvalOutcomeClass::Win => self.compare_win(other),
+                CombatEvalOutcomeClass::Loss => self.compare_loss_estimate(other),
                 CombatEvalOutcomeClass::Unresolved => self.compare_unresolved(other),
             })
             .then_with(|| self.resource_conservation.cmp(&other.resource_conservation))
@@ -143,12 +142,21 @@ impl CombatEvalV2 {
         self.enemy_progress
     }
 
-    fn compare_terminal(self, other: &Self) -> Ordering {
+    fn compare_win(self, other: &Self) -> Ordering {
         self.final_hp
             .cmp(&other.final_hp)
             .then_with(|| self.risk_margin.cmp(&other.risk_margin))
             .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
             .then_with(|| self.phase_stability.cmp(&other.phase_stability))
+    }
+
+    fn compare_loss_estimate(self, other: &Self) -> Ordering {
+        self.progress
+            .cmp(&other.progress)
+            .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
+            .then_with(|| self.phase_stability.cmp(&other.phase_stability))
+            .then_with(|| self.risk_margin.cmp(&other.risk_margin))
+            .then_with(|| self.final_hp.cmp(&other.final_hp))
     }
 
     fn compare_unresolved(self, other: &Self) -> Ordering {
