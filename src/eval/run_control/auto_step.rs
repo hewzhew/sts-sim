@@ -71,6 +71,20 @@ pub(super) fn apply_guarded_auto_step(
         }
 
         if session.current_active_combat_position().is_ok() {
+            if high_stakes_auto_search_requires_hp_loss_gate(session, &options.search) {
+                return finish_auto_step(
+                    session,
+                    &before,
+                    applied,
+                    trace_annotations,
+                    "high-stakes combat auto-search requires an hp-loss gate",
+                    Some(
+                        "Use `n max_hp_loss=N` or `nr max_hp_loss=N` for this combat, or `sd max_hp_loss=N` to set a session default. Use `n max_hp_loss=off` only when you deliberately want to accept any winning search line."
+                            .to_string(),
+                    ),
+                );
+            }
+
             let mut no_potion_rejection = None;
             if let Some(no_potion_options) = auto_no_potion_first_options(session, &options.search)
             {
@@ -254,6 +268,24 @@ fn auto_hp_loss_limit_is_set(
     match options.max_hp_loss {
         Some(RunControlHpLossLimit::Limit(_)) => true,
         Some(RunControlHpLossLimit::Unlimited) => false,
+        None => session.search_max_hp_loss.is_some(),
+    }
+}
+
+fn high_stakes_auto_search_requires_hp_loss_gate(
+    session: &RunControlSession,
+    options: &RunControlSearchCombatOptions,
+) -> bool {
+    super::combat_search::active_combat_high_stakes_potion_budget(session).is_some()
+        && !auto_hp_loss_acceptance_is_explicit(session, options)
+}
+
+fn auto_hp_loss_acceptance_is_explicit(
+    session: &RunControlSession,
+    options: &RunControlSearchCombatOptions,
+) -> bool {
+    match options.max_hp_loss {
+        Some(RunControlHpLossLimit::Limit(_) | RunControlHpLossLimit::Unlimited) => true,
         None => session.search_max_hp_loss.is_some(),
     }
 }
@@ -614,7 +646,10 @@ fn indent_block(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{auto_no_potion_first_options, auto_search_options};
+    use super::{
+        apply_guarded_auto_step, auto_no_potion_first_options, auto_search_options,
+        high_stakes_auto_search_requires_hp_loss_gate,
+    };
     use crate::ai::combat_search_v2::{
         CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
     };
@@ -667,6 +702,7 @@ mod tests {
         let mut session = RunControlSession::new(RunControlConfig::default());
         let mut combat = crate::test_support::blank_test_combat();
         combat.meta.is_boss_fight = true;
+        session.engine_state = EngineState::CombatPlayerTurn;
         session.active_combat = Some(ActiveCombat::new(
             EngineState::CombatPlayerTurn,
             combat,
@@ -802,5 +838,71 @@ mod tests {
             ..RunControlSearchCombatOptions::default()
         };
         assert_eq!(auto_no_potion_first_options(&session, &with_evidence), None);
+    }
+
+    #[test]
+    fn high_stakes_auto_search_requires_explicit_hp_loss_gate() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.meta.is_boss_fight = true;
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoomBoss,
+            }),
+        ));
+
+        assert!(high_stakes_auto_search_requires_hp_loss_gate(
+            &session,
+            &RunControlSearchCombatOptions::default()
+        ));
+        assert!(!high_stakes_auto_search_requires_hp_loss_gate(
+            &session,
+            &RunControlSearchCombatOptions {
+                max_hp_loss: Some(RunControlHpLossLimit::Limit(20)),
+                ..RunControlSearchCombatOptions::default()
+            }
+        ));
+        assert!(!high_stakes_auto_search_requires_hp_loss_gate(
+            &session,
+            &RunControlSearchCombatOptions {
+                max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+                ..RunControlSearchCombatOptions::default()
+            }
+        ));
+
+        let outcome = apply_guarded_auto_step(&mut session, Default::default())
+            .expect("guarded auto-step should reject without mutating");
+
+        assert!(outcome.action_result.is_none());
+        assert!(outcome
+            .message
+            .contains("Reason: high-stakes combat auto-search requires an hp-loss gate"));
+        assert!(outcome.message.contains("n max_hp_loss=N"));
+        assert!(matches!(
+            session.engine_state,
+            EngineState::CombatPlayerTurn
+        ));
+        assert!(session.active_combat.is_some());
+    }
+
+    #[test]
+    fn ordinary_auto_search_does_not_require_hp_loss_gate() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            crate::test_support::blank_test_combat(),
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        assert!(!high_stakes_auto_search_requires_hp_loss_gate(
+            &session,
+            &RunControlSearchCombatOptions::default()
+        ));
     }
 }
