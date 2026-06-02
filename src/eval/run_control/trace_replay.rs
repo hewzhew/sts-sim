@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -23,6 +24,7 @@ pub struct SessionTraceReplayReport {
     pub trace_step_count: usize,
     pub applied_steps: Vec<SessionTraceReplayAppliedStep>,
     pub order_drift_steps: Vec<usize>,
+    pub non_blocking_drifts: Vec<SessionTraceReplayDrift>,
     pub stop: SessionTraceReplayStop,
 }
 
@@ -103,9 +105,16 @@ pub fn replay_session_trace_with_recorder(
     let max_steps = options.max_steps.unwrap_or(trace.steps.len());
     let mut applied_steps = Vec::new();
     let mut order_drift_steps = Vec::new();
+    let mut non_blocking_drifts = Vec::new();
 
     for step in trace.steps.iter().take(max_steps) {
         let before = session_trace_boundary_fingerprint(session);
+        non_blocking_drifts.extend(non_blocking_boundary_drifts(
+            step.step_index,
+            SessionTraceReplayDriftPhase::Before,
+            &step.before,
+            &before,
+        ));
         if let Some(drift) = first_boundary_drift(
             step.step_index,
             SessionTraceReplayDriftPhase::Before,
@@ -116,6 +125,7 @@ pub fn replay_session_trace_with_recorder(
                 trace_step_count: trace.steps.len(),
                 applied_steps,
                 order_drift_steps,
+                non_blocking_drifts,
                 stop: SessionTraceReplayStop::Drift(drift),
             };
         }
@@ -130,6 +140,7 @@ pub fn replay_session_trace_with_recorder(
                     trace_step_count: trace.steps.len(),
                     applied_steps,
                     order_drift_steps,
+                    non_blocking_drifts,
                     stop,
                 };
             }
@@ -142,6 +153,7 @@ pub fn replay_session_trace_with_recorder(
                     trace_step_count: trace.steps.len(),
                     applied_steps,
                     order_drift_steps,
+                    non_blocking_drifts,
                     stop: SessionTraceReplayStop::CommandFailed {
                         step_index: step.step_index,
                         command_line,
@@ -161,6 +173,7 @@ pub fn replay_session_trace_with_recorder(
                     trace_step_count: trace.steps.len(),
                     applied_steps,
                     order_drift_steps,
+                    non_blocking_drifts,
                     stop: SessionTraceReplayStop::CommandFailed {
                         step_index: step.step_index,
                         command_line,
@@ -180,6 +193,12 @@ pub fn replay_session_trace_with_recorder(
         });
 
         let after = session_trace_boundary_fingerprint(session);
+        non_blocking_drifts.extend(non_blocking_boundary_drifts(
+            step.step_index,
+            SessionTraceReplayDriftPhase::After,
+            &step.after,
+            &after,
+        ));
         if let Some(drift) = first_boundary_drift(
             step.step_index,
             SessionTraceReplayDriftPhase::After,
@@ -190,6 +209,7 @@ pub fn replay_session_trace_with_recorder(
                 trace_step_count: trace.steps.len(),
                 applied_steps,
                 order_drift_steps,
+                non_blocking_drifts,
                 stop: SessionTraceReplayStop::Drift(drift),
             };
         }
@@ -200,6 +220,7 @@ pub fn replay_session_trace_with_recorder(
                     trace_step_count: trace.steps.len(),
                     applied_steps,
                     order_drift_steps,
+                    non_blocking_drifts,
                     stop: SessionTraceReplayStop::CommandFailed {
                         step_index: step.step_index,
                         command_line,
@@ -221,6 +242,7 @@ pub fn replay_session_trace_with_recorder(
                         trace_step_count: trace.steps.len(),
                         applied_steps,
                         order_drift_steps,
+                        non_blocking_drifts,
                         stop: SessionTraceReplayStop::CommandFailed {
                             step_index: step.step_index,
                             command_line,
@@ -241,6 +263,7 @@ pub fn replay_session_trace_with_recorder(
         trace_step_count: trace.steps.len(),
         applied_steps,
         order_drift_steps,
+        non_blocking_drifts,
         stop,
     }
 }
@@ -264,6 +287,9 @@ pub fn render_session_trace_replay_report(
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
+    }
+    if !report.non_blocking_drifts.is_empty() {
+        lines.extend(render_non_blocking_drifts(&report.non_blocking_drifts));
     }
     lines.push(format!("  stop: {}", replay_stop_summary(&report.stop)));
     match &report.stop {
@@ -356,11 +382,6 @@ fn first_boundary_drift(
 ) -> Option<SessionTraceReplayDrift> {
     let fields = [
         (
-            "decision_step",
-            expected.decision_step.to_string(),
-            actual.decision_step.to_string(),
-        ),
-        (
             "engine_state",
             expected.engine_state.clone(),
             actual.engine_state.clone(),
@@ -398,13 +419,8 @@ fn first_boundary_drift(
         ),
         ("gold", expected.gold.to_string(), actual.gold.to_string()),
         ("boss", expected.boss.clone(), actual.boss.clone()),
-        (
-            "candidate_set_hash",
-            expected.candidate_set_hash.clone(),
-            actual.candidate_set_hash.clone(),
-        ),
     ];
-    fields
+    let structural_drift = fields
         .into_iter()
         .find(|(_, expected, actual)| expected != actual)
         .map(|(field, expected, actual)| SessionTraceReplayDrift {
@@ -413,7 +429,81 @@ fn first_boundary_drift(
             field: field.to_string(),
             expected,
             actual,
+        });
+    if structural_drift.is_some() {
+        return structural_drift;
+    }
+
+    if phase == SessionTraceReplayDriftPhase::Before
+        && expected.candidate_set_hash != actual.candidate_set_hash
+    {
+        return Some(SessionTraceReplayDrift {
+            step_index,
+            phase,
+            field: "candidate_set_hash".to_string(),
+            expected: expected.candidate_set_hash.clone(),
+            actual: actual.candidate_set_hash.clone(),
+        });
+    }
+
+    None
+}
+
+fn non_blocking_boundary_drifts(
+    step_index: usize,
+    phase: SessionTraceReplayDriftPhase,
+    expected: &SessionTraceBoundaryFingerprintV1,
+    actual: &SessionTraceBoundaryFingerprintV1,
+) -> Vec<SessionTraceReplayDrift> {
+    let mut fields = vec![(
+        "decision_step",
+        expected.decision_step.to_string(),
+        actual.decision_step.to_string(),
+    )];
+    if phase == SessionTraceReplayDriftPhase::After {
+        fields.push((
+            "candidate_set_hash",
+            expected.candidate_set_hash.clone(),
+            actual.candidate_set_hash.clone(),
+        ));
+    }
+    fields
+        .into_iter()
+        .filter(|(_, expected, actual)| expected != actual)
+        .map(|(field, expected, actual)| SessionTraceReplayDrift {
+            step_index,
+            phase,
+            field: field.to_string(),
+            expected,
+            actual,
         })
+        .collect()
+}
+
+fn render_non_blocking_drifts(drifts: &[SessionTraceReplayDrift]) -> Vec<String> {
+    let mut lines = vec!["  non-blocking drift(s):".to_string()];
+    let mut by_field = BTreeMap::<&str, usize>::new();
+    for drift in drifts {
+        *by_field.entry(&drift.field).or_insert(0) += 1;
+    }
+    let summary = by_field
+        .into_iter()
+        .map(|(field, count)| format!("{field}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    lines.push(format!("    summary: {summary}"));
+
+    let max_examples = 4;
+    for drift in drifts.iter().take(max_examples) {
+        lines.push(format!(
+            "    example: step={} phase={:?} field={} expected={} actual={}",
+            drift.step_index, drift.phase, drift.field, drift.expected, drift.actual
+        ));
+    }
+    if drifts.len() > max_examples {
+        lines.push(format!("    ... {} more", drifts.len() - max_examples));
+    }
+    lines
 }
 
 fn replay_stop_summary(stop: &SessionTraceReplayStop) -> String {
@@ -499,6 +589,45 @@ mod tests {
     }
 
     #[test]
+    fn replay_trace_warns_but_continues_on_decision_step_drift() {
+        let mut trace = one_step_trace("0");
+        trace.steps[0].before.decision_step += 100;
+        trace.steps[0].after.decision_step += 100;
+        let mut session = RunControlSession::new(RunControlConfig::default());
+
+        let report =
+            replay_session_trace(&mut session, &trace, SessionTraceReplayOptions::default());
+
+        assert_eq!(report.applied_steps.len(), 1);
+        assert!(matches!(report.stop, SessionTraceReplayStop::TraceEnd));
+        assert_eq!(report.non_blocking_drifts.len(), 2);
+        assert!(report
+            .non_blocking_drifts
+            .iter()
+            .all(|drift| drift.field == "decision_step"));
+        assert_eq!(session.decision_step, 1);
+    }
+
+    #[test]
+    fn replay_trace_warns_but_continues_on_after_candidate_set_drift() {
+        let mut trace = one_step_trace("0");
+        trace.steps[0].after.candidate_set_hash = "stale-after-candidate-set".to_string();
+        let mut session = RunControlSession::new(RunControlConfig::default());
+
+        let report =
+            replay_session_trace(&mut session, &trace, SessionTraceReplayOptions::default());
+
+        assert_eq!(report.applied_steps.len(), 1);
+        assert!(matches!(report.stop, SessionTraceReplayStop::TraceEnd));
+        assert!(report
+            .non_blocking_drifts
+            .iter()
+            .any(|drift| drift.phase == SessionTraceReplayDriftPhase::After
+                && drift.field == "candidate_set_hash"));
+        assert_eq!(session.decision_step, 1);
+    }
+
+    #[test]
     fn replay_trace_can_record_replayed_prefix_into_new_trace() {
         let trace = one_step_trace("0");
         let mut session = RunControlSession::new(RunControlConfig::default());
@@ -523,6 +652,25 @@ mod tests {
         assert!(path.exists());
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn non_blocking_drift_render_is_summarized() {
+        let drifts = (0..8)
+            .map(|index| SessionTraceReplayDrift {
+                step_index: index,
+                phase: SessionTraceReplayDriftPhase::After,
+                field: "decision_step".to_string(),
+                expected: index.to_string(),
+                actual: (index + 1).to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        let lines = render_non_blocking_drifts(&drifts);
+
+        assert!(lines[1].contains("summary: decision_step=8"));
+        assert!(lines.iter().any(|line| line.contains("4 more")));
+        assert!(lines.len() < drifts.len());
     }
 
     fn unique_temp_path(prefix: &str) -> PathBuf {
