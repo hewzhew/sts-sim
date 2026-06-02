@@ -138,6 +138,9 @@ Stop batch search after a good-enough exact win:
 cargo run --release --bin combat_search_v2_driver -- --benchmark-spec tools\artifacts\benchmarks\seed521_act1\benchmark.json --max-hp-loss 8
 ```
 
+Benchmark cases with baselines ignore this early-stop gate, so a good-enough
+candidate cannot hide a whole-combat baseline regression.
+
 Potion branches are disabled unless explicitly requested:
 
 ```powershell

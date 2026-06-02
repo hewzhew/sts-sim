@@ -25,7 +25,9 @@ Active binaries:
     bounding potion resource use for budgeted search experiments
   - `--max-hp-loss <N|off>`: stop once an exact complete winning candidate
     with at most that hp loss is found; this is an acceptance gate for budgeted
-    batch runs, not an exhaustive best-line claim
+    batch runs, not an exhaustive best-line claim. Benchmark cases with
+    baselines keep searching normally so this early acceptance cannot create a
+    baseline regression.
   - `--benchmark-spec <path> --explain-case <case_id>`: diagnostic-only
     initial-decision microscope; reports the selected first action, current
     candidate ordering, and exact one-step consequences without writing

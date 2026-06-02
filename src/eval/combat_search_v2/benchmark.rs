@@ -325,6 +325,7 @@ fn run_combat_search_v2_benchmark_case(
     case: &CombatSearchV2LoadedBenchmarkCase,
     options: CombatSearchV2RunOptions,
 ) -> CombatSearchV2BenchmarkCaseReport {
+    let options = benchmark_case_search_options(case, options);
     let search_report = run_combat_search_v2(
         &case.start.position.engine,
         &case.start.position.combat,
@@ -363,6 +364,16 @@ fn run_combat_search_v2_benchmark_case(
             .map(|path| path.display().to_string()),
         baseline_comparison,
     }
+}
+
+fn benchmark_case_search_options(
+    case: &CombatSearchV2LoadedBenchmarkCase,
+    mut options: CombatSearchV2RunOptions,
+) -> CombatSearchV2RunOptions {
+    if case.baseline.is_some() {
+        options.stop_on_win_hp_loss_at_most = None;
+    }
+    options
 }
 
 fn validate_benchmark_case_artifact(
@@ -924,6 +935,38 @@ mod tests {
         assert_eq!(summary.complete_candidate_missing, 1);
     }
 
+    #[test]
+    fn benchmark_case_with_baseline_disables_hp_loss_early_acceptance() {
+        let case = loaded_case_with_baseline(Some(CombatSearchV2BaselineOutcomeSpec {
+            terminal: SearchTerminalLabel::Win,
+            final_hp: 70,
+            potions_used: 0,
+            turns: 4,
+            cards_played: 9,
+        }));
+        let options = CombatSearchV2RunOptions {
+            stop_on_win_hp_loss_at_most: Some(8),
+            ..CombatSearchV2RunOptions::default()
+        };
+
+        let guarded = benchmark_case_search_options(&case, options);
+
+        assert_eq!(guarded.stop_on_win_hp_loss_at_most, None);
+    }
+
+    #[test]
+    fn benchmark_case_without_baseline_keeps_hp_loss_early_acceptance() {
+        let case = loaded_case_with_baseline(None);
+        let options = CombatSearchV2RunOptions {
+            stop_on_win_hp_loss_at_most: Some(8),
+            ..CombatSearchV2RunOptions::default()
+        };
+
+        let guarded = benchmark_case_search_options(&case, options);
+
+        assert_eq!(guarded.stop_on_win_hp_loss_at_most, Some(8));
+    }
+
     fn unique_temp_dir(label: &str) -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -956,5 +999,26 @@ mod tests {
         let (engine, combat) =
             compile_combat_start_spec(&spec).expect("test start spec should compile");
         CombatPosition::new(engine, combat)
+    }
+
+    fn loaded_case_with_baseline(
+        baseline: Option<CombatSearchV2BaselineOutcomeSpec>,
+    ) -> CombatSearchV2LoadedBenchmarkCase {
+        CombatSearchV2LoadedBenchmarkCase {
+            id: "jaw".to_string(),
+            input: CombatSearchV2LoadedBenchmarkInput::new(
+                CombatSearchV2BenchmarkInputKind::StartSpec,
+                PathBuf::from("jaw.json"),
+            ),
+            start: CombatSearchV2LoadedStart {
+                label: "jaw".to_string(),
+                position: jaw_worm_position(),
+                artifact_trust_level: None,
+                fingerprints: None,
+            },
+            expected_fingerprints: None,
+            baseline,
+            baseline_path: None,
+        }
     }
 }
