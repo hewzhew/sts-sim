@@ -20,6 +20,8 @@ pub struct RunControlConfig {
     pub player_class: &'static str,
     pub reward_automation: RewardAutomationConfig,
     pub auto_capture: AutoCombatCaptureConfig,
+    pub search_max_nodes: Option<usize>,
+    pub search_wall_ms: Option<u64>,
     pub search_max_hp_loss: Option<u32>,
 }
 
@@ -32,6 +34,8 @@ impl Default for RunControlConfig {
             player_class: "Ironclad",
             reward_automation: RewardAutomationConfig::default(),
             auto_capture: AutoCombatCaptureConfig::default(),
+            search_max_nodes: None,
+            search_wall_ms: None,
             search_max_hp_loss: None,
         }
     }
@@ -45,6 +49,8 @@ pub struct RunControlSession {
     pub decision_step: u64,
     pub reward_automation: RewardAutomationConfig,
     pub(in crate::eval::run_control) auto_capture: AutoCombatCaptureConfig,
+    pub(in crate::eval::run_control) search_max_nodes: Option<usize>,
+    pub(in crate::eval::run_control) search_wall_ms: Option<u64>,
     pub(in crate::eval::run_control) search_max_hp_loss: Option<u32>,
     pub(super) combat_outcomes: CombatOutcomeTracker,
     pub(in crate::eval::run_control) combat_sequence: u64,
@@ -137,6 +143,8 @@ impl RunControlSession {
             decision_step: 0,
             reward_automation: config.reward_automation,
             auto_capture: config.auto_capture,
+            search_max_nodes: config.search_max_nodes,
+            search_wall_ms: config.search_wall_ms,
             search_max_hp_loss: config.search_max_hp_loss,
             combat_outcomes: CombatOutcomeTracker::default(),
             combat_sequence: 0,

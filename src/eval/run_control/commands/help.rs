@@ -35,7 +35,7 @@ Help:
   Automation:
     n/next/advance-to-human-boundary [route=manual|planner] [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] [rollout=conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=diagnostic_only|root_frontier_seed] [save=case|path] [max_ops=N]
     nr/next-route = n route=planner, with the same options except route=
-    startup flag: --search-max-hp-loss N sets the default hp-loss gate for sc/n/nr
+    startup flags: --search-max-nodes N, --search-wall-ms N, and --search-max-hp-loss N set defaults for sc/n/nr
     auto-reward
     auto-reward gold|potion|all on|off"
 }

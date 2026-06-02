@@ -37,6 +37,12 @@ struct Args {
     auto_capture_combat_root: Option<PathBuf>,
 
     #[arg(long)]
+    search_max_nodes: Option<usize>,
+
+    #[arg(long)]
+    search_wall_ms: Option<u64>,
+
+    #[arg(long)]
     search_max_hp_loss: Option<u32>,
 }
 
@@ -72,6 +78,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             enabled: args.auto_capture_combat,
             root: args.auto_capture_combat_root.clone(),
         },
+        search_max_nodes: args.search_max_nodes,
+        search_wall_ms: args.search_wall_ms,
         search_max_hp_loss: args.search_max_hp_loss,
     });
 
@@ -87,6 +95,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(max_hp_loss) = args.search_max_hp_loss {
         println!(
             "combat search hp-loss gate enabled: default max_hp_loss={max_hp_loss}; use max_hp_loss=off on a command to disable it"
+        );
+    }
+    if args.search_max_nodes.is_some() || args.search_wall_ms.is_some() {
+        let max_nodes = args
+            .search_max_nodes
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "default".to_string());
+        let wall_ms = args
+            .search_wall_ms
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none/default".to_string());
+        println!(
+            "combat search budget defaults: max_nodes={max_nodes} wall_ms={wall_ms}; command-local max_nodes/wall_ms override them"
         );
     }
     let mut trace = args

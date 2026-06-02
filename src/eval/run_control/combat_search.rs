@@ -25,7 +25,7 @@ pub(super) fn apply_search_combat(
     options: RunControlSearchCombatOptions,
 ) -> Result<RunControlCommandOutcome, String> {
     let start = session.current_active_combat_position()?;
-    let config = search_config(options.clone(), session.decision_step);
+    let config = search_config(session, options.clone());
     let report = run_combat_search_v2(&start.engine, &start.combat, config.clone());
     let saved_evidence =
         save_search_evidence_if_requested(session, options.evidence.as_ref(), &report)?;
@@ -198,20 +198,29 @@ fn render_saved_evidence_note(path: Option<&std::path::Path>) -> String {
 }
 
 fn search_config(
+    session: &RunControlSession,
     options: RunControlSearchCombatOptions,
-    decision_step: u64,
 ) -> CombatSearchV2Config {
     let defaults = CombatSearchV2Config::default();
     CombatSearchV2Config {
-        max_nodes: options.max_nodes.unwrap_or(defaults.max_nodes),
+        max_nodes: options
+            .max_nodes
+            .or(session.search_max_nodes)
+            .unwrap_or(defaults.max_nodes),
         max_actions_per_line: options
             .max_actions_per_line
             .unwrap_or(defaults.max_actions_per_line),
         max_engine_steps_per_action: options
             .max_engine_steps_per_action
             .unwrap_or(defaults.max_engine_steps_per_action),
-        wall_time: options.wall_ms.map(std::time::Duration::from_millis),
-        input_label: Some(format!("run_play_driver:search_combat:step{decision_step}")),
+        wall_time: options
+            .wall_ms
+            .or(session.search_wall_ms)
+            .map(std::time::Duration::from_millis),
+        input_label: Some(format!(
+            "run_play_driver:search_combat:step{}",
+            session.decision_step
+        )),
         potion_policy: options.potion_policy.unwrap_or(defaults.potion_policy),
         max_potions_used: options.max_potions_used.or(defaults.max_potions_used),
         rollout_policy: options.rollout_policy.unwrap_or(defaults.rollout_policy),
@@ -392,9 +401,9 @@ fn current_run_apply_status(session: &RunControlSession) -> RunApplyStatus {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    use super::{effective_hp_loss_limit, next_available_evidence_path};
+    use super::{effective_hp_loss_limit, next_available_evidence_path, search_config};
     use crate::eval::run_control::{
         RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     };
@@ -455,5 +464,29 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn search_config_uses_session_budget_defaults_and_command_override() {
+        let session = RunControlSession::new(RunControlConfig {
+            search_max_nodes: Some(1234),
+            search_wall_ms: Some(5678),
+            ..RunControlConfig::default()
+        });
+
+        let config = search_config(&session, RunControlSearchCombatOptions::default());
+        assert_eq!(config.max_nodes, 1234);
+        assert_eq!(config.wall_time, Some(Duration::from_millis(5678)));
+
+        let config = search_config(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(90),
+                wall_ms: Some(12),
+                ..RunControlSearchCombatOptions::default()
+            },
+        );
+        assert_eq!(config.max_nodes, 90);
+        assert_eq!(config.wall_time, Some(Duration::from_millis(12)));
     }
 }

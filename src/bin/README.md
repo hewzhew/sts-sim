@@ -54,8 +54,10 @@ Active binaries:
     selected complete winning candidate, and apply it only if the dry-run
     still wins; budget/frontier coverage is reported separately. Use
     `max_hp_loss=N` to inspect but refuse high-loss complete candidates.
-    Start `run_play_driver` with `--search-max-hp-loss N` to make that the
-    default for `sc`/`n`/`nr`; use command-local `max_hp_loss=off` to override.
+    Start `run_play_driver` with `--search-max-nodes N`, `--search-wall-ms N`,
+    or `--search-max-hp-loss N` to make those defaults for `sc`/`n`/`nr`;
+    command-local `max_nodes=`, `wall_ms=`, and `max_hp_loss=` override them.
+    Use command-local `max_hp_loss=off` to disable the hp-loss gate once.
     `potion=semantic max_potions=N` for semantic resource-bounded potion probes,
     or `potion=all max_potions=N` for a broader comparison.
   - `n` / `next` / `advance-to-human-boundary [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic]`:

@@ -72,7 +72,7 @@ pub(super) fn apply_guarded_auto_step(
         if session.current_active_combat_position().is_ok() {
             let outcome = super::combat_search::apply_search_combat(
                 session,
-                auto_search_options(options.search.clone()),
+                auto_search_options(session, options.search.clone()),
             )?;
             if let Some(result) = outcome.action_result.as_ref() {
                 applied.push(format!("combat search: {}", result.chosen_label));
@@ -191,9 +191,10 @@ fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<St
 }
 
 fn auto_search_options(
+    session: &RunControlSession,
     mut options: RunControlSearchCombatOptions,
 ) -> RunControlSearchCombatOptions {
-    if options.wall_ms.is_none() {
+    if options.wall_ms.is_none() && session.search_wall_ms.is_none() {
         options.wall_ms = Some(DEFAULT_AUTO_SEARCH_WALL_MS);
     }
     options
@@ -533,4 +534,36 @@ fn trim_search_rejection(message: &str) -> String {
         .take(12)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::auto_search_options;
+    use crate::eval::run_control::{
+        RunControlConfig, RunControlSearchCombatOptions, RunControlSession,
+    };
+
+    #[test]
+    fn auto_search_wall_time_uses_session_default_before_auto_fallback() {
+        let session = RunControlSession::new(RunControlConfig {
+            search_wall_ms: Some(30_000),
+            ..RunControlConfig::default()
+        });
+
+        let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
+        assert_eq!(options.wall_ms, None);
+
+        let options = auto_search_options(
+            &session,
+            RunControlSearchCombatOptions {
+                wall_ms: Some(500),
+                ..RunControlSearchCombatOptions::default()
+            },
+        );
+        assert_eq!(options.wall_ms, Some(500));
+
+        let session = RunControlSession::new(RunControlConfig::default());
+        let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
+        assert_eq!(options.wall_ms, Some(5_000));
+    }
 }
