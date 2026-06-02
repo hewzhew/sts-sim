@@ -95,7 +95,21 @@ pub(super) fn render_action_result(result: &ActionResult) -> String {
     for change in &result.changes {
         render_action_result_change(change, &mut lines);
     }
+    if has_relic_result_change(result) {
+        lines.push("  Type `relics` to inspect current relics.".to_string());
+    }
     lines.join("\n")
+}
+
+fn has_relic_result_change(result: &ActionResult) -> bool {
+    result.changes.iter().any(|change| {
+        matches!(
+            change,
+            ActionResultChange::RelicGained { .. }
+                | ActionResultChange::RelicLost { .. }
+                | ActionResultChange::RelicChanged { .. }
+        )
+    })
 }
 
 impl RunVisibleSnapshot {
@@ -745,6 +759,34 @@ mod tests {
         let json = serde_json::to_string(&result).expect("action result should serialize");
         assert!(json.contains("relic_gained"));
         assert!(json.contains("relic_lost"));
+    }
+
+    #[test]
+    fn relic_result_hint_only_appears_for_relic_changes() {
+        let relic_result = ActionResult {
+            chosen_label: "Take relic".to_string(),
+            status: RunApplyStatus::Running,
+            changes: vec![ActionResultChange::RelicGained {
+                relic: RelicId::PeacePipe,
+            }],
+        };
+        let card_result = ActionResult {
+            chosen_label: "Take card".to_string(),
+            status: RunApplyStatus::Running,
+            changes: vec![ActionResultChange::CardAdded {
+                card: CardSnapshot {
+                    id: crate::content::cards::CardId::Clothesline,
+                    uuid: 1,
+                    upgrades: 0,
+                },
+            }],
+        };
+
+        let relic_rendered = render_action_result(&relic_result);
+        let card_rendered = render_action_result(&card_result);
+
+        assert!(relic_rendered.contains("Type `relics` to inspect current relics."));
+        assert!(!card_rendered.contains("Type `relics` to inspect current relics."));
     }
 
     #[test]
