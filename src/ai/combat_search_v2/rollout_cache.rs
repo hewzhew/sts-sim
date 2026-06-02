@@ -255,7 +255,7 @@ impl RolloutCache {
                 "unresolved rollout priority uses phase-adjusted enemy effort from phase_profile",
                 "high-fanout pending choices stop rollout estimates instead of selecting an arbitrary branch",
                 "small pending choices may be followed by rollout, but their actions are still exact simulator inputs and never terminal outcome records",
-                "enemy_mechanics_adaptive_no_potion uses phase-aware rollout only for typed Guardian mechanics and otherwise falls back to conservative_no_potion",
+                "enemy_mechanics_adaptive_no_potion uses phase-aware rollout for typed Guardian/Bronze Automaton mechanics and otherwise falls back to conservative_no_potion",
                 "turn_beam_no_potion uses turn-plan end states as an estimate-only beam and still reports no terminal outcome record",
             ],
         }
@@ -308,6 +308,8 @@ pub(super) fn adaptive_no_potion_rollout_policy(node: &SearchNode) -> CombatSear
     let profile = combat_search_phase_profile(&node.engine, &node.combat);
     if profile.enemy_mechanics.guardian_open_count > 0
         || profile.enemy_mechanics.guardian_defensive_count > 0
+        || profile.enemy_mechanics.bronze_automaton_count > 0
+        || profile.enemy_mechanics.bronze_orb_count > 0
     {
         CombatSearchV2RolloutPolicy::PhaseAwareNoPotion
     } else {
@@ -322,7 +324,7 @@ mod tests {
     use crate::test_support::{blank_test_combat, test_monster};
 
     #[test]
-    fn adaptive_no_potion_rollout_uses_phase_aware_for_guardian_only() {
+    fn adaptive_no_potion_rollout_uses_phase_aware_for_guardian_and_keeps_nob_conservative() {
         let mut guardian_combat = blank_test_combat();
         guardian_combat.entities.monsters = vec![test_monster(EnemyId::TheGuardian)];
 
@@ -337,6 +339,17 @@ mod tests {
         assert_eq!(
             adaptive_no_potion_rollout_policy(&test_search_node(nob_combat)),
             CombatSearchV2RolloutPolicy::ConservativeNoPotion
+        );
+    }
+
+    #[test]
+    fn adaptive_no_potion_rollout_uses_phase_aware_for_bronze_automaton_mechanics() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::BronzeAutomaton)];
+
+        assert_eq!(
+            adaptive_no_potion_rollout_policy(&test_search_node(combat)),
+            CombatSearchV2RolloutPolicy::PhaseAwareNoPotion
         );
     }
 
