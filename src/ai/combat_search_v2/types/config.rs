@@ -33,7 +33,7 @@ impl Default for CombatSearchV2Config {
             rollout_max_evaluations: super::super::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
             rollout_max_actions: super::super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
             rollout_beam_width: super::super::rollout::DEFAULT_TURN_BEAM_WIDTH,
-            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::SupportEnemyTurnBoundaryFrontierSeed,
             frontier_policy: CombatSearchV2FrontierPolicy::SingleQueue,
         }
     }
@@ -91,6 +91,7 @@ pub enum CombatSearchV2TurnPlanPolicy {
     DiagnosticOnly,
     RootFrontierSeed,
     TurnBoundaryFrontierSeed,
+    SupportEnemyTurnBoundaryFrontierSeed,
 }
 
 impl Default for CombatSearchV2TurnPlanPolicy {
@@ -105,6 +106,9 @@ impl CombatSearchV2TurnPlanPolicy {
             Self::DiagnosticOnly => "diagnostic_only",
             Self::RootFrontierSeed => "root_frontier_seed",
             Self::TurnBoundaryFrontierSeed => "turn_boundary_frontier_seed",
+            Self::SupportEnemyTurnBoundaryFrontierSeed => {
+                "support_enemy_turn_boundary_frontier_seed"
+            }
         }
     }
 
@@ -116,7 +120,14 @@ impl CombatSearchV2TurnPlanPolicy {
     }
 
     pub(in crate::ai::combat_search_v2) fn seeds_turn_boundary_frontier(self) -> bool {
-        matches!(self, Self::TurnBoundaryFrontierSeed)
+        matches!(
+            self,
+            Self::TurnBoundaryFrontierSeed | Self::SupportEnemyTurnBoundaryFrontierSeed
+        )
+    }
+
+    pub(in crate::ai::combat_search_v2) fn requires_support_enemy_gate(self) -> bool {
+        matches!(self, Self::SupportEnemyTurnBoundaryFrontierSeed)
     }
 }
 

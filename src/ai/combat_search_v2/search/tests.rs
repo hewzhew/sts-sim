@@ -360,7 +360,7 @@ fn pending_choice_contract_counts_exact_child_resolution() {
 }
 
 #[test]
-fn root_turn_plan_frontier_seed_is_explicit_opt_in() {
+fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
@@ -382,7 +382,7 @@ fn root_turn_plan_frontier_seed_is_explicit_opt_in() {
     assert!(!diagnostic_only.outcome.complete_trajectory_found);
     assert_eq!(
         diagnostic_only.search_policy.turn_plan_policy,
-        "diagnostic_only"
+        "support_enemy_turn_boundary_frontier_seed"
     );
 
     let seeded = run_combat_search_v2_with_stepper(
@@ -407,6 +407,40 @@ fn root_turn_plan_frontier_seed_is_explicit_opt_in() {
         .diagnosis
         .contains(&"turn_plan_frontier_seeded"));
     assert_eq!(seeded.search_policy.turn_plan_policy, "root_frontier_seed");
+}
+
+#[test]
+fn support_enemy_turn_plan_seed_gate_requires_healer_pair() {
+    let mut combat = blank_test_combat();
+    let mut healer = test_monster(EnemyId::Healer);
+    healer.id = 2;
+    combat.entities.monsters = vec![healer];
+
+    assert!(!support_enemy_turn_plan_seed_gate(&test_search_node(
+        combat.clone()
+    )));
+
+    let mut centurion = test_monster(EnemyId::Centurion);
+    centurion.id = 1;
+    combat.entities.monsters.push(centurion);
+
+    assert!(support_enemy_turn_plan_seed_gate(&test_search_node(combat)));
+}
+
+fn test_search_node(combat: CombatState) -> SearchNode {
+    SearchNode {
+        engine: EngineState::CombatPlayerTurn,
+        combat,
+        actions: Vec::new(),
+        turn_prefix: TurnPrefixState::default(),
+        initial_hp: 80,
+        potions_used: 0,
+        potions_discarded: 0,
+        cards_played: 0,
+        potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
+        rollout_estimate: RolloutNodeEstimate::unevaluated(),
+    }
 }
 
 #[test]

@@ -322,10 +322,24 @@ fn seed_turn_plan_frontier(
 }
 
 fn should_seed_turn_plan_at_node(node: &SearchNode, config: &CombatSearchV2Config) -> bool {
-    config.turn_plan_policy.seeds_turn_boundary_frontier()
-        && matches!(node.engine, EngineState::CombatPlayerTurn)
-        && node.turn_prefix.prefix_length() == 0
-        && terminal_label(&node.engine, &node.combat) == SearchTerminalLabel::Unresolved
+    if !config.turn_plan_policy.seeds_turn_boundary_frontier()
+        || !matches!(node.engine, EngineState::CombatPlayerTurn)
+        || node.turn_prefix.prefix_length() != 0
+        || terminal_label(&node.engine, &node.combat) != SearchTerminalLabel::Unresolved
+    {
+        return false;
+    }
+
+    if config.turn_plan_policy.requires_support_enemy_gate() {
+        return support_enemy_turn_plan_seed_gate(node);
+    }
+
+    true
+}
+
+fn support_enemy_turn_plan_seed_gate(node: &SearchNode) -> bool {
+    let profile = combat_search_phase_profile(&node.engine, &node.combat);
+    profile.enemy_mechanics.healer_support_count > 0 && living_enemy_count(&node.combat) >= 2
 }
 
 #[cfg(test)]

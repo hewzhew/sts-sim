@@ -70,3 +70,16 @@ fn bronze_automaton_profile_reports_spawn_and_stasis_pressure() {
     assert_eq!(profile.bronze_orb_count, 1);
     assert_eq!(profile.bronze_orb_stasis_pending_count, 1);
 }
+
+#[test]
+fn healer_profile_reports_support_enemy() {
+    let mut combat = blank_test_combat();
+    let mut healer = test_monster(EnemyId::Healer);
+    healer.id = 2;
+    combat.entities.monsters = vec![healer];
+
+    let profile = enemy_mechanics_profile(&combat);
+
+    assert_eq!(profile.healer_support_count, 1);
+    assert_eq!(profile.tracked_monsters, 1);
+}

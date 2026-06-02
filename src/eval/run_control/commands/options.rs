@@ -203,8 +203,14 @@ fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, S
         | "turn-boundary-frontier-seed" => {
             Ok(CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed)
         }
+        "support_enemy_turn_boundary_frontier_seed"
+        | "support-enemy-turn-boundary-frontier-seed"
+        | "support_turn_boundary_seed"
+        | "support-turn-boundary-seed"
+        | "support_seed"
+        | "support-seed" => Ok(CombatSearchV2TurnPlanPolicy::SupportEnemyTurnBoundaryFrontierSeed),
         _ => Err(format!(
-            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed"
+            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|support_enemy_turn_boundary_frontier_seed"
         )),
     }
 }

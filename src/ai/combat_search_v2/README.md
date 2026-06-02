@@ -10,7 +10,7 @@ this map and extend an existing boundary when one already exists.
 - `frontier/`: frontier queue, priority, `SearchNode`, and resource dominance
   vectors.
 - `types/config.rs`: user-visible policy switches. New experimental behavior
-  should be an explicit opt-in here before it affects search.
+  should be named here before it affects search.
 - `types/report/`: JSON report schema. Add fields only when a consumer uses
   them to make an implementation decision.
 
@@ -33,6 +33,11 @@ this map and extend an existing boundary when one already exists.
     states whenever search reaches a new empty-prefix player-turn boundary,
     with exact source-key de-duplication. It does not prune atomic branches or
     create terminal outcome records by itself.
+  - `support_enemy_turn_boundary_frontier_seed` is the default gated seed. It
+    uses the same exact end-state seeding only at empty-prefix turn boundaries
+    where typed enemy-mechanics facts show a living Healer/support enemy with
+    another living enemy. It is intended for support-enemy fights without
+    globally crowding ordinary combats.
 - `turn_local_dominance/`: same-parent same-turn pruning only. Cross-turn or
   cross-parent dominance belongs in `frontier/` resource dominance, not here.
 

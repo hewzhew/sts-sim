@@ -88,6 +88,7 @@ pub struct CombatSearchV2EnemyMechanicsReport {
     pub gremlin_nob_enrage_count: usize,
     pub gremlin_nob_anger_amount_total: i32,
     pub sentry_dazed_pressure_count: usize,
+    pub healer_support_count: usize,
     pub hexaghost_opening_pressure_count: usize,
     pub bronze_automaton_count: usize,
     pub bronze_automaton_spawn_orbs_pending_count: usize,

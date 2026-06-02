@@ -181,6 +181,20 @@ fn run_control_parser_accepts_auto_step_options() {
             ..Default::default()
         })
     );
+    assert_eq!(
+        parse_run_control_command("nr turn_plan=support_seed")
+            .expect("support-gated turn-plan policy should parse"),
+        RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            route: RunControlRouteAutomationMode::Planner,
+            search: RunControlSearchCombatOptions {
+                turn_plan_policy: Some(
+                    CombatSearchV2TurnPlanPolicy::SupportEnemyTurnBoundaryFrontierSeed
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    );
 }
 
 #[test]
