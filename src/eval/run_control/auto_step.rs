@@ -15,7 +15,8 @@ use super::view_model::{build_run_control_view_model, DecisionCandidate, RunCont
 
 const DEFAULT_MAX_OPERATIONS: usize = 16;
 const DEFAULT_AUTO_SEARCH_WALL_MS: u64 = 5_000;
-const DEFAULT_AUTO_HIGH_STAKES_MAX_POTIONS_USED: u32 = 2;
+const DEFAULT_AUTO_BOSS_MAX_POTIONS_USED: u32 = 2;
+const DEFAULT_AUTO_ELITE_MAX_POTIONS_USED: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AutoAdvanceClass {
@@ -198,23 +199,28 @@ fn auto_search_options(
     if options.wall_ms.is_none() && session.search_wall_ms.is_none() {
         options.wall_ms = Some(DEFAULT_AUTO_SEARCH_WALL_MS);
     }
-    if options.potion_policy.is_none()
-        && session.search_potion_policy.is_none()
-        && active_combat_is_high_stakes(session)
-    {
+    if options.potion_policy.is_none() && session.search_potion_policy.is_none() {
+        let Some(auto_potion_budget) = active_combat_auto_potion_budget(session) else {
+            return options;
+        };
         options.potion_policy =
             Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
         if options.max_potions_used.is_none() && session.search_max_potions_used.is_none() {
-            options.max_potions_used = Some(DEFAULT_AUTO_HIGH_STAKES_MAX_POTIONS_USED);
+            options.max_potions_used = Some(auto_potion_budget);
         }
     }
     options
 }
 
-fn active_combat_is_high_stakes(session: &RunControlSession) -> bool {
-    session.active_combat.as_ref().is_some_and(|active| {
-        active.combat_state.meta.is_boss_fight || active.combat_state.meta.is_elite_fight
-    })
+fn active_combat_auto_potion_budget(session: &RunControlSession) -> Option<u32> {
+    let combat = &session.active_combat.as_ref()?.combat_state;
+    if combat.meta.is_boss_fight {
+        Some(DEFAULT_AUTO_BOSS_MAX_POTIONS_USED)
+    } else if combat.meta.is_elite_fight {
+        Some(DEFAULT_AUTO_ELITE_MAX_POTIONS_USED)
+    } else {
+        None
+    }
 }
 
 fn auto_advance_candidate<'a>(
@@ -602,7 +608,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_search_options_enables_semantic_potions_for_boss_or_elite_auto_combat() {
+    fn auto_search_options_enables_semantic_potions_for_boss_auto_combat() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         let mut combat = crate::test_support::blank_test_combat();
         combat.meta.is_boss_fight = true;
@@ -621,6 +627,28 @@ mod tests {
             Some(CombatSearchV2PotionPolicy::SemanticBudgeted)
         );
         assert_eq!(options.max_potions_used, Some(2));
+    }
+
+    #[test]
+    fn auto_search_options_enables_single_semantic_potion_for_elite_auto_combat() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.meta.is_elite_fight = true;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoomElite,
+            }),
+        ));
+
+        let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
+
+        assert_eq!(
+            options.potion_policy,
+            Some(CombatSearchV2PotionPolicy::SemanticBudgeted)
+        );
+        assert_eq!(options.max_potions_used, Some(1));
     }
 
     #[test]
