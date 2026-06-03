@@ -641,7 +641,7 @@ fn run_control_auto_run_uses_route_planner_by_default() {
 }
 
 #[test]
-fn run_control_auto_run_picks_high_confidence_card_reward() {
+fn run_control_auto_run_stops_on_card_reward_without_pick_certificate() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::Shockwave,
         crate::content::cards::CardId::Clash,
@@ -655,9 +655,12 @@ fn run_control_auto_run_picks_high_confidence_card_reward() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should apply a high-confidence card reward pick");
+        .expect("auto-run should stop without a card reward pick certificate");
 
-    assert!(outcome.message.contains("card reward policy: Shockwave"));
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(outcome.message.contains("card reward policy stopped:"));
     let record = outcome
         .trace_annotations
         .iter()
@@ -678,16 +681,21 @@ fn run_control_auto_run_picks_high_confidence_card_reward() {
         record.data_role,
         crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
     );
-    assert!(session
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+    );
+    assert!(record.values.is_empty());
+    assert!(!session
         .run_state
         .master_deck
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Shockwave));
-    assert!(outcome.action_result.is_some());
+    assert!(outcome.action_result.is_none());
 }
 
 #[test]
-fn run_control_auto_run_opens_and_picks_high_confidence_card_reward_item() {
+fn run_control_auto_run_does_not_open_card_reward_item_without_pick_certificate() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![
             crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Shockwave, 0),
@@ -703,15 +711,22 @@ fn run_control_auto_run_opens_and_picks_high_confidence_card_reward_item() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should open and apply a high-confidence card reward pick");
+        .expect("auto-run should stop before opening a card reward item without a certificate");
 
-    assert!(outcome.message.contains("card reward policy: Shockwave"));
-    assert!(session
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(outcome.message.contains("card reward policy stopped:"));
+    assert!(!session
         .run_state
         .master_deck
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Shockwave));
-    assert!(outcome.action_result.is_some());
+    assert!(outcome.action_result.is_none());
+    let EngineState::RewardScreen(reward) = &session.engine_state else {
+        panic!("card reward item should remain unopened");
+    };
+    assert!(reward.pending_card_choice.is_none());
 }
 
 #[test]
@@ -824,7 +839,7 @@ fn run_control_auto_run_stops_on_ambiguous_card_reward() {
         record.selection.status,
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
     );
-    assert_eq!(record.values.len(), 3);
+    assert!(record.values.is_empty());
     assert!(!session.run_state.master_deck.iter().any(|card| matches!(
         card.id,
         crate::content::cards::CardId::PommelStrike
@@ -874,7 +889,7 @@ fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
         record.selection.status,
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
     );
-    assert_eq!(record.values.len(), 3);
+    assert!(record.values.is_empty());
     assert!(outcome.action_result.is_none());
     let rendered = render_run_control_state(&session);
     assert!(rendered.contains("Command: type visible id to open reward, or skip"));

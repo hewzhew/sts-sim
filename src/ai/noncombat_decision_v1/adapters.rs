@@ -1,6 +1,5 @@
 use crate::ai::card_reward_policy_v1::{
-    CardRewardCandidateScoreV1, CardRewardDecisionV1, CardRewardPolicyActionV1,
-    CardRewardScoreTermsV1,
+    CardRewardCandidateEvidenceV1, CardRewardDecisionV1, CardRewardPolicyActionV1,
 };
 use crate::ai::route_planner_v1::{
     NeedVectorV1, RouteCandidateTraceV1, RouteDecisionTraceV1, RouteSafetyFlagV1, RouteScoreTermsV1,
@@ -109,23 +108,19 @@ impl CardRewardDecisionV1 {
             .zip(candidate_ids.iter())
             .map(|(candidate, id)| card_reward_evidence_item(candidate, id))
             .collect::<Vec<_>>();
-        let values = self
-            .candidates
-            .iter()
-            .zip(candidate_ids.iter())
-            .enumerate()
-            .map(|(idx, (candidate, id))| card_reward_value_estimate(candidate, id, idx))
-            .collect::<Vec<_>>();
         let selection = card_reward_selection(self);
+        let mut allowed_inputs = vec![InformationClassV1::PublicObservation];
+        if self.context.route.is_some() {
+            allowed_inputs.push(InformationClassV1::KnownDistribution);
+            allowed_inputs.push(InformationClassV1::Belief);
+        }
 
         NonCombatDecisionRecordV1 {
             schema_name: NONCOMBAT_DECISION_RECORD_SCHEMA_NAME.to_string(),
             schema_version: NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
             site: DecisionSiteKindV1::CardReward,
             data_role: DataRoleV1::BehaviorPolicyNotTeacher,
-            information_boundary: InformationBoundaryV1::hidden_free(vec![
-                InformationClassV1::PublicObservation,
-            ]),
+            information_boundary: InformationBoundaryV1::hidden_free(allowed_inputs),
             provenance: PolicyProvenanceV1 {
                 source_policy: "card_reward_policy_v1".to_string(),
                 source_schema_name: "CardRewardPolicyV1".to_string(),
@@ -137,11 +132,16 @@ impl CardRewardDecisionV1 {
                 assumptions: vec![
                     "visible reward cards are public observations after the card reward is opened"
                         .to_string(),
-                    "score terms are behavior-policy evidence, not a teacher label".to_string(),
+                    "card reward policy records mechanical facts and evidence gaps, not an optimal action label".to_string(),
+                    "automatic selection requires an explicit pick certificate; no score fallback is allowed".to_string(),
                 ],
-                warnings: Vec::new(),
+                warnings: self
+                    .evidence_gaps
+                    .iter()
+                    .map(|gap| format!("{gap:?}"))
+                    .collect(),
             },
-            values,
+            values: Vec::new(),
             selection,
         }
     }
@@ -290,12 +290,12 @@ fn route_score_components(terms: &RouteScoreTermsV1) -> Vec<ValueComponentV1> {
     ]
 }
 
-fn card_reward_candidate_id(candidate: &CardRewardCandidateScoreV1) -> String {
+fn card_reward_candidate_id(candidate: &CardRewardCandidateEvidenceV1) -> String {
     format!("card_reward:{}:{:?}", candidate.index, candidate.card)
 }
 
 fn card_reward_candidate_descriptor(
-    candidate: &CardRewardCandidateScoreV1,
+    candidate: &CardRewardCandidateEvidenceV1,
     id: &str,
 ) -> CandidateDescriptorV1 {
     CandidateDescriptorV1 {
@@ -307,36 +307,32 @@ fn card_reward_candidate_descriptor(
             command: Some(format!("{}", candidate.index)),
         },
         information_classes: vec![InformationClassV1::PublicObservation],
-        uncertainty_notes: candidate
-            .notes
+        uncertainty_notes: card_reward_uncertainty_notes(candidate),
+    }
+}
+
+fn card_reward_uncertainty_notes(candidate: &CardRewardCandidateEvidenceV1) -> Vec<String> {
+    let mut notes = candidate.impact.evidence_notes.clone();
+    notes.extend(
+        candidate
+            .impact
+            .certification_blockers
             .iter()
-            .map(|note| (*note).to_string())
-            .collect(),
-    }
+            .map(|gap| format!("certificate blocker: {gap:?}")),
+    );
+    notes
 }
 
-fn card_reward_evidence_item(candidate: &CardRewardCandidateScoreV1, id: &str) -> EvidenceItemV1 {
-    EvidenceItemV1 {
-        kind: EvidenceKindV1::ScoreTerms,
-        candidate_id: Some(id.to_string()),
-        label: format!("card reward score for {}", candidate.name),
-        information_class: InformationClassV1::PublicObservation,
-        components: card_reward_score_components(&candidate.terms),
-    }
-}
-
-fn card_reward_value_estimate(
-    candidate: &CardRewardCandidateScoreV1,
+fn card_reward_evidence_item(
+    candidate: &CardRewardCandidateEvidenceV1,
     id: &str,
-    evidence_ref: usize,
-) -> ValueEstimateV1 {
-    ValueEstimateV1 {
-        candidate_id: id.to_string(),
-        mean_utility: candidate.score,
-        risk_adjusted_utility: candidate.score,
-        confidence: 0.65,
-        components: card_reward_score_components(&candidate.terms),
-        evidence_refs: vec![evidence_ref],
+) -> EvidenceItemV1 {
+    EvidenceItemV1 {
+        kind: EvidenceKindV1::CandidateFacts,
+        candidate_id: Some(id.to_string()),
+        label: format!("card reward facts for {}", candidate.name),
+        information_class: InformationClassV1::PublicObservation,
+        components: card_reward_fact_components(candidate),
     }
 }
 
@@ -352,7 +348,7 @@ fn card_reward_selection(decision: &CardRewardDecisionV1) -> PolicySelectionV1 {
             selected_candidate_id: Some(format!("card_reward:{index}:{card:?}")),
             reason: reason.clone(),
             confidence: *confidence,
-            selection_mode: "score_and_margin_gate".to_string(),
+            selection_mode: "pick_certificate_gate".to_string(),
         },
         CardRewardPolicyActionV1::Stop { reason } => PolicySelectionV1 {
             status: if decision.candidates.is_empty() {
@@ -363,22 +359,30 @@ fn card_reward_selection(decision: &CardRewardDecisionV1) -> PolicySelectionV1 {
             selected_candidate_id: None,
             reason: reason.clone(),
             confidence: 0.0,
-            selection_mode: "score_and_margin_gate".to_string(),
+            selection_mode: "pick_certificate_gate".to_string(),
         },
     }
 }
 
-fn card_reward_score_components(terms: &CardRewardScoreTermsV1) -> Vec<ValueComponentV1> {
+fn card_reward_fact_components(candidate: &CardRewardCandidateEvidenceV1) -> Vec<ValueComponentV1> {
     vec![
-        ValueComponentV1::new("frontload", terms.frontload),
-        ValueComponentV1::new("block", terms.block),
-        ValueComponentV1::new("draw", terms.draw),
-        ValueComponentV1::new("scaling", terms.scaling),
-        ValueComponentV1::new("aoe", terms.aoe),
-        ValueComponentV1::new("exhaust_synergy", terms.exhaust_synergy),
-        ValueComponentV1::new("rarity", terms.rarity),
-        ValueComponentV1::new("premium", terms.premium),
-        ValueComponentV1::new("risk", terms.risk),
-        ValueComponentV1::new("bloat", terms.bloat),
+        ValueComponentV1::new(
+            "frontload_damage_delta",
+            candidate.impact.frontload_damage_delta as f32,
+        ),
+        ValueComponentV1::new("block_delta", candidate.impact.block_delta as f32),
+        ValueComponentV1::new("draw_delta", candidate.impact.draw_delta as f32),
+        ValueComponentV1::new("energy_delta", candidate.impact.energy_delta as f32),
+        ValueComponentV1::new("vulnerable", candidate.facts.vulnerable as f32),
+        ValueComponentV1::new("weak", candidate.facts.weak as f32),
+        ValueComponentV1::new("strength_gain", candidate.facts.strength_gain as f32),
+        ValueComponentV1::new(
+            "enemy_strength_down",
+            candidate.facts.enemy_strength_down as f32,
+        ),
+        ValueComponentV1::new(
+            "certification_blockers",
+            candidate.impact.certification_blockers.len() as f32,
+        ),
     ]
 }

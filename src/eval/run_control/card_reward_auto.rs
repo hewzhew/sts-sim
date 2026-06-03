@@ -131,9 +131,19 @@ fn card_reward_decision(
     session: &RunControlSession,
     cards: &[RewardCard],
 ) -> crate::ai::card_reward_policy_v1::CardRewardDecisionV1 {
-    crate::ai::card_reward_policy_v1::plan_card_reward_decision_v1(
+    let route_trace = crate::ai::route_planner_v1::plan_route_decision_v1(
         &session.run_state,
-        cards,
+        &session.engine_state,
+        Default::default(),
+    );
+    let route_trace = (!route_trace.candidates.is_empty()).then_some(route_trace);
+    let context = crate::ai::card_reward_policy_v1::build_card_reward_decision_context_v1(
+        &session.run_state,
+        cards.to_vec(),
+        route_trace.as_ref(),
+    );
+    crate::ai::card_reward_policy_v1::plan_card_reward_decision_v1(
+        &context,
         &crate::ai::card_reward_policy_v1::CardRewardPolicyConfigV1::default(),
     )
 }

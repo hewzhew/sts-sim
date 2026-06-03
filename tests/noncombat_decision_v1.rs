@@ -1,5 +1,6 @@
 use sts_simulator::ai::card_reward_policy_v1::{
-    plan_card_reward_decision_v1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
+    build_card_reward_decision_context_v1, plan_card_reward_decision_v1, CardRewardPolicyActionV1,
+    CardRewardPolicyConfigV1,
 };
 use sts_simulator::ai::noncombat_decision_v1::{
     DataRoleV1, DecisionSiteKindV1, InformationClassV1, PolicySelectionStatusV1,
@@ -50,17 +51,19 @@ fn route_trace_exports_hidden_free_noncombat_record() {
 }
 
 #[test]
-fn card_reward_pick_exports_noncombat_record_without_hidden_inputs() {
+fn card_reward_stop_exports_noncombat_record_without_hidden_inputs_or_values() {
     let run = RunState::new(521, 0, false, "Ironclad");
-    let decision = plan_card_reward_decision_v1(
+    let route_trace = plan_route_decision_v1(&run, &EngineState::MapNavigation, Default::default());
+    let context = build_card_reward_decision_context_v1(
         &run,
-        &[
+        vec![
             RewardCard::new(CardId::Shockwave, 0),
             RewardCard::new(CardId::Clash, 0),
             RewardCard::new(CardId::SeverSoul, 0),
         ],
-        &CardRewardPolicyConfigV1::default(),
+        Some(&route_trace),
     );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
     let record = decision.to_noncombat_decision_record_v1();
 
@@ -69,34 +72,29 @@ fn card_reward_pick_exports_noncombat_record_without_hidden_inputs() {
     assert_eq!(record.data_role, DataRoleV1::BehaviorPolicyNotTeacher);
     assert!(!record.information_boundary.hidden_simulator_state_used);
     assert_eq!(record.candidates.len(), decision.candidates.len());
-    assert_eq!(record.values.len(), decision.candidates.len());
+    assert!(record.values.is_empty());
     assert!(matches!(
         decision.action,
-        CardRewardPolicyActionV1::Pick {
-            card: CardId::Shockwave,
-            ..
-        }
+        CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert_eq!(record.selection.status, PolicySelectionStatusV1::Selected);
-    assert!(record
-        .selection
-        .selected_candidate_id
-        .as_deref()
-        .is_some_and(|id| id.contains("Shockwave")));
+    assert_eq!(record.selection.status, PolicySelectionStatusV1::Stopped);
+    assert!(record.selection.selected_candidate_id.is_none());
+    assert_eq!(record.selection.selection_mode, "pick_certificate_gate");
 }
 
 #[test]
 fn card_reward_stop_exports_noncombat_record_without_selected_candidate() {
     let run = RunState::new(521, 0, false, "Ironclad");
-    let decision = plan_card_reward_decision_v1(
+    let context = build_card_reward_decision_context_v1(
         &run,
-        &[
+        vec![
             RewardCard::new(CardId::PommelStrike, 0),
             RewardCard::new(CardId::ShrugItOff, 0),
             RewardCard::new(CardId::Armaments, 0),
         ],
-        &CardRewardPolicyConfigV1::default(),
+        None,
     );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
     let record = decision.to_noncombat_decision_record_v1();
 
