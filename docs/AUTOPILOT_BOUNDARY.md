@@ -36,6 +36,12 @@ The record must stay hidden-free:
 Adding a new non-combat autopilot policy should adapt to this record boundary
 instead of inventing another report shape.
 
+All generated `NonCombatDecisionRecordV1` values must pass the central
+`validate_noncombat_decision_record_v1` gate before being attached to run-control
+trace annotations. The gate checks schema identity, hidden-state exclusion,
+candidate references, evidence/value references, and whether human-boundary
+records accidentally select an action.
+
 ## Human Boundaries
 
 Autopilot should stop at:

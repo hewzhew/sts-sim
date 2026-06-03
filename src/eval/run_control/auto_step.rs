@@ -617,7 +617,7 @@ fn finish_auto_step(
         lines.extend(detail.lines().map(|line| format!("  {line}")));
     }
     if let Some(annotation) =
-        super::noncombat_boundary::noncombat_human_boundary_annotation(session, &reason)
+        super::noncombat_boundary::noncombat_human_boundary_annotation(session, &reason)?
     {
         trace_annotations.push(annotation);
     }

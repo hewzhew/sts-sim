@@ -132,6 +132,8 @@ fn route_go_attaches_compact_trace_boundary() {
     let record = noncombat_record
         .as_ref()
         .expect("route planner annotation should carry unified noncombat record");
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("route planner noncombat record should validate");
     assert_eq!(
         record.site,
         crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Map

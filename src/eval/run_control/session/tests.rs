@@ -603,13 +603,26 @@ fn run_control_auto_run_picks_high_confidence_card_reward() {
         .expect("auto-run should apply a high-confidence card reward pick");
 
     assert!(outcome.message.contains("card reward policy: Shockwave"));
-    assert!(outcome.trace_annotations.iter().any(|annotation| matches!(
-        annotation,
-        crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-            record
-        } if record.site == crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
-            && record.data_role == crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
-    )));
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } => Some(record),
+            _ => None,
+        })
+        .expect("card reward policy should attach a noncombat record");
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("card reward policy noncombat record should validate");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+    );
     assert!(session
         .run_state
         .master_deck
@@ -1239,14 +1252,17 @@ fn test_session_after_neow_at_map() -> RunControlSession {
 fn noncombat_human_boundary_record(
     outcome: &RunControlCommandOutcome,
 ) -> &crate::ai::noncombat_decision_v1::NonCombatDecisionRecordV1 {
-    outcome
+    let record = outcome
         .trace_annotations
         .iter()
         .find_map(|annotation| match annotation {
             RunControlTraceAnnotationV1::NonCombatHumanBoundary { record } => Some(record),
             _ => None,
         })
-        .expect("outcome should carry a noncombat human boundary record")
+        .expect("outcome should carry a noncombat human boundary record");
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("noncombat human boundary record should validate");
+    record
 }
 
 fn unique_temp_dir(label: &str) -> PathBuf {

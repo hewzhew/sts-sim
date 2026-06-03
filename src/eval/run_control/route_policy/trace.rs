@@ -1,3 +1,6 @@
+use crate::ai::noncombat_decision_v1::{
+    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
+};
 use crate::ai::route_planner_v1::{RouteCandidateTraceV1, RouteDecisionTraceV1};
 
 use super::super::trace_annotation::{RoutePlannerCandidateSummaryV1, RunControlTraceAnnotationV1};
@@ -8,8 +11,16 @@ pub(super) fn route_go_trace_annotation(
     trace: &RouteDecisionTraceV1,
     selected_index: usize,
     candidate: &RouteCandidateTraceV1,
-) -> RunControlTraceAnnotationV1 {
-    RunControlTraceAnnotationV1::RoutePlannerSelection {
+) -> Result<RunControlTraceAnnotationV1, String> {
+    let noncombat_record = trace.to_noncombat_decision_record_v1();
+    validate_noncombat_decision_record_v1(&noncombat_record).map_err(|errors| {
+        format!(
+            "route planner produced invalid NonCombatDecisionRecordV1: {}",
+            render_noncombat_decision_record_validation_errors(&errors)
+        )
+    })?;
+
+    Ok(RunControlTraceAnnotationV1::RoutePlannerSelection {
         summary: render_route_go_auto_step_summary(candidate),
         selected_index: Some(selected_index),
         candidate_count: trace.candidates.len(),
@@ -26,8 +37,8 @@ pub(super) fn route_go_trace_annotation(
             .to_string(),
         top_candidates: route_go_top_candidate_summaries(trace),
         label_role: "behavior_policy_not_teacher".to_string(),
-        noncombat_record: Some(trace.to_noncombat_decision_record_v1()),
-    }
+        noncombat_record: Some(noncombat_record),
+    })
 }
 
 fn route_go_top_candidate_summaries(

@@ -47,7 +47,7 @@ pub(in crate::eval::run_control) fn apply_route_go_with_summary(
     let input = route_candidate_input(&candidate)?;
     let selection = render_route_go_selection(&candidate);
     let auto_step_summary = render_route_go_auto_step_summary(&candidate);
-    let trace_annotation = route_go_trace_annotation(&trace, selected_index, &candidate);
+    let trace_annotation = route_go_trace_annotation(&trace, selected_index, &candidate)?;
     let outcome = session.apply_input(input)?;
     Ok(RouteGoApplied {
         auto_step_summary,

@@ -1,4 +1,5 @@
 use crate::ai::noncombat_decision_v1::{
+    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
     CandidateDescriptorV1, DataRoleV1, DecisionSiteKindV1, EvidenceBundleV1, EvidenceItemV1,
     EvidenceKindV1, InformationBoundaryV1, InformationClassV1, NonCombatDecisionRecordV1,
     PolicyProvenanceV1, PolicySelectionStatusV1, PolicySelectionV1, PublicActionPlanV1,
@@ -17,10 +18,19 @@ use super::view_model::{
 pub(super) fn noncombat_human_boundary_annotation(
     session: &RunControlSession,
     reason: &str,
-) -> Option<RunControlTraceAnnotationV1> {
-    Some(RunControlTraceAnnotationV1::NonCombatHumanBoundary {
-        record: build_noncombat_human_boundary_record_v1(session, reason)?,
-    })
+) -> Result<Option<RunControlTraceAnnotationV1>, String> {
+    let Some(record) = build_noncombat_human_boundary_record_v1(session, reason) else {
+        return Ok(None);
+    };
+    validate_noncombat_decision_record_v1(&record).map_err(|errors| {
+        format!(
+            "human boundary produced invalid NonCombatDecisionRecordV1: {}",
+            render_noncombat_decision_record_validation_errors(&errors)
+        )
+    })?;
+    Ok(Some(RunControlTraceAnnotationV1::NonCombatHumanBoundary {
+        record,
+    }))
 }
 
 pub(super) fn render_current_noncombat_boundary_record(session: &RunControlSession) -> String {

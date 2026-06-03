@@ -1,3 +1,7 @@
+use crate::ai::noncombat_decision_v1::{
+    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
+    NonCombatDecisionRecordV1,
+};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::rewards::{RewardCard, RewardItem};
 
@@ -50,9 +54,7 @@ pub(super) fn apply_card_reward_policy_pick(
     }
     let outcome = session
         .apply_input(ClientInput::SelectCard(index))?
-        .with_trace_annotations(vec![RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-            record: noncombat_record,
-        }]);
+        .with_trace_annotations(vec![noncombat_policy_annotation(noncombat_record)?]);
     Ok(Some((
         outcome,
         card_reward_summary(card, confidence, &reason, decision.label_role),
@@ -76,13 +78,23 @@ fn apply_policy_to_pending_cards(
     };
     let outcome = session
         .apply_input(ClientInput::SelectCard(index))?
-        .with_trace_annotations(vec![RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-            record: noncombat_record,
-        }]);
+        .with_trace_annotations(vec![noncombat_policy_annotation(noncombat_record)?]);
     Ok(Some((
         outcome,
         card_reward_summary(card, confidence, &reason, decision.label_role),
     )))
+}
+
+fn noncombat_policy_annotation(
+    record: NonCombatDecisionRecordV1,
+) -> Result<RunControlTraceAnnotationV1, String> {
+    validate_noncombat_decision_record_v1(&record).map_err(|errors| {
+        format!(
+            "card reward policy produced invalid NonCombatDecisionRecordV1: {}",
+            render_noncombat_decision_record_validation_errors(&errors)
+        )
+    })?;
+    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision { record })
 }
 
 fn card_reward_decision(
