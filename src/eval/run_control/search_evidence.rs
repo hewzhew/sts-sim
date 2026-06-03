@@ -367,4 +367,15 @@ mod tests {
 
         assert!(err.contains("exact_rng_state"));
     }
+
+    #[test]
+    fn search_evidence_validation_rejects_public_safe_privileged_search_claim() {
+        let mut evidence = valid_search_evidence();
+        evidence["report"]["policy_evidence"]["public_safe"] = json!(true);
+
+        let err = validate_combat_search_evidence_v1(&evidence)
+            .expect_err("privileged simulator search evidence cannot claim public safety");
+
+        assert!(err.contains("public_safe"));
+    }
 }

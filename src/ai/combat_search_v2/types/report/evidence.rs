@@ -10,6 +10,37 @@ pub struct CombatSearchV2PolicyEvidenceReport {
     pub hidden_information_risks: Vec<CombatSearchV2HiddenInformationRisk>,
 }
 
+impl CombatSearchV2PolicyEvidenceReport {
+    pub fn information_access_label(&self) -> &'static str {
+        self.information_access.label()
+    }
+
+    pub fn public_safety_label(&self) -> &'static str {
+        if self.public_safe {
+            "public_safe"
+        } else {
+            "not_public_safe"
+        }
+    }
+
+    pub fn hidden_information_risk_labels_csv(&self) -> String {
+        self.hidden_information_risks
+            .iter()
+            .map(|risk| risk.label())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    pub fn machine_summary(&self) -> String {
+        format!(
+            "information_access={} public_safe={} hidden_risks={}",
+            self.information_access_label(),
+            self.public_safe,
+            self.hidden_information_risk_labels_csv()
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2InformationAccess {
@@ -104,7 +135,7 @@ pub fn combat_search_policy_evidence_for_combat(
 mod tests {
     use super::{
         combat_search_policy_evidence_for_combat, CombatSearchV2HiddenInformationRisk,
-        CombatSearchV2InformationAccess,
+        CombatSearchV2InformationAccess, CombatSearchV2PolicyEvidenceReport,
     };
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
@@ -144,6 +175,29 @@ mod tests {
                 Some(risk)
             );
         }
+    }
+
+    #[test]
+    fn policy_evidence_summary_uses_stable_machine_labels() {
+        let evidence = CombatSearchV2PolicyEvidenceReport {
+            information_access: CombatSearchV2InformationAccess::PrivilegedSimulator,
+            public_safe: false,
+            hidden_information_risks: vec![
+                CombatSearchV2HiddenInformationRisk::PrivilegedSimulatorState,
+                CombatSearchV2HiddenInformationRisk::ExactRngState,
+            ],
+        };
+
+        assert_eq!(evidence.information_access_label(), "privileged_simulator");
+        assert_eq!(evidence.public_safety_label(), "not_public_safe");
+        assert_eq!(
+            evidence.hidden_information_risk_labels_csv(),
+            "privileged_simulator_state,exact_rng_state"
+        );
+        assert_eq!(
+            evidence.machine_summary(),
+            "information_access=privileged_simulator public_safe=false hidden_risks=privileged_simulator_state,exact_rng_state"
+        );
     }
 
     #[test]

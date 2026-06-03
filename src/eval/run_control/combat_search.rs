@@ -448,19 +448,7 @@ fn render_search_application(
 }
 
 fn render_policy_evidence_summary(report: &CombatSearchV2Report) -> String {
-    let risks = report
-        .policy_evidence
-        .hidden_information_risks
-        .iter()
-        .map(|risk| risk.label())
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "  information_access={} public_safe={} hidden_risks={}",
-        report.policy_evidence.information_access.label(),
-        report.policy_evidence.public_safe,
-        risks
-    )
+    format!("  {}", report.policy_evidence.machine_summary())
 }
 
 fn current_run_apply_status(session: &RunControlSession) -> RunApplyStatus {

@@ -213,6 +213,9 @@ fn run_control_search_combat_can_save_search_evidence_for_capture_case() {
         .expect("search-combat should finish and save evidence");
 
     assert!(outcome.message.contains("Search evidence saved"));
+    assert!(outcome
+        .message
+        .contains("information_access=privileged_simulator public_safe=false"));
     let evidence_path = root
         .join("search_evidence")
         .join(format!("first_fight.step{decision_step}.search.json"));
@@ -223,6 +226,11 @@ fn run_control_search_combat_can_save_search_evidence_for_capture_case() {
     assert!(payload.contains("\"capture_path\":"));
     assert!(payload.contains("first_fight.capture.json"));
     assert!(payload.contains("\"schema_name\": \"CombatSearchV2Report\""));
+    assert!(payload.contains("\"policy_evidence\":"));
+    assert!(payload.contains("\"information_access\": \"privileged_simulator\""));
+    assert!(payload.contains("\"public_safe\": false"));
+    assert!(payload.contains("\"privileged_simulator_state\""));
+    assert!(payload.contains("\"exact_rng_state\""));
     crate::eval::run_control::load_combat_search_evidence_v1(&evidence_path)
         .expect("search evidence should validate");
 
