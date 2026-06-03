@@ -1,5 +1,6 @@
 use super::session::RunControlSession;
 use crate::state::core::EngineState;
+use crate::state::rewards::{RewardItem, RewardState};
 
 pub(super) fn run_control_next_hint(session: &RunControlSession) -> &'static str {
     match &session.engine_state {
@@ -24,6 +25,11 @@ pub(super) fn run_control_next_hint(session: &RunControlSession) -> &'static str
         {
             "Next: choose a card id or skip; use deck/map/relics before choosing if needed."
         }
+        EngineState::RewardScreen(reward) | EngineState::RewardOverlay { reward_state: reward, .. }
+            if reward_contains_card_item(reward) =>
+        {
+            "Next: open the card reward id, then choose a card or skip; use deck/map/relics first if needed."
+        }
         EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => {
             "Next: choose a visible reward id, or skip to preview the map while unclaimed rewards remain."
         }
@@ -46,4 +52,11 @@ pub(super) fn run_control_next_hint(session: &RunControlSession) -> &'static str
         }
         EngineState::GameOver(_) => "Next: q to exit, or start a new run from the shell.",
     }
+}
+
+fn reward_contains_card_item(reward: &RewardState) -> bool {
+    reward
+        .items
+        .iter()
+        .any(|item| matches!(item, RewardItem::Card { .. }))
 }

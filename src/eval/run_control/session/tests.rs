@@ -511,6 +511,9 @@ fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
     assert!(outcome
         .message
         .contains("Reason: card reward requires human choice"));
+    assert!(outcome
+        .message
+        .contains("Next: open the card reward id, then choose a card or skip"));
     assert!(outcome.action_result.is_none());
     let EngineState::RewardScreen(reward) = &session.engine_state else {
         panic!("ambiguous card reward item should remain unopened");
