@@ -77,6 +77,9 @@ Do not hide route quality assumptions inside one-off command code.
 
 The card reward policy may auto-pick only when confidence and margin gates pass.
 Low-confidence rewards must stop for human choice.
+Those declined policy evaluations still emit `NonCombatDecisionRecordV1` as
+behavior-policy evidence, with `selection.status = Stopped`; this records why
+automation declined without converting the decision into a teacher label.
 
 If a card reward auto-pick later looks bad, the fix belongs in the card reward
 policy boundary, not in trace replay or benchmark labels.

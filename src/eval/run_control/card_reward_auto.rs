@@ -61,6 +61,36 @@ pub(super) fn apply_card_reward_policy_pick(
     )))
 }
 
+pub(super) fn card_reward_policy_stop_annotation(
+    session: &RunControlSession,
+) -> Result<Option<(RunControlTraceAnnotationV1, String)>, String> {
+    if session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == crate::content::relics::RelicId::SingingBowl)
+    {
+        return Ok(None);
+    }
+
+    let cards = active_pending_reward_cards(session)
+        .or_else(|| visible_card_reward_item(session).map(|(_, cards)| cards));
+    let Some(cards) = cards else {
+        return Ok(None);
+    };
+    let decision = card_reward_decision(session, &cards);
+    let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Stop { reason } =
+        &decision.action
+    else {
+        return Ok(None);
+    };
+    let noncombat_record = decision.to_noncombat_decision_record_v1();
+    Ok(Some((
+        noncombat_policy_annotation(noncombat_record)?,
+        format!("card reward policy stopped: {reason}"),
+    )))
+}
+
 fn apply_policy_to_pending_cards(
     session: &mut RunControlSession,
     cards: Vec<RewardCard>,

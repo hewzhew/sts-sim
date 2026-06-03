@@ -680,6 +680,29 @@ fn run_control_auto_run_stops_on_ambiguous_card_reward() {
         .message
         .contains("Reason: card reward requires human choice"));
     assert!(outcome.message.contains("Next: choose a card id or skip"));
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } => Some(record),
+            _ => None,
+        })
+        .expect("declined card reward policy should still attach a noncombat record");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+    );
+    assert_eq!(record.values.len(), 3);
     assert!(!session.run_state.master_deck.iter().any(|card| matches!(
         card.id,
         crate::content::cards::CardId::PommelStrike
@@ -714,6 +737,22 @@ fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
     assert!(outcome
         .message
         .contains("Next: open the card reward id, then choose a card or skip"));
+    assert!(outcome.message.contains("card reward policy stopped:"));
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } => Some(record),
+            _ => None,
+        })
+        .expect("declined unopened card reward policy should attach a noncombat record");
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+    );
+    assert_eq!(record.values.len(), 3);
     assert!(outcome.action_result.is_none());
     let rendered = render_run_control_state(&session);
     assert!(rendered.contains("Command: type visible id to open reward, or skip"));

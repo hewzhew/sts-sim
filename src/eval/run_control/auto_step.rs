@@ -200,6 +200,8 @@ pub(super) fn apply_guarded_auto_step(
             applied.extend(auto_capture_summaries);
             continue;
         }
+        let card_reward_policy_stop =
+            super::card_reward_auto::card_reward_policy_stop_annotation(session)?;
 
         let view = build_run_control_view_model(session);
         if let Some(auto_candidate) = auto_advance_candidate(session, &view) {
@@ -230,13 +232,17 @@ pub(super) fn apply_guarded_auto_step(
             continue;
         }
 
+        let detail = card_reward_policy_stop.map(|(annotation, detail)| {
+            trace_annotations.push(annotation);
+            detail
+        });
         return finish_auto_step(
             session,
             &before,
             applied,
             trace_annotations,
             human_stop_reason(session),
-            None,
+            detail,
         );
     }
 
