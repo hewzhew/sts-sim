@@ -10,7 +10,7 @@ pub struct CombatSearchV2PolicyEvidenceReport {
     pub hidden_information_risks: Vec<CombatSearchV2HiddenInformationRisk>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2InformationAccess {
     PublicObservation,
@@ -26,9 +26,18 @@ impl CombatSearchV2InformationAccess {
             Self::DebugRaw => "debug_raw",
         }
     }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "public_observation" => Some(Self::PublicObservation),
+            "privileged_simulator" => Some(Self::PrivilegedSimulator),
+            "debug_raw" => Some(Self::DebugRaw),
+            _ => None,
+        }
+    }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2HiddenInformationRisk {
     PrivilegedSimulatorState,
@@ -44,6 +53,18 @@ impl CombatSearchV2HiddenInformationRisk {
             Self::ExactRngState => "exact_rng_state",
             Self::ExactDrawPileOrderWithoutFrozenEye => "exact_draw_pile_order_without_frozen_eye",
             Self::ExactMonsterIntentUnderRunicDome => "exact_monster_intent_under_runic_dome",
+        }
+    }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "privileged_simulator_state" => Some(Self::PrivilegedSimulatorState),
+            "exact_rng_state" => Some(Self::ExactRngState),
+            "exact_draw_pile_order_without_frozen_eye" => {
+                Some(Self::ExactDrawPileOrderWithoutFrozenEye)
+            }
+            "exact_monster_intent_under_runic_dome" => Some(Self::ExactMonsterIntentUnderRunicDome),
+            _ => None,
         }
     }
 }
@@ -90,6 +111,40 @@ mod tests {
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::CombatCard;
     use crate::test_support::{blank_test_combat, test_monster};
+
+    #[test]
+    fn policy_evidence_labels_match_serialized_strings() {
+        for access in [
+            CombatSearchV2InformationAccess::PublicObservation,
+            CombatSearchV2InformationAccess::PrivilegedSimulator,
+            CombatSearchV2InformationAccess::DebugRaw,
+        ] {
+            assert_eq!(
+                serde_json::to_value(access).expect("access should serialize"),
+                serde_json::json!(access.label())
+            );
+            assert_eq!(
+                CombatSearchV2InformationAccess::from_label(access.label()),
+                Some(access)
+            );
+        }
+
+        for risk in [
+            CombatSearchV2HiddenInformationRisk::PrivilegedSimulatorState,
+            CombatSearchV2HiddenInformationRisk::ExactRngState,
+            CombatSearchV2HiddenInformationRisk::ExactDrawPileOrderWithoutFrozenEye,
+            CombatSearchV2HiddenInformationRisk::ExactMonsterIntentUnderRunicDome,
+        ] {
+            assert_eq!(
+                serde_json::to_value(risk).expect("risk should serialize"),
+                serde_json::json!(risk.label())
+            );
+            assert_eq!(
+                CombatSearchV2HiddenInformationRisk::from_label(risk.label()),
+                Some(risk)
+            );
+        }
+    }
 
     #[test]
     fn policy_evidence_declares_privileged_non_public_search() {
