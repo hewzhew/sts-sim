@@ -388,6 +388,39 @@ fn run_control_auto_step_neow_stop_exports_human_boundary_record() {
 }
 
 #[test]
+fn run_control_auto_step_event_stop_exports_human_boundary_record() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(crate::state::events::EventState::new(
+        crate::state::events::EventId::GoldenShrine,
+    ));
+    session.engine_state = EngineState::EventRoom;
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .expect("auto-step should stop at strategic event choice");
+
+    let record = noncombat_human_boundary_record(&outcome);
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Event
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+    );
+    assert!(record
+        .selection
+        .reason
+        .contains("event option requires human choice"));
+    assert!(record.candidates.len() > 1);
+    assert!(matches!(session.engine_state, EngineState::EventRoom));
+}
+
+#[test]
 fn run_control_auto_step_shop_stop_exports_human_boundary_record() {
     let mut session = test_session_at_shop();
 
