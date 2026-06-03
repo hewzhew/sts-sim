@@ -371,6 +371,8 @@ fn render_search_rejection(
     }
     lines.extend([
         format!("  coverage_status={:?}", report.outcome.coverage_status),
+        render_search_policy_summary(report),
+        render_search_diagnostics_summary(report),
         render_policy_evidence_summary(report),
         format!(
             "  complete_trajectory_found={}",
@@ -403,6 +405,8 @@ fn render_search_application(
             "  coverage_status={:?} reliability={}",
             report.outcome.coverage_status, report.evidence_reliability.reliability
         ),
+        render_search_policy_summary(report),
+        render_search_diagnostics_summary(report),
         render_policy_evidence_summary(report),
         format!("  coverage_reason={}", report.outcome.coverage_reason),
         format!("  terminal={:?}", trajectory.terminal),
@@ -445,6 +449,31 @@ fn render_search_application(
         lines.push(format!("    ... {} more actions", actions.len() - 12));
     }
     lines.join("\n")
+}
+
+fn render_search_policy_summary(report: &CombatSearchV2Report) -> String {
+    format!(
+        "  frontier_policy={} turn_plan_policy={} rollout_policy={}",
+        report.search_policy.frontier_policy,
+        report.search_policy.turn_plan_policy,
+        report.rollout.policy
+    )
+}
+
+fn render_search_diagnostics_summary(report: &CombatSearchV2Report) -> String {
+    format!(
+        "  search_diagnostics=frontier_remaining={} unresolved_leaf={} max_actions_cut={} engine_step_cut={} potion_budget_cut={} turn_plan_observed={} turn_plan_seeded={} pending_states={} pending_high_fanout={} rollout_budget_skips={}",
+        report.frontier.remaining_states,
+        report.frontier.unresolved_leaf_count,
+        report.frontier.max_actions_cut_count,
+        report.frontier.engine_step_limit_count,
+        report.frontier.potion_budget_cut_count,
+        report.diagnostics.turn_plan.root_states_observed,
+        report.diagnostics.turn_plan.frontier_seeded_nodes,
+        report.diagnostics.pending_choice.pending_choice_states,
+        report.diagnostics.pending_choice.high_fanout_states,
+        report.rollout.budget_skips,
+    )
 }
 
 fn render_policy_evidence_summary(report: &CombatSearchV2Report) -> String {

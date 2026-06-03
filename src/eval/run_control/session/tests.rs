@@ -269,6 +269,15 @@ fn run_control_search_combat_applies_complete_winning_trajectory() {
         .message
         .contains("Search combat applied complete winning candidate"));
     assert!(outcome.message.contains("coverage_status="));
+    assert!(outcome
+        .message
+        .contains("frontier_policy=round_robin_eval_buckets"));
+    assert!(outcome
+        .message
+        .contains("turn_plan_policy=tactical_enemy_turn_boundary_frontier_seed"));
+    assert!(outcome.message.contains("search_diagnostics="));
+    assert!(outcome.message.contains("turn_plan_seeded="));
+    assert!(outcome.message.contains("pending_high_fanout="));
     assert!(outcome.action_result.is_some());
     assert!(session.active_combat.is_none());
     assert_eq!(

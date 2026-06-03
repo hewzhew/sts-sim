@@ -5,6 +5,8 @@ mod finalize;
 
 use finalize::{finish_combat_search_report, SearchFinishInput};
 
+const TURN_PLAN_SEED_CRITICAL_SURVIVAL_MARGIN: i32 = 6;
+
 pub fn run_combat_search_v2(
     engine: &EngineState,
     combat: &CombatState,
@@ -360,9 +362,31 @@ fn should_seed_turn_plan_at_node(node: &SearchNode, config: &CombatSearchV2Confi
 }
 
 fn tactical_enemy_turn_plan_seed_gate(node: &SearchNode) -> bool {
+    if node.combat.meta.is_boss_fight || node.combat.meta.is_elite_fight {
+        return true;
+    }
+
+    if visible_high_pressure_turn_plan_seed_gate(&node.combat) {
+        return true;
+    }
+
     let profile = combat_search_phase_profile(&node.engine, &node.combat);
     (profile.enemy_mechanics.healer_support_count > 0 && living_enemy_count(&node.combat) >= 2)
         || profile.enemy_mechanics.fungi_beast_count >= 3
+}
+
+fn visible_high_pressure_turn_plan_seed_gate(combat: &CombatState) -> bool {
+    let incoming = visible_incoming_damage(combat);
+    if incoming <= 0 {
+        return false;
+    }
+    let survival_margin = combat
+        .entities
+        .player
+        .current_hp
+        .saturating_add(combat.entities.player.block)
+        .saturating_sub(incoming);
+    survival_margin <= TURN_PLAN_SEED_CRITICAL_SURVIVAL_MARGIN
 }
 
 #[cfg(test)]

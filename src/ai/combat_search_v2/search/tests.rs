@@ -552,6 +552,10 @@ fn config_and_turn_plan_policy_defaults_match() {
         CombatSearchV2TurnPlanPolicy::default()
     );
     assert_eq!(
+        CombatSearchV2Config::default().frontier_policy,
+        CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets
+    );
+    assert_eq!(
         CombatSearchV2TurnPlanPolicy::default().label(),
         "tactical_enemy_turn_boundary_frontier_seed"
     );
@@ -593,6 +597,41 @@ fn tactical_enemy_turn_plan_seed_gate_allows_fungi_swarm() {
     let mut third = test_monster(EnemyId::FungiBeast);
     third.id = 3;
     combat.entities.monsters.push(third);
+
+    assert!(tactical_enemy_turn_plan_seed_gate(&test_search_node(
+        combat
+    )));
+}
+
+#[test]
+fn tactical_enemy_turn_plan_seed_gate_allows_boss_and_elite_boundaries() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+
+    assert!(!tactical_enemy_turn_plan_seed_gate(&test_search_node(
+        combat.clone()
+    )));
+
+    combat.meta.is_boss_fight = true;
+    assert!(tactical_enemy_turn_plan_seed_gate(&test_search_node(
+        combat.clone()
+    )));
+
+    combat.meta.is_boss_fight = false;
+    combat.meta.is_elite_fight = true;
+    assert!(tactical_enemy_turn_plan_seed_gate(&test_search_node(
+        combat
+    )));
+}
+
+#[test]
+fn tactical_enemy_turn_plan_seed_gate_allows_visible_high_pressure() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 10;
+    combat.entities.player.block = 0;
+    let mut jaw_worm = test_monster(EnemyId::JawWorm);
+    jaw_worm.set_planned_move_id(1);
+    combat.entities.monsters = vec![jaw_worm];
 
     assert!(tactical_enemy_turn_plan_seed_gate(&test_search_node(
         combat
