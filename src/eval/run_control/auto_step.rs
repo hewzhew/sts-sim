@@ -191,6 +191,16 @@ pub(super) fn apply_guarded_auto_step(
             }
         }
 
+        if let Some((outcome, summary)) =
+            super::card_reward_auto::apply_card_reward_policy_pick(session)?
+        {
+            let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            trace_annotations.extend(outcome.trace_annotations);
+            applied.push(summary);
+            applied.extend(auto_capture_summaries);
+            continue;
+        }
+
         let view = build_run_control_view_model(session);
         if let Some(auto_candidate) = auto_advance_candidate(session, &view) {
             let Some(input) = auto_candidate.candidate.action.executable_input() else {

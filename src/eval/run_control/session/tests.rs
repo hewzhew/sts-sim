@@ -398,6 +398,95 @@ fn run_control_auto_run_uses_route_planner_by_default() {
 }
 
 #[test]
+fn run_control_auto_run_picks_high_confidence_card_reward() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::Shockwave,
+        crate::content::cards::CardId::Clash,
+        crate::content::cards::CardId::SeverSoul,
+    ]);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should apply a high-confidence card reward pick");
+
+    assert!(outcome.message.contains("card reward policy: Shockwave"));
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Shockwave));
+    assert!(outcome.action_result.is_some());
+}
+
+#[test]
+fn run_control_auto_run_stops_on_ambiguous_card_reward() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::PommelStrike,
+        crate::content::cards::CardId::ShrugItOff,
+        crate::content::cards::CardId::Armaments,
+    ]);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should stop when card reward confidence is low");
+
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(!session.run_state.master_deck.iter().any(|card| matches!(
+        card.id,
+        crate::content::cards::CardId::PommelStrike
+            | crate::content::cards::CardId::ShrugItOff
+            | crate::content::cards::CardId::Armaments
+    )));
+    assert!(outcome.action_result.is_none());
+}
+
+#[test]
+fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::Shockwave,
+        crate::content::cards::CardId::Clash,
+        crate::content::cards::CardId::SeverSoul,
+    ]);
+    session
+        .run_state
+        .relics
+        .push(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::SingingBowl,
+        ));
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should stop when Singing Bowl adds a strategic card reward option");
+
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(!session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Shockwave));
+    assert!(outcome.action_result.is_none());
+}
+
+#[test]
 fn run_control_auto_step_route_planner_advances_map_then_stops_at_combat() {
     let mut session = test_session_with_first_monster_room();
 
@@ -806,6 +895,23 @@ fn test_session_at_shop() -> RunControlSession {
         },
     ];
     session.engine_state = EngineState::Shop(shop);
+    session
+}
+
+fn test_session_at_card_reward(card_ids: Vec<crate::content::cards::CardId>) -> RunControlSession {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = None;
+    let cards = card_ids
+        .into_iter()
+        .map(|card_id| crate::state::rewards::RewardCard::new(card_id, 0))
+        .collect::<Vec<_>>();
+    let mut reward = crate::state::rewards::RewardState::new();
+    reward.items = vec![crate::state::rewards::RewardItem::Card {
+        cards: cards.clone(),
+    }];
+    reward.pending_card_choice = Some(cards);
+    reward.pending_card_reward_index = Some(0);
+    session.engine_state = EngineState::RewardScreen(reward);
     session
 }
 

@@ -1,3 +1,4 @@
+pub mod card_reward_policy_v1;
 pub mod combat_belief;
 pub mod combat_search_v2;
 #[cfg_attr(not(test), allow(dead_code))]
