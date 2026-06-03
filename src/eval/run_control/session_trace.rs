@@ -14,7 +14,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 11;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 12;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -79,6 +79,8 @@ pub struct SessionTraceRunConfigV1 {
 pub struct SessionTraceRewardAutomationV1 {
     pub claim_gold: bool,
     pub claim_potion_with_empty_slot: bool,
+    #[serde(default = "default_true")]
+    pub claim_safe_relic_without_sapphire_key: bool,
 }
 
 impl SessionTraceRunConfigV1 {
@@ -93,9 +95,16 @@ impl SessionTraceRunConfigV1 {
                 claim_potion_with_empty_slot: session
                     .reward_automation
                     .claim_potion_with_empty_slot,
+                claim_safe_relic_without_sapphire_key: session
+                    .reward_automation
+                    .claim_safe_relic_without_sapphire_key,
             },
         }
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -734,10 +743,36 @@ mod tests {
         let json = serde_json::to_string_pretty(&trace).expect("trace should serialize");
 
         assert!(json.contains("\"schema_name\": \"SessionTraceV1\""));
-        assert_eq!(trace.schema_version, 11);
+        assert_eq!(trace.schema_version, 12);
         assert!(json.contains("\"label_role\": \"diagnostic_not_teacher_label\""));
         assert!(json.contains("\"trainable_as_action_label\": false"));
         assert!(json.contains("\"policy_quality_claim\": false"));
+    }
+
+    #[test]
+    fn session_trace_records_safe_relic_reward_automation_config() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session
+            .reward_automation
+            .claim_safe_relic_without_sapphire_key = false;
+
+        let trace = SessionTraceV1::new(&session);
+
+        assert!(
+            !trace
+                .run_config
+                .reward_automation
+                .claim_safe_relic_without_sapphire_key
+        );
+    }
+
+    #[test]
+    fn session_trace_reward_automation_defaults_safe_relic_for_old_traces() {
+        let loaded: SessionTraceRewardAutomationV1 =
+            serde_json::from_str(r#"{"claim_gold":true,"claim_potion_with_empty_slot":true}"#)
+                .expect("old reward automation config should deserialize");
+
+        assert!(loaded.claim_safe_relic_without_sapphire_key);
     }
 
     #[test]

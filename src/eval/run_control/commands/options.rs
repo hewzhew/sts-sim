@@ -216,7 +216,9 @@ pub(super) fn parse_auto_reward_command(rest: &[&str]) -> Result<RunControlComma
             target: parse_reward_automation_target(target)?,
             enabled: parse_on_off(enabled)?,
         }),
-        _ => Err("auto-reward expects no args or: auto-reward gold|potion|all on|off".to_string()),
+        _ => Err(
+            "auto-reward expects no args or: auto-reward gold|potion|relic|all on|off".to_string(),
+        ),
     }
 }
 

@@ -106,9 +106,10 @@ Active binaries:
     automatically saves each new combat at the first stable player-turn
     boundary; with `--trace`, these captures are recorded as trace annotations
     and artifact refs
-  - reward screens auto-claim gold/stolen gold and only claim potion rewards
-    when an empty potion slot exists; use `auto-reward gold|potion|all on|off`
-    to inspect or change this convenience setting
+  - reward screens auto-claim gold/stolen gold, safe relic rewards without a
+    same-screen `SapphireKey`, and potion rewards only when an empty potion slot
+    exists; use `auto-reward gold|potion|relic|all on|off` to inspect or change
+    this convenience setting
   - `save-baseline-case <benchmark_dir> <case_id>`: write the last completed
     whole-combat `CombatBaselineOutcomeV1`; if the matching capture exists,
     refresh `benchmark.json`

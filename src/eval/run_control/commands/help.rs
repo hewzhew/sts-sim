@@ -48,7 +48,7 @@ Help:
     startup flag: --record writes this new run to an auto-named trace so mark <name> can be used without typing a trace path
     mark <name> saves the current recorded trace position as a bookmark; start later with --goto <name>
     auto-reward
-    auto-reward gold|potion|all on|off"
+    auto-reward gold|potion|relic|all on|off"
 }
 
 pub fn run_control_short_hint() -> &'static str {

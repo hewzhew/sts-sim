@@ -105,6 +105,11 @@ Safe relic auto-claim emits `NonCombatDecisionRecordV1` with
 `behavior_policy_not_teacher`, and exists so trace/replay can explain why the
 automation changed state.
 
+Use `auto-reward relic off` to disable safe relic auto-claiming for the current
+session. `auto-reward all on|off` includes this relic gate together with
+gold/stolen-gold and empty-slot potion claiming. Session traces record this
+configuration so replay starts with the same reward automation boundary.
+
 Do not extend this boundary to boss relics, blue-key tradeoffs, card rewards,
 or event/shop/campfire choices. Those remain separate decision sites.
 

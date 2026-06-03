@@ -368,6 +368,10 @@ fn run_config_from_args(
                 .run_config
                 .reward_automation
                 .claim_potion_with_empty_slot,
+            claim_safe_relic_without_sapphire_key: trace
+                .run_config
+                .reward_automation
+                .claim_safe_relic_without_sapphire_key,
         })
         .unwrap_or_default();
 

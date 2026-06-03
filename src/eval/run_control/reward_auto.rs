@@ -21,6 +21,7 @@ const MAX_STABLE_ADVANCE_TICKS: usize = 2_000;
 pub struct RewardAutomationConfig {
     pub claim_gold: bool,
     pub claim_potion_with_empty_slot: bool,
+    pub claim_safe_relic_without_sapphire_key: bool,
 }
 
 impl Default for RewardAutomationConfig {
@@ -28,6 +29,7 @@ impl Default for RewardAutomationConfig {
         Self {
             claim_gold: true,
             claim_potion_with_empty_slot: true,
+            claim_safe_relic_without_sapphire_key: true,
         }
     }
 }
@@ -52,9 +54,10 @@ struct RewardAutomationPlan {
 impl RewardAutomationConfig {
     pub fn summary(&self) -> String {
         format!(
-            "auto-reward: gold={} potion_if_empty_slot={}",
+            "auto-reward: gold={} potion_if_empty_slot={} safe_relic_without_sapphire_key={}",
             on_off(self.claim_gold),
-            on_off(self.claim_potion_with_empty_slot)
+            on_off(self.claim_potion_with_empty_slot),
+            on_off(self.claim_safe_relic_without_sapphire_key)
         )
     }
 }
@@ -133,7 +136,7 @@ fn auto_claim_plan(
                 None,
             )))
         }
-        RewardItem::Relic { relic_id } if can_auto_claim_relic_reward(reward) => {
+        RewardItem::Relic { relic_id } if can_auto_claim_relic_reward(session, reward) => {
             let annotation = safe_relic_reward_policy_annotation(reward, index)?;
             Ok(Some(reward_automation_plan(
                 index,
@@ -166,11 +169,14 @@ fn can_auto_claim_potion(session: &RunControlSession) -> bool {
             .any(|relic| relic.id == crate::content::relics::RelicId::Sozu)
 }
 
-fn can_auto_claim_relic_reward(reward: &RewardState) -> bool {
-    !reward
-        .items
-        .iter()
-        .any(|item| matches!(item, RewardItem::SapphireKey))
+fn can_auto_claim_relic_reward(session: &RunControlSession, reward: &RewardState) -> bool {
+    session
+        .reward_automation
+        .claim_safe_relic_without_sapphire_key
+        && !reward
+            .items
+            .iter()
+            .any(|item| matches!(item, RewardItem::SapphireKey))
 }
 
 fn safe_relic_reward_policy_annotation(
@@ -329,9 +335,13 @@ pub(super) fn set_reward_automation(
     match target {
         RewardAutomationTarget::Gold => config.claim_gold = enabled,
         RewardAutomationTarget::Potion => config.claim_potion_with_empty_slot = enabled,
+        RewardAutomationTarget::Relic => {
+            config.claim_safe_relic_without_sapphire_key = enabled;
+        }
         RewardAutomationTarget::All => {
             config.claim_gold = enabled;
             config.claim_potion_with_empty_slot = enabled;
+            config.claim_safe_relic_without_sapphire_key = enabled;
         }
     }
 }
@@ -340,6 +350,7 @@ pub(super) fn set_reward_automation(
 pub enum RewardAutomationTarget {
     Gold,
     Potion,
+    Relic,
     All,
 }
 
@@ -349,9 +360,10 @@ pub fn parse_reward_automation_target(raw: &str) -> Result<RewardAutomationTarge
         "potion" | "potions" | "potion-if-empty" | "potion_if_empty_slot" => {
             Ok(RewardAutomationTarget::Potion)
         }
+        "relic" | "relics" | "safe-relic" | "safe_relic" => Ok(RewardAutomationTarget::Relic),
         "all" => Ok(RewardAutomationTarget::All),
         _ => Err(format!(
-            "unknown auto-reward target '{raw}', expected gold|potion|all"
+            "unknown auto-reward target '{raw}', expected gold|potion|relic|all"
         )),
     }
 }
@@ -523,6 +535,26 @@ mod tests {
                 RewardItem::SapphireKey
             ]
         ));
+    }
+
+    #[test]
+    fn auto_reward_leaves_relic_when_safe_relic_claiming_is_disabled() {
+        let mut session = reward_screen_session(vec![RewardItem::Relic {
+            relic_id: crate::content::relics::RelicId::Anchor,
+        }]);
+        session
+            .reward_automation
+            .claim_safe_relic_without_sapphire_key = false;
+
+        let report = apply_reward_automation(&mut session).expect("automation should run");
+
+        assert!(report.is_empty());
+        assert!(report.trace_annotations.is_empty());
+        assert!(!session
+            .run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == crate::content::relics::RelicId::Anchor));
     }
 
     fn reward_screen_session(items: Vec<RewardItem>) -> RunControlSession {

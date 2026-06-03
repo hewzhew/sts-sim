@@ -270,6 +270,14 @@ fn run_control_parser_accepts_auto_reward_settings() {
             enabled: false,
         }
     );
+    assert_eq!(
+        parse_run_control_command("auto-reward relic off")
+            .expect("auto-reward relic setting should parse"),
+        RunControlCommand::SetRewardAutomation {
+            target: RewardAutomationTarget::Relic,
+            enabled: false,
+        }
+    );
 }
 
 #[test]
