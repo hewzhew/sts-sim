@@ -5,6 +5,9 @@ Artifacts live under `tools/artifacts/` by default and are ignored by git.
 ## Trace
 
 `SessionTraceV1` records successful state-changing commands from a run session.
+It can also store non-combat human-boundary records when automation stops
+without changing state, such as a shop or campfire choice. Those boundary
+records are provenance evidence and do not replay as actions.
 
 Use it for:
 

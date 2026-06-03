@@ -12,7 +12,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 10;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 11;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -26,6 +26,8 @@ pub struct SessionTraceV1 {
     pub lineage: Option<SessionTraceLineageV1>,
     pub run_config: SessionTraceRunConfigV1,
     pub steps: Vec<SessionTraceStepV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boundary_records: Vec<SessionTraceBoundaryRecordV1>,
     pub artifact_refs: Vec<SessionTraceArtifactRefV1>,
 }
 
@@ -40,6 +42,7 @@ impl SessionTraceV1 {
             lineage: None,
             run_config: SessionTraceRunConfigV1::from_session(session),
             steps: Vec::new(),
+            boundary_records: Vec::new(),
             artifact_refs: Vec::new(),
         }
     }
@@ -111,6 +114,18 @@ pub struct SessionTraceStepV1 {
     pub selection_resolution: SessionTraceSelectionResolution,
     pub annotations: Vec<RunControlTraceAnnotationV1>,
     pub action_result: ActionResult,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionTraceBoundaryRecordV1 {
+    pub record_index: usize,
+    pub raw_command_line: String,
+    pub decision_step: u64,
+    pub screen_title: String,
+    pub decision_kind: String,
+    pub boundary: SessionTraceBoundaryFingerprintV1,
+    pub annotations: Vec<RunControlTraceAnnotationV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -434,6 +449,31 @@ impl SessionTraceRecorder {
         self.save()
     }
 
+    pub fn record_boundary_annotations(
+        &mut self,
+        raw_command_line: impl Into<String>,
+        session: &RunControlSession,
+        annotations: &[RunControlTraceAnnotationV1],
+    ) -> Result<bool, String> {
+        if !annotations.iter().any(is_boundary_record_annotation) {
+            return Ok(false);
+        }
+        let view = build_run_control_view_model(session);
+        self.trace
+            .boundary_records
+            .push(SessionTraceBoundaryRecordV1 {
+                record_index: self.trace.boundary_records.len(),
+                raw_command_line: raw_command_line.into(),
+                decision_step: session.decision_step,
+                screen_title: view.header.title.clone(),
+                decision_kind: decision_kind_from_title(&view.header.title),
+                boundary: session_trace_boundary_fingerprint(session),
+                annotations: annotations.to_vec(),
+            });
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn trace(&self) -> &SessionTraceV1 {
         &self.trace
     }
@@ -457,6 +497,13 @@ impl SessionTraceRecorder {
         let payload = serde_json::to_string_pretty(&self.trace).map_err(|err| err.to_string())?;
         fs::write(&self.path, payload).map_err(|err| err.to_string())
     }
+}
+
+fn is_boundary_record_annotation(annotation: &RunControlTraceAnnotationV1) -> bool {
+    matches!(
+        annotation,
+        RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
+    )
 }
 
 fn annotation_artifact_refs(
@@ -676,7 +723,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&trace).expect("trace should serialize");
 
         assert!(json.contains("\"schema_name\": \"SessionTraceV1\""));
-        assert_eq!(trace.schema_version, 10);
+        assert_eq!(trace.schema_version, 11);
         assert!(json.contains("\"label_role\": \"diagnostic_not_teacher_label\""));
         assert!(json.contains("\"trainable_as_action_label\": false"));
         assert!(json.contains("\"policy_quality_claim\": false"));
@@ -730,6 +777,53 @@ mod tests {
         assert!(recorder.trace().steps.is_empty());
         assert!(recorder.trace().artifact_refs.is_empty());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn recorder_records_noncombat_human_boundary_without_action_step() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut shop = crate::state::shop::ShopState::new();
+        shop.cards.push(crate::state::shop::ShopCard {
+            card_id: crate::content::cards::CardId::Armaments,
+            upgrades: 0,
+            price: 49,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+        let path = unique_temp_dir("session_trace_noncombat_boundary").join("trace.json");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+        let command = RunControlCommand::AutoStep(Default::default());
+        let outcome = session
+            .apply_command(command)
+            .expect("auto-step should stop at non-empty shop without mutating");
+
+        assert!(outcome.action_result.is_none());
+        recorder
+            .record_boundary_annotations("n", &session, &outcome.trace_annotations)
+            .expect("boundary annotation should save");
+
+        assert!(recorder.trace().steps.is_empty());
+        assert_eq!(recorder.trace().boundary_records.len(), 1);
+        let boundary = &recorder.trace().boundary_records[0];
+        assert_eq!(boundary.raw_command_line, "n");
+        assert_eq!(boundary.screen_title, "Shop");
+        assert_eq!(boundary.annotations.len(), 1);
+        let RunControlTraceAnnotationV1::NonCombatHumanBoundary { record } =
+            &boundary.annotations[0]
+        else {
+            panic!("expected noncombat human boundary annotation")
+        };
+        assert_eq!(
+            record.data_role,
+            crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
+        );
+        assert_eq!(
+            record.site,
+            crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Shop
+        );
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]

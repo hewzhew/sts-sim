@@ -114,6 +114,7 @@ fn execute_line(
             }
         } else {
             recorder.record_artifact_command(trimmed, session, &command)?;
+            recorder.record_boundary_annotations(trimmed, session, &outcome.trace_annotations)?;
         }
         if let Some(path) = outcome.search_evidence_path.as_ref() {
             recorder.record_search_evidence_artifact(trimmed, session, path)?;
@@ -276,6 +277,33 @@ mod tests {
 
         execute_line(&mut session, "marks", &registry_path, Some(&mut recorder))
             .expect("marks should print");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn terminal_records_noncombat_stop_boundary_without_action_step() {
+        let dir = unique_temp_dir("terminal_noncombat_boundary");
+        let registry_path = dir.join("bookmarks.json");
+        let trace_path = dir.join("trace.json");
+        let mut session = RunControlSession::new(Default::default());
+        let mut shop = sts_simulator::state::shop::ShopState::new();
+        shop.cards.push(sts_simulator::state::shop::ShopCard {
+            card_id: sts_simulator::content::cards::CardId::Armaments,
+            upgrades: 0,
+            price: 49,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = sts_simulator::state::core::EngineState::Shop(shop);
+        let mut recorder = SessionTraceRecorder::new(trace_path, &session);
+
+        execute_line(&mut session, "n", &registry_path, Some(&mut recorder))
+            .expect("auto-step stop should record boundary through terminal");
+
+        assert!(recorder.trace().steps.is_empty());
+        assert_eq!(recorder.trace().boundary_records.len(), 1);
+        assert_eq!(recorder.trace().boundary_records[0].screen_title, "Shop");
 
         let _ = fs::remove_dir_all(dir);
     }
