@@ -10,8 +10,10 @@ use sts_simulator::eval::run_control::{
     SessionTraceReplayOptions, SessionTraceV1,
 };
 
+mod bookmarks;
 mod terminal;
 mod trace_cli;
+use bookmarks::{default_bookmark_registry_path, resolve_goto_bookmark};
 use terminal::{run_repl, run_script};
 use trace_cli::{file_hash, reject_same_trace_path, trace_output_path, validate_trace_args};
 
@@ -56,6 +58,20 @@ struct Args {
 
     #[arg(long, help = "Only replay the first N recorded trace steps")]
     replay_steps: Option<usize>,
+
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Resume from a named bookmark created with `mark <name>`"
+    )]
+    goto: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Bookmark registry path; defaults to tools/artifacts/traces/bookmarks.json"
+    )]
+    bookmark_file: Option<PathBuf>,
 
     #[arg(
         long,
@@ -107,31 +123,39 @@ impl CliPlayerClass {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let bookmark_registry_path = args
+        .bookmark_file
+        .clone()
+        .unwrap_or_else(default_bookmark_registry_path);
+    let goto_plan = args
+        .goto
+        .as_ref()
+        .map(|name| resolve_goto_bookmark(&bookmark_registry_path, name))
+        .transpose()?;
+    validate_goto_args(&args)?;
     validate_trace_args(
-        args.replay_trace.as_ref(),
-        args.continue_trace.as_ref(),
-        args.branch.as_deref(),
+        effective_replay_trace(&args, goto_plan.as_ref()).as_ref(),
+        effective_continue_trace(&args, goto_plan.as_ref()).as_ref(),
+        effective_branch(&args),
     )?;
-    let replay_trace_path = args
-        .continue_trace
+    let replay_trace_path = effective_continue_trace(&args, goto_plan.as_ref())
+        .or_else(|| effective_replay_trace(&args, goto_plan.as_ref()));
+    let replay_trace = replay_trace_path
         .as_ref()
-        .or(args.replay_trace.as_ref())
-        .cloned();
-    let replay_trace = args
-        .continue_trace
-        .as_ref()
-        .or(args.replay_trace.as_ref())
         .map(|path| load_session_trace_v1(path))
         .transpose()?;
     let config = run_config_from_args(&args, replay_trace.as_ref())?;
     let replay_options = SessionTraceReplayOptions {
-        max_steps: args.replay_steps,
+        max_steps: goto_plan
+            .as_ref()
+            .map(|plan| plan.replay_steps)
+            .or(args.replay_steps),
     };
     let mut session = RunControlSession::new(config);
     let trace_path = trace_output_path(
         args.trace.as_ref(),
-        args.continue_trace.as_ref(),
-        args.branch.as_deref(),
+        effective_continue_trace(&args, goto_plan.as_ref()).as_ref(),
+        effective_branch(&args),
     );
     if let (Some(source), Some(output)) = (replay_trace_path.as_ref(), trace_path.as_ref()) {
         reject_same_trace_path(source, output)?;
@@ -213,9 +237,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(script) = args.script.as_ref() {
-        run_script(&mut session, script.as_path(), trace.as_mut())?;
+        run_script(
+            &mut session,
+            script.as_path(),
+            &bookmark_registry_path,
+            trace.as_mut(),
+        )?;
     } else {
-        run_repl(&mut session, trace.as_mut())?;
+        run_repl(&mut session, &bookmark_registry_path, trace.as_mut())?;
+    }
+    Ok(())
+}
+
+fn effective_replay_trace(
+    args: &Args,
+    goto_plan: Option<&bookmarks::GotoBookmarkPlan>,
+) -> Option<PathBuf> {
+    let _ = goto_plan;
+    args.replay_trace.clone()
+}
+
+fn effective_continue_trace(
+    args: &Args,
+    goto_plan: Option<&bookmarks::GotoBookmarkPlan>,
+) -> Option<PathBuf> {
+    goto_plan
+        .map(|plan| plan.source_trace_path.clone())
+        .or_else(|| args.continue_trace.clone())
+}
+
+fn effective_branch(args: &Args) -> Option<&str> {
+    args.goto.as_deref().or(args.branch.as_deref())
+}
+
+fn validate_goto_args(args: &Args) -> Result<(), String> {
+    if args.goto.is_none() {
+        return Ok(());
+    }
+    if args.replay_trace.is_some()
+        || args.continue_trace.is_some()
+        || args.trace.is_some()
+        || args.branch.is_some()
+        || args.replay_steps.is_some()
+    {
+        return Err(
+            "--goto owns trace replay and output; do not combine it with --replay-trace, --continue-trace, --trace, --branch, or --replay-steps"
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -321,6 +389,8 @@ mod tests {
             continue_trace: None,
             branch: None,
             replay_steps: None,
+            goto: None,
+            bookmark_file: None,
             trace: None,
             auto_capture_combat: false,
             auto_capture_combat_root: None,
@@ -371,5 +441,46 @@ mod tests {
         assert_eq!(config.seed, 1);
         assert_eq!(config.ascension_level, 2);
         assert_eq!(config.player_class, "Defect");
+    }
+
+    #[test]
+    fn goto_rejects_explicit_trace_replay_flags() {
+        let mut args = empty_args();
+        args.goto = Some("before_reward".to_string());
+        args.replay_steps = Some(3);
+
+        let err = validate_goto_args(&args).expect_err("goto should own replay steps");
+
+        assert!(err.contains("--goto owns trace replay"));
+    }
+
+    #[test]
+    fn goto_plan_supplies_continue_trace_branch_and_replay_steps() {
+        let mut args = empty_args();
+        args.goto = Some("before_reward".to_string());
+        let plan = bookmarks::GotoBookmarkPlan {
+            source_trace_path: PathBuf::from("tools/artifacts/traces/seed.trace.json"),
+            replay_steps: 12,
+            bookmark: bookmarks::RunPlayBookmarkV1 {
+                name: "before_reward".to_string(),
+                trace_path: "tools/artifacts/traces/seed.trace.json".to_string(),
+                replay_steps: 12,
+                decision_step: 12,
+                screen_title: "Reward Screen".to_string(),
+                act: 1,
+                floor: 2,
+                hp: 80,
+                max_hp: 80,
+                gold: 238,
+                created_at_unix_ms: 0,
+            },
+        };
+
+        assert_eq!(
+            effective_continue_trace(&args, Some(&plan)),
+            Some(PathBuf::from("tools/artifacts/traces/seed.trace.json"))
+        );
+        assert_eq!(effective_branch(&args), Some("before_reward"));
+        assert_eq!(Some(plan.replay_steps), Some(12));
     }
 }

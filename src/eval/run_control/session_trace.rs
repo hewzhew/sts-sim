@@ -438,6 +438,14 @@ impl SessionTraceRecorder {
         &self.trace
     }
 
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn step_count(&self) -> usize {
+        self.trace.steps.len()
+    }
+
     fn save(&self) -> Result<(), String> {
         if let Some(parent) = self
             .path

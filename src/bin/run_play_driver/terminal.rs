@@ -2,6 +2,9 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
+use crate::bookmarks::{
+    mark_current_boundary, render_bookmarks, validate_bookmark_name, RunPlayBookmarkV1,
+};
 use sts_simulator::eval::run_control::{
     parse_run_control_command, render_run_control_state, RunControlCommand, RunControlSession,
     SessionTraceRecorder,
@@ -10,6 +13,7 @@ use sts_simulator::eval::run_control::{
 pub(crate) fn run_script(
     session: &mut RunControlSession,
     script: &Path,
+    bookmark_registry_path: &Path,
     mut trace: Option<&mut SessionTraceRecorder>,
 ) -> Result<(), String> {
     let payload = fs::read_to_string(script).map_err(|err| err.to_string())?;
@@ -19,9 +23,14 @@ pub(crate) fn run_script(
             continue;
         }
         println!("> {trimmed}");
-        if execute_line(session, trimmed, trace.as_deref_mut())
-            .map_err(|err| format!("{}:{}: {err}", script.display(), line_number + 1))?
-            .should_quit
+        if execute_line(
+            session,
+            trimmed,
+            bookmark_registry_path,
+            trace.as_deref_mut(),
+        )
+        .map_err(|err| format!("{}:{}: {err}", script.display(), line_number + 1))?
+        .should_quit
         {
             break;
         }
@@ -31,6 +40,7 @@ pub(crate) fn run_script(
 
 pub(crate) fn run_repl(
     session: &mut RunControlSession,
+    bookmark_registry_path: &Path,
     mut trace: Option<&mut SessionTraceRecorder>,
 ) -> Result<(), String> {
     let stdin = io::stdin();
@@ -49,7 +59,7 @@ pub(crate) fn run_repl(
             );
             continue;
         }
-        match execute_line(session, &line, trace.as_deref_mut()) {
+        match execute_line(session, &line, bookmark_registry_path, trace.as_deref_mut()) {
             Ok(result) if result.should_quit => break,
             Ok(result) => {
                 ignore_blank_after_long_command = result.ignore_following_blank_enter;
@@ -73,9 +83,13 @@ struct ExecuteLineResult {
 fn execute_line(
     session: &mut RunControlSession,
     line: &str,
+    bookmark_registry_path: &Path,
     mut trace: Option<&mut SessionTraceRecorder>,
 ) -> Result<ExecuteLineResult, String> {
     let trimmed = line.trim();
+    if let Some(command) = parse_terminal_bookmark_command(trimmed)? {
+        return execute_bookmark_command(session, bookmark_registry_path, trace, command);
+    }
     let command = parse_run_control_command(line)?;
     if let Some(message) = long_command_progress_message(&command) {
         println!("{message}");
@@ -111,6 +125,81 @@ fn execute_line(
     })
 }
 
+enum TerminalBookmarkCommand {
+    Mark(String),
+    List,
+}
+
+fn parse_terminal_bookmark_command(raw: &str) -> Result<Option<TerminalBookmarkCommand>, String> {
+    let mut parts = raw.split_whitespace();
+    let Some(command) = parts.next() else {
+        return Ok(None);
+    };
+    match command.to_ascii_lowercase().as_str() {
+        "mark" | "bookmark" => {
+            let name = parts.next().ok_or_else(|| {
+                "mark requires a name, for example: mark before_reward".to_string()
+            })?;
+            if parts.next().is_some() {
+                return Err("mark accepts exactly one name".to_string());
+            }
+            validate_bookmark_name(name)?;
+            Ok(Some(TerminalBookmarkCommand::Mark(name.to_string())))
+        }
+        "marks" | "bookmarks" => {
+            if parts.next().is_some() {
+                return Err("marks does not accept arguments".to_string());
+            }
+            Ok(Some(TerminalBookmarkCommand::List))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn execute_bookmark_command(
+    session: &RunControlSession,
+    bookmark_registry_path: &Path,
+    trace: Option<&mut SessionTraceRecorder>,
+    command: TerminalBookmarkCommand,
+) -> Result<ExecuteLineResult, String> {
+    match command {
+        TerminalBookmarkCommand::List => {
+            println!("{}", render_bookmarks(bookmark_registry_path)?);
+        }
+        TerminalBookmarkCommand::Mark(name) => {
+            let recorder = trace.ok_or_else(|| {
+                "mark requires trace recording; start run_play_driver with --trace, --continue-trace, or --goto"
+                    .to_string()
+            })?;
+            let bookmark = mark_current_boundary(
+                bookmark_registry_path,
+                &name,
+                recorder.path(),
+                recorder.step_count(),
+                session,
+            )?;
+            println!("{}", render_mark_saved(&bookmark));
+        }
+    }
+    Ok(ExecuteLineResult {
+        should_quit: false,
+        ignore_following_blank_enter: false,
+    })
+}
+
+fn render_mark_saved(bookmark: &RunPlayBookmarkV1) -> String {
+    format!(
+        "saved bookmark `{}` at {} | Act {} Floor {} | HP {}/{} | replay_steps={}",
+        bookmark.name,
+        bookmark.screen_title,
+        bookmark.act,
+        bookmark.floor,
+        bookmark.hp,
+        bookmark.max_hp,
+        bookmark.replay_steps
+    )
+}
+
 fn long_command_progress_message(command: &RunControlCommand) -> Option<&'static str> {
     match command {
         RunControlCommand::AutoStep(_) => Some(
@@ -138,6 +227,7 @@ fn ignores_following_blank_enter(command: &RunControlCommand) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
     use sts_simulator::eval::run_control::{
         RunControlAutoStepOptions, RunControlSearchCombatOptions,
     };
@@ -158,5 +248,55 @@ mod tests {
         assert!(ignores_following_blank_enter(&auto_run));
         assert!(ignores_following_blank_enter(&search));
         assert!(!ignores_following_blank_enter(&deck));
+    }
+
+    #[test]
+    fn bookmark_commands_save_and_list_trace_position() {
+        let dir = unique_temp_dir("terminal_bookmark");
+        let registry_path = dir.join("bookmarks.json");
+        let trace_path = dir.join("trace.json");
+        let mut session = RunControlSession::new(Default::default());
+        let mut recorder = SessionTraceRecorder::new(trace_path, &session);
+        execute_line(&mut session, "", &registry_path, Some(&mut recorder))
+            .expect("default candidate should record through terminal");
+
+        execute_line(
+            &mut session,
+            "mark before_reward",
+            &registry_path,
+            Some(&mut recorder),
+        )
+        .expect("mark should save bookmark");
+
+        let rendered = render_bookmarks(&registry_path).expect("bookmarks should render");
+        assert!(rendered.contains("before_reward"));
+        assert!(rendered.contains("replay_steps=1"));
+
+        execute_line(&mut session, "marks", &registry_path, Some(&mut recorder))
+            .expect("marks should print");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mark_requires_trace_recording() {
+        let dir = unique_temp_dir("terminal_bookmark_no_trace");
+        let registry_path = dir.join("bookmarks.json");
+        let mut session = RunControlSession::new(Default::default());
+
+        let err = execute_line(&mut session, "mark missing_trace", &registry_path, None)
+            .expect_err("mark without trace should fail");
+
+        assert!(err.contains("mark requires trace recording"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn unique_temp_dir(label: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{label}_{}_{}", std::process::id(), nanos))
     }
 }

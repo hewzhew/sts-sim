@@ -43,6 +43,13 @@ Active binaries:
   - `--trace <path>`: write a `SessionTraceV1` diagnostic fact log for
     successful state-changing commands and benchmark artifact refs; omitted by
     default, with no implicit trace path
+  - `mark <name>` / `marks`: while trace recording is enabled, save or list a
+    named replay bookmark in `tools/artifacts/traces/bookmarks.json`
+  - `--goto <name>`: resume from a named bookmark. This automatically replays
+    the bookmarked trace prefix, records a new continuation trace beside the
+    source trace, and uses the bookmark name as the branch name. It should not
+    be combined with `--trace`, `--replay-trace`, `--continue-trace`,
+    `--branch`, or `--replay-steps`.
   - `case [path]`: save a diagnostic `RunDecisionCaseV1` with no teacher-label
     or policy-quality claim
   - `capture <path> [label]`: save `CombatCaptureV1` only from active stable

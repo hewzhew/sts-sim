@@ -2,7 +2,7 @@ pub fn run_control_help() -> &'static str {
     "\
 Help:
   Core:
-    main/state, deck, map, ms/map-summary, mf/map-full, rs/route-suggest, rg/route-go, relics, potions, inspect <id>, case [path], d/details, r/raw, quit
+    main/state, deck, map, ms/map-summary, mf/map-full, rs/route-suggest, rg/route-go, relics, potions, inspect <id>, case [path], d/details, r/raw, mark <name>, marks, quit
     map = full visible map; ms = route summary; rs = route planner evidence
     n/next = advance to next human choice; ar/auto-run = longer route-planner automation; <id> chooses a visible option
     Enter chooses the single visible option when safe
@@ -44,10 +44,11 @@ Help:
     max_hp_loss also lets search stop early after an exact complete win within that hp-loss limit; this is a practical acceptance gate, not an optimality claim.
     startup flags: --search-max-nodes N, --search-wall-ms N, and --search-max-hp-loss N set initial defaults for sc/n/nr
     sd/search-defaults changes those defaults inside the current session
+    mark <name> saves the current recorded trace position as a bookmark; start later with --goto <name>
     auto-reward
     auto-reward gold|potion|all on|off"
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "main | n=advance | nr=route-advance | ar=auto-run | deck | map=full-map | ms=route-summary | rs=route-suggest | rg=route-go | sd=search-defaults | relics | potions | inspect <id> | auto-reward | details | raw | help"
+    "main | n=advance | nr=route-advance | ar=auto-run | mark <name> | marks | deck | map=full-map | ms=route-summary | rs=route-suggest | rg=route-go | sd=search-defaults | relics | potions | inspect <id> | auto-reward | details | raw | help"
 }
