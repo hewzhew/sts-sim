@@ -20,8 +20,14 @@ stack for Slay the Spire. The most important loop is:
 - simulator correctness and Java-mechanics parity when real runs expose bugs
 - observation boundaries: public, hidden, random, and privileged simulator state
 - Combat Search V2 value, rollout, frontier, and special-phase handling
-- guarded autopilot for reducing manual repetition during data collection
-- trace, bookmark, capture, baseline, and benchmark artifact hygiene
+- Phase 1 non-combat policy quality: route, deck, card reward, shop, campfire,
+  event, and boss relic decisions under explicit boundaries
+
+## Closed Foundation
+
+Phase 0 run-control automation and provenance boundaries are considered closed.
+Use [PHASE_0_EXIT.md](PHASE_0_EXIT.md) as the completion line. Future work in
+that area should be bugfixes or compatibility fixes, not new policy behavior.
 
 ## Not The Main Line
 

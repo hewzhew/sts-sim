@@ -15,6 +15,7 @@ handoffs, or outdated command flags.
 ## Read First
 
 - [CURRENT_DIRECTION.md](CURRENT_DIRECTION.md)
+- [PHASE_0_EXIT.md](PHASE_0_EXIT.md)
 - [RUN_PLAY_GUIDE.md](RUN_PLAY_GUIDE.md)
 - [AUTOPILOT_BOUNDARY.md](AUTOPILOT_BOUNDARY.md)
 - [ARTIFACTS.md](ARTIFACTS.md)
