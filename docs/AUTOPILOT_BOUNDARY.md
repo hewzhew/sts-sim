@@ -43,6 +43,9 @@ candidate references, evidence/value references, and whether human-boundary
 records accidentally select an action.
 The session trace recorder runs the same validation again before writing
 annotations, so future producers cannot silently bypass the boundary.
+Trace loading also validates existing annotations; old traces with invalid
+non-combat records must be fixed, regenerated, or treated as retired debug
+artifacts instead of replaying silently.
 
 ## Human Boundaries
 

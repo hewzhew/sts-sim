@@ -12,7 +12,9 @@ use super::session_trace::{
     SessionTraceRecorder, SessionTraceSelectionResolution, SessionTraceStepSourceV1,
     SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME, SESSION_TRACE_SCHEMA_VERSION,
 };
-use super::trace_annotation::RunControlTraceAnnotationV1;
+use super::trace_annotation::{
+    validate_run_control_trace_annotations_v1, RunControlTraceAnnotationV1,
+};
 use super::view_model::build_run_control_view_model;
 
 #[derive(Clone, Debug, Default)]
@@ -86,7 +88,20 @@ pub fn load_session_trace_v1(path: &Path) -> Result<SessionTraceV1, String> {
             trace.schema_version
         ));
     }
+    validate_loaded_trace_annotations(&trace)?;
     Ok(trace)
+}
+
+fn validate_loaded_trace_annotations(trace: &SessionTraceV1) -> Result<(), String> {
+    for step in &trace.steps {
+        validate_run_control_trace_annotations_v1(&step.annotations)
+            .map_err(|error| format!("trace step {} {error}", step.step_index))?;
+    }
+    for boundary in &trace.boundary_records {
+        validate_run_control_trace_annotations_v1(&boundary.annotations)
+            .map_err(|error| format!("boundary record {} {error}", boundary.record_index))?;
+    }
+    Ok(())
 }
 
 pub fn replay_session_trace(
@@ -637,6 +652,54 @@ mod tests {
         assert_eq!(report.applied_steps.len(), 1);
         assert!(matches!(report.stop, SessionTraceReplayStop::TraceEnd));
         assert_eq!(session.decision_step, 1);
+    }
+
+    #[test]
+    fn load_trace_rejects_invalid_noncombat_record_annotation() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.engine_state = EngineState::MapNavigation;
+        let path = unique_temp_path("trace_replay_invalid_noncombat_load").join("trace.json");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+        let command = RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            max_operations: Some(1),
+            ..Default::default()
+        });
+        let pending = SessionTraceRecorder::prepare_step(&session, "n route=planner", &command);
+        let outcome = session
+            .apply_command(command)
+            .expect("route planner should produce a trace annotation");
+        let action_result = outcome
+            .action_result
+            .as_ref()
+            .expect("route planner should change state");
+        recorder
+            .record_action_step(pending, &session, action_result, &outcome.trace_annotations)
+            .expect("valid route planner trace should save");
+        let mut trace = recorder.trace().clone();
+        let RunControlTraceAnnotationV1::RoutePlannerSelection {
+            noncombat_record: Some(record),
+            ..
+        } = &mut trace.steps[0].annotations[0]
+        else {
+            panic!("expected route planner noncombat record");
+        };
+        record.information_boundary.hidden_simulator_state_used = true;
+        fs::create_dir_all(path.parent().unwrap()).expect("trace parent should exist");
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&trace).expect("trace should serialize"),
+        )
+        .expect("invalid trace fixture should be written");
+
+        let err =
+            load_session_trace_v1(&path).expect_err("loader should reject invalid annotation");
+
+        assert!(err.contains("invalid NonCombatDecisionRecordV1"));
+        assert!(err.contains("information_boundary.hidden_simulator_state_used"));
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
