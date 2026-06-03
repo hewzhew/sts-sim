@@ -46,6 +46,8 @@ annotations, so future producers cannot silently bypass the boundary.
 Trace loading also validates existing annotations; old traces with invalid
 non-combat records must be fixed, regenerated, or treated as retired debug
 artifacts instead of replaying silently.
+Stopped/no-candidate policy records can also be persisted as boundary records
+without requiring a separate human-boundary annotation.
 
 ## Human Boundaries
 

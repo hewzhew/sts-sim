@@ -504,10 +504,17 @@ impl SessionTraceRecorder {
 }
 
 fn is_boundary_record_annotation(annotation: &RunControlTraceAnnotationV1) -> bool {
-    matches!(
-        annotation,
-        RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
-    )
+    match annotation {
+        RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. } => true,
+        RunControlTraceAnnotationV1::NonCombatPolicyDecision { record } => matches!(
+            record.selection.status,
+            crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+                | crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::NoCandidates
+        ),
+        RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+        | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
+        | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => false,
+    }
 }
 
 fn annotation_artifact_refs(
@@ -825,6 +832,67 @@ mod tests {
         assert_eq!(
             record.site,
             crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Shop
+        );
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn recorder_records_stopped_noncombat_policy_boundary_without_human_annotation() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        let mut reward = crate::state::rewards::RewardState::new();
+        reward.items = vec![crate::state::rewards::RewardItem::Card {
+            cards: vec![
+                crate::state::rewards::RewardCard::new(
+                    crate::content::cards::CardId::PommelStrike,
+                    0,
+                ),
+                crate::state::rewards::RewardCard::new(
+                    crate::content::cards::CardId::ShrugItOff,
+                    0,
+                ),
+                crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Armaments, 0),
+            ],
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+        let path =
+            unique_temp_dir("session_trace_stopped_noncombat_policy_boundary").join("trace.json");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+        let outcome = session
+            .apply_command(RunControlCommand::AutoRun(RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            }))
+            .expect("ambiguous card reward should stop with policy evidence");
+        let policy_annotations = outcome
+            .trace_annotations
+            .iter()
+            .filter(|annotation| {
+                matches!(
+                    annotation,
+                    RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(policy_annotations.len(), 1);
+
+        let recorded = recorder
+            .record_boundary_annotations("ar", &session, &policy_annotations)
+            .expect("stopped noncombat policy annotation should be recordable");
+
+        assert!(recorded);
+        assert!(recorder.trace().steps.is_empty());
+        assert_eq!(recorder.trace().boundary_records.len(), 1);
+        let RunControlTraceAnnotationV1::NonCombatPolicyDecision { record } =
+            &recorder.trace().boundary_records[0].annotations[0]
+        else {
+            panic!("expected stopped noncombat policy annotation");
+        };
+        assert_eq!(
+            record.selection.status,
+            crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
         );
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
