@@ -200,7 +200,7 @@ pub(crate) fn early_frontload_value(card_id: CardId, needs: &DeckNeedsV1) -> f32
 
 pub(crate) fn debuff_control_value(card_id: CardId, needs: &DeckNeedsV1) -> f32 {
     let value = match card_id {
-        CardId::Clothesline => 3.2,
+        CardId::Clothesline => 1.4,
         CardId::Uppercut => 3.0,
         CardId::Shockwave => 2.2,
         CardId::Disarm => 2.0,

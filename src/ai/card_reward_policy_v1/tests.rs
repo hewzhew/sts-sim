@@ -74,7 +74,7 @@ fn policy_picks_targeted_early_frontload_over_weaker_attack_and_cycle() {
 }
 
 #[test]
-fn policy_picks_early_attack_with_weak_over_scaling_traps() {
+fn policy_stops_when_early_attack_choice_depends_on_archetype_or_route() {
     let run_state = RunState::new(915824392, 0, false, "Ironclad");
     let decision = plan_card_reward_decision_v1(
         &run_state,
@@ -88,12 +88,22 @@ fn policy_picks_early_attack_with_weak_over_scaling_traps() {
 
     assert!(matches!(
         decision.action,
-        CardRewardPolicyActionV1::Pick {
-            index: 2,
-            card: CardId::Clothesline,
-            ..
-        }
+        CardRewardPolicyActionV1::Stop { .. }
     ));
+    assert_eq!(decision.candidates[0].card, CardId::Clothesline);
+    assert!(decision.candidates[0].notes.contains(&"debuff-control"));
+    let searing_blow = decision
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::SearingBlow)
+        .expect("Searing Blow candidate should be scored");
+    assert!(searing_blow.notes.contains(&"route-upgrade-dependent"));
+    let heavy_blade = decision
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::HeavyBlade)
+        .expect("Heavy Blade candidate should be scored");
+    assert!(heavy_blade.notes.contains(&"strength-dependent"));
 }
 
 #[test]

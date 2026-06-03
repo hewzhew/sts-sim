@@ -746,7 +746,7 @@ fn run_control_auto_run_opens_and_picks_early_frontload_card_reward_item() {
 }
 
 #[test]
-fn run_control_auto_run_opens_and_picks_early_weak_attack_card_reward_item() {
+fn run_control_auto_run_stops_on_archetype_dependent_early_attack_reward_item() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![
             crate::state::rewards::RewardCard::new(crate::content::cards::CardId::SearingBlow, 0),
@@ -762,15 +762,19 @@ fn run_control_auto_run_opens_and_picks_early_weak_attack_card_reward_item() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should open and pick the early Weak attack reward");
+        .expect("auto-run should stop when reward depends on archetype or route context");
 
-    assert!(outcome.message.contains("card reward policy: Clothesline"));
-    assert!(session
-        .run_state
-        .master_deck
-        .iter()
-        .any(|card| card.id == crate::content::cards::CardId::Clothesline));
-    assert!(outcome.action_result.is_some());
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(outcome.message.contains("card reward policy stopped:"));
+    assert!(!session.run_state.master_deck.iter().any(|card| matches!(
+        card.id,
+        crate::content::cards::CardId::SearingBlow
+            | crate::content::cards::CardId::HeavyBlade
+            | crate::content::cards::CardId::Clothesline
+    )));
+    assert!(outcome.action_result.is_none());
 }
 
 #[test]

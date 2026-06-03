@@ -134,6 +134,11 @@ fn score_candidate(
     if terms.risk < 0.0 {
         notes.push("conditional-risk");
     }
+    match reward_card.id {
+        CardId::SearingBlow => notes.push("route-upgrade-dependent"),
+        CardId::HeavyBlade => notes.push("strength-dependent"),
+        _ => {}
+    }
     if upgrades > 0.0 {
         terms.premium += 0.35 * upgrades;
         notes.push("upgraded");
