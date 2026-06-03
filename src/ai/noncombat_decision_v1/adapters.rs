@@ -371,6 +371,7 @@ fn card_reward_selection(decision: &CardRewardDecisionV1) -> PolicySelectionV1 {
 fn card_reward_score_components(terms: &CardRewardScoreTermsV1) -> Vec<ValueComponentV1> {
     vec![
         ValueComponentV1::new("frontload", terms.frontload),
+        ValueComponentV1::new("early_frontload", terms.early_frontload),
         ValueComponentV1::new("block", terms.block),
         ValueComponentV1::new("draw", terms.draw),
         ValueComponentV1::new("scaling", terms.scaling),

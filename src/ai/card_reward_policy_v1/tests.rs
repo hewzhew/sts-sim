@@ -50,6 +50,30 @@ fn policy_stops_when_good_cards_are_too_close() {
 }
 
 #[test]
+fn policy_picks_targeted_early_frontload_over_weaker_attack_and_cycle() {
+    let run_state = RunState::new(521, 0, false, "Ironclad");
+    let decision = plan_card_reward_decision_v1(
+        &run_state,
+        &[
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::SwordBoomerang, 0),
+            RewardCard::new(CardId::Warcry, 0),
+        ],
+        &CardRewardPolicyConfigV1::default(),
+    );
+
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Pick {
+            index: 0,
+            card: CardId::TwinStrike,
+            ..
+        }
+    ));
+    assert!(decision.candidates[0].notes.contains(&"early-frontload"));
+}
+
+#[test]
 fn policy_stops_on_single_card_that_does_not_clear_score_gate() {
     let run_state = RunState::new(521, 0, false, "Ironclad");
     let decision = plan_card_reward_decision_v1(

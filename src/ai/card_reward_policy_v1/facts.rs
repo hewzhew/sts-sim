@@ -47,6 +47,14 @@ pub(crate) fn deck_needs(run_state: &RunState, config: &CardRewardPolicyConfigV1
         } else {
             0.30
         },
+        need_early_frontload: if run_state.act_num == 1
+            && run_state.floor_num <= 3
+            && (damage < 55 || starter_cards >= 8)
+        {
+            1.0
+        } else {
+            0.0
+        },
         need_block: if block < 28 {
             0.85
         } else if block < 45 {
@@ -64,6 +72,7 @@ pub(crate) fn deck_needs(run_state: &RunState, config: &CardRewardPolicyConfigV1
         need_scaling: if scaling == 0 { 0.80 } else { 0.35 },
         has_exhaust_payoff: exhaust_payoff,
         is_late_deck: deck_size >= config.late_deck_size,
+        is_early_act1: run_state.act_num == 1 && run_state.floor_num <= 3,
     }
 }
 
@@ -157,6 +166,31 @@ pub(crate) fn premium_value(card_id: CardId) -> f32 {
     }
 }
 
+pub(crate) fn early_frontload_value(card_id: CardId, needs: &DeckNeedsV1) -> f32 {
+    if !needs.is_early_act1 || needs.need_early_frontload <= 0.0 {
+        return 0.0;
+    }
+
+    let value = match card_id {
+        // Twin Strike is under-valued by static base damage because its runtime
+        // effect is two attacks. In an Act 1 starter-like deck, that reliably
+        // solves the immediate "need another attack" problem.
+        CardId::TwinStrike => 4.0,
+        CardId::Cleave | CardId::Headbutt | CardId::WildStrike => 2.8,
+        CardId::ThunderClap | CardId::Anger => 2.4,
+        CardId::Clothesline => 2.0,
+        CardId::PerfectedStrike | CardId::HeavyBlade => 1.2,
+        // Already receives draw/premium value; avoid making Pommel an
+        // automatic pick over other strong early options.
+        CardId::PommelStrike => 0.8,
+        // Random-target multi-hit is weaker than targeted frontload before
+        // strength scaling is online.
+        CardId::SwordBoomerang => 0.5,
+        _ => 0.0,
+    };
+    value * needs.need_early_frontload
+}
+
 pub(crate) fn risk_penalty(card_id: CardId, needs: &DeckNeedsV1) -> f32 {
     match card_id {
         CardId::Clash => -3.0,
@@ -170,5 +204,5 @@ pub(crate) fn risk_penalty(card_id: CardId, needs: &DeckNeedsV1) -> f32 {
 
 pub(crate) fn is_aoe_card(card_id: CardId) -> bool {
     let def = get_card_definition(card_id);
-    def.target == CardTarget::AllEnemy || def.is_multi_damage
+    def.target == CardTarget::AllEnemy && def.is_multi_damage
 }

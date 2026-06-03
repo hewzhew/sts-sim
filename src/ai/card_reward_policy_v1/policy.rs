@@ -1,10 +1,10 @@
-use crate::content::cards::{get_card_definition, CardType};
+use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
 use super::facts::{
-    deck_needs, draw_value, effective_cost, is_aoe_card, premium_value, rarity_value, risk_penalty,
-    scaling_value,
+    deck_needs, draw_value, early_frontload_value, effective_cost, is_aoe_card, premium_value,
+    rarity_value, risk_penalty, scaling_value,
 };
 use super::types::{
     CardRewardCandidateScoreV1, CardRewardDecisionV1, CardRewardPolicyActionV1,
@@ -92,13 +92,14 @@ fn score_candidate(
 ) -> CardRewardCandidateScoreV1 {
     let def = get_card_definition(reward_card.id);
     let upgrades = f32::from(reward_card.upgrades);
-    let damage = (def.base_damage + def.upgrade_damage * i32::from(reward_card.upgrades)).max(0);
+    let damage = estimated_attack_damage(reward_card.id, reward_card.upgrades);
     let block = (def.base_block + def.upgrade_block * i32::from(reward_card.upgrades)).max(0);
     let cost = effective_cost(reward_card.id);
     let mut notes = Vec::new();
 
     let mut terms = CardRewardScoreTermsV1 {
         frontload: frontload_score(def.card_type, damage, cost, needs.need_frontload),
+        early_frontload: early_frontload_value(reward_card.id, needs),
         block: block_score(block, cost, needs.need_block),
         draw: draw_value(reward_card.id) * needs.need_draw,
         scaling: scaling_value(reward_card.id) * needs.need_scaling,
@@ -116,6 +117,9 @@ fn score_candidate(
 
     if terms.premium > 0.0 {
         notes.push("premium");
+    }
+    if terms.early_frontload > 0.0 {
+        notes.push("early-frontload");
     }
     if terms.draw > 0.0 {
         notes.push("draw");
@@ -148,6 +152,19 @@ fn frontload_score(card_type: CardType, damage: i32, cost: f32, need_frontload: 
     }
     let efficiency = damage as f32 / cost;
     (efficiency / 3.0).min(4.5) * need_frontload
+}
+
+fn estimated_attack_damage(card_id: CardId, upgrades: u8) -> i32 {
+    let def = get_card_definition(card_id);
+    let single_hit = (def.base_damage + def.upgrade_damage * i32::from(upgrades)).max(0);
+    match card_id {
+        CardId::TwinStrike => single_hit * 2,
+        CardId::SwordBoomerang => {
+            let hits = (def.base_magic + def.upgrade_magic * i32::from(upgrades)).max(0);
+            single_hit * hits
+        }
+        _ => single_hit,
+    }
 }
 
 fn block_score(block: i32, cost: f32, need_block: f32) -> f32 {
