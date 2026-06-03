@@ -7,11 +7,18 @@ pub const NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION: u32 = 1;
 pub enum DecisionSiteKindV1 {
     Map,
     CardReward,
+    Neow,
+    Event,
+    Shop,
+    Campfire,
+    BossRelic,
+    Reward,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum DataRoleV1 {
     BehaviorPolicyNotTeacher,
+    HumanBoundaryNotTeacher,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -46,6 +46,9 @@ pub enum RunControlTraceAnnotationV1 {
     NonCombatPolicyDecision {
         record: NonCombatDecisionRecordV1,
     },
+    NonCombatHumanBoundary {
+        record: NonCombatDecisionRecordV1,
+    },
     AutoCombatCapture {
         case_id: String,
         capture_path: String,

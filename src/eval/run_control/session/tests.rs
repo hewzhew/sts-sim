@@ -362,6 +362,131 @@ fn run_control_auto_run_wraps_auto_step_with_run_summary() {
 }
 
 #[test]
+fn run_control_auto_step_neow_stop_exports_human_boundary_record() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .expect("auto-step should advance intro and stop at Neow bonus");
+
+    let record = noncombat_human_boundary_record(&outcome);
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Neow
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+    );
+    assert!(!record.information_boundary.hidden_simulator_state_used);
+    assert!(record.candidates.len() > 1);
+    assert!(record.selection.selected_candidate_id.is_none());
+}
+
+#[test]
+fn run_control_auto_step_shop_stop_exports_human_boundary_record() {
+    let mut session = test_session_at_shop();
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .expect("auto-step should stop at non-empty shop");
+
+    let record = noncombat_human_boundary_record(&outcome);
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Shop
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+    );
+    assert!(record
+        .selection
+        .reason
+        .contains("shop action requires human choice"));
+    assert!(record
+        .candidates
+        .iter()
+        .any(|candidate| candidate.candidate_id.starts_with("shop:card-")));
+    assert!(record
+        .candidates
+        .iter()
+        .any(|candidate| candidate.candidate_id.starts_with("shop:leave")));
+    assert!(outcome.action_result.is_none());
+    assert!(matches!(session.engine_state, EngineState::Shop(_)));
+}
+
+#[test]
+fn run_control_auto_step_campfire_stop_exports_human_boundary_record() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state = EngineState::Campfire;
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .expect("auto-step should stop at campfire");
+
+    let record = noncombat_human_boundary_record(&outcome);
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Campfire
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
+    );
+    assert!(record
+        .candidates
+        .iter()
+        .any(|candidate| candidate.candidate_id.starts_with("campfire:rest")));
+    assert!(record
+        .candidates
+        .iter()
+        .any(|candidate| candidate.candidate_id.starts_with("campfire:smith-")));
+    assert!(matches!(session.engine_state, EngineState::Campfire));
+}
+
+#[test]
+fn run_control_auto_step_boss_relic_stop_exports_human_boundary_record() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state =
+        EngineState::BossRelicSelect(crate::state::rewards::BossRelicChoiceState::new(vec![
+            crate::content::relics::RelicId::BlackStar,
+            crate::content::relics::RelicId::Astrolabe,
+        ]));
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .expect("auto-step should stop at boss relic choice");
+
+    let record = noncombat_human_boundary_record(&outcome);
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::BossRelic
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
+    );
+    assert_eq!(record.candidates.len(), 2);
+    assert!(record
+        .information_boundary
+        .forbidden_inputs
+        .contains(&crate::ai::noncombat_decision_v1::InformationClassV1::HiddenSimulatorState));
+    assert!(matches!(
+        session.engine_state,
+        EngineState::BossRelicSelect(_)
+    ));
+}
+
+#[test]
 fn run_control_auto_step_stops_on_map_without_mutating_state() {
     let mut session = test_session_after_neow_at_map();
 
@@ -1054,6 +1179,19 @@ fn test_session_after_neow_at_map() -> RunControlSession {
     session.run_state.event_state = None;
     session.engine_state = EngineState::MapNavigation;
     session
+}
+
+fn noncombat_human_boundary_record(
+    outcome: &RunControlCommandOutcome,
+) -> &crate::ai::noncombat_decision_v1::NonCombatDecisionRecordV1 {
+    outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            RunControlTraceAnnotationV1::NonCombatHumanBoundary { record } => Some(record),
+            _ => None,
+        })
+        .expect("outcome should carry a noncombat human boundary record")
 }
 
 fn unique_temp_dir(label: &str) -> PathBuf {

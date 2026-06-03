@@ -261,6 +261,7 @@ fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<St
             } => Some(format!("auto capture: {case_id} -> {capture_path}")),
             RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
+            | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
             | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => None,
         })
         .collect()
@@ -592,7 +593,7 @@ fn finish_auto_step(
     session: &RunControlSession,
     before: &RunVisibleSnapshot,
     applied: Vec<String>,
-    trace_annotations: Vec<RunControlTraceAnnotationV1>,
+    mut trace_annotations: Vec<RunControlTraceAnnotationV1>,
     reason: impl Into<String>,
     detail: Option<String>,
 ) -> Result<RunControlCommandOutcome, String> {
@@ -614,6 +615,11 @@ fn finish_auto_step(
     if let Some(detail) = detail.filter(|detail| !detail.trim().is_empty()) {
         lines.push("Detail:".to_string());
         lines.extend(detail.lines().map(|line| format!("  {line}")));
+    }
+    if let Some(annotation) =
+        super::noncombat_boundary::noncombat_human_boundary_annotation(session, &reason)
+    {
+        trace_annotations.push(annotation);
     }
 
     if applied.is_empty() {

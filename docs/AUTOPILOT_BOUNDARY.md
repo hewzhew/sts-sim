@@ -23,6 +23,10 @@ Route-planner and card-reward autopilot decisions also export
 `NonCombatDecisionRecordV1`. This is the shared Phase 0 record boundary for
 non-combat behavior-policy evidence.
 
+Human-required non-combat stops, such as Neow choices, events, shops,
+campfires, boss relics, and remaining rewards, export the same record shape with
+`data_role = HumanBoundaryNotTeacher`.
+
 The record must stay hidden-free:
 
 - public observations are allowed
