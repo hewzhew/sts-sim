@@ -3,6 +3,7 @@ use super::super::*;
 
 pub(super) struct SearchFinishInput {
     pub(super) config: CombatSearchV2Config,
+    pub(super) policy_evidence: CombatSearchV2PolicyEvidenceReport,
     pub(super) stats: CombatSearchV2Stats,
     pub(super) diagnostics: SearchDiagnosticsCollector,
     pub(super) exact_transpositions: HashMap<CombatExactStateKey, Vec<ResourceVector>>,
@@ -22,6 +23,7 @@ pub(super) struct SearchFinishInput {
 pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSearchV2Report {
     let SearchFinishInput {
         config,
+        policy_evidence,
         stats,
         diagnostics,
         exact_transpositions,
@@ -61,9 +63,10 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
 
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
-        schema_version: 6,
+        schema_version: 7,
         input_label: config.input_label,
         information_boundary: "engine_state_snapshot_truth_v0",
+        policy_evidence,
         search_policy: CombatSearchV2PolicyReport {
             kind: "best_first_atomic_action_graph_search_v2",
             terminal_policy: "whole_combat_terminal_only",

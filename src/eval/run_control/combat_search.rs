@@ -371,6 +371,7 @@ fn render_search_rejection(
     }
     lines.extend([
         format!("  coverage_status={:?}", report.outcome.coverage_status),
+        render_policy_evidence_summary(report),
         format!(
             "  complete_trajectory_found={}",
             report.outcome.complete_trajectory_found
@@ -402,6 +403,7 @@ fn render_search_application(
             "  coverage_status={:?} reliability={}",
             report.outcome.coverage_status, report.evidence_reliability.reliability
         ),
+        render_policy_evidence_summary(report),
         format!("  coverage_reason={}", report.outcome.coverage_reason),
         format!("  terminal={:?}", trajectory.terminal),
         format!(
@@ -443,6 +445,22 @@ fn render_search_application(
         lines.push(format!("    ... {} more actions", actions.len() - 12));
     }
     lines.join("\n")
+}
+
+fn render_policy_evidence_summary(report: &CombatSearchV2Report) -> String {
+    let risks = report
+        .policy_evidence
+        .hidden_information_risks
+        .iter()
+        .map(|risk| risk.label())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "  information_access={} public_safe={} hidden_risks={}",
+        report.policy_evidence.information_access.label(),
+        report.policy_evidence.public_safe,
+        risks
+    )
 }
 
 fn current_run_apply_status(session: &RunControlSession) -> RunApplyStatus {

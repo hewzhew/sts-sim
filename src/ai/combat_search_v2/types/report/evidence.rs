@@ -1,0 +1,151 @@
+use serde::Serialize;
+
+use crate::content::relics::RelicId;
+use crate::runtime::combat::CombatState;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CombatSearchV2PolicyEvidenceReport {
+    pub information_access: CombatSearchV2InformationAccess,
+    pub public_safe: bool,
+    pub hidden_information_risks: Vec<CombatSearchV2HiddenInformationRisk>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2InformationAccess {
+    PublicObservation,
+    PrivilegedSimulator,
+    DebugRaw,
+}
+
+impl CombatSearchV2InformationAccess {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::PublicObservation => "public_observation",
+            Self::PrivilegedSimulator => "privileged_simulator",
+            Self::DebugRaw => "debug_raw",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2HiddenInformationRisk {
+    PrivilegedSimulatorState,
+    ExactRngState,
+    ExactDrawPileOrderWithoutFrozenEye,
+    ExactMonsterIntentUnderRunicDome,
+}
+
+impl CombatSearchV2HiddenInformationRisk {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::PrivilegedSimulatorState => "privileged_simulator_state",
+            Self::ExactRngState => "exact_rng_state",
+            Self::ExactDrawPileOrderWithoutFrozenEye => "exact_draw_pile_order_without_frozen_eye",
+            Self::ExactMonsterIntentUnderRunicDome => "exact_monster_intent_under_runic_dome",
+        }
+    }
+}
+
+pub fn combat_search_policy_evidence_for_combat(
+    combat: &CombatState,
+) -> CombatSearchV2PolicyEvidenceReport {
+    let mut hidden_information_risks = vec![
+        CombatSearchV2HiddenInformationRisk::PrivilegedSimulatorState,
+        CombatSearchV2HiddenInformationRisk::ExactRngState,
+    ];
+
+    if !combat.entities.player.has_relic(RelicId::FrozenEye) && combat.zones.draw_pile.len() > 1 {
+        hidden_information_risks
+            .push(CombatSearchV2HiddenInformationRisk::ExactDrawPileOrderWithoutFrozenEye);
+    }
+
+    if combat.entities.player.has_relic(RelicId::RunicDome)
+        && combat
+            .entities
+            .monsters
+            .iter()
+            .any(|monster| monster.is_alive_for_action())
+    {
+        hidden_information_risks
+            .push(CombatSearchV2HiddenInformationRisk::ExactMonsterIntentUnderRunicDome);
+    }
+
+    CombatSearchV2PolicyEvidenceReport {
+        information_access: CombatSearchV2InformationAccess::PrivilegedSimulator,
+        public_safe: false,
+        hidden_information_risks,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        combat_search_policy_evidence_for_combat, CombatSearchV2HiddenInformationRisk,
+        CombatSearchV2InformationAccess,
+    };
+    use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::combat::CombatCard;
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    #[test]
+    fn policy_evidence_declares_privileged_non_public_search() {
+        let combat = blank_test_combat();
+
+        let evidence = combat_search_policy_evidence_for_combat(&combat);
+
+        assert_eq!(
+            evidence.information_access,
+            CombatSearchV2InformationAccess::PrivilegedSimulator
+        );
+        assert!(!evidence.public_safe);
+        assert!(evidence
+            .hidden_information_risks
+            .contains(&CombatSearchV2HiddenInformationRisk::PrivilegedSimulatorState));
+        assert!(evidence
+            .hidden_information_risks
+            .contains(&CombatSearchV2HiddenInformationRisk::ExactRngState));
+    }
+
+    #[test]
+    fn policy_evidence_marks_hidden_draw_order_without_frozen_eye() {
+        let mut combat = blank_test_combat();
+        combat.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ];
+
+        let without_frozen_eye = combat_search_policy_evidence_for_combat(&combat);
+        assert!(without_frozen_eye
+            .hidden_information_risks
+            .contains(&CombatSearchV2HiddenInformationRisk::ExactDrawPileOrderWithoutFrozenEye));
+
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::FrozenEye));
+        let with_frozen_eye = combat_search_policy_evidence_for_combat(&combat);
+        assert!(!with_frozen_eye
+            .hidden_information_risks
+            .contains(&CombatSearchV2HiddenInformationRisk::ExactDrawPileOrderWithoutFrozenEye));
+    }
+
+    #[test]
+    fn policy_evidence_marks_hidden_runic_dome_intent() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::RunicDome));
+
+        let evidence = combat_search_policy_evidence_for_combat(&combat);
+
+        assert!(evidence
+            .hidden_information_risks
+            .contains(&CombatSearchV2HiddenInformationRisk::ExactMonsterIntentUnderRunicDome));
+    }
+}

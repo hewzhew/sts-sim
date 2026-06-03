@@ -8,7 +8,7 @@ use crate::ai::combat_search_v2::CombatSearchV2Report;
 
 pub const COMBAT_SEARCH_EVIDENCE_SCHEMA_NAME: &str = "CombatSearchEvidenceV1";
 pub const COMBAT_SEARCH_EVIDENCE_SCHEMA_VERSION: u32 = 1;
-pub const COMBAT_SEARCH_REPORT_SCHEMA_VERSION: u64 = 6;
+pub const COMBAT_SEARCH_REPORT_SCHEMA_VERSION: u64 = 7;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CombatSearchEvidenceContextV1 {
@@ -142,6 +142,40 @@ fn validate_report(report: Option<&Value>) -> Result<(), String> {
     if !report.contains_key("budget") {
         return Err("combat search evidence report.budget is missing".to_string());
     }
+    validate_policy_evidence(report.get("policy_evidence"))?;
+    Ok(())
+}
+
+fn validate_policy_evidence(policy_evidence: Option<&Value>) -> Result<(), String> {
+    let policy_evidence = policy_evidence
+        .and_then(Value::as_object)
+        .ok_or_else(|| "combat search evidence report.policy_evidence is missing".to_string())?;
+    expect_string(
+        policy_evidence.get("information_access"),
+        "privileged_simulator",
+        "report.policy_evidence.information_access",
+    )?;
+    expect_bool(
+        policy_evidence.get("public_safe"),
+        false,
+        "report.policy_evidence.public_safe",
+    )?;
+    let risks = policy_evidence
+        .get("hidden_information_risks")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            "combat search evidence report.policy_evidence.hidden_information_risks is missing"
+                .to_string()
+        })?;
+    if !risks
+        .iter()
+        .any(|risk| risk.as_str() == Some("privileged_simulator_state"))
+    {
+        return Err(
+            "combat search evidence report.policy_evidence.hidden_information_risks must include privileged_simulator_state"
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
@@ -213,7 +247,12 @@ mod tests {
             },
             "report": {
                 "schema_name": "CombatSearchV2Report",
-                "schema_version": 6,
+                "schema_version": 7,
+                "policy_evidence": {
+                    "information_access": "privileged_simulator",
+                    "public_safe": false,
+                    "hidden_information_risks": ["privileged_simulator_state"]
+                },
                 "outcome": {},
                 "budget": {}
             }
@@ -226,5 +265,36 @@ mod tests {
         evidence["label_role"] = json!("search_evidence_not_human_baseline");
         validate_combat_search_evidence_v1(&evidence)
             .expect("valid search evidence envelope should pass");
+    }
+
+    #[test]
+    fn search_evidence_validation_requires_policy_evidence_boundary() {
+        let evidence = json!({
+            "schema_name": "CombatSearchEvidenceV1",
+            "schema_version": 1,
+            "artifact_kind": "combat_search_evidence",
+            "saved_at_unix_ms": 1,
+            "label_role": "search_evidence_not_human_baseline",
+            "trainable_as_action_label": false,
+            "policy_quality_claim": false,
+            "context": {
+                "source_kind": "run_control_search_combat",
+                "decision_step": 3,
+                "capture_case_id": null,
+                "capture_root": null,
+                "capture_path": null
+            },
+            "report": {
+                "schema_name": "CombatSearchV2Report",
+                "schema_version": 7,
+                "outcome": {},
+                "budget": {}
+            }
+        });
+
+        let err = validate_combat_search_evidence_v1(&evidence)
+            .expect_err("search report must declare its policy evidence boundary");
+
+        assert!(err.contains("report.policy_evidence"));
     }
 }

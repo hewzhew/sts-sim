@@ -1,5 +1,8 @@
 use super::*;
+use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
+use crate::content::relics::{RelicId, RelicState};
+use crate::runtime::combat::CombatCard;
 use crate::test_support::{blank_test_combat, test_monster};
 
 #[derive(Clone, Copy)]
@@ -338,6 +341,46 @@ fn max_potions_used_cuts_potion_branches_without_disabling_policy_all() {
             .map(|trajectory| trajectory.potions_used),
         Some(1)
     );
+}
+
+#[test]
+fn search_report_declares_privileged_policy_evidence_boundary() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.draw_pile = vec![
+        CombatCard::new(CardId::Strike, 11),
+        CombatCard::new(CardId::Defend, 12),
+    ];
+    combat
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::RunicDome));
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 1,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert_eq!(report.schema_version, 7);
+    assert_eq!(
+        report.policy_evidence.information_access,
+        CombatSearchV2InformationAccess::PrivilegedSimulator
+    );
+    assert!(!report.policy_evidence.public_safe);
+    assert!(report
+        .policy_evidence
+        .hidden_information_risks
+        .contains(&CombatSearchV2HiddenInformationRisk::ExactDrawPileOrderWithoutFrozenEye));
+    assert!(report
+        .policy_evidence
+        .hidden_information_risks
+        .contains(&CombatSearchV2HiddenInformationRisk::ExactMonsterIntentUnderRunicDome));
 }
 
 #[test]

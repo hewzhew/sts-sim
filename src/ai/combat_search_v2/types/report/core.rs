@@ -3,6 +3,7 @@ use serde::Serialize;
 use super::super::{
     CombatSearchV2DiagnosticsReport, CombatSearchV2TrajectoryReport, SearchCoverageStatus,
 };
+use super::evidence::CombatSearchV2PolicyEvidenceReport;
 use super::frontier::CombatSearchV2FrontierReport;
 use super::rollout::CombatSearchV2RolloutReport;
 
@@ -12,6 +13,7 @@ pub struct CombatSearchV2Report {
     pub schema_version: u32,
     pub input_label: Option<String>,
     pub information_boundary: &'static str,
+    pub policy_evidence: CombatSearchV2PolicyEvidenceReport,
     pub search_policy: CombatSearchV2PolicyReport,
     pub budget: CombatSearchV2BudgetReport,
     pub outcome: CombatSearchV2OutcomeReport,

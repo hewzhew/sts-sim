@@ -24,6 +24,7 @@ pub fn run_combat_search_v2_with_stepper(
     let mut stats = CombatSearchV2Stats::default();
     let mut diagnostics = SearchDiagnosticsCollector::default();
     let initial_hp = combat.entities.player.current_hp;
+    let policy_evidence = combat_search_policy_evidence_for_combat(combat);
     let mut exact_transpositions: HashMap<CombatExactStateKey, Vec<ResourceVector>> =
         HashMap::new();
     let mut dominance: HashMap<CombatDominanceKey, Vec<ResourceVector>> = HashMap::new();
@@ -282,6 +283,7 @@ pub fn run_combat_search_v2_with_stepper(
     diagnostics.observe_root_turn_plan(&root_for_turn_plan_diagnostics, stepper);
     finish_combat_search_report(SearchFinishInput {
         config,
+        policy_evidence,
         stats,
         diagnostics,
         exact_transpositions,
