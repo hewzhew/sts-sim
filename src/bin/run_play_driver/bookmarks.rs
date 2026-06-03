@@ -132,7 +132,7 @@ pub fn render_bookmarks(registry_path: &Path) -> Result<String, String> {
     let mut lines = vec!["Bookmarks:".to_string()];
     for bookmark in registry.bookmarks.values() {
         lines.push(format!(
-            "  {} | {} | Act {} Floor {} | HP {}/{} | Gold {} | replay_steps={} | {}",
+            "  {} | {} | Act {} Floor {} | HP {}/{} | Gold {} | replay_steps={} | goto: --goto {} | {}",
             bookmark.name,
             bookmark.screen_title,
             bookmark.act,
@@ -141,6 +141,7 @@ pub fn render_bookmarks(registry_path: &Path) -> Result<String, String> {
             bookmark.max_hp,
             bookmark.gold,
             bookmark.replay_steps,
+            bookmark.name,
             bookmark.trace_path
         ));
     }
@@ -288,6 +289,7 @@ mod tests {
         assert!(rendered.contains("Bookmarks:"));
         assert!(rendered.contains("start | Neow Intro"));
         assert!(rendered.contains("replay_steps=1"));
+        assert!(rendered.contains("goto: --goto start"));
 
         let _ = fs::remove_dir_all(dir);
     }

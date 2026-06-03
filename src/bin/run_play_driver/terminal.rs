@@ -189,14 +189,15 @@ fn execute_bookmark_command(
 
 fn render_mark_saved(bookmark: &RunPlayBookmarkV1) -> String {
     format!(
-        "saved bookmark `{}` at {} | Act {} Floor {} | HP {}/{} | replay_steps={}",
+        "saved bookmark `{}` at {} | Act {} Floor {} | HP {}/{} | replay_steps={}\nresume later: --goto {}",
         bookmark.name,
         bookmark.screen_title,
         bookmark.act,
         bookmark.floor,
         bookmark.hp,
         bookmark.max_hp,
-        bookmark.replay_steps
+        bookmark.replay_steps,
+        bookmark.name
     )
 }
 
@@ -271,6 +272,7 @@ mod tests {
         let rendered = render_bookmarks(&registry_path).expect("bookmarks should render");
         assert!(rendered.contains("before_reward"));
         assert!(rendered.contains("replay_steps=1"));
+        assert!(rendered.contains("goto: --goto before_reward"));
 
         execute_line(&mut session, "marks", &registry_path, Some(&mut recorder))
             .expect("marks should print");
