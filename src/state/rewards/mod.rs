@@ -101,4 +101,10 @@ impl RewardState {
             ..Self::new()
         }
     }
+
+    pub fn has_card_reward_item(&self) -> bool {
+        self.items
+            .iter()
+            .any(|item| matches!(item, RewardItem::Card { .. }))
+    }
 }

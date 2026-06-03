@@ -229,6 +229,9 @@ fn state_command_hint(session: &RunControlSession) -> String {
             "type visible id to take card, bowl, or back".to_string()
         }
         EngineState::RewardOverlay { .. } => "type visible id, bowl, or back".to_string(),
+        EngineState::RewardScreen(reward) if reward.has_card_reward_item() => {
+            "type visible id to open reward, or skip".to_string()
+        }
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
         EngineState::PendingChoice(_)
             if super::selection_surface::active_selection_surface(session).is_some() =>

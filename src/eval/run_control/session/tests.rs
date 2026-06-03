@@ -515,6 +515,9 @@ fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
         .message
         .contains("Next: open the card reward id, then choose a card or skip"));
     assert!(outcome.action_result.is_none());
+    let rendered = render_run_control_state(&session);
+    assert!(rendered.contains("Command: type visible id to open reward, or skip"));
+    assert!(!rendered.contains("pick <idx>"));
     let EngineState::RewardScreen(reward) = &session.engine_state else {
         panic!("ambiguous card reward item should remain unopened");
     };
