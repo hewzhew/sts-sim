@@ -561,6 +561,61 @@ fn run_control_auto_step_stops_on_map_without_mutating_state() {
 }
 
 #[test]
+fn run_control_auto_step_records_route_policy_stop_when_safety_gate_rejects() {
+    let mut session = test_session_with_forced_unsafe_elite_route();
+    let before = (
+        session.run_state.map.current_x,
+        session.run_state.map.current_y,
+        session.run_state.current_hp,
+    );
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("route planner safety gate should stop cleanly");
+
+    assert!(outcome
+        .message
+        .contains("Reason: route planner declined automatic map selection"));
+    assert!(outcome.message.contains("route planner policy stopped:"));
+    assert_eq!(
+        before,
+        (
+            session.run_state.map.current_x,
+            session.run_state.map.current_y,
+            session.run_state.current_hp
+        )
+    );
+    assert!(outcome.action_result.is_none());
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            RunControlTraceAnnotationV1::NonCombatPolicyDecision { record } => Some(record),
+            _ => None,
+        })
+        .expect("declined route planner should attach a noncombat policy record");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Map
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+    );
+    assert!(!record.candidates.is_empty());
+}
+
+#[test]
 fn run_control_auto_run_uses_route_planner_by_default() {
     let mut session = test_session_with_first_monster_room();
 
@@ -1225,6 +1280,18 @@ fn test_session_with_first_monster_room() -> RunControlSession {
     second.class = Some(RoomType::MonsterRoom);
     session.run_state.map = MapState::new(vec![vec![first], vec![second]]);
     session.run_state.monster_list = vec![EncounterId::JawWorm, EncounterId::Cultist];
+    session
+}
+
+fn test_session_with_forced_unsafe_elite_route() -> RunControlSession {
+    let mut session = test_session_after_neow_at_map();
+    session.run_state.current_hp = 1;
+    let mut first = MapRoomNode::new(0, 0);
+    first.class = Some(RoomType::MonsterRoomElite);
+    first.edges.insert(MapEdge::new(0, 0, 0, 1));
+    let mut second = MapRoomNode::new(0, 1);
+    second.class = Some(RoomType::MonsterRoom);
+    session.run_state.map = MapState::new(vec![vec![first], vec![second]]);
     session
 }
 

@@ -41,6 +41,28 @@ pub(super) fn route_go_trace_annotation(
     })
 }
 
+pub(super) fn route_policy_stop_annotation(
+    trace: &RouteDecisionTraceV1,
+    reason: &str,
+) -> Result<RunControlTraceAnnotationV1, String> {
+    let mut stopped_trace = trace.clone();
+    stopped_trace.selected_index = None;
+    stopped_trace.warnings.push(reason.to_string());
+    let mut noncombat_record = stopped_trace.to_noncombat_decision_record_v1();
+    noncombat_record.selection.reason = reason.to_string();
+    noncombat_record.selection.selection_mode = "route_policy_stop".to_string();
+    validate_noncombat_decision_record_v1(&noncombat_record).map_err(|errors| {
+        format!(
+            "route planner stop produced invalid NonCombatDecisionRecordV1: {}",
+            render_noncombat_decision_record_validation_errors(&errors)
+        )
+    })?;
+
+    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+        record: noncombat_record,
+    })
+}
+
 fn route_go_top_candidate_summaries(
     trace: &RouteDecisionTraceV1,
 ) -> Vec<RoutePlannerCandidateSummaryV1> {

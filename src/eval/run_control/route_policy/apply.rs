@@ -5,7 +5,7 @@ use super::super::session::{RunControlCommandOutcome, RunControlSession};
 use super::format::{render_route_go_auto_step_summary, render_route_go_selection};
 use super::planner::plan_route_for_session;
 use super::suggestion::render_route_suggestion;
-use super::trace::route_go_trace_annotation;
+use super::trace::{route_go_trace_annotation, route_policy_stop_annotation};
 
 pub(in crate::eval::run_control) struct RouteGoApplied {
     pub outcome: RunControlCommandOutcome,
@@ -59,6 +59,29 @@ pub(in crate::eval::run_control) fn apply_route_go_with_summary(
     })
 }
 
+pub(in crate::eval::run_control) fn route_policy_stop_for_session(
+    session: &RunControlSession,
+    reason: &str,
+) -> Result<
+    Option<(
+        crate::eval::run_control::RunControlTraceAnnotationV1,
+        String,
+    )>,
+    String,
+> {
+    if !session.engine_state.is_map_surface() {
+        return Ok(None);
+    }
+    let trace = plan_route_for_session(session);
+    if trace.candidates.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some((
+        route_policy_stop_annotation(&trace, reason)?,
+        format!("route planner policy stopped: {}", first_line(reason)),
+    )))
+}
+
 fn route_candidate_input(candidate: &RouteCandidateTraceV1) -> Result<ClientInput, String> {
     let x = usize::try_from(candidate.target.x).map_err(|_| {
         format!(
@@ -76,4 +99,8 @@ fn route_candidate_input(candidate: &RouteCandidateTraceV1) -> Result<ClientInpu
         RouteMoveKindV1::NormalEdge => Ok(ClientInput::SelectMapNode(x)),
         RouteMoveKindV1::WingBootsJump => Ok(ClientInput::FlyToNode(x, y)),
     }
+}
+
+fn first_line(text: &str) -> &str {
+    text.lines().next().unwrap_or(text)
 }

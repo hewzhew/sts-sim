@@ -179,13 +179,21 @@ pub(super) fn apply_guarded_auto_step(
                     );
                 }
                 Err(err) => {
+                    let detail =
+                        match super::route_policy::route_policy_stop_for_session(session, &err)? {
+                            Some((annotation, summary)) => {
+                                trace_annotations.push(annotation);
+                                Some(format!("{summary}\n{err}"))
+                            }
+                            None => Some(err),
+                        };
                     return finish_auto_step(
                         session,
                         &before,
                         applied,
                         trace_annotations,
                         "route planner declined automatic map selection",
-                        Some(err),
+                        detail,
                     );
                 }
             }
