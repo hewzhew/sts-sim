@@ -41,6 +41,8 @@ All generated `NonCombatDecisionRecordV1` values must pass the central
 trace annotations. The gate checks schema identity, hidden-state exclusion,
 candidate references, evidence/value references, and whether human-boundary
 records accidentally select an action.
+The session trace recorder runs the same validation again before writing
+annotations, so future producers cannot silently bypass the boundary.
 
 ## Human Boundaries
 

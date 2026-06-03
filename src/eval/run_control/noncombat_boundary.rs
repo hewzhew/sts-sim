@@ -56,6 +56,15 @@ fn render_noncombat_decision_record_summary(record: &NonCombatDecisionRecordV1) 
         &mut out,
         format!("{} v{}", record.schema_name, record.schema_version),
     );
+    if let Err(errors) = validate_noncombat_decision_record_v1(record) {
+        push_line(
+            &mut out,
+            format!(
+                "Validation errors: {}",
+                render_noncombat_decision_record_validation_errors(&errors)
+            ),
+        );
+    }
     push_line(
         &mut out,
         format!(
@@ -334,5 +343,33 @@ fn site_slug(site: DecisionSiteKindV1) -> &'static str {
         DecisionSiteKindV1::Campfire => "campfire",
         DecisionSiteKindV1::BossRelic => "boss_relic",
         DecisionSiteKindV1::Reward => "reward",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::eval::run_control::{RunControlConfig, RunControlSession};
+
+    #[test]
+    fn boundary_summary_surfaces_record_validation_errors() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut shop = crate::state::shop::ShopState::new();
+        shop.cards.push(crate::state::shop::ShopCard {
+            card_id: crate::content::cards::CardId::Armaments,
+            upgrades: 0,
+            price: 49,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+        let mut record = build_noncombat_human_boundary_record_v1(&session, "test")
+            .expect("shop should build a boundary record");
+        record.information_boundary.hidden_simulator_state_used = true;
+
+        let rendered = render_noncombat_decision_record_summary(&record);
+
+        assert!(rendered.contains("Validation errors:"));
+        assert!(rendered.contains("information_boundary.hidden_simulator_state_used"));
     }
 }

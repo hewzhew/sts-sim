@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ai::noncombat_decision_v1::NonCombatDecisionRecordV1;
+use crate::ai::noncombat_decision_v1::{
+    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
+    NonCombatDecisionRecordV1,
+};
 use crate::state::core::ClientInput;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -61,4 +64,50 @@ pub enum RunControlTraceAnnotationV1 {
         actions: Vec<CombatAutomationActionV1>,
         label_role: String,
     },
+}
+
+pub(in crate::eval::run_control) fn validate_run_control_trace_annotations_v1(
+    annotations: &[RunControlTraceAnnotationV1],
+) -> Result<(), String> {
+    for (idx, annotation) in annotations.iter().enumerate() {
+        validate_run_control_trace_annotation_v1(idx, annotation)?;
+    }
+    Ok(())
+}
+
+fn validate_run_control_trace_annotation_v1(
+    idx: usize,
+    annotation: &RunControlTraceAnnotationV1,
+) -> Result<(), String> {
+    match annotation {
+        RunControlTraceAnnotationV1::RoutePlannerSelection {
+            noncombat_record: Some(record),
+            ..
+        } => validate_noncombat_record_annotation(idx, "route_planner_selection", record),
+        RunControlTraceAnnotationV1::NonCombatPolicyDecision { record } => {
+            validate_noncombat_record_annotation(idx, "noncombat_policy_decision", record)
+        }
+        RunControlTraceAnnotationV1::NonCombatHumanBoundary { record } => {
+            validate_noncombat_record_annotation(idx, "noncombat_human_boundary", record)
+        }
+        RunControlTraceAnnotationV1::RoutePlannerSelection {
+            noncombat_record: None,
+            ..
+        }
+        | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
+        | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => Ok(()),
+    }
+}
+
+fn validate_noncombat_record_annotation(
+    idx: usize,
+    kind: &str,
+    record: &NonCombatDecisionRecordV1,
+) -> Result<(), String> {
+    validate_noncombat_decision_record_v1(record).map_err(|errors| {
+        format!(
+            "annotation[{idx}] {kind} contains invalid NonCombatDecisionRecordV1: {}",
+            render_noncombat_decision_record_validation_errors(&errors)
+        )
+    })
 }
