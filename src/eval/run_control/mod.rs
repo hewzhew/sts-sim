@@ -11,6 +11,7 @@ mod decision_surface;
 #[cfg(test)]
 mod decision_surface_tests;
 mod input_gate;
+mod next_hint;
 pub mod outcome;
 mod panels;
 #[cfg(test)]

@@ -1,7 +1,6 @@
 use super::commands::{RunControlAutoStepOptions, RunControlRouteAutomationMode};
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::view_model::build_run_control_view_model;
-use crate::state::core::EngineState;
 
 const DEFAULT_AUTO_RUN_MAX_OPERATIONS: usize = 128;
 
@@ -17,22 +16,12 @@ pub(in crate::eval::run_control) fn apply_auto_run(
 
     let mut outcome = super::auto_step::apply_guarded_auto_step(session, options)?;
     let title = build_run_control_view_model(session).header.title;
-    let reason = extract_reason(&outcome.message);
     let applied_operations = count_applied_operations(&outcome.message);
-    let next_hint = auto_run_next_hint(session);
     outcome.message = format!(
-        "Auto-run stopped: {title}\nroute=planner max_operations={max_operations} applied_operations={applied_operations}\n{reason}\n{next_hint}\n{}",
+        "Auto-run stopped: {title}\nroute=planner max_operations={max_operations} applied_operations={applied_operations}\n{}",
         outcome.message
     );
     Ok(outcome)
-}
-
-fn extract_reason(message: &str) -> String {
-    message
-        .lines()
-        .find(|line| line.starts_with("Reason: "))
-        .unwrap_or("Reason: unknown")
-        .to_string()
 }
 
 fn count_applied_operations(message: &str) -> usize {
@@ -51,49 +40,6 @@ fn count_applied_operations(message: &str) -> usize {
         }
     }
     count
-}
-
-fn auto_run_next_hint(session: &RunControlSession) -> &'static str {
-    match &session.engine_state {
-        EngineState::EventRoom => {
-            let is_neow_bonus = session.run_state.event_state.as_ref().is_some_and(|event| {
-                event.id == crate::state::events::EventId::Neow && event.current_screen > 0
-            });
-            if is_neow_bonus {
-                "Next: choose a Neow bonus id, or inspect deck/map/relics first."
-            } else {
-                "Next: choose a visible event option id; use inspect/details/raw if the semantics look wrong."
-            }
-        }
-        EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
-            "Next: use rs to inspect route evidence, rg to accept the route planner, or type a visible path id."
-        }
-        EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
-            "Next: choose a card id or skip; use deck/map/relics before choosing if needed."
-        }
-        EngineState::RewardOverlay { reward_state, .. } if reward_state.pending_card_choice.is_some() => {
-            "Next: choose a card id or skip; use deck/map/relics before choosing if needed."
-        }
-        EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => {
-            "Next: choose a visible reward id, or skip to preview the map while unclaimed rewards remain."
-        }
-        EngineState::CombatPlayerTurn | EngineState::CombatProcessing | EngineState::PendingChoice(_) => {
-            "Next: play manually, cap the combat if useful, or try sc max_nodes=N wall_ms=N."
-        }
-        EngineState::BossRelicSelect(_) => {
-            "Next: choose a visible boss relic id; inspect deck/relics first if needed."
-        }
-        EngineState::Shop(_) => {
-            "Next: buy card/relic/potion, purge a card, or leave the shop."
-        }
-        EngineState::Campfire => {
-            "Next: rest, smith a deck index, or use another visible campfire option."
-        }
-        EngineState::TreasureRoom(_) => "Next: open the chest.",
-        EngineState::RunPendingChoice(_) => "Next: choose a visible run-choice id.",
-        EngineState::CombatStart(_) => "Next: advance once; combat setup should settle into a player turn.",
-        EngineState::GameOver(_) => "Next: q to exit, or start a new run from the shell.",
-    }
 }
 
 #[cfg(test)]

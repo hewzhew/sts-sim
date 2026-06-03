@@ -609,6 +609,7 @@ fn finish_auto_step(
         }
     }
     lines.push(format!("Reason: {reason}"));
+    lines.push(super::next_hint::run_control_next_hint(session).to_string());
     if let Some(detail) = detail.filter(|detail| !detail.trim().is_empty()) {
         lines.push("Detail:".to_string());
         lines.extend(detail.lines().map(|line| format!("  {line}")));

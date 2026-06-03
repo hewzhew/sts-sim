@@ -329,6 +329,7 @@ fn run_control_auto_step_advances_routine_neow_intro_only() {
     assert!(outcome
         .message
         .contains("Reason: Neow bonus requires human choice"));
+    assert!(outcome.message.contains("Next: choose a Neow bonus id"));
     assert!(outcome.action_result.is_some());
     assert!(matches!(session.engine_state, EngineState::EventRoom));
     assert_eq!(
@@ -372,6 +373,9 @@ fn run_control_auto_step_stops_on_map_without_mutating_state() {
     assert!(outcome
         .message
         .contains("Reason: map route requires human choice"));
+    assert!(outcome
+        .message
+        .contains("Next: use rs to inspect route evidence"));
     assert!(outcome.action_result.is_none());
     assert!(matches!(session.engine_state, EngineState::MapNavigation));
 }
