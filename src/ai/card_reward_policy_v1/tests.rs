@@ -50,7 +50,7 @@ fn policy_stops_when_good_cards_are_too_close() {
 }
 
 #[test]
-fn policy_picks_targeted_early_frontload_over_weaker_attack_and_cycle() {
+fn policy_stops_on_non_premium_early_attack_reward() {
     let run_state = RunState::new(521, 0, false, "Ironclad");
     let decision = plan_card_reward_decision_v1(
         &run_state,
@@ -64,13 +64,9 @@ fn policy_picks_targeted_early_frontload_over_weaker_attack_and_cycle() {
 
     assert!(matches!(
         decision.action,
-        CardRewardPolicyActionV1::Pick {
-            index: 0,
-            card: CardId::TwinStrike,
-            ..
-        }
+        CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.candidates[0].notes.contains(&"early-frontload"));
+    assert_eq!(decision.candidates[0].card, CardId::TwinStrike);
 }
 
 #[test]
@@ -90,8 +86,6 @@ fn policy_stops_when_early_attack_choice_depends_on_archetype_or_route() {
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert_eq!(decision.candidates[0].card, CardId::Clothesline);
-    assert!(decision.candidates[0].notes.contains(&"debuff-control"));
     let searing_blow = decision
         .candidates
         .iter()

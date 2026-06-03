@@ -715,7 +715,7 @@ fn run_control_auto_run_opens_and_picks_high_confidence_card_reward_item() {
 }
 
 #[test]
-fn run_control_auto_run_opens_and_picks_early_frontload_card_reward_item() {
+fn run_control_auto_run_stops_on_non_premium_early_attack_reward_item() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![
             crate::state::rewards::RewardCard::new(crate::content::cards::CardId::TwinStrike, 0),
@@ -734,15 +734,19 @@ fn run_control_auto_run_opens_and_picks_early_frontload_card_reward_item() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should open and pick a clear early frontload reward");
+        .expect("auto-run should stop on non-premium early attack rewards");
 
-    assert!(outcome.message.contains("card reward policy: Twin Strike"));
-    assert!(session
-        .run_state
-        .master_deck
-        .iter()
-        .any(|card| card.id == crate::content::cards::CardId::TwinStrike));
-    assert!(outcome.action_result.is_some());
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(outcome.message.contains("card reward policy stopped:"));
+    assert!(!session.run_state.master_deck.iter().any(|card| matches!(
+        card.id,
+        crate::content::cards::CardId::TwinStrike
+            | crate::content::cards::CardId::SwordBoomerang
+            | crate::content::cards::CardId::Warcry
+    )));
+    assert!(outcome.action_result.is_none());
 }
 
 #[test]

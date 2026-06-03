@@ -1,5 +1,6 @@
 mod facts;
 mod policy;
+mod priors;
 mod types;
 
 pub use policy::plan_card_reward_decision_v1;

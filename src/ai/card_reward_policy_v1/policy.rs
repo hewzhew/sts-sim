@@ -2,10 +2,8 @@ use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
-use super::facts::{
-    debuff_control_value, deck_needs, draw_value, early_frontload_value, effective_cost,
-    is_aoe_card, premium_value, rarity_value, risk_penalty, scaling_value,
-};
+use super::facts::{deck_needs, effective_cost, is_aoe_card};
+use super::priors::{draw_value, premium_value, rarity_value, risk_penalty, scaling_value};
 use super::types::{
     CardRewardCandidateScoreV1, CardRewardDecisionV1, CardRewardPolicyActionV1,
     CardRewardPolicyConfigV1, CardRewardScoreTermsV1, DeckNeedsV1,
@@ -99,8 +97,6 @@ fn score_candidate(
 
     let mut terms = CardRewardScoreTermsV1 {
         frontload: frontload_score(def.card_type, damage, cost, needs.need_frontload),
-        early_frontload: early_frontload_value(reward_card.id, needs),
-        debuff_control: debuff_control_value(reward_card.id, needs),
         block: block_score(block, cost, needs.need_block),
         draw: draw_value(reward_card.id) * needs.need_draw,
         scaling: scaling_value(reward_card.id) * needs.need_scaling,
@@ -118,12 +114,6 @@ fn score_candidate(
 
     if terms.premium > 0.0 {
         notes.push("premium");
-    }
-    if terms.early_frontload > 0.0 {
-        notes.push("early-frontload");
-    }
-    if terms.debuff_control > 0.0 {
-        notes.push("debuff-control");
     }
     if terms.draw > 0.0 {
         notes.push("draw");

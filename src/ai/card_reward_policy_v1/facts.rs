@@ -1,4 +1,4 @@
-use crate::content::cards::{get_card_definition, CardId, CardRarity, CardTarget, CardType};
+use crate::content::cards::{get_card_definition, CardId, CardTarget, CardType};
 use crate::state::run::RunState;
 
 use super::types::{CardRewardPolicyConfigV1, DeckNeedsV1};
@@ -47,21 +47,6 @@ pub(crate) fn deck_needs(run_state: &RunState, config: &CardRewardPolicyConfigV1
         } else {
             0.30
         },
-        need_early_frontload: if run_state.act_num == 1
-            && run_state.floor_num <= 3
-            && (damage < 55 || starter_cards >= 8)
-        {
-            1.0
-        } else {
-            0.0
-        },
-        need_debuff_control: if run_state.act_num == 1 && run_state.floor_num <= 8 {
-            1.0
-        } else if run_state.act_num == 1 {
-            0.65
-        } else {
-            0.35
-        },
         need_block: if block < 28 {
             0.85
         } else if block < 45 {
@@ -79,7 +64,6 @@ pub(crate) fn deck_needs(run_state: &RunState, config: &CardRewardPolicyConfigV1
         need_scaling: if scaling == 0 { 0.80 } else { 0.35 },
         has_exhaust_payoff: exhaust_payoff,
         is_late_deck: deck_size >= config.late_deck_size,
-        is_early_act1: run_state.act_num == 1 && run_state.floor_num <= 3,
     }
 }
 
@@ -108,16 +92,6 @@ pub(crate) fn is_draw_card(card_id: CardId) -> bool {
     )
 }
 
-pub(crate) fn draw_value(card_id: CardId) -> f32 {
-    match card_id {
-        CardId::Offering => 3.2,
-        CardId::BattleTrance | CardId::MasterOfStrategy => 2.4,
-        CardId::PommelStrike | CardId::ShrugItOff | CardId::BurningPact => 1.5,
-        CardId::Warcry | CardId::Finesse | CardId::FlashOfSteel => 1.0,
-        _ => 0.0,
-    }
-}
-
 pub(crate) fn is_scaling_card(card_id: CardId) -> bool {
     matches!(
         card_id,
@@ -138,87 +112,6 @@ pub(crate) fn is_scaling_card(card_id: CardId) -> bool {
             | CardId::Shockwave
             | CardId::Disarm
     )
-}
-
-pub(crate) fn scaling_value(card_id: CardId) -> f32 {
-    match card_id {
-        CardId::Corruption | CardId::DemonForm | CardId::Barricade => 3.0,
-        CardId::Shockwave | CardId::Disarm => 2.6,
-        CardId::Inflame | CardId::SpotWeakness | CardId::FeelNoPain | CardId::DarkEmbrace => 2.3,
-        CardId::Metallicize | CardId::LimitBreak | CardId::Evolve | CardId::FireBreathing => 1.8,
-        CardId::Berserk | CardId::Rupture | CardId::Juggernaut => 1.4,
-        _ => 0.0,
-    }
-}
-
-pub(crate) fn rarity_value(card_id: CardId) -> f32 {
-    match get_card_definition(card_id).rarity {
-        CardRarity::Rare => 1.0,
-        CardRarity::Uncommon => 0.55,
-        CardRarity::Common => 0.15,
-        CardRarity::Basic | CardRarity::Special | CardRarity::Curse => 0.0,
-    }
-}
-
-pub(crate) fn premium_value(card_id: CardId) -> f32 {
-    match card_id {
-        CardId::Offering => 5.0,
-        CardId::Shockwave => 4.8,
-        CardId::Immolate | CardId::Disarm => 4.2,
-        CardId::Feed | CardId::Reaper | CardId::Corruption => 3.6,
-        CardId::Impervious | CardId::FiendFire | CardId::BattleTrance => 3.1,
-        CardId::FlameBarrier | CardId::Uppercut | CardId::Carnage | CardId::PowerThrough => 2.4,
-        CardId::ShrugItOff | CardId::PommelStrike | CardId::Armaments => 1.4,
-        _ => 0.0,
-    }
-}
-
-pub(crate) fn early_frontload_value(card_id: CardId, needs: &DeckNeedsV1) -> f32 {
-    if !needs.is_early_act1 || needs.need_early_frontload <= 0.0 {
-        return 0.0;
-    }
-
-    let value = match card_id {
-        // Twin Strike is under-valued by static base damage because its runtime
-        // effect is two attacks. In an Act 1 starter-like deck, that reliably
-        // solves the immediate "need another attack" problem.
-        CardId::TwinStrike => 4.0,
-        CardId::Cleave | CardId::Headbutt | CardId::WildStrike => 2.8,
-        CardId::ThunderClap | CardId::Anger => 2.4,
-        CardId::Clothesline => 2.0,
-        CardId::PerfectedStrike | CardId::HeavyBlade => 1.2,
-        // Already receives draw/premium value; avoid making Pommel an
-        // automatic pick over other strong early options.
-        CardId::PommelStrike => 0.8,
-        // Random-target multi-hit is weaker than targeted frontload before
-        // strength scaling is online.
-        CardId::SwordBoomerang => 0.5,
-        _ => 0.0,
-    };
-    value * needs.need_early_frontload
-}
-
-pub(crate) fn debuff_control_value(card_id: CardId, needs: &DeckNeedsV1) -> f32 {
-    let value = match card_id {
-        CardId::Clothesline => 1.4,
-        CardId::Uppercut => 3.0,
-        CardId::Shockwave => 2.2,
-        CardId::Disarm => 2.0,
-        CardId::ThunderClap => 1.5,
-        _ => 0.0,
-    };
-    value * needs.need_debuff_control
-}
-
-pub(crate) fn risk_penalty(card_id: CardId, needs: &DeckNeedsV1) -> f32 {
-    match card_id {
-        CardId::Clash => -3.0,
-        CardId::PerfectedStrike if needs.deck_size < 13 => -1.0,
-        CardId::DemonForm if needs.deck_size < 13 => -0.8,
-        CardId::Barricade if needs.need_block > 0.7 => -0.8,
-        CardId::BodySlam if needs.need_block > 0.7 => -1.2,
-        _ => 0.0,
-    }
 }
 
 pub(crate) fn is_aoe_card(card_id: CardId) -> bool {
