@@ -823,6 +823,94 @@ fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
 }
 
 #[test]
+fn run_control_auto_run_claims_safe_relic_reward_with_policy_annotation() {
+    let mut session =
+        test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Relic {
+            relic_id: crate::content::relics::RelicId::Anchor,
+        }]);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should claim a safe relic reward");
+
+    assert!(outcome.message.contains("routine reward: Relic Anchor"));
+    assert!(session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == crate::content::relics::RelicId::Anchor));
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } => Some(record),
+            _ => None,
+        })
+        .expect("safe relic reward auto-claim should attach a noncombat record");
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("safe relic reward noncombat record should validate");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Reward
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
+    );
+    assert_eq!(
+        record.selection.selected_candidate_id.as_deref(),
+        Some("reward:relic:0:Anchor")
+    );
+}
+
+#[test]
+fn run_control_auto_run_keeps_relic_reward_when_sapphire_key_is_available() {
+    let mut session = test_session_at_reward_items(vec![
+        crate::state::rewards::RewardItem::Relic {
+            relic_id: crate::content::relics::RelicId::Anchor,
+        },
+        crate::state::rewards::RewardItem::SapphireKey,
+    ]);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should stop for sapphire/relic choice");
+
+    assert!(outcome
+        .message
+        .contains("Reason: relic reward or Sapphire Key requires human choice"));
+    assert!(!session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == crate::content::relics::RelicId::Anchor));
+    let EngineState::RewardScreen(reward) = &session.engine_state else {
+        panic!("sapphire/relic choice should remain on reward screen");
+    };
+    assert!(matches!(
+        reward.items.as_slice(),
+        [
+            crate::state::rewards::RewardItem::Relic {
+                relic_id: crate::content::relics::RelicId::Anchor
+            },
+            crate::state::rewards::RewardItem::SapphireKey
+        ]
+    ));
+}
+
+#[test]
 fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::Shockwave,

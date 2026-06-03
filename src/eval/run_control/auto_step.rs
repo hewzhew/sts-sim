@@ -67,6 +67,7 @@ pub(super) fn apply_guarded_auto_step(
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
+            trace_annotations.extend(reward_report.trace_annotations);
             continue;
         }
 
@@ -553,6 +554,17 @@ fn human_stop_reason(session: &RunControlSession) -> String {
         EngineState::RewardOverlay { reward_state, .. } if reward_has_card_item(reward_state) => {
             "card reward requires human choice".to_string()
         }
+        EngineState::RewardScreen(reward)
+            if reward_has_relic_item(reward) && reward_has_sapphire_key_item(reward) =>
+        {
+            "relic reward or Sapphire Key requires human choice".to_string()
+        }
+        EngineState::RewardOverlay { reward_state, .. }
+            if reward_has_relic_item(reward_state)
+                && reward_has_sapphire_key_item(reward_state) =>
+        {
+            "relic reward or Sapphire Key requires human choice".to_string()
+        }
         EngineState::RewardScreen(reward) if reward_has_relic_item(reward) => {
             "relic reward requires human choice".to_string()
         }
@@ -601,6 +613,13 @@ fn reward_has_relic_item(reward: &crate::state::rewards::RewardState) -> bool {
         .items
         .iter()
         .any(|item| matches!(item, crate::state::rewards::RewardItem::Relic { .. }))
+}
+
+fn reward_has_sapphire_key_item(reward: &crate::state::rewards::RewardState) -> bool {
+    reward
+        .items
+        .iter()
+        .any(|item| matches!(item, crate::state::rewards::RewardItem::SapphireKey))
 }
 
 fn finish_auto_step(

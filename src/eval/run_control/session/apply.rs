@@ -280,6 +280,7 @@ impl RunControlSession {
         self.ensure_combat_started_if_needed()?;
         self.observe_active_combat_started();
         let auto_capture = super::super::auto_capture::maybe_auto_capture_combat_start(self)?;
+        let mut trace_annotations = reward_automation.trace_annotations.clone();
         self.decision_step = self.decision_step.saturating_add(1);
 
         let status = if tick.keep_running {
@@ -305,17 +306,14 @@ impl RunControlSession {
         } else {
             report
         };
-        let trace_annotations = auto_capture
-            .as_ref()
-            .map(|auto_capture| {
-                vec![RunControlTraceAnnotationV1::AutoCombatCapture {
-                    case_id: auto_capture.case_id.clone(),
-                    capture_path: auto_capture.capture_path.display().to_string(),
-                    benchmark_manifest_path: auto_capture.benchmark_manifest.display().to_string(),
-                    label_role: "diagnostic_capture_not_human_baseline".to_string(),
-                }]
-            })
-            .unwrap_or_default();
+        if let Some(auto_capture) = auto_capture.as_ref() {
+            trace_annotations.push(RunControlTraceAnnotationV1::AutoCombatCapture {
+                case_id: auto_capture.case_id.clone(),
+                capture_path: auto_capture.capture_path.display().to_string(),
+                benchmark_manifest_path: auto_capture.benchmark_manifest.display().to_string(),
+                label_role: "diagnostic_capture_not_human_baseline".to_string(),
+            });
+        }
         Ok(RunControlCommandOutcome::action(
             format!("{report}\n{}", render_run_control_state(self)),
             action_result,

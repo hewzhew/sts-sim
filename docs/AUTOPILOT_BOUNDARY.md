@@ -6,7 +6,8 @@ of strategy quality, and not a replacement for simulator/search validation.
 ## Allowed Autopilot
 
 - routine single-action progress
-- automatic low-risk reward claiming, such as gold and potions when slots exist
+- automatic low-risk reward claiming, such as gold, safe relic rewards, and
+  potions when slots exist
 - route-planner map decisions
 - high-confidence card reward policy decisions
 - combat search handoff when a complete executable win is found within budget
@@ -88,6 +89,24 @@ automation declined without converting the decision into a teacher label.
 
 If a card reward auto-pick later looks bad, the fix belongs in the card reward
 policy boundary, not in trace replay or benchmark labels.
+
+## Reward Automation
+
+Reward automation may claim rewards that do not represent a meaningful
+strategic branch:
+
+- gold and stolen gold
+- potions only when an empty slot exists and Sozu is absent
+- ordinary visible relic rewards only when no `SapphireKey` reward is present on
+  the same screen
+
+Safe relic auto-claim emits `NonCombatDecisionRecordV1` with
+`selection.status = Selected`. The record is still
+`behavior_policy_not_teacher`, and exists so trace/replay can explain why the
+automation changed state.
+
+Do not extend this boundary to boss relics, blue-key tradeoffs, card rewards,
+or event/shop/campfire choices. Those remain separate decision sites.
 
 ## Combat Search Handoff
 
