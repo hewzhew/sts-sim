@@ -6,6 +6,7 @@ use crate::ai::combat_state_key::{
 };
 use crate::content::cards::java_id;
 use crate::content::monsters::EnemyId;
+use crate::eval::observation_boundary::CombatPublicObservationV1;
 use crate::runtime::combat::CombatState;
 use crate::runtime::rng::{RngPool, StsRng};
 use crate::sim::combat::{combat_terminal, stable_boundary, CombatPosition, CombatTerminal};
@@ -109,64 +110,7 @@ pub struct ActionTargetFingerprintV1 {
 #[derive(Clone, Debug, Serialize)]
 struct CombatPublicObservationFingerprintInputV1 {
     boundary: DecisionBoundaryFingerprintV1,
-    player: PlayerObservationFingerprintV1,
-    hand: Vec<CardObservationFingerprintV1>,
-    piles: PileObservationFingerprintV1,
-    potions: Vec<Option<PotionObservationFingerprintV1>>,
-    monsters: Vec<MonsterObservationFingerprintV1>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct PlayerObservationFingerprintV1 {
-    player_class: String,
-    ascension_level: u8,
-    hp: i32,
-    max_hp: i32,
-    block: i32,
-    energy: u8,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct CardObservationFingerprintV1 {
-    uuid: u32,
-    card_id: String,
-    upgrades: u8,
-    cost_for_turn: i32,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct PileObservationFingerprintV1 {
-    draw_count: usize,
-    discard_count: usize,
-    exhaust_count: usize,
-    limbo_count: usize,
-    queued_cards_count: usize,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct PotionObservationFingerprintV1 {
-    uuid: u32,
-    potion_id: String,
-    can_use: bool,
-    can_discard: bool,
-    requires_target: bool,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct MonsterObservationFingerprintV1 {
-    slot: u8,
-    entity_id: usize,
-    enemy_id: String,
-    hp: i32,
-    max_hp: i32,
-    block: i32,
-    alive: bool,
-    escaped: bool,
-    dying: bool,
-    half_dead: bool,
-    planned_move_id: u8,
-    visible_intent: String,
-    preview_damage_per_hit: i32,
+    public: CombatPublicObservationV1,
 }
 
 pub fn combat_state_fingerprint_v1(position: &CombatPosition) -> StateFingerprintV1 {
@@ -264,86 +208,9 @@ fn decision_kind(engine: &EngineState) -> String {
 fn public_observation_input(
     position: &CombatPosition,
 ) -> CombatPublicObservationFingerprintInputV1 {
-    let combat = &position.combat;
     CombatPublicObservationFingerprintInputV1 {
-        boundary: boundary_fingerprint(&position.engine, combat),
-        player: PlayerObservationFingerprintV1 {
-            player_class: combat.meta.player_class.clone(),
-            ascension_level: combat.meta.ascension_level,
-            hp: combat.entities.player.current_hp,
-            max_hp: combat.entities.player.max_hp,
-            block: combat.entities.player.block,
-            energy: combat.turn.energy,
-        },
-        hand: combat
-            .zones
-            .hand
-            .iter()
-            .map(|card| CardObservationFingerprintV1 {
-                uuid: card.uuid,
-                card_id: java_id(card.id).to_string(),
-                upgrades: card.upgrades,
-                cost_for_turn: card.cost_for_turn_java(),
-            })
-            .collect(),
-        piles: PileObservationFingerprintV1 {
-            draw_count: combat.zones.draw_pile.len(),
-            discard_count: combat.zones.discard_pile.len(),
-            exhaust_count: combat.zones.exhaust_pile.len(),
-            limbo_count: combat.zones.limbo.len(),
-            queued_cards_count: combat.zones.queued_cards.len(),
-        },
-        potions: combat
-            .entities
-            .potions
-            .iter()
-            .map(|slot| {
-                slot.as_ref().map(|potion| PotionObservationFingerprintV1 {
-                    uuid: potion.uuid,
-                    potion_id: format!("{:?}", potion.id),
-                    can_use: potion.can_use,
-                    can_discard: potion.can_discard,
-                    requires_target: potion.requires_target,
-                })
-            })
-            .collect(),
-        monsters: combat
-            .entities
-            .monsters
-            .iter()
-            .map(|monster| {
-                let observation = combat
-                    .runtime
-                    .monster_protocol
-                    .get(&monster.id)
-                    .map(|protocol| &protocol.observation);
-                let turn_plan = monster.turn_plan();
-                MonsterObservationFingerprintV1 {
-                    slot: monster.slot,
-                    entity_id: monster.id,
-                    enemy_id: EnemyId::from_id(monster.monster_type)
-                        .map(|enemy| format!("{enemy:?}"))
-                        .unwrap_or_else(|| format!("monster_type:{}", monster.monster_type)),
-                    hp: monster.current_hp,
-                    max_hp: monster.max_hp,
-                    block: monster.block,
-                    alive: monster.is_alive_for_action(),
-                    escaped: monster.is_escaped,
-                    dying: monster.is_dying,
-                    half_dead: monster.half_dead,
-                    planned_move_id: monster.planned_move_id(),
-                    visible_intent: observation
-                        .filter(|obs| obs.visible_intent != crate::runtime::combat::Intent::Unknown)
-                        .map(|obs| format!("{:?}", obs.visible_intent))
-                        .unwrap_or_else(|| format!("{:?}", turn_plan.summary_spec())),
-                    preview_damage_per_hit: observation
-                        .filter(|obs| obs.preview_damage_per_hit > 0)
-                        .map(|obs| obs.preview_damage_per_hit)
-                        .or_else(|| turn_plan.attack().map(|attack| attack.base_damage))
-                        .unwrap_or(0),
-                }
-            })
-            .collect(),
+        boundary: boundary_fingerprint(&position.engine, &position.combat),
+        public: crate::eval::observation_boundary::combat_public_observation_v1(&position.combat),
     }
 }
 
@@ -628,4 +495,112 @@ fn hex_lower(bytes: &[u8]) -> String {
         let _ = write!(&mut out, "{byte:02x}");
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::combat::{CombatCard, Intent};
+    use crate::state::core::EngineState;
+
+    #[test]
+    fn public_observation_hash_does_not_change_for_hidden_runic_dome_intent() {
+        let mut attack = combat_with_single_monster();
+        attack
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::RunicDome));
+        attack.set_monster_protocol_visible_intent(
+            7,
+            Intent::Attack {
+                damage: 11,
+                hits: 1,
+            },
+        );
+        let mut defend = attack.clone();
+        defend.set_monster_protocol_visible_intent(7, Intent::Defend);
+
+        assert_eq!(
+            public_hash(attack),
+            public_hash(defend),
+            "Runic Dome hides intent, so changing privileged monster intent must not change public hash"
+        );
+    }
+
+    #[test]
+    fn public_observation_hash_changes_for_visible_intent() {
+        let mut attack = combat_with_single_monster();
+        attack.set_monster_protocol_visible_intent(
+            7,
+            Intent::Attack {
+                damage: 11,
+                hits: 1,
+            },
+        );
+        let mut defend = attack.clone();
+        defend.set_monster_protocol_visible_intent(7, Intent::Defend);
+
+        assert_ne!(
+            public_hash(attack),
+            public_hash(defend),
+            "visible monster intent is part of public observation"
+        );
+    }
+
+    #[test]
+    fn public_observation_hash_ignores_draw_order_without_frozen_eye() {
+        let mut first = combat_with_single_monster();
+        first.zones.draw_pile = vec![
+            CombatCard::new(CardId::Bash, 1),
+            CombatCard::new(CardId::Strike, 2),
+            CombatCard::new(CardId::Defend, 3),
+        ];
+        let mut reordered = first.clone();
+        reordered.zones.draw_pile.swap(0, 2);
+
+        assert_eq!(
+            public_hash(first),
+            public_hash(reordered),
+            "without Frozen Eye, draw pile contents are public but exact order is hidden"
+        );
+    }
+
+    #[test]
+    fn public_observation_hash_tracks_draw_order_with_frozen_eye() {
+        let mut first = combat_with_single_monster();
+        first
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::FrozenEye));
+        first.zones.draw_pile = vec![
+            CombatCard::new(CardId::Bash, 1),
+            CombatCard::new(CardId::Strike, 2),
+            CombatCard::new(CardId::Defend, 3),
+        ];
+        let mut reordered = first.clone();
+        reordered.zones.draw_pile.swap(0, 2);
+
+        assert_ne!(
+            public_hash(first),
+            public_hash(reordered),
+            "Frozen Eye makes exact draw pile order public"
+        );
+    }
+
+    fn public_hash(combat: CombatState) -> String {
+        combat_state_fingerprint_v1(&CombatPosition::new(EngineState::CombatPlayerTurn, combat))
+            .public_observation_hash
+    }
+
+    fn combat_with_single_monster() -> CombatState {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.id = 7;
+        monster.slot = 0;
+        combat.entities.monsters.push(monster);
+        combat
+    }
 }
