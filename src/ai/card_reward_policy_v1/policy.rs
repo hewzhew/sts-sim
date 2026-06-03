@@ -34,7 +34,15 @@ pub fn plan_card_reward_decision_v1(
         [] => CardRewardPolicyActionV1::Stop {
             reason: "no visible card reward candidates".to_string(),
         },
-        [best] => pick_action(best, 1.0, "single visible card reward candidate"),
+        [best] if best.score >= config.min_auto_pick_score => {
+            pick_action(best, 0.75, "single card clears score gate")
+        }
+        [best] => CardRewardPolicyActionV1::Stop {
+            reason: format!(
+                "single card {} score {:.2} does not clear auto-pick score gate {:.2}",
+                best.name, best.score, config.min_auto_pick_score
+            ),
+        },
         [best, second, ..]
             if best.score >= config.min_auto_pick_score
                 && best.score - second.score >= config.min_auto_pick_margin =>

@@ -48,3 +48,18 @@ fn policy_stops_when_good_cards_are_too_close() {
         CardRewardPolicyActionV1::Stop { .. }
     ));
 }
+
+#[test]
+fn policy_stops_on_single_card_that_does_not_clear_score_gate() {
+    let run_state = RunState::new(521, 0, false, "Ironclad");
+    let decision = plan_card_reward_decision_v1(
+        &run_state,
+        &[RewardCard::new(CardId::ShrugItOff, 0)],
+        &CardRewardPolicyConfigV1::default(),
+    );
+
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+}

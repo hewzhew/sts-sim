@@ -424,6 +424,34 @@ fn run_control_auto_run_picks_high_confidence_card_reward() {
 }
 
 #[test]
+fn run_control_auto_run_opens_and_picks_high_confidence_card_reward_item() {
+    let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
+        cards: vec![
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Shockwave, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Clash, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::SeverSoul, 0),
+        ],
+    }]);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should open and apply a high-confidence card reward pick");
+
+    assert!(outcome.message.contains("card reward policy: Shockwave"));
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Shockwave));
+    assert!(outcome.action_result.is_some());
+}
+
+#[test]
 fn run_control_auto_run_stops_on_ambiguous_card_reward() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::PommelStrike,
@@ -450,6 +478,39 @@ fn run_control_auto_run_stops_on_ambiguous_card_reward() {
             | crate::content::cards::CardId::Armaments
     )));
     assert!(outcome.action_result.is_none());
+}
+
+#[test]
+fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
+    let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
+        cards: vec![
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::PommelStrike, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::ShrugItOff, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Armaments, 0),
+        ],
+    }]);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should stop before opening an ambiguous card reward item");
+
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(outcome.action_result.is_none());
+    let EngineState::RewardScreen(reward) = &session.engine_state else {
+        panic!("ambiguous card reward item should remain unopened");
+    };
+    assert!(reward.pending_card_choice.is_none());
+    assert!(matches!(
+        reward.items.as_slice(),
+        [crate::state::rewards::RewardItem::Card { .. }]
+    ));
 }
 
 #[test]
@@ -484,6 +545,46 @@ fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Shockwave));
     assert!(outcome.action_result.is_none());
+}
+
+#[test]
+fn run_control_auto_run_does_not_open_card_reward_item_with_singing_bowl() {
+    let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
+        cards: vec![
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Shockwave, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Clash, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::SeverSoul, 0),
+        ],
+    }]);
+    session
+        .run_state
+        .relics
+        .push(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::SingingBowl,
+        ));
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should stop before opening a Singing Bowl card reward item");
+
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(outcome.action_result.is_none());
+    let EngineState::RewardScreen(reward) = &session.engine_state else {
+        panic!("Singing Bowl card reward item should remain unopened");
+    };
+    assert!(reward.pending_card_choice.is_none());
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .all(|card| card.id != crate::content::cards::CardId::Shockwave));
 }
 
 #[test]
@@ -911,6 +1012,17 @@ fn test_session_at_card_reward(card_ids: Vec<crate::content::cards::CardId>) -> 
     }];
     reward.pending_card_choice = Some(cards);
     reward.pending_card_reward_index = Some(0);
+    session.engine_state = EngineState::RewardScreen(reward);
+    session
+}
+
+fn test_session_at_reward_items(
+    items: Vec<crate::state::rewards::RewardItem>,
+) -> RunControlSession {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = None;
+    let mut reward = crate::state::rewards::RewardState::new();
+    reward.items = items;
     session.engine_state = EngineState::RewardScreen(reward);
     session
 }

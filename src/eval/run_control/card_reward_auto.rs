@@ -1,4 +1,5 @@
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::rewards::{RewardCard, RewardItem};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
 
@@ -13,14 +14,15 @@ pub(super) fn apply_card_reward_policy_pick(
     {
         return Ok(None);
     }
-    let Some(cards) = active_pending_reward_cards(session) else {
+
+    if let Some(cards) = active_pending_reward_cards(session) {
+        return apply_policy_to_pending_cards(session, cards);
+    }
+
+    let Some((reward_index, cards)) = visible_card_reward_item(session) else {
         return Ok(None);
     };
-    let decision = crate::ai::card_reward_policy_v1::plan_card_reward_decision_v1(
-        &session.run_state,
-        &cards,
-        &crate::ai::card_reward_policy_v1::CardRewardPolicyConfigV1::default(),
-    );
+    let decision = card_reward_decision(session, &cards);
     let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Pick {
         index,
         card,
@@ -30,20 +32,72 @@ pub(super) fn apply_card_reward_policy_pick(
     else {
         return Ok(None);
     };
-    let name = crate::content::cards::get_card_definition(card).name;
+
+    session.apply_input(ClientInput::ClaimReward(reward_index))?;
+    let Some(opened_cards) = active_pending_reward_cards(session) else {
+        return Err(
+            "card reward policy opened a reward item but no pending card choice appeared"
+                .to_string(),
+        );
+    };
+    if opened_cards.len() <= index || opened_cards[index].id != card {
+        return Err(
+            "card reward policy opened a reward item but the pending card choices drifted"
+                .to_string(),
+        );
+    }
     let outcome = session.apply_input(ClientInput::SelectCard(index))?;
     Ok(Some((
         outcome,
-        format!(
-            "card reward policy: {name} confidence={confidence:.2} reason={reason} label_role={}",
-            decision.label_role
-        ),
+        card_reward_summary(card, confidence, &reason, decision.label_role),
     )))
 }
 
-fn active_pending_reward_cards(
+fn apply_policy_to_pending_cards(
+    session: &mut RunControlSession,
+    cards: Vec<RewardCard>,
+) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
+    let decision = card_reward_decision(session, &cards);
+    let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Pick {
+        index,
+        card,
+        confidence,
+        reason,
+    } = decision.action
+    else {
+        return Ok(None);
+    };
+    let outcome = session.apply_input(ClientInput::SelectCard(index))?;
+    Ok(Some((
+        outcome,
+        card_reward_summary(card, confidence, &reason, decision.label_role),
+    )))
+}
+
+fn card_reward_decision(
     session: &RunControlSession,
-) -> Option<Vec<crate::state::rewards::RewardCard>> {
+    cards: &[RewardCard],
+) -> crate::ai::card_reward_policy_v1::CardRewardDecisionV1 {
+    crate::ai::card_reward_policy_v1::plan_card_reward_decision_v1(
+        &session.run_state,
+        cards,
+        &crate::ai::card_reward_policy_v1::CardRewardPolicyConfigV1::default(),
+    )
+}
+
+fn card_reward_summary(
+    card: crate::content::cards::CardId,
+    confidence: f32,
+    reason: &str,
+    label_role: &'static str,
+) -> String {
+    let name = crate::content::cards::get_card_definition(card).name;
+    format!(
+        "card reward policy: {name} confidence={confidence:.2} reason={reason} label_role={label_role}",
+    )
+}
+
+fn active_pending_reward_cards(session: &RunControlSession) -> Option<Vec<RewardCard>> {
     let cards = match &session.engine_state {
         EngineState::RewardScreen(reward) => reward.pending_card_choice.as_ref()?,
         EngineState::RewardOverlay { reward_state, .. } => {
@@ -52,4 +106,23 @@ fn active_pending_reward_cards(
         _ => return None,
     };
     Some(cards.clone())
+}
+
+fn visible_card_reward_item(session: &RunControlSession) -> Option<(usize, Vec<RewardCard>)> {
+    let reward = match &session.engine_state {
+        EngineState::RewardScreen(reward) => reward,
+        EngineState::RewardOverlay { reward_state, .. } => reward_state,
+        _ => return None,
+    };
+    if reward.pending_card_choice.is_some() {
+        return None;
+    }
+    reward
+        .items
+        .iter()
+        .enumerate()
+        .find_map(|(idx, item)| match item {
+            RewardItem::Card { cards } => Some((idx, cards.clone())),
+            _ => None,
+        })
 }
