@@ -353,6 +353,7 @@ fn run_control_auto_run_wraps_auto_step_with_run_summary() {
     assert!(outcome
         .message
         .contains("Reason: Neow bonus requires human choice"));
+    assert!(outcome.message.contains("Next: choose a Neow bonus id"));
     assert!(outcome.message.contains("route=planner"));
     assert!(outcome.message.contains("applied_operations=1"));
     assert!(outcome.message.contains("routine: Proceed"));
@@ -391,6 +392,9 @@ fn run_control_auto_run_uses_route_planner_by_default() {
     assert!(outcome.message.contains("Auto-run stopped: Combat"));
     assert!(outcome.message.contains("route=planner"));
     assert!(outcome.message.contains("route planner:"));
+    assert!(outcome
+        .message
+        .contains("Next: play manually, cap the combat if useful"));
     assert!(matches!(
         session.engine_state,
         EngineState::CombatPlayerTurn
@@ -471,6 +475,7 @@ fn run_control_auto_run_stops_on_ambiguous_card_reward() {
     assert!(outcome
         .message
         .contains("Reason: card reward requires human choice"));
+    assert!(outcome.message.contains("Next: choose a card id or skip"));
     assert!(!session.run_state.master_deck.iter().any(|card| matches!(
         card.id,
         crate::content::cards::CardId::PommelStrike

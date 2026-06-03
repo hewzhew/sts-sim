@@ -21,7 +21,19 @@ use trace_cli::{
 };
 
 #[derive(Parser, Debug)]
-#[command(about = "Thin simulator run/play driver with exact combat capture support")]
+#[command(
+    about = "Thin simulator run/play driver with exact combat capture support",
+    after_long_help = "Daily examples:
+  Start and auto-record:
+    run_play_driver --seed 521 --ascension 0 --class ironclad --record
+
+  Resume a bookmark created by `mark <name>`:
+    run_play_driver --goto <name>
+
+  Continue a trace with a named branch:
+    run_play_driver --continue-trace tools/artifacts/traces/seed521.trace.json --branch test1
+"
+)]
 struct Args {
     #[arg(long)]
     seed: Option<u64>,
