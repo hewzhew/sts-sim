@@ -26,6 +26,7 @@ pub(super) fn route_go_trace_annotation(
             .to_string(),
         top_candidates: route_go_top_candidate_summaries(trace),
         label_role: "behavior_policy_not_teacher".to_string(),
+        noncombat_record: Some(trace.to_noncombat_decision_record_v1()),
     }
 }
 

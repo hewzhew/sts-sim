@@ -2,6 +2,7 @@ use crate::state::core::{ClientInput, EngineState};
 use crate::state::rewards::{RewardCard, RewardItem};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::trace_annotation::RunControlTraceAnnotationV1;
 
 pub(super) fn apply_card_reward_policy_pick(
     session: &mut RunControlSession,
@@ -23,6 +24,7 @@ pub(super) fn apply_card_reward_policy_pick(
         return Ok(None);
     };
     let decision = card_reward_decision(session, &cards);
+    let noncombat_record = decision.to_noncombat_decision_record_v1();
     let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Pick {
         index,
         card,
@@ -46,7 +48,11 @@ pub(super) fn apply_card_reward_policy_pick(
                 .to_string(),
         );
     }
-    let outcome = session.apply_input(ClientInput::SelectCard(index))?;
+    let outcome = session
+        .apply_input(ClientInput::SelectCard(index))?
+        .with_trace_annotations(vec![RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+            record: noncombat_record,
+        }]);
     Ok(Some((
         outcome,
         card_reward_summary(card, confidence, &reason, decision.label_role),
@@ -58,6 +64,7 @@ fn apply_policy_to_pending_cards(
     cards: Vec<RewardCard>,
 ) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
     let decision = card_reward_decision(session, &cards);
+    let noncombat_record = decision.to_noncombat_decision_record_v1();
     let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Pick {
         index,
         card,
@@ -67,7 +74,11 @@ fn apply_policy_to_pending_cards(
     else {
         return Ok(None);
     };
-    let outcome = session.apply_input(ClientInput::SelectCard(index))?;
+    let outcome = session
+        .apply_input(ClientInput::SelectCard(index))?
+        .with_trace_annotations(vec![RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+            record: noncombat_record,
+        }]);
     Ok(Some((
         outcome,
         card_reward_summary(card, confidence, &reason, decision.label_role),

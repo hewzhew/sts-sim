@@ -17,6 +17,21 @@ Every non-trivial autopilot decision must be treated as:
 label_role = behavior_policy_not_teacher
 ```
 
+## Decision Records
+
+Route-planner and card-reward autopilot decisions also export
+`NonCombatDecisionRecordV1`. This is the shared Phase 0 record boundary for
+non-combat behavior-policy evidence.
+
+The record must stay hidden-free:
+
+- public observations are allowed
+- known distributions and beliefs are allowed when declared
+- hidden simulator state is forbidden
+
+Adding a new non-combat autopilot policy should adapt to this record boundary
+instead of inventing another report shape.
+
 ## Human Boundaries
 
 Autopilot should stop at:

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::ai::noncombat_decision_v1::NonCombatDecisionRecordV1;
 use crate::state::core::ClientInput;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -39,6 +40,11 @@ pub enum RunControlTraceAnnotationV1 {
         command: String,
         top_candidates: Vec<RoutePlannerCandidateSummaryV1>,
         label_role: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        noncombat_record: Option<NonCombatDecisionRecordV1>,
+    },
+    NonCombatPolicyDecision {
+        record: NonCombatDecisionRecordV1,
     },
     AutoCombatCapture {
         case_id: String,

@@ -12,7 +12,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 8;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 9;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -481,6 +481,7 @@ fn annotation_artifact_refs(
                 benchmark_manifest_path: Some(benchmark_manifest_path.clone()),
             }),
             RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+            | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
             | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => None,
         })
         .collect()
@@ -674,6 +675,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&trace).expect("trace should serialize");
 
         assert!(json.contains("\"schema_name\": \"SessionTraceV1\""));
+        assert_eq!(trace.schema_version, 9);
         assert!(json.contains("\"label_role\": \"diagnostic_not_teacher_label\""));
         assert!(json.contains("\"trainable_as_action_label\": false"));
         assert!(json.contains("\"policy_quality_claim\": false"));

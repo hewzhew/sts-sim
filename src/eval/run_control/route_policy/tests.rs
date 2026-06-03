@@ -116,6 +116,7 @@ fn route_go_attaches_compact_trace_boundary() {
         command,
         top_candidates,
         label_role,
+        noncombat_record,
         ..
     } = &outcome.trace_annotations[0]
     else {
@@ -128,4 +129,15 @@ fn route_go_attaches_compact_trace_boundary() {
     assert!(!top_candidates.is_empty());
     assert!(top_candidates.len() <= 3);
     assert_eq!(label_role, "behavior_policy_not_teacher");
+    let record = noncombat_record
+        .as_ref()
+        .expect("route planner annotation should carry unified noncombat record");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Map
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+    );
 }

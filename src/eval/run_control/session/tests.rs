@@ -423,6 +423,13 @@ fn run_control_auto_run_picks_high_confidence_card_reward() {
         .expect("auto-run should apply a high-confidence card reward pick");
 
     assert!(outcome.message.contains("card reward policy: Shockwave"));
+    assert!(outcome.trace_annotations.iter().any(|annotation| matches!(
+        annotation,
+        crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+            record
+        } if record.site == crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
+            && record.data_role == crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+    )));
     assert!(session
         .run_state
         .master_deck
