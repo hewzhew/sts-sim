@@ -74,6 +74,29 @@ fn policy_picks_targeted_early_frontload_over_weaker_attack_and_cycle() {
 }
 
 #[test]
+fn policy_picks_early_attack_with_weak_over_scaling_traps() {
+    let run_state = RunState::new(915824392, 0, false, "Ironclad");
+    let decision = plan_card_reward_decision_v1(
+        &run_state,
+        &[
+            RewardCard::new(CardId::SearingBlow, 0),
+            RewardCard::new(CardId::HeavyBlade, 0),
+            RewardCard::new(CardId::Clothesline, 0),
+        ],
+        &CardRewardPolicyConfigV1::default(),
+    );
+
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Pick {
+            index: 2,
+            card: CardId::Clothesline,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn policy_stops_on_single_card_that_does_not_clear_score_gate() {
     let run_state = RunState::new(521, 0, false, "Ironclad");
     let decision = plan_card_reward_decision_v1(

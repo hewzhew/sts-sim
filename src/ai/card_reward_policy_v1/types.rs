@@ -52,6 +52,7 @@ pub struct CardRewardCandidateScoreV1 {
 pub struct CardRewardScoreTermsV1 {
     pub frontload: f32,
     pub early_frontload: f32,
+    pub debuff_control: f32,
     pub block: f32,
     pub draw: f32,
     pub scaling: f32,
@@ -67,6 +68,7 @@ impl CardRewardScoreTermsV1 {
     pub fn total(&self) -> f32 {
         self.frontload
             + self.early_frontload
+            + self.debuff_control
             + self.block
             + self.draw
             + self.scaling
@@ -84,6 +86,7 @@ pub(crate) struct DeckNeedsV1 {
     pub deck_size: usize,
     pub need_frontload: f32,
     pub need_early_frontload: f32,
+    pub need_debuff_control: f32,
     pub need_block: f32,
     pub need_draw: f32,
     pub need_scaling: f32,

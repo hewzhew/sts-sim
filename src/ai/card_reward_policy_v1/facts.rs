@@ -55,6 +55,13 @@ pub(crate) fn deck_needs(run_state: &RunState, config: &CardRewardPolicyConfigV1
         } else {
             0.0
         },
+        need_debuff_control: if run_state.act_num == 1 && run_state.floor_num <= 8 {
+            1.0
+        } else if run_state.act_num == 1 {
+            0.65
+        } else {
+            0.35
+        },
         need_block: if block < 28 {
             0.85
         } else if block < 45 {
@@ -189,6 +196,18 @@ pub(crate) fn early_frontload_value(card_id: CardId, needs: &DeckNeedsV1) -> f32
         _ => 0.0,
     };
     value * needs.need_early_frontload
+}
+
+pub(crate) fn debuff_control_value(card_id: CardId, needs: &DeckNeedsV1) -> f32 {
+    let value = match card_id {
+        CardId::Clothesline => 3.2,
+        CardId::Uppercut => 3.0,
+        CardId::Shockwave => 2.2,
+        CardId::Disarm => 2.0,
+        CardId::ThunderClap => 1.5,
+        _ => 0.0,
+    };
+    value * needs.need_debuff_control
 }
 
 pub(crate) fn risk_penalty(card_id: CardId, needs: &DeckNeedsV1) -> f32 {

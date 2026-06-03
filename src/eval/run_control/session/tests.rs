@@ -746,6 +746,34 @@ fn run_control_auto_run_opens_and_picks_early_frontload_card_reward_item() {
 }
 
 #[test]
+fn run_control_auto_run_opens_and_picks_early_weak_attack_card_reward_item() {
+    let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
+        cards: vec![
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::SearingBlow, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::HeavyBlade, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Clothesline, 0),
+        ],
+    }]);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should open and pick the early Weak attack reward");
+
+    assert!(outcome.message.contains("card reward policy: Clothesline"));
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Clothesline));
+    assert!(outcome.action_result.is_some());
+}
+
+#[test]
 fn run_control_auto_run_stops_on_ambiguous_card_reward() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::PommelStrike,

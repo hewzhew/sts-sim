@@ -372,6 +372,7 @@ fn card_reward_score_components(terms: &CardRewardScoreTermsV1) -> Vec<ValueComp
     vec![
         ValueComponentV1::new("frontload", terms.frontload),
         ValueComponentV1::new("early_frontload", terms.early_frontload),
+        ValueComponentV1::new("debuff_control", terms.debuff_control),
         ValueComponentV1::new("block", terms.block),
         ValueComponentV1::new("draw", terms.draw),
         ValueComponentV1::new("scaling", terms.scaling),
