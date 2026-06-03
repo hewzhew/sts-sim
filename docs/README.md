@@ -1,63 +1,27 @@
-# Docs Index
+# Current Documentation
 
-This directory is split between current entrypoints and historical notes.
+This directory contains the active documentation for `sts_simulator`.
 
-## Read These First
+Older notes were moved to:
 
-- [../README.md](../README.md)
-- [AI_DIRECTION.md](AI_DIRECTION.md)
-- [REPOSITORY_MAP.md](REPOSITORY_MAP.md)
-- [LAYER_BOUNDARIES.md](LAYER_BOUNDARIES.md)
-- [TEST_ORACLE_STRATEGY.md](TEST_ORACLE_STRATEGY.md)
-- [CODEX_CLI_RESUME.md](CODEX_CLI_RESUME.md)
-- [NEXT_AI_HANDOFF.md](NEXT_AI_HANDOFF.md)
+```text
+docs_legacy/2026-06-03_pre_rewrite/docs/
+```
 
-Then branch by task:
+Treat legacy files as historical context only. They may describe retired
+workflows such as old watch UI, live communication tooling, LLM controller
+handoffs, or outdated command flags.
 
-- LLM controller / demo route:
-  - [LLM_INTEGRATION_HANDOFF.md](LLM_INTEGRATION_HANDOFF.md)
-  - [../tools/llm/README.md](../tools/llm/README.md)
-- Java-source-backed mechanics parity:
-  - [MECHANICS_ACCEPTANCE_STANDARD.md](MECHANICS_ACCEPTANCE_STANDARD.md)
-  - [MECHANICS_AUDIT_LEDGER.md](MECHANICS_AUDIT_LEDGER.md)
-  - [JAVA_SOURCE_MAP.md](JAVA_SOURCE_MAP.md)
-  - [JAVA_MECHANICS_DEBUG_HANDOFF.md](JAVA_MECHANICS_DEBUG_HANDOFF.md)
-- legacy `live_comm` / parity / fixture capture:
-  - [live_comm/README.md](live_comm/README.md)
-  - [live_comm/LEGACY_FIXTURE_ONLY.md](live_comm/LEGACY_FIXTURE_ONLY.md)
-  - [live_comm/LIVE_COMM_RUNBOOK.md](live_comm/LIVE_COMM_RUNBOOK.md)
-  - [live_comm/LIVE_COMM_PARITY_WORKFLOW.md](live_comm/LIVE_COMM_PARITY_WORKFLOW.md)
-- testing / start-spec fixture work:
-  - [testing/README.md](testing/README.md)
-  - [BUGFIX_WORKFLOW.md](BUGFIX_WORKFLOW.md)
-- local debug binary usage:
-  - [PLAY_GUIDE.md](PLAY_GUIDE.md)
-- current AI/eval infrastructure:
-  - [../tools/learning/README.md](../tools/learning/README.md)
-  - [decision_records/README.md](decision_records/README.md)
+## Read First
 
-## Directory Roles
+- [CURRENT_DIRECTION.md](CURRENT_DIRECTION.md)
+- [RUN_PLAY_GUIDE.md](RUN_PLAY_GUIDE.md)
+- [AUTOPILOT_BOUNDARY.md](AUTOPILOT_BOUNDARY.md)
+- [ARTIFACTS.md](ARTIFACTS.md)
+- [KNOWN_LIMITS.md](KNOWN_LIMITS.md)
 
-- root `docs/`
-  - repo-wide rules and default entry docs
-- `docs/live_comm/`
-  - legacy bridge notes and future adapter boundary
-- `docs/testing/`
-  - active testing workflow and start-spec notes
-- `docs/design/`
-  - engine and runtime design notes
-- `docs/decision_records/`
-  - short current decisions that prevent repeating invalidated experiment paths
-- `docs/audits/`
-  - dated investigations and validation reports
-- `docs/archive/`
-  - retired handoffs and historical notes
-- `docs/templates/`
-  - reusable templates
+## Current Rule
 
-## Canonical Versus Historical
-
-- if a file is linked from an active `README.md`, treat it as current workflow
-- if a file lives under `audits/` or `archive/`, treat it as historical context
-- if a dated note disagrees with the root `README`, `AI_DIRECTION.md`, or
-  live-comm boundary docs, the current entrypoint wins
+If a legacy note disagrees with this directory, the active docs win. If active
+docs disagree with current code behavior, update the active docs or fix the
+code in the same change.

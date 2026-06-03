@@ -94,4 +94,4 @@ stop when they cover the question.
 
 `live_comm/` is also legacy. Use it only for fixture capture or historical
 investigation unless the adapter is rebuilt under the boundary in
-`docs/live_comm/LEGACY_FIXTURE_ONLY.md`.
+`docs_legacy/2026-06-03_pre_rewrite/docs/live_comm/LEGACY_FIXTURE_ONLY.md`.

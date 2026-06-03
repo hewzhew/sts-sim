@@ -5,7 +5,7 @@ historical investigation only; do not treat this launcher as the active AI,
 search, or workbench path.
 
 See
-[docs/live_comm/LEGACY_FIXTURE_ONLY.md](D:\rust\sts_simulator\docs\live_comm\LEGACY_FIXTURE_ONLY.md)
+[legacy live-comm boundary](D:\rust\sts_simulator\docs_legacy\2026-06-03_pre_rewrite\docs\live_comm\LEGACY_FIXTURE_ONLY.md)
 before reviving or extending this stack.
 
 Use this wrapper so `CommunicationMod` does not need a new command in
@@ -22,10 +22,10 @@ The launcher now treats stale runtime binaries as a first-class failure mode:
 
 Full day-to-day workflow:
 
-- [docs/live_comm/LIVE_COMM_RUNBOOK.md](D:\rust\sts_simulator\docs\live_comm\LIVE_COMM_RUNBOOK.md)
-- [docs/live_comm/LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](D:\rust\sts_simulator\docs\live_comm\LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
-- [docs/live_comm/LIVE_COMM_MODES.md](D:\rust\sts_simulator\docs\live_comm\LIVE_COMM_MODES.md)
-- [docs/live_comm/WATCH_PRESET_SCHEMA_DRAFT.md](D:\rust\sts_simulator\docs\live_comm\WATCH_PRESET_SCHEMA_DRAFT.md)
+- [LIVE_COMM_RUNBOOK.md](D:\rust\sts_simulator\docs_legacy\2026-06-03_pre_rewrite\docs\live_comm\LIVE_COMM_RUNBOOK.md)
+- [LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md](D:\rust\sts_simulator\docs_legacy\2026-06-03_pre_rewrite\docs\live_comm\LIVE_COMM_MANUAL_SCENARIO_RUNBOOK.md)
+- [LIVE_COMM_MODES.md](D:\rust\sts_simulator\docs_legacy\2026-06-03_pre_rewrite\docs\live_comm\LIVE_COMM_MODES.md)
+- [WATCH_PRESET_SCHEMA_DRAFT.md](D:\rust\sts_simulator\docs_legacy\2026-06-03_pre_rewrite\docs\live_comm\WATCH_PRESET_SCHEMA_DRAFT.md)
 
 ## One-time `config.properties` setup
 
@@ -165,8 +165,10 @@ Terminology:
 
 - these JSON files are currently best thought of as `run profiles`
 - the watch/capture portion inside them is the beginning of a `watch preset`
-- mode selection is documented separately in `docs/live_comm/LIVE_COMM_MODES.md`
-- future schema direction is documented in `docs/live_comm/WATCH_PRESET_SCHEMA_DRAFT.md`
+- mode selection is documented in the legacy
+  `docs_legacy/2026-06-03_pre_rewrite/docs/live_comm/LIVE_COMM_MODES.md`
+- future schema direction is documented in the legacy
+  `docs_legacy/2026-06-03_pre_rewrite/docs/live_comm/WATCH_PRESET_SCHEMA_DRAFT.md`
 
 Example:
 

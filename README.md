@@ -5,183 +5,96 @@
 `sts_simulator` is an unofficial Rust simulator and AI-search workspace for
 Slay the Spire.
 
-The active direction is:
+Current main line:
 
 ```text
-simulator state -> legal actions -> rollout/search -> value -> policy improvement
+simulator -> state representation -> search/rollout -> value -> policy improvement
 ```
 
-This repository is not currently focused on a live-game UI, prompt engineering,
-or an LLM-driven controller. Those may become adapters later, but the main line
-is simulator correctness, stable state boundaries, combat search, and
-whole-combat outcome evaluation.
+The project is not currently focused on old watch UI, Workbench,
+DecisionFrame, prompt engineering, or an LLM-driven controller. Those may return
+later as adapters, but they do not define simulator truth or search quality.
 
-## Current Status
+## Current Workflow
 
-This is a work in progress. The currently maintained workflow is:
+The maintained loop is:
 
 1. run a deterministic simulator session from Neow onward
-2. make non-combat decisions manually or with guarded helpers
-3. capture stable combat starts
-4. run Combat Search V2 on whole-combat trajectories
-5. compare search outcomes against whole-combat baselines
+2. make or automate low-risk non-combat decisions under explicit boundaries
+3. capture stable combat starts when needed
+4. run Combat Search V2 over complete combat trajectories
+5. compare whole-combat outcomes, not step-by-step action agreement
 
-Search reports are budgeted evidence. An unresolved result or a budgeted win is
-not a proof of optimal play.
-
-## What This Is
-
-- a Rust reimplementation of Slay the Spire run/combat state transitions
-- legal action generation and apply-action execution
-- a terminal run/play driver for manual and semi-automatic runs
-- exact combat capture and benchmark artifact infrastructure
-- Combat Search V2 experiments over complete combat trajectories
-- route-planner evidence for map decisions
-
-## What This Is Not
-
-- not an official Mega Crit project
-- not a polished game client
-- not a live CommunicationMod replacement right now
-- not an LLM teacher-label generator
-- not a stable public API yet
-- not a claim of optimal Slay the Spire play
+Autopilot, route planning, card reward policy, traces, and search-assisted
+combat are convenience/evidence tools. They are not teacher labels.
 
 ## Quick Start
 
+Build once:
+
 ```powershell
 cd D:\rust\sts_simulator
-cargo test --quiet
-cargo run --release --bin run_play_driver -- --seed 521 --ascension 0 --class ironclad
+cargo build --release --bin run_play_driver
 ```
 
-For faster iteration during development, use the debug build:
+Start a fresh recorded run with a random seed:
 
 ```powershell
-cargo run --bin run_play_driver -- --seed 521 --ascension 0 --class ironclad
-```
-
-## Main Entrypoints
-
-| Binary | Purpose |
-| --- | --- |
-| `run_play_driver` | manual or semi-automatic simulator run, combat capture, whole-combat baseline capture |
-| `combat_search_v2_driver` | whole-combat search from start specs, combat captures, or benchmark suites |
-| `artifact_doctor` | read-only audit over benchmark artifact directories |
-
-See [src/bin/README.md](src/bin/README.md) for the current binary surface.
-
-## Manual Run Workflow
-
-Start a simulator session:
-
-```powershell
-cargo run --release --bin run_play_driver -- --seed 521 --ascension 0 --class ironclad
-```
-
-Optional diagnostic trace:
-
-```powershell
-cargo run --release --bin run_play_driver -- --seed 521 --ascension 0 --class ironclad --trace tools\artifacts\traces\seed521.trace.json
-```
-
-Optional automatic combat-start capture:
-
-```powershell
-cargo run --release --bin run_play_driver -- --seed 521 --ascension 0 --class ironclad --auto-capture-combat
+$seed = Get-Random -Minimum 1 -Maximum 2147483647
+echo "seed=$seed"
+.\target\release\run_play_driver.exe --seed $seed --ascension 0 --class ironclad --record --search-wall-ms 100
 ```
 
 Useful in-session commands:
 
 | Command | Meaning |
 | --- | --- |
-| `n` / `next` | guarded advance to the next human strategic boundary |
-| `nr` | guarded advance, allowing the route planner to choose map nodes |
-| `rs` | route suggestion only |
-| `rg` | route planner chooses and executes one map move |
-| `sc` / `search-combat` | run Combat Search V2 from the current combat boundary |
-| `cap <case_id>` | capture the current stable combat start |
-| `baseline` | save the matching whole-combat baseline after the captured combat ends |
-| `deck`, `map`, `relics`, `potions` | inspect visible run panels |
-| `draw`, `discard`, `exhaust` | inspect combat piles |
-| `details`, `raw` | inspect debug/internal views |
-| `help` | show the full command list |
+| `ar` | auto-run with guarded route/card/search helpers until human input is needed |
+| `n` | guarded advance without route planning |
+| `nr` | guarded advance with route planning |
+| `rs` / `rg` | route suggestion / execute one route choice |
+| `sc` | run combat search from the current combat boundary |
+| `sd` | inspect or update search defaults |
+| `mark <name>` | save a replay bookmark while recording |
+| `q` | quit cleanly |
 
-Reward screens and map previews intentionally preserve unclaimed rewards until a
-path is actually chosen. Opening the map from a reward screen is a preview; use
-`back` or `cancel` to return, and use `go <x>` or `rg` to commit to the next
-room.
-
-## Combat Search Workflow
-
-Run search from an exact combat capture:
+Resume from a bookmark:
 
 ```powershell
-cargo run --release --bin combat_search_v2_driver -- --combat-snapshot tools\artifacts\benchmarks\seed521_act1\captures\some_case.capture.json
+.\target\release\run_play_driver.exe --goto <name> --search-wall-ms 100
 ```
 
-Run search over a benchmark suite:
+See [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md) for the maintained play
+workflow.
 
-```powershell
-cargo run --release --bin combat_search_v2_driver -- --benchmark-spec tools\artifacts\benchmarks\seed521_act1\benchmark.json
-```
+## Main Entrypoints
 
-Use explicit budgets when probing hard fights:
-
-```powershell
-cargo run --release --bin combat_search_v2_driver -- --combat-snapshot tools\artifacts\benchmarks\seed521_act1\captures\some_case.capture.json --max-nodes 500000 --wall-ms 30000
-```
-
-Stop batch search after a good-enough exact win:
-
-```powershell
-cargo run --release --bin combat_search_v2_driver -- --benchmark-spec tools\artifacts\benchmarks\seed521_act1\benchmark.json --max-hp-loss 8
-```
-
-Benchmark cases with baselines ignore this early-stop gate, so a good-enough
-candidate cannot hide a whole-combat baseline regression.
-
-Potion branches are disabled unless explicitly requested:
-
-```powershell
-cargo run --release --bin combat_search_v2_driver -- --combat-snapshot tools\artifacts\benchmarks\seed521_act1\captures\some_case.capture.json --potion-policy semantic --max-potions-used 1
-```
-
-Important search output concepts:
-
-- `Win` / `Loss` / `Unresolved` describe the reported terminal class.
-- `coverage_status=node_budget_limited` or `time_budget_limited` means
-  unresolved frontier remains.
-- `coverage_status=accepted_complete_candidate` means search stopped after an
-  exact complete win passed the configured hp-loss acceptance gate.
-- `complete_trajectory_found=false` means the search did not find an executable
-  complete win under the given budget.
-- A budgeted complete win is useful evidence, but it is not an exhaustive
-  best-line claim.
-
-## Artifacts
-
-Artifacts are stored under `tools/artifacts/` by default and are ignored by git.
-
-Common artifact types:
-
-| Artifact | Role |
+| Binary | Purpose |
 | --- | --- |
-| `CombatCaptureV1` | stable combat decision boundary used as a search input |
-| `CombatBaselineOutcomeV1` | whole-combat baseline outcome for a matching capture |
-| `BenchmarkSuiteV1` | suite manifest that registers captures and optional baselines |
-| `SessionTraceV1` | diagnostic fact log for successful state-changing commands |
-| `SearchBenchmarkResultV1` | search result evidence over one or more cases |
+| `run_play_driver` | manual and semi-automatic simulator runs, traces, bookmarks, captures, baselines |
+| `combat_search_v2_driver` | whole-combat search from start specs, combat captures, or benchmark suites |
+| `artifact_doctor` | read-only audit over benchmark artifact directories |
 
-Artifacts are provenance and evaluation evidence. They are not teacher labels,
-and they should not be treated as proof of policy quality without the matching
-benchmark context and simulator version.
+See [src/bin/README.md](src/bin/README.md) for binary details.
 
-Read-only artifact audit:
+## Active Docs
 
-```powershell
-cargo run --release --bin artifact_doctor -- --root tools\artifacts\benchmarks --json
+Start here:
+
+- [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)
+- [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
+- [docs/AUTOPILOT_BOUNDARY.md](docs/AUTOPILOT_BOUNDARY.md)
+- [docs/ARTIFACTS.md](docs/ARTIFACTS.md)
+- [docs/KNOWN_LIMITS.md](docs/KNOWN_LIMITS.md)
+
+The old documentation tree was moved to:
+
+```text
+docs_legacy/2026-06-03_pre_rewrite/docs/
 ```
+
+Legacy docs are for archaeology only. They may mention retired LLM, live-comm,
+watch UI, Workbench, or stale command paths.
 
 ## Architecture
 
@@ -194,25 +107,11 @@ cargo run --release --bin artifact_doctor -- --root tools\artifacts\benchmarks -
 | `src/sim` | simulator-facing legal action and apply/search boundaries |
 | `src/ai` | combat search, state keys, route planner, value/rollout work |
 | `src/eval` | run-control, benchmark artifacts, diagnostics, reports |
-| `src/bin` | maintained command entrypoints only |
-| `docs` | current notes plus historical audits and design records |
-
-Current compatibility modules may preserve old paths, but new code should prefer
-the active ownership above.
-
-## Current Roadmap
-
-1. keep stable simulator boundaries correct
-2. improve Combat Search V2 value and rollout behavior
-3. handle special combat phases and high-fanout branches without unsound pruning
-4. make route planning useful for low-risk map automation
-5. strengthen capture -> suite -> search -> baseline comparison loops
-6. revisit live-game adapters or LLM integration only after the simulator/search
-   evidence layer is reliable
+| `src/bin` | maintained command entrypoints |
 
 ## Verification
 
-Before pushing core changes, run:
+For core code changes:
 
 ```powershell
 cargo fmt --check
@@ -224,13 +123,11 @@ cargo build --release --bin combat_search_v2_driver
 git diff --check
 ```
 
-## Documentation Notes
+For documentation-only changes, at minimum run:
 
-The repository contains many historical investigations. Treat the root README,
-[src/bin/README.md](src/bin/README.md), and current code as the active entry
-points. Older files under `docs/audits`, `docs/archive`, and retired live-comm
-notes are useful context, but they may describe workflows that are no longer the
-main path.
+```powershell
+git diff --check
+```
 
 ## License and Game Notice
 
