@@ -116,6 +116,9 @@ fn long_command_progress_message(command: &RunControlCommand) -> Option<&'static
         RunControlCommand::AutoStep(_) => Some(
             "running advance-to-human-boundary; combat search may take a few seconds. Extra blank Enter presses after it finishes will be ignored.",
         ),
+        RunControlCommand::AutoRun(_) => Some(
+            "running auto-run with route planner; combat search may take a few seconds. Extra blank Enter presses after it finishes will be ignored.",
+        ),
         RunControlCommand::SearchCombat(_) => Some(
             "running combat search; this may take a few seconds. Extra blank Enter presses after it finishes will be ignored.",
         ),
@@ -126,7 +129,9 @@ fn long_command_progress_message(command: &RunControlCommand) -> Option<&'static
 fn ignores_following_blank_enter(command: &RunControlCommand) -> bool {
     matches!(
         command,
-        RunControlCommand::AutoStep(_) | RunControlCommand::SearchCombat(_)
+        RunControlCommand::AutoStep(_)
+            | RunControlCommand::AutoRun(_)
+            | RunControlCommand::SearchCombat(_)
     )
 }
 
@@ -140,14 +145,17 @@ mod tests {
     #[test]
     fn long_running_commands_show_progress_and_guard_blank_enter() {
         let auto = RunControlCommand::AutoStep(RunControlAutoStepOptions::default());
+        let auto_run = RunControlCommand::AutoRun(RunControlAutoStepOptions::default());
         let search = RunControlCommand::SearchCombat(RunControlSearchCombatOptions::default());
         let deck = RunControlCommand::Deck;
 
         assert!(long_command_progress_message(&auto).is_some());
+        assert!(long_command_progress_message(&auto_run).is_some());
         assert!(long_command_progress_message(&search).is_some());
         assert!(long_command_progress_message(&deck).is_none());
 
         assert!(ignores_following_blank_enter(&auto));
+        assert!(ignores_following_blank_enter(&auto_run));
         assert!(ignores_following_blank_enter(&search));
         assert!(!ignores_following_blank_enter(&deck));
     }

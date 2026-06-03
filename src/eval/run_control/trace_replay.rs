@@ -540,7 +540,9 @@ fn try_replay_recorded_combat_trajectory(
 ) -> Option<RunControlCommandOutcome> {
     if !matches!(
         command,
-        RunControlCommand::AutoStep(_) | RunControlCommand::SearchCombat(_)
+        RunControlCommand::AutoStep(_)
+            | RunControlCommand::AutoRun(_)
+            | RunControlCommand::SearchCombat(_)
     ) {
         return None;
     }
@@ -725,15 +727,38 @@ mod tests {
 
     #[test]
     fn replay_trace_uses_recorded_combat_trajectory_for_auto_step() {
+        assert_replay_uses_recorded_combat_trajectory(
+            RunControlCommand::AutoStep(RunControlAutoStepOptions {
+                max_operations: Some(0),
+                ..Default::default()
+            }),
+            "n max_ops=0",
+            "replay should apply the recorded combat input, not only accept the compact boundary",
+        );
+    }
+
+    #[test]
+    fn replay_trace_uses_recorded_combat_trajectory_for_auto_run() {
+        assert_replay_uses_recorded_combat_trajectory(
+            RunControlCommand::AutoRun(RunControlAutoStepOptions {
+                max_operations: Some(0),
+                ..Default::default()
+            }),
+            "ar max_ops=0",
+            "auto-run replay should apply the recorded combat input via trajectory annotation",
+        );
+    }
+
+    fn assert_replay_uses_recorded_combat_trajectory(
+        command: RunControlCommand,
+        command_line: &str,
+        message: &str,
+    ) {
         let mut recording_session = test_session_at_first_combat();
-        let command = RunControlCommand::AutoStep(RunControlAutoStepOptions {
-            max_operations: Some(0),
-            ..Default::default()
-        });
         let path = unique_temp_path("trace_replay_combat_trajectory").join("trace.json");
         let mut recorder = SessionTraceRecorder::new(path.clone(), &recording_session);
         let pending =
-            SessionTraceRecorder::prepare_step(&recording_session, "n max_ops=0", &command);
+            SessionTraceRecorder::prepare_step(&recording_session, command_line, &command);
         let outcome = recording_session
             .apply_input(ClientInput::EndTurn)
             .expect("recorded combat action should apply");
@@ -780,7 +805,7 @@ mod tests {
         assert_eq!(
             combat_turn_count(&replay_session),
             combat_turn_count(&recording_session),
-            "replay should apply the recorded combat input, not only accept the compact boundary"
+            "{message}"
         );
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

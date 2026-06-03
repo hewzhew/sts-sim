@@ -230,6 +230,33 @@ fn run_control_parser_accepts_auto_step_options() {
 }
 
 #[test]
+fn run_control_parser_accepts_auto_run_options() {
+    assert_eq!(
+        parse_run_control_command("auto-run max_ops=33 wall_ms=100")
+            .expect("auto-run should parse"),
+        RunControlCommand::AutoRun(RunControlAutoStepOptions {
+            search: RunControlSearchCombatOptions {
+                wall_ms: Some(100),
+                ..Default::default()
+            },
+            max_operations: Some(33),
+            route: RunControlRouteAutomationMode::Planner,
+        })
+    );
+    assert_eq!(
+        parse_run_control_command("ar").expect("ar should parse"),
+        RunControlCommand::AutoRun(RunControlAutoStepOptions {
+            route: RunControlRouteAutomationMode::Planner,
+            ..Default::default()
+        })
+    );
+    assert!(
+        parse_run_control_command("auto-run route=manual").is_err(),
+        "auto-run should not silently accept conflicting route mode"
+    );
+}
+
+#[test]
 fn run_control_parser_accepts_auto_reward_settings() {
     assert_eq!(
         parse_run_control_command("auto-reward").expect("auto-reward should parse"),

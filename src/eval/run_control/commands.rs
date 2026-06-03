@@ -72,6 +72,7 @@ pub enum RunControlCommand {
     SearchDefaults(RunControlSearchDefaultsCommand),
     SearchCombat(RunControlSearchCombatOptions),
     AutoStep(RunControlAutoStepOptions),
+    AutoRun(RunControlAutoStepOptions),
     RewardAutomationStatus,
     SetRewardAutomation {
         target: RewardAutomationTarget,

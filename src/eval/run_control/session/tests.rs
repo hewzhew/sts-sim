@@ -342,6 +342,24 @@ fn run_control_auto_step_advances_routine_neow_intro_only() {
 }
 
 #[test]
+fn run_control_auto_run_wraps_auto_step_with_run_summary() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(Default::default()))
+        .expect("auto-run should advance routine intro");
+
+    assert!(outcome.message.contains("Auto-run stopped: Neow Bonus"));
+    assert!(outcome
+        .message
+        .contains("Reason: Neow bonus requires human choice"));
+    assert!(outcome.message.contains("route=planner"));
+    assert!(outcome.message.contains("applied_operations=1"));
+    assert!(outcome.message.contains("routine: Proceed"));
+    assert!(outcome.action_result.is_some());
+}
+
+#[test]
 fn run_control_auto_step_stops_on_map_without_mutating_state() {
     let mut session = test_session_after_neow_at_map();
 
@@ -355,6 +373,28 @@ fn run_control_auto_step_stops_on_map_without_mutating_state() {
         .contains("Reason: map route requires human choice"));
     assert!(outcome.action_result.is_none());
     assert!(matches!(session.engine_state, EngineState::MapNavigation));
+}
+
+#[test]
+fn run_control_auto_run_uses_route_planner_by_default() {
+    let mut session = test_session_with_first_monster_room();
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should use route planner");
+
+    assert!(outcome.message.contains("Auto-run stopped: Combat"));
+    assert!(outcome.message.contains("route=planner"));
+    assert!(outcome.message.contains("route planner:"));
+    assert!(matches!(
+        session.engine_state,
+        EngineState::CombatPlayerTurn
+    ));
 }
 
 #[test]

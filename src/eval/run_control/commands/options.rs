@@ -191,6 +191,24 @@ pub(super) fn parse_route_auto_step_command(rest: &[&str]) -> Result<RunControlC
     Ok(RunControlCommand::AutoStep(options))
 }
 
+pub(super) fn parse_auto_run_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    if rest.iter().any(|token| {
+        token.split_once('=').is_some_and(|(key, _)| {
+            matches!(
+                key.to_ascii_lowercase().as_str(),
+                "route" | "route_policy" | "route-policy"
+            )
+        })
+    }) {
+        return Err("auto-run already means route=planner; do not pass route=".to_string());
+    }
+    let RunControlCommand::AutoStep(mut options) = parse_auto_step_command(rest)? else {
+        unreachable!("parse_auto_step_command always returns AutoStep")
+    };
+    options.route = RunControlRouteAutomationMode::Planner;
+    Ok(RunControlCommand::AutoRun(options))
+}
+
 pub(super) fn parse_auto_reward_command(rest: &[&str]) -> Result<RunControlCommand, String> {
     match rest {
         [] | ["status"] => Ok(RunControlCommand::RewardAutomationStatus),

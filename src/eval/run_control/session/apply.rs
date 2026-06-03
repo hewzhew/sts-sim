@@ -114,6 +114,9 @@ impl RunControlSession {
             RunControlCommand::AutoStep(options) => {
                 super::super::auto_step::apply_guarded_auto_step(self, options)
             }
+            RunControlCommand::AutoRun(options) => {
+                super::super::auto_run::apply_auto_run(self, options)
+            }
             RunControlCommand::RewardAutomationStatus => Ok(RunControlCommandOutcome::message(
                 self.reward_automation.summary(),
             )),

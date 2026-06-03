@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::state::core::{CampfireChoice, ClientInput};
 
 use super::options::{
-    parse_auto_reward_command, parse_auto_step_command, parse_buy_command,
+    parse_auto_reward_command, parse_auto_run_command, parse_auto_step_command, parse_buy_command,
     parse_optional_usize_arg, parse_route_auto_step_command, parse_search_combat_options,
     parse_search_defaults_command, parse_u32_list, parse_usize_arg, parse_usize_list,
 };
@@ -79,6 +79,7 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
             parse_auto_step_command(&rest)
         }
         "nr" | "next-route" | "advance-route" => parse_route_auto_step_command(&rest),
+        "ar" | "auto-run" | "autorun" | "run-auto" => parse_auto_run_command(&rest),
         "auto-reward" => parse_auto_reward_command(&rest),
         "action" => Ok(RunControlCommand::ActionIndex(parse_usize_arg(
             rest.first(),

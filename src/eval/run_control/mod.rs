@@ -1,5 +1,6 @@
 mod artifact_commands;
 mod auto_capture;
+mod auto_run;
 mod auto_step;
 mod combat_search;
 mod combat_start;
