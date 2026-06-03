@@ -402,11 +402,15 @@ mod tests {
         assert!(!rendered.contains("go <x>"));
         assert!(!rendered.contains("known:"));
         assert!(!rendered.contains("partial:"));
-        assert!(rendered.contains("gain 100 gold"));
-        assert!(rendered.contains("3 random uncommon colorless card choices"));
-        assert!(rendered.contains("random rare relic outcome"));
-        assert!(rendered.contains("lose starter relic Burning Blood"));
-        assert!(rendered.contains("random boss relic outcome"));
+        assert!(rendered.contains("Obtain 100 Gold."));
+        assert!(rendered.contains("Choose a colorless card to obtain."));
+        assert!(!rendered.contains("gain 100 gold"));
+        assert!(!rendered.contains("3 random uncommon colorless card choices"));
+        assert!(!rendered.contains("random rare relic outcome"));
+        assert!(rendered.contains("Lose your starter Relic."));
+        assert!(!rendered.contains("lose starter relic Burning Blood"));
+        assert!(!rendered.contains("random boss relic outcome"));
+        assert!(!rendered.contains("distribution known, result hidden"));
     }
 
     #[test]

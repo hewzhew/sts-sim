@@ -50,7 +50,7 @@ fn event_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         .map(|(idx, option)| {
             let label = clean_event_label(&option.ui.text);
             let resolution = CandidateResolution::from_event_option(option);
-            let note = event_option_note(option, options.len(), resolution.as_ref());
+            let note = event_option_note(option, options.len());
             if option.ui.disabled {
                 unavailable_candidate(
                     idx.to_string(),
@@ -72,11 +72,7 @@ fn event_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         .collect()
 }
 
-fn event_option_note(
-    option: &EventOption,
-    option_count: usize,
-    resolution: Option<&CandidateResolution>,
-) -> Option<String> {
+fn event_option_note(option: &EventOption, option_count: usize) -> Option<String> {
     if option.ui.disabled {
         return Some(format!(
             "locked: {}",
@@ -90,9 +86,6 @@ fn event_option_note(
         )
     {
         return Some("routine".to_string());
-    }
-    if let Some(note) = resolution.and_then(CandidateResolution::main_note) {
-        return Some(note);
     }
     match option.semantics.transition {
         EventOptionTransition::OpenSelection(kind) => {
