@@ -25,9 +25,10 @@ stack for Slay the Spire. The most important loop is:
 
 ## Closed Foundation
 
-Phase 0 run-control automation and provenance boundaries are considered closed.
-Use [PHASE_0_EXIT.md](PHASE_0_EXIT.md) as the completion line. Future work in
-that area should be bugfixes or compatibility fixes, not new policy behavior.
+Phase 0 run-control automation and provenance boundaries are closed. Keep
+`n`/`nr`/`ar`, trace/replay/bookmarks, non-combat boundary records, and combat
+capture artifacts working; otherwise avoid expanding this layer. New
+route/card/shop/event/campfire/boss-relic policy behavior belongs to Phase 1.
 
 ## Not The Main Line
 
