@@ -44,6 +44,7 @@ Help:
     max_hp_loss also lets search stop early after an exact complete win within that hp-loss limit; this is a practical acceptance gate, not an optimality claim.
     startup flags: --search-max-nodes N, --search-wall-ms N, and --search-max-hp-loss N set initial defaults for sc/n/nr
     sd/search-defaults changes those defaults inside the current session
+    startup flag: --record writes this new run to an auto-named trace so mark <name> can be used without typing a trace path
     mark <name> saves the current recorded trace position as a bookmark; start later with --goto <name>
     auto-reward
     auto-reward gold|potion|all on|off"

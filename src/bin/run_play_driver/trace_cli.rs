@@ -22,14 +22,24 @@ pub(super) fn validate_trace_args(
 
 pub(super) fn trace_output_path(
     trace: Option<&PathBuf>,
+    record_trace: Option<PathBuf>,
     continue_trace: Option<&PathBuf>,
     branch: Option<&str>,
 ) -> Option<PathBuf> {
-    match (trace, continue_trace) {
-        (Some(path), _) => Some(path.clone()),
-        (None, Some(parent)) => Some(default_continue_trace_path(parent, branch)),
-        (None, None) => None,
+    match (trace, record_trace, continue_trace) {
+        (Some(path), _, _) => Some(path.clone()),
+        (None, Some(path), _) => Some(path),
+        (None, None, Some(parent)) => Some(default_continue_trace_path(parent, branch)),
+        (None, None, None) => None,
     }
+}
+
+pub(super) fn default_record_trace_path(seed: u64, ascension: u8, player_class: &str) -> PathBuf {
+    let class = sanitize_branch_name(player_class);
+    let suffix = current_trace_suffix();
+    PathBuf::from("tools/artifacts/traces").join(format!(
+        "seed{seed}_{class}_a{ascension}.{suffix}.trace.json"
+    ))
 }
 
 pub(super) fn reject_same_trace_path(source: &Path, output: &Path) -> Result<(), String> {
@@ -132,6 +142,20 @@ mod tests {
             .expect("path should have utf8 file name");
         assert!(file_name.starts_with("seed590.act1_event_path."));
         assert!(file_name.ends_with(".trace.json"));
+    }
+
+    #[test]
+    fn default_record_trace_path_names_run_config_and_is_unique() {
+        let first = default_record_trace_path(521, 0, "Ironclad");
+        let second = default_record_trace_path(521, 0, "Ironclad");
+
+        let first_name = first
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("trace path should have a file name");
+        assert!(first_name.starts_with("seed521_ironclad_a0."));
+        assert!(first_name.ends_with(".trace.json"));
+        assert_ne!(first, second);
     }
 
     #[test]

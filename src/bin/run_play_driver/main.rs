@@ -15,7 +15,10 @@ mod terminal;
 mod trace_cli;
 use bookmarks::{default_bookmark_registry_path, resolve_goto_bookmark};
 use terminal::{run_repl, run_script};
-use trace_cli::{file_hash, reject_same_trace_path, trace_output_path, validate_trace_args};
+use trace_cli::{
+    default_record_trace_path, file_hash, reject_same_trace_path, trace_output_path,
+    validate_trace_args,
+};
 
 #[derive(Parser, Debug)]
 #[command(about = "Thin simulator run/play driver with exact combat capture support")]
@@ -80,6 +83,12 @@ struct Args {
     )]
     trace: Option<PathBuf>,
 
+    #[arg(
+        long,
+        help = "Record this new run to an auto-named trace under tools/artifacts/traces"
+    )]
+    record: bool,
+
     #[arg(long)]
     auto_capture_combat: bool,
 
@@ -133,6 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|name| resolve_goto_bookmark(&bookmark_registry_path, name))
         .transpose()?;
     validate_goto_args(&args)?;
+    validate_record_args(&args)?;
     validate_trace_args(
         effective_replay_trace(&args, goto_plan.as_ref()).as_ref(),
         effective_continue_trace(&args, goto_plan.as_ref()).as_ref(),
@@ -152,8 +162,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .or(args.replay_steps),
     };
     let mut session = RunControlSession::new(config);
+    let record_trace = args.record.then(|| {
+        default_record_trace_path(
+            session.run_state.seed,
+            session.run_state.ascension_level,
+            &session.run_state.player_class,
+        )
+    });
     let trace_path = trace_output_path(
         args.trace.as_ref(),
+        record_trace,
         effective_continue_trace(&args, goto_plan.as_ref()).as_ref(),
         effective_branch(&args),
     );
@@ -288,6 +306,25 @@ fn validate_goto_args(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_record_args(args: &Args) -> Result<(), String> {
+    if !args.record {
+        return Ok(());
+    }
+    if args.trace.is_some()
+        || args.replay_trace.is_some()
+        || args.continue_trace.is_some()
+        || args.goto.is_some()
+        || args.branch.is_some()
+        || args.replay_steps.is_some()
+    {
+        return Err(
+            "--record starts a fresh auto-named trace; do not combine it with --trace, --replay-trace, --continue-trace, --goto, --branch, or --replay-steps"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn trace_has_combat_automation(trace: &SessionTraceV1) -> bool {
     trace.steps.iter().any(|step| {
         step.annotations.iter().any(|annotation| {
@@ -392,6 +429,7 @@ mod tests {
             goto: None,
             bookmark_file: None,
             trace: None,
+            record: false,
             auto_capture_combat: false,
             auto_capture_combat_root: None,
             search_max_nodes: None,
@@ -452,6 +490,17 @@ mod tests {
         let err = validate_goto_args(&args).expect_err("goto should own replay steps");
 
         assert!(err.contains("--goto owns trace replay"));
+    }
+
+    #[test]
+    fn record_rejects_explicit_trace_and_replay_flags() {
+        let mut args = empty_args();
+        args.record = true;
+        args.trace = Some(PathBuf::from("manual.trace.json"));
+
+        let err = validate_record_args(&args).expect_err("record should own trace output path");
+
+        assert!(err.contains("--record starts a fresh auto-named trace"));
     }
 
     #[test]

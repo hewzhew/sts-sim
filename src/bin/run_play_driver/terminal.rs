@@ -168,7 +168,7 @@ fn execute_bookmark_command(
         }
         TerminalBookmarkCommand::Mark(name) => {
             let recorder = trace.ok_or_else(|| {
-                "mark requires trace recording; start run_play_driver with --trace, --continue-trace, or --goto"
+                "mark requires trace recording; start run_play_driver with --record, --trace, --continue-trace, or --goto"
                     .to_string()
             })?;
             let bookmark = mark_current_boundary(
@@ -287,7 +287,7 @@ mod tests {
         let err = execute_line(&mut session, "mark missing_trace", &registry_path, None)
             .expect_err("mark without trace should fail");
 
-        assert!(err.contains("mark requires trace recording"));
+        assert!(err.contains("--record"));
 
         let _ = fs::remove_dir_all(dir);
     }

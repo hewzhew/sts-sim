@@ -43,6 +43,9 @@ Active binaries:
   - `--trace <path>`: write a `SessionTraceV1` diagnostic fact log for
     successful state-changing commands and benchmark artifact refs; omitted by
     default, with no implicit trace path
+  - `--record`: convenience form for a new manual/auto-run session. It writes
+    to a unique auto-named trace under `tools/artifacts/traces`, so the REPL can
+    use `mark <name>` without typing a trace path.
   - `mark <name>` / `marks`: while trace recording is enabled, save or list a
     named replay bookmark in `tools/artifacts/traces/bookmarks.json`
   - `--goto <name>`: resume from a named bookmark. This automatically replays
