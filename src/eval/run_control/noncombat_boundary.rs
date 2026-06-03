@@ -23,6 +23,115 @@ pub(super) fn noncombat_human_boundary_annotation(
     })
 }
 
+pub(super) fn render_current_noncombat_boundary_record(session: &RunControlSession) -> String {
+    let Some(record) =
+        build_noncombat_human_boundary_record_v1(session, "manual noncombat boundary inspection")
+    else {
+        return "No NonCombatDecisionRecordV1 is available at the current boundary.\n\
+Supported noncombat boundaries: Neow, event, map, reward/card reward, shop, campfire, boss relic."
+            .to_string();
+    };
+
+    render_noncombat_decision_record_summary(&record)
+}
+
+fn render_noncombat_decision_record_summary(record: &NonCombatDecisionRecordV1) -> String {
+    let hidden_free = !record.information_boundary.hidden_simulator_state_used
+        && record
+            .information_boundary
+            .forbidden_inputs
+            .contains(&InformationClassV1::HiddenSimulatorState);
+    let mut out = String::new();
+    push_line(
+        &mut out,
+        format!("{} v{}", record.schema_name, record.schema_version),
+    );
+    push_line(
+        &mut out,
+        format!(
+            "site={:?} data_role={:?} hidden_free={hidden_free}",
+            record.site, record.data_role
+        ),
+    );
+    push_line(
+        &mut out,
+        format!(
+            "selection={:?} mode={} confidence={:.2}",
+            record.selection.status, record.selection.selection_mode, record.selection.confidence
+        ),
+    );
+    push_line(&mut out, format!("reason={}", record.selection.reason));
+    push_line(
+        &mut out,
+        format!(
+            "candidates={} evidence_items={} values={}",
+            record.candidates.len(),
+            record.evidence.items.len(),
+            record.values.len()
+        ),
+    );
+    push_line(&mut out, "");
+    push_line(
+        &mut out,
+        format!(
+            "Information: allowed={} forbidden={}",
+            information_classes_label(&record.information_boundary.allowed_inputs),
+            information_classes_label(&record.information_boundary.forbidden_inputs)
+        ),
+    );
+    push_line(&mut out, "");
+    push_line(&mut out, "Candidates:");
+    if record.candidates.is_empty() {
+        push_line(&mut out, "  none");
+    }
+    for candidate in &record.candidates {
+        let command = candidate
+            .action_plan
+            .command
+            .as_deref()
+            .unwrap_or("not executable");
+        push_line(
+            &mut out,
+            format!(
+                "  {} | {} | command={}",
+                candidate.candidate_id, candidate.label, command
+            ),
+        );
+        if !candidate.uncertainty_notes.is_empty() {
+            push_line(
+                &mut out,
+                format!("    notes: {}", candidate.uncertainty_notes.join("; ")),
+            );
+        }
+    }
+    if !record.evidence.warnings.is_empty() {
+        push_line(&mut out, "");
+        push_line(&mut out, "Warnings:");
+        for warning in &record.evidence.warnings {
+            push_line(&mut out, format!("  - {warning}"));
+        }
+    }
+    push_line(&mut out, "");
+    push_line(&mut out, "Commands: main | details | raw | q");
+    out
+}
+
+fn information_classes_label(classes: &[InformationClassV1]) -> String {
+    if classes.is_empty() {
+        return "none".to_string();
+    }
+    classes
+        .iter()
+        .map(|class| format!("{class:?}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn push_line(out: &mut String, line: impl AsRef<str>) {
+    out.push_str(line.as_ref());
+    out.push('\n');
+}
+
 fn build_noncombat_human_boundary_record_v1(
     session: &RunControlSession,
     reason: &str,

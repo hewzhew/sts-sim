@@ -355,6 +355,18 @@ fn run_control_parser_accepts_view_commands() {
         RunControlCommand::Map
     );
     assert_eq!(
+        parse_run_control_command("bd").expect("bd should parse"),
+        RunControlCommand::BoundaryRecord
+    );
+    assert_eq!(
+        parse_run_control_command("boundary").expect("boundary should parse"),
+        RunControlCommand::BoundaryRecord
+    );
+    assert_eq!(
+        parse_run_control_command("boundary-record").expect("boundary-record should parse"),
+        RunControlCommand::BoundaryRecord
+    );
+    assert_eq!(
         parse_run_control_command("rs").expect("rs should parse"),
         RunControlCommand::RouteSuggest
     );

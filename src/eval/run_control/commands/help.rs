@@ -2,8 +2,9 @@ pub fn run_control_help() -> &'static str {
     "\
 Help:
   Core:
-    main/state, deck, map, ms/map-summary, mf/map-full, rs/route-suggest, rg/route-go, relics, potions, inspect <id>, case [path], d/details, r/raw, mark <name>, marks, quit
+    main/state, deck, map, ms/map-summary, mf/map-full, bd/boundary, rs/route-suggest, rg/route-go, relics, potions, inspect <id>, case [path], d/details, r/raw, mark <name>, marks, quit
     map = full visible map; ms = route summary; rs = route planner evidence
+    bd = current NonCombatDecisionRecordV1 summary when stopped at a noncombat boundary
     n/next = advance to next human choice; ar/auto-run = longer route-planner automation; <id> chooses a visible option
     Enter chooses the single visible option when safe
 
@@ -51,5 +52,5 @@ Help:
 }
 
 pub fn run_control_short_hint() -> &'static str {
-    "main | n=advance | nr=route-advance | ar=auto-run | mark <name> | marks | deck | map=full-map | ms=route-summary | rs=route-suggest | rg=route-go | sd=search-defaults | relics | potions | inspect <id> | auto-reward | details | raw | help"
+    "main | n=advance | nr=route-advance | ar=auto-run | mark <name> | marks | deck | map=full-map | ms=route-summary | bd=boundary | rs=route-suggest | rg=route-go | sd=search-defaults | relics | potions | inspect <id> | auto-reward | details | raw | help"
 }

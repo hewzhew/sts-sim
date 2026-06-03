@@ -36,6 +36,9 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "map" => Ok(RunControlCommand::Map),
         "ms" | "map-summary" | "route-summary" | "routes" => Ok(RunControlCommand::MapSummary),
         "mf" | "map-full" | "full-map" => Ok(RunControlCommand::MapFull),
+        "bd" | "boundary" | "boundary-record" | "noncombat-boundary" => {
+            Ok(RunControlCommand::BoundaryRecord)
+        }
         "rs" | "route" | "route-suggest" | "route-suggestion" => {
             Ok(RunControlCommand::RouteSuggest)
         }

@@ -3,9 +3,9 @@ use crate::content::monsters::factory::EncounterId;
 use crate::eval::run_control::decision_surface;
 use crate::eval::run_control::registry::BenchmarkCasePaths;
 use crate::eval::run_control::{
-    render_run_control_details, render_run_control_state, CombatBaselineOutcomeV1,
-    RunControlCommand, RunControlHpLossLimit, RunControlSearchCombatOptions,
-    RunControlSearchDefaultsCommand,
+    parse_run_control_command, render_run_control_details, render_run_control_state,
+    CombatBaselineOutcomeV1, RunControlCommand, RunControlHpLossLimit,
+    RunControlSearchCombatOptions, RunControlSearchDefaultsCommand,
 };
 use crate::state::core::ClientInput;
 use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
@@ -453,6 +453,28 @@ fn run_control_auto_step_shop_stop_exports_human_boundary_record() {
         .candidates
         .iter()
         .any(|candidate| candidate.candidate_id.starts_with("shop:leave")));
+    assert!(outcome.action_result.is_none());
+    assert!(matches!(session.engine_state, EngineState::Shop(_)));
+}
+
+#[test]
+fn run_control_boundary_command_renders_current_noncombat_record_summary() {
+    let mut session = test_session_at_shop();
+    let command = parse_run_control_command("bd").expect("bd should parse as boundary view");
+
+    let outcome = session
+        .apply_command(command)
+        .expect("boundary view should render current noncombat record");
+
+    assert!(outcome.message.contains("NonCombatDecisionRecordV1"));
+    assert!(outcome.message.contains("site=Shop"));
+    assert!(outcome
+        .message
+        .contains("data_role=HumanBoundaryNotTeacher"));
+    assert!(outcome.message.contains("hidden_free=true"));
+    assert!(outcome.message.contains("selection=Stopped"));
+    assert!(outcome.message.contains("shop:card-0"));
+    assert!(outcome.message.contains("shop:leave"));
     assert!(outcome.action_result.is_none());
     assert!(matches!(session.engine_state, EngineState::Shop(_)));
 }

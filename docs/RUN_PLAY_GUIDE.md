@@ -25,6 +25,7 @@ make the trace a benchmark or a teacher label.
 | `nr` | guarded advance with route planning |
 | `rs` | show route suggestion only |
 | `rg` | execute one route-planner map choice |
+| `bd` | show the current `NonCombatDecisionRecordV1` summary at a non-combat boundary |
 | `sc` | run combat search from the current combat boundary |
 | `sd` | inspect or update search defaults |
 | `mark <name>` | save a named replay bookmark while recording |
@@ -34,7 +35,7 @@ make the trace a benchmark or a teacher label.
 Use panels as needed:
 
 ```text
-deck | map | mf | relics | potions | draw | discard | exhaust | inspect <id> | details | raw
+deck | map | mf | bd | relics | potions | draw | discard | exhaust | inspect <id> | details | raw
 ```
 
 `Ctrl+C` exits the process immediately. Prefer `q` when recording traces so the

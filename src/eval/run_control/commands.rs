@@ -29,6 +29,7 @@ pub enum RunControlCommand {
     Map,
     MapFull,
     MapSummary,
+    BoundaryRecord,
     RouteSuggest,
     RouteGo,
     Relics,

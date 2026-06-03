@@ -48,6 +48,9 @@ impl RunControlSession {
             RunControlCommand::MapSummary => Ok(RunControlCommandOutcome::message(
                 render_route_summary_panel(self),
             )),
+            RunControlCommand::BoundaryRecord => Ok(RunControlCommandOutcome::message(
+                super::super::noncombat_boundary::render_current_noncombat_boundary_record(self),
+            )),
             RunControlCommand::RouteSuggest => Ok(RunControlCommandOutcome::message(
                 super::super::route_policy::render_route_suggestion(self),
             )),
