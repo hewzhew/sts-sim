@@ -1,3 +1,4 @@
+use super::pressure::route_pressure_v1;
 use super::types::{
     DeckPlanHypothesisV1, StrategyDeckFactsV1, StrategyDeckFormationNeedV1,
     StrategyDeckFormationStageV1, StrategyDeckFormationV1, StrategyPlanIdV1,
@@ -9,7 +10,7 @@ pub fn assess_deck_formation_v1(
     route: Option<&StrategyRouteFutureV1>,
     plans: &[DeckPlanHypothesisV1],
 ) -> StrategyDeckFormationV1 {
-    let route_pressure = route_pressure(route);
+    let route_pressure = route_pressure_v1(route);
     let strengths = committed_plan_strengths(plans);
     let seeded_plan_count = plans
         .iter()
@@ -161,33 +162,6 @@ fn formation_notes(
     }
 
     notes
-}
-
-fn route_pressure(route: Option<&StrategyRouteFutureV1>) -> StrategyPlanPressureV1 {
-    let Some(route) = route else {
-        return StrategyPlanPressureV1::Medium;
-    };
-    pressure_from_count(route.max_early_pressure).max(pressure_from_need(route.avoid_damage))
-}
-
-fn pressure_from_need(value: f32) -> StrategyPlanPressureV1 {
-    if value >= 0.65 {
-        StrategyPlanPressureV1::High
-    } else if value >= 0.30 {
-        StrategyPlanPressureV1::Medium
-    } else {
-        StrategyPlanPressureV1::Low
-    }
-}
-
-fn pressure_from_count(value: usize) -> StrategyPlanPressureV1 {
-    if value >= 3 {
-        StrategyPlanPressureV1::High
-    } else if value >= 1 {
-        StrategyPlanPressureV1::Medium
-    } else {
-        StrategyPlanPressureV1::Low
-    }
 }
 
 fn push_unique<T: Copy + Eq>(items: &mut Vec<T>, item: T) {

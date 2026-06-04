@@ -5,7 +5,7 @@ use super::types::{
     CardRewardValueStatusV1,
 };
 
-use crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1;
+use crate::ai::noncombat_strategy_v1::{StrategyPlanSupportV1, StrategyRoutePackageIdV1};
 use crate::content::cards::CardId;
 
 pub(crate) fn pick_gate(
@@ -103,7 +103,7 @@ fn candidate_certificate(
     }
 
     match candidate.card {
-        CardId::SearingBlow => upgrade_sink_certificate(candidate),
+        CardId::SearingBlow => upgrade_sink_certificate(context, candidate),
         CardId::HeavyBlade => strength_payoff_certificate(candidate),
         CardId::Clothesline => weak_frontload_certificate(context, candidate),
         _ => None,
@@ -111,9 +111,16 @@ fn candidate_certificate(
 }
 
 fn upgrade_sink_certificate(
+    context: &CardRewardDecisionContextV1,
     candidate: &CardRewardCandidateEvidenceV1,
 ) -> Option<CardRewardPickCertificateV1> {
     if candidate.plan_delta.support != CardRewardPlanSupportV1::Strong {
+        return None;
+    }
+    let route_package = context
+        .plans
+        .route_package(StrategyRoutePackageIdV1::UpgradeCommitment)?;
+    if route_package.support != StrategyPlanSupportV1::Strong {
         return None;
     }
     Some(CardRewardPickCertificateV1 {
@@ -121,7 +128,11 @@ fn upgrade_sink_certificate(
         card: candidate.card,
         confidence: 0.82,
         reasons: vec![
-            "UpgradeSink plan is strongly supported by visible route fire budget".to_string(),
+            format!(
+                "UpgradeCommitment route package is {:?}: {}",
+                route_package.support,
+                route_package.evidence.join(", ")
+            ),
             "selection is a plan commitment, not an impact-prior score".to_string(),
         ],
     })
@@ -168,16 +179,18 @@ fn weak_frontload_certificate(
     {
         return None;
     }
-    let formation = &context.plans.formation;
-    if !formation.strengths.is_empty() {
+    let combat_patch = context
+        .plans
+        .route_package(StrategyRoutePackageIdV1::CombatPatchWindow)?;
+    if combat_patch.support != StrategyPlanSupportV1::Strong {
         return None;
     }
-    if !formation
-        .needs
-        .contains(&StrategyDeckFormationNeedV1::Frontload)
-        && !formation
-            .needs
-            .contains(&StrategyDeckFormationNeedV1::Block)
+    let core_protection = context
+        .plans
+        .route_package(StrategyRoutePackageIdV1::CorePlanProtection);
+    if core_protection
+        .map(|package| package.support == StrategyPlanSupportV1::Strong)
+        .unwrap_or(false)
     {
         return None;
     }
@@ -190,8 +203,9 @@ fn weak_frontload_certificate(
             "WeakFrontload plan patches visible weak coverage and near-term combat pressure"
                 .to_string(),
             format!(
-                "deck formation is {:?} with needs {:?}",
-                formation.stage, formation.needs
+                "CombatPatchWindow route package is {:?}: {}",
+                combat_patch.support,
+                combat_patch.evidence.join(", ")
             ),
             "no competing upgrade-sink or strength-payoff plan is strongly supported".to_string(),
         ],

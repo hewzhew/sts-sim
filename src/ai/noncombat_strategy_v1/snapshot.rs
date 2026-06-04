@@ -1,4 +1,6 @@
 use super::formation::assess_deck_formation_v1;
+use super::pressure::{pressure_from_need_v1, route_pressure_v1};
+use super::route_package::assess_route_packages_v1;
 use super::types::{
     DeckPlanHypothesisV1, RunStrategySnapshotV1, StrategyDeckFactsV1, StrategyPlanIdV1,
     StrategyPlanPressureV1, StrategyPlanSupportV1, StrategyRouteFutureV1,
@@ -21,12 +23,14 @@ pub fn build_run_strategy_snapshot_v1(
         energy_draw_plan(),
     ];
     let formation = assess_deck_formation_v1(&deck, route.as_ref(), &plans);
+    let route_packages = assess_route_packages_v1(route.as_ref(), &formation, &plans);
 
     RunStrategySnapshotV1 {
         deck,
         route,
         plans,
         formation,
+        route_packages,
     }
 }
 
@@ -34,7 +38,7 @@ fn frontload_survival_plan(
     deck: &StrategyDeckFactsV1,
     route: Option<&StrategyRouteFutureV1>,
 ) -> DeckPlanHypothesisV1 {
-    let route_pressure = route_pressure(route);
+    let route_pressure = route_pressure_v1(route);
     let low_damage = deck.total_attack_damage < 45;
     let support = if route_pressure == StrategyPlanPressureV1::High || low_damage {
         StrategyPlanSupportV1::Strong
@@ -60,7 +64,7 @@ fn weak_control_plan(
     deck: &StrategyDeckFactsV1,
     route: Option<&StrategyRouteFutureV1>,
 ) -> DeckPlanHypothesisV1 {
-    let route_pressure = route_pressure(route);
+    let route_pressure = route_pressure_v1(route);
     let support = if deck.weak_sources > 0 {
         StrategyPlanSupportV1::Blocked
     } else if route_pressure == StrategyPlanPressureV1::High {
@@ -120,7 +124,7 @@ fn upgrade_sink_plan(
     route: Option<&StrategyRouteFutureV1>,
 ) -> DeckPlanHypothesisV1 {
     let rest_pressure = route
-        .map(|route| pressure_from_need(route.need_heal.max(route.avoid_damage)))
+        .map(|route| pressure_from_need_v1(route.need_heal.max(route.avoid_damage)))
         .unwrap_or(StrategyPlanPressureV1::High);
     let (min_fires, max_fires, first_fire_floor) = route
         .map(|route| (route.min_fires, route.max_fires, route.first_fire_floor))
@@ -259,32 +263,5 @@ fn package_plan(
             Vec::new()
         },
         opportunity_costs: Vec::new(),
-    }
-}
-
-fn route_pressure(route: Option<&StrategyRouteFutureV1>) -> StrategyPlanPressureV1 {
-    let Some(route) = route else {
-        return StrategyPlanPressureV1::Medium;
-    };
-    pressure_from_count(route.max_early_pressure).max(pressure_from_need(route.avoid_damage))
-}
-
-fn pressure_from_need(value: f32) -> StrategyPlanPressureV1 {
-    if value >= 0.65 {
-        StrategyPlanPressureV1::High
-    } else if value >= 0.30 {
-        StrategyPlanPressureV1::Medium
-    } else {
-        StrategyPlanPressureV1::Low
-    }
-}
-
-fn pressure_from_count(value: usize) -> StrategyPlanPressureV1 {
-    if value >= 3 {
-        StrategyPlanPressureV1::High
-    } else if value >= 1 {
-        StrategyPlanPressureV1::Medium
-    } else {
-        StrategyPlanPressureV1::Low
     }
 }

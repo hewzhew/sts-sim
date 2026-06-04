@@ -69,11 +69,16 @@ pub struct RunStrategySnapshotV1 {
     pub route: Option<StrategyRouteFutureV1>,
     pub plans: Vec<DeckPlanHypothesisV1>,
     pub formation: StrategyDeckFormationV1,
+    pub route_packages: Vec<StrategyRoutePackageV1>,
 }
 
 impl RunStrategySnapshotV1 {
     pub fn plan(&self, id: StrategyPlanIdV1) -> Option<&DeckPlanHypothesisV1> {
         self.plans.iter().find(|plan| plan.id == id)
+    }
+
+    pub fn route_package(&self, id: StrategyRoutePackageIdV1) -> Option<&StrategyRoutePackageV1> {
+        self.route_packages.iter().find(|package| package.id == id)
     }
 }
 
@@ -111,6 +116,22 @@ pub struct StrategyDeckFormationV1 {
     pub strengths: Vec<StrategyPlanIdV1>,
     pub blockers: Vec<String>,
     pub notes: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StrategyRoutePackageIdV1 {
+    CombatPatchWindow,
+    UpgradeCommitment,
+    CorePlanProtection,
+    RecoveryPressure,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StrategyRoutePackageV1 {
+    pub id: StrategyRoutePackageIdV1,
+    pub support: StrategyPlanSupportV1,
+    pub evidence: Vec<String>,
+    pub risks: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

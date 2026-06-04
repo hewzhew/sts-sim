@@ -3,7 +3,9 @@ use crate::ai::card_reward_policy_v1::{
     CardRewardPlanEffectV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
     CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
-use crate::ai::noncombat_strategy_v1::StrategyPlanIdV1;
+use crate::ai::noncombat_strategy_v1::{
+    StrategyPlanIdV1, StrategyPlanSupportV1, StrategyRoutePackageIdV1,
+};
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
@@ -172,6 +174,13 @@ fn searing_blow_can_only_certify_with_real_upgrade_budget() {
             ..
         }
     ));
+    assert!(decision
+        .pick_certificate
+        .as_ref()
+        .expect("Searing Blow certificate")
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("UpgradeCommitment route package")));
 }
 
 #[test]
@@ -212,6 +221,20 @@ fn clothesline_certifies_as_weak_frontload_patch_when_growth_plans_are_blocked()
         decision.pick_certificate.as_ref().map(|cert| cert.card),
         Some(CardId::Clothesline)
     );
+    assert!(decision
+        .pick_certificate
+        .as_ref()
+        .expect("Clothesline certificate")
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("CombatPatchWindow route package")));
+    assert_eq!(
+        context
+            .plans
+            .route_package(StrategyRoutePackageIdV1::CombatPatchWindow)
+            .map(|package| package.support),
+        Some(StrategyPlanSupportV1::Strong)
+    );
 }
 
 #[test]
@@ -230,6 +253,13 @@ fn weak_frontload_patch_does_not_auto_certify_when_core_plan_is_committed() {
         .formation
         .strengths
         .contains(&StrategyPlanIdV1::StrengthScaling));
+    assert_eq!(
+        context
+            .plans
+            .route_package(StrategyRoutePackageIdV1::CorePlanProtection)
+            .map(|package| package.support),
+        Some(StrategyPlanSupportV1::Strong)
+    );
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
