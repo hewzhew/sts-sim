@@ -11,15 +11,6 @@ use super::trace_annotation::RunControlTraceAnnotationV1;
 pub(super) fn apply_card_reward_policy_pick(
     session: &mut RunControlSession,
 ) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
-    if session
-        .run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == crate::content::relics::RelicId::SingingBowl)
-    {
-        return Ok(None);
-    }
-
     if let Some(cards) = active_pending_reward_cards(session) {
         return apply_policy_to_pending_cards(session, cards);
     }
@@ -64,18 +55,20 @@ pub(super) fn apply_card_reward_policy_pick(
 pub(super) fn apply_card_reward_item_open(
     session: &mut RunControlSession,
 ) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
-    if session
-        .run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == crate::content::relics::RelicId::SingingBowl)
-    {
-        return Ok(None);
-    }
-
     let Some((reward_index, _cards)) = visible_card_reward_item(session) else {
         return Ok(None);
     };
+    let decision = card_reward_decision(session, &_cards);
+    let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Stop { disposition, .. } =
+        decision.action
+    else {
+        return Ok(None);
+    };
+    if disposition
+        == crate::ai::card_reward_policy_v1::CardRewardStopDispositionV1::KeepRewardItemClosed
+    {
+        return Ok(None);
+    }
     let outcome = session.apply_input(ClientInput::ClaimReward(reward_index))?;
     Ok(Some((
         outcome,
@@ -86,22 +79,13 @@ pub(super) fn apply_card_reward_item_open(
 pub(super) fn card_reward_policy_stop_annotation(
     session: &RunControlSession,
 ) -> Result<Option<(RunControlTraceAnnotationV1, String)>, String> {
-    if session
-        .run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == crate::content::relics::RelicId::SingingBowl)
-    {
-        return Ok(None);
-    }
-
     let cards = active_pending_reward_cards(session)
         .or_else(|| visible_card_reward_item(session).map(|(_, cards)| cards));
     let Some(cards) = cards else {
         return Ok(None);
     };
     let decision = card_reward_decision(session, &cards);
-    let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Stop { reason } =
+    let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Stop { reason, .. } =
         &decision.action
     else {
         return Ok(None);

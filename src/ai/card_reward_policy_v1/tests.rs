@@ -351,6 +351,31 @@ fn uncalibrated_prior_values_are_consumed_by_gate_but_cannot_certify_pick() {
         .contains(&CardRewardEvidenceGapV1::UncalibratedValueEstimate));
 }
 
+#[test]
+fn singing_bowl_blocks_automatic_card_reward_pick_inside_policy() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state
+        .relics
+        .push(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::SingingBowl,
+        ));
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::Clothesline, 0)],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision
+        .evidence_gaps
+        .contains(&CardRewardEvidenceGapV1::SingingBowlAddsMaxHpChoice));
+}
+
 fn context_for_cards(
     cards: Vec<RewardCard>,
 ) -> crate::ai::card_reward_policy_v1::CardRewardDecisionContextV1 {
@@ -405,6 +430,10 @@ fn context_for_run_with_route(
         deck,
         route,
         strategy,
+        has_singing_bowl: run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == crate::content::relics::RelicId::SingingBowl),
         candidates,
     }
 }

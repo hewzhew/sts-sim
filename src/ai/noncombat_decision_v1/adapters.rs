@@ -364,7 +364,7 @@ fn card_reward_selection(decision: &CardRewardDecisionV1) -> PolicySelectionV1 {
             confidence: *confidence,
             selection_mode: "pick_certificate_gate".to_string(),
         },
-        CardRewardPolicyActionV1::Stop { reason } => PolicySelectionV1 {
+        CardRewardPolicyActionV1::Stop { reason, .. } => PolicySelectionV1 {
             status: if decision.candidates.is_empty() {
                 PolicySelectionStatusV1::NoCandidates
             } else {

@@ -1530,6 +1530,17 @@ fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
     assert!(outcome
         .message
         .contains("Reason: card reward requires human choice"));
+    assert!(outcome.message.contains("card reward policy stopped:"));
+    assert!(outcome.trace_annotations.iter().any(|annotation| {
+        matches!(
+            annotation,
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record
+            } if record.site == crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
+                && record.selection.status
+                    == crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+        )
+    }));
     assert!(!session
         .run_state
         .master_deck
@@ -1566,6 +1577,17 @@ fn run_control_auto_run_does_not_open_card_reward_item_with_singing_bowl() {
     assert!(outcome
         .message
         .contains("Reason: card reward requires human choice"));
+    assert!(outcome.message.contains("card reward policy stopped:"));
+    assert!(outcome.trace_annotations.iter().any(|annotation| {
+        matches!(
+            annotation,
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record
+            } if record.site == crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
+                && record.selection.status
+                    == crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+        )
+    }));
     assert!(outcome.action_result.is_none());
     let EngineState::RewardScreen(reward) = &session.engine_state else {
         panic!("Singing Bowl card reward item should remain unopened");

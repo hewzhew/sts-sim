@@ -47,6 +47,10 @@ pub fn build_card_reward_decision_context_v1(
         deck,
         route,
         strategy,
+        has_singing_bowl: run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == crate::content::relics::RelicId::SingingBowl),
         candidates,
     }
 }

@@ -21,6 +21,7 @@ pub struct CardRewardDecisionContextV1 {
     pub deck: DeckProfileV1,
     pub route: Option<CardRewardRouteEvidenceV1>,
     pub strategy: CardRewardStrategySnapshotV2,
+    pub has_singing_bowl: bool,
     pub candidates: Vec<CardRewardCandidateEvidenceV1>,
 }
 
@@ -205,6 +206,7 @@ pub enum CardRewardEvidenceGapV1 {
     UnsupportedCardMechanics,
     RandomOutcomeRequiresPolicy,
     ConditionalPlayabilityRequiresPolicy,
+    SingingBowlAddsMaxHpChoice,
     NoAutoPickCertificate,
 }
 
@@ -268,5 +270,12 @@ pub enum CardRewardPolicyActionV1 {
     },
     Stop {
         reason: String,
+        disposition: CardRewardStopDispositionV1,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CardRewardStopDispositionV1 {
+    MayOpenRewardItem,
+    KeepRewardItemClosed,
 }

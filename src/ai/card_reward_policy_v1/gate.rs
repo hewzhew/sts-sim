@@ -1,8 +1,8 @@
 use super::types::{
     CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardEvidenceGapV1,
     CardRewardPickCertificateV1, CardRewardPlanEffectV1, CardRewardPlanSupportV1,
-    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
-    CardRewardValueStatusV1,
+    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardStopDispositionV1,
+    CardRewardValueEstimateV1, CardRewardValueStatusV1,
 };
 
 use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
@@ -23,6 +23,23 @@ pub(crate) fn pick_gate(
         return (
             CardRewardPolicyActionV1::Stop {
                 reason: "no visible card reward candidates".to_string(),
+                disposition: CardRewardStopDispositionV1::MayOpenRewardItem,
+            },
+            gaps,
+            None,
+        );
+    }
+
+    if context.has_singing_bowl {
+        push_gap(
+            &mut gaps,
+            CardRewardEvidenceGapV1::SingingBowlAddsMaxHpChoice,
+        );
+        return (
+            CardRewardPolicyActionV1::Stop {
+                reason: "card reward policy stopped because Singing Bowl adds a max-HP alternative"
+                    .to_string(),
+                disposition: CardRewardStopDispositionV1::KeepRewardItemClosed,
             },
             gaps,
             None,
@@ -74,6 +91,7 @@ pub(crate) fn pick_gate(
     (
         CardRewardPolicyActionV1::Stop {
             reason: stop_reason(&gaps),
+            disposition: CardRewardStopDispositionV1::MayOpenRewardItem,
         },
         gaps,
         None,
