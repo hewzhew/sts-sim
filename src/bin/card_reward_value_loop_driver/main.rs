@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use sts_simulator::eval::card_reward_value_loop::extract_card_reward_value_loop_examples_v1;
+use sts_simulator::eval::card_reward_value_loop::{
+    extract_card_reward_value_loop_examples_v1, summarize_card_reward_value_loop_examples_v1,
+};
 use sts_simulator::eval::run_control::load_session_trace_v1;
 
 #[derive(Debug, Parser)]
@@ -20,6 +22,9 @@ struct Args {
 
     #[arg(long)]
     json_lines: bool,
+
+    #[arg(long)]
+    summary: bool,
 }
 
 fn main() {
@@ -37,7 +42,14 @@ fn run(args: Args) -> Result<(), String> {
         examples.extend(extract_card_reward_value_loop_examples_v1(&trace)?);
     }
 
-    let payload = if args.json_lines {
+    let payload = if args.summary {
+        let summary = summarize_card_reward_value_loop_examples_v1(&examples);
+        if args.json_lines {
+            serde_json::to_string(&summary).map_err(|err| err.to_string())?
+        } else {
+            serde_json::to_string_pretty(&summary).map_err(|err| err.to_string())?
+        }
+    } else if args.json_lines {
         examples
             .iter()
             .map(|example| serde_json::to_string(example).map_err(|err| err.to_string()))

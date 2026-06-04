@@ -7,8 +7,9 @@ use sts_simulator::ai::noncombat_decision_v1::{
 };
 use sts_simulator::content::cards::CardId;
 use sts_simulator::eval::card_reward_value_loop::{
-    extract_card_reward_value_loop_examples_v1, CardRewardValueLoopOutcomeStatusV1,
-    CardRewardValueLoopReplayStatusV1, CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
+    extract_card_reward_value_loop_examples_v1, summarize_card_reward_value_loop_examples_v1,
+    CardRewardValueLoopOutcomeStatusV1, CardRewardValueLoopReplayStatusV1,
+    CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
 };
 use sts_simulator::eval::run_control::{
     RunActionApplyStatusV1, RunActionResultV1, RunControlConfig, RunControlSession,
@@ -82,6 +83,67 @@ fn extracts_card_reward_value_loop_example_with_missing_outcome_marker() {
         CardRewardValueLoopOutcomeStatusV1::Missing
     );
     assert!(examples[0].outcome.is_none());
+}
+
+#[test]
+fn summarizes_card_reward_value_loop_examples_without_strategy_claims() {
+    let selected_record = selected_card_reward_record(CardId::TwinStrike);
+    let selected_outcome = attach_noncombat_outcome_v1(
+        &selected_record,
+        NonCombatOutcomeWindowV1::AfterOneFloor,
+        outcome_snapshot(1, 80, 0),
+        outcome_snapshot(2, 74, 1),
+    )
+    .expect("selected card reward record should accept outcome");
+    let mut selected_trace = trace_with_card_reward_record(selected_record);
+    selected_trace
+        .noncombat_outcome_attachments
+        .push(selected_outcome);
+    let missing_trace = trace_with_card_reward_record(selected_card_reward_record(CardId::Cleave));
+    let mut examples =
+        extract_card_reward_value_loop_examples_v1(&selected_trace).expect("trace should extract");
+    examples.extend(
+        extract_card_reward_value_loop_examples_v1(&missing_trace).expect("trace should extract"),
+    );
+
+    let summary = summarize_card_reward_value_loop_examples_v1(&examples);
+
+    assert_eq!(summary.total_examples, 2);
+    assert_eq!(
+        histogram_count(&summary.outcome_status_counts, "attached"),
+        1
+    );
+    assert_eq!(
+        histogram_count(&summary.outcome_status_counts, "missing"),
+        1
+    );
+    assert_eq!(
+        histogram_count(&summary.selection_status_counts, "selected"),
+        2
+    );
+    assert_eq!(
+        histogram_count(
+            &summary.replay_status_counts,
+            "record_only_no_public_packet"
+        ),
+        2
+    );
+    assert_eq!(
+        histogram_count(
+            &summary.value_status_counts,
+            "value_status_uncalibrated_prior"
+        ),
+        2
+    );
+    assert_eq!(
+        histogram_count(&summary.evidence_gap_counts, "UncalibratedValueEstimate"),
+        2
+    );
+    assert_eq!(summary.attached_outcome_count, 1);
+    assert_eq!(summary.missing_outcome_count, 1);
+    assert_eq!(summary.label_role, "diagnostic_not_teacher_label");
+    assert!(!summary.trainable_as_action_label);
+    assert!(!summary.policy_quality_claim);
 }
 
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {
@@ -163,4 +225,15 @@ fn outcome_snapshot(
         bosses_completed: 0,
         run_terminal: None,
     }
+}
+
+fn histogram_count(
+    entries: &[sts_simulator::eval::card_reward_value_loop::HistogramEntryV1],
+    key: &str,
+) -> usize {
+    entries
+        .iter()
+        .find(|entry| entry.key == key)
+        .map(|entry| entry.count)
+        .unwrap_or_default()
 }
