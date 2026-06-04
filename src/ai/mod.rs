@@ -9,6 +9,7 @@ pub mod combat_state_snapshot;
 pub mod event_policy_v1;
 pub mod noncombat_decision_v1;
 pub mod noncombat_strategy_v1;
+pub mod reward_policy_v1;
 pub mod route_planner_v1;
 pub mod run_choice_policy_v1;
 pub mod shop_policy_v1;

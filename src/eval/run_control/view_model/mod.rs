@@ -11,8 +11,7 @@ use candidates::decision_candidates;
 use context::{decision_context, decision_warnings};
 use labels::pending_choice_label;
 pub(super) use labels::{
-    boss_label, combat_card_label, deck_summary, monster_name, reward_card_label,
-    reward_item_label, room_type_label,
+    boss_label, combat_card_label, deck_summary, monster_name, reward_card_label, room_type_label,
 };
 pub use resolution::{CandidateResolution, FollowupBoundary};
 

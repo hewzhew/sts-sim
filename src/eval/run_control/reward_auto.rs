@@ -1,18 +1,16 @@
 use crate::ai::noncombat_decision_v1::{
     render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
-    CandidateDescriptorV1, DataRoleV1, DecisionSiteKindV1, EvidenceBundleV1, EvidenceItemV1,
-    EvidenceKindV1, InformationBoundaryV1, InformationClassV1, NonCombatDecisionRecordV1,
-    PolicyProvenanceV1, PolicySelectionStatusV1, PolicySelectionV1, PublicActionPlanV1,
-    NONCOMBAT_DECISION_RECORD_SCHEMA_NAME, NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
+    NonCombatDecisionRecordV1,
 };
-use crate::content::potions::get_potion_definition;
+use crate::ai::reward_policy_v1::{
+    build_reward_decision_context_v1, plan_reward_decision_v1, RewardPolicyActionV1,
+    RewardPolicyConfigV1,
+};
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::state::core::{ClientInput, EngineState};
-use crate::state::rewards::{RewardItem, RewardState};
 
 use super::session::RunControlSession;
 use super::trace_annotation::RunControlTraceAnnotationV1;
-use super::view_model::reward_item_label;
 
 const MAX_AUTO_REWARD_CLAIMS: usize = 16;
 const MAX_STABLE_ADVANCE_TICKS: usize = 2_000;
@@ -48,7 +46,7 @@ pub(super) struct RewardAutomationClaim {
 
 struct RewardAutomationPlan {
     claim: RewardAutomationClaim,
-    trace_annotation: Option<RunControlTraceAnnotationV1>,
+    trace_annotation: RunControlTraceAnnotationV1,
 }
 
 impl RewardAutomationConfig {
@@ -89,9 +87,7 @@ pub(super) fn apply_reward_automation(
         };
         apply_claim_reward_to_stable(session, plan.claim.index)?;
         report.claims.push(plan.claim);
-        if let Some(annotation) = plan.trace_annotation {
-            report.trace_annotations.push(annotation);
-        }
+        report.trace_annotations.push(plan.trace_annotation);
     }
     Err(format!(
         "auto-reward exceeded {MAX_AUTO_REWARD_CLAIMS} claims without reaching a stable non-claim state"
@@ -104,199 +100,41 @@ fn next_auto_claim(session: &RunControlSession) -> Result<Option<RewardAutomatio
         EngineState::RewardOverlay { reward_state, .. } => reward_state,
         _ => return Ok(None),
     };
-    if reward.pending_card_choice.is_some() {
+    let context = build_reward_decision_context_v1(&session.run_state, reward);
+    let decision = plan_reward_decision_v1(&context, &reward_policy_config(session));
+    let RewardPolicyActionV1::Claim { index, label, .. } = &decision.action else {
         return Ok(None);
-    }
-
-    for (idx, item) in reward.items.iter().enumerate() {
-        if let Some(plan) = auto_claim_plan(session, reward, idx, item)? {
-            return Ok(Some(plan));
-        }
-    }
-    Ok(None)
+    };
+    let record = decision.to_noncombat_decision_record_v1();
+    Ok(Some(RewardAutomationPlan {
+        claim: RewardAutomationClaim {
+            index: *index,
+            label: label.clone(),
+        },
+        trace_annotation: noncombat_policy_annotation(record)?,
+    }))
 }
 
-fn auto_claim_plan(
-    session: &RunControlSession,
-    reward: &RewardState,
-    index: usize,
-    item: &RewardItem,
-) -> Result<Option<RewardAutomationPlan>, String> {
-    match item {
-        RewardItem::Gold { amount } if session.reward_automation.claim_gold => Ok(Some(
-            reward_automation_plan(index, format!("{amount} gold"), None),
-        )),
-        RewardItem::StolenGold { amount } if session.reward_automation.claim_gold => Ok(Some(
-            reward_automation_plan(index, format!("{amount} stolen gold"), None),
-        )),
-        RewardItem::Potion { potion_id } if can_auto_claim_potion(session) => {
-            Ok(Some(reward_automation_plan(
-                index,
-                format!("{} potion", get_potion_definition(*potion_id).name),
-                None,
-            )))
-        }
-        RewardItem::Relic { relic_id } if can_auto_claim_relic_reward(session, reward) => {
-            let annotation = safe_relic_reward_policy_annotation(reward, index)?;
-            Ok(Some(reward_automation_plan(
-                index,
-                format!("Relic {relic_id:?}"),
-                Some(annotation),
-            )))
-        }
-        _ => Ok(None),
+fn reward_policy_config(session: &RunControlSession) -> RewardPolicyConfigV1 {
+    RewardPolicyConfigV1 {
+        claim_gold: session.reward_automation.claim_gold,
+        claim_potion_with_empty_slot: session.reward_automation.claim_potion_with_empty_slot,
+        claim_safe_relic_without_sapphire_key: session
+            .reward_automation
+            .claim_safe_relic_without_sapphire_key,
     }
 }
 
-fn reward_automation_plan(
-    index: usize,
-    label: String,
-    trace_annotation: Option<RunControlTraceAnnotationV1>,
-) -> RewardAutomationPlan {
-    RewardAutomationPlan {
-        claim: RewardAutomationClaim { index, label },
-        trace_annotation,
-    }
-}
-
-fn can_auto_claim_potion(session: &RunControlSession) -> bool {
-    session.reward_automation.claim_potion_with_empty_slot
-        && session.run_state.find_empty_potion_slot().is_some()
-        && !session
-            .run_state
-            .relics
-            .iter()
-            .any(|relic| relic.id == crate::content::relics::RelicId::Sozu)
-}
-
-fn can_auto_claim_relic_reward(session: &RunControlSession, reward: &RewardState) -> bool {
-    session
-        .reward_automation
-        .claim_safe_relic_without_sapphire_key
-        && !reward
-            .items
-            .iter()
-            .any(|item| matches!(item, RewardItem::SapphireKey))
-}
-
-fn safe_relic_reward_policy_annotation(
-    reward: &RewardState,
-    selected_index: usize,
+fn noncombat_policy_annotation(
+    record: NonCombatDecisionRecordV1,
 ) -> Result<RunControlTraceAnnotationV1, String> {
-    let record = safe_relic_reward_policy_record(reward, selected_index);
     validate_noncombat_decision_record_v1(&record).map_err(|errors| {
         format!(
-            "safe relic reward policy produced invalid NonCombatDecisionRecordV1: {}",
+            "reward policy produced invalid NonCombatDecisionRecordV1: {}",
             render_noncombat_decision_record_validation_errors(&errors)
         )
     })?;
     Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision { record })
-}
-
-fn safe_relic_reward_policy_record(
-    reward: &RewardState,
-    selected_index: usize,
-) -> NonCombatDecisionRecordV1 {
-    let candidates = reward
-        .items
-        .iter()
-        .enumerate()
-        .map(|(idx, item)| reward_candidate_descriptor(idx, item))
-        .collect::<Vec<_>>();
-    let evidence_items = reward
-        .items
-        .iter()
-        .enumerate()
-        .map(|(idx, item)| reward_candidate_evidence_item(idx, item))
-        .collect::<Vec<_>>();
-    let selected_candidate_id = reward
-        .items
-        .get(selected_index)
-        .map(|item| reward_candidate_id(selected_index, item));
-
-    NonCombatDecisionRecordV1 {
-        schema_name: NONCOMBAT_DECISION_RECORD_SCHEMA_NAME.to_string(),
-        schema_version: NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
-        site: DecisionSiteKindV1::Reward,
-        data_role: DataRoleV1::BehaviorPolicyNotTeacher,
-        information_boundary: InformationBoundaryV1::hidden_free(vec![
-            InformationClassV1::PublicObservation,
-        ]),
-        provenance: PolicyProvenanceV1 {
-            source_policy: "reward_auto_safe_relic_v1".to_string(),
-            source_schema_name: "RewardAutomationConfig".to_string(),
-            source_schema_version: 1,
-        },
-        candidates,
-        evidence: EvidenceBundleV1 {
-            items: evidence_items,
-            assumptions: vec![
-                "ordinary relic rewards are auto-claimed only when no Sapphire Key is present on the same reward screen"
-                    .to_string(),
-                "this is a behavior-policy convenience action, not a teacher label".to_string(),
-            ],
-            warnings: Vec::new(),
-        },
-        values: Vec::new(),
-        selection: PolicySelectionV1 {
-            status: PolicySelectionStatusV1::Selected,
-            selected_candidate_id,
-            reason:
-                "auto-claimed safe relic reward because no Sapphire Key choice is present"
-                    .to_string(),
-            confidence: 0.85,
-            selection_mode: "safe_relic_reward_gate".to_string(),
-        },
-    }
-}
-
-fn reward_candidate_descriptor(index: usize, item: &RewardItem) -> CandidateDescriptorV1 {
-    CandidateDescriptorV1 {
-        candidate_id: reward_candidate_id(index, item),
-        site: DecisionSiteKindV1::Reward,
-        label: reward_item_label(item),
-        action_plan: PublicActionPlanV1 {
-            summary: format!("claim reward index {index}"),
-            command: Some(format!("claim {index}")),
-        },
-        information_classes: vec![InformationClassV1::PublicObservation],
-        uncertainty_notes: reward_candidate_uncertainty_notes(item),
-    }
-}
-
-fn reward_candidate_evidence_item(index: usize, item: &RewardItem) -> EvidenceItemV1 {
-    EvidenceItemV1 {
-        kind: EvidenceKindV1::CandidateFacts,
-        candidate_id: Some(reward_candidate_id(index, item)),
-        label: reward_item_label(item),
-        information_class: InformationClassV1::PublicObservation,
-        components: Vec::new(),
-    }
-}
-
-fn reward_candidate_id(index: usize, item: &RewardItem) -> String {
-    match item {
-        RewardItem::Gold { .. } => format!("reward:gold:{index}"),
-        RewardItem::StolenGold { .. } => format!("reward:stolen_gold:{index}"),
-        RewardItem::Card { .. } => format!("reward:card:{index}"),
-        RewardItem::Relic { relic_id } => format!("reward:relic:{index}:{relic_id:?}"),
-        RewardItem::Potion { potion_id } => format!("reward:potion:{index}:{potion_id:?}"),
-        RewardItem::EmeraldKey => format!("reward:emerald_key:{index}"),
-        RewardItem::SapphireKey => format!("reward:sapphire_key:{index}"),
-    }
-}
-
-fn reward_candidate_uncertainty_notes(item: &RewardItem) -> Vec<String> {
-    match item {
-        RewardItem::SapphireKey => vec![
-            "Sapphire Key competes with the visible relic reward and blocks safe relic auto-claim"
-                .to_string(),
-        ],
-        RewardItem::Card { .. } => {
-            vec!["card reward selection remains a separate policy boundary".to_string()]
-        }
-        _ => Vec::new(),
-    }
 }
 
 fn apply_claim_reward_to_stable(
@@ -410,6 +248,25 @@ mod tests {
             Some(PotionId::EssenceOfSteel)
         );
         assert_eq!(report.claims.len(), 2);
+        assert_eq!(report.trace_annotations.len(), 2);
+        for annotation in &report.trace_annotations {
+            let super::super::trace_annotation::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } = annotation
+            else {
+                panic!("reward auto-claim should attach noncombat policy evidence");
+            };
+            crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+                .expect("reward auto-claim record should validate");
+            assert_eq!(
+                record.site,
+                crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Reward
+            );
+            assert_eq!(
+                record.data_role,
+                crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+            );
+        }
         let EngineState::RewardScreen(reward) = &session.engine_state else {
             panic!("card reward should keep reward screen open");
         };
