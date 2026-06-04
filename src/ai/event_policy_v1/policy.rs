@@ -6,6 +6,7 @@ use crate::state::events::{
 };
 use crate::state::run::RunState;
 
+use super::certificates::pick_certificates;
 use super::types::{
     EventCandidateEvidenceV1, EventDecisionContextV1, EventDecisionV1, EventPolicyActionV1,
     EventPolicyClassV1, EventPolicyConfigV1,
@@ -40,11 +41,7 @@ pub fn plan_event_decision_v1(
         );
     }
 
-    let certificates = context
-        .candidates
-        .iter()
-        .filter_map(|candidate| pick_certificate(candidate, context, config))
-        .collect::<Vec<_>>();
+    let certificates = pick_certificates(context, config);
 
     let action = match certificates.as_slice() {
         [certificate] => EventPolicyActionV1::Pick {
@@ -66,46 +63,6 @@ pub fn plan_event_decision_v1(
         action,
         label_role: "behavior_policy_not_teacher",
         context: context.clone(),
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct PickCertificate {
-    index: usize,
-    label: String,
-    confidence: f32,
-    reason: String,
-}
-
-fn pick_certificate(
-    candidate: &EventCandidateEvidenceV1,
-    context: &EventDecisionContextV1,
-    config: &EventPolicyConfigV1,
-) -> Option<PickCertificate> {
-    if candidate.disabled {
-        return None;
-    }
-    match candidate.class {
-        EventPolicyClassV1::FreeKnownBenefit if config.allow_free_known_benefit => {
-            Some(PickCertificate {
-                index: candidate.index,
-                label: candidate.label.clone(),
-                confidence: 0.84,
-                reason: "free known public event benefit with no visible downside".to_string(),
-            })
-        }
-        EventPolicyClassV1::SafeExit
-            if config.allow_safe_exit_from_risky_event
-                && all_other_enabled_candidates_are_risky(context, candidate.index) =>
-        {
-            Some(PickCertificate {
-                index: candidate.index,
-                label: candidate.label.clone(),
-                confidence: 0.72,
-                reason: "declined event because every other visible option has cost, uncertainty, combat, or deck mutation".to_string(),
-            })
-        }
-        _ => None,
     }
 }
 
@@ -282,27 +239,6 @@ fn has_negative_or_agency_effect(option: &EventOption) -> bool {
         || has_selection_or_deck_mutation(option)
         || starts_combat(option)
         || has_unresolved_reward(option)
-}
-
-fn all_other_enabled_candidates_are_risky(
-    context: &EventDecisionContextV1,
-    selected_index: usize,
-) -> bool {
-    context
-        .candidates
-        .iter()
-        .filter(|candidate| candidate.index != selected_index && !candidate.disabled)
-        .all(|candidate| {
-            matches!(
-                candidate.class,
-                EventPolicyClassV1::ResourceCost
-                    | EventPolicyClassV1::CurseDebt
-                    | EventPolicyClassV1::SelectionOrDeckMutation
-                    | EventPolicyClassV1::CombatStart
-                    | EventPolicyClassV1::UncertainReward
-                    | EventPolicyClassV1::Unknown
-            )
-        })
 }
 
 fn support_gate_for_class(class: EventPolicyClassV1) -> StrategyPlanSupportV1 {

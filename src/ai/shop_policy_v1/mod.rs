@@ -1,3 +1,4 @@
+mod certificates;
 mod policy;
 mod types;
 

@@ -4,6 +4,7 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 
+use super::certificates::pick_certificates;
 use super::types::{
     BossRelicCandidateEvidenceV1, BossRelicDecisionContextV1, BossRelicDecisionV1,
     BossRelicPolicyActionV1, BossRelicPolicyClassV1, BossRelicPolicyConfigV1,
@@ -29,11 +30,7 @@ pub fn plan_boss_relic_decision_v1(
     context: &BossRelicDecisionContextV1,
     config: &BossRelicPolicyConfigV1,
 ) -> BossRelicDecisionV1 {
-    let certificates = context
-        .candidates
-        .iter()
-        .filter_map(|candidate| pick_certificate(candidate, context, config))
-        .collect::<Vec<_>>();
+    let certificates = pick_certificates(context, config);
 
     let action = match certificates.as_slice() {
         [certificate] => BossRelicPolicyActionV1::Pick {
@@ -55,64 +52,6 @@ pub fn plan_boss_relic_decision_v1(
         action,
         label_role: "behavior_policy_not_teacher",
         context: context.clone(),
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct PickCertificate {
-    index: usize,
-    relic: RelicId,
-    confidence: f32,
-    reason: String,
-}
-
-fn pick_certificate(
-    candidate: &BossRelicCandidateEvidenceV1,
-    context: &BossRelicDecisionContextV1,
-    config: &BossRelicPolicyConfigV1,
-) -> Option<PickCertificate> {
-    match candidate.class {
-        BossRelicPolicyClassV1::StarterRelicUpgrade if config.allow_starter_upgrade => {
-            Some(PickCertificate {
-                index: candidate.index,
-                relic: candidate.relic,
-                confidence: 0.95,
-                reason: format!(
-                    "{:?} upgrades the starter relic with no visible downside",
-                    candidate.relic
-                ),
-            })
-        }
-        BossRelicPolicyClassV1::DeckCleanup
-            if config.allow_empty_cage_when_cleanup_supported
-                && candidate.support_gate_at_least(StrategyPlanSupportV1::Plausible)
-                && no_higher_agency_competitor(context, candidate.index) =>
-        {
-            Some(PickCertificate {
-                index: candidate.index,
-                relic: candidate.relic,
-                confidence: 0.82,
-                reason: format!(
-                    "{:?} matches cleanup pressure and avoids higher-agency boss relic uncertainty",
-                    candidate.relic
-                ),
-            })
-        }
-        BossRelicPolicyClassV1::BroadSafeValue
-            if config.allow_tiny_house_as_safe_fallback
-                && candidate.relic == RelicId::TinyHouse
-                && all_other_candidates_are_constrained(context, candidate.index) =>
-        {
-            Some(PickCertificate {
-                index: candidate.index,
-                relic: candidate.relic,
-                confidence: 0.78,
-                reason:
-                    "TinyHouse is the only broad low-downside option against constrained alternatives"
-                        .to_string(),
-            })
-        }
-        _ => None,
     }
 }
 
@@ -231,44 +170,6 @@ fn support_gate_for_candidate(
     }
 }
 
-fn no_higher_agency_competitor(
-    context: &BossRelicDecisionContextV1,
-    selected_index: usize,
-) -> bool {
-    context
-        .candidates
-        .iter()
-        .filter(|candidate| candidate.index != selected_index)
-        .all(|candidate| {
-            matches!(
-                candidate.class,
-                BossRelicPolicyClassV1::EnergyWithConstraint
-                    | BossRelicPolicyClassV1::CurseDebt
-                    | BossRelicPolicyClassV1::TransformAgency
-                    | BossRelicPolicyClassV1::Unknown
-            )
-        })
-}
-
-fn all_other_candidates_are_constrained(
-    context: &BossRelicDecisionContextV1,
-    selected_index: usize,
-) -> bool {
-    context
-        .candidates
-        .iter()
-        .filter(|candidate| candidate.index != selected_index)
-        .all(|candidate| {
-            matches!(
-                candidate.class,
-                BossRelicPolicyClassV1::EnergyWithConstraint
-                    | BossRelicPolicyClassV1::CurseDebt
-                    | BossRelicPolicyClassV1::TransformAgency
-                    | BossRelicPolicyClassV1::Unknown
-            )
-        })
-}
-
 fn stop_reason(context: &BossRelicDecisionContextV1) -> String {
     if context.candidates.is_empty() {
         return "boss relic policy stopped because there are no candidates".to_string();
@@ -281,19 +182,4 @@ fn stop_reason(context: &BossRelicDecisionContextV1) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!("boss relic policy stopped because no conservative V2 certificate matched ({classes})")
-}
-
-impl BossRelicCandidateEvidenceV1 {
-    fn support_gate_at_least(&self, minimum: StrategyPlanSupportV1) -> bool {
-        support_rank(self.support_gate) >= support_rank(minimum)
-    }
-}
-
-fn support_rank(support: StrategyPlanSupportV1) -> u8 {
-    match support {
-        StrategyPlanSupportV1::Blocked => 0,
-        StrategyPlanSupportV1::Weak => 1,
-        StrategyPlanSupportV1::Plausible => 2,
-        StrategyPlanSupportV1::Strong => 3,
-    }
 }

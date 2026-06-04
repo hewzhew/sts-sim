@@ -4,6 +4,7 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::state::core::CampfireChoice;
 use crate::state::run::RunState;
 
+use super::certificates::certified_action;
 use super::types::{
     candidate_id, CampfireCandidateEvidenceV1, CampfireDecisionContextV1, CampfireDecisionV1,
     CampfirePolicyActionV1, CampfirePolicyClassV1, CampfirePolicyConfigV1,
@@ -31,26 +32,10 @@ pub fn plan_campfire_decision_v1(
     context: &CampfireDecisionContextV1,
     config: &CampfirePolicyConfigV1,
 ) -> CampfireDecisionV1 {
-    let action = if config.allow_rest_under_recovery_pressure
-        && context.current_hp < context.max_hp
-        && context
-            .candidates
-            .iter()
-            .any(|candidate| candidate.choice == CampfireChoice::Rest)
-        && context
-            .strategy
-            .support(StrategyPackageIdV2::RecoveryPressure)
-            == StrategyPlanSupportV1::Strong
-    {
-        CampfirePolicyActionV1::Rest {
-            confidence: 0.86,
-            reason: "RecoveryPressure Strong and Rest is available while HP is missing".to_string(),
-        }
-    } else {
-        CampfirePolicyActionV1::Stop {
+    let action =
+        certified_action(context, config).unwrap_or_else(|| CampfirePolicyActionV1::Stop {
             reason: stop_reason(context),
-        }
-    };
+        });
 
     CampfireDecisionV1 {
         action,

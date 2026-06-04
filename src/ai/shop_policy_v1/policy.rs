@@ -5,6 +5,7 @@ use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
+use super::certificates::certified_action;
 use super::types::{
     purge_candidate_id, ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopDecisionV1,
     ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
@@ -81,36 +82,7 @@ pub fn plan_shop_decision_v1(
     context: &ShopDecisionContextV1,
     config: &ShopPolicyConfigV1,
 ) -> ShopDecisionV1 {
-    let action = if config.allow_curse_purge {
-        context
-            .candidates
-            .iter()
-            .find(|candidate| candidate.class == ShopPolicyClassV1::CursePurge)
-            .and_then(|candidate| purge_action(candidate, 0.92, "curse cleanup"))
-    } else {
-        None
-    }
-    .or_else(|| {
-        if !config.allow_starter_strike_purge_when_core_plan_protected {
-            return None;
-        }
-        context
-            .candidates
-            .iter()
-            .find(|candidate| {
-                candidate.class == ShopPolicyClassV1::StarterStrikePurge
-                    && candidate.support_gate == StrategyPlanSupportV1::Strong
-                    && !context.affordable_purchase_exists
-            })
-            .and_then(|candidate| {
-                purge_action(
-                    candidate,
-                    0.74,
-                    "CorePlanProtection Strong and no affordable purchase competes",
-                )
-            })
-    })
-    .unwrap_or_else(|| ShopPolicyActionV1::Stop {
+    let action = certified_action(context, config).unwrap_or_else(|| ShopPolicyActionV1::Stop {
         reason: stop_reason(context),
     });
 
@@ -119,19 +91,6 @@ pub fn plan_shop_decision_v1(
         label_role: "behavior_policy_not_teacher",
         context: context.clone(),
     }
-}
-
-fn purge_action(
-    candidate: &ShopCandidateEvidenceV1,
-    confidence: f32,
-    reason: &'static str,
-) -> Option<ShopPolicyActionV1> {
-    Some(ShopPolicyActionV1::Purge {
-        deck_index: candidate.deck_index?,
-        card: candidate.card?,
-        confidence,
-        reason: reason.to_string(),
-    })
 }
 
 fn purge_candidate_evidence(
