@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 use sts_simulator::eval::run_control::{
     build_decision_surface, canonical_player_class, parse_run_control_command, RunControlCommand,
@@ -32,6 +33,9 @@ struct Args {
 
     #[arg(long, value_name = "PATH")]
     prefix_script: Option<PathBuf>,
+
+    #[arg(long = "prefix-command", value_name = "COMMAND")]
+    prefix_commands: Vec<String>,
 
     #[arg(long, value_name = "N")]
     search_max_nodes: Option<usize>,
@@ -63,6 +67,13 @@ struct AutoRunBatchRowV1 {
     error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct StopReasonSummaryV1 {
+    stop_reason: String,
+    count: usize,
+    seeds: Vec<u64>,
+}
+
 fn main() {
     let args = Args::parse();
     if let Err(err) = run(args) {
@@ -73,6 +84,7 @@ fn main() {
 
 fn run(args: Args) -> Result<(), String> {
     let seeds = expand_seeds(&args)?;
+    let mut rows = Vec::new();
     for seed in seeds {
         let row = run_seed(&args, seed);
         if args.json_lines {
@@ -94,10 +106,14 @@ fn run(args: Args) -> Result<(), String> {
                 row.applied_operations,
                 row.stop_reason
             );
-            if let Some(error) = row.error {
+            if let Some(error) = row.error.as_ref() {
                 println!("  error: {error}");
             }
         }
+        rows.push(row);
+    }
+    if !args.json_lines && rows.len() > 1 {
+        print_stop_summary(&rows);
     }
     Ok(())
 }
@@ -138,9 +154,7 @@ fn run_seed_inner(args: &Args, seed: u64) -> Result<AutoRunBatchRowV1, String> {
         ..RunControlConfig::default()
     });
 
-    if let Some(script) = args.prefix_script.as_ref() {
-        apply_prefix_script(&mut session, script)?;
-    }
+    apply_prefix_inputs(&mut session, args)?;
 
     let outcome = session.apply_command(RunControlCommand::AutoRun(
         sts_simulator::eval::run_control::RunControlAutoStepOptions {
@@ -162,6 +176,20 @@ fn run_seed_inner(args: &Args, seed: u64) -> Result<AutoRunBatchRowV1, String> {
     ))
 }
 
+fn apply_prefix_inputs(session: &mut RunControlSession, args: &Args) -> Result<(), String> {
+    if let Some(script) = args.prefix_script.as_ref() {
+        apply_prefix_script(session, script)?;
+    }
+    for (index, command_line) in args.prefix_commands.iter().enumerate() {
+        apply_prefix_command(
+            session,
+            command_line,
+            &format!("inline --prefix-command #{}", index + 1),
+        )?;
+    }
+    Ok(())
+}
+
 fn apply_prefix_script(session: &mut RunControlSession, path: &PathBuf) -> Result<(), String> {
     let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;
     for (line_index, line) in payload.lines().enumerate() {
@@ -169,20 +197,46 @@ fn apply_prefix_script(session: &mut RunControlSession, path: &PathBuf) -> Resul
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let command = parse_run_control_command(trimmed)
-            .map_err(|err| format!("{}:{}: {err}", path.display(), line_index + 1))?;
-        let outcome = session
-            .apply_command(command)
-            .map_err(|err| format!("{}:{}: {err}", path.display(), line_index + 1))?;
-        if outcome.should_quit {
-            return Err(format!(
-                "{}:{}: prefix script requested quit before auto-run",
-                path.display(),
-                line_index + 1
-            ));
-        }
+        apply_prefix_command(
+            session,
+            trimmed,
+            &format!("{}:{}", path.display(), line_index + 1),
+        )?;
     }
     Ok(())
+}
+
+fn apply_prefix_command(
+    session: &mut RunControlSession,
+    command_line: &str,
+    label: &str,
+) -> Result<(), String> {
+    let command =
+        parse_run_control_command(command_line).map_err(|err| format!("{label}: {err}"))?;
+    let outcome = session
+        .apply_command(command)
+        .map_err(|err| format!("{label}: {err}"))?;
+    if outcome.should_quit {
+        return Err(format!(
+            "{label}: prefix command requested quit before auto-run"
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn prefix_input_labels(args: &Args) -> Vec<String> {
+    let mut labels = Vec::new();
+    if let Some(script) = args.prefix_script.as_ref() {
+        labels.push(format!("script {}", script.display()));
+    }
+    labels.extend(
+        args.prefix_commands
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format!("inline --prefix-command #{}", index + 1)),
+    );
+    labels
 }
 
 fn row_from_session(
@@ -262,6 +316,54 @@ fn count_applied_bullets(message: &str) -> usize {
     count
 }
 
+fn summarize_stop_reasons(rows: &[AutoRunBatchRowV1]) -> Vec<StopReasonSummaryV1> {
+    let mut grouped: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+    for row in rows {
+        grouped
+            .entry(row.stop_reason.clone())
+            .or_default()
+            .push(row.seed);
+    }
+    let mut summaries = grouped
+        .into_iter()
+        .map(|(stop_reason, seeds)| StopReasonSummaryV1 {
+            stop_reason,
+            count: seeds.len(),
+            seeds,
+        })
+        .collect::<Vec<_>>();
+    summaries.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.stop_reason.cmp(&right.stop_reason))
+    });
+    summaries
+}
+
+fn print_stop_summary(rows: &[AutoRunBatchRowV1]) {
+    println!();
+    println!("stop reason summary:");
+    for summary in summarize_stop_reasons(rows) {
+        let seed_preview = summary
+            .seeds
+            .iter()
+            .take(5)
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let suffix = if summary.seeds.len() > 5 {
+            format!(",... +{}", summary.seeds.len() - 5)
+        } else {
+            String::new()
+        };
+        println!(
+            "  {} | count={} | seeds={}{}",
+            summary.stop_reason, summary.count, seed_preview, suffix
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +377,7 @@ mod tests {
             ascension: 0,
             player_class: "ironclad".to_string(),
             prefix_script: None,
+            prefix_commands: vec![],
             search_max_nodes: None,
             search_wall_ms: None,
             max_operations: 128,
@@ -298,6 +401,99 @@ mod tests {
         assert_eq!(
             extract_stop_reason(message),
             Some("card reward requires human choice".to_string())
+        );
+    }
+
+    #[test]
+    fn prefix_inputs_apply_script_before_inline_commands() {
+        let args = Args {
+            seeds: vec![521],
+            seed_start: None,
+            count: 1,
+            ascension: 0,
+            player_class: "ironclad".to_string(),
+            prefix_script: Some(PathBuf::from("opening.txt")),
+            prefix_commands: vec!["0".to_string(), "ar".to_string()],
+            search_max_nodes: None,
+            search_wall_ms: None,
+            max_operations: 128,
+            json_lines: false,
+        };
+
+        assert_eq!(
+            prefix_input_labels(&args),
+            vec![
+                "script opening.txt".to_string(),
+                "inline --prefix-command #1".to_string(),
+                "inline --prefix-command #2".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn stop_summary_groups_rows_by_reason() {
+        let rows = vec![
+            AutoRunBatchRowV1 {
+                schema_name: "AutoRunBatchRowV1",
+                schema_version: 1,
+                seed: 1,
+                status: "ok".to_string(),
+                applied_operations: 2,
+                stop_reason: "card reward requires human choice".to_string(),
+                screen_title: "Reward Screen".to_string(),
+                act: 1,
+                floor: 1,
+                hp: 80,
+                max_hp: 80,
+                gold: 99,
+                error: None,
+            },
+            AutoRunBatchRowV1 {
+                schema_name: "AutoRunBatchRowV1",
+                schema_version: 1,
+                seed: 2,
+                status: "ok".to_string(),
+                applied_operations: 0,
+                stop_reason: "card reward requires human choice".to_string(),
+                screen_title: "Reward Screen".to_string(),
+                act: 1,
+                floor: 0,
+                hp: 80,
+                max_hp: 80,
+                gold: 99,
+                error: None,
+            },
+            AutoRunBatchRowV1 {
+                schema_name: "AutoRunBatchRowV1",
+                schema_version: 1,
+                seed: 3,
+                status: "error".to_string(),
+                applied_operations: 0,
+                stop_reason: "prefix failed".to_string(),
+                screen_title: "Neow Intro".to_string(),
+                act: 1,
+                floor: 0,
+                hp: 80,
+                max_hp: 80,
+                gold: 99,
+                error: Some("bad command".to_string()),
+            },
+        ];
+
+        assert_eq!(
+            summarize_stop_reasons(&rows),
+            vec![
+                StopReasonSummaryV1 {
+                    stop_reason: "card reward requires human choice".to_string(),
+                    count: 2,
+                    seeds: vec![1, 2],
+                },
+                StopReasonSummaryV1 {
+                    stop_reason: "prefix failed".to_string(),
+                    count: 1,
+                    seeds: vec![3],
+                },
+            ]
         );
     }
 }
