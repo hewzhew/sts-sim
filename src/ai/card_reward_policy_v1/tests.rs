@@ -1,7 +1,8 @@
 use crate::ai::card_reward_policy_v1::{
-    build_card_reward_decision_context_v1, plan_card_reward_decision_v1, CardRewardEvidenceGapV1,
-    CardRewardPlanEffectV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
-    CardRewardValueSourceV1, CardRewardValueStatusV1,
+    build_card_reward_decision_context_v1, plan_card_reward_decision_v1,
+    replay_card_reward_decision_v1, CardRewardEvidenceGapV1, CardRewardPlanEffectV1,
+    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueSourceV1,
+    CardRewardValueStatusV1, PublicRewardDecisionPacketV1,
 };
 use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
 use crate::content::cards::CardId;
@@ -174,7 +175,7 @@ fn noncombat_record_exports_card_reward_plan_evidence() {
 }
 
 #[test]
-fn searing_blow_can_only_certify_with_real_upgrade_budget() {
+fn searing_blow_exports_upgrade_commitment_but_uncalibrated_gate_stops() {
     let context = context_for_cards_with_route(
         vec![RewardCard::new(CardId::SearingBlow, 0)],
         route_with_upgrade_budget(),
@@ -182,28 +183,26 @@ fn searing_blow_can_only_certify_with_real_upgrade_budget() {
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
-    assert_eq!(
-        decision.pick_certificate.as_ref().map(|cert| cert.card),
-        Some(CardId::SearingBlow)
-    );
     assert!(matches!(
         decision.action,
-        CardRewardPolicyActionV1::Pick {
-            card: CardId::SearingBlow,
-            ..
-        }
+        CardRewardPolicyActionV1::Stop { .. }
     ));
+    assert!(decision.pick_certificate.is_none());
+    assert_eq!(
+        context
+            .strategy
+            .support(StrategyPackageIdV2::UpgradeCommitment),
+        StrategyPlanSupportV1::Strong
+    );
     assert!(decision
-        .pick_certificate
-        .as_ref()
-        .expect("Searing Blow certificate")
-        .reasons
+        .value_estimates
         .iter()
-        .any(|reason| reason.contains("UpgradeCommitment route package")));
+        .all(|estimate| estimate.status == CardRewardValueStatusV1::UncalibratedPrior));
+    assert!(!decision.autopilot_gate.value_source_eligible);
 }
 
 #[test]
-fn heavy_blade_can_only_certify_with_strength_plan() {
+fn heavy_blade_exports_strength_plan_but_uncalibrated_gate_stops() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.add_card_to_deck(CardId::Inflame);
     let context = context_for_run_with_route(
@@ -214,14 +213,22 @@ fn heavy_blade_can_only_certify_with_strength_plan() {
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
     assert_eq!(
-        decision.pick_certificate.as_ref().map(|cert| cert.card),
-        Some(CardId::HeavyBlade)
+        context
+            .strategy
+            .support(StrategyPackageIdV2::StrengthScaling),
+        StrategyPlanSupportV1::Strong
     );
+    assert!(!decision.autopilot_gate.value_source_eligible);
 }
 
 #[test]
-fn clothesline_certifies_as_weak_frontload_patch_when_growth_plans_are_blocked() {
+fn clothesline_exports_weak_frontload_patch_but_uncalibrated_gate_stops() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.floor_num = 1;
     let context = context_for_run_with_route(
@@ -236,27 +243,30 @@ fn clothesline_certifies_as_weak_frontload_patch_when_growth_plans_are_blocked()
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
-    assert_eq!(
-        decision.pick_certificate.as_ref().map(|cert| cert.card),
-        Some(CardId::Clothesline)
-    );
-    assert!(decision
-        .pick_certificate
-        .as_ref()
-        .expect("Clothesline certificate")
-        .reasons
-        .iter()
-        .any(|reason| reason.contains("CombatPatchWindow route package")));
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
     assert_eq!(
         context
             .strategy
             .support(StrategyPackageIdV2::CombatPatchWindow),
         StrategyPlanSupportV1::Strong
     );
+    assert!(decision
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::Clothesline)
+        .expect("Clothesline candidate")
+        .plan_delta
+        .effects
+        .contains(&CardRewardPlanEffectV1::WeakCoverage));
+    assert!(!decision.autopilot_gate.value_source_eligible);
 }
 
 #[test]
-fn early_transition_attack_certificate_picks_deterministic_frontload_patch() {
+fn early_transition_attack_exports_frontload_patch_but_uncalibrated_gate_stops() {
     let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
     run_state.floor_num = 1;
     let context = context_for_run_with_route(
@@ -282,21 +292,24 @@ fn early_transition_attack_certificate_picks_deterministic_frontload_patch() {
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
-    assert_eq!(
-        decision.pick_certificate.as_ref().map(|cert| cert.card),
-        Some(CardId::TwinStrike)
-    );
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
     assert!(decision
-        .pick_certificate
-        .as_ref()
-        .expect("Twin Strike transition certificate")
-        .reasons
+        .candidates
         .iter()
-        .any(|reason| reason.contains("FrontloadSurvival")));
+        .find(|candidate| candidate.card == CardId::TwinStrike)
+        .expect("Twin Strike candidate")
+        .plan_delta
+        .effects
+        .contains(&CardRewardPlanEffectV1::FrontloadDamage));
+    assert!(!decision.autopilot_gate.value_source_eligible);
 }
 
 #[test]
-fn transition_attack_certificate_stops_when_multiple_deterministic_attacks_match() {
+fn transition_attack_value_gate_stops_when_multiple_deterministic_attacks_match() {
     let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
     run_state.floor_num = 1;
     let context = context_for_run_with_route(
@@ -319,7 +332,7 @@ fn transition_attack_certificate_stops_when_multiple_deterministic_attacks_match
 }
 
 #[test]
-fn multi_debuff_control_certificate_picks_deterministic_combat_control_patch() {
+fn multi_debuff_control_exports_combat_control_but_uncalibrated_gate_stops() {
     let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
     run_state.floor_num = 1;
     let context = context_for_run_with_route(
@@ -343,17 +356,12 @@ fn multi_debuff_control_certificate_picks_deterministic_combat_control_patch() {
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
-    assert_eq!(
-        decision.pick_certificate.as_ref().map(|cert| cert.card),
-        Some(CardId::Shockwave)
-    );
-    assert!(decision
-        .pick_certificate
-        .as_ref()
-        .expect("Shockwave combat-control certificate")
-        .reasons
-        .iter()
-        .any(|reason| reason.contains("deterministic multi-debuff control")));
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
+    assert!(!decision.autopilot_gate.value_source_eligible);
 }
 
 #[test]
@@ -387,7 +395,7 @@ fn weak_frontload_patch_does_not_auto_certify_when_core_plan_is_committed() {
 }
 
 #[test]
-fn score_threshold_overrides_cannot_force_a_pick_without_certificate() {
+fn score_threshold_overrides_cannot_force_a_pick_without_value_gate() {
     let run_state = RunState::new(521, 0, false, "Ironclad");
     let context = build_card_reward_decision_context_v1(
         &run_state,
@@ -397,7 +405,7 @@ fn score_threshold_overrides_cannot_force_a_pick_without_certificate() {
     let decision = plan_card_reward_decision_v1(
         &context,
         &CardRewardPolicyConfigV1 {
-            allow_automatic_pick_certificates: true,
+            allow_autopilot_value_gate: true,
         },
     );
 
@@ -422,7 +430,7 @@ fn decision_builds_prior_value_estimates_for_every_candidate() {
     assert!(decision
         .value_estimates
         .iter()
-        .all(|estimate| estimate.source == CardRewardValueSourceV1::ImpactPrior));
+        .all(|estimate| estimate.source == CardRewardValueSourceV1::UncalibratedImpactPrior));
     assert!(decision
         .value_estimates
         .iter()
@@ -450,6 +458,68 @@ fn uncalibrated_prior_values_are_consumed_by_gate_but_cannot_certify_pick() {
     assert!(decision
         .evidence_gaps
         .contains(&CardRewardEvidenceGapV1::UncalibratedValueEstimate));
+}
+
+#[test]
+fn uncalibrated_prior_blocks_even_when_old_rule_would_have_matched() {
+    let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
+    run_state.floor_num = 1;
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Shockwave, 0),
+            RewardCard::new(CardId::Clash, 0),
+            RewardCard::new(CardId::SeverSoul, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
+    assert_eq!(
+        decision.value_estimates[0].source,
+        CardRewardValueSourceV1::UncalibratedImpactPrior
+    );
+    assert_eq!(
+        decision.value_estimates[0].status,
+        CardRewardValueStatusV1::UncalibratedPrior
+    );
+    assert!(decision
+        .autopilot_gate
+        .blocked_reasons
+        .contains(&CardRewardEvidenceGapV1::UncalibratedValueEstimate));
+    assert!(!decision.autopilot_gate.value_source_eligible);
+}
+
+#[test]
+fn replay_harness_exports_value_loop_gate_state_without_selecting() {
+    let mut context = context_for_cards(vec![RewardCard::new(CardId::Shockwave, 0)]);
+    context.route = Some(route_with_combat_pressure());
+    let packet = PublicRewardDecisionPacketV1::from_context(&context);
+
+    let replay =
+        replay_card_reward_decision_v1(&packet, &CardRewardPolicyConfigV1::default(), None);
+
+    assert_eq!(replay.candidates.len(), 1);
+    assert_eq!(replay.value_estimates.len(), 1);
+    assert_eq!(
+        replay.value_estimates[0].source,
+        CardRewardValueSourceV1::UncalibratedImpactPrior
+    );
+    assert_eq!(
+        replay.value_estimates[0].status,
+        CardRewardValueStatusV1::UncalibratedPrior
+    );
+    assert!(!replay.autopilot_gate.value_source_eligible);
+    assert!(replay.selected_candidate_id.is_none());
+    assert!(replay
+        .stop_reason
+        .contains("missing or unresolved evidence"));
 }
 
 #[test]

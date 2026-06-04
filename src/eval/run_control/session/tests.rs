@@ -1271,7 +1271,7 @@ fn run_control_auto_run_stops_on_non_premium_early_attack_reward_item() {
 }
 
 #[test]
-fn run_control_auto_run_picks_deterministic_transition_attack_after_first_combat() {
+fn run_control_auto_run_stops_on_uncalibrated_transition_attack_after_first_combat() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::TwinStrike,
         crate::content::cards::CardId::SwordBoomerang,
@@ -1286,10 +1286,12 @@ fn run_control_auto_run_picks_deterministic_transition_attack_after_first_combat
                 ..Default::default()
             },
         ))
-        .expect("auto-run should pick deterministic transition frontload");
+        .expect("auto-run should stop without calibrated transition frontload value");
 
-    assert!(outcome.message.contains("card reward policy: Twin Strike"));
-    assert!(session
+    assert!(outcome
+        .message
+        .contains("card reward requires human choice"));
+    assert!(!session
         .run_state
         .master_deck
         .iter()
@@ -1307,7 +1309,7 @@ fn run_control_auto_run_picks_deterministic_transition_attack_after_first_combat
 }
 
 #[test]
-fn run_control_auto_run_picks_deterministic_combat_control_after_first_combat() {
+fn run_control_auto_run_stops_on_uncalibrated_combat_control_after_first_combat() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::Shockwave,
         crate::content::cards::CardId::Clash,
@@ -1322,10 +1324,12 @@ fn run_control_auto_run_picks_deterministic_combat_control_after_first_combat() 
                 ..Default::default()
             },
         ))
-        .expect("auto-run should pick deterministic multi-debuff control");
+        .expect("auto-run should stop without calibrated combat-control value");
 
-    assert!(outcome.message.contains("card reward policy: Shockwave"));
-    assert!(session
+    assert!(outcome
+        .message
+        .contains("card reward requires human choice"));
+    assert!(!session
         .run_state
         .master_deck
         .iter()

@@ -139,7 +139,7 @@ fn assess_dependency(
                 CardRewardDependencyAssessmentV1 {
                     dependency,
                     status: CardRewardDependencyStatusV1::Unknown,
-                    reason: "deck has exhaust-related cards, but no exhaust plan certificate exists"
+                    reason: "deck has exhaust-related cards, but no exhaust package evidence exists"
                         .to_string(),
                 }
             } else {
@@ -155,7 +155,7 @@ fn assess_dependency(
                 CardRewardDependencyAssessmentV1 {
                     dependency,
                     status: CardRewardDependencyStatusV1::Unknown,
-                    reason: "deck has status-related cards, but no status plan certificate exists"
+                    reason: "deck has status-related cards, but no status package evidence exists"
                         .to_string(),
                 }
             } else {

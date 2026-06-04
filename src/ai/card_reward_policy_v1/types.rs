@@ -2,15 +2,15 @@ use crate::content::cards::{CardId, CardRarity, CardType};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardRewardPolicyConfigV1 {
-    /// Enables automatic picks only when a candidate receives an explicit
-    /// certificate from the evidence gate. This does not enable score fallback.
-    pub allow_automatic_pick_certificates: bool,
+    /// Enables automatic picks only when the generic value gate accepts a
+    /// calibrated estimate. This does not enable score fallback.
+    pub allow_autopilot_value_gate: bool,
 }
 
 impl Default for CardRewardPolicyConfigV1 {
     fn default() -> Self {
         Self {
-            allow_automatic_pick_certificates: true,
+            allow_autopilot_value_gate: true,
         }
     }
 }
@@ -103,7 +103,6 @@ pub type CardRewardStrategySnapshotV2 = crate::ai::noncombat_strategy_v1::RunStr
 pub type CardRewardCandidatePlanDeltaV1 =
     crate::ai::noncombat_strategy_v1::StrategyCandidatePlanDeltaV1;
 pub type CardRewardPlanEffectV1 = crate::ai::noncombat_strategy_v1::StrategyPlanEffectV1;
-pub type CardRewardPlanSupportV1 = crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardRewardFactsV1 {
@@ -196,6 +195,11 @@ pub enum CardRewardEvidenceGapV1 {
     MissingRouteEvidence,
     MissingValueEstimate,
     UncalibratedValueEstimate,
+    IneligibleValueSource,
+    ValueNotPositive,
+    ValueMarginTooSmall,
+    ValueUncertaintyTooHigh,
+    UnresolvedCandidateDependencies,
     MissingStrategicPlanEvidence,
     UnsatisfiedRouteUpgradeEvidence,
     UnsatisfiedStrengthScalingEvidence,
@@ -212,7 +216,10 @@ pub enum CardRewardEvidenceGapV1 {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CardRewardValueSourceV1 {
-    ImpactPrior,
+    UncalibratedImpactPrior,
+    CombatProbe,
+    RouteRisk,
+    LearnedValue,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -250,11 +257,26 @@ pub struct CardRewardPickCertificateV1 {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct CardRewardAutopilotGateReportV1 {
+    pub hidden_free: bool,
+    pub candidate_coverage_complete: bool,
+    pub value_source_eligible: bool,
+    pub calibration_status_allowed: bool,
+    pub value_vs_skip_positive: bool,
+    pub margin_sufficient: bool,
+    pub uncertainty_below_limit: bool,
+    pub unresolved_dependencies_empty: bool,
+    pub selected_candidate_index: Option<usize>,
+    pub blocked_reasons: Vec<CardRewardEvidenceGapV1>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct CardRewardDecisionV1 {
     pub action: CardRewardPolicyActionV1,
     pub context: CardRewardDecisionContextV1,
     pub candidates: Vec<CardRewardCandidateEvidenceV1>,
     pub value_estimates: Vec<CardRewardValueEstimateV1>,
+    pub autopilot_gate: CardRewardAutopilotGateReportV1,
     pub evidence_gaps: Vec<CardRewardEvidenceGapV1>,
     pub pick_certificate: Option<CardRewardPickCertificateV1>,
     pub label_role: &'static str,

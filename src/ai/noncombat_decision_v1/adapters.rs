@@ -139,7 +139,7 @@ impl CardRewardDecisionV1 {
                     "visible reward cards are public observations after the card reward is opened"
                         .to_string(),
                     "card reward policy records mechanical facts and evidence gaps, not an optimal action label".to_string(),
-                    "automatic selection requires an explicit pick certificate; no score fallback is allowed".to_string(),
+                      "automatic selection requires the generic autopilot value gate to accept an eligible calibrated estimate; no score fallback is allowed".to_string(),
                 ],
                 warnings: self
                     .evidence_gaps
@@ -332,7 +332,7 @@ fn card_reward_uncertainty_notes(candidate: &CardRewardCandidateEvidenceV1) -> V
             .impact
             .certification_blockers
             .iter()
-            .map(|gap| format!("certificate blocker: {gap:?}")),
+            .map(|gap| format!("autopilot blocker: {gap:?}")),
     );
     notes
 }
@@ -362,7 +362,7 @@ fn card_reward_selection(decision: &CardRewardDecisionV1) -> PolicySelectionV1 {
             selected_candidate_id: Some(format!("card_reward:{index}:{card:?}")),
             reason: reason.clone(),
             confidence: *confidence,
-            selection_mode: "pick_certificate_gate".to_string(),
+            selection_mode: "autopilot_value_gate".to_string(),
         },
         CardRewardPolicyActionV1::Stop { reason, .. } => PolicySelectionV1 {
             status: if decision.candidates.is_empty() {
@@ -373,7 +373,7 @@ fn card_reward_selection(decision: &CardRewardDecisionV1) -> PolicySelectionV1 {
             selected_candidate_id: None,
             reason: reason.clone(),
             confidence: 0.0,
-            selection_mode: "pick_certificate_gate".to_string(),
+            selection_mode: "autopilot_value_gate".to_string(),
         },
     }
 }
@@ -436,7 +436,12 @@ fn card_reward_value_components(estimate: &CardRewardValueEstimateV1) -> Vec<Val
         .collect::<Vec<_>>();
     components.push(ValueComponentV1::new(
         match estimate.source {
-            CardRewardValueSourceV1::ImpactPrior => "value_source_impact_prior",
+            CardRewardValueSourceV1::UncalibratedImpactPrior => {
+                "value_source_uncalibrated_impact_prior"
+            }
+            CardRewardValueSourceV1::CombatProbe => "value_source_combat_probe",
+            CardRewardValueSourceV1::RouteRisk => "value_source_route_risk",
+            CardRewardValueSourceV1::LearnedValue => "value_source_learned_value",
         },
         1.0,
     ));

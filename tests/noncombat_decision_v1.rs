@@ -88,7 +88,7 @@ fn card_reward_stop_exports_hidden_free_uncalibrated_value_inputs() {
     ));
     assert_eq!(record.selection.status, PolicySelectionStatusV1::Stopped);
     assert!(record.selection.selected_candidate_id.is_none());
-    assert_eq!(record.selection.selection_mode, "pick_certificate_gate");
+    assert_eq!(record.selection.selection_mode, "autopilot_value_gate");
 }
 
 #[test]

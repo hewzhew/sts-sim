@@ -12,7 +12,7 @@ pub(crate) fn estimate_card_reward_values(
         .map(|candidate| CardRewardValueEstimateV1 {
             index: candidate.index,
             card: candidate.card,
-            source: CardRewardValueSourceV1::ImpactPrior,
+            source: CardRewardValueSourceV1::UncalibratedImpactPrior,
             status: CardRewardValueStatusV1::UncalibratedPrior,
             survival_delta: 0.0,
             progress_delta: 0.0,
