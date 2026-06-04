@@ -256,6 +256,69 @@ fn clothesline_certifies_as_weak_frontload_patch_when_growth_plans_are_blocked()
 }
 
 #[test]
+fn early_transition_attack_certificate_picks_deterministic_frontload_patch() {
+    let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
+    run_state.floor_num = 1;
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::SwordBoomerang, 0),
+            RewardCard::new(CardId::Warcry, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let sword_boomerang = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::SwordBoomerang)
+        .expect("Sword Boomerang candidate");
+    assert!(sword_boomerang.facts.is_random_output);
+    assert!(sword_boomerang
+        .impact
+        .certification_blockers
+        .contains(&CardRewardEvidenceGapV1::RandomOutcomeRequiresPolicy));
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert_eq!(
+        decision.pick_certificate.as_ref().map(|cert| cert.card),
+        Some(CardId::TwinStrike)
+    );
+    assert!(decision
+        .pick_certificate
+        .as_ref()
+        .expect("Twin Strike transition certificate")
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("FrontloadSurvival")));
+}
+
+#[test]
+fn transition_attack_certificate_stops_when_multiple_deterministic_attacks_match() {
+    let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
+    run_state.floor_num = 1;
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::PommelStrike, 0),
+            RewardCard::new(CardId::Warcry, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
+}
+
+#[test]
 fn weak_frontload_patch_does_not_auto_certify_when_core_plan_is_committed() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.floor_num = 1;

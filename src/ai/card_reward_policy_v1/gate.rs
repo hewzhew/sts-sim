@@ -6,7 +6,7 @@ use super::types::{
 };
 
 use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
-use crate::content::cards::CardId;
+use crate::content::cards::{CardId, CardType};
 
 pub(crate) fn pick_gate(
     context: &CardRewardDecisionContextV1,
@@ -124,7 +124,7 @@ fn candidate_certificate(
         CardId::SearingBlow => upgrade_sink_certificate(context, candidate),
         CardId::HeavyBlade => strength_payoff_certificate(candidate),
         CardId::Clothesline => weak_frontload_certificate(context, candidate),
-        _ => None,
+        _ => transition_frontload_certificate(context, candidate),
     }
 }
 
@@ -225,6 +225,105 @@ fn weak_frontload_certificate(
             ),
             "no competing upgrade-sink or strength-payoff plan is strongly supported".to_string(),
         ],
+    })
+}
+
+fn transition_frontload_certificate(
+    context: &CardRewardDecisionContextV1,
+    candidate: &CardRewardCandidateEvidenceV1,
+) -> Option<CardRewardPickCertificateV1> {
+    if context.run.floor <= 0 {
+        return None;
+    }
+    if candidate.card_type != CardType::Attack {
+        return None;
+    }
+    if candidate.facts.cost < 0 || candidate.facts.cost > 1 {
+        return None;
+    }
+    if !candidate
+        .plan_delta
+        .effects
+        .contains(&CardRewardPlanEffectV1::FrontloadDamage)
+    {
+        return None;
+    }
+    if candidate.impact.frontload_damage_delta < transition_frontload_floor(context) {
+        return None;
+    }
+    if has_competing_strong_plan_candidate(context, candidate.index) {
+        return None;
+    }
+
+    let frontload = context
+        .strategy
+        .package(StrategyPackageIdV2::FrontloadSurvival)?;
+    if !matches!(
+        frontload.support,
+        StrategyPlanSupportV1::Strong | StrategyPlanSupportV1::Plausible
+    ) {
+        return None;
+    }
+    let combat_patch = context
+        .strategy
+        .package(StrategyPackageIdV2::CombatPatchWindow)?;
+    if !matches!(
+        combat_patch.support,
+        StrategyPlanSupportV1::Strong | StrategyPlanSupportV1::Plausible
+    ) {
+        return None;
+    }
+
+    Some(CardRewardPickCertificateV1 {
+        index: candidate.index,
+        card: candidate.card,
+        confidence: 0.72,
+        reasons: vec![
+            format!(
+                "FrontloadSurvival is {:?}: {}",
+                frontload.support,
+                frontload.evidence.join(", ")
+            ),
+            format!(
+                "CombatPatchWindow is {:?}: {}",
+                combat_patch.support,
+                combat_patch.evidence.join(", ")
+            ),
+            format!(
+                "deterministic low-cost attack adds {} frontload damage against a deck average threshold of {}",
+                candidate.impact.frontload_damage_delta,
+                transition_frontload_floor(context)
+            ),
+        ],
+    })
+}
+
+fn transition_frontload_floor(context: &CardRewardDecisionContextV1) -> i32 {
+    let average_attack = if context.deck.attacks > 0 {
+        (context.deck.total_attack_damage + i32::from(context.deck.attacks) - 1)
+            / i32::from(context.deck.attacks)
+    } else {
+        0
+    };
+    average_attack.saturating_add(2).max(8)
+}
+
+fn has_competing_strong_plan_candidate(
+    context: &CardRewardDecisionContextV1,
+    candidate_index: usize,
+) -> bool {
+    context.candidates.iter().any(|other| {
+        other.index != candidate_index
+            && other.plan_delta.support == CardRewardPlanSupportV1::Strong
+            && other.plan_delta.effects.iter().any(|effect| {
+                matches!(
+                    effect,
+                    CardRewardPlanEffectV1::UpgradeSink
+                        | CardRewardPlanEffectV1::StrengthPayoff
+                        | CardRewardPlanEffectV1::WeakCoverage
+                )
+            })
+            && !has_hard_blocker(other)
     })
 }
 

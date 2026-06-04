@@ -188,7 +188,8 @@ fn upgrades_cards(card_id: CardId) -> bool {
 fn is_random_output(card_id: CardId) -> bool {
     matches!(
         card_id,
-        CardId::Discovery
+        CardId::SwordBoomerang
+            | CardId::Discovery
             | CardId::InfernalBlade
             | CardId::JackOfAllTrades
             | CardId::WhiteNoise
@@ -245,6 +246,7 @@ fn pick_dependencies(card_id: CardId) -> Vec<CardRewardPickDependencyV1> {
 
 fn unsupported_mechanics(card_id: CardId) -> Vec<&'static str> {
     match card_id {
+        CardId::Warcry => vec!["hand top-deck selection"],
         CardId::Rampage => vec!["combat-history damage growth"],
         CardId::BloodForBlood => vec!["combat-damage cost mutation"],
         CardId::Dropkick => vec!["conditional draw and energy on vulnerable target"],

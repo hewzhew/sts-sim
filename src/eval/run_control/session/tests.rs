@@ -1271,6 +1271,42 @@ fn run_control_auto_run_stops_on_non_premium_early_attack_reward_item() {
 }
 
 #[test]
+fn run_control_auto_run_picks_deterministic_transition_attack_after_first_combat() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::TwinStrike,
+        crate::content::cards::CardId::SwordBoomerang,
+        crate::content::cards::CardId::Warcry,
+    ]);
+    session.run_state.floor_num = 1;
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should pick deterministic transition frontload");
+
+    assert!(outcome.message.contains("card reward policy: Twin Strike"));
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::TwinStrike));
+    assert!(!session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::SwordBoomerang));
+    assert!(!session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Warcry));
+}
+
+#[test]
 fn run_control_auto_run_stops_on_archetype_dependent_early_attack_reward_item() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![
