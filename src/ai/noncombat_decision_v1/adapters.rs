@@ -321,6 +321,14 @@ fn card_reward_uncertainty_notes(candidate: &CardRewardCandidateEvidenceV1) -> V
     let mut notes = candidate.impact.evidence_notes.clone();
     notes.extend(
         candidate
+            .plan_delta
+            .effects
+            .iter()
+            .map(|effect| format!("plan effect: {effect:?}")),
+    );
+    notes.extend(candidate.plan_delta.notes.clone());
+    notes.extend(
+        candidate
             .impact
             .certification_blockers
             .iter()
@@ -371,7 +379,7 @@ fn card_reward_selection(decision: &CardRewardDecisionV1) -> PolicySelectionV1 {
 }
 
 fn card_reward_fact_components(candidate: &CardRewardCandidateEvidenceV1) -> Vec<ValueComponentV1> {
-    vec![
+    let mut components = vec![
         ValueComponentV1::new(
             "frontload_damage_delta",
             candidate.impact.frontload_damage_delta as f32,
@@ -390,7 +398,19 @@ fn card_reward_fact_components(candidate: &CardRewardCandidateEvidenceV1) -> Vec
             "certification_blockers",
             candidate.impact.certification_blockers.len() as f32,
         ),
-    ]
+        ValueComponentV1::new(
+            format!("plan_support_{:?}", candidate.plan_delta.support),
+            1.0,
+        ),
+    ];
+    components.extend(
+        candidate
+            .plan_delta
+            .effects
+            .iter()
+            .map(|effect| ValueComponentV1::new(format!("plan_effect_{effect:?}"), 1.0)),
+    );
+    components
 }
 
 fn card_reward_value_estimate(estimate: &CardRewardValueEstimateV1) -> ValueEstimateV1 {

@@ -205,10 +205,7 @@ fn has_conditional_playability(card_id: CardId) -> bool {
         card_id,
         CardId::Clash
             | CardId::BodySlam
-            | CardId::HeavyBlade
             | CardId::PerfectedStrike
-            | CardId::SearingBlow
-            | CardId::LimitBreak
             | CardId::GrandFinale
             | CardId::Expertise
     )

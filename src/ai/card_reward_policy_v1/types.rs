@@ -20,6 +20,7 @@ pub struct CardRewardDecisionContextV1 {
     pub run: CardRewardRunContextV1,
     pub deck: DeckProfileV1,
     pub route: Option<CardRewardRouteEvidenceV1>,
+    pub plans: CardRewardStrategicPlansV1,
     pub candidates: Vec<CardRewardCandidateEvidenceV1>,
 }
 
@@ -83,6 +84,7 @@ pub struct DeckProfileV1 {
     pub status_generators: u8,
     pub status_payoffs: u8,
     pub route_upgrade_payoffs: u8,
+    pub important_cards_unupgraded: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -93,7 +95,14 @@ pub struct CardRewardCandidateEvidenceV1 {
     pub card_type: CardType,
     pub facts: CardRewardFactsV1,
     pub impact: CardRewardCandidateImpactV1,
+    pub plan_delta: CardRewardCandidatePlanDeltaV1,
 }
+
+pub type CardRewardStrategicPlansV1 = crate::ai::noncombat_strategy_v1::RunStrategySnapshotV1;
+pub type CardRewardCandidatePlanDeltaV1 =
+    crate::ai::noncombat_strategy_v1::StrategyCandidatePlanDeltaV1;
+pub type CardRewardPlanEffectV1 = crate::ai::noncombat_strategy_v1::StrategyPlanEffectV1;
+pub type CardRewardPlanSupportV1 = crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardRewardFactsV1 {

@@ -5,4 +5,5 @@ pub mod combat_search_v2;
 pub mod combat_state_key;
 pub mod combat_state_snapshot;
 pub mod noncombat_decision_v1;
+pub mod noncombat_strategy_v1;
 pub mod route_planner_v1;

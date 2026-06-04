@@ -43,6 +43,7 @@ pub(crate) fn deck_profile(run_state: &RunState) -> DeckProfileV1 {
         status_generators: 0,
         status_payoffs: 0,
         route_upgrade_payoffs: 0,
+        important_cards_unupgraded: 0,
     };
 
     for card in &run_state.master_deck {
@@ -113,6 +114,10 @@ pub(crate) fn deck_profile(run_state: &RunState) -> DeckProfileV1 {
         {
             profile.route_upgrade_payoffs = profile.route_upgrade_payoffs.saturating_add(1);
         }
+        if card.upgrades == 0 && matches!(card.id, CardId::Bash) {
+            profile.important_cards_unupgraded =
+                profile.important_cards_unupgraded.saturating_add(1);
+        }
     }
 
     profile
@@ -161,4 +166,49 @@ pub(crate) fn route_evidence(
             .unwrap_or(0.0),
         warnings: trace.warnings.clone(),
     })
+}
+
+pub(crate) fn strategy_deck_facts(
+    deck: &DeckProfileV1,
+) -> crate::ai::noncombat_strategy_v1::StrategyDeckFactsV1 {
+    crate::ai::noncombat_strategy_v1::StrategyDeckFactsV1 {
+        deck_size: deck.deck_size,
+        strength_sources: deck.strength_sources,
+        strength_payoffs: deck.strength_payoffs,
+        weak_sources: deck.weak_sources,
+        route_upgrade_payoffs: deck.route_upgrade_payoffs,
+        important_cards_unupgraded: deck.important_cards_unupgraded,
+        exhaust_generators: deck.exhaust_generators,
+        exhaust_payoffs: deck.exhaust_payoffs,
+        status_generators: deck.status_generators,
+        status_payoffs: deck.status_payoffs,
+        total_attack_damage: deck.total_attack_damage,
+        total_block: deck.total_block,
+    }
+}
+
+pub(crate) fn strategy_route_future(
+    route: Option<&CardRewardRouteEvidenceV1>,
+) -> Option<crate::ai::noncombat_strategy_v1::StrategyRouteFutureV1> {
+    let route = route?;
+    let selected = route.selected_route.as_ref()?;
+    Some(crate::ai::noncombat_strategy_v1::StrategyRouteFutureV1 {
+        min_fires: selected.min_fires,
+        max_fires: selected.max_fires,
+        first_fire_floor: selected.first_fire_floor,
+        max_early_pressure: selected.max_early_pressure,
+        need_heal: route.need_heal,
+        avoid_damage: route.avoid_damage,
+    })
+}
+
+pub(crate) fn strategy_candidate_facts(
+    facts: &super::types::CardRewardFactsV1,
+) -> crate::ai::noncombat_strategy_v1::StrategyCandidateFactsV1 {
+    crate::ai::noncombat_strategy_v1::StrategyCandidateFactsV1 {
+        card: facts.card,
+        damage_total: facts.damage.total_damage,
+        weak: facts.weak,
+        strength_gain: facts.strength_gain,
+    }
 }
