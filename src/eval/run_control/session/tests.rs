@@ -800,6 +800,90 @@ fn run_control_auto_step_boss_relic_stop_exports_human_boundary_record() {
 }
 
 #[test]
+fn run_control_auto_run_picks_safe_boss_relic_certificate() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state =
+        EngineState::BossRelicSelect(crate::state::rewards::BossRelicChoiceState::new(vec![
+            crate::content::relics::RelicId::Ectoplasm,
+            crate::content::relics::RelicId::BlackBlood,
+            crate::content::relics::RelicId::CoffeeDripper,
+        ]));
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should pick the safe starter upgrade boss relic");
+
+    assert!(outcome.message.contains("boss relic policy: BlackBlood"));
+    assert!(session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == crate::content::relics::RelicId::BlackBlood));
+    assert_eq!(session.run_state.act_num, 2);
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } => Some(record),
+            _ => None,
+        })
+        .expect("boss relic policy should attach a noncombat record");
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("boss relic policy noncombat record should validate");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::BossRelic
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
+    );
+}
+
+#[test]
+fn run_control_auto_run_stops_on_high_agency_boss_relic_choice() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state =
+        EngineState::BossRelicSelect(crate::state::rewards::BossRelicChoiceState::new(vec![
+            crate::content::relics::RelicId::TinyHouse,
+            crate::content::relics::RelicId::RunicPyramid,
+            crate::content::relics::RelicId::SneckoEye,
+        ]));
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should stop for high-agency boss relic choices");
+
+    assert!(outcome
+        .message
+        .contains("Reason: boss relic choice requires human choice"));
+    assert!(outcome.action_result.is_none());
+    assert!(matches!(
+        session.engine_state,
+        EngineState::BossRelicSelect(_)
+    ));
+    let record = noncombat_human_boundary_record(&outcome);
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::BossRelic
+    );
+}
+
+#[test]
 fn run_control_auto_step_run_choice_stop_exports_human_boundary_record() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state =

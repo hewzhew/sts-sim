@@ -2,6 +2,7 @@ mod artifact_commands;
 mod auto_capture;
 mod auto_run;
 mod auto_step;
+mod boss_relic_policy;
 mod campfire_policy;
 mod card_reward_auto;
 mod combat_search;
