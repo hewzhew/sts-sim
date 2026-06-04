@@ -5,6 +5,7 @@ mod auto_step;
 mod boss_relic_policy;
 mod campfire_policy;
 mod card_reward_auto;
+mod combat_auto_policy;
 mod combat_search;
 mod combat_start;
 mod commands;
@@ -17,6 +18,7 @@ mod input_gate;
 mod next_hint;
 mod noncombat_auto;
 mod noncombat_boundary;
+mod noncombat_policy_annotation;
 pub mod outcome;
 mod panels;
 #[cfg(test)]

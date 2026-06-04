@@ -3,8 +3,7 @@ use std::collections::BTreeSet;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
 use super::commands::{
-    RunControlAutoStepOptions, RunControlHpLossLimit, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions,
+    RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::RunControlTraceAnnotationV1;
@@ -15,8 +14,6 @@ use super::transition_report::{
 use super::view_model::{build_run_control_view_model, DecisionCandidate, RunControlViewModel};
 
 const DEFAULT_MAX_OPERATIONS: usize = 16;
-const DEFAULT_AUTO_SEARCH_WALL_MS: u64 = 5_000;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AutoAdvanceClass {
     Routine,
@@ -299,28 +296,31 @@ fn auto_search_options(
     session: &RunControlSession,
     mut options: RunControlSearchCombatOptions,
 ) -> RunControlSearchCombatOptions {
-    if options.wall_ms.is_none() && session.search_wall_ms.is_none() {
-        options.wall_ms = Some(DEFAULT_AUTO_SEARCH_WALL_MS);
+    let plan = super::combat_auto_policy::combat_auto_search_plan(session, &options);
+    if options.wall_ms.is_none() {
+        options.wall_ms = plan.default_wall_ms;
     }
-    super::combat_search::high_stakes_search_options(session, options)
+    if options.potion_policy.is_none() && session.search_potion_policy.is_none() {
+        options.potion_policy = plan.primary_potion_policy;
+    }
+    if options.max_potions_used.is_none() && session.search_max_potions_used.is_none() {
+        options.max_potions_used = plan.primary_max_potions_used;
+    }
+    options
 }
 
 fn auto_no_potion_first_options(
     session: &RunControlSession,
     options: &RunControlSearchCombatOptions,
 ) -> Option<RunControlSearchCombatOptions> {
-    if super::combat_search::active_combat_high_stakes_potion_budget(session).is_none()
-        || options.potion_policy.is_some()
-        || session.search_potion_policy.is_some()
-        || !auto_hp_loss_limit_is_set(session, options)
-        || options.evidence.is_some()
-    {
+    let plan = super::combat_auto_policy::combat_auto_search_plan(session, options);
+    if !plan.no_potion_first {
         return None;
     }
 
     let mut no_potion = options.clone();
-    if no_potion.wall_ms.is_none() && session.search_wall_ms.is_none() {
-        no_potion.wall_ms = Some(DEFAULT_AUTO_SEARCH_WALL_MS);
+    if no_potion.wall_ms.is_none() {
+        no_potion.wall_ms = plan.default_wall_ms;
     }
     no_potion.potion_policy = Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never);
     no_potion.max_potions_used = Some(0);
@@ -332,65 +332,26 @@ fn auto_potion_rescue_options(
     session: &RunControlSession,
     options: &RunControlSearchCombatOptions,
 ) -> Option<RunControlSearchCombatOptions> {
-    if !auto_hp_loss_limit_is_set(session, options)
-        || options.potion_policy.is_some()
-        || session.search_potion_policy.is_some()
-        || options.max_potions_used.is_some()
-        || session.search_max_potions_used.is_some()
-        || !active_combat_has_usable_potion(session)
-    {
+    let plan = super::combat_auto_policy::combat_auto_search_plan(session, options);
+    let Some(potion_policy) = plan.potion_rescue_policy else {
         return None;
-    }
+    };
 
     let mut rescue = options.clone();
-    if rescue.wall_ms.is_none() && session.search_wall_ms.is_none() {
-        rescue.wall_ms = Some(DEFAULT_AUTO_SEARCH_WALL_MS);
+    if rescue.wall_ms.is_none() {
+        rescue.wall_ms = plan.default_wall_ms;
     }
-    rescue.potion_policy = Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::All);
-    rescue.max_potions_used =
-        Some(super::combat_search::active_combat_high_stakes_potion_budget(session).unwrap_or(1));
+    rescue.potion_policy = Some(potion_policy);
+    rescue.max_potions_used = plan.potion_rescue_max_potions_used;
     Some(rescue)
-}
-
-fn active_combat_has_usable_potion(session: &RunControlSession) -> bool {
-    session.active_combat.as_ref().is_some_and(|active| {
-        active
-            .combat_state
-            .entities
-            .potions
-            .iter()
-            .flatten()
-            .any(|potion| potion.can_use)
-    })
-}
-
-fn auto_hp_loss_limit_is_set(
-    session: &RunControlSession,
-    options: &RunControlSearchCombatOptions,
-) -> bool {
-    match options.max_hp_loss {
-        Some(RunControlHpLossLimit::Limit(_)) => true,
-        Some(RunControlHpLossLimit::Unlimited) => false,
-        None => session.search_max_hp_loss.is_some(),
-    }
 }
 
 fn high_stakes_auto_search_requires_hp_loss_gate(
     session: &RunControlSession,
     options: &RunControlSearchCombatOptions,
 ) -> bool {
-    super::combat_search::active_combat_high_stakes_potion_budget(session).is_some()
-        && !auto_hp_loss_acceptance_is_explicit(session, options)
-}
-
-fn auto_hp_loss_acceptance_is_explicit(
-    session: &RunControlSession,
-    options: &RunControlSearchCombatOptions,
-) -> bool {
-    match options.max_hp_loss {
-        Some(RunControlHpLossLimit::Limit(_) | RunControlHpLossLimit::Unlimited) => true,
-        None => session.search_max_hp_loss.is_some(),
-    }
+    super::combat_auto_policy::combat_auto_search_plan(session, options)
+        .requires_explicit_hp_loss_gate
 }
 
 fn auto_advance_candidate<'a>(

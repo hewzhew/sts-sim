@@ -1,11 +1,6 @@
-use crate::ai::noncombat_decision_v1::{
-    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
-    NonCombatDecisionRecordV1,
-};
 use crate::state::core::{ClientInput, EngineState};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
-use super::trace_annotation::RunControlTraceAnnotationV1;
 
 pub(super) fn apply_event_policy_choice(
     session: &mut RunControlSession,
@@ -41,7 +36,12 @@ pub(super) fn apply_event_policy_choice(
 
     let outcome = session
         .apply_input(ClientInput::EventChoice(index))?
-        .with_trace_annotations(vec![noncombat_policy_annotation(noncombat_record)?]);
+        .with_trace_annotations(vec![
+            super::noncombat_policy_annotation::noncombat_policy_annotation(
+                "event policy",
+                noncombat_record,
+            )?,
+        ]);
     Ok(Some((
         outcome,
         format!(
@@ -49,16 +49,4 @@ pub(super) fn apply_event_policy_choice(
             decision.label_role
         ),
     )))
-}
-
-fn noncombat_policy_annotation(
-    record: NonCombatDecisionRecordV1,
-) -> Result<RunControlTraceAnnotationV1, String> {
-    validate_noncombat_decision_record_v1(&record).map_err(|errors| {
-        format!(
-            "event policy produced invalid NonCombatDecisionRecordV1: {}",
-            render_noncombat_decision_record_validation_errors(&errors)
-        )
-    })?;
-    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision { record })
 }

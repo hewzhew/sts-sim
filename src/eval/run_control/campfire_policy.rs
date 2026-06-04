@@ -1,11 +1,6 @@
-use crate::ai::noncombat_decision_v1::{
-    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
-    NonCombatDecisionRecordV1,
-};
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
-use super::trace_annotation::RunControlTraceAnnotationV1;
 
 pub(super) fn apply_campfire_policy_rest(
     session: &mut RunControlSession,
@@ -31,7 +26,12 @@ pub(super) fn apply_campfire_policy_rest(
 
     let outcome = session
         .apply_input(ClientInput::CampfireOption(CampfireChoice::Rest))?
-        .with_trace_annotations(vec![noncombat_policy_annotation(noncombat_record)?]);
+        .with_trace_annotations(vec![
+            super::noncombat_policy_annotation::noncombat_policy_annotation(
+                "campfire policy",
+                noncombat_record,
+            )?,
+        ]);
     Ok(Some((
         outcome,
         format!(
@@ -39,16 +39,4 @@ pub(super) fn apply_campfire_policy_rest(
             decision.label_role
         ),
     )))
-}
-
-fn noncombat_policy_annotation(
-    record: NonCombatDecisionRecordV1,
-) -> Result<RunControlTraceAnnotationV1, String> {
-    validate_noncombat_decision_record_v1(&record).map_err(|errors| {
-        format!(
-            "campfire policy produced invalid NonCombatDecisionRecordV1: {}",
-            render_noncombat_decision_record_validation_errors(&errors)
-        )
-    })?;
-    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision { record })
 }

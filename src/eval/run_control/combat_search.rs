@@ -190,23 +190,14 @@ pub(in crate::eval::run_control) fn high_stakes_search_options(
     session: &RunControlSession,
     mut options: RunControlSearchCombatOptions,
 ) -> RunControlSearchCombatOptions {
+    let plan = super::combat_auto_policy::combat_auto_search_plan(session, &options);
     if options.potion_policy.is_none() && session.search_potion_policy.is_none() {
-        if let Some(potion_budget) = active_combat_high_stakes_potion_budget(session) {
-            options.potion_policy =
-                Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
-            if options.max_potions_used.is_none() && session.search_max_potions_used.is_none() {
-                options.max_potions_used = Some(potion_budget);
-            }
-        }
+        options.potion_policy = plan.primary_potion_policy;
+    }
+    if options.max_potions_used.is_none() && session.search_max_potions_used.is_none() {
+        options.max_potions_used = plan.primary_max_potions_used;
     }
     options
-}
-
-pub(in crate::eval::run_control) fn active_combat_high_stakes_potion_budget(
-    session: &RunControlSession,
-) -> Option<u32> {
-    let combat = &session.active_combat.as_ref()?.combat_state;
-    crate::ai::combat_search_v2::high_stakes_semantic_potion_budget(combat)
 }
 
 fn search_report_has_invalid_card_identity(report: &CombatSearchV2Report) -> bool {

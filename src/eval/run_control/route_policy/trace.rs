@@ -1,8 +1,8 @@
-use crate::ai::noncombat_decision_v1::{
-    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
-};
 use crate::ai::route_planner_v1::{RouteCandidateTraceV1, RouteDecisionTraceV1};
 
+use super::super::noncombat_policy_annotation::{
+    noncombat_policy_annotation, validate_noncombat_policy_record,
+};
 use super::super::trace_annotation::{RoutePlannerCandidateSummaryV1, RunControlTraceAnnotationV1};
 use super::super::view_model::room_type_label;
 use super::format::{render_route_go_auto_step_summary, safety_label};
@@ -13,12 +13,7 @@ pub(super) fn route_go_trace_annotation(
     candidate: &RouteCandidateTraceV1,
 ) -> Result<RunControlTraceAnnotationV1, String> {
     let noncombat_record = trace.to_noncombat_decision_record_v1();
-    validate_noncombat_decision_record_v1(&noncombat_record).map_err(|errors| {
-        format!(
-            "route planner produced invalid NonCombatDecisionRecordV1: {}",
-            render_noncombat_decision_record_validation_errors(&errors)
-        )
-    })?;
+    validate_noncombat_policy_record("route planner", &noncombat_record)?;
 
     Ok(RunControlTraceAnnotationV1::RoutePlannerSelection {
         summary: render_route_go_auto_step_summary(candidate),
@@ -51,16 +46,7 @@ pub(super) fn route_policy_stop_annotation(
     let mut noncombat_record = stopped_trace.to_noncombat_decision_record_v1();
     noncombat_record.selection.reason = reason.to_string();
     noncombat_record.selection.selection_mode = "route_policy_stop".to_string();
-    validate_noncombat_decision_record_v1(&noncombat_record).map_err(|errors| {
-        format!(
-            "route planner stop produced invalid NonCombatDecisionRecordV1: {}",
-            render_noncombat_decision_record_validation_errors(&errors)
-        )
-    })?;
-
-    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-        record: noncombat_record,
-    })
+    noncombat_policy_annotation("route planner stop", noncombat_record)
 }
 
 fn route_go_top_candidate_summaries(

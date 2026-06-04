@@ -1,7 +1,3 @@
-use crate::ai::noncombat_decision_v1::{
-    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
-    NonCombatDecisionRecordV1,
-};
 use crate::ai::reward_policy_v1::{
     build_reward_decision_context_v1, plan_reward_decision_v1, RewardPolicyActionV1,
     RewardPolicyConfigV1,
@@ -111,7 +107,10 @@ fn next_auto_claim(session: &RunControlSession) -> Result<Option<RewardAutomatio
             index: *index,
             label: label.clone(),
         },
-        trace_annotation: noncombat_policy_annotation(record)?,
+        trace_annotation: super::noncombat_policy_annotation::noncombat_policy_annotation(
+            "reward policy",
+            record,
+        )?,
     }))
 }
 
@@ -123,18 +122,6 @@ fn reward_policy_config(session: &RunControlSession) -> RewardPolicyConfigV1 {
             .reward_automation
             .claim_safe_relic_without_sapphire_key,
     }
-}
-
-fn noncombat_policy_annotation(
-    record: NonCombatDecisionRecordV1,
-) -> Result<RunControlTraceAnnotationV1, String> {
-    validate_noncombat_decision_record_v1(&record).map_err(|errors| {
-        format!(
-            "reward policy produced invalid NonCombatDecisionRecordV1: {}",
-            render_noncombat_decision_record_validation_errors(&errors)
-        )
-    })?;
-    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision { record })
 }
 
 fn apply_claim_reward_to_stable(

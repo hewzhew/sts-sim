@@ -1,12 +1,7 @@
-use crate::ai::noncombat_decision_v1::{
-    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
-    NonCombatDecisionRecordV1,
-};
 use crate::content::cards::get_card_definition;
 use crate::state::core::{ClientInput, EngineState};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
-use super::trace_annotation::RunControlTraceAnnotationV1;
 
 pub(super) fn apply_shop_policy_purge(
     session: &mut RunControlSession,
@@ -34,7 +29,12 @@ pub(super) fn apply_shop_policy_purge(
     let card_name = get_card_definition(card).name;
     let outcome = session
         .apply_input(ClientInput::PurgeCard(deck_index))?
-        .with_trace_annotations(vec![noncombat_policy_annotation(noncombat_record)?]);
+        .with_trace_annotations(vec![
+            super::noncombat_policy_annotation::noncombat_policy_annotation(
+                "shop policy",
+                noncombat_record,
+            )?,
+        ]);
     Ok(Some((
         outcome,
         format!(
@@ -42,16 +42,4 @@ pub(super) fn apply_shop_policy_purge(
             decision.label_role
         ),
     )))
-}
-
-fn noncombat_policy_annotation(
-    record: NonCombatDecisionRecordV1,
-) -> Result<RunControlTraceAnnotationV1, String> {
-    validate_noncombat_decision_record_v1(&record).map_err(|errors| {
-        format!(
-            "shop policy produced invalid NonCombatDecisionRecordV1: {}",
-            render_noncombat_decision_record_validation_errors(&errors)
-        )
-    })?;
-    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision { record })
 }
