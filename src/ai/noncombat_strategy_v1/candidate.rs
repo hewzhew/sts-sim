@@ -1,9 +1,16 @@
 use crate::content::cards::CardId;
 
 use super::types::{
-    RunStrategySnapshotV1, StrategyCandidateFactsV1, StrategyCandidatePlanDeltaV1,
-    StrategyPlanEffectV1, StrategyPlanIdV1, StrategyPlanSupportV1,
+    RunStrategySnapshotV1, RunStrategySnapshotV2, StrategyCandidateFactsV1,
+    StrategyCandidatePlanDeltaV1, StrategyPlanEffectV1, StrategyPlanIdV1, StrategyPlanSupportV1,
 };
+
+pub fn candidate_plan_delta_v2(
+    facts: StrategyCandidateFactsV1,
+    snapshot: &RunStrategySnapshotV2,
+) -> StrategyCandidatePlanDeltaV1 {
+    candidate_plan_delta_v1(facts, &snapshot.v1)
+}
 
 pub fn candidate_plan_delta_v1(
     facts: StrategyCandidateFactsV1,

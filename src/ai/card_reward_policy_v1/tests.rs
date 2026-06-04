@@ -3,9 +3,7 @@ use crate::ai::card_reward_policy_v1::{
     CardRewardPlanEffectV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
     CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
-use crate::ai::noncombat_strategy_v1::{
-    StrategyPackageIdV2, StrategyPlanIdV1, StrategyPlanSupportV1,
-};
+use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
@@ -137,12 +135,14 @@ fn card_reward_context_uses_strategy_snapshot_v2_packages() {
 
     assert_eq!(
         context
-            .plans
+            .strategy
             .support(StrategyPackageIdV2::UpgradeCommitment),
         StrategyPlanSupportV1::Strong
     );
     assert_eq!(
-        context.plans.support(StrategyPackageIdV2::PotionCapacity),
+        context
+            .strategy
+            .support(StrategyPackageIdV2::PotionCapacity),
         StrategyPlanSupportV1::Strong
     );
 }
@@ -249,7 +249,7 @@ fn clothesline_certifies_as_weak_frontload_patch_when_growth_plans_are_blocked()
         .any(|reason| reason.contains("CombatPatchWindow route package")));
     assert_eq!(
         context
-            .plans
+            .strategy
             .support(StrategyPackageIdV2::CombatPatchWindow),
         StrategyPlanSupportV1::Strong
     );
@@ -267,14 +267,11 @@ fn weak_frontload_patch_does_not_auto_certify_when_core_plan_is_committed() {
     );
 
     assert!(context
-        .plans
-        .v1
-        .formation
-        .strengths
-        .contains(&StrategyPlanIdV1::StrengthScaling));
+        .strategy
+        .has_formation_strength(StrategyPackageIdV2::StrengthScaling));
     assert_eq!(
         context
-            .plans
+            .strategy
             .support(StrategyPackageIdV2::CorePlanProtection),
         StrategyPlanSupportV1::Strong
     );
@@ -376,7 +373,7 @@ fn context_for_run_with_route(
 ) -> crate::ai::card_reward_policy_v1::CardRewardDecisionContextV1 {
     let deck = super::profile::deck_profile(run_state);
     let route = Some(route);
-    let plans =
+    let strategy =
         crate::ai::noncombat_strategy_v1::build_run_strategy_snapshot_from_run_state_with_route_v2(
             run_state,
             super::profile::strategy_route_future(route.as_ref()),
@@ -387,9 +384,9 @@ fn context_for_run_with_route(
         .map(|(index, card)| {
             let facts = super::facts::card_facts(&card);
             let impact = super::impact::candidate_impact(&facts, &deck, route.as_ref());
-            let plan_delta = crate::ai::noncombat_strategy_v1::candidate_plan_delta_v1(
+            let plan_delta = crate::ai::noncombat_strategy_v1::candidate_plan_delta_v2(
                 super::profile::strategy_candidate_facts(&facts),
-                &plans.v1,
+                &strategy,
             );
             crate::ai::card_reward_policy_v1::CardRewardCandidateEvidenceV1 {
                 index,
@@ -407,7 +404,7 @@ fn context_for_run_with_route(
         run: super::profile::run_context(run_state),
         deck,
         route,
-        plans,
+        strategy,
         candidates,
     }
 }

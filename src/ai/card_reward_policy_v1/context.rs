@@ -15,7 +15,7 @@ pub fn build_card_reward_decision_context_v1(
 ) -> CardRewardDecisionContextV1 {
     let deck = deck_profile(run_state);
     let route = route_evidence(route_trace);
-    let plans =
+    let strategy =
         crate::ai::noncombat_strategy_v1::build_run_strategy_snapshot_from_run_state_with_route_v2(
             run_state,
             strategy_route_future(route.as_ref()),
@@ -26,9 +26,9 @@ pub fn build_card_reward_decision_context_v1(
         .map(|(index, card)| {
             let facts = card_facts(&card);
             let impact = candidate_impact(&facts, &deck, route.as_ref());
-            let plan_delta = crate::ai::noncombat_strategy_v1::candidate_plan_delta_v1(
+            let plan_delta = crate::ai::noncombat_strategy_v1::candidate_plan_delta_v2(
                 strategy_candidate_facts(&facts),
-                &plans.v1,
+                &strategy,
             );
             CardRewardCandidateEvidenceV1 {
                 index,
@@ -46,7 +46,7 @@ pub fn build_card_reward_decision_context_v1(
         run: run_context(run_state),
         deck,
         route,
-        plans,
+        strategy,
         candidates,
     }
 }

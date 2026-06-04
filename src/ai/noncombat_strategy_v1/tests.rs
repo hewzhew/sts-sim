@@ -1,10 +1,11 @@
 use crate::content::cards::CardId;
 
-use super::{
-    build_run_strategy_snapshot_v1, candidate_plan_delta_v1, StrategyCandidateFactsV1,
-    StrategyDeckFactsV1, StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1,
-    StrategyPlanEffectV1, StrategyPlanIdV1, StrategyPlanSupportV1, StrategyRouteFutureV1,
-    StrategyRoutePackageIdV1,
+use super::candidate::candidate_plan_delta_v1;
+use super::snapshot::build_run_strategy_snapshot_v1;
+use super::types::{
+    StrategyCandidateFactsV1, StrategyDeckFactsV1, StrategyDeckFormationNeedV1,
+    StrategyDeckFormationStageV1, StrategyPlanEffectV1, StrategyPlanIdV1, StrategyPlanSupportV1,
+    StrategyRouteFutureV1, StrategyRoutePackageIdV1,
 };
 
 #[test]
@@ -253,7 +254,9 @@ fn route_packages_link_upgrade_commitment_to_visible_fire_budget() {
 
     assert_eq!(
         snapshot
-            .route_package(StrategyRoutePackageIdV1::UpgradeCommitment)
+            .route_packages
+            .iter()
+            .find(|package| package.id == StrategyRoutePackageIdV1::UpgradeCommitment)
             .map(|package| package.support),
         Some(StrategyPlanSupportV1::Strong)
     );
@@ -296,7 +299,9 @@ fn route_packages_mark_combat_patch_window_under_pressure() {
 
     assert_eq!(
         snapshot
-            .route_package(StrategyRoutePackageIdV1::CombatPatchWindow)
+            .route_packages
+            .iter()
+            .find(|package| package.id == StrategyRoutePackageIdV1::CombatPatchWindow)
             .map(|package| package.support),
         Some(StrategyPlanSupportV1::Strong)
     );
@@ -339,7 +344,9 @@ fn route_packages_protect_committed_core_plan() {
 
     assert_eq!(
         snapshot
-            .route_package(StrategyRoutePackageIdV1::CorePlanProtection)
+            .route_packages
+            .iter()
+            .find(|package| package.id == StrategyRoutePackageIdV1::CorePlanProtection)
             .map(|package| package.support),
         Some(StrategyPlanSupportV1::Strong)
     );
@@ -399,7 +406,18 @@ fn strategy_snapshot_v2_unifies_archetype_route_and_resource_packages() {
             .map(|package| package.domain),
         Some(super::StrategyPackageDomainV2::Resource)
     );
-    assert!(snapshot.packages.len() >= snapshot.v1.plans.len() + snapshot.v1.route_packages.len());
+    assert!(snapshot
+        .packages
+        .iter()
+        .any(|package| package.domain == super::StrategyPackageDomainV2::Archetype));
+    assert!(snapshot
+        .packages
+        .iter()
+        .any(|package| package.domain == super::StrategyPackageDomainV2::Route));
+    assert!(snapshot
+        .packages
+        .iter()
+        .any(|package| package.domain == super::StrategyPackageDomainV2::Resource));
 }
 
 #[test]
@@ -439,4 +457,47 @@ fn strategy_snapshot_v2_from_run_state_tracks_resource_facts() {
             .map(|package| package.support),
         Some(StrategyPlanSupportV1::Strong)
     );
+}
+
+#[test]
+fn strategy_snapshot_v2_exposes_formation_and_candidate_delta_without_v1_access() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 12,
+            attacks: 7,
+            skills: 4,
+            powers: 1,
+            starter_strikes: 5,
+            starter_defends: 4,
+            strength_sources: 1,
+            strength_payoffs: 0,
+            weak_sources: 0,
+            draw_sources: 0,
+            energy_sources: 0,
+            vulnerable_sources: 0,
+            route_upgrade_payoffs: 0,
+            important_cards_unupgraded: 1,
+            exhaust_generators: 0,
+            exhaust_payoffs: 0,
+            status_generators: 0,
+            status_payoffs: 0,
+            total_attack_damage: 48,
+            total_block: 20,
+        },
+        None,
+        None,
+    );
+
+    assert!(snapshot.has_formation_strength(super::StrategyPackageIdV2::StrengthScaling));
+
+    let delta = super::candidate_plan_delta_v2(
+        StrategyCandidateFactsV1 {
+            card: crate::content::cards::CardId::HeavyBlade,
+            damage_total: 14,
+            weak: 0,
+            strength_gain: 0,
+        },
+        &snapshot,
+    );
+    assert_eq!(delta.support, StrategyPlanSupportV1::Strong);
 }

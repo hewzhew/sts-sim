@@ -20,7 +20,7 @@ pub struct CardRewardDecisionContextV1 {
     pub run: CardRewardRunContextV1,
     pub deck: DeckProfileV1,
     pub route: Option<CardRewardRouteEvidenceV1>,
-    pub plans: CardRewardStrategicPlansV1,
+    pub strategy: CardRewardStrategySnapshotV2,
     pub candidates: Vec<CardRewardCandidateEvidenceV1>,
 }
 
@@ -98,7 +98,7 @@ pub struct CardRewardCandidateEvidenceV1 {
     pub plan_delta: CardRewardCandidatePlanDeltaV1,
 }
 
-pub type CardRewardStrategicPlansV1 = crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2;
+pub type CardRewardStrategySnapshotV2 = crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2;
 pub type CardRewardCandidatePlanDeltaV1 =
     crate::ai::noncombat_strategy_v1::StrategyCandidatePlanDeltaV1;
 pub type CardRewardPlanEffectV1 = crate::ai::noncombat_strategy_v1::StrategyPlanEffectV1;

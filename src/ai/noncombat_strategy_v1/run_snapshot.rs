@@ -5,18 +5,8 @@ use crate::state::run::RunState;
 use super::snapshot::build_run_strategy_snapshot_v1;
 use super::snapshot_v2::build_run_strategy_snapshot_v2_from_v1;
 use super::types::{
-    RunStrategySnapshotV1, RunStrategySnapshotV2, StrategyDeckFactsV1, StrategyResourceFactsV2,
-    StrategyRouteFutureV1,
+    RunStrategySnapshotV2, StrategyDeckFactsV1, StrategyResourceFactsV2, StrategyRouteFutureV1,
 };
-
-pub fn build_run_strategy_snapshot_from_run_state_v1(
-    run_state: &RunState,
-) -> RunStrategySnapshotV1 {
-    build_run_strategy_snapshot_v1(
-        deck_facts_from_run_state_v1(run_state),
-        route_future_from_run_state_v1(run_state),
-    )
-}
 
 pub fn build_run_strategy_snapshot_from_run_state_v2(
     run_state: &RunState,

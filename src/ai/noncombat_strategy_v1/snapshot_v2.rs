@@ -1,9 +1,8 @@
 use super::snapshot::build_run_strategy_snapshot_v1;
 use super::types::{
     DeckPlanHypothesisV1, RunStrategySnapshotV1, RunStrategySnapshotV2, StrategyDeckFactsV1,
-    StrategyPackageDomainV2, StrategyPackageIdV2, StrategyPackageV2, StrategyPlanIdV1,
-    StrategyPlanSupportV1, StrategyResourceFactsV2, StrategyRouteFutureV1,
-    StrategyRoutePackageIdV1, StrategyRoutePackageV1,
+    StrategyPackageDomainV2, StrategyPackageIdV2, StrategyPackageV2, StrategyPlanSupportV1,
+    StrategyResourceFactsV2, StrategyRouteFutureV1, StrategyRoutePackageV1,
 };
 
 pub fn build_run_strategy_snapshot_v2(
@@ -33,7 +32,7 @@ pub fn build_run_strategy_snapshot_v2_from_v1(
 
 fn archetype_package(plan: &DeckPlanHypothesisV1) -> StrategyPackageV2 {
     StrategyPackageV2 {
-        id: plan_id_v2(plan.id),
+        id: StrategyPackageIdV2::from_plan_v1(plan.id),
         domain: StrategyPackageDomainV2::Archetype,
         support: plan.support,
         evidence: plan.evidence.clone(),
@@ -44,7 +43,7 @@ fn archetype_package(plan: &DeckPlanHypothesisV1) -> StrategyPackageV2 {
 
 fn route_package(package: &StrategyRoutePackageV1) -> StrategyPackageV2 {
     StrategyPackageV2 {
-        id: route_package_id_v2(package.id),
+        id: StrategyPackageIdV2::from_route_package_v1(package.id),
         domain: StrategyPackageDomainV2::Route,
         support: package.support,
         evidence: package.evidence.clone(),
@@ -229,29 +228,5 @@ fn empty_resource_facts() -> StrategyResourceFactsV2 {
         removable_curses: 0,
         starter_cards: 0,
         relic_constraints: Vec::new(),
-    }
-}
-
-fn plan_id_v2(id: StrategyPlanIdV1) -> StrategyPackageIdV2 {
-    match id {
-        StrategyPlanIdV1::FrontloadSurvival => StrategyPackageIdV2::FrontloadSurvival,
-        StrategyPlanIdV1::WeakControl => StrategyPackageIdV2::WeakControl,
-        StrategyPlanIdV1::StrengthScaling => StrategyPackageIdV2::StrengthScaling,
-        StrategyPlanIdV1::UpgradeSink => StrategyPackageIdV2::UpgradeSink,
-        StrategyPlanIdV1::ExhaustEngine => StrategyPackageIdV2::ExhaustEngine,
-        StrategyPlanIdV1::BlockEngine => StrategyPackageIdV2::BlockEngine,
-        StrategyPlanIdV1::StrikeDensity => StrategyPackageIdV2::StrikeDensity,
-        StrategyPlanIdV1::StatusPackage => StrategyPackageIdV2::StatusPackage,
-        StrategyPlanIdV1::SelfDamage => StrategyPackageIdV2::SelfDamage,
-        StrategyPlanIdV1::EnergyDraw => StrategyPackageIdV2::EnergyDraw,
-    }
-}
-
-fn route_package_id_v2(id: StrategyRoutePackageIdV1) -> StrategyPackageIdV2 {
-    match id {
-        StrategyRoutePackageIdV1::CombatPatchWindow => StrategyPackageIdV2::CombatPatchWindow,
-        StrategyRoutePackageIdV1::UpgradeCommitment => StrategyPackageIdV2::UpgradeCommitment,
-        StrategyRoutePackageIdV1::CorePlanProtection => StrategyPackageIdV2::CorePlanProtection,
-        StrategyRoutePackageIdV1::RecoveryPressure => StrategyPackageIdV2::RecoveryPressure,
     }
 }

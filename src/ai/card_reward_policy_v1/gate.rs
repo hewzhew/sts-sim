@@ -118,7 +118,7 @@ fn upgrade_sink_certificate(
         return None;
     }
     let route_package = context
-        .plans
+        .strategy
         .package(StrategyPackageIdV2::UpgradeCommitment)?;
     if route_package.support != StrategyPlanSupportV1::Strong {
         return None;
@@ -180,13 +180,13 @@ fn weak_frontload_certificate(
         return None;
     }
     let combat_patch = context
-        .plans
+        .strategy
         .package(StrategyPackageIdV2::CombatPatchWindow)?;
     if combat_patch.support != StrategyPlanSupportV1::Strong {
         return None;
     }
     if context
-        .plans
+        .strategy
         .support(StrategyPackageIdV2::CorePlanProtection)
         == StrategyPlanSupportV1::Strong
     {

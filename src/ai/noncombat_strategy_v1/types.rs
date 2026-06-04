@@ -76,10 +76,6 @@ impl RunStrategySnapshotV1 {
     pub fn plan(&self, id: StrategyPlanIdV1) -> Option<&DeckPlanHypothesisV1> {
         self.plans.iter().find(|plan| plan.id == id)
     }
-
-    pub fn route_package(&self, id: StrategyRoutePackageIdV1) -> Option<&StrategyRoutePackageV1> {
-        self.route_packages.iter().find(|package| package.id == id)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -189,6 +185,32 @@ pub enum StrategyPackageIdV2 {
     RelicConstraints,
 }
 
+impl StrategyPackageIdV2 {
+    pub(crate) fn from_plan_v1(id: StrategyPlanIdV1) -> Self {
+        match id {
+            StrategyPlanIdV1::FrontloadSurvival => Self::FrontloadSurvival,
+            StrategyPlanIdV1::WeakControl => Self::WeakControl,
+            StrategyPlanIdV1::StrengthScaling => Self::StrengthScaling,
+            StrategyPlanIdV1::UpgradeSink => Self::UpgradeSink,
+            StrategyPlanIdV1::ExhaustEngine => Self::ExhaustEngine,
+            StrategyPlanIdV1::BlockEngine => Self::BlockEngine,
+            StrategyPlanIdV1::StrikeDensity => Self::StrikeDensity,
+            StrategyPlanIdV1::StatusPackage => Self::StatusPackage,
+            StrategyPlanIdV1::SelfDamage => Self::SelfDamage,
+            StrategyPlanIdV1::EnergyDraw => Self::EnergyDraw,
+        }
+    }
+
+    pub(crate) fn from_route_package_v1(id: StrategyRoutePackageIdV1) -> Self {
+        match id {
+            StrategyRoutePackageIdV1::CombatPatchWindow => Self::CombatPatchWindow,
+            StrategyRoutePackageIdV1::UpgradeCommitment => Self::UpgradeCommitment,
+            StrategyRoutePackageIdV1::CorePlanProtection => Self::CorePlanProtection,
+            StrategyRoutePackageIdV1::RecoveryPressure => Self::RecoveryPressure,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrategyPackageV2 {
     pub id: StrategyPackageIdV2,
@@ -216,7 +238,7 @@ pub struct StrategyResourceFactsV2 {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunStrategySnapshotV2 {
-    pub v1: RunStrategySnapshotV1,
+    pub(crate) v1: RunStrategySnapshotV1,
     pub resources: StrategyResourceFactsV2,
     pub packages: Vec<StrategyPackageV2>,
 }
@@ -230,5 +252,13 @@ impl RunStrategySnapshotV2 {
         self.package(id)
             .map(|package| package.support)
             .unwrap_or(StrategyPlanSupportV1::Blocked)
+    }
+
+    pub fn has_formation_strength(&self, id: StrategyPackageIdV2) -> bool {
+        self.v1
+            .formation
+            .strengths
+            .iter()
+            .any(|strength| StrategyPackageIdV2::from_plan_v1(*strength) == id)
     }
 }
