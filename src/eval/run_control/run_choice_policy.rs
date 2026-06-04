@@ -1,63 +1,58 @@
-use crate::content::cards::{get_card_definition, CardType};
-use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState};
+use crate::ai::noncombat_decision_v1::{
+    render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
+    NonCombatDecisionRecordV1,
+};
+use crate::state::core::{ClientInput, EngineState};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::trace_annotation::RunControlTraceAnnotationV1;
 
 pub(super) fn apply_run_choice_policy_purge_curse(
     session: &mut RunControlSession,
 ) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
-    let Some((indices, labels)) = run_choice_curse_purge_selection(session) else {
+    let EngineState::RunPendingChoice(choice) = &session.engine_state else {
         return Ok(None);
     };
-    let summary = format!("run choice policy: purge {}", labels.join(", "));
-    let outcome = session.apply_input(ClientInput::SubmitDeckSelect(indices))?;
-    Ok(Some((outcome, summary)))
-}
-
-fn run_choice_curse_purge_selection(
-    session: &RunControlSession,
-) -> Option<(Vec<usize>, Vec<&'static str>)> {
-    let EngineState::RunPendingChoice(choice) = &session.engine_state else {
-        return None;
+    let context = crate::ai::run_choice_policy_v1::build_run_choice_decision_context_v1(
+        &session.run_state,
+        choice,
+    );
+    let decision = crate::ai::run_choice_policy_v1::plan_run_choice_decision_v1(
+        &context,
+        &crate::ai::run_choice_policy_v1::RunChoicePolicyConfigV1::default(),
+    );
+    let noncombat_record = decision.to_noncombat_decision_record_v1();
+    let crate::ai::run_choice_policy_v1::RunChoicePolicyActionV1::SelectDeckIndices {
+        indices,
+        labels,
+        confidence,
+        reason,
+    } = decision.action
+    else {
+        return Ok(None);
     };
-    if !is_purge_choice(choice) {
-        return None;
-    }
 
-    let mut curse_indices = session
-        .run_state
-        .master_deck
-        .iter()
-        .enumerate()
-        .filter(|(_, card)| {
-            crate::state::core::run_pending_choice_allows_card_for_run(
-                &choice.reason,
-                card,
-                &session.run_state,
-            ) && get_card_definition(card.id).card_type == CardType::Curse
-        })
-        .map(|(idx, _)| idx)
-        .collect::<Vec<_>>();
-
-    if curse_indices.len() < choice.min_choices {
-        return None;
-    }
-    curse_indices.truncate(choice.max_choices);
-    if curse_indices.len() < choice.min_choices || curse_indices.is_empty() {
-        return None;
-    }
-
-    let labels = curse_indices
-        .iter()
-        .filter_map(|idx| session.run_state.master_deck.get(*idx))
-        .map(|card| get_card_definition(card.id).name)
-        .collect::<Vec<_>>();
-    Some((curse_indices, labels))
+    let outcome = session
+        .apply_input(ClientInput::SubmitDeckSelect(indices))?
+        .with_trace_annotations(vec![noncombat_policy_annotation(noncombat_record)?]);
+    Ok(Some((
+        outcome,
+        format!(
+            "run choice policy: purge {} confidence={confidence:.2} reason={reason} label_role={}",
+            labels.join(", "),
+            decision.label_role
+        ),
+    )))
 }
 
-fn is_purge_choice(choice: &RunPendingChoiceState) -> bool {
-    matches!(
-        choice.reason,
-        RunPendingChoiceReason::Purge | RunPendingChoiceReason::PurgeNonBottled
-    )
+fn noncombat_policy_annotation(
+    record: NonCombatDecisionRecordV1,
+) -> Result<RunControlTraceAnnotationV1, String> {
+    validate_noncombat_decision_record_v1(&record).map_err(|errors| {
+        format!(
+            "run choice policy produced invalid NonCombatDecisionRecordV1: {}",
+            render_noncombat_decision_record_validation_errors(&errors)
+        )
+    })?;
+    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision { record })
 }

@@ -604,6 +604,26 @@ fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire()
         .expect("auto-run should rest when recovery pressure is strong");
 
     assert!(outcome.message.contains("campfire policy: rest"));
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } => Some(record),
+            _ => None,
+        })
+        .expect("campfire policy should attach a noncombat record");
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("campfire policy noncombat record should validate");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Campfire
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+    );
     assert!(outcome.action_result.is_some());
     assert!(
         session.run_state.current_hp > 20,
@@ -653,6 +673,30 @@ fn run_control_auto_run_purges_curse_at_shop() {
         .expect("auto-run should purge a visible curse at shop");
 
     assert!(outcome.message.contains("shop policy: purge Doubt"));
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } => Some(record),
+            _ => None,
+        })
+        .expect("shop policy should attach a noncombat record");
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("shop policy noncombat record should validate");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Shop
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
+    );
     assert_eq!(session.run_state.gold, 25);
     assert!(!session
         .run_state
@@ -749,6 +793,26 @@ fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
         .expect("auto-run should purge a curse at a run pending purge choice");
 
     assert!(outcome.message.contains("run choice policy: purge Doubt"));
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } => Some(record),
+            _ => None,
+        })
+        .expect("run choice policy should attach a noncombat record");
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("run choice policy noncombat record should validate");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::RunChoice
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+    );
     assert!(!session
         .run_state
         .master_deck
