@@ -184,6 +184,8 @@ pub enum CardRewardPickDependencyV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CardRewardEvidenceGapV1 {
     MissingRouteEvidence,
+    MissingValueEstimate,
+    UncalibratedValueEstimate,
     MissingStrategicPlanEvidence,
     UnsatisfiedRouteUpgradeEvidence,
     UnsatisfiedStrengthScalingEvidence,
@@ -195,6 +197,37 @@ pub enum CardRewardEvidenceGapV1 {
     RandomOutcomeRequiresPolicy,
     ConditionalPlayabilityRequiresPolicy,
     NoAutoPickCertificate,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CardRewardValueSourceV1 {
+    ImpactPrior,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CardRewardValueStatusV1 {
+    UncalibratedPrior,
+    CounterfactualProbe,
+    OutcomeCalibrated,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CardRewardValueEstimateV1 {
+    pub index: usize,
+    pub card: CardId,
+    pub source: CardRewardValueSourceV1,
+    pub status: CardRewardValueStatusV1,
+    pub survival_delta: f32,
+    pub progress_delta: f32,
+    pub deck_consistency_delta: f32,
+    pub uncertainty: f32,
+    pub components: Vec<CardRewardValueComponentV1>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CardRewardValueComponentV1 {
+    pub name: &'static str,
+    pub value: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -210,6 +243,7 @@ pub struct CardRewardDecisionV1 {
     pub action: CardRewardPolicyActionV1,
     pub context: CardRewardDecisionContextV1,
     pub candidates: Vec<CardRewardCandidateEvidenceV1>,
+    pub value_estimates: Vec<CardRewardValueEstimateV1>,
     pub evidence_gaps: Vec<CardRewardEvidenceGapV1>,
     pub pick_certificate: Option<CardRewardPickCertificateV1>,
     pub label_role: &'static str,

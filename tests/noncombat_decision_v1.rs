@@ -51,7 +51,7 @@ fn route_trace_exports_hidden_free_noncombat_record() {
 }
 
 #[test]
-fn card_reward_stop_exports_noncombat_record_without_hidden_inputs_or_values() {
+fn card_reward_stop_exports_hidden_free_uncalibrated_value_inputs() {
     let run = RunState::new(521, 0, false, "Ironclad");
     let route_trace = plan_route_decision_v1(&run, &EngineState::MapNavigation, Default::default());
     let context = build_card_reward_decision_context_v1(
@@ -72,7 +72,14 @@ fn card_reward_stop_exports_noncombat_record_without_hidden_inputs_or_values() {
     assert_eq!(record.data_role, DataRoleV1::BehaviorPolicyNotTeacher);
     assert!(!record.information_boundary.hidden_simulator_state_used);
     assert_eq!(record.candidates.len(), decision.candidates.len());
-    assert!(record.values.is_empty());
+    assert_eq!(record.values.len(), decision.candidates.len());
+    assert!(record.values.iter().all(|value| value.confidence == 0.0));
+    assert!(record.values.iter().all(|value| {
+        value
+            .components
+            .iter()
+            .any(|component| component.name == "value_status_uncalibrated_prior")
+    }));
     assert!(matches!(
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }

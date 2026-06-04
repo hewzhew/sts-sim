@@ -1,5 +1,6 @@
 use crate::ai::card_reward_policy_v1::{
     CardRewardCandidateEvidenceV1, CardRewardDecisionV1, CardRewardPolicyActionV1,
+    CardRewardValueEstimateV1, CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
 use crate::ai::route_planner_v1::{
     NeedVectorV1, RouteCandidateTraceV1, RouteDecisionTraceV1, RouteSafetyFlagV1, RouteScoreTermsV1,
@@ -108,6 +109,11 @@ impl CardRewardDecisionV1 {
             .zip(candidate_ids.iter())
             .map(|(candidate, id)| card_reward_evidence_item(candidate, id))
             .collect::<Vec<_>>();
+        let values = self
+            .value_estimates
+            .iter()
+            .map(card_reward_value_estimate)
+            .collect::<Vec<_>>();
         let selection = card_reward_selection(self);
         let mut allowed_inputs = vec![InformationClassV1::PublicObservation];
         if self.context.route.is_some() {
@@ -141,7 +147,7 @@ impl CardRewardDecisionV1 {
                     .map(|gap| format!("{gap:?}"))
                     .collect(),
             },
-            values: Vec::new(),
+            values,
             selection,
         }
     }
@@ -385,4 +391,42 @@ fn card_reward_fact_components(candidate: &CardRewardCandidateEvidenceV1) -> Vec
             candidate.impact.certification_blockers.len() as f32,
         ),
     ]
+}
+
+fn card_reward_value_estimate(estimate: &CardRewardValueEstimateV1) -> ValueEstimateV1 {
+    ValueEstimateV1 {
+        candidate_id: format!("card_reward:{}:{:?}", estimate.index, estimate.card),
+        mean_utility: 0.0,
+        risk_adjusted_utility: 0.0,
+        confidence: match estimate.status {
+            CardRewardValueStatusV1::UncalibratedPrior => 0.0,
+            CardRewardValueStatusV1::CounterfactualProbe => 0.5,
+            CardRewardValueStatusV1::OutcomeCalibrated => 0.75,
+        },
+        components: card_reward_value_components(estimate),
+        evidence_refs: vec![estimate.index],
+    }
+}
+
+fn card_reward_value_components(estimate: &CardRewardValueEstimateV1) -> Vec<ValueComponentV1> {
+    let mut components = estimate
+        .components
+        .iter()
+        .map(|component| ValueComponentV1::new(component.name, component.value))
+        .collect::<Vec<_>>();
+    components.push(ValueComponentV1::new(
+        match estimate.source {
+            CardRewardValueSourceV1::ImpactPrior => "value_source_impact_prior",
+        },
+        1.0,
+    ));
+    components.push(ValueComponentV1::new(
+        match estimate.status {
+            CardRewardValueStatusV1::UncalibratedPrior => "value_status_uncalibrated_prior",
+            CardRewardValueStatusV1::CounterfactualProbe => "value_status_counterfactual_probe",
+            CardRewardValueStatusV1::OutcomeCalibrated => "value_status_outcome_calibrated",
+        },
+        1.0,
+    ));
+    components
 }

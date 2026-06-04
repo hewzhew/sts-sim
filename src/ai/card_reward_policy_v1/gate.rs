@@ -1,10 +1,12 @@
 use super::types::{
     CardRewardDecisionContextV1, CardRewardEvidenceGapV1, CardRewardPickCertificateV1,
-    CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
+    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
+    CardRewardValueStatusV1,
 };
 
 pub(crate) fn pick_gate(
     context: &CardRewardDecisionContextV1,
+    value_estimates: &[CardRewardValueEstimateV1],
     config: &CardRewardPolicyConfigV1,
 ) -> (
     CardRewardPolicyActionV1,
@@ -27,6 +29,18 @@ pub(crate) fn pick_gate(
         push_gap(&mut gaps, CardRewardEvidenceGapV1::MissingRouteEvidence);
     }
 
+    if value_estimates.len() != context.candidates.len() {
+        push_gap(&mut gaps, CardRewardEvidenceGapV1::MissingValueEstimate);
+    }
+    for estimate in value_estimates {
+        if estimate.status == CardRewardValueStatusV1::UncalibratedPrior {
+            push_gap(
+                &mut gaps,
+                CardRewardEvidenceGapV1::UncalibratedValueEstimate,
+            );
+        }
+    }
+
     for candidate in &context.candidates {
         for gap in &candidate.impact.certification_blockers {
             push_gap(&mut gaps, *gap);
@@ -34,7 +48,7 @@ pub(crate) fn pick_gate(
     }
 
     let certificate = if config.allow_automatic_pick_certificates {
-        certified_pick(context, &gaps)
+        certified_pick(context, value_estimates, &gaps)
     } else {
         None
     };
@@ -64,11 +78,13 @@ pub(crate) fn pick_gate(
 
 fn certified_pick(
     _context: &CardRewardDecisionContextV1,
+    _value_estimates: &[CardRewardValueEstimateV1],
     _gaps: &[CardRewardEvidenceGapV1],
 ) -> Option<CardRewardPickCertificateV1> {
-    // This is intentionally empty until a separate strategy source can prove a
-    // card reward is covered by deck, route, and archetype evidence. The middle
-    // layer is still useful: it records why no certificate exists.
+    // This is intentionally empty until value estimates can come from a
+    // counterfactual probe or outcome-calibrated estimator. Impact priors are
+    // recorded for calibration, but they are not allowed to sign autopick
+    // certificates by themselves.
     None
 }
 

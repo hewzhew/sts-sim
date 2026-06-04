@@ -1,0 +1,69 @@
+use super::types::{
+    CardRewardDecisionContextV1, CardRewardValueComponentV1, CardRewardValueEstimateV1,
+    CardRewardValueSourceV1, CardRewardValueStatusV1,
+};
+
+pub(crate) fn estimate_card_reward_values(
+    context: &CardRewardDecisionContextV1,
+) -> Vec<CardRewardValueEstimateV1> {
+    context
+        .candidates
+        .iter()
+        .map(|candidate| CardRewardValueEstimateV1 {
+            index: candidate.index,
+            card: candidate.card,
+            source: CardRewardValueSourceV1::ImpactPrior,
+            status: CardRewardValueStatusV1::UncalibratedPrior,
+            survival_delta: 0.0,
+            progress_delta: 0.0,
+            deck_consistency_delta: 0.0,
+            uncertainty: 1.0,
+            components: impact_prior_components(context, candidate),
+        })
+        .collect()
+}
+
+fn impact_prior_components(
+    context: &CardRewardDecisionContextV1,
+    candidate: &super::types::CardRewardCandidateEvidenceV1,
+) -> Vec<CardRewardValueComponentV1> {
+    let facts = &candidate.facts;
+    vec![
+        CardRewardValueComponentV1 {
+            name: "raw_damage",
+            value: facts.damage.total_damage.max(0) as f32,
+        },
+        CardRewardValueComponentV1 {
+            name: "raw_block",
+            value: facts.block.max(0) as f32,
+        },
+        CardRewardValueComponentV1 {
+            name: "raw_draw",
+            value: facts.draw_cards.max(0) as f32,
+        },
+        CardRewardValueComponentV1 {
+            name: "raw_energy",
+            value: facts.energy_gain.max(0) as f32,
+        },
+        CardRewardValueComponentV1 {
+            name: "raw_vulnerable",
+            value: facts.vulnerable.max(0) as f32,
+        },
+        CardRewardValueComponentV1 {
+            name: "raw_weak",
+            value: facts.weak.max(0) as f32,
+        },
+        CardRewardValueComponentV1 {
+            name: "raw_enemy_strength_down",
+            value: facts.enemy_strength_down.max(0) as f32,
+        },
+        CardRewardValueComponentV1 {
+            name: "deck_size_after_pick",
+            value: context.deck.deck_size.saturating_add(1) as f32,
+        },
+        CardRewardValueComponentV1 {
+            name: "uncertainty",
+            value: 1.0,
+        },
+    ]
+}

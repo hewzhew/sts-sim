@@ -5,6 +5,7 @@ mod impact;
 mod policy;
 mod profile;
 mod types;
+mod value;
 
 pub use context::build_card_reward_decision_context_v1;
 pub use policy::plan_card_reward_decision_v1;
@@ -12,6 +13,7 @@ pub use types::{
     CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardDecisionV1,
     CardRewardEvidenceGapV1, CardRewardFactsV1, CardRewardPickCertificateV1,
     CardRewardPickDependencyV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
+    CardRewardValueEstimateV1, CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
 
 #[cfg(test)]

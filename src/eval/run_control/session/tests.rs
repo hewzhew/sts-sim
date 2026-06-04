@@ -685,7 +685,8 @@ fn run_control_auto_run_stops_on_card_reward_without_pick_certificate() {
         record.selection.status,
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
     );
-    assert!(record.values.is_empty());
+    assert_eq!(record.values.len(), record.candidates.len());
+    assert!(record.values.iter().all(|value| value.confidence == 0.0));
     assert!(!session
         .run_state
         .master_deck
@@ -839,7 +840,8 @@ fn run_control_auto_run_stops_on_ambiguous_card_reward() {
         record.selection.status,
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
     );
-    assert!(record.values.is_empty());
+    assert_eq!(record.values.len(), record.candidates.len());
+    assert!(record.values.iter().all(|value| value.confidence == 0.0));
     assert!(!session.run_state.master_deck.iter().any(|card| matches!(
         card.id,
         crate::content::cards::CardId::PommelStrike
@@ -889,7 +891,8 @@ fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
         record.selection.status,
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
     );
-    assert!(record.values.is_empty());
+    assert_eq!(record.values.len(), record.candidates.len());
+    assert!(record.values.iter().all(|value| value.confidence == 0.0));
     assert!(outcome.action_result.is_none());
     let rendered = render_run_control_state(&session);
     assert!(rendered.contains("Command: type visible id to open reward, or skip"));
