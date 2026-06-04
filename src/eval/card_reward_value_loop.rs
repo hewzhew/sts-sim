@@ -2,6 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+mod replay;
+pub use replay::{
+    replay_card_reward_records_with_calibration_v1, CardRewardCalibrationReplayCandidateV1,
+    CardRewardCalibrationReplayEstimateV1, CardRewardCalibrationReplayExampleV1,
+    CardRewardCalibrationReplayReportV1, CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME,
+    CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_VERSION,
+};
+
 use crate::ai::card_reward_policy_v1::{
     CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardValueComponentV1,
     CardRewardValueEstimateV1, CardRewardValueSourceV1, CardRewardValueStatusV1,

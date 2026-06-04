@@ -10,8 +10,9 @@ use sts_simulator::content::cards::CardId;
 use sts_simulator::eval::card_reward_value_loop::{
     calibrate_card_reward_outcomes_v1, estimate_card_reward_value_from_calibration_v1,
     estimate_card_reward_values_from_calibration_v1, extract_card_reward_value_loop_examples_v1,
-    summarize_card_reward_value_loop_examples_v1, CardRewardValueLoopOutcomeStatusV1,
-    CardRewardValueLoopReplayStatusV1, CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
+    replay_card_reward_records_with_calibration_v1, summarize_card_reward_value_loop_examples_v1,
+    CardRewardValueLoopOutcomeStatusV1, CardRewardValueLoopReplayStatusV1,
+    CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
 };
 use sts_simulator::eval::run_control::{
     RunActionApplyStatusV1, RunActionResultV1, RunControlConfig, RunControlSession,
@@ -235,6 +236,35 @@ fn converts_outcome_calibration_into_current_context_external_estimates() {
     assert!(!estimates
         .iter()
         .any(|estimate| estimate.card == CardId::Shockwave));
+}
+
+#[test]
+fn replays_record_level_value_changes_with_outcome_calibration() {
+    let examples = vec![
+        example_for_card_with_next_combat_hp_loss(CardId::TwinStrike, 4),
+        example_for_card_with_next_combat_hp_loss(CardId::TwinStrike, 6),
+        example_for_card_with_next_combat_hp_loss(CardId::Cleave, 12),
+    ];
+    let calibration = calibrate_card_reward_outcomes_v1(&examples);
+
+    let replay = replay_card_reward_records_with_calibration_v1(&examples, &calibration);
+
+    assert_eq!(replay.total_examples, 3);
+    assert_eq!(replay.replayed_examples, 3);
+    assert_eq!(replay.policy_replay_status, "record_only_no_public_packet");
+    assert_eq!(replay.examples[0].candidate_replays.len(), 1);
+    let candidate = &replay.examples[0].candidate_replays[0];
+    assert_eq!(candidate.card_id.as_deref(), Some("TwinStrike"));
+    let estimate = candidate
+        .calibration_estimate
+        .as_ref()
+        .expect("TwinStrike should have calibration estimate");
+    assert_eq!(estimate.source, "OutcomeCalibration");
+    assert_eq!(estimate.status, "OutcomeCalibrated");
+    assert!(estimate.survival_delta > 0.0);
+    assert!(!estimate.usable_for_autopilot_gate);
+    assert_eq!(replay.label_role, "diagnostic_not_teacher_label");
+    assert!(!replay.policy_quality_claim);
 }
 
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {

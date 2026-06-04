@@ -5,7 +5,8 @@ use clap::Parser;
 
 use sts_simulator::eval::card_reward_value_loop::{
     calibrate_card_reward_outcomes_v1, extract_card_reward_value_loop_examples_v1,
-    summarize_card_reward_value_loop_examples_v1,
+    replay_card_reward_records_with_calibration_v1, summarize_card_reward_value_loop_examples_v1,
+    CardRewardOutcomeCalibrationV1,
 };
 use sts_simulator::eval::run_control::load_session_trace_v1;
 
@@ -29,6 +30,12 @@ struct Args {
 
     #[arg(long)]
     calibration: bool,
+
+    #[arg(long)]
+    replay_calibration: bool,
+
+    #[arg(long, value_name = "PATH")]
+    calibration_path: Option<PathBuf>,
 }
 
 fn main() {
@@ -40,8 +47,15 @@ fn main() {
 }
 
 fn run(args: Args) -> Result<(), String> {
-    if args.summary && args.calibration {
-        return Err("use only one of --summary or --calibration".to_string());
+    if [args.summary, args.calibration, args.replay_calibration]
+        .into_iter()
+        .filter(|enabled| *enabled)
+        .count()
+        > 1
+    {
+        return Err(
+            "use only one of --summary, --calibration, or --replay-calibration".to_string(),
+        );
     }
 
     let mut examples = Vec::new();
@@ -64,6 +78,17 @@ fn run(args: Args) -> Result<(), String> {
         } else {
             serde_json::to_string_pretty(&calibration).map_err(|err| err.to_string())?
         }
+    } else if args.replay_calibration {
+        let calibration = match args.calibration_path.as_ref() {
+            Some(path) => load_card_reward_outcome_calibration(path)?,
+            None => calibrate_card_reward_outcomes_v1(&examples),
+        };
+        let replay = replay_card_reward_records_with_calibration_v1(&examples, &calibration);
+        if args.json_lines {
+            serde_json::to_string(&replay).map_err(|err| err.to_string())?
+        } else {
+            serde_json::to_string_pretty(&replay).map_err(|err| err.to_string())?
+        }
     } else if args.json_lines {
         examples
             .iter()
@@ -83,4 +108,11 @@ fn run(args: Args) -> Result<(), String> {
         println!("{payload}");
     }
     Ok(())
+}
+
+fn load_card_reward_outcome_calibration(
+    path: &PathBuf,
+) -> Result<CardRewardOutcomeCalibrationV1, String> {
+    let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;
+    serde_json::from_str(&payload).map_err(|err| err.to_string())
 }
