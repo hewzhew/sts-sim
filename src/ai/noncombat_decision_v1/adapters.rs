@@ -110,7 +110,8 @@ impl CardRewardDecisionV1 {
             .map(|(candidate, id)| card_reward_evidence_item(candidate, id))
             .collect::<Vec<_>>();
         let values = self
-            .value_estimates
+            .value_arbitration
+            .gate_value_estimates
             .iter()
             .map(card_reward_value_estimate)
             .collect::<Vec<_>>();

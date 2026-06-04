@@ -1,3 +1,4 @@
+use super::arbitration::{value_source_autopilot_eligible_v1, value_status_autopilot_eligible_v1};
 use super::types::{
     CardRewardAutopilotGateReportV1, CardRewardDecisionContextV1, CardRewardEvidenceGapV1,
     CardRewardPickCertificateV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
@@ -267,21 +268,11 @@ fn generic_certificate(
 }
 
 fn value_source_eligible(source: CardRewardValueSourceV1) -> bool {
-    matches!(
-        source,
-        // OutcomeCalibration is a consumable estimator artifact, but it is not
-        // autopilot-eligible until arbitration adds explicit confidence gates.
-        CardRewardValueSourceV1::CombatProbe
-            | CardRewardValueSourceV1::RouteRisk
-            | CardRewardValueSourceV1::LearnedValue
-    )
+    value_source_autopilot_eligible_v1(source)
 }
 
 fn calibration_status_allowed(status: CardRewardValueStatusV1) -> bool {
-    matches!(
-        status,
-        CardRewardValueStatusV1::CounterfactualProbe | CardRewardValueStatusV1::OutcomeCalibrated
-    )
+    value_status_autopilot_eligible_v1(status)
 }
 
 fn total_value_delta(estimate: &CardRewardValueEstimateV1) -> f32 {

@@ -244,6 +244,28 @@ pub struct CardRewardValueEstimateV1 {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct CardRewardEstimatorArbitrationV1 {
+    pub schema_name: &'static str,
+    pub schema_version: u32,
+    pub label_role: &'static str,
+    pub input_estimate_count: usize,
+    pub gate_value_estimates: Vec<CardRewardValueEstimateV1>,
+    pub candidate_reports: Vec<CardRewardEstimatorCandidateArbitrationV1>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CardRewardEstimatorCandidateArbitrationV1 {
+    pub index: usize,
+    pub card: CardId,
+    pub input_estimate_count: usize,
+    pub selected_source: Option<CardRewardValueSourceV1>,
+    pub selected_status: Option<CardRewardValueStatusV1>,
+    pub selected_for_gate: bool,
+    pub autopilot_source_eligible: bool,
+    pub rejected_reasons: Vec<CardRewardEvidenceGapV1>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct CardRewardValueComponentV1 {
     pub name: &'static str,
     pub value: f32,
@@ -277,6 +299,7 @@ pub struct CardRewardDecisionV1 {
     pub context: CardRewardDecisionContextV1,
     pub candidates: Vec<CardRewardCandidateEvidenceV1>,
     pub value_estimates: Vec<CardRewardValueEstimateV1>,
+    pub value_arbitration: CardRewardEstimatorArbitrationV1,
     pub autopilot_gate: CardRewardAutopilotGateReportV1,
     pub evidence_gaps: Vec<CardRewardEvidenceGapV1>,
     pub pick_certificate: Option<CardRewardPickCertificateV1>,

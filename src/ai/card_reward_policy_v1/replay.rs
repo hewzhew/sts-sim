@@ -1,8 +1,8 @@
 use super::policy::plan_card_reward_decision_v1;
 use super::types::{
     CardRewardAutopilotGateReportV1, CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1,
-    CardRewardDecisionV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
-    CardRewardValueEstimateV1,
+    CardRewardDecisionV1, CardRewardEstimatorArbitrationV1, CardRewardPolicyActionV1,
+    CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -38,6 +38,7 @@ pub struct CardRewardDecisionDiffV1 {
 pub struct CardRewardDecisionReplayV1 {
     pub candidates: Vec<CardRewardReplayCandidateSummaryV1>,
     pub value_estimates: Vec<CardRewardValueEstimateV1>,
+    pub value_arbitration: CardRewardEstimatorArbitrationV1,
     pub autopilot_gate: CardRewardAutopilotGateReportV1,
     pub selected_candidate_id: Option<String>,
     pub stop_reason: String,
@@ -64,6 +65,7 @@ pub fn replay_card_reward_decision_v1(
     CardRewardDecisionReplayV1 {
         candidates: decision.candidates.iter().map(candidate_summary).collect(),
         value_estimates: decision.value_estimates.clone(),
+        value_arbitration: decision.value_arbitration.clone(),
         autopilot_gate: decision.autopilot_gate.clone(),
         selected_candidate_id,
         stop_reason,

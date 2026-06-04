@@ -1,8 +1,9 @@
 use crate::ai::card_reward_policy_v1::{
-    build_card_reward_decision_context_v1, plan_card_reward_decision_v1,
-    replay_card_reward_decision_v1, CardRewardEvidenceGapV1, CardRewardPlanEffectV1,
-    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
-    CardRewardValueSourceV1, CardRewardValueStatusV1, PublicRewardDecisionPacketV1,
+    arbitrate_card_reward_value_estimates_v1, build_card_reward_decision_context_v1,
+    plan_card_reward_decision_v1, replay_card_reward_decision_v1, CardRewardEvidenceGapV1,
+    CardRewardPlanEffectV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
+    CardRewardValueEstimateV1, CardRewardValueSourceV1, CardRewardValueStatusV1,
+    PublicRewardDecisionPacketV1,
 };
 use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
 use crate::content::cards::CardId;
@@ -539,6 +540,88 @@ fn outcome_calibration_estimates_are_not_autopilot_eligible_without_arbitration_
 }
 
 #[test]
+fn estimator_arbitration_selects_one_gate_estimate_per_candidate_by_source_quality() {
+    let mut context = context_for_cards(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    context.route = Some(route_with_combat_pressure());
+    let raw_estimates = vec![
+        test_value_estimate(
+            0,
+            CardId::TwinStrike,
+            CardRewardValueSourceV1::UncalibratedImpactPrior,
+            CardRewardValueStatusV1::UncalibratedPrior,
+            10.0,
+            1.0,
+        ),
+        test_value_estimate(
+            0,
+            CardId::TwinStrike,
+            CardRewardValueSourceV1::OutcomeCalibration,
+            CardRewardValueStatusV1::OutcomeCalibrated,
+            1.0,
+            0.2,
+        ),
+        test_value_estimate(
+            1,
+            CardId::Cleave,
+            CardRewardValueSourceV1::UncalibratedImpactPrior,
+            CardRewardValueStatusV1::UncalibratedPrior,
+            0.0,
+            1.0,
+        ),
+    ];
+
+    let arbitration = arbitrate_card_reward_value_estimates_v1(&context, &raw_estimates);
+
+    assert_eq!(arbitration.input_estimate_count, 3);
+    assert_eq!(arbitration.gate_value_estimates.len(), 2);
+    assert_eq!(
+        arbitration.gate_value_estimates[0].source,
+        CardRewardValueSourceV1::OutcomeCalibration
+    );
+    assert_eq!(
+        arbitration.gate_value_estimates[1].source,
+        CardRewardValueSourceV1::UncalibratedImpactPrior
+    );
+    let twin_report = arbitration
+        .candidate_reports
+        .iter()
+        .find(|report| report.index == 0)
+        .expect("candidate 0 should have arbitration report");
+    assert_eq!(twin_report.input_estimate_count, 2);
+    assert_eq!(
+        twin_report.selected_source,
+        Some(CardRewardValueSourceV1::OutcomeCalibration)
+    );
+    assert!(twin_report.selected_for_gate);
+    assert!(!twin_report.autopilot_source_eligible);
+    assert_eq!(arbitration.label_role, "diagnostic_not_teacher_label");
+}
+
+#[test]
+fn card_reward_policy_routes_value_estimates_through_arbitration() {
+    let mut context = context_for_cards(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    context.route = Some(route_with_combat_pressure());
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert_eq!(decision.value_estimates.len(), 2);
+    assert_eq!(decision.value_arbitration.input_estimate_count, 2);
+    assert_eq!(decision.value_arbitration.gate_value_estimates.len(), 2);
+    assert!(decision
+        .value_arbitration
+        .candidate_reports
+        .iter()
+        .all(|report| report.selected_for_gate));
+    assert!(decision.pick_certificate.is_none());
+}
+
+#[test]
 fn replay_harness_exports_value_loop_gate_state_without_selecting() {
     let mut context = context_for_cards(vec![RewardCard::new(CardId::Shockwave, 0)]);
     context.route = Some(route_with_combat_pressure());
@@ -549,6 +632,8 @@ fn replay_harness_exports_value_loop_gate_state_without_selecting() {
 
     assert_eq!(replay.candidates.len(), 1);
     assert_eq!(replay.value_estimates.len(), 1);
+    assert_eq!(replay.value_arbitration.input_estimate_count, 1);
+    assert_eq!(replay.value_arbitration.gate_value_estimates.len(), 1);
     assert_eq!(
         replay.value_estimates[0].source,
         CardRewardValueSourceV1::UncalibratedImpactPrior
@@ -562,6 +647,27 @@ fn replay_harness_exports_value_loop_gate_state_without_selecting() {
     assert!(replay
         .stop_reason
         .contains("missing or unresolved evidence"));
+}
+
+fn test_value_estimate(
+    index: usize,
+    card: CardId,
+    source: CardRewardValueSourceV1,
+    status: CardRewardValueStatusV1,
+    survival_delta: f32,
+    uncertainty: f32,
+) -> CardRewardValueEstimateV1 {
+    CardRewardValueEstimateV1 {
+        index,
+        card,
+        source,
+        status,
+        survival_delta,
+        progress_delta: 0.0,
+        deck_consistency_delta: 0.0,
+        uncertainty,
+        components: Vec::new(),
+    }
 }
 
 #[test]
