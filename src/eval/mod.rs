@@ -1,5 +1,6 @@
 pub mod artifact;
 pub mod artifact_doctor;
+pub mod card_reward_value_loop;
 pub mod combat_capture;
 pub mod combat_search_v2;
 pub mod fingerprint;

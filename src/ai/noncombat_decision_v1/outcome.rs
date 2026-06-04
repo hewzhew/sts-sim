@@ -211,6 +211,12 @@ fn outcome_metrics(
 }
 
 fn decision_record_hash(record: &NonCombatDecisionRecordV1) -> Result<String, String> {
+    noncombat_decision_record_hash_v1(record)
+}
+
+pub fn noncombat_decision_record_hash_v1(
+    record: &NonCombatDecisionRecordV1,
+) -> Result<String, String> {
     let bytes = serde_json::to_vec(record)
         .map_err(|err| format!("failed to serialize decision record for hashing: {err}"))?;
     Ok(super::hash::hash_bytes(&bytes))

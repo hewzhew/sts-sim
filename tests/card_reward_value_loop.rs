@@ -1,0 +1,166 @@
+use sts_simulator::ai::card_reward_policy_v1::{
+    build_card_reward_decision_context_v1, plan_card_reward_decision_v1, CardRewardPolicyConfigV1,
+};
+use sts_simulator::ai::noncombat_decision_v1::{
+    attach_noncombat_outcome_v1, DecisionSiteKindV1, NonCombatDecisionRecordV1,
+    NonCombatOutcomeSnapshotV1, NonCombatOutcomeWindowV1, PolicySelectionStatusV1,
+};
+use sts_simulator::content::cards::CardId;
+use sts_simulator::eval::card_reward_value_loop::{
+    extract_card_reward_value_loop_examples_v1, CardRewardValueLoopOutcomeStatusV1,
+    CardRewardValueLoopReplayStatusV1, CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
+};
+use sts_simulator::eval::run_control::{
+    RunActionApplyStatusV1, RunActionResultV1, RunControlConfig, RunControlSession,
+    RunControlTraceAnnotationV1, SessionTraceBoundaryFingerprintV1,
+    SessionTraceSelectionResolution, SessionTraceStepSourceV1, SessionTraceStepV1, SessionTraceV1,
+};
+use sts_simulator::state::rewards::RewardCard;
+use sts_simulator::state::RunState;
+
+#[test]
+fn extracts_card_reward_value_loop_example_with_attached_outcome() {
+    let record = selected_card_reward_record(CardId::TwinStrike);
+    let outcome = attach_noncombat_outcome_v1(
+        &record,
+        NonCombatOutcomeWindowV1::AfterOneFloor,
+        outcome_snapshot(1, 80, 0),
+        outcome_snapshot(2, 74, 1),
+    )
+    .expect("selected card reward record should accept outcome");
+    let mut trace = trace_with_card_reward_record(record);
+    trace.noncombat_outcome_attachments.push(outcome);
+
+    let examples =
+        extract_card_reward_value_loop_examples_v1(&trace).expect("trace should extract");
+
+    assert_eq!(examples.len(), 1);
+    let example = &examples[0];
+    assert_eq!(
+        example.schema_name,
+        CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME
+    );
+    assert_eq!(example.trace_step_index, Some(0));
+    assert_eq!(example.decision_site, DecisionSiteKindV1::CardReward);
+    assert_eq!(
+        example.replay_status,
+        CardRewardValueLoopReplayStatusV1::RecordOnlyNoPublicPacket
+    );
+    assert_eq!(
+        example.outcome_status,
+        CardRewardValueLoopOutcomeStatusV1::Attached
+    );
+    assert_eq!(
+        example.selected_candidate_id.as_deref(),
+        Some("card_reward:0:TwinStrike")
+    );
+    assert_eq!(
+        example
+            .outcome
+            .as_ref()
+            .and_then(|outcome| outcome.card_reward.as_ref())
+            .and_then(|card_reward| card_reward.next_combat_hp_loss),
+        Some(6)
+    );
+    assert_eq!(example.source_record.candidates.len(), 1);
+    assert_eq!(example.source_record.values.len(), 1);
+    assert_eq!(example.label_role, "diagnostic_not_teacher_label");
+    assert!(!example.trainable_as_action_label);
+    assert!(!example.policy_quality_claim);
+}
+
+#[test]
+fn extracts_card_reward_value_loop_example_with_missing_outcome_marker() {
+    let trace = trace_with_card_reward_record(selected_card_reward_record(CardId::TwinStrike));
+
+    let examples =
+        extract_card_reward_value_loop_examples_v1(&trace).expect("trace should extract");
+
+    assert_eq!(examples.len(), 1);
+    assert_eq!(
+        examples[0].outcome_status,
+        CardRewardValueLoopOutcomeStatusV1::Missing
+    );
+    assert!(examples[0].outcome.is_none());
+}
+
+fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {
+    let run = RunState::new(521, 0, false, "Ironclad");
+    let context = build_card_reward_decision_context_v1(&run, vec![RewardCard::new(card, 0)], None);
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let mut record = decision.to_noncombat_decision_record_v1();
+    record.selection.status = PolicySelectionStatusV1::Selected;
+    record.selection.selected_candidate_id = Some(format!("card_reward:0:{card:?}"));
+    record.selection.reason = "test selected visible card reward".to_string();
+    record.selection.confidence = 1.0;
+    record
+}
+
+fn trace_with_card_reward_record(record: NonCombatDecisionRecordV1) -> SessionTraceV1 {
+    let session = RunControlSession::new(RunControlConfig::default());
+    let mut trace = SessionTraceV1::new(&session);
+    let boundary = boundary();
+    trace.steps.push(SessionTraceStepV1 {
+        step_index: 0,
+        step_source: SessionTraceStepSourceV1::ManualOrAutomation,
+        raw_command_line: "0".to_string(),
+        decision_step_before: 1,
+        decision_step_after: 2,
+        screen_title: "Card Reward".to_string(),
+        decision_kind: "CardReward".to_string(),
+        before: boundary.clone(),
+        after: boundary,
+        visible_candidates: Vec::new(),
+        selected_candidate: None,
+        selection_resolution: SessionTraceSelectionResolution::Unresolved,
+        annotations: vec![RunControlTraceAnnotationV1::NonCombatPolicyDecision { record }],
+        action_result: RunActionResultV1 {
+            chosen_label: "Twin Strike".to_string(),
+            status: RunActionApplyStatusV1::Running,
+            changes: Vec::new(),
+        },
+    });
+    trace
+}
+
+fn boundary() -> SessionTraceBoundaryFingerprintV1 {
+    SessionTraceBoundaryFingerprintV1 {
+        decision_step: 1,
+        engine_state: "RewardScreen".to_string(),
+        active_combat_engine_state: None,
+        screen_title: "Card Reward".to_string(),
+        decision_kind: "CardReward".to_string(),
+        decision_label: "Choose a card or skip".to_string(),
+        act: 1,
+        floor: 1,
+        current_hp: 80,
+        max_hp: 80,
+        gold: 99,
+        boss: "The Guardian".to_string(),
+        candidate_count: 1,
+        candidate_set_hash: "candidate-set".to_string(),
+        candidate_order_hash: "candidate-order".to_string(),
+        combat: None,
+    }
+}
+
+fn outcome_snapshot(
+    floor: i32,
+    current_hp: i32,
+    combats_completed: u32,
+) -> NonCombatOutcomeSnapshotV1 {
+    NonCombatOutcomeSnapshotV1 {
+        act: 1,
+        floor,
+        current_hp,
+        max_hp: 80,
+        gold: 99,
+        deck_size: 11,
+        relic_count: 1,
+        potion_count: 0,
+        combats_completed,
+        elites_completed: 0,
+        bosses_completed: 0,
+        run_terminal: None,
+    }
+}
