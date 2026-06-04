@@ -124,7 +124,8 @@ fn candidate_certificate(
         CardId::SearingBlow => upgrade_sink_certificate(context, candidate),
         CardId::HeavyBlade => strength_payoff_certificate(candidate),
         CardId::Clothesline => weak_frontload_certificate(context, candidate),
-        _ => transition_frontload_certificate(context, candidate),
+        _ => multi_debuff_control_certificate(context, candidate)
+            .or_else(|| transition_frontload_certificate(context, candidate)),
     }
 }
 
@@ -294,6 +295,56 @@ fn transition_frontload_certificate(
                 candidate.impact.frontload_damage_delta,
                 transition_frontload_floor(context)
             ),
+        ],
+    })
+}
+
+fn multi_debuff_control_certificate(
+    context: &CardRewardDecisionContextV1,
+    candidate: &CardRewardCandidateEvidenceV1,
+) -> Option<CardRewardPickCertificateV1> {
+    if context.run.floor <= 0 {
+        return None;
+    }
+    if candidate.facts.weak < 2
+        || candidate.facts.vulnerable < 2
+        || candidate.facts.enemy_strength_down < 2
+    {
+        return None;
+    }
+    if !matches!(
+        context.strategy.support(StrategyPackageIdV2::WeakControl),
+        StrategyPlanSupportV1::Strong | StrategyPlanSupportV1::Plausible
+    ) {
+        return None;
+    }
+    let combat_patch = context
+        .strategy
+        .package(StrategyPackageIdV2::CombatPatchWindow)?;
+    if !matches!(
+        combat_patch.support,
+        StrategyPlanSupportV1::Strong | StrategyPlanSupportV1::Plausible
+    ) {
+        return None;
+    }
+    if has_competing_strong_plan_candidate(context, candidate.index) {
+        return None;
+    }
+
+    Some(CardRewardPickCertificateV1 {
+        index: candidate.index,
+        card: candidate.card,
+        confidence: 0.82,
+        reasons: vec![
+            "deterministic multi-debuff control adds weak, vulnerable, and enemy strength down"
+                .to_string(),
+            format!(
+                "CombatPatchWindow is {:?}: {}",
+                combat_patch.support,
+                combat_patch.evidence.join(", ")
+            ),
+            "selection is certified by visible combat-control facts, not by card-name score"
+                .to_string(),
         ],
     })
 }

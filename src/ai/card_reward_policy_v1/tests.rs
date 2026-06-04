@@ -319,6 +319,44 @@ fn transition_attack_certificate_stops_when_multiple_deterministic_attacks_match
 }
 
 #[test]
+fn multi_debuff_control_certificate_picks_deterministic_combat_control_patch() {
+    let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
+    run_state.floor_num = 1;
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Shockwave, 0),
+            RewardCard::new(CardId::Clash, 0),
+            RewardCard::new(CardId::SeverSoul, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let shockwave = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::Shockwave)
+        .expect("Shockwave candidate");
+    assert_eq!(shockwave.facts.weak, 3);
+    assert_eq!(shockwave.facts.vulnerable, 3);
+    assert_eq!(shockwave.facts.enemy_strength_down, 3);
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert_eq!(
+        decision.pick_certificate.as_ref().map(|cert| cert.card),
+        Some(CardId::Shockwave)
+    );
+    assert!(decision
+        .pick_certificate
+        .as_ref()
+        .expect("Shockwave combat-control certificate")
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("deterministic multi-debuff control")));
+}
+
+#[test]
 fn weak_frontload_patch_does_not_auto_certify_when_core_plan_is_committed() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.floor_num = 1;

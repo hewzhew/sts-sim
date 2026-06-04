@@ -153,7 +153,7 @@ fn strength_gain(card_id: CardId, magic: i32) -> i32 {
 
 fn enemy_strength_down(card_id: CardId, magic: i32) -> i32 {
     match card_id {
-        CardId::Disarm | CardId::DarkShackles | CardId::PiercingWail => magic,
+        CardId::Disarm | CardId::Shockwave | CardId::DarkShackles | CardId::PiercingWail => magic,
         _ => 0,
     }
 }

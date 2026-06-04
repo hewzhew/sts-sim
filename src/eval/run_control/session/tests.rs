@@ -1307,6 +1307,42 @@ fn run_control_auto_run_picks_deterministic_transition_attack_after_first_combat
 }
 
 #[test]
+fn run_control_auto_run_picks_deterministic_combat_control_after_first_combat() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::Shockwave,
+        crate::content::cards::CardId::Clash,
+        crate::content::cards::CardId::SeverSoul,
+    ]);
+    session.run_state.floor_num = 1;
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should pick deterministic multi-debuff control");
+
+    assert!(outcome.message.contains("card reward policy: Shockwave"));
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Shockwave));
+    assert!(!session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Clash));
+    assert!(!session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::SeverSoul));
+}
+
+#[test]
 fn run_control_auto_run_stops_on_archetype_dependent_early_attack_reward_item() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![
