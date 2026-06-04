@@ -201,69 +201,29 @@ pub(super) fn apply_guarded_auto_step(
         }
 
         if options.route == super::commands::RunControlRouteAutomationMode::Planner {
-            if let Some((outcome, summary)) =
-                super::campfire_policy::apply_campfire_policy_rest(session)?
+            if let Some(application) =
+                super::noncombat_auto::apply_planner_noncombat_policy(session)?
             {
-                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-                trace_annotations.extend(outcome.trace_annotations);
-                applied.push(summary);
+                let auto_capture_summaries =
+                    auto_capture_summaries(&application.outcome.trace_annotations);
+                trace_annotations.extend(application.outcome.trace_annotations);
+                applied.push(application.summary);
                 applied.extend(auto_capture_summaries);
-                continue;
-            }
-            if let Some((outcome, summary)) = super::shop_policy::apply_shop_policy_purge(session)?
-            {
-                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-                trace_annotations.extend(outcome.trace_annotations);
-                applied.push(summary);
-                applied.extend(auto_capture_summaries);
-                return finish_auto_step(
-                    session,
-                    &before,
-                    applied,
-                    trace_annotations,
-                    "shop policy changed deck; inspect shop before continuing",
-                    None,
-                );
-            }
-            if let Some((outcome, summary)) =
-                super::run_choice_policy::apply_run_choice_policy_purge_curse(session)?
-            {
-                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-                trace_annotations.extend(outcome.trace_annotations);
-                applied.push(summary);
-                applied.extend(auto_capture_summaries);
-                continue;
-            }
-            if let Some((outcome, summary)) =
-                super::boss_relic_policy::apply_boss_relic_policy_pick(session)?
-            {
-                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-                trace_annotations.extend(outcome.trace_annotations);
-                applied.push(summary);
-                applied.extend(auto_capture_summaries);
-                continue;
-            }
-            if let Some((outcome, summary)) =
-                super::card_reward_auto::apply_card_reward_policy_pick(session)?
-            {
-                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-                trace_annotations.extend(outcome.trace_annotations);
-                applied.push(summary);
-                applied.extend(auto_capture_summaries);
-                continue;
-            }
-            if let Some((outcome, summary)) =
-                super::card_reward_auto::apply_card_reward_item_open(session)?
-            {
-                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-                trace_annotations.extend(outcome.trace_annotations);
-                applied.push(summary);
-                applied.extend(auto_capture_summaries);
+                if let Some(reason) = application.stop_after_reason {
+                    return finish_auto_step(
+                        session,
+                        &before,
+                        applied,
+                        trace_annotations,
+                        reason,
+                        None,
+                    );
+                }
                 continue;
             }
         }
         let card_reward_policy_stop =
-            super::card_reward_auto::card_reward_policy_stop_annotation(session)?;
+            super::noncombat_auto::planner_noncombat_policy_stop_annotation(session)?;
 
         let view = build_run_control_view_model(session);
         if let Some(auto_candidate) = auto_advance_candidate(session, &view) {

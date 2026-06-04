@@ -12,8 +12,10 @@ mod decision_case;
 mod decision_surface;
 #[cfg(test)]
 mod decision_surface_tests;
+mod event_policy;
 mod input_gate;
 mod next_hint;
+mod noncombat_auto;
 mod noncombat_boundary;
 pub mod outcome;
 mod panels;

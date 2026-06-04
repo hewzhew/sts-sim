@@ -1,6 +1,9 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -18,6 +21,61 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         EventChoiceMeta::new(format!("[Pray] Gain {} Gold.", gold_amt)),
         EventChoiceMeta::new("[Desecrate] Gain 275 Gold. Become Cursed - Regret."),
         EventChoiceMeta::new("[Leave]"),
+    ]
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
+    if event_state.current_screen == 1 {
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..EventOptionSemantics::default()
+            },
+        )];
+    }
+
+    let gold_amt = if run_state.ascension_level >= 15 {
+        50
+    } else {
+        100
+    };
+    vec![
+        EventOption::new(
+            EventChoiceMeta::new(format!("[Pray] Gain {} Gold.", gold_amt)),
+            EventOptionSemantics {
+                action: EventActionKind::Gain,
+                effects: vec![EventEffect::GainGold(gold_amt)],
+                transition: EventOptionTransition::AdvanceScreen,
+                ..EventOptionSemantics::default()
+            },
+        ),
+        EventOption::new(
+            EventChoiceMeta::new("[Desecrate] Gain 275 Gold. Become Cursed - Regret."),
+            EventOptionSemantics {
+                action: EventActionKind::Gain,
+                effects: vec![
+                    EventEffect::GainGold(275),
+                    EventEffect::ObtainCurse {
+                        count: 1,
+                        kind: EventCardKind::Specific(CardId::Regret),
+                    },
+                ],
+                transition: EventOptionTransition::AdvanceScreen,
+                ..EventOptionSemantics::default()
+            },
+        ),
+        EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..EventOptionSemantics::default()
+            },
+        ),
     ]
 }
 

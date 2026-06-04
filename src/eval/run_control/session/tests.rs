@@ -426,6 +426,59 @@ fn run_control_auto_step_event_stop_exports_human_boundary_record() {
 }
 
 #[test]
+fn run_control_auto_run_event_policy_takes_free_known_benefit() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 0;
+    session.run_state.event_state = Some(crate::state::events::EventState::new(
+        crate::state::events::EventId::GoldenShrine,
+    ));
+    session.engine_state = EngineState::EventRoom;
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should take a free known event benefit");
+
+    assert!(outcome.message.contains("event policy: [Pray]"));
+    assert_eq!(session.run_state.gold, 100);
+    assert!(matches!(session.engine_state, EngineState::EventRoom));
+    assert_eq!(
+        session
+            .run_state
+            .event_state
+            .as_ref()
+            .unwrap()
+            .current_screen,
+        1
+    );
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+            } => Some(record),
+            _ => None,
+        })
+        .expect("event policy should attach a noncombat record");
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("event policy noncombat record should validate");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Event
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
+    );
+}
+
+#[test]
 fn run_control_auto_step_shop_stop_exports_human_boundary_record() {
     let mut session = test_session_at_shop();
 
