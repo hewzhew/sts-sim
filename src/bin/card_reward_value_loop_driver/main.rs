@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use sts_simulator::eval::card_reward_value_loop::{
-    extract_card_reward_value_loop_examples_v1, summarize_card_reward_value_loop_examples_v1,
+    calibrate_card_reward_outcomes_v1, extract_card_reward_value_loop_examples_v1,
+    summarize_card_reward_value_loop_examples_v1,
 };
 use sts_simulator::eval::run_control::load_session_trace_v1;
 
@@ -25,6 +26,9 @@ struct Args {
 
     #[arg(long)]
     summary: bool,
+
+    #[arg(long)]
+    calibration: bool,
 }
 
 fn main() {
@@ -36,6 +40,10 @@ fn main() {
 }
 
 fn run(args: Args) -> Result<(), String> {
+    if args.summary && args.calibration {
+        return Err("use only one of --summary or --calibration".to_string());
+    }
+
     let mut examples = Vec::new();
     for path in &args.traces {
         let trace = load_session_trace_v1(path)?;
@@ -48,6 +56,13 @@ fn run(args: Args) -> Result<(), String> {
             serde_json::to_string(&summary).map_err(|err| err.to_string())?
         } else {
             serde_json::to_string_pretty(&summary).map_err(|err| err.to_string())?
+        }
+    } else if args.calibration {
+        let calibration = calibrate_card_reward_outcomes_v1(&examples);
+        if args.json_lines {
+            serde_json::to_string(&calibration).map_err(|err| err.to_string())?
+        } else {
+            serde_json::to_string_pretty(&calibration).map_err(|err| err.to_string())?
         }
     } else if args.json_lines {
         examples

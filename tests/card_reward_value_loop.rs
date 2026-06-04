@@ -1,5 +1,6 @@
 use sts_simulator::ai::card_reward_policy_v1::{
     build_card_reward_decision_context_v1, plan_card_reward_decision_v1, CardRewardPolicyConfigV1,
+    CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
 use sts_simulator::ai::noncombat_decision_v1::{
     attach_noncombat_outcome_v1, DecisionSiteKindV1, NonCombatDecisionRecordV1,
@@ -7,6 +8,7 @@ use sts_simulator::ai::noncombat_decision_v1::{
 };
 use sts_simulator::content::cards::CardId;
 use sts_simulator::eval::card_reward_value_loop::{
+    calibrate_card_reward_outcomes_v1, estimate_card_reward_value_from_calibration_v1,
     extract_card_reward_value_loop_examples_v1, summarize_card_reward_value_loop_examples_v1,
     CardRewardValueLoopOutcomeStatusV1, CardRewardValueLoopReplayStatusV1,
     CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
@@ -146,6 +148,64 @@ fn summarizes_card_reward_value_loop_examples_without_strategy_claims() {
     assert!(!summary.policy_quality_claim);
 }
 
+#[test]
+fn calibrates_selected_outcomes_into_consumable_card_id_prior() {
+    let examples = vec![
+        example_for_card_with_next_combat_hp_loss(CardId::TwinStrike, 4),
+        example_for_card_with_next_combat_hp_loss(CardId::TwinStrike, 6),
+        example_for_card_with_next_combat_hp_loss(CardId::Cleave, 12),
+    ];
+
+    let calibration = calibrate_card_reward_outcomes_v1(&examples);
+
+    assert_eq!(calibration.total_examples, 3);
+    assert_eq!(
+        calibration.estimator_kind,
+        "selected_outcome_card_id_prior_v1"
+    );
+    assert_eq!(calibration.card_id_buckets.len(), 2);
+    let twin_strike = calibration
+        .card_id_buckets
+        .iter()
+        .find(|bucket| bucket.card_id == "TwinStrike")
+        .expect("TwinStrike bucket should be present");
+    assert_eq!(twin_strike.selected_count, 2);
+    assert_eq!(twin_strike.outcome_attached_count, 2);
+    assert_eq!(twin_strike.mean_next_combat_hp_loss, Some(5.0));
+    assert!(twin_strike.confidence > 0.0);
+    assert!(!twin_strike.usable_for_autopilot_gate);
+    assert!(twin_strike.usable_for_value_estimate);
+
+    let run = RunState::new(521, 0, false, "Ironclad");
+    let context = build_card_reward_decision_context_v1(
+        &run,
+        vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::Cleave, 0),
+        ],
+        None,
+    );
+    let twin_candidate = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::TwinStrike)
+        .expect("TwinStrike candidate should be present");
+
+    let estimate = estimate_card_reward_value_from_calibration_v1(twin_candidate, &calibration)
+        .expect("TwinStrike should get an outcome-calibrated estimate");
+
+    assert_eq!(estimate.index, twin_candidate.index);
+    assert_eq!(estimate.card, CardId::TwinStrike);
+    assert_eq!(estimate.source, CardRewardValueSourceV1::OutcomeCalibration);
+    assert_eq!(estimate.status, CardRewardValueStatusV1::OutcomeCalibrated);
+    assert!(estimate.survival_delta > 0.0);
+    assert!(estimate.uncertainty > 0.0);
+    assert!(estimate
+        .components
+        .iter()
+        .any(|component| component.name == "outcome_sample_count" && component.value == 2.0));
+}
+
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {
     let run = RunState::new(521, 0, false, "Ironclad");
     let context = build_card_reward_decision_context_v1(&run, vec![RewardCard::new(card, 0)], None);
@@ -156,6 +216,27 @@ fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {
     record.selection.reason = "test selected visible card reward".to_string();
     record.selection.confidence = 1.0;
     record
+}
+
+fn example_for_card_with_next_combat_hp_loss(
+    card: CardId,
+    hp_loss: i32,
+) -> sts_simulator::eval::card_reward_value_loop::CardRewardValueLoopExampleV1 {
+    let record = selected_card_reward_record(card);
+    let outcome = attach_noncombat_outcome_v1(
+        &record,
+        NonCombatOutcomeWindowV1::AfterOneFloor,
+        outcome_snapshot(1, 80, 0),
+        outcome_snapshot(2, 80 - hp_loss, 1),
+    )
+    .expect("selected card reward record should accept outcome");
+    let mut trace = trace_with_card_reward_record(record);
+    trace.noncombat_outcome_attachments.push(outcome);
+    extract_card_reward_value_loop_examples_v1(&trace)
+        .expect("trace should extract")
+        .into_iter()
+        .next()
+        .expect("one card reward example should be extracted")
 }
 
 fn trace_with_card_reward_record(record: NonCombatDecisionRecordV1) -> SessionTraceV1 {

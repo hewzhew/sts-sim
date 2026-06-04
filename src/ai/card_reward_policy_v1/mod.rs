@@ -15,8 +15,8 @@ pub use types::{
     CardRewardAutopilotGateReportV1, CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1,
     CardRewardDecisionV1, CardRewardEvidenceGapV1, CardRewardFactsV1, CardRewardPickCertificateV1,
     CardRewardPickDependencyV1, CardRewardPlanEffectV1, CardRewardPolicyActionV1,
-    CardRewardPolicyConfigV1, CardRewardStopDispositionV1, CardRewardValueEstimateV1,
-    CardRewardValueSourceV1, CardRewardValueStatusV1,
+    CardRewardPolicyConfigV1, CardRewardStopDispositionV1, CardRewardValueComponentV1,
+    CardRewardValueEstimateV1, CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
 
 #[cfg(test)]

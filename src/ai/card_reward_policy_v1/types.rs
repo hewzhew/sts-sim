@@ -217,6 +217,7 @@ pub enum CardRewardEvidenceGapV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CardRewardValueSourceV1 {
     UncalibratedImpactPrior,
+    OutcomeCalibration,
     CombatProbe,
     RouteRisk,
     LearnedValue,

@@ -1,8 +1,8 @@
 use crate::ai::card_reward_policy_v1::{
     build_card_reward_decision_context_v1, plan_card_reward_decision_v1,
     replay_card_reward_decision_v1, CardRewardEvidenceGapV1, CardRewardPlanEffectV1,
-    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueSourceV1,
-    CardRewardValueStatusV1, PublicRewardDecisionPacketV1,
+    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
+    CardRewardValueSourceV1, CardRewardValueStatusV1, PublicRewardDecisionPacketV1,
 };
 use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
 use crate::content::cards::CardId;
@@ -494,6 +494,48 @@ fn uncalibrated_prior_blocks_even_when_old_rule_would_have_matched() {
         .blocked_reasons
         .contains(&CardRewardEvidenceGapV1::UncalibratedValueEstimate));
     assert!(!decision.autopilot_gate.value_source_eligible);
+}
+
+#[test]
+fn outcome_calibration_estimates_are_not_autopilot_eligible_without_arbitration_gate() {
+    let mut context = context_for_cards(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    context.route = Some(route_with_combat_pressure());
+    let value_estimates = context
+        .candidates
+        .iter()
+        .map(|candidate| CardRewardValueEstimateV1 {
+            index: candidate.index,
+            card: candidate.card,
+            source: CardRewardValueSourceV1::OutcomeCalibration,
+            status: CardRewardValueStatusV1::OutcomeCalibrated,
+            survival_delta: if candidate.card == CardId::TwinStrike {
+                2.0
+            } else {
+                0.5
+            },
+            progress_delta: 0.0,
+            deck_consistency_delta: 0.0,
+            uncertainty: 0.1,
+            components: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+
+    let (action, gate_report, gaps, certificate) = super::gate::pick_gate(
+        &context,
+        &value_estimates,
+        &CardRewardPolicyConfigV1::default(),
+    );
+
+    assert!(matches!(action, CardRewardPolicyActionV1::Stop { .. }));
+    assert!(certificate.is_none());
+    assert!(!gate_report.value_source_eligible);
+    assert!(gate_report
+        .blocked_reasons
+        .contains(&CardRewardEvidenceGapV1::IneligibleValueSource));
+    assert!(gaps.contains(&CardRewardEvidenceGapV1::IneligibleValueSource));
 }
 
 #[test]

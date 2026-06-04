@@ -269,6 +269,8 @@ fn generic_certificate(
 fn value_source_eligible(source: CardRewardValueSourceV1) -> bool {
     matches!(
         source,
+        // OutcomeCalibration is a consumable estimator artifact, but it is not
+        // autopilot-eligible until arbitration adds explicit confidence gates.
         CardRewardValueSourceV1::CombatProbe
             | CardRewardValueSourceV1::RouteRisk
             | CardRewardValueSourceV1::LearnedValue
