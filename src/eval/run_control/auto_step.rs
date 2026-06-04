@@ -202,6 +202,39 @@ pub(super) fn apply_guarded_auto_step(
 
         if options.route == super::commands::RunControlRouteAutomationMode::Planner {
             if let Some((outcome, summary)) =
+                super::campfire_policy::apply_campfire_policy_rest(session)?
+            {
+                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+                trace_annotations.extend(outcome.trace_annotations);
+                applied.push(summary);
+                applied.extend(auto_capture_summaries);
+                continue;
+            }
+            if let Some((outcome, summary)) = super::shop_policy::apply_shop_policy_purge(session)?
+            {
+                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+                trace_annotations.extend(outcome.trace_annotations);
+                applied.push(summary);
+                applied.extend(auto_capture_summaries);
+                return finish_auto_step(
+                    session,
+                    &before,
+                    applied,
+                    trace_annotations,
+                    "shop policy changed deck; inspect shop before continuing",
+                    None,
+                );
+            }
+            if let Some((outcome, summary)) =
+                super::run_choice_policy::apply_run_choice_policy_purge_curse(session)?
+            {
+                let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+                trace_annotations.extend(outcome.trace_annotations);
+                applied.push(summary);
+                applied.extend(auto_capture_summaries);
+                continue;
+            }
+            if let Some((outcome, summary)) =
                 super::card_reward_auto::apply_card_reward_policy_pick(session)?
             {
                 let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
@@ -487,6 +520,11 @@ fn classify_single_executable_candidate(
         EngineState::EventRoom if event_single_candidate_is_safe(session, candidate) => {
             AutoAdvanceClass::Forced
         }
+        EngineState::RunPendingChoice(choice)
+            if choice.min_choices == 1 && choice.max_choices == 1 =>
+        {
+            AutoAdvanceClass::Forced
+        }
         EngineState::GameOver(_) => AutoAdvanceClass::Unsafe,
         _ => AutoAdvanceClass::Strategic,
     }
@@ -524,6 +562,9 @@ fn single_candidate_reason(
         (EngineState::TreasureRoom(_), AutoAdvanceClass::Routine, _) => "single chest action",
         (EngineState::Shop(_), AutoAdvanceClass::Routine, "leave") => "only shop exit remains",
         (EngineState::EventRoom, AutoAdvanceClass::Forced, _) => "single safe event transition",
+        (EngineState::RunPendingChoice(_), AutoAdvanceClass::Forced, _) => {
+            "single forced run choice"
+        }
         _ => "single safe action",
     }
 }

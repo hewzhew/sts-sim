@@ -417,6 +417,11 @@ fn run_control_auto_step_event_stop_exports_human_boundary_record() {
         .reason
         .contains("event option requires human choice"));
     assert!(record.candidates.len() > 1);
+    assert!(record
+        .evidence
+        .items
+        .iter()
+        .any(|item| item.label.contains("strategy package: Resource/HpSafety")));
     assert!(matches!(session.engine_state, EngineState::EventRoom));
 }
 
@@ -453,6 +458,18 @@ fn run_control_auto_step_shop_stop_exports_human_boundary_record() {
         .candidates
         .iter()
         .any(|candidate| candidate.candidate_id.starts_with("shop:leave")));
+    assert!(record.evidence.items.iter().any(|item| item
+        .label
+        .contains("strategy package: Route/CorePlanProtection")));
+    assert!(record
+        .evidence
+        .items
+        .iter()
+        .any(|item| item.label.contains("strategy package: Resource/GoldPlan")));
+    assert!(record
+        .information_boundary
+        .allowed_inputs
+        .contains(&crate::ai::noncombat_decision_v1::InformationClassV1::Belief));
     assert!(outcome.action_result.is_none());
     assert!(matches!(session.engine_state, EngineState::Shop(_)));
 }
@@ -505,7 +522,245 @@ fn run_control_auto_step_campfire_stop_exports_human_boundary_record() {
         .candidates
         .iter()
         .any(|candidate| candidate.candidate_id.starts_with("campfire:smith-")));
+    assert!(record.evidence.items.iter().any(|item| item
+        .label
+        .contains("strategy package: Route/RecoveryPressure")));
+    assert!(record
+        .evidence
+        .items
+        .iter()
+        .any(|item| item.label.contains("strategy package: Resource/HpSafety")));
+    assert!(record
+        .information_boundary
+        .allowed_inputs
+        .contains(&crate::ai::noncombat_decision_v1::InformationClassV1::Belief));
     assert!(matches!(session.engine_state, EngineState::Campfire));
+}
+
+#[test]
+fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire() {
+    let mut session = test_session_at_campfire_with_hp(20, 80);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should rest when recovery pressure is strong");
+
+    assert!(outcome.message.contains("campfire policy: rest"));
+    assert!(outcome.action_result.is_some());
+    assert!(
+        session.run_state.current_hp > 20,
+        "rest should heal before leaving the campfire"
+    );
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
+}
+
+#[test]
+fn run_control_auto_run_does_not_auto_smith_at_healthy_campfire() {
+    let mut session = test_session_at_campfire_with_hp(80, 80);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should stop at healthy campfire");
+
+    assert!(outcome
+        .message
+        .contains("Reason: campfire action requires human choice"));
+    assert!(outcome.action_result.is_none());
+    assert!(matches!(session.engine_state, EngineState::Campfire));
+}
+
+#[test]
+fn run_control_auto_run_purges_curse_at_shop() {
+    let mut session = test_session_at_shop();
+    session
+        .run_state
+        .add_card_to_deck_without_interception_from(
+            crate::content::cards::CardId::Doubt,
+            0,
+            crate::state::selection::DomainEventSource::DeckMutation,
+        );
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should purge a visible curse at shop");
+
+    assert!(outcome.message.contains("shop policy: purge Doubt"));
+    assert_eq!(session.run_state.gold, 25);
+    assert!(!session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Doubt));
+    assert!(matches!(session.engine_state, EngineState::Shop(_)));
+}
+
+#[test]
+fn run_control_auto_run_does_not_purge_starter_shell_at_shop() {
+    let mut session = test_session_at_shop();
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should stop at ordinary shop");
+
+    assert!(outcome
+        .message
+        .contains("Reason: shop action requires human choice"));
+    assert_eq!(session.run_state.gold, 100);
+    assert_eq!(session.run_state.master_deck.len(), 10);
+    assert!(matches!(session.engine_state, EngineState::Shop(_)));
+}
+
+#[test]
+fn run_control_auto_run_uses_core_plan_package_to_purge_starter_when_no_purchase_competes() {
+    let mut session = test_session_at_shop();
+    if let EngineState::Shop(shop) = &mut session.engine_state {
+        shop.cards.clear();
+        shop.relics.clear();
+        shop.potions.clear();
+    }
+    session
+        .run_state
+        .add_card_to_deck(crate::content::cards::CardId::Inflame);
+    session
+        .run_state
+        .add_card_to_deck(crate::content::cards::CardId::HeavyBlade);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should purge a starter strike when core-plan protection is strong");
+
+    assert!(outcome.message.contains("shop policy: purge Strike"));
+    assert_eq!(session.run_state.gold, 25);
+    assert_eq!(
+        session
+            .run_state
+            .master_deck
+            .iter()
+            .filter(|card| card.id == crate::content::cards::CardId::Strike)
+            .count(),
+        4
+    );
+    assert!(matches!(session.engine_state, EngineState::Shop(_)));
+}
+
+#[test]
+fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .add_card_to_deck_without_interception_from(
+            crate::content::cards::CardId::Doubt,
+            0,
+            crate::state::selection::DomainEventSource::DeckMutation,
+        );
+    session.engine_state =
+        EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: crate::state::core::RunPendingChoiceReason::PurgeNonBottled,
+            return_state: Box::new(EngineState::MapNavigation),
+        });
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should purge a curse at a run pending purge choice");
+
+    assert!(outcome.message.contains("run choice policy: purge Doubt"));
+    assert!(!session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Doubt));
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
+}
+
+#[test]
+fn run_control_auto_run_does_not_purge_starter_at_run_pending_purge_choice() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state =
+        EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: crate::state::core::RunPendingChoiceReason::PurgeNonBottled,
+            return_state: Box::new(EngineState::MapNavigation),
+        });
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should stop at a purge choice without a curse");
+
+    assert!(outcome
+        .message
+        .contains("Reason: card selection requires human choice"));
+    assert_eq!(session.run_state.master_deck.len(), 10);
+    assert!(matches!(
+        session.engine_state,
+        EngineState::RunPendingChoice(_)
+    ));
+}
+
+#[test]
+fn run_control_auto_run_executes_single_forced_run_pending_choice() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.master_deck = vec![crate::runtime::combat::CombatCard::new(
+        crate::content::cards::CardId::Strike,
+        7001,
+    )];
+    session.engine_state =
+        EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: crate::state::core::RunPendingChoiceReason::Upgrade,
+            return_state: Box::new(EngineState::MapNavigation),
+        });
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should execute a single forced run pending choice");
+
+    assert!(outcome.message.contains("single forced run choice"));
+    assert_eq!(session.run_state.master_deck[0].upgrades, 1);
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
 }
 
 #[test]
@@ -535,9 +790,51 @@ fn run_control_auto_step_boss_relic_stop_exports_human_boundary_record() {
         .information_boundary
         .forbidden_inputs
         .contains(&crate::ai::noncombat_decision_v1::InformationClassV1::HiddenSimulatorState));
+    assert!(record.evidence.items.iter().any(|item| item
+        .label
+        .contains("strategy package: Resource/RelicConstraints")));
     assert!(matches!(
         session.engine_state,
         EngineState::BossRelicSelect(_)
+    ));
+}
+
+#[test]
+fn run_control_auto_step_run_choice_stop_exports_human_boundary_record() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state =
+        EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: crate::state::core::RunPendingChoiceReason::Upgrade,
+            return_state: Box::new(EngineState::MapNavigation),
+        });
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .expect("auto-step should stop at multi-candidate run choice");
+
+    let record = noncombat_human_boundary_record(&outcome);
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::RunChoice
+    );
+    assert_eq!(
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
+    );
+    assert!(record
+        .selection
+        .reason
+        .contains("card selection requires human choice"));
+    assert!(record
+        .candidates
+        .iter()
+        .any(|candidate| candidate.candidate_id.starts_with("run_choice:")));
+    assert!(outcome.action_result.is_none());
+    assert!(matches!(
+        session.engine_state,
+        EngineState::RunPendingChoice(_)
     ));
 }
 
@@ -1476,6 +1773,22 @@ fn test_session_with_forced_unsafe_elite_route() -> RunControlSession {
     let mut second = MapRoomNode::new(0, 1);
     second.class = Some(RoomType::MonsterRoom);
     session.run_state.map = MapState::new(vec![vec![first], vec![second]]);
+    session
+}
+
+fn test_session_at_campfire_with_hp(current_hp: i32, max_hp: i32) -> RunControlSession {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state = EngineState::Campfire;
+    session.run_state.current_hp = current_hp;
+    session.run_state.max_hp = max_hp;
+    let mut rest = MapRoomNode::new(0, 0);
+    rest.class = Some(RoomType::RestRoom);
+    rest.edges.insert(MapEdge::new(0, 0, 0, 1));
+    let mut next = MapRoomNode::new(0, 1);
+    next.class = Some(RoomType::MonsterRoom);
+    session.run_state.map = MapState::new(vec![vec![rest], vec![next]]);
+    session.run_state.map.current_x = 0;
+    session.run_state.map.current_y = 0;
     session
 }
 

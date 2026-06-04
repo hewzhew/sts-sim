@@ -168,33 +168,6 @@ pub(crate) fn route_evidence(
     })
 }
 
-pub(crate) fn strategy_deck_facts(
-    deck: &DeckProfileV1,
-) -> crate::ai::noncombat_strategy_v1::StrategyDeckFactsV1 {
-    crate::ai::noncombat_strategy_v1::StrategyDeckFactsV1 {
-        deck_size: deck.deck_size,
-        attacks: deck.attacks,
-        skills: deck.skills,
-        powers: deck.powers,
-        starter_strikes: deck.starter_strikes,
-        starter_defends: deck.starter_defends,
-        strength_sources: deck.strength_sources,
-        strength_payoffs: deck.strength_payoffs,
-        weak_sources: deck.weak_sources,
-        draw_sources: deck.draw_cards,
-        energy_sources: deck.energy_sources,
-        vulnerable_sources: deck.vulnerable_sources,
-        route_upgrade_payoffs: deck.route_upgrade_payoffs,
-        important_cards_unupgraded: deck.important_cards_unupgraded,
-        exhaust_generators: deck.exhaust_generators,
-        exhaust_payoffs: deck.exhaust_payoffs,
-        status_generators: deck.status_generators,
-        status_payoffs: deck.status_payoffs,
-        total_attack_damage: deck.total_attack_damage,
-        total_block: deck.total_block,
-    }
-}
-
 pub(crate) fn strategy_route_future(
     route: Option<&CardRewardRouteEvidenceV1>,
 ) -> Option<crate::ai::noncombat_strategy_v1::StrategyRouteFutureV1> {

@@ -5,7 +5,7 @@ use super::types::{
     CardRewardValueStatusV1,
 };
 
-use crate::ai::noncombat_strategy_v1::{StrategyPlanSupportV1, StrategyRoutePackageIdV1};
+use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
 use crate::content::cards::CardId;
 
 pub(crate) fn pick_gate(
@@ -119,7 +119,7 @@ fn upgrade_sink_certificate(
     }
     let route_package = context
         .plans
-        .route_package(StrategyRoutePackageIdV1::UpgradeCommitment)?;
+        .package(StrategyPackageIdV2::UpgradeCommitment)?;
     if route_package.support != StrategyPlanSupportV1::Strong {
         return None;
     }
@@ -181,16 +181,14 @@ fn weak_frontload_certificate(
     }
     let combat_patch = context
         .plans
-        .route_package(StrategyRoutePackageIdV1::CombatPatchWindow)?;
+        .package(StrategyPackageIdV2::CombatPatchWindow)?;
     if combat_patch.support != StrategyPlanSupportV1::Strong {
         return None;
     }
-    let core_protection = context
+    if context
         .plans
-        .route_package(StrategyRoutePackageIdV1::CorePlanProtection);
-    if core_protection
-        .map(|package| package.support == StrategyPlanSupportV1::Strong)
-        .unwrap_or(false)
+        .support(StrategyPackageIdV2::CorePlanProtection)
+        == StrategyPlanSupportV1::Strong
     {
         return None;
     }

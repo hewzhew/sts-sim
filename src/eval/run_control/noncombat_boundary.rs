@@ -162,12 +162,23 @@ fn build_noncombat_human_boundary_record_v1(
         .iter()
         .map(|candidate| candidate_descriptor(site, candidate))
         .collect::<Vec<_>>();
-    let evidence_items = view
+    let mut evidence_items = view
         .candidates
         .iter()
         .map(|candidate| candidate_evidence(site, candidate))
         .collect::<Vec<_>>();
-    let allowed_inputs = allowed_information_classes(&view);
+    if matches!(
+        site,
+        DecisionSiteKindV1::CardReward
+            | DecisionSiteKindV1::Campfire
+            | DecisionSiteKindV1::Event
+            | DecisionSiteKindV1::BossRelic
+            | DecisionSiteKindV1::RunChoice
+            | DecisionSiteKindV1::Shop
+    ) {
+        evidence_items.extend(strategy_package_evidence_items(session));
+    }
+    let allowed_inputs = allowed_information_classes(&view, &evidence_items);
 
     Some(NonCombatDecisionRecordV1 {
         schema_name: NONCOMBAT_DECISION_RECORD_SCHEMA_NAME.to_string(),
@@ -233,17 +244,20 @@ fn decision_site_kind(session: &RunControlSession) -> Option<DecisionSiteKindV1>
         EngineState::Shop(_) => Some(DecisionSiteKindV1::Shop),
         EngineState::Campfire => Some(DecisionSiteKindV1::Campfire),
         EngineState::BossRelicSelect(_) => Some(DecisionSiteKindV1::BossRelic),
+        EngineState::RunPendingChoice(_) => Some(DecisionSiteKindV1::RunChoice),
         EngineState::TreasureRoom(_)
         | EngineState::CombatStart(_)
         | EngineState::CombatPlayerTurn
         | EngineState::CombatProcessing
         | EngineState::PendingChoice(_)
-        | EngineState::RunPendingChoice(_)
         | EngineState::GameOver(_) => None,
     }
 }
 
-fn allowed_information_classes(view: &RunControlViewModel) -> Vec<InformationClassV1> {
+fn allowed_information_classes(
+    view: &RunControlViewModel,
+    evidence_items: &[EvidenceItemV1],
+) -> Vec<InformationClassV1> {
     let mut classes = vec![InformationClassV1::PublicObservation];
     if view
         .candidates
@@ -252,11 +266,59 @@ fn allowed_information_classes(view: &RunControlViewModel) -> Vec<InformationCla
     {
         classes.push(InformationClassV1::KnownDistribution);
     }
+    if evidence_items
+        .iter()
+        .any(|item| item.information_class == InformationClassV1::Belief)
+        && !classes.contains(&InformationClassV1::Belief)
+    {
+        classes.push(InformationClassV1::Belief);
+    }
     classes
 }
 
 fn candidate_resolution_has_known_distribution(resolution: Option<&CandidateResolution>) -> bool {
     resolution.is_some_and(|resolution| !resolution.unresolved_effects.is_empty())
+}
+
+fn strategy_package_evidence_items(session: &RunControlSession) -> Vec<EvidenceItemV1> {
+    let snapshot = crate::ai::noncombat_strategy_v1::build_run_strategy_snapshot_from_run_state_v2(
+        &session.run_state,
+    );
+    snapshot
+        .packages
+        .into_iter()
+        .map(|package| EvidenceItemV1 {
+            kind: EvidenceKindV1::PolicyGate,
+            candidate_id: None,
+            label: format!("strategy package: {:?}/{:?}", package.domain, package.id),
+            information_class: InformationClassV1::Belief,
+            components: vec![
+                crate::ai::noncombat_decision_v1::ValueComponentV1::new(
+                    "support",
+                    route_package_support_value(package.support),
+                ),
+                crate::ai::noncombat_decision_v1::ValueComponentV1::new(
+                    "evidence_count",
+                    package.evidence.len() as f32,
+                ),
+                crate::ai::noncombat_decision_v1::ValueComponentV1::new(
+                    "risk_count",
+                    package.risks.len() as f32,
+                ),
+            ],
+        })
+        .collect()
+}
+
+fn route_package_support_value(
+    support: crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1,
+) -> f32 {
+    match support {
+        crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1::Blocked => 0.0,
+        crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1::Weak => 0.25,
+        crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1::Plausible => 0.5,
+        crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1::Strong => 1.0,
+    }
 }
 
 fn candidate_descriptor(
@@ -343,6 +405,7 @@ fn site_slug(site: DecisionSiteKindV1) -> &'static str {
         DecisionSiteKindV1::Campfire => "campfire",
         DecisionSiteKindV1::BossRelic => "boss_relic",
         DecisionSiteKindV1::Reward => "reward",
+        DecisionSiteKindV1::RunChoice => "run_choice",
     }
 }
 

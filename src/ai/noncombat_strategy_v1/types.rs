@@ -158,3 +158,77 @@ pub struct StrategyCandidateFactsV1 {
     pub weak: i32,
     pub strength_gain: i32,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StrategyPackageDomainV2 {
+    Archetype,
+    Route,
+    Resource,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StrategyPackageIdV2 {
+    FrontloadSurvival,
+    WeakControl,
+    StrengthScaling,
+    UpgradeSink,
+    ExhaustEngine,
+    BlockEngine,
+    StrikeDensity,
+    StatusPackage,
+    SelfDamage,
+    EnergyDraw,
+    CombatPatchWindow,
+    UpgradeCommitment,
+    CorePlanProtection,
+    RecoveryPressure,
+    GoldPlan,
+    PotionCapacity,
+    HpSafety,
+    ShopRemoveWindow,
+    RelicConstraints,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StrategyPackageV2 {
+    pub id: StrategyPackageIdV2,
+    pub domain: StrategyPackageDomainV2,
+    pub support: StrategyPlanSupportV1,
+    pub evidence: Vec<String>,
+    pub blockers: Vec<String>,
+    pub risks: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StrategyResourceFactsV2 {
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    pub estimated_purge_cost: i32,
+    pub potion_slots: usize,
+    pub potion_count: usize,
+    pub empty_potion_slots: usize,
+    pub curses: usize,
+    pub removable_curses: usize,
+    pub starter_cards: usize,
+    pub relic_constraints: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunStrategySnapshotV2 {
+    pub v1: RunStrategySnapshotV1,
+    pub resources: StrategyResourceFactsV2,
+    pub packages: Vec<StrategyPackageV2>,
+}
+
+impl RunStrategySnapshotV2 {
+    pub fn package(&self, id: StrategyPackageIdV2) -> Option<&StrategyPackageV2> {
+        self.packages.iter().find(|package| package.id == id)
+    }
+
+    pub fn support(&self, id: StrategyPackageIdV2) -> StrategyPlanSupportV1 {
+        self.package(id)
+            .map(|package| package.support)
+            .unwrap_or(StrategyPlanSupportV1::Blocked)
+    }
+}

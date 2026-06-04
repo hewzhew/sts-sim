@@ -98,7 +98,7 @@ pub struct CardRewardCandidateEvidenceV1 {
     pub plan_delta: CardRewardCandidatePlanDeltaV1,
 }
 
-pub type CardRewardStrategicPlansV1 = crate::ai::noncombat_strategy_v1::RunStrategySnapshotV1;
+pub type CardRewardStrategicPlansV1 = crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2;
 pub type CardRewardCandidatePlanDeltaV1 =
     crate::ai::noncombat_strategy_v1::StrategyCandidatePlanDeltaV1;
 pub type CardRewardPlanEffectV1 = crate::ai::noncombat_strategy_v1::StrategyPlanEffectV1;

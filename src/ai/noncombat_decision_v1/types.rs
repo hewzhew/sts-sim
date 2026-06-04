@@ -13,6 +13,7 @@ pub enum DecisionSiteKindV1 {
     Campfire,
     BossRelic,
     Reward,
+    RunChoice,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

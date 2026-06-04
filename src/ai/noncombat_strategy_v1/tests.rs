@@ -344,3 +344,99 @@ fn route_packages_protect_committed_core_plan() {
         Some(StrategyPlanSupportV1::Strong)
     );
 }
+
+#[test]
+fn strategy_snapshot_v2_unifies_archetype_route_and_resource_packages() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 14,
+            attacks: 8,
+            skills: 4,
+            powers: 2,
+            starter_strikes: 4,
+            starter_defends: 3,
+            strength_sources: 2,
+            strength_payoffs: 1,
+            weak_sources: 1,
+            draw_sources: 1,
+            energy_sources: 1,
+            vulnerable_sources: 1,
+            route_upgrade_payoffs: 0,
+            important_cards_unupgraded: 0,
+            exhaust_generators: 0,
+            exhaust_payoffs: 0,
+            status_generators: 0,
+            status_payoffs: 0,
+            total_attack_damage: 86,
+            total_block: 32,
+        },
+        Some(StrategyRouteFutureV1 {
+            min_fires: 2,
+            max_fires: 3,
+            first_fire_floor: Some(5),
+            max_early_pressure: 1,
+            need_heal: 0.1,
+            avoid_damage: 0.1,
+        }),
+        None,
+    );
+
+    assert_eq!(
+        snapshot
+            .package(super::StrategyPackageIdV2::StrengthScaling)
+            .map(|package| package.domain),
+        Some(super::StrategyPackageDomainV2::Archetype)
+    );
+    assert_eq!(
+        snapshot
+            .package(super::StrategyPackageIdV2::CorePlanProtection)
+            .map(|package| package.domain),
+        Some(super::StrategyPackageDomainV2::Route)
+    );
+    assert_eq!(
+        snapshot
+            .package(super::StrategyPackageIdV2::HpSafety)
+            .map(|package| package.domain),
+        Some(super::StrategyPackageDomainV2::Resource)
+    );
+    assert!(snapshot.packages.len() >= snapshot.v1.plans.len() + snapshot.v1.route_packages.len());
+}
+
+#[test]
+fn strategy_snapshot_v2_from_run_state_tracks_resource_facts() {
+    let mut run_state = crate::state::run::RunState::new(123, 0, false, "Ironclad");
+    run_state.current_hp = 20;
+    run_state.max_hp = 80;
+    run_state.gold = 160;
+    run_state.add_card_to_deck_without_interception_from(
+        crate::content::cards::CardId::Doubt,
+        0,
+        crate::state::selection::DomainEventSource::DeckMutation,
+    );
+    run_state.potions[0] = Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::FirePotion,
+        7,
+    ));
+
+    let snapshot = super::build_run_strategy_snapshot_from_run_state_v2(&run_state);
+
+    assert_eq!(snapshot.resources.current_hp, 20);
+    assert_eq!(snapshot.resources.max_hp, 80);
+    assert_eq!(snapshot.resources.gold, 160);
+    assert_eq!(snapshot.resources.curses, 1);
+    assert_eq!(snapshot.resources.potion_slots, 3);
+    assert_eq!(snapshot.resources.potion_count, 1);
+    assert_eq!(snapshot.resources.empty_potion_slots, 2);
+    assert_eq!(
+        snapshot
+            .package(super::StrategyPackageIdV2::HpSafety)
+            .map(|package| package.support),
+        Some(StrategyPlanSupportV1::Strong)
+    );
+    assert_eq!(
+        snapshot
+            .package(super::StrategyPackageIdV2::ShopRemoveWindow)
+            .map(|package| package.support),
+        Some(StrategyPlanSupportV1::Strong)
+    );
+}
