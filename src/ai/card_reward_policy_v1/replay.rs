@@ -6,8 +6,10 @@ use super::types::{
     CardRewardDecisionV1, CardRewardEstimatorArbitrationV1, CardRewardEstimatorInputsV1,
     CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PublicRewardDecisionPacketV1 {
     pub context: CardRewardDecisionContextV1,
 }

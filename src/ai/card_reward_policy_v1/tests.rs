@@ -805,10 +805,11 @@ fn context_for_run_with_route(
                 super::profile::strategy_candidate_facts(&facts),
                 &strategy,
             );
+            let name = facts.name.clone();
             crate::ai::card_reward_policy_v1::CardRewardCandidateEvidenceV1 {
                 index,
                 card: facts.card,
-                name: facts.name,
+                name,
                 card_type: facts.card_type,
                 facts,
                 impact,
@@ -832,7 +833,7 @@ fn context_for_run_with_route(
 
 fn route_with_combat_pressure() -> CardRewardRouteEvidenceV1 {
     CardRewardRouteEvidenceV1 {
-        route_policy: "test_route_evidence",
+        route_policy: "test_route_evidence".to_string(),
         selected_route: Some(CardRewardSelectedRouteV1 {
             next_x: 3,
             next_y: 1,
@@ -856,7 +857,7 @@ fn route_with_combat_pressure() -> CardRewardRouteEvidenceV1 {
 
 fn route_with_upgrade_budget() -> CardRewardRouteEvidenceV1 {
     CardRewardRouteEvidenceV1 {
-        route_policy: "test_route_evidence",
+        route_policy: "test_route_evidence".to_string(),
         selected_route: Some(CardRewardSelectedRouteV1 {
             next_x: 3,
             next_y: 1,

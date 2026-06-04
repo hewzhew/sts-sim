@@ -239,6 +239,7 @@ mod tests {
         for annotation in &report.trace_annotations {
             let super::super::trace_annotation::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } = annotation
             else {
                 panic!("reward auto-claim should attach noncombat policy evidence");
@@ -333,6 +334,7 @@ mod tests {
         assert_eq!(report.trace_annotations.len(), 1);
         let super::super::trace_annotation::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
             record,
+            ..
         } = &report.trace_annotations[0]
         else {
             panic!("safe relic auto-claim should attach noncombat policy evidence");

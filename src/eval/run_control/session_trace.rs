@@ -567,7 +567,7 @@ impl SessionTraceRecorder {
 fn is_boundary_record_annotation(annotation: &RunControlTraceAnnotationV1) -> bool {
     match annotation {
         RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. } => true,
-        RunControlTraceAnnotationV1::NonCombatPolicyDecision { record } => matches!(
+        RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. } => matches!(
             record.selection.status,
             crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
                 | crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::NoCandidates
@@ -988,7 +988,7 @@ mod tests {
         assert!(recorded);
         assert!(recorder.trace().steps.is_empty());
         assert_eq!(recorder.trace().boundary_records.len(), 1);
-        let RunControlTraceAnnotationV1::NonCombatPolicyDecision { record } =
+        let RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. } =
             &recorder.trace().boundary_records[0].annotations[0]
         else {
             panic!("expected stopped noncombat policy annotation");

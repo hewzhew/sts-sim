@@ -1,6 +1,6 @@
 use sts_simulator::ai::card_reward_policy_v1::{
     build_card_reward_decision_context_v1, plan_card_reward_decision_v1, CardRewardPolicyConfigV1,
-    CardRewardValueSourceV1, CardRewardValueStatusV1,
+    CardRewardValueSourceV1, CardRewardValueStatusV1, PublicRewardDecisionPacketV1,
 };
 use sts_simulator::ai::noncombat_decision_v1::{
     attach_noncombat_outcome_v1, DecisionSiteKindV1, NonCombatDecisionRecordV1,
@@ -86,6 +86,50 @@ fn extracts_card_reward_value_loop_example_with_missing_outcome_marker() {
         CardRewardValueLoopOutcomeStatusV1::Missing
     );
     assert!(examples[0].outcome.is_none());
+}
+
+#[test]
+fn extracts_card_reward_value_loop_example_with_public_packet_for_full_replay() {
+    let (record, packet) = selected_card_reward_record_with_packet(CardId::TwinStrike);
+    let trace = trace_with_card_reward_record_and_packet(record, Some(packet));
+
+    let examples =
+        extract_card_reward_value_loop_examples_v1(&trace).expect("trace should extract");
+
+    assert_eq!(examples.len(), 1);
+    assert_eq!(
+        examples[0].replay_status,
+        CardRewardValueLoopReplayStatusV1::FullPublicPacket
+    );
+    assert!(examples[0].public_packet.is_some());
+}
+
+#[test]
+fn public_packet_trace_annotation_round_trips_through_json() {
+    let (record, packet) = selected_card_reward_record_with_packet(CardId::TwinStrike);
+    let trace = trace_with_card_reward_record_and_packet(record, Some(packet));
+
+    let payload = serde_json::to_string_pretty(&trace).expect("trace should serialize");
+    let restored: SessionTraceV1 =
+        serde_json::from_str(&payload).expect("trace should deserialize");
+    let examples =
+        extract_card_reward_value_loop_examples_v1(&restored).expect("trace should extract");
+
+    assert_eq!(examples.len(), 1);
+    assert_eq!(
+        examples[0].replay_status,
+        CardRewardValueLoopReplayStatusV1::FullPublicPacket
+    );
+    assert_eq!(
+        examples[0]
+            .public_packet
+            .as_ref()
+            .unwrap()
+            .context
+            .candidates
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -267,16 +311,50 @@ fn replays_record_level_value_changes_with_outcome_calibration() {
     assert!(!replay.policy_quality_claim);
 }
 
+#[test]
+fn replays_public_packet_policy_with_outcome_calibration_inputs() {
+    let examples = vec![
+        example_for_card_with_next_combat_hp_loss(CardId::TwinStrike, 4),
+        example_for_card_with_next_combat_hp_loss(CardId::TwinStrike, 6),
+        example_for_card_with_next_combat_hp_loss(CardId::Cleave, 12),
+    ];
+    let calibration = calibrate_card_reward_outcomes_v1(&examples);
+    let (record, packet) = selected_card_reward_record_with_packet(CardId::TwinStrike);
+    let trace = trace_with_card_reward_record_and_packet(record, Some(packet));
+    let public_packet_examples =
+        extract_card_reward_value_loop_examples_v1(&trace).expect("trace should extract");
+
+    let replay =
+        replay_card_reward_records_with_calibration_v1(&public_packet_examples, &calibration);
+
+    assert_eq!(replay.policy_replay_status, "full_public_packet_replay");
+    assert_eq!(replay.replayed_examples, 1);
+    assert_eq!(
+        replay.examples[0].policy_replay_status,
+        "full_public_packet_replay"
+    );
+    assert!(replay.examples[0]
+        .policy_value_sources
+        .contains(&"OutcomeCalibration".to_string()));
+}
+
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {
+    selected_card_reward_record_with_packet(card).0
+}
+
+fn selected_card_reward_record_with_packet(
+    card: CardId,
+) -> (NonCombatDecisionRecordV1, PublicRewardDecisionPacketV1) {
     let run = RunState::new(521, 0, false, "Ironclad");
     let context = build_card_reward_decision_context_v1(&run, vec![RewardCard::new(card, 0)], None);
+    let packet = PublicRewardDecisionPacketV1::from_context(&context);
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
     let mut record = decision.to_noncombat_decision_record_v1();
     record.selection.status = PolicySelectionStatusV1::Selected;
     record.selection.selected_candidate_id = Some(format!("card_reward:0:{card:?}"));
     record.selection.reason = "test selected visible card reward".to_string();
     record.selection.confidence = 1.0;
-    record
+    (record, packet)
 }
 
 fn example_for_card_with_next_combat_hp_loss(
@@ -301,6 +379,13 @@ fn example_for_card_with_next_combat_hp_loss(
 }
 
 fn trace_with_card_reward_record(record: NonCombatDecisionRecordV1) -> SessionTraceV1 {
+    trace_with_card_reward_record_and_packet(record, None)
+}
+
+fn trace_with_card_reward_record_and_packet(
+    record: NonCombatDecisionRecordV1,
+    public_packet: Option<PublicRewardDecisionPacketV1>,
+) -> SessionTraceV1 {
     let session = RunControlSession::new(RunControlConfig::default());
     let mut trace = SessionTraceV1::new(&session);
     let boundary = boundary();
@@ -317,7 +402,10 @@ fn trace_with_card_reward_record(record: NonCombatDecisionRecordV1) -> SessionTr
         visible_candidates: Vec::new(),
         selected_candidate: None,
         selection_resolution: SessionTraceSelectionResolution::Unresolved,
-        annotations: vec![RunControlTraceAnnotationV1::NonCombatPolicyDecision { record }],
+        annotations: vec![RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+            record,
+            card_reward_packet: public_packet,
+        }],
         action_result: RunActionResultV1 {
             chosen_label: "Twin Strike".to_string(),
             status: RunActionApplyStatusV1::Running,

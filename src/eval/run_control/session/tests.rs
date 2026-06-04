@@ -462,6 +462,7 @@ fn run_control_auto_run_event_policy_takes_free_known_benefit() {
         .find_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } => Some(record),
             _ => None,
         })
@@ -610,6 +611,7 @@ fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire()
         .find_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } => Some(record),
             _ => None,
         })
@@ -679,6 +681,7 @@ fn run_control_auto_run_purges_curse_at_shop() {
         .find_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } => Some(record),
             _ => None,
         })
@@ -799,6 +802,7 @@ fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
         .find_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } => Some(record),
             _ => None,
         })
@@ -949,6 +953,7 @@ fn run_control_auto_run_picks_safe_boss_relic_certificate() {
         .find_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } => Some(record),
             _ => None,
         })
@@ -1094,7 +1099,7 @@ fn run_control_auto_step_records_route_policy_stop_when_safety_gate_rejects() {
         .trace_annotations
         .iter()
         .find_map(|annotation| match annotation {
-            RunControlTraceAnnotationV1::NonCombatPolicyDecision { record } => Some(record),
+            RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. } => Some(record),
             _ => None,
         })
         .expect("declined route planner should attach a noncombat policy record");
@@ -1165,6 +1170,7 @@ fn run_control_auto_run_stops_on_card_reward_without_pick_certificate() {
         .find_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } => Some(record),
             _ => None,
         })
@@ -1409,6 +1415,7 @@ fn run_control_auto_run_stops_on_ambiguous_card_reward() {
         .find_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } => Some(record),
             _ => None,
         })
@@ -1466,6 +1473,7 @@ fn run_control_auto_run_opens_ambiguous_card_reward_item_before_stopping() {
         .find_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } => Some(record),
             _ => None,
         })
@@ -1520,6 +1528,7 @@ fn run_control_auto_run_claims_safe_relic_reward_with_policy_annotation() {
         .find_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
+                ..
             } => Some(record),
             _ => None,
         })
@@ -1611,7 +1620,8 @@ fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
         matches!(
             annotation,
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record
+                record,
+                ..
             } if record.site == crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
                 && record.selection.status
                     == crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
@@ -1658,7 +1668,8 @@ fn run_control_auto_run_does_not_open_card_reward_item_with_singing_bowl() {
         matches!(
             annotation,
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record
+                record,
+                ..
             } if record.site == crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
                 && record.selection.status
                     == crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped

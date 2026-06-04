@@ -433,7 +433,7 @@ fn card_reward_value_components(estimate: &CardRewardValueEstimateV1) -> Vec<Val
     let mut components = estimate
         .components
         .iter()
-        .map(|component| ValueComponentV1::new(component.name, component.value))
+        .map(|component| ValueComponentV1::new(component.name.clone(), component.value))
         .collect::<Vec<_>>();
     components.push(ValueComponentV1::new(
         match estimate.source {

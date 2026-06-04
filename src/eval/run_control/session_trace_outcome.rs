@@ -181,7 +181,7 @@ fn selected_noncombat_records(
                 noncombat_record: Some(record),
                 ..
             }
-            | RunControlTraceAnnotationV1::NonCombatPolicyDecision { record }
+            | RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { record } => {
                 (record.selection.status == PolicySelectionStatusV1::Selected)
                     .then(|| record.clone())
@@ -281,6 +281,7 @@ mod tests {
             &mut pending_outcomes,
             &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record: selected_card_reward_record(CardId::TwinStrike),
+                card_reward_packet: None,
             }],
             before,
         );

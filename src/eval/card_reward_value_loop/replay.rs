@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-use super::{CardRewardOutcomeCalibrationV1, CardRewardValueLoopExampleV1};
+use super::{
+    estimate_card_reward_values_from_calibration_v1, CardRewardOutcomeCalibrationV1,
+    CardRewardValueLoopExampleV1,
+};
+use crate::ai::card_reward_policy_v1::{
+    replay_card_reward_decision_with_estimator_inputs_v1, CardRewardEstimatorInputsV1,
+    CardRewardPolicyConfigV1,
+};
 
 pub const CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME: &str = "CardRewardCalibrationReplayReportV1";
 pub const CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_VERSION: u32 = 1;
@@ -24,6 +31,10 @@ pub struct CardRewardCalibrationReplayReportV1 {
 pub struct CardRewardCalibrationReplayExampleV1 {
     pub decision_record_hash: String,
     pub selected_candidate_id: Option<String>,
+    pub policy_replay_status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_selected_candidate_id: Option<String>,
+    pub policy_value_sources: Vec<String>,
     pub original_value_count: usize,
     pub candidate_replays: Vec<CardRewardCalibrationReplayCandidateV1>,
 }
@@ -58,6 +69,10 @@ pub fn replay_card_reward_records_with_calibration_v1(
         .iter()
         .map(|example| card_reward_calibration_replay_example(example, calibration))
         .collect::<Vec<_>>();
+    let full_packet_count = examples_out
+        .iter()
+        .filter(|example| example.policy_replay_status == "full_public_packet_replay")
+        .count();
 
     CardRewardCalibrationReplayReportV1 {
         schema_name: CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME.to_string(),
@@ -65,7 +80,7 @@ pub fn replay_card_reward_records_with_calibration_v1(
         label_role: "diagnostic_not_teacher_label".to_string(),
         trainable_as_action_label: false,
         policy_quality_claim: false,
-        policy_replay_status: "record_only_no_public_packet".to_string(),
+        policy_replay_status: replay_status_label(examples.len(), full_packet_count).to_string(),
         total_examples: examples.len(),
         replayed_examples: examples_out.len(),
         examples: examples_out,
@@ -104,12 +119,54 @@ fn card_reward_calibration_replay_example(
             }
         })
         .collect::<Vec<_>>();
+    let policy_replay = example.public_packet.as_ref().map(|packet| {
+        let external_value_estimates =
+            estimate_card_reward_values_from_calibration_v1(&packet.context, calibration);
+        let inputs = CardRewardEstimatorInputsV1 {
+            external_value_estimates,
+        };
+        replay_card_reward_decision_with_estimator_inputs_v1(
+            packet,
+            &CardRewardPolicyConfigV1::default(),
+            &inputs,
+            None,
+        )
+    });
+    let policy_value_sources = policy_replay
+        .as_ref()
+        .map(|replay| {
+            replay
+                .value_arbitration
+                .gate_value_estimates
+                .iter()
+                .map(|estimate| format!("{:?}", estimate.source))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     CardRewardCalibrationReplayExampleV1 {
         decision_record_hash: example.decision_record_hash.clone(),
         selected_candidate_id: example.selected_candidate_id.clone(),
+        policy_replay_status: if policy_replay.is_some() {
+            "full_public_packet_replay".to_string()
+        } else {
+            "record_only_no_public_packet".to_string()
+        },
+        policy_selected_candidate_id: policy_replay
+            .as_ref()
+            .and_then(|replay| replay.selected_candidate_id.clone()),
+        policy_value_sources,
         original_value_count: example.source_record.values.len(),
         candidate_replays,
+    }
+}
+
+fn replay_status_label(total_examples: usize, full_packet_count: usize) -> &'static str {
+    match (total_examples, full_packet_count) {
+        (0, _) => "record_only_no_public_packet",
+        (total, full) if total == full => "full_public_packet_replay",
+        (_, 0) => "record_only_no_public_packet",
+        _ => "mixed_public_packet_and_record",
     }
 }
 

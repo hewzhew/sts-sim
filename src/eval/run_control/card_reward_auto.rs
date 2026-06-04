@@ -16,6 +16,7 @@ pub(super) fn apply_card_reward_policy_pick(
     };
     let decision = card_reward_decision(session, &cards);
     let noncombat_record = decision.to_noncombat_decision_record_v1();
+    let trace_annotation = card_reward_policy_trace_annotation(&decision, noncombat_record)?;
     let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Pick {
         index,
         card,
@@ -41,12 +42,7 @@ pub(super) fn apply_card_reward_policy_pick(
     }
     let outcome = session
         .apply_input(ClientInput::SelectCard(index))?
-        .with_trace_annotations(vec![
-            super::noncombat_policy_annotation::noncombat_policy_annotation(
-                "card reward policy",
-                noncombat_record,
-            )?,
-        ]);
+        .with_trace_annotations(vec![trace_annotation]);
     Ok(Some((
         outcome,
         card_reward_summary(card, confidence, &reason, decision.label_role),
@@ -93,10 +89,7 @@ pub(super) fn card_reward_policy_stop_annotation(
     };
     let noncombat_record = decision.to_noncombat_decision_record_v1();
     Ok(Some((
-        super::noncombat_policy_annotation::noncombat_policy_annotation(
-            "card reward policy",
-            noncombat_record,
-        )?,
+        card_reward_policy_trace_annotation(&decision, noncombat_record)?,
         format!("card reward policy stopped: {reason}"),
     )))
 }
@@ -107,6 +100,7 @@ fn apply_policy_to_pending_cards(
 ) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
     let decision = card_reward_decision(session, &cards);
     let noncombat_record = decision.to_noncombat_decision_record_v1();
+    let trace_annotation = card_reward_policy_trace_annotation(&decision, noncombat_record)?;
     let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Pick {
         index,
         card,
@@ -118,12 +112,7 @@ fn apply_policy_to_pending_cards(
     };
     let outcome = session
         .apply_input(ClientInput::SelectCard(index))?
-        .with_trace_annotations(vec![
-            super::noncombat_policy_annotation::noncombat_policy_annotation(
-                "card reward policy",
-                noncombat_record,
-            )?,
-        ]);
+        .with_trace_annotations(vec![trace_annotation]);
     Ok(Some((
         outcome,
         card_reward_summary(card, confidence, &reason, decision.label_role),
@@ -149,6 +138,24 @@ fn card_reward_decision(
         &context,
         &crate::ai::card_reward_policy_v1::CardRewardPolicyConfigV1::default(),
     )
+}
+
+fn card_reward_policy_trace_annotation(
+    decision: &crate::ai::card_reward_policy_v1::CardRewardDecisionV1,
+    record: crate::ai::noncombat_decision_v1::NonCombatDecisionRecordV1,
+) -> Result<RunControlTraceAnnotationV1, String> {
+    super::noncombat_policy_annotation::validate_noncombat_policy_record(
+        "card reward policy",
+        &record,
+    )?;
+    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+        record,
+        card_reward_packet: Some(
+            crate::ai::card_reward_policy_v1::PublicRewardDecisionPacketV1::from_context(
+                &decision.context,
+            ),
+        ),
+    })
 }
 
 fn card_reward_summary(

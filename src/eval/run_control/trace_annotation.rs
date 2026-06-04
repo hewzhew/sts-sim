@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::ai::card_reward_policy_v1::PublicRewardDecisionPacketV1;
 use crate::ai::noncombat_decision_v1::{
     render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
     NonCombatDecisionRecordV1,
@@ -48,6 +49,8 @@ pub enum RunControlTraceAnnotationV1 {
     },
     NonCombatPolicyDecision {
         record: NonCombatDecisionRecordV1,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        card_reward_packet: Option<PublicRewardDecisionPacketV1>,
     },
     NonCombatHumanBoundary {
         record: NonCombatDecisionRecordV1,
@@ -84,7 +87,7 @@ fn validate_run_control_trace_annotation_v1(
             noncombat_record: Some(record),
             ..
         } => validate_noncombat_record_annotation(idx, "route_planner_selection", record),
-        RunControlTraceAnnotationV1::NonCombatPolicyDecision { record } => {
+        RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. } => {
             validate_noncombat_record_annotation(idx, "noncombat_policy_decision", record)
         }
         RunControlTraceAnnotationV1::NonCombatHumanBoundary { record } => {

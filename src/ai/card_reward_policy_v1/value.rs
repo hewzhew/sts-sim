@@ -30,39 +30,39 @@ fn impact_prior_components(
     let facts = &candidate.facts;
     vec![
         CardRewardValueComponentV1 {
-            name: "raw_damage",
+            name: "raw_damage".to_string(),
             value: facts.damage.total_damage.max(0) as f32,
         },
         CardRewardValueComponentV1 {
-            name: "raw_block",
+            name: "raw_block".to_string(),
             value: facts.block.max(0) as f32,
         },
         CardRewardValueComponentV1 {
-            name: "raw_draw",
+            name: "raw_draw".to_string(),
             value: facts.draw_cards.max(0) as f32,
         },
         CardRewardValueComponentV1 {
-            name: "raw_energy",
+            name: "raw_energy".to_string(),
             value: facts.energy_gain.max(0) as f32,
         },
         CardRewardValueComponentV1 {
-            name: "raw_vulnerable",
+            name: "raw_vulnerable".to_string(),
             value: facts.vulnerable.max(0) as f32,
         },
         CardRewardValueComponentV1 {
-            name: "raw_weak",
+            name: "raw_weak".to_string(),
             value: facts.weak.max(0) as f32,
         },
         CardRewardValueComponentV1 {
-            name: "raw_enemy_strength_down",
+            name: "raw_enemy_strength_down".to_string(),
             value: facts.enemy_strength_down.max(0) as f32,
         },
         CardRewardValueComponentV1 {
-            name: "deck_size_after_pick",
+            name: "deck_size_after_pick".to_string(),
             value: context.deck.deck_size.saturating_add(1) as f32,
         },
         CardRewardValueComponentV1 {
-            name: "uncertainty",
+            name: "uncertainty".to_string(),
             value: 1.0,
         },
     ]

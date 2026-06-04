@@ -15,7 +15,7 @@ pub(crate) fn card_facts(card: &RewardCard) -> CardRewardFactsV1 {
 
     CardRewardFactsV1 {
         card: card.id,
-        name: def.name,
+        name: def.name.to_string(),
         card_type: def.card_type,
         rarity: def.rarity,
         cost: def.cost,
@@ -244,17 +244,17 @@ fn pick_dependencies(card_id: CardId) -> Vec<CardRewardPickDependencyV1> {
     dependencies
 }
 
-fn unsupported_mechanics(card_id: CardId) -> Vec<&'static str> {
+fn unsupported_mechanics(card_id: CardId) -> Vec<String> {
     match card_id {
-        CardId::Warcry => vec!["hand top-deck selection"],
-        CardId::Rampage => vec!["combat-history damage growth"],
-        CardId::BloodForBlood => vec!["combat-damage cost mutation"],
-        CardId::Dropkick => vec!["conditional draw and energy on vulnerable target"],
-        CardId::Headbutt => vec!["discard-pile top-deck selection"],
-        CardId::Havoc => vec!["top-deck random/hidden execution"],
-        CardId::DualWield => vec!["hand copy selection"],
-        CardId::Exhume => vec!["exhaust-pile selection"],
-        CardId::FiendFire => vec!["hand-size dependent exhaust damage"],
+        CardId::Warcry => vec!["hand top-deck selection".to_string()],
+        CardId::Rampage => vec!["combat-history damage growth".to_string()],
+        CardId::BloodForBlood => vec!["combat-damage cost mutation".to_string()],
+        CardId::Dropkick => vec!["conditional draw and energy on vulnerable target".to_string()],
+        CardId::Headbutt => vec!["discard-pile top-deck selection".to_string()],
+        CardId::Havoc => vec!["top-deck random/hidden execution".to_string()],
+        CardId::DualWield => vec!["hand copy selection".to_string()],
+        CardId::Exhume => vec!["exhaust-pile selection".to_string()],
+        CardId::FiendFire => vec!["hand-size dependent exhaust damage".to_string()],
         _ => Vec::new(),
     }
 }

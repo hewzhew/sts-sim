@@ -30,10 +30,11 @@ pub fn build_card_reward_decision_context_v1(
                 strategy_candidate_facts(&facts),
                 &strategy,
             );
+            let name = facts.name.clone();
             CardRewardCandidateEvidenceV1 {
                 index,
                 card: facts.card,
-                name: facts.name,
+                name,
                 card_type: facts.card_type,
                 facts,
                 impact,

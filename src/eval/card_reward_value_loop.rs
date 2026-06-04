@@ -13,6 +13,7 @@ pub use replay::{
 use crate::ai::card_reward_policy_v1::{
     CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardValueComponentV1,
     CardRewardValueEstimateV1, CardRewardValueSourceV1, CardRewardValueStatusV1,
+    PublicRewardDecisionPacketV1,
 };
 use crate::ai::noncombat_decision_v1::{
     noncombat_decision_record_hash_v1, DecisionSiteKindV1, NonCombatDecisionRecordV1,
@@ -33,6 +34,7 @@ pub const CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION: u32 = 1;
 #[serde(rename_all = "snake_case")]
 pub enum CardRewardValueLoopReplayStatusV1 {
     RecordOnlyNoPublicPacket,
+    FullPublicPacket,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -66,6 +68,8 @@ pub struct CardRewardValueLoopExampleV1 {
     pub value_estimate_count: usize,
 
     pub source_record: NonCombatDecisionRecordV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_packet: Option<PublicRewardDecisionPacketV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<NonCombatOutcomeAttachmentV1>,
 }
@@ -261,27 +265,27 @@ pub fn estimate_card_reward_value_from_calibration_v1(
         uncertainty: bucket.uncertainty,
         components: vec![
             CardRewardValueComponentV1 {
-                name: "outcome_sample_count",
+                name: "outcome_sample_count".to_string(),
                 value: bucket.outcome_attached_count as f32,
             },
             CardRewardValueComponentV1 {
-                name: "mean_next_combat_hp_loss",
+                name: "mean_next_combat_hp_loss".to_string(),
                 value: card_mean,
             },
             CardRewardValueComponentV1 {
-                name: "global_mean_next_combat_hp_loss",
+                name: "global_mean_next_combat_hp_loss".to_string(),
                 value: global_mean,
             },
             CardRewardValueComponentV1 {
-                name: "survival_delta_from_global",
+                name: "survival_delta_from_global".to_string(),
                 value: survival_delta,
             },
             CardRewardValueComponentV1 {
-                name: "outcome_calibration_confidence",
+                name: "outcome_calibration_confidence".to_string(),
                 value: bucket.confidence,
             },
             CardRewardValueComponentV1 {
-                name: "outcome_calibration_uncertainty",
+                name: "outcome_calibration_uncertainty".to_string(),
                 value: bucket.uncertainty,
             },
         ],
@@ -383,7 +387,11 @@ fn card_reward_value_loop_example(
         trace_boundary_record_index: source.trace_boundary_record_index,
         decision_record_hash,
         decision_site: source.record.site,
-        replay_status: CardRewardValueLoopReplayStatusV1::RecordOnlyNoPublicPacket,
+        replay_status: if source.public_packet.is_some() {
+            CardRewardValueLoopReplayStatusV1::FullPublicPacket
+        } else {
+            CardRewardValueLoopReplayStatusV1::RecordOnlyNoPublicPacket
+        },
         outcome_status,
         selected_candidate_id: source.record.selection.selected_candidate_id.clone(),
         selection_status: source.record.selection.status,
@@ -391,6 +399,7 @@ fn card_reward_value_loop_example(
         candidate_count: source.record.candidates.len(),
         value_estimate_count: source.record.values.len(),
         source_record: source.record.clone(),
+        public_packet: source.public_packet.cloned(),
         outcome,
     }
 }
@@ -415,6 +424,7 @@ fn replay_status_label(status: &CardRewardValueLoopReplayStatusV1) -> &'static s
         CardRewardValueLoopReplayStatusV1::RecordOnlyNoPublicPacket => {
             "record_only_no_public_packet"
         }
+        CardRewardValueLoopReplayStatusV1::FullPublicPacket => "full_public_packet",
     }
 }
 
@@ -493,6 +503,7 @@ struct CardRewardDecisionRecordSource<'a> {
     trace_step_index: Option<usize>,
     trace_boundary_record_index: Option<usize>,
     record: &'a NonCombatDecisionRecordV1,
+    public_packet: Option<&'a PublicRewardDecisionPacketV1>,
 }
 
 fn card_reward_record_sources(trace: &SessionTraceV1) -> Vec<CardRewardDecisionRecordSource<'_>> {
@@ -512,10 +523,11 @@ fn card_reward_record_sources_from_step(
     step.annotations
         .iter()
         .filter_map(|annotation| card_reward_record_from_annotation(annotation))
-        .map(|record| CardRewardDecisionRecordSource {
+        .map(|(record, public_packet)| CardRewardDecisionRecordSource {
             trace_step_index: Some(step.step_index),
             trace_boundary_record_index: None,
             record,
+            public_packet,
         })
         .collect()
 }
@@ -527,28 +539,37 @@ fn card_reward_record_sources_from_boundary(
         .annotations
         .iter()
         .filter_map(|annotation| card_reward_record_from_annotation(annotation))
-        .map(|record| CardRewardDecisionRecordSource {
+        .map(|(record, public_packet)| CardRewardDecisionRecordSource {
             trace_step_index: None,
             trace_boundary_record_index: Some(boundary.record_index),
             record,
+            public_packet,
         })
         .collect()
 }
 
 fn card_reward_record_from_annotation(
     annotation: &RunControlTraceAnnotationV1,
-) -> Option<&NonCombatDecisionRecordV1> {
+) -> Option<(
+    &NonCombatDecisionRecordV1,
+    Option<&PublicRewardDecisionPacketV1>,
+)> {
     match annotation {
-        RunControlTraceAnnotationV1::NonCombatPolicyDecision { record }
-        | RunControlTraceAnnotationV1::NonCombatHumanBoundary { record }
+        RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+            record,
+            card_reward_packet,
+        } if record.site == DecisionSiteKindV1::CardReward => {
+            Some((record, card_reward_packet.as_ref()))
+        }
+        RunControlTraceAnnotationV1::NonCombatHumanBoundary { record }
             if record.site == DecisionSiteKindV1::CardReward =>
         {
-            Some(record)
+            Some((record, None))
         }
         RunControlTraceAnnotationV1::RoutePlannerSelection {
             noncombat_record: Some(record),
             ..
-        } if record.site == DecisionSiteKindV1::CardReward => Some(record),
+        } if record.site == DecisionSiteKindV1::CardReward => Some((record, None)),
         RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
         | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
         | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }

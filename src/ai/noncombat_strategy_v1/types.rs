@@ -1,6 +1,7 @@
 use crate::content::cards::CardId;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyPlanIdV1 {
     FrontloadSurvival,
     WeakControl,
@@ -14,7 +15,7 @@ pub enum StrategyPlanIdV1 {
     EnergyDraw,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyPlanSupportV1 {
     Blocked,
     Weak,
@@ -22,14 +23,14 @@ pub enum StrategyPlanSupportV1 {
     Strong,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum StrategyPlanPressureV1 {
     Low,
     Medium,
     High,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StrategyDeckFactsV1 {
     pub deck_size: usize,
     pub attacks: u8,
@@ -53,7 +54,7 @@ pub struct StrategyDeckFactsV1 {
     pub total_block: i32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StrategyRouteFutureV1 {
     pub min_fires: usize,
     pub max_fires: usize,
@@ -63,7 +64,7 @@ pub struct StrategyRouteFutureV1 {
     pub avoid_damage: f32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RunStrategySnapshotV1 {
     pub deck: StrategyDeckFactsV1,
     pub route: Option<StrategyRouteFutureV1>,
@@ -78,7 +79,7 @@ impl RunStrategySnapshotV1 {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DeckPlanHypothesisV1 {
     pub id: StrategyPlanIdV1,
     pub support: StrategyPlanSupportV1,
@@ -87,7 +88,7 @@ pub struct DeckPlanHypothesisV1 {
     pub opportunity_costs: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyDeckFormationStageV1 {
     StarterShell,
     Transitional,
@@ -96,7 +97,7 @@ pub enum StrategyDeckFormationStageV1 {
     Mature,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyDeckFormationNeedV1 {
     Frontload,
     Block,
@@ -105,7 +106,7 @@ pub enum StrategyDeckFormationNeedV1 {
     Consistency,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StrategyDeckFormationV1 {
     pub stage: StrategyDeckFormationStageV1,
     pub needs: Vec<StrategyDeckFormationNeedV1>,
@@ -114,7 +115,7 @@ pub struct StrategyDeckFormationV1 {
     pub notes: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyRoutePackageIdV1 {
     CombatPatchWindow,
     UpgradeCommitment,
@@ -122,7 +123,7 @@ pub enum StrategyRoutePackageIdV1 {
     RecoveryPressure,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StrategyRoutePackageV1 {
     pub id: StrategyRoutePackageIdV1,
     pub support: StrategyPlanSupportV1,
@@ -130,7 +131,7 @@ pub struct StrategyRoutePackageV1 {
     pub risks: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyPlanEffectV1 {
     UpgradeSink,
     UpgradeBudgetConsumer,
@@ -140,14 +141,14 @@ pub enum StrategyPlanEffectV1 {
     DamageMitigation,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StrategyCandidatePlanDeltaV1 {
     pub effects: Vec<StrategyPlanEffectV1>,
     pub support: StrategyPlanSupportV1,
     pub notes: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StrategyCandidateFactsV1 {
     pub card: CardId,
     pub damage_total: i32,
@@ -155,14 +156,14 @@ pub struct StrategyCandidateFactsV1 {
     pub strength_gain: i32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyPackageDomainV2 {
     Archetype,
     Route,
     Resource,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyPackageIdV2 {
     FrontloadSurvival,
     WeakControl,
@@ -211,7 +212,7 @@ impl StrategyPackageIdV2 {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StrategyPackageV2 {
     pub id: StrategyPackageIdV2,
     pub domain: StrategyPackageDomainV2,
@@ -221,7 +222,7 @@ pub struct StrategyPackageV2 {
     pub risks: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StrategyResourceFactsV2 {
     pub current_hp: i32,
     pub max_hp: i32,
@@ -236,7 +237,7 @@ pub struct StrategyResourceFactsV2 {
     pub relic_constraints: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RunStrategySnapshotV2 {
     pub(crate) v1: RunStrategySnapshotV1,
     pub resources: StrategyResourceFactsV2,

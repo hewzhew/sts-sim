@@ -1,4 +1,5 @@
 use crate::content::cards::{CardId, CardRarity, CardType};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardRewardPolicyConfigV1 {
@@ -20,7 +21,7 @@ pub struct CardRewardEstimatorInputsV1 {
     pub external_value_estimates: Vec<CardRewardValueEstimateV1>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardDecisionContextV1 {
     pub run: CardRewardRunContextV1,
     pub deck: DeckProfileV1,
@@ -30,21 +31,21 @@ pub struct CardRewardDecisionContextV1 {
     pub candidates: Vec<CardRewardCandidateEvidenceV1>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardRunContextV1 {
     pub act: u8,
     pub floor: i32,
     pub ascension: u8,
-    pub class: &'static str,
+    pub class: String,
     pub boss: Option<String>,
     pub hp: i32,
     pub max_hp: i32,
     pub gold: i32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardRouteEvidenceV1 {
-    pub route_policy: &'static str,
+    pub route_policy: String,
     pub selected_route: Option<CardRewardSelectedRouteV1>,
     pub candidate_count: usize,
     pub need_card_rewards: f32,
@@ -55,7 +56,7 @@ pub struct CardRewardRouteEvidenceV1 {
     pub warnings: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardSelectedRouteV1 {
     pub next_x: i32,
     pub next_y: i32,
@@ -68,7 +69,7 @@ pub struct CardRewardSelectedRouteV1 {
     pub max_early_pressure: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DeckProfileV1 {
     pub deck_size: usize,
     pub attacks: u8,
@@ -93,11 +94,11 @@ pub struct DeckProfileV1 {
     pub important_cards_unupgraded: u8,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardCandidateEvidenceV1 {
     pub index: usize,
     pub card: CardId,
-    pub name: &'static str,
+    pub name: String,
     pub card_type: CardType,
     pub facts: CardRewardFactsV1,
     pub impact: CardRewardCandidateImpactV1,
@@ -109,10 +110,10 @@ pub type CardRewardCandidatePlanDeltaV1 =
     crate::ai::noncombat_strategy_v1::StrategyCandidatePlanDeltaV1;
 pub type CardRewardPlanEffectV1 = crate::ai::noncombat_strategy_v1::StrategyPlanEffectV1;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardFactsV1 {
     pub card: CardId,
-    pub name: &'static str,
+    pub name: String,
     pub card_type: CardType,
     pub rarity: CardRarity,
     pub cost: i8,
@@ -132,17 +133,17 @@ pub struct CardRewardFactsV1 {
     pub has_conditional_playability: bool,
     pub is_aoe: bool,
     pub pick_dependencies: Vec<CardRewardPickDependencyV1>,
-    pub unsupported_mechanics: Vec<&'static str>,
+    pub unsupported_mechanics: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardDamageFactsV1 {
     pub damage_per_hit: i32,
     pub hit_count: i32,
     pub total_damage: i32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardCandidateImpactV1 {
     pub added_deck_size: i32,
     pub frontload_damage_delta: i32,
@@ -155,7 +156,7 @@ pub struct CardRewardCandidateImpactV1 {
     pub evidence_notes: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CardRewardScalingSignalV1 {
     StrengthGain,
     StrengthPayoff,
@@ -167,21 +168,21 @@ pub enum CardRewardScalingSignalV1 {
     BlockEngine,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardDependencyAssessmentV1 {
     pub dependency: CardRewardPickDependencyV1,
     pub status: CardRewardDependencyStatusV1,
     pub reason: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CardRewardDependencyStatusV1 {
     Satisfied,
     Unsatisfied,
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CardRewardPickDependencyV1 {
     RouteUpgradeDensity,
     StrengthScaling,
@@ -195,7 +196,7 @@ pub enum CardRewardPickDependencyV1 {
     UnsupportedMechanics,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CardRewardEvidenceGapV1 {
     MissingRouteEvidence,
     MissingValueEstimate,
@@ -219,7 +220,7 @@ pub enum CardRewardEvidenceGapV1 {
     NoAutoPickCertificate,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CardRewardValueSourceV1 {
     UncalibratedImpactPrior,
     OutcomeCalibration,
@@ -228,14 +229,14 @@ pub enum CardRewardValueSourceV1 {
     LearnedValue,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CardRewardValueStatusV1 {
     UncalibratedPrior,
     CounterfactualProbe,
     OutcomeCalibrated,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardValueEstimateV1 {
     pub index: usize,
     pub card: CardId,
@@ -270,9 +271,9 @@ pub struct CardRewardEstimatorCandidateArbitrationV1 {
     pub rejected_reasons: Vec<CardRewardEvidenceGapV1>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardValueComponentV1 {
-    pub name: &'static str,
+    pub name: String,
     pub value: f32,
 }
 

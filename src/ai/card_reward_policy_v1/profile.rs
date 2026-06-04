@@ -13,7 +13,7 @@ pub(crate) fn run_context(run_state: &RunState) -> CardRewardRunContextV1 {
         act: run_state.act_num,
         floor: run_state.floor_num,
         ascension: run_state.ascension_level,
-        class: run_state.player_class,
+        class: run_state.player_class.to_string(),
         boss: run_state.boss_key.map(|boss| format!("{boss:?}")),
         hp: run_state.current_hp,
         max_hp: run_state.max_hp,
@@ -146,7 +146,7 @@ pub(crate) fn route_evidence(
         .and_then(|idx| trace.candidates.get(idx));
 
     Some(CardRewardRouteEvidenceV1 {
-        route_policy: "route_planner_v1",
+        route_policy: "route_planner_v1".to_string(),
         selected_route: selected,
         candidate_count: trace.candidates.len(),
         need_card_rewards: selected_candidate
