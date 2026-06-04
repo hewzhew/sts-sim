@@ -1,8 +1,10 @@
-use super::policy::plan_card_reward_decision_v1;
+use super::policy::{
+    plan_card_reward_decision_v1, plan_card_reward_decision_with_estimator_inputs_v1,
+};
 use super::types::{
     CardRewardAutopilotGateReportV1, CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1,
-    CardRewardDecisionV1, CardRewardEstimatorArbitrationV1, CardRewardPolicyActionV1,
-    CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
+    CardRewardDecisionV1, CardRewardEstimatorArbitrationV1, CardRewardEstimatorInputsV1,
+    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -52,6 +54,24 @@ pub fn replay_card_reward_decision_v1(
     previous: Option<&CardRewardDecisionV1>,
 ) -> CardRewardDecisionReplayV1 {
     let decision = plan_card_reward_decision_v1(&packet.context, config);
+    card_reward_decision_replay(previous, decision)
+}
+
+pub fn replay_card_reward_decision_with_estimator_inputs_v1(
+    packet: &PublicRewardDecisionPacketV1,
+    config: &CardRewardPolicyConfigV1,
+    inputs: &CardRewardEstimatorInputsV1,
+    previous: Option<&CardRewardDecisionV1>,
+) -> CardRewardDecisionReplayV1 {
+    let decision =
+        plan_card_reward_decision_with_estimator_inputs_v1(&packet.context, config, inputs);
+    card_reward_decision_replay(previous, decision)
+}
+
+fn card_reward_decision_replay(
+    previous: Option<&CardRewardDecisionV1>,
+    decision: CardRewardDecisionV1,
+) -> CardRewardDecisionReplayV1 {
     let selected_candidate_id = decision_selected_candidate_id(&decision);
     let stop_reason =
         decision_stop_reason(&decision).unwrap_or_else(|| "selected candidate".to_string());

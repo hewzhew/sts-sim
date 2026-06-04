@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::ai::card_reward_policy_v1::{
-    CardRewardCandidateEvidenceV1, CardRewardValueComponentV1, CardRewardValueEstimateV1,
-    CardRewardValueSourceV1, CardRewardValueStatusV1,
+    CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardValueComponentV1,
+    CardRewardValueEstimateV1, CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
 use crate::ai::noncombat_decision_v1::{
     noncombat_decision_record_hash_v1, DecisionSiteKindV1, NonCombatDecisionRecordV1,
@@ -278,6 +278,19 @@ pub fn estimate_card_reward_value_from_calibration_v1(
             },
         ],
     })
+}
+
+pub fn estimate_card_reward_values_from_calibration_v1(
+    context: &CardRewardDecisionContextV1,
+    calibration: &CardRewardOutcomeCalibrationV1,
+) -> Vec<CardRewardValueEstimateV1> {
+    context
+        .candidates
+        .iter()
+        .filter_map(|candidate| {
+            estimate_card_reward_value_from_calibration_v1(candidate, calibration)
+        })
+        .collect()
 }
 
 pub fn summarize_card_reward_value_loop_examples_v1(

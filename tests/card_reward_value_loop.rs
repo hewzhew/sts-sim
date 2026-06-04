@@ -9,9 +9,9 @@ use sts_simulator::ai::noncombat_decision_v1::{
 use sts_simulator::content::cards::CardId;
 use sts_simulator::eval::card_reward_value_loop::{
     calibrate_card_reward_outcomes_v1, estimate_card_reward_value_from_calibration_v1,
-    extract_card_reward_value_loop_examples_v1, summarize_card_reward_value_loop_examples_v1,
-    CardRewardValueLoopOutcomeStatusV1, CardRewardValueLoopReplayStatusV1,
-    CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
+    estimate_card_reward_values_from_calibration_v1, extract_card_reward_value_loop_examples_v1,
+    summarize_card_reward_value_loop_examples_v1, CardRewardValueLoopOutcomeStatusV1,
+    CardRewardValueLoopReplayStatusV1, CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
 };
 use sts_simulator::eval::run_control::{
     RunActionApplyStatusV1, RunActionResultV1, RunControlConfig, RunControlSession,
@@ -204,6 +204,37 @@ fn calibrates_selected_outcomes_into_consumable_card_id_prior() {
         .components
         .iter()
         .any(|component| component.name == "outcome_sample_count" && component.value == 2.0));
+}
+
+#[test]
+fn converts_outcome_calibration_into_current_context_external_estimates() {
+    let examples = vec![
+        example_for_card_with_next_combat_hp_loss(CardId::TwinStrike, 4),
+        example_for_card_with_next_combat_hp_loss(CardId::TwinStrike, 6),
+        example_for_card_with_next_combat_hp_loss(CardId::Cleave, 12),
+    ];
+    let calibration = calibrate_card_reward_outcomes_v1(&examples);
+    let run = RunState::new(521, 0, false, "Ironclad");
+    let context = build_card_reward_decision_context_v1(
+        &run,
+        vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::Cleave, 0),
+            RewardCard::new(CardId::Shockwave, 0),
+        ],
+        None,
+    );
+
+    let estimates = estimate_card_reward_values_from_calibration_v1(&context, &calibration);
+
+    assert_eq!(estimates.len(), 2);
+    assert!(estimates
+        .iter()
+        .any(|estimate| estimate.card == CardId::TwinStrike
+            && estimate.source == CardRewardValueSourceV1::OutcomeCalibration));
+    assert!(!estimates
+        .iter()
+        .any(|estimate| estimate.card == CardId::Shockwave));
 }
 
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {

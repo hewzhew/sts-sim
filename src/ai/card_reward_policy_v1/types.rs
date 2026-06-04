@@ -15,6 +15,11 @@ impl Default for CardRewardPolicyConfigV1 {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CardRewardEstimatorInputsV1 {
+    pub external_value_estimates: Vec<CardRewardValueEstimateV1>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardRewardDecisionContextV1 {
     pub run: CardRewardRunContextV1,
