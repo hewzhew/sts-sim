@@ -4,9 +4,15 @@ use std::path::{Path, PathBuf};
 use blake2::{Blake2b512, Digest};
 use serde::{Deserialize, Serialize};
 
+use crate::ai::noncombat_decision_v1::{NonCombatOutcomeAttachmentV1, NonCombatOutcomeSnapshotV1};
+
 use super::commands::RunControlCommand;
 use super::registry::BenchmarkCasePaths;
 use super::session::RunControlSession;
+use super::session_trace_outcome::{
+    noncombat_outcome_snapshot, queue_selected_noncombat_outcomes, resolve_pending_outcomes,
+    update_outcome_counters, SessionTraceOutcomeCounters, SessionTracePendingOutcome,
+};
 use super::trace_annotation::{
     validate_run_control_trace_annotations_v1, RunControlTraceAnnotationV1,
 };
@@ -14,7 +20,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 12;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 13;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +36,8 @@ pub struct SessionTraceV1 {
     pub steps: Vec<SessionTraceStepV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boundary_records: Vec<SessionTraceBoundaryRecordV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub noncombat_outcome_attachments: Vec<NonCombatOutcomeAttachmentV1>,
     pub artifact_refs: Vec<SessionTraceArtifactRefV1>,
 }
 
@@ -45,6 +53,7 @@ impl SessionTraceV1 {
             run_config: SessionTraceRunConfigV1::from_session(session),
             steps: Vec::new(),
             boundary_records: Vec::new(),
+            noncombat_outcome_attachments: Vec::new(),
             artifact_refs: Vec::new(),
         }
     }
@@ -250,12 +259,15 @@ pub struct SessionTracePendingStep {
     visible_candidates: Vec<SessionTraceCandidateV1>,
     selected_candidate: Option<SessionTraceCandidateV1>,
     selection_resolution: SessionTraceSelectionResolution,
+    outcome_snapshot_before: NonCombatOutcomeSnapshotV1,
 }
 
 #[derive(Debug)]
 pub struct SessionTraceRecorder {
     path: PathBuf,
     trace: SessionTraceV1,
+    outcome_counters: SessionTraceOutcomeCounters,
+    pending_outcomes: Vec<SessionTracePendingOutcome>,
 }
 
 impl SessionTraceRecorder {
@@ -270,7 +282,12 @@ impl SessionTraceRecorder {
     ) -> Self {
         let mut trace = SessionTraceV1::new(session);
         trace.lineage = lineage;
-        Self { path, trace }
+        Self {
+            path,
+            trace,
+            outcome_counters: SessionTraceOutcomeCounters::default(),
+            pending_outcomes: Vec::new(),
+        }
     }
 
     pub fn prepare_step(
@@ -296,6 +313,10 @@ impl SessionTraceRecorder {
             visible_candidates: candidates,
             selected_candidate,
             selection_resolution,
+            outcome_snapshot_before: noncombat_outcome_snapshot(
+                session,
+                SessionTraceOutcomeCounters::default(),
+            ),
         }
     }
 
@@ -353,6 +374,18 @@ impl SessionTraceRecorder {
             decision_step_after,
             annotations,
         ));
+        let mut before_outcome = pending.outcome_snapshot_before;
+        before_outcome.combats_completed = self.outcome_counters.combats_completed;
+        before_outcome.elites_completed = self.outcome_counters.elites_completed;
+        before_outcome.bosses_completed = self.outcome_counters.bosses_completed;
+        queue_selected_noncombat_outcomes(&mut self.pending_outcomes, annotations, before_outcome);
+        update_outcome_counters(&mut self.outcome_counters, action_result, session_after);
+        resolve_pending_outcomes(
+            &mut self.pending_outcomes,
+            &mut self.trace.noncombat_outcome_attachments,
+            session_after,
+            self.outcome_counters,
+        )?;
         self.save()
     }
 
@@ -468,7 +501,24 @@ impl SessionTraceRecorder {
         annotations: &[RunControlTraceAnnotationV1],
     ) -> Result<bool, String> {
         validate_run_control_trace_annotations_v1(annotations)?;
-        if !annotations.iter().any(is_boundary_record_annotation) {
+        let before_snapshot = noncombat_outcome_snapshot(session, self.outcome_counters);
+        let _queued = queue_selected_noncombat_outcomes(
+            &mut self.pending_outcomes,
+            annotations,
+            before_snapshot,
+        );
+        let resolved = resolve_pending_outcomes(
+            &mut self.pending_outcomes,
+            &mut self.trace.noncombat_outcome_attachments,
+            session,
+            self.outcome_counters,
+        )?;
+        let should_record_boundary = annotations.iter().any(is_boundary_record_annotation);
+        if !should_record_boundary {
+            if resolved {
+                self.save()?;
+                return Ok(true);
+            }
             return Ok(false);
         }
         let view = build_run_control_view_model(session);
@@ -743,10 +793,26 @@ mod tests {
         let json = serde_json::to_string_pretty(&trace).expect("trace should serialize");
 
         assert!(json.contains("\"schema_name\": \"SessionTraceV1\""));
-        assert_eq!(trace.schema_version, 12);
+        assert_eq!(trace.schema_version, 13);
         assert!(json.contains("\"label_role\": \"diagnostic_not_teacher_label\""));
         assert!(json.contains("\"trainable_as_action_label\": false"));
         assert!(json.contains("\"policy_quality_claim\": false"));
+    }
+
+    #[test]
+    fn session_trace_defaults_empty_noncombat_outcomes_for_old_traces() {
+        let session = RunControlSession::new(RunControlConfig::default());
+        let trace = SessionTraceV1::new(&session);
+        let mut value = serde_json::to_value(&trace).expect("trace should serialize");
+        value
+            .as_object_mut()
+            .expect("trace JSON should be an object")
+            .remove("noncombat_outcome_attachments");
+
+        let loaded: SessionTraceV1 =
+            serde_json::from_value(value).expect("missing outcome attachments should default");
+
+        assert!(loaded.noncombat_outcome_attachments.is_empty());
     }
 
     #[test]
@@ -1072,6 +1138,115 @@ mod tests {
         assert!(top_candidates.len() <= 3);
         assert!(command.starts_with("go ") || command.starts_with("fly "));
         assert_eq!(label_role, "behavior_policy_not_teacher");
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn recorder_attaches_selected_noncombat_outcome_after_next_floor_resolves() {
+        let mut session = test_session_after_neow_at_map();
+        let path = unique_temp_dir("session_trace_noncombat_outcome").join("trace.json");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+        let command = RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            route: RunControlRouteAutomationMode::Planner,
+            max_operations: Some(1),
+            ..Default::default()
+        });
+        let pending = SessionTraceRecorder::prepare_step(&session, "n route=planner", &command);
+        let outcome = session
+            .apply_command(command)
+            .expect("route planner auto-step should advance map");
+        let action_result = outcome
+            .action_result
+            .as_ref()
+            .expect("route planner auto-step should produce an action result");
+        assert!(
+            session.active_combat.is_some(),
+            "route outcome must not attach at combat entry"
+        );
+
+        recorder
+            .record_action_step(pending, &session, action_result, &outcome.trace_annotations)
+            .expect("trace step should save route annotation");
+
+        assert!(recorder.trace().noncombat_outcome_attachments.is_empty());
+
+        session.active_combat = None;
+        session.engine_state = EngineState::RewardScreen(crate::state::rewards::RewardState::new());
+        session.run_state.current_hp = 72;
+
+        let recorded = recorder
+            .record_boundary_annotations("state", &session, &[])
+            .expect("reaching a noncombat boundary should attach pending outcome");
+
+        assert!(recorded);
+        assert_eq!(recorder.trace().noncombat_outcome_attachments.len(), 1);
+        let attachment = &recorder.trace().noncombat_outcome_attachments[0];
+        assert_eq!(
+            attachment.window,
+            crate::ai::noncombat_decision_v1::NonCombatOutcomeWindowV1::AfterOneFloor
+        );
+        assert_eq!(attachment.before.floor, 0);
+        assert_eq!(attachment.after.floor, 1);
+        assert_eq!(attachment.metrics.floor_delta, 1);
+        assert_eq!(attachment.metrics.hp_delta, -8);
+        assert!(!attachment.trainable_as_action_label);
+        assert!(!attachment.policy_quality_claim);
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn recorder_does_not_attach_outcome_for_stopped_noncombat_policy() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        let mut reward = crate::state::rewards::RewardState::new();
+        reward.items = vec![crate::state::rewards::RewardItem::Card {
+            cards: vec![
+                crate::state::rewards::RewardCard::new(
+                    crate::content::cards::CardId::PommelStrike,
+                    0,
+                ),
+                crate::state::rewards::RewardCard::new(
+                    crate::content::cards::CardId::ShrugItOff,
+                    0,
+                ),
+                crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Armaments, 0),
+            ],
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+        let path = unique_temp_dir("session_trace_stopped_noncombat_outcome").join("trace.json");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+        let outcome = session
+            .apply_command(RunControlCommand::AutoRun(RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            }))
+            .expect("ambiguous card reward should stop with policy evidence");
+        let policy_annotations = outcome
+            .trace_annotations
+            .iter()
+            .filter(|annotation| {
+                matches!(
+                    annotation,
+                    RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        recorder
+            .record_boundary_annotations("ar", &session, &policy_annotations)
+            .expect("stopped policy annotation should save boundary");
+
+        session.run_state.floor_num += 1;
+        session.run_state.current_hp -= 5;
+        let recorded = recorder
+            .record_boundary_annotations("state", &session, &[])
+            .expect("empty boundary check should not fail");
+
+        assert!(!recorded);
+        assert!(recorder.trace().noncombat_outcome_attachments.is_empty());
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

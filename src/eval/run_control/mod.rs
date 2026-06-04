@@ -26,6 +26,7 @@ mod search_evidence;
 mod selection_surface;
 mod session;
 mod session_trace;
+mod session_trace_outcome;
 mod trace_annotation;
 mod trace_replay;
 mod transition_report;
