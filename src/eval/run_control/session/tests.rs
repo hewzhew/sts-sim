@@ -651,7 +651,7 @@ fn run_control_auto_run_stops_on_card_reward_without_pick_certificate() {
     let outcome = session
         .apply_command(RunControlCommand::AutoRun(
             crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
+                max_operations: Some(2),
                 ..Default::default()
             },
         ))
@@ -696,7 +696,7 @@ fn run_control_auto_run_stops_on_card_reward_without_pick_certificate() {
 }
 
 #[test]
-fn run_control_auto_run_does_not_open_card_reward_item_without_pick_certificate() {
+fn run_control_auto_run_opens_card_reward_item_without_pick_certificate() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![
             crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Shockwave, 0),
@@ -708,11 +708,11 @@ fn run_control_auto_run_does_not_open_card_reward_item_without_pick_certificate(
     let outcome = session
         .apply_command(RunControlCommand::AutoRun(
             crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
+                max_operations: Some(2),
                 ..Default::default()
             },
         ))
-        .expect("auto-run should stop before opening a card reward item without a certificate");
+        .expect("auto-run should open a card reward item without picking a card");
 
     assert!(outcome
         .message
@@ -723,11 +723,14 @@ fn run_control_auto_run_does_not_open_card_reward_item_without_pick_certificate(
         .master_deck
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Shockwave));
-    assert!(outcome.action_result.is_none());
+    assert!(outcome.action_result.is_some());
+    assert!(outcome
+        .message
+        .contains("card reward: opened card reward item"));
     let EngineState::RewardScreen(reward) = &session.engine_state else {
-        panic!("card reward item should remain unopened");
+        panic!("card reward should remain on reward screen");
     };
-    assert!(reward.pending_card_choice.is_none());
+    assert!(reward.pending_card_choice.is_some());
 }
 
 #[test]
@@ -746,7 +749,7 @@ fn run_control_auto_run_stops_on_non_premium_early_attack_reward_item() {
     let outcome = session
         .apply_command(RunControlCommand::AutoRun(
             crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
+                max_operations: Some(2),
                 ..Default::default()
             },
         ))
@@ -762,7 +765,11 @@ fn run_control_auto_run_stops_on_non_premium_early_attack_reward_item() {
             | crate::content::cards::CardId::SwordBoomerang
             | crate::content::cards::CardId::Warcry
     )));
-    assert!(outcome.action_result.is_none());
+    assert!(outcome.action_result.is_some());
+    let EngineState::RewardScreen(reward) = &session.engine_state else {
+        panic!("card reward should stay on reward screen");
+    };
+    assert!(reward.pending_card_choice.is_some());
 }
 
 #[test]
@@ -778,7 +785,7 @@ fn run_control_auto_run_stops_on_archetype_dependent_early_attack_reward_item() 
     let outcome = session
         .apply_command(RunControlCommand::AutoRun(
             crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
+                max_operations: Some(2),
                 ..Default::default()
             },
         ))
@@ -794,7 +801,11 @@ fn run_control_auto_run_stops_on_archetype_dependent_early_attack_reward_item() 
             | crate::content::cards::CardId::HeavyBlade
             | crate::content::cards::CardId::Clothesline
     )));
-    assert!(outcome.action_result.is_none());
+    assert!(outcome.action_result.is_some());
+    let EngineState::RewardScreen(reward) = &session.engine_state else {
+        panic!("card reward should stay on reward screen");
+    };
+    assert!(reward.pending_card_choice.is_some());
 }
 
 #[test]
@@ -852,7 +863,7 @@ fn run_control_auto_run_stops_on_ambiguous_card_reward() {
 }
 
 #[test]
-fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
+fn run_control_auto_run_opens_ambiguous_card_reward_item_before_stopping() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![
             crate::state::rewards::RewardCard::new(crate::content::cards::CardId::PommelStrike, 0),
@@ -864,18 +875,16 @@ fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
     let outcome = session
         .apply_command(RunControlCommand::AutoRun(
             crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
+                max_operations: Some(2),
                 ..Default::default()
             },
         ))
-        .expect("auto-run should stop before opening an ambiguous card reward item");
+        .expect("auto-run should open ambiguous card reward item before stopping");
 
     assert!(outcome
         .message
         .contains("Reason: card reward requires human choice"));
-    assert!(outcome
-        .message
-        .contains("Next: open the card reward id, then choose a card or skip"));
+    assert!(outcome.message.contains("Next: choose a card id or skip"));
     assert!(outcome.message.contains("card reward policy stopped:"));
     let record = outcome
         .trace_annotations
@@ -893,14 +902,16 @@ fn run_control_auto_run_does_not_open_ambiguous_card_reward_item() {
     );
     assert_eq!(record.values.len(), record.candidates.len());
     assert!(record.values.iter().all(|value| value.confidence == 0.0));
-    assert!(outcome.action_result.is_none());
+    assert!(outcome.action_result.is_some());
+    assert!(outcome
+        .message
+        .contains("card reward: opened card reward item"));
     let rendered = render_run_control_state(&session);
-    assert!(rendered.contains("Command: type visible id to open reward, or skip"));
-    assert!(!rendered.contains("pick <idx>"));
+    assert!(rendered.contains("Choose a card or return to the reward screen."));
     let EngineState::RewardScreen(reward) = &session.engine_state else {
-        panic!("ambiguous card reward item should remain unopened");
+        panic!("ambiguous card reward should remain on reward screen");
     };
-    assert!(reward.pending_card_choice.is_none());
+    assert!(reward.pending_card_choice.is_some());
     assert!(matches!(
         reward.items.as_slice(),
         [crate::state::rewards::RewardItem::Card { .. }]

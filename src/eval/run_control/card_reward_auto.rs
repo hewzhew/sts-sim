@@ -61,6 +61,28 @@ pub(super) fn apply_card_reward_policy_pick(
     )))
 }
 
+pub(super) fn apply_card_reward_item_open(
+    session: &mut RunControlSession,
+) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
+    if session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == crate::content::relics::RelicId::SingingBowl)
+    {
+        return Ok(None);
+    }
+
+    let Some((reward_index, _cards)) = visible_card_reward_item(session) else {
+        return Ok(None);
+    };
+    let outcome = session.apply_input(ClientInput::ClaimReward(reward_index))?;
+    Ok(Some((
+        outcome,
+        "card reward: opened card reward item".to_string(),
+    )))
+}
+
 pub(super) fn card_reward_policy_stop_annotation(
     session: &RunControlSession,
 ) -> Result<Option<(RunControlTraceAnnotationV1, String)>, String> {

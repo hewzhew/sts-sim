@@ -962,7 +962,7 @@ mod tests {
         let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
         let outcome = session
             .apply_command(RunControlCommand::AutoRun(RunControlAutoStepOptions {
-                max_operations: Some(1),
+                max_operations: Some(2),
                 ..Default::default()
             }))
             .expect("ambiguous card reward should stop with policy evidence");

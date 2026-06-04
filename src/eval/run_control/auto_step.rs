@@ -209,6 +209,15 @@ pub(super) fn apply_guarded_auto_step(
             applied.extend(auto_capture_summaries);
             continue;
         }
+        if let Some((outcome, summary)) =
+            super::card_reward_auto::apply_card_reward_item_open(session)?
+        {
+            let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            trace_annotations.extend(outcome.trace_annotations);
+            applied.push(summary);
+            applied.extend(auto_capture_summaries);
+            continue;
+        }
         let card_reward_policy_stop =
             super::card_reward_auto::card_reward_policy_stop_annotation(session)?;
 
