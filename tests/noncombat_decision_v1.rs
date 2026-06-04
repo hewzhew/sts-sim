@@ -3,7 +3,8 @@ use sts_simulator::ai::card_reward_policy_v1::{
     CardRewardPolicyConfigV1,
 };
 use sts_simulator::ai::noncombat_decision_v1::{
-    attach_noncombat_outcome_v1, compare_noncombat_decision_records_v1, DataRoleV1,
+    attach_noncombat_outcome_v1, attach_noncombat_outcome_with_card_reward_observation_v1,
+    compare_noncombat_decision_records_v1, CardRewardOutcomeObservationV1, DataRoleV1,
     DecisionSiteKindV1, InformationClassV1, NonCombatOutcomeSnapshotV1, NonCombatOutcomeWindowV1,
     NonCombatReplayCandidateSetStatusV1, PolicySelectionStatusV1,
     NONCOMBAT_DECISION_RECORD_SCHEMA_NAME,
@@ -207,4 +208,158 @@ fn outcome_attachment_records_public_short_horizon_deltas() {
     assert_eq!(attachment.label_role, "diagnostic_not_teacher_label");
     assert!(!attachment.trainable_as_action_label);
     assert!(!attachment.policy_quality_claim);
+}
+
+#[test]
+fn card_reward_outcome_attachment_records_selected_card_public_metrics() {
+    let run = RunState::new(521, 0, false, "Ironclad");
+    let context = build_card_reward_decision_context_v1(
+        &run,
+        vec![RewardCard::new(CardId::TwinStrike, 0)],
+        None,
+    );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let mut record = decision.to_noncombat_decision_record_v1();
+    record.selection.status = PolicySelectionStatusV1::Selected;
+    record.selection.selected_candidate_id = Some("card_reward:0:TwinStrike".to_string());
+
+    let before = NonCombatOutcomeSnapshotV1 {
+        act: 1,
+        floor: 1,
+        current_hp: 80,
+        max_hp: 80,
+        gold: 99,
+        deck_size: 10,
+        relic_count: 1,
+        potion_count: 0,
+        combats_completed: 0,
+        elites_completed: 0,
+        bosses_completed: 0,
+        run_terminal: None,
+    };
+    let after = NonCombatOutcomeSnapshotV1 {
+        floor: 2,
+        current_hp: 74,
+        deck_size: 11,
+        combats_completed: 1,
+        ..before.clone()
+    };
+
+    let attachment = attach_noncombat_outcome_v1(
+        &record,
+        NonCombatOutcomeWindowV1::AfterOneFloor,
+        before,
+        after,
+    )
+    .expect("selected card reward should accept outcome attachment");
+
+    let card_reward = attachment
+        .card_reward
+        .as_ref()
+        .expect("selected card reward should have card-specific outcome");
+    assert_eq!(
+        card_reward.selected_candidate_id,
+        "card_reward:0:TwinStrike"
+    );
+    assert_eq!(card_reward.picked_card_label, "Twin Strike");
+    assert_eq!(card_reward.next_combat_hp_loss, Some(6));
+    assert_eq!(card_reward.floor_reached_after_decision, 2);
+    assert_eq!(card_reward.picked_card_drawn_count, None);
+    assert_eq!(card_reward.picked_card_played_count, None);
+    assert_eq!(card_reward.picked_card_upgraded_before_boss, None);
+    assert_eq!(card_reward.picked_card_removed_later, None);
+}
+
+#[test]
+fn stopped_card_reward_outcome_attachment_does_not_fabricate_card_metrics() {
+    let run = RunState::new(521, 0, false, "Ironclad");
+    let context = build_card_reward_decision_context_v1(
+        &run,
+        vec![RewardCard::new(CardId::TwinStrike, 0)],
+        None,
+    );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let record = decision.to_noncombat_decision_record_v1();
+
+    let snapshot = NonCombatOutcomeSnapshotV1 {
+        act: 1,
+        floor: 1,
+        current_hp: 80,
+        max_hp: 80,
+        gold: 99,
+        deck_size: 10,
+        relic_count: 1,
+        potion_count: 0,
+        combats_completed: 0,
+        elites_completed: 0,
+        bosses_completed: 0,
+        run_terminal: None,
+    };
+
+    let attachment = attach_noncombat_outcome_v1(
+        &record,
+        NonCombatOutcomeWindowV1::AfterOneFloor,
+        snapshot.clone(),
+        snapshot,
+    )
+    .expect("stopped card reward record should still accept generic attachment");
+
+    assert!(attachment.card_reward.is_none());
+}
+
+#[test]
+fn card_reward_outcome_attachment_accepts_structured_card_observation() {
+    let run = RunState::new(521, 0, false, "Ironclad");
+    let context = build_card_reward_decision_context_v1(
+        &run,
+        vec![RewardCard::new(CardId::TwinStrike, 0)],
+        None,
+    );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let mut record = decision.to_noncombat_decision_record_v1();
+    record.selection.status = PolicySelectionStatusV1::Selected;
+    record.selection.selected_candidate_id = Some("card_reward:0:TwinStrike".to_string());
+
+    let before = NonCombatOutcomeSnapshotV1 {
+        act: 1,
+        floor: 1,
+        current_hp: 80,
+        max_hp: 80,
+        gold: 99,
+        deck_size: 10,
+        relic_count: 1,
+        potion_count: 0,
+        combats_completed: 0,
+        elites_completed: 0,
+        bosses_completed: 0,
+        run_terminal: None,
+    };
+    let after = NonCombatOutcomeSnapshotV1 {
+        floor: 2,
+        current_hp: 74,
+        deck_size: 11,
+        combats_completed: 1,
+        ..before.clone()
+    };
+
+    let attachment = attach_noncombat_outcome_with_card_reward_observation_v1(
+        &record,
+        NonCombatOutcomeWindowV1::AfterOneFloor,
+        before,
+        after,
+        CardRewardOutcomeObservationV1 {
+            picked_card_drawn_count: None,
+            picked_card_played_count: None,
+            picked_card_upgraded_before_boss: Some(true),
+            picked_card_removed_later: Some(false),
+        },
+    )
+    .expect("selected card reward should accept structured card observation");
+
+    let card_reward = attachment
+        .card_reward
+        .as_ref()
+        .expect("selected card reward should have card-specific outcome");
+    assert_eq!(card_reward.picked_card_upgraded_before_boss, Some(true));
+    assert_eq!(card_reward.picked_card_removed_later, Some(false));
 }

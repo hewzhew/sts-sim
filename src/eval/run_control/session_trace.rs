@@ -11,7 +11,8 @@ use super::registry::BenchmarkCasePaths;
 use super::session::RunControlSession;
 use super::session_trace_outcome::{
     noncombat_outcome_snapshot, queue_selected_noncombat_outcomes, resolve_pending_outcomes,
-    update_outcome_counters, SessionTraceOutcomeCounters, SessionTracePendingOutcome,
+    update_outcome_counters, update_pending_outcome_observations, SessionTraceOutcomeCounters,
+    SessionTracePendingOutcome,
 };
 use super::trace_annotation::{
     validate_run_control_trace_annotations_v1, RunControlTraceAnnotationV1,
@@ -20,7 +21,7 @@ use super::transition_report::ActionResult;
 use super::view_model::{build_run_control_view_model, CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 13;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 14;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -379,6 +380,7 @@ impl SessionTraceRecorder {
         before_outcome.elites_completed = self.outcome_counters.elites_completed;
         before_outcome.bosses_completed = self.outcome_counters.bosses_completed;
         queue_selected_noncombat_outcomes(&mut self.pending_outcomes, annotations, before_outcome);
+        update_pending_outcome_observations(&mut self.pending_outcomes, action_result);
         update_outcome_counters(&mut self.outcome_counters, action_result, session_after);
         resolve_pending_outcomes(
             &mut self.pending_outcomes,
@@ -793,7 +795,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&trace).expect("trace should serialize");
 
         assert!(json.contains("\"schema_name\": \"SessionTraceV1\""));
-        assert_eq!(trace.schema_version, 13);
+        assert_eq!(trace.schema_version, 14);
         assert!(json.contains("\"label_role\": \"diagnostic_not_teacher_label\""));
         assert!(json.contains("\"trainable_as_action_label\": false"));
         assert!(json.contains("\"policy_quality_claim\": false"));

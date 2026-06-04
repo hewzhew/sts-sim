@@ -1,5 +1,6 @@
 use crate::ai::noncombat_decision_v1::{
-    attach_noncombat_outcome_v1, NonCombatDecisionRecordV1, NonCombatOutcomeAttachmentV1,
+    attach_noncombat_outcome_with_card_reward_observation_v1, CardRewardOutcomeObservationV1,
+    DecisionSiteKindV1, NonCombatDecisionRecordV1, NonCombatOutcomeAttachmentV1,
     NonCombatOutcomeSnapshotV1, NonCombatOutcomeWindowV1, NonCombatRunTerminalV1,
     PolicySelectionStatusV1,
 };
@@ -22,6 +23,7 @@ pub(super) struct SessionTracePendingOutcome {
     record: NonCombatDecisionRecordV1,
     window: NonCombatOutcomeWindowV1,
     before: NonCombatOutcomeSnapshotV1,
+    card_reward_observation: CardRewardOutcomeObservationV1,
 }
 
 pub(super) fn queue_selected_noncombat_outcomes(
@@ -35,6 +37,7 @@ pub(super) fn queue_selected_noncombat_outcomes(
             record,
             window: NonCombatOutcomeWindowV1::AfterOneFloor,
             before: before.clone(),
+            card_reward_observation: CardRewardOutcomeObservationV1::default(),
         });
         queued = true;
     }
@@ -74,6 +77,36 @@ pub(super) fn update_outcome_counters(
     }
 }
 
+pub(super) fn update_pending_outcome_observations(
+    pending_outcomes: &mut [SessionTracePendingOutcome],
+    action_result: &ActionResult,
+) {
+    if pending_outcomes.is_empty() {
+        return;
+    }
+    for change in &action_result.changes {
+        match change {
+            ActionResultChange::CardUpgraded { before, .. } => {
+                for pending in pending_outcomes.iter_mut() {
+                    if selected_card_reward_matches_card(pending, before) {
+                        pending
+                            .card_reward_observation
+                            .picked_card_upgraded_before_boss = Some(true);
+                    }
+                }
+            }
+            ActionResultChange::CardRemoved { card } => {
+                for pending in pending_outcomes.iter_mut() {
+                    if selected_card_reward_matches_card(pending, card) {
+                        pending.card_reward_observation.picked_card_removed_later = Some(true);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 pub(super) fn resolve_pending_outcomes(
     pending_outcomes: &mut Vec<SessionTracePendingOutcome>,
     attachments: &mut Vec<NonCombatOutcomeAttachmentV1>,
@@ -92,11 +125,12 @@ pub(super) fn resolve_pending_outcomes(
     let mut resolved = false;
     for pending in std::mem::take(pending_outcomes) {
         if outcome_window_reached(&pending, &after) {
-            let attachment = attach_noncombat_outcome_v1(
+            let attachment = attach_noncombat_outcome_with_card_reward_observation_v1(
                 &pending.record,
                 pending.window,
                 pending.before,
                 after.clone(),
+                pending.card_reward_observation,
             )?;
             attachments.push(attachment);
             resolved = true;
@@ -162,6 +196,23 @@ fn selected_noncombat_records(
         .collect()
 }
 
+fn selected_card_reward_matches_card(
+    pending: &SessionTracePendingOutcome,
+    card: &crate::eval::run_control::transition_report::CardSnapshot,
+) -> bool {
+    if pending.record.site != DecisionSiteKindV1::CardReward {
+        return false;
+    }
+    let Some(selected_candidate_id) = pending.record.selection.selected_candidate_id.as_deref()
+    else {
+        return false;
+    };
+    selected_candidate_id
+        .rsplit(':')
+        .next()
+        .is_some_and(|card_id| card_id == format!("{:?}", card.id))
+}
+
 fn outcome_window_reached(
     pending: &SessionTracePendingOutcome,
     after: &NonCombatOutcomeSnapshotV1,
@@ -193,4 +244,130 @@ fn is_noncombat_outcome_boundary(session: &RunControlSession) -> bool {
                 | EngineState::CombatProcessing
                 | EngineState::PendingChoice(_)
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::noncombat_decision_v1::{
+        CandidateDescriptorV1, DataRoleV1, DecisionSiteKindV1, EvidenceBundleV1,
+        InformationBoundaryV1, InformationClassV1, NonCombatDecisionRecordV1, PolicyProvenanceV1,
+        PolicySelectionStatusV1, PolicySelectionV1, PublicActionPlanV1,
+        NONCOMBAT_DECISION_RECORD_SCHEMA_NAME, NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
+    };
+    use crate::content::cards::CardId;
+    use crate::eval::run_control::transition_report::{
+        ActionResult, ActionResultChange, CardSnapshot, RunApplyStatus,
+    };
+
+    #[test]
+    fn pending_card_reward_outcome_records_selected_card_upgrade_and_removal() {
+        let mut pending_outcomes = Vec::new();
+        let before = NonCombatOutcomeSnapshotV1 {
+            act: 1,
+            floor: 1,
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_size: 10,
+            relic_count: 1,
+            potion_count: 0,
+            combats_completed: 0,
+            elites_completed: 0,
+            bosses_completed: 0,
+            run_terminal: None,
+        };
+        queue_selected_noncombat_outcomes(
+            &mut pending_outcomes,
+            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record: selected_card_reward_record(CardId::TwinStrike),
+            }],
+            before,
+        );
+
+        update_pending_outcome_observations(
+            &mut pending_outcomes,
+            &ActionResult {
+                chosen_label: "smith Twin Strike".to_string(),
+                status: RunApplyStatus::Running,
+                changes: vec![ActionResultChange::CardUpgraded {
+                    before: CardSnapshot {
+                        id: CardId::TwinStrike,
+                        uuid: 100,
+                        upgrades: 0,
+                    },
+                    after: CardSnapshot {
+                        id: CardId::TwinStrike,
+                        uuid: 100,
+                        upgrades: 1,
+                    },
+                }],
+            },
+        );
+        update_pending_outcome_observations(
+            &mut pending_outcomes,
+            &ActionResult {
+                chosen_label: "remove Twin Strike".to_string(),
+                status: RunApplyStatus::Running,
+                changes: vec![ActionResultChange::CardRemoved {
+                    card: CardSnapshot {
+                        id: CardId::TwinStrike,
+                        uuid: 100,
+                        upgrades: 1,
+                    },
+                }],
+            },
+        );
+
+        assert_eq!(
+            pending_outcomes[0]
+                .card_reward_observation
+                .picked_card_upgraded_before_boss,
+            Some(true)
+        );
+        assert_eq!(
+            pending_outcomes[0]
+                .card_reward_observation
+                .picked_card_removed_later,
+            Some(true)
+        );
+    }
+
+    fn selected_card_reward_record(card_id: CardId) -> NonCombatDecisionRecordV1 {
+        let candidate_id = format!("card_reward:0:{card_id:?}");
+        NonCombatDecisionRecordV1 {
+            schema_name: NONCOMBAT_DECISION_RECORD_SCHEMA_NAME.to_string(),
+            schema_version: NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
+            site: DecisionSiteKindV1::CardReward,
+            data_role: DataRoleV1::BehaviorPolicyNotTeacher,
+            information_boundary: InformationBoundaryV1::hidden_free(vec![
+                InformationClassV1::PublicObservation,
+            ]),
+            provenance: PolicyProvenanceV1 {
+                source_policy: "test".to_string(),
+                source_schema_name: "TestPolicy".to_string(),
+                source_schema_version: 1,
+            },
+            candidates: vec![CandidateDescriptorV1 {
+                candidate_id: candidate_id.clone(),
+                site: DecisionSiteKindV1::CardReward,
+                label: "Twin Strike".to_string(),
+                action_plan: PublicActionPlanV1 {
+                    summary: "pick Twin Strike".to_string(),
+                    command: Some("pick 0".to_string()),
+                },
+                information_classes: vec![InformationClassV1::PublicObservation],
+                uncertainty_notes: Vec::new(),
+            }],
+            evidence: EvidenceBundleV1::default(),
+            values: Vec::new(),
+            selection: PolicySelectionV1 {
+                status: PolicySelectionStatusV1::Selected,
+                selected_candidate_id: Some(candidate_id),
+                reason: "test selected card reward".to_string(),
+                confidence: 1.0,
+                selection_mode: "test".to_string(),
+            },
+        }
+    }
 }

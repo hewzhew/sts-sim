@@ -6,9 +6,11 @@ mod types;
 mod validation;
 
 pub use outcome::{
-    attach_noncombat_outcome_v1, NonCombatOutcomeAttachmentV1, NonCombatOutcomeMetricsV1,
-    NonCombatOutcomeSnapshotV1, NonCombatOutcomeWindowV1, NonCombatRunTerminalV1,
-    NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_NAME, NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_VERSION,
+    attach_noncombat_outcome_v1, attach_noncombat_outcome_with_card_reward_observation_v1,
+    CardRewardOutcomeAttachmentV1, CardRewardOutcomeObservationV1, NonCombatOutcomeAttachmentV1,
+    NonCombatOutcomeMetricsV1, NonCombatOutcomeSnapshotV1, NonCombatOutcomeWindowV1,
+    NonCombatRunTerminalV1, NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_NAME,
+    NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_VERSION,
 };
 pub use replay::{
     compare_noncombat_decision_records_v1, NonCombatDecisionReplayReportV1,

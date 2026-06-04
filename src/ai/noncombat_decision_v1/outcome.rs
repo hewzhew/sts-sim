@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::types::{DecisionSiteKindV1, NonCombatDecisionRecordV1};
+use super::types::{DecisionSiteKindV1, NonCombatDecisionRecordV1, PolicySelectionStatusV1};
 use super::validation::{
     render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
 };
@@ -22,6 +22,33 @@ pub struct NonCombatOutcomeAttachmentV1 {
     pub before: NonCombatOutcomeSnapshotV1,
     pub after: NonCombatOutcomeSnapshotV1,
     pub metrics: NonCombatOutcomeMetricsV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_reward: Option<CardRewardOutcomeAttachmentV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardRewardOutcomeAttachmentV1 {
+    pub selected_candidate_id: String,
+    pub picked_card_label: String,
+    pub floor_reached_after_decision: i32,
+    pub next_combat_hp_loss: Option<i32>,
+    pub hp_before_next_elite: Option<i32>,
+    pub hp_after_next_elite: Option<i32>,
+    pub hp_before_boss: Option<i32>,
+    pub picked_card_drawn_count: Option<u32>,
+    pub picked_card_played_count: Option<u32>,
+    pub picked_card_upgraded_before_boss: Option<bool>,
+    pub picked_card_removed_later: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardRewardOutcomeObservationV1 {
+    pub picked_card_drawn_count: Option<u32>,
+    pub picked_card_played_count: Option<u32>,
+    pub picked_card_upgraded_before_boss: Option<bool>,
+    pub picked_card_removed_later: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -84,6 +111,22 @@ pub fn attach_noncombat_outcome_v1(
     before: NonCombatOutcomeSnapshotV1,
     after: NonCombatOutcomeSnapshotV1,
 ) -> Result<NonCombatOutcomeAttachmentV1, String> {
+    attach_noncombat_outcome_with_card_reward_observation_v1(
+        record,
+        window,
+        before,
+        after,
+        CardRewardOutcomeObservationV1::default(),
+    )
+}
+
+pub fn attach_noncombat_outcome_with_card_reward_observation_v1(
+    record: &NonCombatDecisionRecordV1,
+    window: NonCombatOutcomeWindowV1,
+    before: NonCombatOutcomeSnapshotV1,
+    after: NonCombatOutcomeSnapshotV1,
+    card_reward_observation: CardRewardOutcomeObservationV1,
+) -> Result<NonCombatOutcomeAttachmentV1, String> {
     validate_noncombat_decision_record_v1(record).map_err(|errors| {
         format!(
             "cannot attach outcome to invalid NonCombatDecisionRecordV1: {}",
@@ -91,6 +134,9 @@ pub fn attach_noncombat_outcome_v1(
         )
     })?;
 
+    let metrics = outcome_metrics(&before, &after);
+    let card_reward =
+        card_reward_outcome(record, &before, &after, &metrics, card_reward_observation);
     Ok(NonCombatOutcomeAttachmentV1 {
         schema_name: NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_NAME.to_string(),
         schema_version: NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_VERSION,
@@ -100,9 +146,47 @@ pub fn attach_noncombat_outcome_v1(
         site: record.site,
         decision_record_hash: decision_record_hash(record)?,
         window,
-        metrics: outcome_metrics(&before, &after),
+        metrics,
         before,
         after,
+        card_reward,
+    })
+}
+
+fn card_reward_outcome(
+    record: &NonCombatDecisionRecordV1,
+    before: &NonCombatOutcomeSnapshotV1,
+    after: &NonCombatOutcomeSnapshotV1,
+    metrics: &NonCombatOutcomeMetricsV1,
+    observation: CardRewardOutcomeObservationV1,
+) -> Option<CardRewardOutcomeAttachmentV1> {
+    if record.site != DecisionSiteKindV1::CardReward {
+        return None;
+    }
+    if record.selection.status != PolicySelectionStatusV1::Selected {
+        return None;
+    }
+    let selected_candidate_id = record.selection.selected_candidate_id.clone()?;
+    let picked_card_label = record
+        .candidates
+        .iter()
+        .find(|candidate| candidate.candidate_id == selected_candidate_id)
+        .map(|candidate| candidate.label.clone())
+        .unwrap_or_else(|| selected_candidate_id.clone());
+
+    Some(CardRewardOutcomeAttachmentV1 {
+        selected_candidate_id,
+        picked_card_label,
+        floor_reached_after_decision: after.floor,
+        next_combat_hp_loss: (metrics.combats_completed_delta > 0)
+            .then_some((before.current_hp - after.current_hp).max(0)),
+        hp_before_next_elite: None,
+        hp_after_next_elite: None,
+        hp_before_boss: None,
+        picked_card_drawn_count: observation.picked_card_drawn_count,
+        picked_card_played_count: observation.picked_card_played_count,
+        picked_card_upgraded_before_boss: observation.picked_card_upgraded_before_boss,
+        picked_card_removed_later: observation.picked_card_removed_later,
     })
 }
 
