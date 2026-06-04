@@ -5,6 +5,7 @@ use super::types::{
     CardRewardValueStatusV1,
 };
 
+use crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1;
 use crate::content::cards::CardId;
 
 pub(crate) fn pick_gate(
@@ -167,6 +168,19 @@ fn weak_frontload_certificate(
     {
         return None;
     }
+    let formation = &context.plans.formation;
+    if !formation.strengths.is_empty() {
+        return None;
+    }
+    if !formation
+        .needs
+        .contains(&StrategyDeckFormationNeedV1::Frontload)
+        && !formation
+            .needs
+            .contains(&StrategyDeckFormationNeedV1::Block)
+    {
+        return None;
+    }
 
     Some(CardRewardPickCertificateV1 {
         index: candidate.index,
@@ -175,6 +189,10 @@ fn weak_frontload_certificate(
         reasons: vec![
             "WeakFrontload plan patches visible weak coverage and near-term combat pressure"
                 .to_string(),
+            format!(
+                "deck formation is {:?} with needs {:?}",
+                formation.stage, formation.needs
+            ),
             "no competing upgrade-sink or strength-payoff plan is strongly supported".to_string(),
         ],
     })

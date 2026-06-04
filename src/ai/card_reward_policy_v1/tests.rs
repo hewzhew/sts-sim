@@ -3,6 +3,7 @@ use crate::ai::card_reward_policy_v1::{
     CardRewardPlanEffectV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
     CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
+use crate::ai::noncombat_strategy_v1::StrategyPlanIdV1;
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
@@ -211,6 +212,32 @@ fn clothesline_certifies_as_weak_frontload_patch_when_growth_plans_are_blocked()
         decision.pick_certificate.as_ref().map(|cert| cert.card),
         Some(CardId::Clothesline)
     );
+}
+
+#[test]
+fn weak_frontload_patch_does_not_auto_certify_when_core_plan_is_committed() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.floor_num = 1;
+    run_state.add_card_to_deck(CardId::Inflame);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::Clothesline, 0)],
+        route_with_combat_pressure(),
+    );
+
+    assert!(context
+        .plans
+        .formation
+        .strengths
+        .contains(&StrategyPlanIdV1::StrengthScaling));
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
 }
 
 #[test]

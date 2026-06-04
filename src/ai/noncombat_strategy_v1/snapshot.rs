@@ -1,3 +1,4 @@
+use super::formation::assess_deck_formation_v1;
 use super::types::{
     DeckPlanHypothesisV1, RunStrategySnapshotV1, StrategyDeckFactsV1, StrategyPlanIdV1,
     StrategyPlanPressureV1, StrategyPlanSupportV1, StrategyRouteFutureV1,
@@ -19,8 +20,14 @@ pub fn build_run_strategy_snapshot_v1(
         self_damage_plan(),
         energy_draw_plan(),
     ];
+    let formation = assess_deck_formation_v1(&deck, route.as_ref(), &plans);
 
-    RunStrategySnapshotV1 { deck, route, plans }
+    RunStrategySnapshotV1 {
+        deck,
+        route,
+        plans,
+        formation,
+    }
 }
 
 fn frontload_survival_plan(

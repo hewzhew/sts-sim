@@ -32,9 +32,17 @@ pub enum StrategyPlanPressureV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrategyDeckFactsV1 {
     pub deck_size: usize,
+    pub attacks: u8,
+    pub skills: u8,
+    pub powers: u8,
+    pub starter_strikes: u8,
+    pub starter_defends: u8,
     pub strength_sources: u8,
     pub strength_payoffs: u8,
     pub weak_sources: u8,
+    pub draw_sources: u8,
+    pub energy_sources: u8,
+    pub vulnerable_sources: u8,
     pub route_upgrade_payoffs: u8,
     pub important_cards_unupgraded: u8,
     pub exhaust_generators: u8,
@@ -60,6 +68,7 @@ pub struct RunStrategySnapshotV1 {
     pub deck: StrategyDeckFactsV1,
     pub route: Option<StrategyRouteFutureV1>,
     pub plans: Vec<DeckPlanHypothesisV1>,
+    pub formation: StrategyDeckFormationV1,
 }
 
 impl RunStrategySnapshotV1 {
@@ -75,6 +84,33 @@ pub struct DeckPlanHypothesisV1 {
     pub evidence: Vec<String>,
     pub blockers: Vec<String>,
     pub opportunity_costs: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StrategyDeckFormationStageV1 {
+    StarterShell,
+    Transitional,
+    PlanSeeded,
+    PlanCommitted,
+    Mature,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StrategyDeckFormationNeedV1 {
+    Frontload,
+    Block,
+    Scaling,
+    DrawEnergy,
+    Consistency,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StrategyDeckFormationV1 {
+    pub stage: StrategyDeckFormationStageV1,
+    pub needs: Vec<StrategyDeckFormationNeedV1>,
+    pub strengths: Vec<StrategyPlanIdV1>,
+    pub blockers: Vec<String>,
+    pub notes: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
