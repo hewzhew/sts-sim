@@ -751,6 +751,12 @@ pub fn try_build_event_state_from_screen_state(
         EventId::Designer if current_screen == 1 => {
             decode_designer_internal_state(screen_state.get("event_semantics_state")?)?
         }
+        EventId::Nloth if current_screen == 0 => {
+            decode_nloth_internal_state(run_state, screen_state.get("event_semantics_state")?)?
+        }
+        EventId::WorldOfGoop if current_screen == 0 => {
+            decode_goop_puddle_internal_state(screen_state.get("event_semantics_state")?)?
+        }
         EventId::Falling if current_screen == 1 => {
             decode_falling_internal_state(run_state, screen_state.get("event_semantics_state")?)?
         }
@@ -771,6 +777,25 @@ pub fn event_semantics_state(run_state: &RunState, event_state: &EventState) -> 
         EventId::Designer if event_state.current_screen == 1 => Some(json!({
             "adjust_upgrades_one": event_state.internal_state & 1 != 0,
             "clean_up_removes_cards": event_state.internal_state & 2 != 0,
+        })),
+        EventId::Nloth if event_state.current_screen == 0 => {
+            let choice1_relic_index = (event_state.internal_state & 0xFF) as usize;
+            let choice2_relic_index = ((event_state.internal_state >> 8) & 0xFF) as usize;
+            Some(json!({
+                "choice1_relic_index": choice1_relic_index,
+                "choice2_relic_index": choice2_relic_index,
+                "choice1_relic": run_state
+                    .relics
+                    .get(choice1_relic_index)
+                    .map(|relic| format!("{:?}", relic.id)),
+                "choice2_relic": run_state
+                    .relics
+                    .get(choice2_relic_index)
+                    .map(|relic| format!("{:?}", relic.id)),
+            }))
+        }
+        EventId::WorldOfGoop if event_state.current_screen == 0 => Some(json!({
+            "gold_loss": event_state.internal_state,
         })),
         EventId::WeMeetAgain if event_state.current_screen == 0 => {
             let potion_slot = ((event_state.internal_state >> 8) & 0xFF) as usize;
@@ -798,7 +823,11 @@ pub fn event_semantics_state(run_state: &RunState, event_state: &EventState) -> 
 pub fn live_event_requires_semantics_state(event_id: EventId, current_screen: usize) -> bool {
     matches!(
         (event_id, current_screen),
-        (EventId::Designer, 1) | (EventId::WeMeetAgain, 0) | (EventId::Falling, 1)
+        (EventId::Designer, 1)
+            | (EventId::Nloth, 0)
+            | (EventId::WorldOfGoop, 0)
+            | (EventId::WeMeetAgain, 0)
+            | (EventId::Falling, 1)
     )
 }
 
@@ -808,6 +837,8 @@ pub fn live_event_semantics_state_keys(
 ) -> Option<&'static [&'static str]> {
     match (event_id, current_screen) {
         (EventId::Designer, 1) => Some(&["adjust_upgrades_one", "clean_up_removes_cards"]),
+        (EventId::Nloth, 0) => Some(&["choice1_relic_index", "choice2_relic_index"]),
+        (EventId::WorldOfGoop, 0) => Some(&["gold_loss"]),
         (EventId::WeMeetAgain, 0) => Some(&["potion_slot", "gold_amount", "card_uuid"]),
         (EventId::Falling, 1) => Some(&["skill_uuid", "power_uuid", "attack_uuid"]),
         _ => None,
@@ -822,6 +853,31 @@ fn decode_designer_internal_state(event_semantics_state: &Value) -> Option<i32> 
         .get("clean_up_removes_cards")
         .and_then(Value::as_bool)? as i32;
     Some(adjust_upgrades_one | (clean_up_removes_cards << 1))
+}
+
+fn decode_nloth_internal_state(run_state: &RunState, event_semantics_state: &Value) -> Option<i32> {
+    let choice1_relic_index = event_semantics_state
+        .get("choice1_relic_index")
+        .and_then(Value::as_u64)? as usize;
+    let choice2_relic_index = event_semantics_state
+        .get("choice2_relic_index")
+        .and_then(Value::as_u64)? as usize;
+    if choice1_relic_index >= run_state.relics.len()
+        || choice2_relic_index >= run_state.relics.len()
+        || choice1_relic_index == choice2_relic_index
+        || choice1_relic_index > 0xFF
+        || choice2_relic_index > 0xFF
+    {
+        return None;
+    }
+    Some((choice1_relic_index as i32) | ((choice2_relic_index as i32) << 8))
+}
+
+fn decode_goop_puddle_internal_state(event_semantics_state: &Value) -> Option<i32> {
+    let gold_loss = event_semantics_state
+        .get("gold_loss")
+        .and_then(Value::as_i64)?;
+    i32::try_from(gold_loss).ok().filter(|loss| *loss >= 0)
 }
 
 fn decode_we_meet_again_state_fields(
@@ -895,6 +951,7 @@ fn decode_falling_internal_state(
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
     use serde_json::json;
 
     #[test]
@@ -1062,5 +1119,66 @@ mod tests {
                 .unwrap();
 
         assert_eq!(rebuilt.internal_state, event_state.internal_state);
+    }
+
+    #[test]
+    fn nloth_event_semantics_state_round_trips_to_internal_state() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.relics = vec![
+            RelicState::new(RelicId::BurningBlood),
+            RelicState::new(RelicId::Anchor),
+            RelicState::new(RelicId::Vajra),
+        ];
+        let event_state = EventState {
+            id: EventId::Nloth,
+            current_screen: 0,
+            internal_state: 1 | (2 << 8),
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+
+        let semantics = event_semantics_state(&rs, &event_state).unwrap();
+        assert_eq!(semantics["choice1_relic_index"], 1);
+        assert_eq!(semantics["choice2_relic_index"], 2);
+        assert_eq!(semantics["choice1_relic"], "Anchor");
+        assert_eq!(semantics["choice2_relic"], "Vajra");
+        let screen_state = json!({
+            "event_name": "N'loth",
+            "current_screen": 0,
+            "event_semantics_state": semantics,
+        });
+        let rebuilt =
+            try_build_event_state_from_screen_state(&rs, EventId::Nloth, 0, &screen_state).unwrap();
+
+        assert_eq!(rebuilt.internal_state, event_state.internal_state);
+        assert!(live_event_requires_semantics_state(EventId::Nloth, 0));
+    }
+
+    #[test]
+    fn goop_puddle_event_semantics_state_round_trips_to_internal_state() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: EventId::WorldOfGoop,
+            current_screen: 0,
+            internal_state: 42,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+
+        let semantics = event_semantics_state(&rs, &event_state).unwrap();
+        assert_eq!(semantics["gold_loss"], 42);
+        let screen_state = json!({
+            "event_name": "World of Goop",
+            "current_screen": 0,
+            "event_semantics_state": semantics,
+        });
+        let rebuilt =
+            try_build_event_state_from_screen_state(&rs, EventId::WorldOfGoop, 0, &screen_state)
+                .unwrap();
+
+        assert_eq!(rebuilt.internal_state, event_state.internal_state);
+        assert!(live_event_requires_semantics_state(EventId::WorldOfGoop, 0));
     }
 }
