@@ -72,7 +72,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
             // Java creates a synthetic boss MapRoomNode at y=15 and runs the
             // normal next-room transition before MonsterRoomBoss.onPlayerEntry().
             run_state.map.current_y = 15;
-            run_state.map.current_x = 1;
+            run_state.map.current_x = -1;
             run_state.floor_num += 1;
             run_state.room_mugged = false;
             run_state.room_smoked = false;
@@ -126,6 +126,10 @@ mod tests {
         handle_choice(&mut engine_state, &mut run_state, 0);
 
         assert!(matches!(engine_state, EngineState::CombatPlayerTurn));
+        assert_eq!(
+            run_state.map.current_x, -1,
+            "Java SecretPortal constructs MapRoomNode(-1, 15); pathX.add(1) is only path history"
+        );
         assert_eq!(run_state.map.current_y, 15);
         assert_eq!(run_state.floor_num, 41);
         assert_eq!(

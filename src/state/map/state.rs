@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct MapState {
     pub graph: Map,
     /// current_y = -1 indicates the player has not selected a starting node at the bottom yet.
-    /// current_y = 14 indicates fighting the Boss.
+    /// current_y = 14 is the final visible map row; current_y = 15 is the synthetic boss room.
     pub current_y: i32,
     pub current_x: i32,
     pub boss_node_available: bool,
