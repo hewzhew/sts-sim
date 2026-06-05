@@ -127,6 +127,7 @@ pub fn client_input_hint(input: &ClientInput) -> String {
         ClientInput::SubmitGridSelect(uuids) => format_u32_command("grid-select", uuids),
         ClientInput::SubmitDeckSelect(indices) => format_usize_command("select", indices),
         ClientInput::ClaimReward(idx) => format!("claim {idx}"),
+        ClientInput::OpenRewardOverlay => "rewards".to_string(),
         ClientInput::OpenChest => "open".to_string(),
         ClientInput::SelectCard(idx) => format!("pick {idx}"),
         ClientInput::BuyCard(idx) => format!("buy card {idx}"),

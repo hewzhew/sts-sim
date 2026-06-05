@@ -40,6 +40,9 @@ pub(super) fn run_control_next_hint(session: &RunControlSession) -> &'static str
         EngineState::BossRelicSelect(_) => {
             "Next: choose a visible boss relic id; inspect deck/relics first if needed."
         }
+        EngineState::Shop(shop) if shop.pending_reward_overlay.is_some() => {
+            "Next: type rewards to reopen pending shop rewards, or finish shopping before leaving."
+        }
         EngineState::Shop(_) => "Next: buy card/relic/potion, purge a card, or leave the shop.",
         EngineState::Campfire => {
             "Next: rest, smith a deck index, or use another visible campfire option."

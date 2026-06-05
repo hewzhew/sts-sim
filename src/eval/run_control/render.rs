@@ -90,12 +90,16 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
             push_line(
                 &mut out,
                 format!(
-                    "shop cards={} relics={} potions={} purge_cost={} purge_available={}",
+                    "shop cards={} relics={} potions={} purge_cost={} purge_available={} pending_rewards={}",
                     shop.cards.len(),
                     shop.relics.len(),
                     shop.potions.len(),
                     shop.purge_cost,
-                    shop.purge_available
+                    shop.purge_available,
+                    shop.pending_reward_overlay
+                        .as_ref()
+                        .map(|reward| reward.items.len())
+                        .unwrap_or(0)
                 ),
             );
         }

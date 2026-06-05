@@ -7,6 +7,7 @@ pub(crate) struct StableShopKey {
     pub cards: Vec<StableShopRowKey>,
     pub relics: Vec<StableShopRowKey>,
     pub potions: Vec<StableShopRowKey>,
+    pub pending_reward_overlay: Option<StableRewardKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -20,12 +21,16 @@ pub(crate) struct StableShopRowKey {
 impl StableShopKey {
     pub(in crate::ai::combat_state_key) fn diagnostic_string(&self) -> String {
         format!(
-            "purge{}:{}:cards{}:relics{}:potions{}",
+            "purge{}:{}:cards{}:relics{}:potions{}:overlay{}",
             self.purge_cost,
             self.purge_available,
             join_diagnostic_strings(&self.cards),
             join_diagnostic_strings(&self.relics),
             join_diagnostic_strings(&self.potions),
+            self.pending_reward_overlay
+                .as_ref()
+                .map(StableRewardKey::diagnostic_string)
+                .unwrap_or_else(|| "_".to_string()),
         )
     }
 }

@@ -211,6 +211,14 @@ pub fn handle(
 ) -> Option<EngineState> {
     if let Some(in_val) = input {
         match in_val {
+            ClientInput::OpenRewardOverlay => {
+                if let Some(reward_state) = shop.pending_reward_overlay.take() {
+                    return Some(EngineState::reward_overlay(
+                        reward_state,
+                        EngineState::Shop(shop.clone()),
+                    ));
+                }
+            }
             ClientInput::BuyCard(idx) => {
                 if idx < shop.cards.len()
                     && shop.cards[idx].can_buy
@@ -590,6 +598,42 @@ mod tests {
             return_shop.relics.is_empty(),
             "returning to shop must not resurrect the purchased Orrery slot"
         );
+    }
+
+    #[test]
+    fn shop_can_reopen_pending_reward_overlay_once() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut shop = ShopState::new();
+        let mut pending = crate::state::rewards::RewardState::new();
+        pending.items = vec![crate::state::rewards::RewardItem::Gold { amount: 25 }];
+        shop.pending_reward_overlay = Some(pending);
+
+        let next = handle(
+            &mut run_state,
+            &mut shop,
+            Some(ClientInput::OpenRewardOverlay),
+        )
+        .expect("pending shop reward overlay should reopen");
+
+        let EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } = next
+        else {
+            panic!("expected reward overlay");
+        };
+        assert_eq!(
+            reward_state.items,
+            vec![crate::state::rewards::RewardItem::Gold { amount: 25 }]
+        );
+        let EngineState::Shop(return_shop) = *return_state else {
+            panic!("overlay should return to shop");
+        };
+        assert!(
+            return_shop.pending_reward_overlay.is_none(),
+            "opening pending rewards must move, not clone, the overlay state"
+        );
+        assert!(shop.pending_reward_overlay.is_none());
     }
 
     #[test]

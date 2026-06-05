@@ -2056,6 +2056,43 @@ fn run_control_shop_leave_candidate_exits_shop() {
 }
 
 #[test]
+fn run_control_shop_rewards_candidate_reopens_pending_overlay() {
+    let mut session = test_session_at_shop();
+    let EngineState::Shop(shop) = &mut session.engine_state else {
+        panic!("test session should start in shop");
+    };
+    let mut pending = crate::state::rewards::RewardState::new();
+    pending.items = vec![crate::state::rewards::RewardItem::Card {
+        cards: vec![crate::state::rewards::RewardCard::new(
+            crate::content::cards::CardId::Shockwave,
+            0,
+        )],
+    }];
+    shop.pending_reward_overlay = Some(pending);
+
+    let outcome = session
+        .apply_command(parse_run_control_command("rewards").expect("rewards should parse"))
+        .expect("visible rewards id should reopen overlay");
+
+    assert!(outcome.message.contains("Chose: Open pending rewards"));
+    let EngineState::RewardOverlay {
+        reward_state,
+        return_state,
+    } = &session.engine_state
+    else {
+        panic!("expected reward overlay");
+    };
+    assert!(matches!(
+        reward_state.items.as_slice(),
+        [crate::state::rewards::RewardItem::Card { .. }]
+    ));
+    let EngineState::Shop(return_shop) = return_state.as_ref() else {
+        panic!("overlay should return to shop");
+    };
+    assert!(return_shop.pending_reward_overlay.is_none());
+}
+
+#[test]
 fn run_control_campfire_accepts_bare_smith_index_alias() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::Campfire;

@@ -28,12 +28,16 @@ pub(super) fn decision_context(session: &RunControlSession) -> Vec<String> {
             ]
         }
         EngineState::Shop(shop) => vec![format!(
-            "Shop: cards={} relics={} potions={} purge_cost={} purge_available={}",
+            "Shop: cards={} relics={} potions={} purge_cost={} purge_available={} pending_rewards={}",
             shop.cards.len(),
             shop.relics.len(),
             shop.potions.len(),
             shop.purge_cost,
-            shop.purge_available
+            shop.purge_available,
+            shop.pending_reward_overlay
+                .as_ref()
+                .map(|reward| reward.items.len())
+                .unwrap_or(0)
         )],
         EngineState::Campfire => vec![deck_summary(&session.run_state)],
         EngineState::TreasureRoom(chest) => vec![format!("Chest: {chest:?}")],

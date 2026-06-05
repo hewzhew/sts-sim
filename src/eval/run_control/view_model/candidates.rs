@@ -225,8 +225,10 @@ fn reward_candidates(
                 reward_overlay_return_label(return_state),
                 if reward.items.is_empty() {
                     Some("routine")
+                } else if matches!(return_state, EngineState::Shop(_)) {
+                    Some("unclaimed overlay rewards remain available in the shop")
                 } else {
-                    Some("closes overlay; claim rewards first")
+                    Some("returns to previous screen with unclaimed overlay rewards")
                 },
                 ClientInput::Cancel,
             )
@@ -429,6 +431,14 @@ fn shop_candidates(
             format!("Remove card | {} gold", shop.purge_cost),
             purge_block.unwrap_or("locked"),
             purge_block.map(|reason| format!("locked: {reason}")),
+        ));
+    }
+    if shop.pending_reward_overlay.is_some() {
+        candidates.push(candidate(
+            "rewards",
+            "Open pending rewards",
+            ClientInput::OpenRewardOverlay,
+            Some("shop overlay rewards remain until leaving the shop"),
         ));
     }
     candidates.push(candidate(

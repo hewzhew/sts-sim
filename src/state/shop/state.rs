@@ -1,6 +1,7 @@
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
+use crate::state::rewards::RewardState;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
@@ -50,6 +51,12 @@ pub struct ShopState {
     pub potions: Vec<ShopPotion>,
     pub purge_cost: i32,
     pub purge_available: bool,
+    /// Java's CombatRewardScreen can be opened over the shop by shop relics
+    /// such as Orrery. Closing that screen returns to the shop without
+    /// abandoning unclaimed reward items; the player can reopen the reward
+    /// overlay before leaving the shop room.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_reward_overlay: Option<RewardState>,
 }
 
 impl ShopState {
@@ -60,6 +67,7 @@ impl ShopState {
             potions: Vec::new(),
             purge_cost: 75,
             purge_available: true,
+            pending_reward_overlay: None,
         }
     }
 }

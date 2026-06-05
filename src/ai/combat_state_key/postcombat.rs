@@ -102,6 +102,7 @@ pub(super) fn stable_shop_key(state: &ShopState) -> StableShopKey {
         cards,
         relics,
         potions,
+        pending_reward_overlay: state.pending_reward_overlay.as_ref().map(stable_reward_key),
     }
 }
 

@@ -60,6 +60,9 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "bowl" | "singing-bowl" => Ok(RunControlCommand::Candidate("bowl".to_string())),
         "skip" => Ok(RunControlCommand::Candidate("skip".to_string())),
         "leave" => Ok(RunControlCommand::Candidate("leave".to_string())),
+        "rewards" | "reward-overlay" | "pending-rewards" => {
+            Ok(RunControlCommand::Candidate("rewards".to_string()))
+        }
         "d" | "details" => Ok(RunControlCommand::Details),
         "r" | "raw" => Ok(RunControlCommand::Raw),
         "actions" | "legal" => Ok(RunControlCommand::Actions),

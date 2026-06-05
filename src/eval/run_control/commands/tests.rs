@@ -319,6 +319,10 @@ fn run_control_parser_accepts_visible_non_numeric_ids() {
         RunControlCommand::Candidate("leave".to_string())
     );
     assert_eq!(
+        parse_run_control_command("rewards").expect("pending reward overlay id should parse"),
+        RunControlCommand::Candidate("rewards".to_string())
+    );
+    assert_eq!(
         parse_run_control_command("purge").expect("purge candidate should parse"),
         RunControlCommand::Candidate("purge".to_string())
     );

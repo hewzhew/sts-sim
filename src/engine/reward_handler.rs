@@ -50,12 +50,45 @@ fn reward_done_state(
     overlay_return_state.unwrap_or_else(|| post_reward_state(run_state))
 }
 
+fn reward_state_has_unclaimed_content(reward_state: &RewardState) -> bool {
+    !reward_state.items.is_empty() || reward_state.pending_card_choice.is_some()
+}
+
+fn append_reward_overlay(existing: &mut RewardState, incoming: &RewardState) {
+    let index_offset = existing.items.len();
+    existing.items.extend(incoming.items.clone());
+    if existing.pending_card_choice.is_none() && incoming.pending_card_choice.is_some() {
+        existing.pending_card_choice = incoming.pending_card_choice.clone();
+        existing.pending_card_reward_index = incoming
+            .pending_card_reward_index
+            .map(|idx| idx.saturating_add(index_offset));
+    }
+}
+
+fn return_state_with_pending_reward_overlay(
+    return_state: EngineState,
+    reward_state: &RewardState,
+) -> EngineState {
+    match return_state {
+        EngineState::Shop(mut shop) if reward_state_has_unclaimed_content(reward_state) => {
+            if let Some(existing) = &mut shop.pending_reward_overlay {
+                append_reward_overlay(existing, reward_state);
+            } else {
+                shop.pending_reward_overlay = Some(reward_state.clone());
+            }
+            EngineState::Shop(shop)
+        }
+        other => other,
+    }
+}
+
 fn reward_exit_state(
     run_state: &mut RunState,
     reward_state: &RewardState,
     overlay_return_state: Option<EngineState>,
 ) -> EngineState {
     overlay_return_state
+        .map(|return_state| return_state_with_pending_reward_overlay(return_state, reward_state))
         .unwrap_or_else(|| reward_map_overlay_or_post_reward_state(run_state, reward_state))
 }
 
@@ -568,9 +601,107 @@ mod tests {
         )
         .expect("overlay cancel should return to the parent screen");
 
-        assert!(matches!(next, EngineState::Shop(_)));
+        let EngineState::Shop(returned_shop) = next else {
+            panic!("overlay cancel should return to shop");
+        };
+        assert_eq!(
+            returned_shop
+                .pending_reward_overlay
+                .as_ref()
+                .map(|reward| &reward.items),
+            Some(&vec![RewardItem::Gold { amount: 25 }]),
+            "Java combat reward overlay can be closed back to the shop without consuming or abandoning its reward items"
+        );
         assert_eq!(run_state.gold, 99);
         assert_eq!(reward_state.items, vec![RewardItem::Gold { amount: 25 }]);
+    }
+
+    #[test]
+    fn overlay_card_choice_cancel_persists_card_reward_on_shop() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Card {
+            cards: vec![crate::state::rewards::RewardCard::new(
+                CardId::PommelStrike,
+                0,
+            )],
+        }];
+        let shop_return = EngineState::Shop(ShopState::new());
+
+        assert!(super::handle_overlay(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::ClaimReward(0)),
+            shop_return.clone(),
+        )
+        .is_none());
+        assert!(reward_state.pending_card_choice.is_some());
+
+        let next = super::handle_overlay(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::Cancel),
+            shop_return,
+        );
+        assert!(
+            next.is_none(),
+            "closing the card reward sub-screen mutates the current reward overlay in place"
+        );
+        assert!(reward_state.pending_card_choice.is_none());
+        assert_eq!(reward_state.items.len(), 1);
+
+        let next = super::handle_overlay(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::Cancel),
+            EngineState::Shop(ShopState::new()),
+        )
+        .expect("closing reward overlay should return to shop");
+        let EngineState::Shop(returned_shop) = next else {
+            panic!("overlay cancel should return to shop");
+        };
+        let pending = returned_shop
+            .pending_reward_overlay
+            .expect("shop should remember unclaimed overlay card reward");
+        assert_eq!(pending.items.len(), 1);
+        assert!(matches!(pending.items[0], RewardItem::Card { .. }));
+    }
+
+    #[test]
+    fn overlay_cancel_merges_with_existing_shop_pending_rewards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut existing = RewardState::new();
+        existing.items = vec![RewardItem::Gold { amount: 25 }];
+        let mut shop = ShopState::new();
+        shop.pending_reward_overlay = Some(existing);
+
+        let mut active = RewardState::new();
+        active.items = vec![RewardItem::Potion {
+            potion_id: PotionId::FirePotion,
+        }];
+
+        let next = super::handle_overlay(
+            &mut run_state,
+            &mut active,
+            Some(ClientInput::Cancel),
+            EngineState::Shop(shop),
+        )
+        .expect("overlay cancel should return to shop");
+        let EngineState::Shop(returned_shop) = next else {
+            panic!("overlay cancel should return to shop");
+        };
+        let pending = returned_shop
+            .pending_reward_overlay
+            .expect("shop should keep merged pending rewards");
+        assert_eq!(
+            pending.items,
+            vec![
+                RewardItem::Gold { amount: 25 },
+                RewardItem::Potion {
+                    potion_id: PotionId::FirePotion
+                }
+            ]
+        );
     }
 
     #[test]

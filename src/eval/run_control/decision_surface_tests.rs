@@ -180,7 +180,7 @@ fn decision_surface_boss_relic_screen_exposes_skip_candidate() {
 }
 
 #[test]
-fn decision_surface_reward_overlay_back_uses_conservative_close_warning() {
+fn decision_surface_reward_overlay_back_notes_shop_rewards_remain_available() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward_state = RewardState::new();
     reward_state.items = vec![RewardItem::Card {
@@ -212,8 +212,8 @@ fn decision_surface_reward_overlay_back_uses_conservative_close_warning() {
         back.note
             .as_deref()
             .unwrap_or_default()
-            .contains("claim rewards first"),
-        "return note should tell the player to claim overlay rewards before closing"
+            .contains("remain available"),
+        "return note should tell the player that shop overlay rewards can be reopened"
     );
     assert!(
         surface
@@ -222,6 +222,31 @@ fn decision_surface_reward_overlay_back_uses_conservative_close_warning() {
             .iter()
             .all(|line| !line.contains("abandons")),
         "details/context should not contradict Java-style overlay return behavior"
+    );
+}
+
+#[test]
+fn decision_surface_shop_exposes_pending_reward_overlay_candidate() {
+    let mut session = test_session_at_shop();
+    let EngineState::Shop(shop) = &mut session.engine_state else {
+        panic!("test session should start in shop");
+    };
+    let mut pending = RewardState::new();
+    pending.items = vec![RewardItem::Gold { amount: 25 }];
+    shop.pending_reward_overlay = Some(pending);
+
+    let surface = build_decision_surface(&session);
+    let rewards = surface
+        .view
+        .candidates
+        .iter()
+        .find(|candidate| candidate.id == "rewards")
+        .expect("shop should expose pending overlay rewards");
+
+    assert_eq!(rewards.label, "Open pending rewards");
+    assert_eq!(
+        rewards.action.executable_input(),
+        Some(ClientInput::OpenRewardOverlay)
     );
 }
 

@@ -106,6 +106,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         }],
         purge_cost: 75,
         purge_available: true,
+        pending_reward_overlay: None,
     };
     let shop_b = crate::state::shop::ShopState {
         cards: vec![
@@ -138,6 +139,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         }],
         purge_cost: 75,
         purge_available: true,
+        pending_reward_overlay: None,
     };
     assert_eq!(
         stable_outcome_key(&EngineState::Shop(shop_a), &baseline),

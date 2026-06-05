@@ -27,6 +27,7 @@ pub enum ClientInput {
     SubmitGridSelect(Vec<u32>),
     SubmitDeckSelect(Vec<usize>),
     ClaimReward(usize),
+    OpenRewardOverlay,
     OpenChest,
     SelectCard(usize),
     BuyCard(usize),
