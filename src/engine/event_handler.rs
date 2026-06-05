@@ -747,6 +747,18 @@ pub fn try_build_event_state_from_screen_state(
         });
     }
 
+    if event_id == EventId::TheLibrary && current_screen == 1 {
+        let extra_data = decode_library_extra_data(screen_state.get("event_semantics_state")?)?;
+        return Some(EventState {
+            id: event_id,
+            current_screen,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data,
+        });
+    }
+
     let internal_state = match event_id {
         EventId::Designer if current_screen == 1 => {
             decode_designer_internal_state(screen_state.get("event_semantics_state")?)?
@@ -797,6 +809,9 @@ pub fn event_semantics_state(run_state: &RunState, event_state: &EventState) -> 
         EventId::WorldOfGoop if event_state.current_screen == 0 => Some(json!({
             "gold_loss": event_state.internal_state,
         })),
+        EventId::TheLibrary if event_state.current_screen == 1 => {
+            Some(library_extra_data_semantics(&event_state.extra_data))
+        }
         EventId::WeMeetAgain if event_state.current_screen == 0 => {
             let potion_slot = ((event_state.internal_state >> 8) & 0xFF) as usize;
             let gold_amount = event_state.internal_state & 0xFF;
@@ -826,6 +841,7 @@ pub fn live_event_requires_semantics_state(event_id: EventId, current_screen: us
         (EventId::Designer, 1)
             | (EventId::Nloth, 0)
             | (EventId::WorldOfGoop, 0)
+            | (EventId::TheLibrary, 1)
             | (EventId::WeMeetAgain, 0)
             | (EventId::Falling, 1)
     )
@@ -839,6 +855,7 @@ pub fn live_event_semantics_state_keys(
         (EventId::Designer, 1) => Some(&["adjust_upgrades_one", "clean_up_removes_cards"]),
         (EventId::Nloth, 0) => Some(&["choice1_relic_index", "choice2_relic_index"]),
         (EventId::WorldOfGoop, 0) => Some(&["gold_loss"]),
+        (EventId::TheLibrary, 1) => Some(&["cards"]),
         (EventId::WeMeetAgain, 0) => Some(&["potion_slot", "gold_amount", "card_uuid"]),
         (EventId::Falling, 1) => Some(&["skill_uuid", "power_uuid", "attack_uuid"]),
         _ => None,
@@ -878,6 +895,38 @@ fn decode_goop_puddle_internal_state(event_semantics_state: &Value) -> Option<i3
         .get("gold_loss")
         .and_then(Value::as_i64)?;
     i32::try_from(gold_loss).ok().filter(|loss| *loss >= 0)
+}
+
+fn library_extra_data_semantics(extra_data: &[i32]) -> Value {
+    let cards = extra_data
+        .chunks_exact(2)
+        .map(|entry| {
+            json!({
+                "card_id": entry[0],
+                "upgrades": entry[1],
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({ "cards": cards })
+}
+
+fn decode_library_extra_data(event_semantics_state: &Value) -> Option<Vec<i32>> {
+    let cards = event_semantics_state
+        .get("cards")
+        .and_then(Value::as_array)?;
+    let mut extra_data = Vec::with_capacity(cards.len() * 2);
+    for card in cards {
+        let card_id = card.get("card_id").and_then(Value::as_i64)?;
+        let upgrades = card.get("upgrades").and_then(Value::as_i64)?;
+        let card_id = i32::try_from(card_id).ok()?;
+        let upgrades = i32::try_from(upgrades).ok()?;
+        if card_id < 0 || !(0..=255).contains(&upgrades) {
+            return None;
+        }
+        extra_data.push(card_id);
+        extra_data.push(upgrades);
+    }
+    Some(extra_data)
 }
 
 fn decode_we_meet_again_state_fields(
@@ -1180,5 +1229,32 @@ mod tests {
 
         assert_eq!(rebuilt.internal_state, event_state.internal_state);
         assert!(live_event_requires_semantics_state(EventId::WorldOfGoop, 0));
+    }
+
+    #[test]
+    fn library_event_semantics_state_round_trips_revealed_card_list() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: EventId::TheLibrary,
+            current_screen: 1,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data: vec![CardId::ShrugItOff as i32, 1, CardId::PommelStrike as i32, 0],
+        };
+
+        let semantics = event_semantics_state(&rs, &event_state).unwrap();
+        assert_eq!(semantics["cards"].as_array().unwrap().len(), 2);
+        let screen_state = json!({
+            "event_name": "The Library",
+            "current_screen": 1,
+            "event_semantics_state": semantics,
+        });
+        let rebuilt =
+            try_build_event_state_from_screen_state(&rs, EventId::TheLibrary, 1, &screen_state)
+                .unwrap();
+
+        assert_eq!(rebuilt.extra_data, event_state.extra_data);
+        assert!(live_event_requires_semantics_state(EventId::TheLibrary, 1));
     }
 }
