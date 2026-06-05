@@ -226,7 +226,7 @@ fn reward_candidates(
                 if reward.items.is_empty() {
                     Some("routine")
                 } else {
-                    Some("unclaimed overlay rewards are abandoned")
+                    Some("closes overlay; claim rewards first")
                 },
                 ClientInput::Cancel,
             )
@@ -263,33 +263,77 @@ fn reward_overlay_return_label(return_state: &EngineState) -> String {
 }
 
 fn campfire_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
-    let mut candidates = vec![candidate(
-        "rest",
-        "Rest",
-        ClientInput::CampfireOption(CampfireChoice::Rest),
-        None::<String>,
-    )];
-    let upgradeable = session
-        .run_state
-        .master_deck
-        .iter()
-        .enumerate()
-        .filter(|(_, card)| crate::state::core::master_deck_card_can_upgrade(card))
-        .map(|(idx, card)| {
-            candidate(
-                format!("smith-{idx}"),
-                format!("Smith {}", combat_card_label(card)),
-                ClientInput::CampfireOption(CampfireChoice::Smith(idx)),
+    let mut candidates = Vec::new();
+    for choice in crate::engine::campfire_handler::get_available_options(&session.run_state) {
+        match choice {
+            CampfireChoice::Rest => candidates.push(candidate(
+                "rest",
+                "Rest",
+                ClientInput::CampfireOption(CampfireChoice::Rest),
                 None::<String>,
-            )
-        });
-    candidates.extend(upgradeable);
-    candidates.push(candidate(
-        "recall",
-        "Recall ruby key",
-        ClientInput::CampfireOption(CampfireChoice::Recall),
-        None::<String>,
-    ));
+            )),
+            CampfireChoice::Smith(_) => {
+                candidates.extend(
+                    session
+                        .run_state
+                        .master_deck
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, card)| crate::state::core::master_deck_card_can_upgrade(card))
+                        .map(|(idx, card)| {
+                            candidate(
+                                format!("smith-{idx}"),
+                                format!("Smith {}", combat_card_label(card)),
+                                ClientInput::CampfireOption(CampfireChoice::Smith(idx)),
+                                None::<String>,
+                            )
+                        }),
+                );
+            }
+            CampfireChoice::Dig => candidates.push(candidate(
+                "dig",
+                "Dig",
+                ClientInput::CampfireOption(CampfireChoice::Dig),
+                None::<String>,
+            )),
+            CampfireChoice::Lift => candidates.push(candidate(
+                "lift",
+                "Lift",
+                ClientInput::CampfireOption(CampfireChoice::Lift),
+                None::<String>,
+            )),
+            CampfireChoice::Toke(_) => {
+                candidates.extend(
+                    session
+                        .run_state
+                        .master_deck
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, card)| {
+                            crate::state::core::master_deck_card_is_purgeable(card)
+                                && !crate::state::core::master_deck_card_is_bottled(
+                                    card,
+                                    &session.run_state.relics,
+                                )
+                        })
+                        .map(|(idx, card)| {
+                            candidate(
+                                format!("toke-{idx}"),
+                                format!("Toke {}", combat_card_label(card)),
+                                ClientInput::CampfireOption(CampfireChoice::Toke(idx)),
+                                None::<String>,
+                            )
+                        }),
+                );
+            }
+            CampfireChoice::Recall => candidates.push(candidate(
+                "recall",
+                "Recall ruby key",
+                ClientInput::CampfireOption(CampfireChoice::Recall),
+                None::<String>,
+            )),
+        }
+    }
     candidates
 }
 

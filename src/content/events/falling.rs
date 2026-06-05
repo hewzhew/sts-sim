@@ -59,7 +59,10 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
             if has_skill {
                 let effect = card_remove_effect(run_state, skill_idx(s));
                 choices.push(EventOption::new(
-                    EventChoiceMeta::new("[Skill] Remove a Skill."),
+                    EventChoiceMeta::new(format!(
+                        "[Skill] Remove {}.",
+                        card_name(run_state, skill_idx(s))
+                    )),
                     EventOptionSemantics {
                         action: EventActionKind::DeckOperation,
                         effects: vec![effect],
@@ -85,7 +88,10 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
             if has_power {
                 let effect = card_remove_effect(run_state, power_idx(s));
                 choices.push(EventOption::new(
-                    EventChoiceMeta::new("[Power] Remove a Power."),
+                    EventChoiceMeta::new(format!(
+                        "[Power] Remove {}.",
+                        card_name(run_state, power_idx(s))
+                    )),
                     EventOptionSemantics {
                         action: EventActionKind::DeckOperation,
                         effects: vec![effect],
@@ -111,7 +117,10 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
             if has_attack {
                 let effect = card_remove_effect(run_state, attack_idx(s));
                 choices.push(EventOption::new(
-                    EventChoiceMeta::new("[Attack] Remove an Attack."),
+                    EventChoiceMeta::new(format!(
+                        "[Attack] Remove {}.",
+                        card_name(run_state, attack_idx(s))
+                    )),
                     EventOptionSemantics {
                         action: EventActionKind::DeckOperation,
                         effects: vec![effect],
@@ -155,6 +164,18 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         .into_iter()
         .map(|option| option.ui)
         .collect()
+}
+
+fn card_name(run_state: &RunState, deck_idx: usize) -> String {
+    run_state
+        .master_deck
+        .get(deck_idx)
+        .map(|card| {
+            crate::content::cards::get_card_definition(card.id)
+                .name
+                .to_string()
+        })
+        .unwrap_or_else(|| "unknown card".to_string())
 }
 
 fn card_remove_effect(run_state: &RunState, deck_idx: usize) -> EventEffect {
@@ -308,6 +329,10 @@ mod tests {
             extra_data: Vec::new(),
         };
         let options = get_options(&rs, &state);
+        assert!(
+            options[0].ui.text.contains("Shrug It Off"),
+            "Falling should display the preselected specific Skill card"
+        );
         assert!(matches!(
             options[0].semantics.effects.as_slice(),
             [EventEffect::RemoveCard {

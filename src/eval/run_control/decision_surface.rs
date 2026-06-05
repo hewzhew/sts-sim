@@ -213,7 +213,10 @@ fn state_command_hint(session: &RunControlSession) -> String {
         EngineState::Shop(_) => {
             "card-2 or card 2 | relic-1 or relic 1 | potion-0 or potion 0 | leave".to_string()
         }
-        EngineState::Campfire => "rest | smith-<deck_idx> or smith <deck_idx> | recall".to_string(),
+        EngineState::Campfire => {
+            "rest | smith-<deck_idx> or smith <deck_idx> | dig | lift | toke-<deck_idx> | recall"
+                .to_string()
+        }
         EngineState::MapNavigation => {
             "type a path id, e.g. 0 or 5 | map=full map | rg=route-go".to_string()
         }

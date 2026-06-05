@@ -16,6 +16,9 @@ pub fn handle(
     input: Option<ClientInput>,
 ) -> bool {
     if let Some(ClientInput::CampfireOption(choice)) = input {
+        if !campfire_choice_is_available(run_state, choice) {
+            return true;
+        }
         match choice {
             CampfireChoice::Rest => {
                 // Java: Asc 14 = 25%, else 30%. (int)(maxHP * multiplier) — truncation.
@@ -127,6 +130,34 @@ pub fn handle(
     true
 }
 
+pub fn campfire_choice_is_available(run_state: &RunState, choice: CampfireChoice) -> bool {
+    let available_options = get_available_options(run_state);
+    match choice {
+        CampfireChoice::Rest
+        | CampfireChoice::Dig
+        | CampfireChoice::Lift
+        | CampfireChoice::Recall => available_options.contains(&choice),
+        CampfireChoice::Smith(idx) => {
+            available_options
+                .iter()
+                .any(|option| matches!(option, CampfireChoice::Smith(_)))
+                && run_state
+                    .master_deck
+                    .get(idx)
+                    .is_some_and(crate::state::core::master_deck_card_can_upgrade)
+        }
+        CampfireChoice::Toke(idx) => {
+            available_options
+                .iter()
+                .any(|option| matches!(option, CampfireChoice::Toke(_)))
+                && run_state.master_deck.get(idx).is_some_and(|card| {
+                    crate::state::core::master_deck_card_is_purgeable(card)
+                        && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
+                })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::handle;
@@ -231,6 +262,31 @@ mod tests {
     }
 
     #[test]
+    fn fusion_hammer_rejects_direct_smith_input() {
+        let mut engine_state = EngineState::Campfire;
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck = vec![CombatCard::new(CardId::SwordBoomerang, 10)];
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::FusionHammer));
+
+        assert!(handle(
+            &mut engine_state,
+            &mut run_state,
+            Some(ClientInput::CampfireOption(CampfireChoice::Smith(0)))
+        ));
+
+        assert_eq!(
+            run_state.master_deck[0].upgrades, 0,
+            "Fusion Hammer must veto direct Smith commands, not just hide the UI option"
+        );
+        assert!(
+            matches!(engine_state, EngineState::Campfire),
+            "invalid campfire input should leave the player at the campfire"
+        );
+    }
+
+    #[test]
     fn campfire_toke_rejects_unpurgeable_and_bottled_direct_indices() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.master_deck = vec![
@@ -242,6 +298,7 @@ mod tests {
         let mut bottle = RelicState::new(RelicId::BottledLightning);
         bottle.amount = 12;
         run_state.relics.push(bottle);
+        run_state.relics.push(RelicState::new(RelicId::PeacePipe));
         run_state.emitted_events.clear();
 
         let mut engine_state = EngineState::Campfire;

@@ -7,7 +7,7 @@ use super::{RunControlCommand, RunControlConfig, RunControlSession};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
-use crate::content::relics::RelicId;
+use crate::content::relics::{RelicId, RelicState};
 use crate::runtime::action::CardDestination;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{
@@ -129,6 +129,84 @@ fn decision_surface_contextual_numeric_aliases_are_screen_scoped() {
         Some(ClientInput::CampfireOption(
             crate::state::core::CampfireChoice::Smith(8)
         ))
+    );
+}
+
+#[test]
+fn decision_surface_fusion_hammer_hides_smith_candidates() {
+    let mut session = campfire_session();
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::FusionHammer));
+
+    let surface = build_decision_surface(&session);
+
+    assert!(
+        surface
+            .view
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.id.starts_with("smith-")),
+        "Fusion Hammer should remove normal Smith candidates from the campfire surface"
+    );
+    assert!(
+        resolve_surface_candidate(&surface, &session.engine_state, "8").is_none(),
+        "bare numeric campfire alias must not resolve to a hidden Smith candidate"
+    );
+    assert!(
+        session
+            .validate_input_for_current_state(&ClientInput::CampfireOption(
+                crate::state::core::CampfireChoice::Smith(8)
+            ))
+            .is_err(),
+        "direct Smith input should not pass the run-control input gate under Fusion Hammer"
+    );
+}
+
+#[test]
+fn decision_surface_reward_overlay_back_uses_conservative_close_warning() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward_state = RewardState::new();
+    reward_state.items = vec![RewardItem::Card {
+        cards: vec![RewardCard::new(CardId::Shockwave, 0)],
+    }];
+    session.engine_state = EngineState::RewardOverlay {
+        reward_state,
+        return_state: Box::new(EngineState::Shop(crate::state::shop::ShopState::new())),
+    };
+
+    let surface = build_decision_surface(&session);
+    let back = surface
+        .view
+        .candidates
+        .iter()
+        .find(|candidate| candidate.id == "back")
+        .expect("reward overlay should expose a return candidate");
+
+    assert_eq!(back.label, "Return to shop");
+    assert!(
+        !back
+            .note
+            .as_deref()
+            .unwrap_or_default()
+            .contains("abandoned"),
+        "returning to the parent screen must not be described as abandoning overlay rewards"
+    );
+    assert!(
+        back.note
+            .as_deref()
+            .unwrap_or_default()
+            .contains("claim rewards first"),
+        "return note should tell the player to claim overlay rewards before closing"
+    );
+    assert!(
+        surface
+            .view
+            .context
+            .iter()
+            .all(|line| !line.contains("abandons")),
+        "details/context should not contradict Java-style overlay return behavior"
     );
 }
 

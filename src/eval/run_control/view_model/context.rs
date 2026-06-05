@@ -128,7 +128,7 @@ fn reward_context(reward: &RewardState, overlay: bool) -> Vec<String> {
         reward.screen_context
     )];
     if overlay {
-        context.push("Overlay reward: returning abandons unclaimed overlay rewards.".to_string());
+        context.push("Overlay reward: claim rewards before closing the overlay.".to_string());
     }
     context
 }
