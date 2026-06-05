@@ -165,6 +165,21 @@ fn decision_surface_fusion_hammer_hides_smith_candidates() {
 }
 
 #[test]
+fn decision_surface_boss_relic_screen_exposes_skip_candidate() {
+    let session = boss_relic_session();
+    let surface = build_decision_surface(&session);
+
+    assert!(surface.view.candidates.iter().any(|candidate| {
+        candidate.id == "skip" && candidate.action.executable_input() == Some(ClientInput::Cancel)
+    }));
+    assert_eq!(
+        resolve_surface_candidate(&surface, &session.engine_state, "skip")
+            .and_then(|candidate| candidate.action.executable_input()),
+        Some(ClientInput::Cancel)
+    );
+}
+
+#[test]
 fn decision_surface_reward_overlay_back_uses_conservative_close_warning() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward_state = RewardState::new();

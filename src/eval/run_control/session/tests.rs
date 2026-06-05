@@ -906,7 +906,11 @@ fn run_control_auto_step_boss_relic_stop_exports_human_boundary_record() {
         record.data_role,
         crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
     );
-    assert_eq!(record.candidates.len(), 2);
+    assert_eq!(record.candidates.len(), 3);
+    assert!(record
+        .candidates
+        .iter()
+        .any(|candidate| candidate.candidate_id == "boss_relic:skip"));
     assert!(record
         .information_boundary
         .forbidden_inputs

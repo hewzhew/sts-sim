@@ -797,7 +797,7 @@ fn run_choice_candidates(
 }
 
 fn boss_relic_candidates(choice: &BossRelicChoiceState) -> Vec<DecisionCandidate> {
-    choice
+    let mut candidates = choice
         .relics
         .iter()
         .enumerate()
@@ -811,7 +811,14 @@ fn boss_relic_candidates(choice: &BossRelicChoiceState) -> Vec<DecisionCandidate
             candidate.resolution = Some(CandidateResolution::from_boss_relic(*relic));
             candidate
         })
-        .collect()
+        .collect::<Vec<_>>();
+    candidates.push(candidate(
+        "skip",
+        "Skip boss relic",
+        ClientInput::Cancel,
+        Some("leaves boss chest without taking a boss relic"),
+    ));
+    candidates
 }
 
 #[cfg(test)]

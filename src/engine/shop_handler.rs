@@ -212,7 +212,10 @@ pub fn handle(
     if let Some(in_val) = input {
         match in_val {
             ClientInput::BuyCard(idx) => {
-                if idx < shop.cards.len() && run_state.gold >= shop.cards[idx].price {
+                if idx < shop.cards.len()
+                    && shop.cards[idx].can_buy
+                    && run_state.gold >= shop.cards[idx].price
+                {
                     let purchased = shop.cards.remove(idx);
                     run_state.change_gold_with_source(-purchased.price, DomainEventSource::Shop);
                     run_state.add_card_to_deck_with_upgrades_from(
@@ -226,7 +229,10 @@ pub fn handle(
                 }
             }
             ClientInput::BuyRelic(idx) => {
-                if idx < shop.relics.len() && run_state.gold >= shop.relics[idx].price {
+                if idx < shop.relics.len()
+                    && shop.relics[idx].can_buy
+                    && run_state.gold >= shop.relics[idx].price
+                {
                     let purchased = shop.relics.remove(idx);
                     run_state.change_gold_with_source(-purchased.price, DomainEventSource::Shop);
                     let next_state = run_state.obtain_relic_with_source(
@@ -247,7 +253,10 @@ pub fn handle(
                 }
             }
             ClientInput::BuyPotion(idx) => {
-                if idx < shop.potions.len() && run_state.gold >= shop.potions[idx].price {
+                if idx < shop.potions.len()
+                    && shop.potions[idx].can_buy
+                    && run_state.gold >= shop.potions[idx].price
+                {
                     if has_relic(run_state, RelicId::Sozu) {
                         return None;
                     } else if let Some(empty_slot) = run_state.find_empty_potion_slot() {
@@ -463,6 +472,50 @@ mod tests {
             spend_pos < fish_gold_pos && fish_gold_pos < obtained_pos,
             "Java ShopScreen.purchaseCard queues FastCardObtainEffect, then loses gold; the effect later runs onObtainCard before Soul.obtain"
         );
+    }
+
+    #[test]
+    fn shop_handler_respects_blocked_item_flags_for_direct_inputs() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 500;
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::PommelStrike,
+            upgrades: 0,
+            price: 50,
+            can_buy: false,
+            blocked_reason: Some("blocked card".to_string()),
+        });
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::Anchor,
+            price: 150,
+            can_buy: false,
+            blocked_reason: Some("blocked relic".to_string()),
+        });
+        shop.potions.push(ShopPotion {
+            potion_id: PotionId::FirePotion,
+            price: 50,
+            can_buy: false,
+            blocked_reason: Some("blocked potion".to_string()),
+        });
+
+        assert!(handle(&mut run_state, &mut shop, Some(ClientInput::BuyCard(0))).is_none());
+        assert!(handle(&mut run_state, &mut shop, Some(ClientInput::BuyRelic(0))).is_none());
+        assert!(handle(&mut run_state, &mut shop, Some(ClientInput::BuyPotion(0))).is_none());
+
+        assert_eq!(run_state.gold, 500);
+        assert_eq!(shop.cards.len(), 1);
+        assert_eq!(shop.relics.len(), 1);
+        assert_eq!(shop.potions.len(), 1);
+        assert!(!run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::PommelStrike));
+        assert!(!run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Anchor));
+        assert!(run_state.potions.iter().all(Option::is_none));
     }
 
     #[test]
