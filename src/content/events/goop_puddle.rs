@@ -1,25 +1,62 @@
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
 const GOLD_GAIN: i32 = 75;
 const DAMAGE: i32 = 11;
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Leave]")];
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )];
     }
 
     // Gold loss stored in internal_state (rolled at init time, matching Java)
     let gold_loss = event_state.internal_state;
     vec![
-        EventChoiceMeta::new(format!(
-            "[Gather Gold] Gain {} Gold. Take {} damage.",
-            GOLD_GAIN, DAMAGE
-        )),
-        EventChoiceMeta::new(format!("[Leave] Lose {} Gold.", gold_loss)),
+        EventOption::new(
+            EventChoiceMeta::new(format!(
+                "[Gather Gold] Gain {} Gold. Take {} damage.",
+                GOLD_GAIN, DAMAGE
+            )),
+            EventOptionSemantics {
+                action: EventActionKind::Trade,
+                effects: vec![
+                    EventEffect::GainGold(GOLD_GAIN),
+                    EventEffect::LoseHp(DAMAGE),
+                ],
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        ),
+        EventOption::new(
+            EventChoiceMeta::new(format!("[Leave] Lose {} Gold.", gold_loss)),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                effects: vec![EventEffect::LoseGold(gold_loss)],
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        ),
     ]
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -73,10 +110,12 @@ pub fn init_goop_puddle_state(run_state: &mut RunState) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_choice, init_goop_puddle_state};
+    use super::{get_options, handle_choice, init_goop_puddle_state};
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionTransition, EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -87,6 +126,50 @@ mod tests {
         run_state.event_state = Some(EventState::new(EventId::WorldOfGoop));
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn structured_options_expose_pregenerated_gold_loss_and_result_boundary() {
+        let mut run_state = goop_run(80, 100);
+        let mut event_state = EventState::new(EventId::WorldOfGoop);
+        event_state.internal_state = 42;
+
+        let options = get_options(&run_state, &event_state);
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Trade);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::GainGold(75)));
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(11)));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        assert_eq!(options[1].semantics.action, EventActionKind::Leave);
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseGold(42)));
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        event_state.current_screen = 1;
+        run_state.event_state = Some(event_state.clone());
+        let result_options = get_options(&run_state, &event_state);
+        assert_eq!(result_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            result_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
+        assert!(result_options[0].semantics.terminal);
     }
 
     #[test]

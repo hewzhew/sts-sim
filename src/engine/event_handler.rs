@@ -675,6 +675,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::FaceTrader => {
             crate::content::events::face_trader::get_options(run_state, event_state)
         }
+        EventId::WorldOfGoop => {
+            crate::content::events::goop_puddle::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
