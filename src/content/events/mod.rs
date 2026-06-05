@@ -79,6 +79,59 @@ pub(crate) fn apply_player_default_damage(
     run_state.change_hp_with_source(-damage, source)
 }
 
+pub(crate) fn bonfire_options(
+    event_state: &crate::state::events::EventState,
+    approach_text: impl Into<String>,
+    offer_text: impl Into<String>,
+) -> Vec<crate::state::events::EventOption> {
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+        EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventSelectionKind,
+    };
+
+    match event_state.current_screen {
+        0 => vec![EventOption::new(
+            EventChoiceMeta::new(approach_text),
+            EventOptionSemantics {
+                action: EventActionKind::Continue,
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        )],
+        1 => vec![EventOption::new(
+            EventChoiceMeta::new(offer_text),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::RemoveCard {
+                    count: 1,
+                    target_uuid: None,
+                    kind: EventCardKind::Unknown,
+                }],
+                constraints: vec![EventOptionConstraint::RequiresNonBottledPurgeableCard],
+                transition: EventOptionTransition::OpenSelection(EventSelectionKind::OfferCard),
+                ..Default::default()
+            },
+        )],
+        2 => vec![EventOption::new(
+            EventChoiceMeta::new("[Continue]"),
+            EventOptionSemantics {
+                action: EventActionKind::Continue,
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        )],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
+    }
+}
+
 // Phase 1: Exordium Events
 pub mod big_fish;
 pub mod golden_wing;

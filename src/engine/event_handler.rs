@@ -699,6 +699,12 @@ pub fn try_get_structured_event_options_for_state(
         EventId::TheLibrary => {
             crate::content::events::the_library::get_options(run_state, event_state)
         }
+        EventId::BonfireElementals => {
+            crate::content::events::bonfire_elementals::get_options(run_state, event_state)
+        }
+        EventId::BonfireSpirits => {
+            crate::content::events::bonfire_spirits::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }

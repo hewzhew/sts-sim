@@ -11,19 +11,23 @@
 
 use crate::content::relics::RelicId;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{EventChoiceMeta, EventId, EventOption, EventState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
-    match event_state.current_screen {
-        0 => vec![EventChoiceMeta::new("[Approach]")],
-        1 => {
-            // Offer a card to the bonfire
-            vec![EventChoiceMeta::new("[Offer] Select a card to offer.")]
-        }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
-    }
+pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
+    crate::content::events::bonfire_options(
+        event_state,
+        "[Approach]",
+        "[Offer] Select a card to offer.",
+    )
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _choice_idx: usize) {
@@ -104,13 +108,16 @@ pub fn apply_offer_reward(engine_state: &mut EngineState, run_state: &mut RunSta
 
 #[cfg(test)]
 mod tests {
-    use super::handle_choice;
+    use super::{get_options, handle_choice};
     use crate::content::cards::CardId;
     use crate::content::relics::RelicId;
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventId, EventOptionConstraint,
+        EventOptionTransition, EventSelectionKind, EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{
         DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
@@ -129,6 +136,55 @@ mod tests {
 
     fn deck_card(id: CardId, uuid: u32) -> CombatCard {
         CombatCard::new(id, uuid)
+    }
+
+    #[test]
+    fn structured_options_expose_bonfire_spirits_offer_selection_boundary() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101)];
+        let mut event_state = EventState::new(EventId::BonfireSpirits);
+        event_state.current_screen = 1;
+        run_state.event_state = Some(event_state);
+
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].semantics.action, EventActionKind::DeckOperation);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::RemoveCard {
+                count: 1,
+                target_uuid: None,
+                kind: EventCardKind::Unknown,
+            }));
+        assert!(options[0]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresNonBottledPurgeableCard));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::OfferCard)
+        );
+    }
+
+    #[test]
+    fn structured_options_expose_bonfire_spirits_intro_and_complete_boundaries() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut intro = EventState::new(EventId::BonfireSpirits);
+        intro.current_screen = 0;
+        let intro_options = get_options(&run_state, &intro);
+        assert_eq!(intro_options[0].semantics.action, EventActionKind::Continue);
+        assert_eq!(
+            intro_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut complete = EventState::new(EventId::BonfireSpirits);
+        complete.current_screen = 3;
+        let complete_options = get_options(&run_state, &complete);
+        assert_eq!(complete_options[0].semantics.action, EventActionKind::Leave);
+        assert!(complete_options[0].semantics.terminal);
     }
 
     #[test]
