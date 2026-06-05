@@ -5,13 +5,25 @@
 // Forge uses gridSelectScreen for player to choose which card to upgrade.
 
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventRelicKind,
+    EventSelectionKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Leave]")];
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )];
     }
 
     let has_upgradable = run_state
@@ -21,18 +33,63 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
 
     let mut choices = vec![];
     if has_upgradable {
-        choices.push(EventChoiceMeta::new("[Forge] Upgrade a card."));
+        choices.push(EventOption::new(
+            EventChoiceMeta::new("[Forge] Upgrade a card."),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::UpgradeCard { count: 1 }],
+                constraints: vec![EventOptionConstraint::RequiresUpgradeableCard],
+                transition: EventOptionTransition::OpenSelection(EventSelectionKind::UpgradeCard),
+                ..Default::default()
+            },
+        ));
     } else {
-        choices.push(EventChoiceMeta::disabled(
-            "[Forge] Upgrade a card.",
-            "No upgradable cards",
+        choices.push(EventOption::new(
+            EventChoiceMeta::disabled("[Forge] Upgrade a card.", "No upgradable cards"),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::UpgradeCard { count: 1 }],
+                constraints: vec![EventOptionConstraint::RequiresUpgradeableCard],
+                transition: EventOptionTransition::OpenSelection(EventSelectionKind::UpgradeCard),
+                ..Default::default()
+            },
         ));
     }
-    choices.push(EventChoiceMeta::new(
-        "[Rummage] Obtain Pain and Warped Tongs.",
+    choices.push(EventOption::new(
+        EventChoiceMeta::new("[Rummage] Obtain Pain and Warped Tongs."),
+        EventOptionSemantics {
+            action: EventActionKind::Trade,
+            effects: vec![
+                EventEffect::ObtainRelic {
+                    count: 1,
+                    kind: EventRelicKind::Specific(crate::content::relics::RelicId::WarpedTongs),
+                },
+                EventEffect::ObtainCurse {
+                    count: 1,
+                    kind: EventCardKind::Specific(crate::content::cards::CardId::Pain),
+                },
+            ],
+            transition: EventOptionTransition::AdvanceScreen,
+            ..Default::default()
+        },
     ));
-    choices.push(EventChoiceMeta::new("[Leave]"));
+    choices.push(EventOption::new(
+        EventChoiceMeta::new("[Leave]"),
+        EventOptionSemantics {
+            action: EventActionKind::Leave,
+            transition: EventOptionTransition::Complete,
+            terminal: true,
+            ..Default::default()
+        },
+    ));
     choices
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -108,6 +165,10 @@ mod tests {
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::ClientInput;
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventOptionConstraint, EventOptionTransition,
+        EventRelicKind, EventSelectionKind,
+    };
     use crate::state::selection::{
         DomainEvent, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
     };
@@ -129,6 +190,68 @@ mod tests {
         let mut card = CombatCard::new(id, uuid);
         card.upgrades = upgrades;
         card
+    }
+
+    #[test]
+    fn options_expose_structured_forge_rummage_and_leave_semantics() {
+        let mut run_state = blacksmith_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101, 0)];
+        let event_state = run_state.event_state.as_ref().unwrap();
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            event_state,
+        )
+        .expect("Accursed Blacksmith should expose structured event semantics");
+
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].semantics.action, EventActionKind::DeckOperation);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![EventEffect::UpgradeCard { count: 1 }]
+        );
+        assert!(options[0]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresUpgradeableCard));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::UpgradeCard)
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Trade);
+        assert_eq!(
+            options[1].semantics.effects,
+            vec![
+                EventEffect::ObtainRelic {
+                    count: 1,
+                    kind: EventRelicKind::Specific(RelicId::WarpedTongs),
+                },
+                EventEffect::ObtainCurse {
+                    count: 1,
+                    kind: EventCardKind::Specific(CardId::Pain),
+                },
+            ]
+        );
+        assert_eq!(options[2].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            options[2].semantics.transition,
+            EventOptionTransition::Complete
+        );
+
+        let mut result_screen = EventState::new(EventId::AccursedBlacksmith);
+        result_screen.current_screen = 1;
+        let leave_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &result_screen,
+            )
+            .expect("Accursed Blacksmith result screen should expose leave semantics");
+        assert_eq!(leave_options.len(), 1);
+        assert_eq!(leave_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            leave_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
     }
 
     #[test]

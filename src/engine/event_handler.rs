@@ -640,6 +640,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::DrugDealer => {
             crate::content::events::drug_dealer::get_options(run_state, event_state)
         }
+        EventId::AccursedBlacksmith => {
+            crate::content::events::accursed_blacksmith::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
