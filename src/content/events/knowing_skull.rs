@@ -1,5 +1,8 @@
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -42,32 +45,106 @@ fn card_cost(state: i32) -> i32 {
 }
 
 pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(_run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             // Intro screen
-            vec![EventChoiceMeta::new("[Proceed]")]
+            vec![EventOption::new(
+                EventChoiceMeta::new("[Proceed]"),
+                EventOptionSemantics {
+                    action: EventActionKind::Continue,
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            )]
         }
         1 => {
             // ASK screen: repeatable options with independent escalating costs
             let s = event_state.internal_state;
+            let mut potion_effects = vec![EventEffect::LoseHp(potion_cost(s))];
+            if !run_state
+                .relics
+                .iter()
+                .any(|relic| relic.id == crate::content::relics::RelicId::Sozu)
+            {
+                potion_effects.push(EventEffect::ObtainPotion { count: 1 });
+            }
             vec![
-                EventChoiceMeta::new(format!(
-                    "[Potion] Lose {} HP. Obtain a random Potion.",
-                    potion_cost(s)
-                )),
-                EventChoiceMeta::new(format!(
-                    "[Gold] Gain {} Gold. Lose {} HP.",
-                    GOLD_REWARD,
-                    gold_cost(s)
-                )),
-                EventChoiceMeta::new(format!(
-                    "[Card] Lose {} HP. Obtain a colorless card.",
-                    card_cost(s)
-                )),
-                EventChoiceMeta::new(format!("[Leave] Lose {} HP.", BASE_COST)),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Potion] Lose {} HP. Obtain a random Potion.",
+                        potion_cost(s)
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: potion_effects,
+                        transition: EventOptionTransition::None,
+                        repeatable: true,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Gold] Gain {} Gold. Lose {} HP.",
+                        GOLD_REWARD,
+                        gold_cost(s)
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: vec![
+                            EventEffect::LoseHp(gold_cost(s)),
+                            EventEffect::GainGold(GOLD_REWARD),
+                        ],
+                        transition: EventOptionTransition::None,
+                        repeatable: true,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Card] Lose {} HP. Obtain a colorless card.",
+                        card_cost(s)
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: vec![
+                            EventEffect::LoseHp(card_cost(s)),
+                            EventEffect::ObtainColorlessCard {
+                                count: 1,
+                                kind: EventCardKind::RandomColorlessUncommon,
+                            },
+                        ],
+                        transition: EventOptionTransition::None,
+                        repeatable: true,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new(format!("[Leave] Lose {} HP.", BASE_COST)),
+                    EventOptionSemantics {
+                        action: EventActionKind::Leave,
+                        effects: vec![EventEffect::LoseHp(BASE_COST)],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
 }
 
@@ -138,6 +215,9 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 mod tests {
     use super::*;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventOptionTransition,
+    };
     use crate::state::selection::DomainEvent;
 
     fn skull_run() -> RunState {
@@ -155,6 +235,106 @@ mod tests {
         });
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn structured_options_expose_repeatable_escalating_costs_and_rewards() {
+        let mut run_state = skull_run();
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert_eq!(options.len(), 4);
+        assert_eq!(options[0].semantics.action, EventActionKind::Trade);
+        assert!(options[0].semantics.repeatable);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(6)));
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainPotion { count: 1 }));
+
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(6)));
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::GainGold(90)));
+
+        assert!(options[2]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(6)));
+        assert!(options[2]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainColorlessCard {
+                count: 1,
+                kind: EventCardKind::RandomColorlessUncommon,
+            }));
+
+        assert_eq!(options[3].semantics.action, EventActionKind::Leave);
+        assert!(options[3]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(6)));
+        assert_eq!(
+            options[3].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        run_state.event_state.as_mut().unwrap().internal_state = (2 << 16) | (1 << 8) | 3;
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(9)));
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(7)));
+        assert!(options[2]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(8)));
+    }
+
+    #[test]
+    fn structured_potion_option_respects_sozu_actual_effect_boundary() {
+        let mut run_state = skull_run();
+        run_state.relics.push(RelicState::new(RelicId::Sozu));
+
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(6)));
+        assert!(!options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainPotion { count: 1 }));
+    }
+
+    #[test]
+    fn structured_intro_and_complete_screens_expose_continue_then_leave() {
+        let run_state = skull_run();
+        let mut intro = EventState::new(EventId::KnowingSkull);
+        intro.current_screen = 0;
+        let intro_options = get_options(&run_state, &intro);
+        assert_eq!(intro_options[0].semantics.action, EventActionKind::Continue);
+        assert_eq!(
+            intro_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut complete = EventState::new(EventId::KnowingSkull);
+        complete.current_screen = 2;
+        let complete_options = get_options(&run_state, &complete);
+        assert_eq!(complete_options[0].semantics.action, EventActionKind::Leave);
+        assert!(complete_options[0].semantics.terminal);
     }
 
     #[test]
