@@ -666,6 +666,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::Ssssserpent => {
             crate::content::events::sssserpent::get_options(run_state, event_state)
         }
+        EventId::TombRedMask => {
+            crate::content::events::tomb_red_mask::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
