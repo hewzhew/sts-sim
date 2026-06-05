@@ -723,6 +723,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::Colosseum => {
             crate::content::events::colosseum::get_options(run_state, event_state)
         }
+        EventId::DeadAdventurer => {
+            crate::content::events::dead_adventurer::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }

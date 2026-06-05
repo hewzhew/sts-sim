@@ -1,6 +1,9 @@
 use crate::content::monsters::factory::EncounterId;
 use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventRandomOutcomeKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -56,20 +59,61 @@ fn encounter_id_for_enemy(enemy: i32) -> EncounterId {
     }
 }
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             let chance = encounter_chance(event_state.internal_state);
             vec![
-                EventChoiceMeta::new(format!("[Search] {}% chance of a fight.", chance)),
-                EventChoiceMeta::new("[Leave]"),
+                EventOption::new(
+                    EventChoiceMeta::new(format!("[Search] {}% chance of a fight.", chance)),
+                    EventOptionSemantics {
+                        action: EventActionKind::Special,
+                        effects: vec![EventEffect::RandomOutcome {
+                            kind: EventRandomOutcomeKind::DeadAdventurerSearch,
+                        }],
+                        repeatable: true,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Leave]"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Leave,
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
         // Combat triggered
-        1 => vec![EventChoiceMeta::new("[Fight!]")],
+        1 => vec![EventOption::new(
+            EventChoiceMeta::new("[Fight!]"),
+            EventOptionSemantics {
+                action: EventActionKind::Fight,
+                effects: vec![EventEffect::StartCombat],
+                transition: EventOptionTransition::StartCombat,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
         // Post-loot or post-combat
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -220,8 +264,84 @@ mod tests {
     };
     use crate::content::monsters::factory::EncounterId;
     use crate::state::core::{CombatContext, EngineState, PostCombatReturn};
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionTransition, EventRandomOutcomeKind,
+        EventState,
+    };
     use crate::state::run::RunState;
+
+    #[test]
+    fn structured_options_expose_random_search_without_flattening_hidden_rewards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut internal_state = 0;
+        set_num_rewards(&mut internal_state, 0);
+        set_encounter_chance(&mut internal_state, 25);
+        set_reward_types(&mut internal_state, 0, 1, 2);
+        set_enemy_type(&mut internal_state, 0);
+        run_state.event_state = Some(EventState {
+            id: EventId::DeadAdventurer,
+            current_screen: 0,
+            internal_state,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            run_state.event_state.as_ref().unwrap(),
+        )
+        .expect("Dead Adventurer should expose structured event options");
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Special);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![EventEffect::RandomOutcome {
+                kind: EventRandomOutcomeKind::DeadAdventurerSearch,
+            }]
+        );
+        assert!(options[0].semantics.repeatable);
+        assert_eq!(options[0].semantics.transition, EventOptionTransition::None);
+        assert_eq!(options[1].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+    }
+
+    #[test]
+    fn structured_fight_prompt_exposes_start_combat_without_hidden_reward_details() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut internal_state = 0;
+        set_num_rewards(&mut internal_state, 1);
+        set_encounter_chance(&mut internal_state, 50);
+        set_reward_types(&mut internal_state, 0, 1, 2);
+        set_enemy_type(&mut internal_state, 2);
+        run_state.event_state = Some(EventState {
+            id: EventId::DeadAdventurer,
+            current_screen: 1,
+            internal_state,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            run_state.event_state.as_ref().unwrap(),
+        )
+        .expect("Dead Adventurer fight prompt should expose structured event options");
+
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].semantics.action, EventActionKind::Fight);
+        assert_eq!(options[0].semantics.effects, vec![EventEffect::StartCombat]);
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::StartCombat
+        );
+        assert!(options[0].semantics.terminal);
+    }
 
     #[test]
     fn init_consumes_java_enemy_roll_and_stores_enemy_in_state() {

@@ -168,6 +168,7 @@ pub enum SelectionBoundary {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum RandomEventOutcomeBoundary {
     GremlinWheel,
+    DeadAdventurerSearch,
 }
 
 impl CandidateResolution {
@@ -482,6 +483,7 @@ impl RandomEventOutcomeBoundary {
     fn brief(self) -> &'static str {
         match self {
             RandomEventOutcomeBoundary::GremlinWheel => "Gremlin Wheel",
+            RandomEventOutcomeBoundary::DeadAdventurerSearch => "Dead Adventurer search",
         }
     }
 }
@@ -740,6 +742,9 @@ fn push_effect_resolution(
 fn random_event_outcome_boundary(kind: EventRandomOutcomeKind) -> RandomEventOutcomeBoundary {
     match kind {
         EventRandomOutcomeKind::GremlinWheel => RandomEventOutcomeBoundary::GremlinWheel,
+        EventRandomOutcomeKind::DeadAdventurerSearch => {
+            RandomEventOutcomeBoundary::DeadAdventurerSearch
+        }
     }
 }
 
