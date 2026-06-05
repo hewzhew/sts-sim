@@ -784,6 +784,9 @@ pub fn try_build_event_state_from_screen_state(
                 "internal_state_privileged",
             )?
         }
+        EventId::KnowingSkull if current_screen == 1 => {
+            decode_knowing_skull_internal_state(screen_state.get("event_semantics_state")?)?
+        }
         EventId::Nloth if current_screen == 0 => {
             decode_nloth_internal_state(run_state, screen_state.get("event_semantics_state")?)?
         }
@@ -827,6 +830,19 @@ pub fn event_semantics_state(run_state: &RunState, event_state: &EventState) -> 
         EventId::MatchAndKeep if event_state.current_screen <= 3 => Some(json!({
             "extra_data_privileged": event_state.extra_data,
         })),
+        EventId::KnowingSkull if event_state.current_screen == 1 => {
+            let potion_count = event_state.internal_state & 0xFF;
+            let gold_count = (event_state.internal_state >> 8) & 0xFF;
+            let card_count = (event_state.internal_state >> 16) & 0xFF;
+            Some(json!({
+                "potion_count": potion_count,
+                "gold_count": gold_count,
+                "card_count": card_count,
+                "potion_cost": 6 + potion_count,
+                "gold_cost": 6 + gold_count,
+                "card_cost": 6 + card_count,
+            }))
+        }
         EventId::Nloth if event_state.current_screen == 0 => {
             let choice1_relic_index = (event_state.internal_state & 0xFF) as usize;
             let choice2_relic_index = ((event_state.internal_state >> 8) & 0xFF) as usize;
@@ -896,6 +912,7 @@ pub fn live_event_requires_semantics_state(event_id: EventId, current_screen: us
             | (EventId::MatchAndKeep, 1)
             | (EventId::MatchAndKeep, 2)
             | (EventId::MatchAndKeep, 3)
+            | (EventId::KnowingSkull, 1)
             | (EventId::Nloth, 0)
             | (EventId::WorldOfGoop, 0)
             | (EventId::ScrapOoze, 0)
@@ -915,6 +932,7 @@ pub fn live_event_semantics_state_keys(
         (EventId::Designer, 1) => Some(&["adjust_upgrades_one", "clean_up_removes_cards"]),
         (EventId::DeadAdventurer, 0 | 1) => Some(&["internal_state_privileged"]),
         (EventId::MatchAndKeep, 0 | 1 | 2 | 3) => Some(&["extra_data_privileged"]),
+        (EventId::KnowingSkull, 1) => Some(&["potion_count", "gold_count", "card_count"]),
         (EventId::Nloth, 0) => Some(&["choice1_relic_index", "choice2_relic_index"]),
         (EventId::WorldOfGoop, 0) => Some(&["gold_loss"]),
         (EventId::ScrapOoze, 0) => Some(&["relic_chance", "damage"]),
@@ -951,6 +969,19 @@ fn decode_privileged_i32_vec(event_semantics_state: &Value, key: &str) -> Option
             i32::try_from(value).ok()
         })
         .collect()
+}
+
+fn decode_knowing_skull_internal_state(event_semantics_state: &Value) -> Option<i32> {
+    let potion_count = decode_small_counter(event_semantics_state, "potion_count")?;
+    let gold_count = decode_small_counter(event_semantics_state, "gold_count")?;
+    let card_count = decode_small_counter(event_semantics_state, "card_count")?;
+    Some(potion_count | (gold_count << 8) | (card_count << 16))
+}
+
+fn decode_small_counter(event_semantics_state: &Value, key: &str) -> Option<i32> {
+    let value = event_semantics_state.get(key).and_then(Value::as_i64)?;
+    let value = i32::try_from(value).ok()?;
+    (0..=0xFF).contains(&value).then_some(value)
 }
 
 fn decode_nloth_internal_state(run_state: &RunState, event_semantics_state: &Value) -> Option<i32> {
@@ -1569,6 +1600,41 @@ mod tests {
         assert_eq!(rebuilt.extra_data, event_state.extra_data);
         assert!(live_event_requires_semantics_state(
             EventId::MatchAndKeep,
+            1
+        ));
+    }
+
+    #[test]
+    fn knowing_skull_event_semantics_state_round_trips_public_cost_counters() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: EventId::KnowingSkull,
+            current_screen: 1,
+            internal_state: (2 << 16) | (1 << 8) | 3,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+
+        let semantics = event_semantics_state(&rs, &event_state).unwrap();
+        assert_eq!(semantics["potion_count"], 3);
+        assert_eq!(semantics["gold_count"], 1);
+        assert_eq!(semantics["card_count"], 2);
+        assert_eq!(semantics["potion_cost"], 9);
+        assert_eq!(semantics["gold_cost"], 7);
+        assert_eq!(semantics["card_cost"], 8);
+        let screen_state = json!({
+            "event_name": "Knowing Skull",
+            "current_screen": 1,
+            "event_semantics_state": semantics,
+        });
+        let rebuilt =
+            try_build_event_state_from_screen_state(&rs, EventId::KnowingSkull, 1, &screen_state)
+                .unwrap();
+
+        assert_eq!(rebuilt.internal_state, event_state.internal_state);
+        assert!(live_event_requires_semantics_state(
+            EventId::KnowingSkull,
             1
         ));
     }
