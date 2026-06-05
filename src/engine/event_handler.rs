@@ -637,6 +637,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::Neow => crate::content::events::neow::get_options(run_state, event_state),
         EventId::Addict => crate::content::events::addict::get_options(run_state, event_state),
         EventId::BigFish => crate::content::events::big_fish::get_options(run_state, event_state),
+        EventId::DrugDealer => {
+            crate::content::events::drug_dealer::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }

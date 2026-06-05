@@ -6,7 +6,11 @@
 // Screen 1: [Leave]
 
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventRelicKind,
+    EventSelectionKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -18,28 +22,88 @@ fn purgeable_count(run_state: &RunState) -> usize {
         .count()
 }
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Leave]")];
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )];
     }
 
-    let mut choices = vec![EventChoiceMeta::new("[Ingest Mutagens] Obtain J.A.X.")];
+    let mut choices = vec![EventOption::new(
+        EventChoiceMeta::new("[Ingest Mutagens] Obtain J.A.X."),
+        EventOptionSemantics {
+            action: EventActionKind::Gain,
+            effects: vec![EventEffect::ObtainCard {
+                count: 1,
+                kind: EventCardKind::Specific(crate::content::cards::CardId::JAX),
+            }],
+            transition: EventOptionTransition::AdvanceScreen,
+            ..Default::default()
+        },
+    )];
 
     if purgeable_count(run_state) >= 2 {
-        choices.push(EventChoiceMeta::new(
-            "[Become a Test Subject] Transform 2 cards.",
+        choices.push(EventOption::new(
+            EventChoiceMeta::new("[Become a Test Subject] Transform 2 cards."),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::TransformCard { count: 2 }],
+                constraints: vec![EventOptionConstraint::RequiresTransformableCards(2)],
+                transition: EventOptionTransition::OpenSelection(EventSelectionKind::TransformCard),
+                ..Default::default()
+            },
         ));
     } else {
-        choices.push(EventChoiceMeta::disabled(
-            "[Become a Test Subject] Transform 2 cards.",
-            "Not enough purgeable cards",
+        choices.push(EventOption::new(
+            EventChoiceMeta::disabled(
+                "[Become a Test Subject] Transform 2 cards.",
+                "Not enough purgeable cards",
+            ),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::TransformCard { count: 2 }],
+                constraints: vec![EventOptionConstraint::RequiresTransformableCards(2)],
+                transition: EventOptionTransition::OpenSelection(EventSelectionKind::TransformCard),
+                ..Default::default()
+            },
         ));
     }
 
-    choices.push(EventChoiceMeta::new(
-        "[Inject Mutagens] Obtain Mutagenic Strength relic.",
+    let relic_id = if run_state
+        .relics
+        .iter()
+        .any(|r| r.id == crate::content::relics::RelicId::MutagenicStrength)
+    {
+        crate::content::relics::RelicId::Circlet
+    } else {
+        crate::content::relics::RelicId::MutagenicStrength
+    };
+    choices.push(EventOption::new(
+        EventChoiceMeta::new("[Inject Mutagens] Obtain Mutagenic Strength relic."),
+        EventOptionSemantics {
+            action: EventActionKind::Gain,
+            effects: vec![EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::Specific(relic_id),
+            }],
+            transition: EventOptionTransition::AdvanceScreen,
+            ..Default::default()
+        },
     ));
     choices
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -113,6 +177,10 @@ mod tests {
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::ClientInput;
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventOptionConstraint, EventOptionTransition,
+        EventRelicKind, EventSelectionKind,
+    };
     use crate::state::selection::{
         DomainEvent, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
     };
@@ -133,6 +201,66 @@ mod tests {
 
     fn deck_card(id: CardId, uuid: u32) -> CombatCard {
         CombatCard::new(id, uuid)
+    }
+
+    #[test]
+    fn options_expose_structured_jax_transform_relic_and_leave_semantics() {
+        let mut run_state = drug_dealer_run();
+        run_state.master_deck = vec![
+            deck_card(CardId::Strike, 101),
+            deck_card(CardId::Defend, 102),
+        ];
+        let event_state = run_state.event_state.as_ref().unwrap();
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            event_state,
+        )
+        .expect("Drug Dealer should expose structured event semantics");
+
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].semantics.action, EventActionKind::Gain);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![EventEffect::ObtainCard {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::JAX),
+            }]
+        );
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::TransformCard)
+        );
+        assert_eq!(
+            options[1].semantics.effects,
+            vec![EventEffect::TransformCard { count: 2 }]
+        );
+        assert!(options[1]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresTransformableCards(2)));
+        assert_eq!(
+            options[2].semantics.effects,
+            vec![EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::Specific(RelicId::MutagenicStrength),
+            }]
+        );
+
+        let mut result_screen = EventState::new(EventId::DrugDealer);
+        result_screen.current_screen = 1;
+        let leave_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &result_screen,
+            )
+            .expect("Drug Dealer result screen should expose leave semantics");
+        assert_eq!(leave_options.len(), 1);
+        assert_eq!(leave_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            leave_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
     }
 
     #[test]

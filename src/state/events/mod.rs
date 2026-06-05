@@ -245,6 +245,7 @@ pub enum EventOptionConstraint {
     RequiresRemovableCard,
     RequiresUpgradeableCard,
     RequiresTransformableCard,
+    RequiresTransformableCards(usize),
     RequiresPotion,
     RequiresPotionSlotValue,
 }
