@@ -769,6 +769,9 @@ pub fn try_build_event_state_from_screen_state(
         EventId::WorldOfGoop if current_screen == 0 => {
             decode_goop_puddle_internal_state(screen_state.get("event_semantics_state")?)?
         }
+        EventId::TheJoust if current_screen == 2 || current_screen == 3 => {
+            decode_joust_internal_state(current_screen, screen_state.get("event_semantics_state")?)?
+        }
         EventId::Falling if current_screen == 1 => {
             decode_falling_internal_state(run_state, screen_state.get("event_semantics_state")?)?
         }
@@ -812,6 +815,13 @@ pub fn event_semantics_state(run_state: &RunState, event_state: &EventState) -> 
         EventId::TheLibrary if event_state.current_screen == 1 => {
             Some(library_extra_data_semantics(&event_state.extra_data))
         }
+        EventId::TheJoust if event_state.current_screen == 2 => Some(json!({
+            "bet_for_owner": event_state.internal_state & 1 != 0,
+        })),
+        EventId::TheJoust if event_state.current_screen == 3 => Some(json!({
+            "bet_for_owner": event_state.internal_state & 1 != 0,
+            "owner_wins_privileged": event_state.internal_state & 2 != 0,
+        })),
         EventId::WeMeetAgain if event_state.current_screen == 0 => {
             let potion_slot = ((event_state.internal_state >> 8) & 0xFF) as usize;
             let gold_amount = event_state.internal_state & 0xFF;
@@ -842,6 +852,8 @@ pub fn live_event_requires_semantics_state(event_id: EventId, current_screen: us
             | (EventId::Nloth, 0)
             | (EventId::WorldOfGoop, 0)
             | (EventId::TheLibrary, 1)
+            | (EventId::TheJoust, 2)
+            | (EventId::TheJoust, 3)
             | (EventId::WeMeetAgain, 0)
             | (EventId::Falling, 1)
     )
@@ -856,6 +868,8 @@ pub fn live_event_semantics_state_keys(
         (EventId::Nloth, 0) => Some(&["choice1_relic_index", "choice2_relic_index"]),
         (EventId::WorldOfGoop, 0) => Some(&["gold_loss"]),
         (EventId::TheLibrary, 1) => Some(&["cards"]),
+        (EventId::TheJoust, 2) => Some(&["bet_for_owner"]),
+        (EventId::TheJoust, 3) => Some(&["bet_for_owner", "owner_wins_privileged"]),
         (EventId::WeMeetAgain, 0) => Some(&["potion_slot", "gold_amount", "card_uuid"]),
         (EventId::Falling, 1) => Some(&["skill_uuid", "power_uuid", "attack_uuid"]),
         _ => None,
@@ -927,6 +941,23 @@ fn decode_library_extra_data(event_semantics_state: &Value) -> Option<Vec<i32>> 
         extra_data.push(upgrades);
     }
     Some(extra_data)
+}
+
+fn decode_joust_internal_state(
+    current_screen: usize,
+    event_semantics_state: &Value,
+) -> Option<i32> {
+    let bet_for_owner = event_semantics_state
+        .get("bet_for_owner")
+        .and_then(Value::as_bool)? as i32;
+    let owner_wins = if current_screen == 3 {
+        event_semantics_state
+            .get("owner_wins_privileged")
+            .and_then(Value::as_bool)? as i32
+    } else {
+        0
+    };
+    Some(bet_for_owner | (owner_wins << 1))
 }
 
 fn decode_we_meet_again_state_fields(
@@ -1256,5 +1287,60 @@ mod tests {
 
         assert_eq!(rebuilt.extra_data, event_state.extra_data);
         assert!(live_event_requires_semantics_state(EventId::TheLibrary, 1));
+    }
+
+    #[test]
+    fn joust_pre_roll_event_semantics_state_round_trips_public_bet() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: EventId::TheJoust,
+            current_screen: 2,
+            internal_state: 1,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+
+        let semantics = event_semantics_state(&rs, &event_state).unwrap();
+        assert_eq!(semantics["bet_for_owner"], true);
+        let screen_state = json!({
+            "event_name": "The Joust",
+            "current_screen": 2,
+            "event_semantics_state": semantics,
+        });
+        let rebuilt =
+            try_build_event_state_from_screen_state(&rs, EventId::TheJoust, 2, &screen_state)
+                .unwrap();
+
+        assert_eq!(rebuilt.internal_state, event_state.internal_state);
+        assert!(live_event_requires_semantics_state(EventId::TheJoust, 2));
+    }
+
+    #[test]
+    fn joust_post_roll_event_semantics_state_round_trips_privileged_result() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: EventId::TheJoust,
+            current_screen: 3,
+            internal_state: 1 | 2,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+
+        let semantics = event_semantics_state(&rs, &event_state).unwrap();
+        assert_eq!(semantics["bet_for_owner"], true);
+        assert_eq!(semantics["owner_wins_privileged"], true);
+        let screen_state = json!({
+            "event_name": "The Joust",
+            "current_screen": 3,
+            "event_semantics_state": semantics,
+        });
+        let rebuilt =
+            try_build_event_state_from_screen_state(&rs, EventId::TheJoust, 3, &screen_state)
+                .unwrap();
+
+        assert_eq!(rebuilt.internal_state, event_state.internal_state);
+        assert!(live_event_requires_semantics_state(EventId::TheJoust, 3));
     }
 }
