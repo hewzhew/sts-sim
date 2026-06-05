@@ -696,6 +696,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::KnowingSkull => {
             crate::content::events::knowing_skull::get_options(run_state, event_state)
         }
+        EventId::TheLibrary => {
+            crate::content::events::the_library::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }

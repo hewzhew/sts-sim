@@ -1,6 +1,9 @@
 use crate::content::cards::{get_card_definition, CardId, CardRarity};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -15,23 +18,46 @@ const LIBRARY_ENTRY_WIDTH: usize = 2;
 /// Screen 1: 20 cards to choose from (only when Read was picked)
 /// Screen 2: Leave
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+fn library_heal_amount(run_state: &RunState) -> i32 {
+    let heal_pct = if run_state.ascension_level >= 15 {
+        0.20
+    } else {
+        0.33
+    };
+    (run_state.max_hp as f32 * heal_pct).round() as i32
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
-            let heal_pct = if run_state.ascension_level >= 15 {
-                0.20
-            } else {
-                0.33
-            };
-            let heal_amt = (run_state.max_hp as f32 * heal_pct).round() as i32;
+            let heal_amt = library_heal_amount(run_state);
             vec![
-                EventChoiceMeta::new("[Read] Choose a card from 20 offerings."),
-                EventChoiceMeta::new(format!("[Sleep] Heal {} HP.", heal_amt)),
+                EventOption::new(
+                    EventChoiceMeta::new("[Read] Choose a card from 20 offerings."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Gain,
+                        effects: vec![EventEffect::OfferCards {
+                            count: 20,
+                            kind: EventCardKind::RandomClassCard,
+                        }],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new(format!("[Sleep] Heal {} HP.", heal_amt)),
+                    EventOptionSemantics {
+                        action: EventActionKind::Gain,
+                        effects: vec![EventEffect::Heal(heal_amt)],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
         1 => {
             // Show 20 card offerings from extra_data
-            let mut choices = Vec::with_capacity(20);
+            let mut options = Vec::with_capacity(20);
             for idx in 0..library_entry_count(&event_state.extra_data) {
                 let Some((card_id, upgrades)) =
                     library_card_entry_at(run_state, &event_state.extra_data, idx)
@@ -40,15 +66,41 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
                 };
                 let def = get_card_definition(card_id);
                 let upgrade_suffix = if upgrades > 0 { "+" } else { "" };
-                choices.push(EventChoiceMeta::new(format!(
-                    "{}{} ({:?} {:?})",
-                    def.name, upgrade_suffix, def.rarity, def.card_type
-                )));
+                options.push(EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "{}{} ({:?} {:?})",
+                        def.name, upgrade_suffix, def.rarity, def.card_type
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Gain,
+                        effects: vec![EventEffect::ObtainCard {
+                            count: 1,
+                            kind: EventCardKind::Specific(card_id),
+                        }],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ));
             }
-            choices
+            options
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -64,12 +116,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
                 }
                 _ => {
                     // Sleep: heal
-                    let heal_pct = if run_state.ascension_level >= 15 {
-                        0.20
-                    } else {
-                        0.33
-                    };
-                    let heal_amt = (run_state.max_hp as f32 * heal_pct).round() as i32;
+                    let heal_amt = library_heal_amount(run_state);
                     run_state
                         .heal_with_source(heal_amt, DomainEventSource::Event(EventId::TheLibrary));
                     event_state.current_screen = 2;
@@ -217,7 +264,76 @@ mod tests {
     use super::*;
     use crate::content::cards::CardType;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventOptionTransition,
+    };
     use crate::state::selection::DomainEvent;
+
+    #[test]
+    fn structured_options_expose_read_sleep_and_specific_book_card_choices() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.current_hp = 10;
+        rs.max_hp = 80;
+        rs.event_state = Some(EventState::new(EventId::TheLibrary));
+
+        let options = get_options(&rs, rs.event_state.as_ref().unwrap());
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Gain);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::OfferCards {
+                count: 20,
+                kind: EventCardKind::RandomClassCard,
+            }));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Gain);
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::Heal(26)));
+
+        let mut event_state = EventState::new(EventId::TheLibrary);
+        event_state.current_screen = 1;
+        push_library_card_entry(&mut event_state.extra_data, CardId::ShrugItOff, 1);
+        let card_options = get_options(&rs, &event_state);
+        assert_eq!(card_options.len(), 1);
+        assert_eq!(card_options[0].semantics.action, EventActionKind::Gain);
+        assert!(card_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainCard {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::ShrugItOff),
+            }));
+        assert_eq!(
+            card_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut complete = EventState::new(EventId::TheLibrary);
+        complete.current_screen = 2;
+        let complete_options = get_options(&rs, &complete);
+        assert_eq!(complete_options[0].semantics.action, EventActionKind::Leave);
+        assert!(complete_options[0].semantics.terminal);
+    }
+
+    #[test]
+    fn structured_sleep_uses_a15_heal_amount() {
+        let mut rs = RunState::new(1, 15, true, "Ironclad");
+        rs.max_hp = 80;
+        rs.event_state = Some(EventState::new(EventId::TheLibrary));
+
+        let options = get_options(&rs, rs.event_state.as_ref().unwrap());
+
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::Heal(16)));
+    }
 
     #[test]
     fn read_preserves_preview_obtain_upgrades_and_event_source() {
