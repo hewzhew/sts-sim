@@ -1,22 +1,51 @@
 use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
-    if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Leave]")];
-    }
-
-    let potion_count = if run_state.ascension_level >= 15 {
+fn potion_reward_count(run_state: &RunState) -> usize {
+    if run_state.ascension_level >= 15 {
         2
     } else {
         3
-    };
-    vec![EventChoiceMeta::new(format!(
-        "[Take] Obtain {} random Potions.",
-        potion_count
-    ))]
+    }
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
+    if event_state.current_screen == 1 {
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )];
+    }
+
+    let potion_count = potion_reward_count(run_state);
+    vec![EventOption::new(
+        EventChoiceMeta::new(format!("[Take] Obtain {} random Potions.", potion_count)),
+        EventOptionSemantics {
+            action: EventActionKind::Gain,
+            effects: vec![EventEffect::ObtainPotion {
+                count: potion_count,
+            }],
+            transition: EventOptionTransition::OpenReward,
+            ..Default::default()
+        },
+    )]
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _choice_idx: usize) {
@@ -25,11 +54,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
     match event_state.current_screen {
         0 => {
             // Take potions
-            let potion_count = if run_state.ascension_level >= 15 {
-                2
-            } else {
-                3
-            };
+            let potion_count = potion_reward_count(run_state);
             // Java adds potion RewardItems and opens the combat reward screen.
             let mut rewards = RewardState::new();
             for _ in 0..potion_count {
@@ -51,10 +76,12 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
 
 #[cfg(test)]
 mod tests {
-    use super::handle_choice;
+    use super::{get_options, handle_choice};
     use crate::rewards::state::RewardItem;
     use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionTransition, EventState,
+    };
     use crate::state::run::RunState;
 
     fn lab_run(ascension_level: u8) -> RunState {
@@ -62,6 +89,40 @@ mod tests {
         run_state.event_state = Some(EventState::new(EventId::Lab));
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn structured_options_expose_potion_reward_count_and_reward_screen_boundary() {
+        let run_state = lab_run(0);
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].semantics.action, EventActionKind::Gain);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainPotion { count: 3 }));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::OpenReward
+        );
+
+        let run_state_a15 = lab_run(15);
+        let options_a15 = get_options(&run_state_a15, run_state_a15.event_state.as_ref().unwrap());
+        assert!(options_a15[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainPotion { count: 2 }));
+
+        let mut complete = EventState::new(EventId::Lab);
+        complete.current_screen = 1;
+        let complete_options = get_options(&run_state, &complete);
+        assert_eq!(complete_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            complete_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
+        assert!(complete_options[0].semantics.terminal);
     }
 
     #[test]

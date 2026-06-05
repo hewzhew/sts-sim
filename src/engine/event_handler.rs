@@ -681,6 +681,7 @@ pub fn try_get_structured_event_options_for_state(
         EventId::FountainOfCurseCleansing => {
             crate::content::events::fountain::get_options(run_state, event_state)
         }
+        EventId::Lab => crate::content::events::lab::get_options(run_state, event_state),
         _ => return None,
     })
 }
