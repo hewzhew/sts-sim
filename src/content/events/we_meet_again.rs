@@ -35,6 +35,18 @@ fn card_by_uuid(run_state: &RunState, uuid: u32) -> Option<&crate::runtime::comb
     run_state.master_deck.iter().find(|card| card.uuid == uuid)
 }
 
+fn potion_by_slot(
+    run_state: &RunState,
+    slot: Option<usize>,
+) -> Option<&crate::content::potions::Potion> {
+    slot.and_then(|slot| run_state.potions.get(slot))
+        .and_then(|potion| potion.as_ref())
+}
+
+fn potion_label(potion: &crate::content::potions::Potion) -> &'static str {
+    crate::content::potions::get_potion_definition(potion.id).name
+}
+
 fn card_label(card: &crate::runtime::combat::CombatCard) -> String {
     let name = crate::content::cards::get_card_definition(card.id).name;
     if card.upgrades == 0 {
@@ -47,16 +59,19 @@ fn card_label(card: &crate::runtime::combat::CombatCard) -> String {
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
-            let has_potion = potion_slot(event_state).is_some();
+            let selected_potion = potion_by_slot(run_state, potion_slot(event_state));
             let gold_amt = gold_amount(event_state);
             let has_gold = gold_amt > 0;
             let card_uuid = card_uuid(event_state);
             let selected_card = card_uuid.and_then(|uuid| card_by_uuid(run_state, uuid));
 
             vec![
-                if has_potion {
+                if let Some(potion) = selected_potion {
                     EventOption::new(
-                        EventChoiceMeta::new("[Give Potion] Obtain a Relic."),
+                        EventChoiceMeta::new(format!(
+                            "[Give Potion] Give {}. Obtain a Relic.",
+                            potion_label(potion)
+                        )),
                         EventOptionSemantics {
                             action: EventActionKind::Trade,
                             effects: vec![EventEffect::ObtainRelic {
@@ -430,6 +445,48 @@ mod tests {
             options[2].ui.text.contains("Shrug It Off"),
             "Java shows the exact requested card in the button text: {:?}",
             options[2].ui.text
+        );
+    }
+
+    #[test]
+    fn potion_trade_option_names_the_requested_potion() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.potions[1] = Some(Potion::new(PotionId::FirePotion, 91));
+        let event_state = EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: 1 << 8,
+            completed: false,
+            combat_pending: false,
+            extra_data: vec![NO_CARD_UUID],
+        };
+
+        let options = get_options(&rs, &event_state);
+
+        assert!(
+            options[0].ui.text.contains("Fire Potion"),
+            "Java shows the exact requested potion in the button text: {:?}",
+            options[0].ui.text
+        );
+    }
+
+    #[test]
+    fn stale_potion_slot_disables_potion_trade() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: crate::state::events::EventId::WeMeetAgain,
+            current_screen: 0,
+            internal_state: 1 << 8,
+            completed: false,
+            combat_pending: false,
+            extra_data: vec![NO_CARD_UUID],
+        };
+
+        let options = get_options(&rs, &event_state);
+
+        assert!(
+            options[0].ui.disabled,
+            "We Meet Again should not expose a potion trade when the stored slot no longer contains a potion"
         );
     }
 
