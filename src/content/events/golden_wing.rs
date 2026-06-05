@@ -1,5 +1,8 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventSelectionKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -18,37 +21,115 @@ fn has_high_damage_card(run_state: &RunState) -> bool {
     })
 }
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Proceed]")];
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Proceed]"),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::RemoveCard {
+                    count: 1,
+                    target_uuid: None,
+                    kind: EventCardKind::Unknown,
+                }],
+                transition: EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard),
+                repeatable: false,
+                terminal: false,
+                ..Default::default()
+            },
+        )];
     }
     if event_state.current_screen >= 2 {
-        return vec![EventChoiceMeta::new("[Leave]")];
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )];
     }
 
     let can_attack = has_high_damage_card(run_state);
-    let mut choices = vec![EventChoiceMeta::new(format!(
-        "[Remove a card] Take {} damage. Remove a card from your deck.",
-        DAMAGE
-    ))];
+    let mut choices = vec![EventOption::new(
+        EventChoiceMeta::new(format!(
+            "[Remove a card] Take {} damage. Remove a card from your deck.",
+            DAMAGE
+        )),
+        EventOptionSemantics {
+            action: EventActionKind::DeckOperation,
+            effects: vec![
+                EventEffect::LoseHp(DAMAGE),
+                EventEffect::RemoveCard {
+                    count: 1,
+                    target_uuid: None,
+                    kind: EventCardKind::Unknown,
+                },
+            ],
+            transition: EventOptionTransition::AdvanceScreen,
+            repeatable: false,
+            terminal: false,
+            ..Default::default()
+        },
+    )];
 
     if can_attack {
-        choices.push(EventChoiceMeta::new(format!(
-            "[Attack] Gain {}-{} Gold.",
-            MIN_GOLD, MAX_GOLD
-        )));
+        choices.push(EventOption::new(
+            EventChoiceMeta::new(format!("[Attack] Gain {}-{} Gold.", MIN_GOLD, MAX_GOLD)),
+            EventOptionSemantics {
+                action: EventActionKind::Gain,
+                effects: vec![EventEffect::GainGoldRange {
+                    min: MIN_GOLD,
+                    max: MAX_GOLD,
+                }],
+                transition: EventOptionTransition::AdvanceScreen,
+                repeatable: false,
+                terminal: false,
+                ..Default::default()
+            },
+        ));
     } else {
-        choices.push(EventChoiceMeta::disabled(
-            format!(
-                "[Attack] Requires an Attack card with ≥{} damage.",
-                REQUIRED_DAMAGE
+        choices.push(EventOption::new(
+            EventChoiceMeta::disabled(
+                format!(
+                    "[Attack] Requires an Attack card with ≥{} damage.",
+                    REQUIRED_DAMAGE
+                ),
+                "No qualifying attack card.",
             ),
-            "No qualifying attack card.",
+            EventOptionSemantics {
+                action: EventActionKind::Gain,
+                effects: vec![EventEffect::GainGoldRange {
+                    min: MIN_GOLD,
+                    max: MAX_GOLD,
+                }],
+                transition: EventOptionTransition::AdvanceScreen,
+                repeatable: false,
+                terminal: false,
+                ..Default::default()
+            },
         ));
     }
 
-    choices.push(EventChoiceMeta::new("[Leave]"));
+    choices.push(EventOption::new(
+        EventChoiceMeta::new("[Leave]"),
+        EventOptionSemantics {
+            action: EventActionKind::Leave,
+            transition: EventOptionTransition::AdvanceScreen,
+            repeatable: false,
+            terminal: false,
+            ..Default::default()
+        },
+    ));
     choices
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -112,6 +193,9 @@ mod tests {
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventOptionTransition, EventSelectionKind,
+    };
     use crate::state::events::{EventId, EventState};
     use crate::state::run::RunState;
     use crate::state::selection::{
@@ -265,6 +349,64 @@ mod tests {
         let choices = super::get_choices(&run_state, run_state.event_state.as_ref().unwrap());
 
         assert!(choices[1].disabled);
+    }
+
+    #[test]
+    fn options_expose_structured_remove_and_random_gold_semantics() {
+        let mut run_state = golden_wing_run();
+        let mut pommel = CombatCard::new(CardId::PommelStrike, 99);
+        pommel.upgrades = 1;
+        run_state.master_deck.push(pommel);
+        let event_state = run_state.event_state.as_ref().unwrap();
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            event_state,
+        )
+        .expect("Golden Wing should expose structured event semantics");
+
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].semantics.action, EventActionKind::DeckOperation);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![
+                EventEffect::LoseHp(super::DAMAGE),
+                EventEffect::RemoveCard {
+                    count: 1,
+                    target_uuid: None,
+                    kind: crate::state::events::EventCardKind::Unknown,
+                },
+            ]
+        );
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Gain);
+        assert_eq!(
+            options[1].semantics.effects,
+            vec![EventEffect::GainGoldRange {
+                min: super::MIN_GOLD,
+                max: super::MAX_GOLD,
+            }]
+        );
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut purge_screen = event_state.clone();
+        purge_screen.current_screen = 1;
+        let purge_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &purge_screen,
+            )
+            .expect("Golden Wing purge screen should expose the pending selection boundary");
+        assert_eq!(
+            purge_options[0].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard)
+        );
     }
 
     #[test]

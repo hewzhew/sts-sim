@@ -171,6 +171,10 @@ pub enum EventActionKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EventEffect {
     GainGold(i32),
+    GainGoldRange {
+        min: i32,
+        max: i32,
+    },
     LoseGold(i32),
     LoseHp(i32),
     LoseMaxHp(i32),

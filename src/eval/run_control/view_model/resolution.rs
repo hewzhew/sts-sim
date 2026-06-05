@@ -58,6 +58,11 @@ pub enum KnownEffect {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum UnresolvedEffect {
+    RandomGoldRange {
+        min: i32,
+        max: i32,
+        visibility: HiddenInfoVisibility,
+    },
     RandomRelic {
         count: usize,
         pool: RelicPoolBoundary,
@@ -377,6 +382,9 @@ impl KnownEffect {
 impl UnresolvedEffect {
     fn brief(&self) -> String {
         match self {
+            UnresolvedEffect::RandomGoldRange { min, max, .. } => {
+                format!("random gold {min}-{max} outcome")
+            }
             UnresolvedEffect::RandomRelic { pool, .. } => {
                 format!("{} outcome", pool.brief())
             }
@@ -404,6 +412,9 @@ impl UnresolvedEffect {
 
     fn detail(&self) -> String {
         match self {
+            UnresolvedEffect::RandomGoldRange { min, max, .. } => {
+                format!("gain {min}-{max} gold; distribution known, result hidden")
+            }
             UnresolvedEffect::RandomRelic { count, pool, .. } => {
                 format!(
                     "{count} {}; distribution known, result hidden",
@@ -536,6 +547,13 @@ fn push_effect_resolution(
 ) {
     match effect {
         EventEffect::GainGold(amount) => known_effects.push(KnownEffect::GainGold(*amount)),
+        EventEffect::GainGoldRange { min, max } => {
+            unresolved_effects.push(UnresolvedEffect::RandomGoldRange {
+                min: *min,
+                max: *max,
+                visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
+            });
+        }
         EventEffect::LoseGold(amount) => known_effects.push(KnownEffect::LoseGold(*amount)),
         EventEffect::LoseHp(amount) => known_effects.push(KnownEffect::LoseHp(*amount)),
         EventEffect::LoseMaxHp(amount) => known_effects.push(KnownEffect::LoseMaxHp(*amount)),

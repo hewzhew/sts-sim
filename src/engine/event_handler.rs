@@ -615,6 +615,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::GoldenShrine => {
             crate::content::events::golden_shrine::get_options(run_state, event_state)
         }
+        EventId::GoldenWing => {
+            crate::content::events::golden_wing::get_options(run_state, event_state)
+        }
         EventId::WeMeetAgain => {
             crate::content::events::we_meet_again::get_options(run_state, event_state)
         }
