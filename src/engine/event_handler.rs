@@ -647,6 +647,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::ShiningLight => {
             crate::content::events::shining_light::get_options(run_state, event_state)
         }
+        EventId::LivingWall => {
+            crate::content::events::living_wall::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }

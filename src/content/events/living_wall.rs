@@ -1,32 +1,107 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventSelectionKind,
+    EventState,
+};
 use crate::state::run::RunState;
 
 /// Returns the choices for the Living Wall event: [Forget, Change, Grow]
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Leave]")];
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )];
     }
 
-    let mut choices = vec![
-        EventChoiceMeta::new("[Forget] Remove a card from your deck."),
-        EventChoiceMeta::new("[Change] Transform a card in your deck."),
-    ];
-
+    let has_non_bottled_purgeable =
+        crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state);
     let has_upgradable = run_state
         .master_deck
         .iter()
         .any(crate::state::core::master_deck_card_can_upgrade);
+    let deck_selection_transition = |selection_kind| {
+        if has_non_bottled_purgeable {
+            EventOptionTransition::OpenSelection(selection_kind)
+        } else {
+            EventOptionTransition::AdvanceScreen
+        }
+    };
+
+    let mut choices = vec![
+        EventOption::new(
+            EventChoiceMeta::new("[Forget] Remove a card from your deck."),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::RemoveCard {
+                    count: 1,
+                    target_uuid: None,
+                    kind: EventCardKind::Unknown,
+                }],
+                constraints: vec![EventOptionConstraint::RequiresNonBottledPurgeableCard],
+                transition: deck_selection_transition(EventSelectionKind::RemoveCard),
+                ..Default::default()
+            },
+        ),
+        EventOption::new(
+            EventChoiceMeta::new("[Change] Transform a card in your deck."),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::TransformCard { count: 1 }],
+                constraints: vec![EventOptionConstraint::RequiresNonBottledPurgeableCard],
+                transition: deck_selection_transition(EventSelectionKind::TransformCard),
+                ..Default::default()
+            },
+        ),
+    ];
+
     if has_upgradable {
-        choices.push(EventChoiceMeta::new("[Grow] Upgrade a card in your deck."));
+        choices.push(EventOption::new(
+            EventChoiceMeta::new("[Grow] Upgrade a card in your deck."),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::UpgradeCard { count: 1 }],
+                constraints: vec![
+                    EventOptionConstraint::RequiresUpgradeableCard,
+                    EventOptionConstraint::RequiresNonBottledPurgeableCard,
+                ],
+                transition: deck_selection_transition(EventSelectionKind::UpgradeCard),
+                ..Default::default()
+            },
+        ));
     } else {
-        choices.push(EventChoiceMeta::disabled(
-            "[Grow] Upgrade a card in your deck.",
-            "Requires an upgradable card in your deck.",
+        choices.push(EventOption::new(
+            EventChoiceMeta::disabled(
+                "[Grow] Upgrade a card in your deck.",
+                "Requires an upgradable card in your deck.",
+            ),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::UpgradeCard { count: 1 }],
+                constraints: vec![
+                    EventOptionConstraint::RequiresUpgradeableCard,
+                    EventOptionConstraint::RequiresNonBottledPurgeableCard,
+                ],
+                transition: deck_selection_transition(EventSelectionKind::UpgradeCard),
+                ..Default::default()
+            },
         ));
     }
 
     choices
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -86,6 +161,10 @@ mod tests {
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::ClientInput;
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventOptionConstraint, EventOptionTransition,
+        EventSelectionKind,
+    };
     use crate::state::selection::{
         DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
         SelectionTargetRef,
@@ -108,6 +187,118 @@ mod tests {
         let mut bottle = RelicState::new(RelicId::BottledFlame);
         bottle.amount = uuid as i32;
         run_state.relics.push(bottle);
+    }
+
+    #[test]
+    fn options_expose_structured_forget_change_grow_and_leave_semantics() {
+        let mut run_state = living_wall_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101, 0)];
+        let event_state = run_state.event_state.as_ref().unwrap();
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            event_state,
+        )
+        .expect("Living Wall should expose structured event semantics");
+
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].semantics.action, EventActionKind::DeckOperation);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![EventEffect::RemoveCard {
+                count: 1,
+                target_uuid: None,
+                kind: crate::state::events::EventCardKind::Unknown,
+            }]
+        );
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard)
+        );
+        assert!(options[0]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresNonBottledPurgeableCard));
+
+        assert_eq!(
+            options[1].semantics.effects,
+            vec![EventEffect::TransformCard { count: 1 }]
+        );
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::TransformCard)
+        );
+        assert!(options[1]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresNonBottledPurgeableCard));
+
+        assert_eq!(
+            options[2].semantics.effects,
+            vec![EventEffect::UpgradeCard { count: 1 }]
+        );
+        assert!(options[2]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresUpgradeableCard));
+        assert!(options[2]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresNonBottledPurgeableCard));
+        assert_eq!(
+            options[2].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::UpgradeCard)
+        );
+
+        let mut result_screen =
+            crate::state::events::EventState::new(crate::state::events::EventId::LivingWall);
+        result_screen.current_screen = 1;
+        let leave_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &result_screen,
+            )
+            .expect("Living Wall result screen should expose leave semantics");
+        assert_eq!(leave_options.len(), 1);
+        assert_eq!(leave_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            leave_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
+    }
+
+    #[test]
+    fn options_preserve_java_enabled_but_no_selection_living_wall_edge_case() {
+        let mut run_state = living_wall_run();
+        run_state.master_deck = vec![deck_card(CardId::Strike, 101, 0)];
+        bottle_uuid(&mut run_state, 101);
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            run_state.event_state.as_ref().unwrap(),
+        )
+        .expect(
+            "Living Wall should expose semantics even when no non-bottled card can be selected",
+        );
+
+        assert!(!options[0].ui.disabled);
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen,
+            "Java keeps Forget clickable but opens no grid when all purgeable cards are bottled"
+        );
+        assert!(!options[1].ui.disabled);
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen,
+            "Java keeps Change clickable but opens no grid when all purgeable cards are bottled"
+        );
+        assert!(!options[2].ui.disabled);
+        assert_eq!(
+            options[2].semantics.transition,
+            EventOptionTransition::AdvanceScreen,
+            "Grow is enabled by upgradable cards, but Java's non-bottled purgeable guard still prevents the grid"
+        );
     }
 
     #[test]

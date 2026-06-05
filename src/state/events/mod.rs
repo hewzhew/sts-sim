@@ -243,6 +243,7 @@ pub enum EventOptionConstraint {
     RequiresGold(i32),
     RequiresRelic(RelicId),
     RequiresRemovableCard,
+    RequiresNonBottledPurgeableCard,
     RequiresUpgradeableCard,
     RequiresTransformableCard,
     RequiresTransformableCards(usize),
