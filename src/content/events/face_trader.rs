@@ -1,30 +1,116 @@
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+const FACE_RELICS: [RelicId; 5] = [
+    RelicId::CultistMask,
+    RelicId::FaceOfCleric,
+    RelicId::GremlinMask,
+    RelicId::NlothsMask,
+    RelicId::SsserpentHead,
+];
+
+fn gold_reward(run_state: &RunState) -> i32 {
+    if run_state.ascension_level >= 15 {
+        50
+    } else {
+        75
+    }
+}
+
+fn touch_damage(run_state: &RunState) -> i32 {
+    (run_state.max_hp / 10).max(1)
+}
+
+fn owns_relic(run_state: &RunState, relic_id: RelicId) -> bool {
+    run_state.relics.iter().any(|owned| owned.id == relic_id)
+}
+
+fn face_relic_reward_kind(run_state: &RunState) -> EventRelicKind {
+    if FACE_RELICS
+        .iter()
+        .copied()
+        .all(|relic_id| owns_relic(run_state, relic_id))
+    {
+        EventRelicKind::Specific(RelicId::Circlet)
+    } else {
+        EventRelicKind::RandomFace
+    }
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
-        0 => vec![EventChoiceMeta::new("[Proceed]")],
+        0 => vec![EventOption::new(
+            EventChoiceMeta::new("[Proceed]"),
+            EventOptionSemantics {
+                action: EventActionKind::Continue,
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        )],
         1 => {
-            let gold_reward = if run_state.ascension_level >= 15 {
-                50
-            } else {
-                75
-            };
-            let damage = (run_state.max_hp / 10).max(1);
+            let gold_reward = gold_reward(run_state);
+            let damage = touch_damage(run_state);
             vec![
-                EventChoiceMeta::new(format!(
-                    "[Touch] Lose {} HP. Gain {} Gold.",
-                    damage, gold_reward
-                )),
-                EventChoiceMeta::new("[Trade] Obtain a face Relic."),
-                EventChoiceMeta::new("[Leave]"),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Touch] Lose {} HP. Gain {} Gold.",
+                        damage, gold_reward
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: vec![
+                            EventEffect::LoseHp(damage),
+                            EventEffect::GainGold(gold_reward),
+                        ],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Trade] Obtain a face Relic."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: vec![EventEffect::ObtainRelic {
+                            count: 1,
+                            kind: face_relic_reward_kind(run_state),
+                        }],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Leave]"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Leave,
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -39,12 +125,8 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 0 => {
                     // Touch: damage + gold
                     // Java: DamageInfo(null, damage) — DEFAULT damage type, ownerless.
-                    let gold_reward = if run_state.ascension_level >= 15 {
-                        50
-                    } else {
-                        75
-                    };
-                    let damage = (run_state.max_hp / 10).max(1);
+                    let gold_reward = gold_reward(run_state);
+                    let damage = touch_damage(run_state);
                     run_state.change_gold_with_source(
                         gold_reward,
                         DomainEventSource::Event(EventId::FaceTrader),
@@ -60,14 +142,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 1 => {
                     // Trade: get a face relic
                     // Java: Collections.shuffle(ids, new Random(miscRng.randomLong()))
-                    let face_relics = [
-                        RelicId::CultistMask,
-                        RelicId::FaceOfCleric,
-                        RelicId::GremlinMask,
-                        RelicId::NlothsMask,
-                        RelicId::SsserpentHead,
-                    ];
-                    let mut available: Vec<RelicId> = face_relics
+                    let mut available: Vec<RelicId> = FACE_RELICS
                         .iter()
                         .copied()
                         .filter(|r| !run_state.relics.iter().any(|owned| owned.id == *r))
@@ -94,7 +169,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     event_state.current_screen = 2;
                 }
                 _ => {
-                    event_state.completed = true;
+                    event_state.current_screen = 2;
                 }
             }
         }
@@ -108,10 +183,12 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 
 #[cfg(test)]
 mod tests {
-    use super::handle_choice;
+    use super::{get_options, handle_choice};
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionTransition, EventRelicKind, EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -125,6 +202,90 @@ mod tests {
         run_state.event_state = Some(event_state);
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn structured_intro_and_main_options_expose_java_semantics() {
+        let run_state = face_trader_main_run();
+
+        let intro_options = get_options(&run_state, &EventState::new(EventId::FaceTrader));
+        assert_eq!(intro_options.len(), 1);
+        assert_eq!(intro_options[0].semantics.action, EventActionKind::Continue);
+        assert_eq!(
+            intro_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let event_state = run_state.event_state.as_ref().unwrap();
+        let main_options = get_options(&run_state, event_state);
+
+        assert_eq!(main_options.len(), 3);
+        assert_eq!(main_options[0].semantics.action, EventActionKind::Trade);
+        assert!(main_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseHp(8)));
+        assert!(main_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::GainGold(75)));
+        assert_eq!(
+            main_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        assert_eq!(main_options[1].semantics.action, EventActionKind::Trade);
+        assert!(main_options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::RandomFace,
+            }));
+
+        assert_eq!(main_options[2].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            main_options[2].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+    }
+
+    #[test]
+    fn structured_trade_option_exposes_circlet_when_all_faces_are_owned() {
+        let mut run_state = face_trader_main_run();
+        run_state.relics.extend([
+            RelicState::new(RelicId::CultistMask),
+            RelicState::new(RelicId::FaceOfCleric),
+            RelicState::new(RelicId::GremlinMask),
+            RelicState::new(RelicId::NlothsMask),
+            RelicState::new(RelicId::SsserpentHead),
+        ]);
+
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::Specific(RelicId::Circlet),
+            }));
+    }
+
+    #[test]
+    fn leave_from_main_screen_goes_to_java_result_screen_before_map() {
+        let mut run_state = face_trader_main_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 2);
+
+        let event_state = run_state.event_state.as_ref().unwrap();
+        assert!(!event_state.completed);
+        assert_eq!(event_state.current_screen, 2);
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(run_state.event_state.as_ref().unwrap().completed);
     }
 
     #[test]
