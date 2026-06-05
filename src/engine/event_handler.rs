@@ -705,6 +705,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::BonfireSpirits => {
             crate::content::events::bonfire_spirits::get_options(run_state, event_state)
         }
+        EventId::ScrapOoze => {
+            crate::content::events::scrap_ooze::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
