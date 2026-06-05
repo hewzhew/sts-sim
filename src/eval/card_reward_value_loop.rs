@@ -520,9 +520,8 @@ fn card_reward_record_sources(trace: &SessionTraceV1) -> Vec<CardRewardDecisionR
 fn card_reward_record_sources_from_step(
     step: &SessionTraceStepV1,
 ) -> Vec<CardRewardDecisionRecordSource<'_>> {
-    step.annotations
-        .iter()
-        .filter_map(|annotation| card_reward_record_from_annotation(annotation))
+    card_reward_records_from_annotations(&step.annotations)
+        .into_iter()
         .map(|(record, public_packet)| CardRewardDecisionRecordSource {
             trace_step_index: Some(step.step_index),
             trace_boundary_record_index: None,
@@ -535,10 +534,8 @@ fn card_reward_record_sources_from_step(
 fn card_reward_record_sources_from_boundary(
     boundary: &SessionTraceBoundaryRecordV1,
 ) -> Vec<CardRewardDecisionRecordSource<'_>> {
-    boundary
-        .annotations
-        .iter()
-        .filter_map(|annotation| card_reward_record_from_annotation(annotation))
+    card_reward_records_from_annotations(&boundary.annotations)
+        .into_iter()
         .map(|(record, public_packet)| CardRewardDecisionRecordSource {
             trace_step_index: None,
             trace_boundary_record_index: Some(boundary.record_index),
@@ -546,6 +543,43 @@ fn card_reward_record_sources_from_boundary(
             public_packet,
         })
         .collect()
+}
+
+fn card_reward_records_from_annotations(
+    annotations: &[RunControlTraceAnnotationV1],
+) -> Vec<(
+    &NonCombatDecisionRecordV1,
+    Option<&PublicRewardDecisionPacketV1>,
+)> {
+    let policy_records = annotations
+        .iter()
+        .filter_map(card_reward_policy_record_from_annotation)
+        .collect::<Vec<_>>();
+    if !policy_records.is_empty() {
+        return policy_records;
+    }
+
+    annotations
+        .iter()
+        .filter_map(card_reward_record_from_annotation)
+        .collect()
+}
+
+fn card_reward_policy_record_from_annotation(
+    annotation: &RunControlTraceAnnotationV1,
+) -> Option<(
+    &NonCombatDecisionRecordV1,
+    Option<&PublicRewardDecisionPacketV1>,
+)> {
+    match annotation {
+        RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+            record,
+            card_reward_packet,
+        } if record.site == DecisionSiteKindV1::CardReward => {
+            Some((record, card_reward_packet.as_ref()))
+        }
+        _ => None,
+    }
 }
 
 fn card_reward_record_from_annotation(

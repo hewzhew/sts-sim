@@ -133,6 +133,27 @@ fn public_packet_trace_annotation_round_trips_through_json() {
 }
 
 #[test]
+fn extraction_prefers_policy_packet_over_same_boundary_human_record() {
+    let (policy_record, packet) = selected_card_reward_record_with_packet(CardId::TwinStrike);
+    let human_record = selected_card_reward_record(CardId::Cleave);
+    let mut trace = trace_with_card_reward_record_and_packet(policy_record, Some(packet));
+    trace.steps[0]
+        .annotations
+        .push(RunControlTraceAnnotationV1::NonCombatHumanBoundary {
+            record: human_record,
+        });
+
+    let examples =
+        extract_card_reward_value_loop_examples_v1(&trace).expect("trace should extract");
+
+    assert_eq!(examples.len(), 1);
+    assert_eq!(
+        examples[0].replay_status,
+        CardRewardValueLoopReplayStatusV1::FullPublicPacket
+    );
+}
+
+#[test]
 fn summarizes_card_reward_value_loop_examples_without_strategy_claims() {
     let selected_record = selected_card_reward_record(CardId::TwinStrike);
     let selected_outcome = attach_noncombat_outcome_v1(
