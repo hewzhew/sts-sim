@@ -16,7 +16,8 @@ Help:
     sd/search-defaults [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] sets session defaults for sc/n/nr; sd clear resets them
 
   Map/Event/Reward:
-    rs/route-suggest = read-only route evidence; rg/route-go = execute selected route planner move; go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, select <idx...>
+    rs/route-suggest = read-only route evidence; rg/route-go = execute selected route planner move; go <x>, fly <x> <y>, event <idx>, claim <idx>, pick <idx>, rp <idx>, select <idx...>
+    rp/record-pick <idx> selects a card reward and records it as diagnostic behavior data with public packet/outcome calibration metadata
     select <idx...> submits the visible selection surface; empty select chooses nothing when allowed
     hand-select <uuid...>, grid-select <uuid...>, choose <idx>, open, relic <idx>
 

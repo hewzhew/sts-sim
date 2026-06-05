@@ -73,6 +73,42 @@ pub(super) fn apply_card_reward_item_open(
     )))
 }
 
+pub(super) fn apply_recorded_card_reward_pick(
+    session: &mut RunControlSession,
+    index: usize,
+) -> Result<RunControlCommandOutcome, String> {
+    if let Some(cards) = active_pending_reward_cards(session) {
+        return apply_recorded_pick_to_pending_cards(session, cards, index);
+    }
+
+    let Some((reward_index, cards)) = visible_card_reward_item(session) else {
+        return Err(
+            "rp <idx> is only valid on a card reward item or card reward screen".to_string(),
+        );
+    };
+    let decision = recorded_card_reward_decision(session, &cards, index)?;
+    let selected_card = decision.candidates[index].card;
+    let record = recorded_card_reward_record(&decision);
+    let trace_annotation = card_reward_policy_trace_annotation(&decision, record)?;
+
+    session.apply_input(ClientInput::ClaimReward(reward_index))?;
+    let Some(opened_cards) = active_pending_reward_cards(session) else {
+        return Err(
+            "recorded card reward pick opened a reward item but no pending card choice appeared"
+                .to_string(),
+        );
+    };
+    if opened_cards.len() <= index || opened_cards[index].id != selected_card {
+        return Err(
+            "recorded card reward pick opened a reward item but choices drifted".to_string(),
+        );
+    }
+
+    Ok(session
+        .apply_input(ClientInput::SelectCard(index))?
+        .with_trace_annotations(vec![trace_annotation]))
+}
+
 pub(super) fn card_reward_policy_stop_annotation(
     session: &RunControlSession,
 ) -> Result<Option<(RunControlTraceAnnotationV1, String)>, String> {
@@ -119,6 +155,19 @@ fn apply_policy_to_pending_cards(
     )))
 }
 
+fn apply_recorded_pick_to_pending_cards(
+    session: &mut RunControlSession,
+    cards: Vec<RewardCard>,
+    index: usize,
+) -> Result<RunControlCommandOutcome, String> {
+    let decision = recorded_card_reward_decision(session, &cards, index)?;
+    let record = recorded_card_reward_record(&decision);
+    let trace_annotation = card_reward_policy_trace_annotation(&decision, record)?;
+    Ok(session
+        .apply_input(ClientInput::SelectCard(index))?
+        .with_trace_annotations(vec![trace_annotation]))
+}
+
 fn card_reward_decision(
     session: &RunControlSession,
     cards: &[RewardCard],
@@ -138,6 +187,44 @@ fn card_reward_decision(
         &context,
         &crate::ai::card_reward_policy_v1::CardRewardPolicyConfigV1::default(),
     )
+}
+
+fn recorded_card_reward_decision(
+    session: &RunControlSession,
+    cards: &[RewardCard],
+    index: usize,
+) -> Result<crate::ai::card_reward_policy_v1::CardRewardDecisionV1, String> {
+    if index >= cards.len() {
+        return Err(format!(
+            "card reward index {index} is out of range; visible choices are 0..{}",
+            cards.len().saturating_sub(1)
+        ));
+    }
+    let mut decision = card_reward_decision(session, cards);
+    let Some(candidate) = decision.candidates.get(index) else {
+        return Err(format!(
+            "card reward index {index} is out of range for policy candidates"
+        ));
+    };
+    decision.action = crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Pick {
+        index,
+        card: candidate.card,
+        confidence: 0.25,
+        reason: "human recorded card reward pick; diagnostic behavior data, not a teacher label"
+            .to_string(),
+    };
+    decision.pick_certificate = None;
+    decision.label_role = "behavior_policy_not_teacher";
+    Ok(decision)
+}
+
+fn recorded_card_reward_record(
+    decision: &crate::ai::card_reward_policy_v1::CardRewardDecisionV1,
+) -> crate::ai::noncombat_decision_v1::NonCombatDecisionRecordV1 {
+    let mut record = decision.to_noncombat_decision_record_v1();
+    record.provenance.source_policy = "run_control_recorded_card_reward_pick_v1".to_string();
+    record.selection.selection_mode = "human_recorded_pick".to_string();
+    record
 }
 
 fn card_reward_policy_trace_annotation(

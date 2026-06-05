@@ -381,7 +381,12 @@ impl SessionTraceRecorder {
         before_outcome.bosses_completed = self.outcome_counters.bosses_completed;
         queue_selected_noncombat_outcomes(&mut self.pending_outcomes, annotations, before_outcome);
         update_pending_outcome_observations(&mut self.pending_outcomes, action_result);
-        update_outcome_counters(&mut self.outcome_counters, action_result, session_after);
+        update_outcome_counters(
+            &mut self.outcome_counters,
+            action_result,
+            session_after,
+            annotations,
+        );
         resolve_pending_outcomes(
             &mut self.pending_outcomes,
             &mut self.trace.noncombat_outcome_attachments,

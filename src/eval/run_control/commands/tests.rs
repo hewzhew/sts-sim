@@ -66,6 +66,18 @@ fn run_control_parser_accepts_case_artifact_commands() {
 }
 
 #[test]
+fn run_control_parser_accepts_recorded_card_reward_pick() {
+    assert_eq!(
+        parse_run_control_command("rp 1").expect("rp should parse"),
+        RunControlCommand::RecordedCardRewardPick(1)
+    );
+    assert_eq!(
+        parse_run_control_command("record-pick 2").expect("record-pick should parse"),
+        RunControlCommand::RecordedCardRewardPick(2)
+    );
+}
+
+#[test]
 fn run_control_parser_accepts_search_combat_options() {
     assert_eq!(
             parse_run_control_command(

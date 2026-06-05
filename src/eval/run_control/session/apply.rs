@@ -129,6 +129,9 @@ impl RunControlSession {
                     self.reward_automation.summary(),
                 ))
             }
+            RunControlCommand::RecordedCardRewardPick(index) => {
+                super::super::card_reward_auto::apply_recorded_card_reward_pick(self, index)
+            }
             RunControlCommand::CardIndex(index) => {
                 if matches!(self.engine_state, EngineState::Shop(_)) {
                     self.apply_input(ClientInput::BuyCard(index))

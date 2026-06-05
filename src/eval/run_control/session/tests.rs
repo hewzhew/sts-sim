@@ -1636,6 +1636,58 @@ fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
 }
 
 #[test]
+fn run_control_recorded_card_reward_pick_selects_card_with_noncombat_record() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::Shockwave,
+        crate::content::cards::CardId::Clash,
+        crate::content::cards::CardId::SeverSoul,
+    ]);
+
+    let outcome = session
+        .apply_command(RunControlCommand::RecordedCardRewardPick(1))
+        .expect("recorded pick should select a card reward");
+
+    assert!(outcome.action_result.is_some());
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Clash));
+    let annotation = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+                card_reward_packet,
+            } => Some((record, card_reward_packet)),
+            _ => None,
+        })
+        .expect("recorded pick should attach a card reward noncombat record");
+    let (record, packet) = annotation;
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("recorded card reward record should validate");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
+    );
+    assert_eq!(
+        record.selection.selected_candidate_id.as_deref(),
+        Some("card_reward:1:Clash")
+    );
+    assert_eq!(record.selection.selection_mode, "human_recorded_pick");
+    assert_eq!(
+        record.provenance.source_policy,
+        "run_control_recorded_card_reward_pick_v1"
+    );
+    assert!(packet.is_some());
+}
+
+#[test]
 fn run_control_auto_run_does_not_open_card_reward_item_with_singing_bowl() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![

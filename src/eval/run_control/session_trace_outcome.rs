@@ -48,16 +48,31 @@ pub(super) fn update_outcome_counters(
     counters: &mut SessionTraceOutcomeCounters,
     action_result: &ActionResult,
     session_after: &RunControlSession,
+    annotations: &[RunControlTraceAnnotationV1],
 ) {
-    if !action_result
+    let combat_ended_changes = action_result
         .changes
         .iter()
-        .any(|change| matches!(change, ActionResultChange::CombatEnded))
-    {
+        .filter(|change| matches!(change, ActionResultChange::CombatEnded))
+        .count() as u32;
+    let combat_automation_trajectories = annotations
+        .iter()
+        .filter(|annotation| {
+            matches!(
+                annotation,
+                RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+                    action_count,
+                    ..
+                } if *action_count > 0
+            )
+        })
+        .count() as u32;
+    let completed_combats = combat_ended_changes.max(combat_automation_trajectories);
+    if completed_combats == 0 {
         return;
     }
 
-    counters.combats_completed = counters.combats_completed.saturating_add(1);
+    counters.combats_completed = counters.combats_completed.saturating_add(completed_combats);
     match session_after.run_state.map.get_current_room_type() {
         Some(RoomType::MonsterRoomElite) => {
             counters.elites_completed = counters.elites_completed.saturating_add(1);
@@ -259,6 +274,8 @@ mod tests {
     use crate::eval::run_control::transition_report::{
         ActionResult, ActionResultChange, CardSnapshot, RunApplyStatus,
     };
+    use crate::eval::run_control::{RunControlConfig, RunControlSession};
+    use crate::state::core::{ClientInput, EngineState};
 
     #[test]
     fn pending_card_reward_outcome_records_selected_card_upgrade_and_removal() {
@@ -332,6 +349,73 @@ mod tests {
                 .picked_card_removed_later,
             Some(true)
         );
+    }
+
+    #[test]
+    fn combat_automation_trajectory_counts_as_completed_combat_for_card_reward_outcome() {
+        let mut pending_outcomes = Vec::new();
+        let mut attachments = Vec::new();
+        let mut counters = SessionTraceOutcomeCounters::default();
+        let before = NonCombatOutcomeSnapshotV1 {
+            act: 1,
+            floor: 1,
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_size: 11,
+            relic_count: 1,
+            potion_count: 0,
+            combats_completed: 0,
+            elites_completed: 0,
+            bosses_completed: 0,
+            run_terminal: None,
+        };
+        queue_selected_noncombat_outcomes(
+            &mut pending_outcomes,
+            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record: selected_card_reward_record(CardId::TwinStrike),
+                card_reward_packet: None,
+            }],
+            before,
+        );
+
+        let annotations = vec![RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+            source: "test_combat_search".to_string(),
+            action_count: 2,
+            actions: vec![super::super::trace_annotation::CombatAutomationActionV1 {
+                step_index: 0,
+                action_key: "combat/end_turn".to_string(),
+                input: ClientInput::EndTurn,
+            }],
+            label_role: "behavior_policy_not_teacher".to_string(),
+        }];
+        let action_result = ActionResult {
+            chosen_label: "advance-to-human-boundary applied 1 operation(s)".to_string(),
+            status: RunApplyStatus::Running,
+            changes: vec![ActionResultChange::LocationChanged {
+                before_act: 1,
+                before_floor: 1,
+                after_act: 1,
+                after_floor: 2,
+            }],
+        };
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 2;
+        session.run_state.current_hp = 72;
+        session.engine_state = EngineState::RewardScreen(crate::state::rewards::RewardState::new());
+
+        update_outcome_counters(&mut counters, &action_result, &session, &annotations);
+        resolve_pending_outcomes(&mut pending_outcomes, &mut attachments, &session, counters)
+            .expect("pending card reward outcome should resolve");
+
+        assert_eq!(attachments.len(), 1);
+        let card_reward = attachments[0]
+            .card_reward
+            .as_ref()
+            .expect("selected card reward should receive card reward outcome");
+        assert_eq!(card_reward.next_combat_hp_loss, Some(8));
+        assert_eq!(attachments[0].metrics.combats_completed_delta, 1);
     }
 
     fn selected_card_reward_record(card_id: CardId) -> NonCombatDecisionRecordV1 {

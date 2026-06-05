@@ -221,16 +221,17 @@ fn state_command_hint(session: &RunControlSession) -> String {
             "type a path id to commit, or back/cancel to return".to_string()
         }
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
-            "type visible id to take card, or back".to_string()
+            "type visible id to take card; rp <id> records pick; back".to_string()
         }
         EngineState::RewardOverlay { reward_state, .. }
             if reward_state.pending_card_choice.is_some() =>
         {
-            "type visible id to take card, bowl, or back".to_string()
+            "type visible id to take card; rp <id> records pick; bowl; back".to_string()
         }
         EngineState::RewardOverlay { .. } => "type visible id, bowl, or back".to_string(),
         EngineState::RewardScreen(reward) if reward.has_card_reward_item() => {
-            "type visible id to open reward, or skip".to_string()
+            "type visible id to open reward; rp <card_idx> records first card reward pick; skip"
+                .to_string()
         }
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
         EngineState::PendingChoice(_)
