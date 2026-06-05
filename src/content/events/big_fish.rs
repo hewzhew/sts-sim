@@ -1,23 +1,74 @@
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
 const MAX_HP_AMT: i32 = 5;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Leave]")];
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )];
     }
 
     let heal_amt = run_state.max_hp / 3;
     vec![
-        EventChoiceMeta::new(format!("[Banana] Heal {} HP.", heal_amt)),
-        EventChoiceMeta::new(format!("[Donut] Gain {} Max HP.", MAX_HP_AMT)),
-        EventChoiceMeta::new("[Box] Obtain a random Relic. Become Cursed - Regret."),
+        EventOption::new(
+            EventChoiceMeta::new(format!("[Banana] Heal {} HP.", heal_amt)),
+            EventOptionSemantics {
+                action: EventActionKind::Gain,
+                effects: vec![EventEffect::Heal(heal_amt)],
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        ),
+        EventOption::new(
+            EventChoiceMeta::new(format!("[Donut] Gain {} Max HP.", MAX_HP_AMT)),
+            EventOptionSemantics {
+                action: EventActionKind::Gain,
+                effects: vec![EventEffect::GainMaxHp(MAX_HP_AMT)],
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        ),
+        EventOption::new(
+            EventChoiceMeta::new("[Box] Obtain a random Relic. Become Cursed - Regret."),
+            EventOptionSemantics {
+                action: EventActionKind::Trade,
+                effects: vec![
+                    EventEffect::ObtainRelic {
+                        count: 1,
+                        kind: EventRelicKind::RandomRelic,
+                    },
+                    EventEffect::ObtainCurse {
+                        count: 1,
+                        kind: EventCardKind::Specific(CardId::Regret),
+                    },
+                ],
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        ),
     ]
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -83,7 +134,10 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventId, EventOptionTransition,
+        EventRelicKind, EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -193,6 +247,59 @@ mod tests {
         run_state.common_relic_pool = vec![relic_id];
         run_state.uncommon_relic_pool = vec![relic_id];
         run_state.rare_relic_pool = vec![relic_id];
+    }
+
+    #[test]
+    fn options_expose_structured_banana_donut_box_and_leave_semantics() {
+        let run_state = big_fish_run(20, 81);
+        let event_state = run_state.event_state.as_ref().unwrap();
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            event_state,
+        )
+        .expect("Big Fish should expose structured event semantics");
+
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].semantics.action, EventActionKind::Gain);
+        assert_eq!(options[0].semantics.effects, vec![EventEffect::Heal(27)]);
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Gain);
+        assert_eq!(
+            options[1].semantics.effects,
+            vec![EventEffect::GainMaxHp(5)]
+        );
+        assert_eq!(
+            options[2].semantics.effects,
+            vec![
+                EventEffect::ObtainRelic {
+                    count: 1,
+                    kind: EventRelicKind::RandomRelic,
+                },
+                EventEffect::ObtainCurse {
+                    count: 1,
+                    kind: EventCardKind::Specific(CardId::Regret),
+                },
+            ]
+        );
+
+        let mut result_screen = EventState::new(EventId::BigFish);
+        result_screen.current_screen = 1;
+        let leave_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &result_screen,
+            )
+            .expect("Big Fish result screen should expose leave semantics");
+        assert_eq!(leave_options.len(), 1);
+        assert_eq!(leave_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            leave_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
     }
 
     #[test]
