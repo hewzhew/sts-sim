@@ -8,20 +8,10 @@ use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
 pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
-    if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Leave]")];
-    }
-
-    let gold_amt = if run_state.ascension_level >= 15 {
-        50
-    } else {
-        100
-    };
-    vec![
-        EventChoiceMeta::new(format!("[Pray] Gain {} Gold.", gold_amt)),
-        EventChoiceMeta::new("[Desecrate] Gain 275 Gold. Become Cursed - Regret."),
-        EventChoiceMeta::new("[Leave]"),
-    ]
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
