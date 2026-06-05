@@ -662,6 +662,7 @@ pub fn try_get_structured_event_options_for_state(
         EventId::Duplicator => {
             crate::content::events::duplicator::get_options(run_state, event_state)
         }
+        EventId::Beggar => crate::content::events::beggar::get_options(run_state, event_state),
         _ => return None,
     })
 }

@@ -1,35 +1,99 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventSelectionKind,
+    EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
 const GOLD_COST: i32 = 75;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             // Donate 75g → purge a card, OR leave
             if run_state.gold >= GOLD_COST {
                 vec![
-                    EventChoiceMeta::new(format!(
-                        "[Donate] Lose {} Gold. Remove a card.",
-                        GOLD_COST
-                    )),
-                    EventChoiceMeta::new("[Leave]"),
+                    EventOption::new(
+                        EventChoiceMeta::new(format!(
+                            "[Donate] Lose {} Gold. Remove a card.",
+                            GOLD_COST
+                        )),
+                        EventOptionSemantics {
+                            action: EventActionKind::Trade,
+                            effects: vec![EventEffect::LoseGold(GOLD_COST)],
+                            constraints: vec![EventOptionConstraint::RequiresGold(GOLD_COST)],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            ..Default::default()
+                        },
+                    ),
+                    EventOption::new(
+                        EventChoiceMeta::new("[Leave]"),
+                        EventOptionSemantics {
+                            action: EventActionKind::Leave,
+                            transition: EventOptionTransition::AdvanceScreen,
+                            ..Default::default()
+                        },
+                    ),
                 ]
             } else {
                 vec![
-                    EventChoiceMeta::disabled(
-                        format!("[Donate] {} Gold.", GOLD_COST),
-                        "Not enough Gold",
+                    EventOption::new(
+                        EventChoiceMeta::disabled(
+                            format!("[Donate] {} Gold.", GOLD_COST),
+                            "Not enough Gold",
+                        ),
+                        EventOptionSemantics {
+                            action: EventActionKind::Trade,
+                            effects: vec![EventEffect::LoseGold(GOLD_COST)],
+                            constraints: vec![EventOptionConstraint::RequiresGold(GOLD_COST)],
+                            transition: EventOptionTransition::AdvanceScreen,
+                            ..Default::default()
+                        },
                     ),
-                    EventChoiceMeta::new("[Leave]"),
+                    EventOption::new(
+                        EventChoiceMeta::new("[Leave]"),
+                        EventOptionSemantics {
+                            action: EventActionKind::Leave,
+                            transition: EventOptionTransition::AdvanceScreen,
+                            ..Default::default()
+                        },
+                    ),
                 ]
             }
         }
-        1 => vec![EventChoiceMeta::new("[Proceed] Remove a card.")],
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        1 => vec![EventOption::new(
+            EventChoiceMeta::new("[Proceed] Remove a card."),
+            EventOptionSemantics {
+                action: EventActionKind::DeckOperation,
+                effects: vec![EventEffect::RemoveCard {
+                    count: 1,
+                    target_uuid: None,
+                    kind: EventCardKind::Unknown,
+                }],
+                constraints: vec![EventOptionConstraint::RequiresNonBottledPurgeableCard],
+                transition: EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard),
+                ..Default::default()
+            },
+        )],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -47,7 +111,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 }
             }
             _ => {
-                event_state.completed = true;
+                event_state.current_screen = 2;
             }
         },
         1 => {
@@ -77,7 +141,10 @@ mod tests {
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventId, EventOptionConstraint,
+        EventOptionTransition, EventSelectionKind, EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{
         DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
@@ -96,6 +163,99 @@ mod tests {
 
     fn deck_card(id: CardId, uuid: u32) -> CombatCard {
         CombatCard::new(id, uuid)
+    }
+
+    #[test]
+    fn options_expose_structured_donate_proceed_and_leave_semantics() {
+        let run_state = beggar_run(0);
+        let event_state = run_state.event_state.as_ref().unwrap();
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            event_state,
+        )
+        .expect("Beggar should expose structured event semantics");
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Trade);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![EventEffect::LoseGold(75)]
+        );
+        assert!(options[0]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresGold(75)));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut paid_screen = EventState::new(EventId::Beggar);
+        paid_screen.current_screen = 1;
+        let paid_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &paid_screen,
+            )
+            .expect("Beggar paid screen should expose remove-card selection semantics");
+        assert_eq!(paid_options.len(), 1);
+        assert_eq!(
+            paid_options[0].semantics.action,
+            EventActionKind::DeckOperation
+        );
+        assert_eq!(
+            paid_options[0].semantics.effects,
+            vec![EventEffect::RemoveCard {
+                count: 1,
+                target_uuid: None,
+                kind: EventCardKind::Unknown,
+            }]
+        );
+        assert!(paid_options[0]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresNonBottledPurgeableCard));
+        assert_eq!(
+            paid_options[0].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard)
+        );
+
+        let mut leave_screen = EventState::new(EventId::Beggar);
+        leave_screen.current_screen = 2;
+        let leave_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &leave_screen,
+            )
+            .expect("Beggar leave screen should expose complete semantics");
+        assert_eq!(leave_options.len(), 1);
+        assert_eq!(leave_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            leave_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
+    }
+
+    #[test]
+    fn leave_advances_to_cancel_result_screen_like_java() {
+        let mut run_state = beggar_run(0);
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        assert_eq!(
+            run_state.event_state.as_ref().unwrap().current_screen,
+            2,
+            "Java Beggar shows a cancel result screen before opening the map"
+        );
+        assert!(!run_state.event_state.as_ref().unwrap().completed);
+        assert!(matches!(engine_state, EngineState::EventRoom));
     }
 
     #[test]
