@@ -1,5 +1,9 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventSelectionKind,
+    EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -14,9 +18,16 @@ use crate::state::selection::DomainEventSource;
 /// Screen 0: [Proceed]
 /// Screen 1: [Take Card] / [Ignore]
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
-        0 => vec![EventChoiceMeta::new("[Proceed]")],
+        0 => vec![EventOption::new(
+            EventChoiceMeta::new("[Proceed]"),
+            EventOptionSemantics {
+                action: EventActionKind::Continue,
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        )],
         1 => {
             let def = crate::content::cards::get_card_definition(run_state.note_for_yourself_card);
             let upgrade_suffix = if run_state.note_for_yourself_upgrades > 0 {
@@ -25,15 +36,58 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
                 ""
             };
             vec![
-                EventChoiceMeta::new(format!(
-                    "[Take Card] Obtain {}{}. Remove a card.",
-                    def.name, upgrade_suffix
-                )),
-                EventChoiceMeta::new("[Ignore]"),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Take Card] Obtain {}{}. Remove a card.",
+                        def.name, upgrade_suffix
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects: vec![
+                            EventEffect::ObtainCard {
+                                count: 1,
+                                kind: EventCardKind::Specific(run_state.note_for_yourself_card),
+                            },
+                            EventEffect::RemoveCard {
+                                count: 1,
+                                target_uuid: None,
+                                kind: EventCardKind::Unknown,
+                            },
+                        ],
+                        constraints: vec![EventOptionConstraint::RequiresNonBottledPurgeableCard],
+                        transition: EventOptionTransition::OpenSelection(
+                            EventSelectionKind::RemoveCard,
+                        ),
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Ignore]"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Decline,
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -85,9 +139,89 @@ mod tests {
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::ClientInput;
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventOptionConstraint, EventOptionTransition,
+        EventSelectionKind,
+    };
     use crate::state::selection::{
         DomainEvent, SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
     };
+
+    #[test]
+    fn structured_take_exposes_specific_note_card_and_remove_selection_boundary() {
+        let mut rs = RunState::new(1, 0, true, "Ironclad");
+        rs.note_for_yourself_card = CardId::Bash;
+        let mut event_state = EventState::new(EventId::NoteForYourself);
+        event_state.current_screen = 1;
+        rs.event_state = Some(event_state);
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &rs,
+            rs.event_state.as_ref().unwrap(),
+        )
+        .expect("NoteForYourself should expose structured event options");
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::DeckOperation);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainCard {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::Bash),
+            }));
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::RemoveCard {
+                count: 1,
+                target_uuid: None,
+                kind: EventCardKind::Unknown,
+            }));
+        assert!(options[0]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresNonBottledPurgeableCard));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard)
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Decline);
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+    }
+
+    #[test]
+    fn structured_intro_and_complete_boundaries() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let intro = EventState::new(EventId::NoteForYourself);
+        let intro_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(&rs, &intro)
+                .expect("NoteForYourself intro should expose structured event options");
+
+        assert_eq!(intro_options[0].semantics.action, EventActionKind::Continue);
+        assert_eq!(
+            intro_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut complete = EventState::new(EventId::NoteForYourself);
+        complete.current_screen = 2;
+        let complete_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &rs, &complete,
+            )
+            .expect("NoteForYourself complete screen should expose structured event options");
+
+        assert_eq!(complete_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            complete_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
+        assert!(complete_options[0].semantics.terminal);
+    }
 
     #[test]
     fn take_uses_profile_note_card_and_event_source() {

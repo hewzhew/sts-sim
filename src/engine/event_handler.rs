@@ -711,6 +711,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::GremlinWheelGame => {
             crate::content::events::gremlin_wheel::get_options(run_state, event_state)
         }
+        EventId::NoteForYourself => {
+            crate::content::events::note_for_yourself::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
