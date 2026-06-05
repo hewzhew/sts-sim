@@ -9,28 +9,89 @@
 use crate::content::monsters::factory::EncounterId;
 use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             // Introduction
-            vec![EventChoiceMeta::new("[Proceed]")]
+            vec![EventOption::new(
+                EventChoiceMeta::new("[Proceed]"),
+                EventOptionSemantics {
+                    action: EventActionKind::Continue,
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            )]
         }
         1 => {
             // Ready to fight
-            vec![EventChoiceMeta::new("[Fight!]")]
+            vec![EventOption::new(
+                EventChoiceMeta::new("[Fight!]"),
+                EventOptionSemantics {
+                    action: EventActionKind::Fight,
+                    effects: vec![EventEffect::StartCombat],
+                    transition: EventOptionTransition::StartCombat,
+                    ..Default::default()
+                },
+            )]
         }
         2 => {
             // Post-first-combat: choose to fight Nobs or flee
             vec![
-                EventChoiceMeta::new("[Flee] Leave the Colosseum."),
-                EventChoiceMeta::new("[Fight] Challenge the Nobs for riches!"),
+                EventOption::new(
+                    EventChoiceMeta::new("[Flee] Leave the Colosseum."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Leave,
+                        transition: EventOptionTransition::Complete,
+                        terminal: true,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Fight] Challenge the Nobs for riches!"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Fight,
+                        effects: vec![
+                            EventEffect::ObtainRelic {
+                                count: 1,
+                                kind: EventRelicKind::RandomRareRelic,
+                            },
+                            EventEffect::ObtainRelic {
+                                count: 1,
+                                kind: EventRelicKind::RandomUncommonRelic,
+                            },
+                            EventEffect::GainGold(100),
+                            EventEffect::StartCombat,
+                        ],
+                        transition: EventOptionTransition::StartCombat,
+                        terminal: true,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -111,6 +172,95 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 mod tests {
     use super::*;
     use crate::state::core::CombatContext;
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionTransition, EventRelicKind,
+    };
+
+    #[test]
+    fn structured_options_expose_colosseum_combat_boundaries() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+        let intro = EventState::new(EventId::Colosseum);
+        let intro_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state, &intro,
+            )
+            .expect("Colosseum should expose structured event options");
+
+        assert_eq!(intro_options[0].semantics.action, EventActionKind::Continue);
+        assert_eq!(
+            intro_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut first_fight = EventState::new(EventId::Colosseum);
+        first_fight.current_screen = 1;
+        let first_fight_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &first_fight,
+            )
+            .expect("Colosseum first fight screen should expose structured event options");
+
+        assert_eq!(
+            first_fight_options[0].semantics.action,
+            EventActionKind::Fight
+        );
+        assert!(first_fight_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::StartCombat));
+        assert_eq!(
+            first_fight_options[0].semantics.transition,
+            EventOptionTransition::StartCombat
+        );
+        assert!(
+            !first_fight_options[0].semantics.terminal,
+            "first Colosseum fight returns to the event room after combat"
+        );
+
+        let mut post_combat = EventState::new(EventId::Colosseum);
+        post_combat.current_screen = 2;
+        let post_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &post_combat,
+            )
+            .expect("Colosseum post-combat screen should expose structured event options");
+
+        assert_eq!(post_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            post_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
+        assert_eq!(post_options[1].semantics.action, EventActionKind::Fight);
+        assert!(post_options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::RandomRareRelic,
+            }));
+        assert!(post_options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::RandomUncommonRelic,
+            }));
+        assert!(post_options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::GainGold(100)));
+        assert!(post_options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::StartCombat));
+        assert_eq!(
+            post_options[1].semantics.transition,
+            EventOptionTransition::StartCombat
+        );
+        assert!(post_options[1].semantics.terminal);
+    }
 
     #[test]
     fn first_fight_returns_to_event_room_without_rewards_or_elite_trigger() {

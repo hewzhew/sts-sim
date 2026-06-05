@@ -720,6 +720,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::MysteriousSphere => {
             crate::content::events::mysterious_sphere::get_options(run_state, event_state)
         }
+        EventId::Colosseum => {
+            crate::content::events::colosseum::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
