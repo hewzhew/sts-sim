@@ -1,6 +1,9 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -12,24 +15,72 @@ fn gold_reward(run_state: &RunState) -> i32 {
     }
 }
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+fn serpent_reward_effects(run_state: &RunState) -> Vec<EventEffect> {
+    vec![
+        EventEffect::GainGold(gold_reward(run_state)),
+        EventEffect::ObtainCurse {
+            count: 1,
+            kind: EventCardKind::Specific(CardId::Doubt),
+        },
+    ]
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             let gold = gold_reward(run_state);
             vec![
-                EventChoiceMeta::new(format!(
-                    "[Agree] Gain {} Gold. Become Cursed - Doubt.",
-                    gold
-                )),
-                EventChoiceMeta::new("[Disagree] Leave."),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Agree] Gain {} Gold. Become Cursed - Doubt.",
+                        gold
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Accept,
+                        effects: serpent_reward_effects(run_state),
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Disagree] Leave."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Decline,
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
         1 => {
             // AGREE screen: confirm
-            vec![EventChoiceMeta::new("[Confirm]")]
+            vec![EventOption::new(
+                EventChoiceMeta::new("[Confirm]"),
+                EventOptionSemantics {
+                    action: EventActionKind::Continue,
+                    effects: serpent_reward_effects(run_state),
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            )]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -69,7 +120,9 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventId, EventOptionTransition, EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -79,6 +132,79 @@ mod tests {
         run_state.event_state = Some(EventState::new(EventId::Ssssserpent));
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn options_expose_structured_agree_confirm_disagree_and_leave_semantics() {
+        let run_state = serpent_run(0);
+        let event_state = run_state.event_state.as_ref().unwrap();
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            event_state,
+        )
+        .expect("Ssssserpent should expose structured event semantics");
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Accept);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![
+                EventEffect::GainGold(175),
+                EventEffect::ObtainCurse {
+                    count: 1,
+                    kind: EventCardKind::Specific(CardId::Doubt),
+                },
+            ]
+        );
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Decline);
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut confirm_screen = EventState::new(EventId::Ssssserpent);
+        confirm_screen.current_screen = 1;
+        let confirm_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &confirm_screen,
+            )
+            .expect("Ssssserpent confirm screen should expose actual reward semantics");
+        assert_eq!(confirm_options.len(), 1);
+        assert_eq!(
+            confirm_options[0].semantics.action,
+            EventActionKind::Continue
+        );
+        assert_eq!(
+            confirm_options[0].semantics.effects,
+            vec![
+                EventEffect::GainGold(175),
+                EventEffect::ObtainCurse {
+                    count: 1,
+                    kind: EventCardKind::Specific(CardId::Doubt),
+                },
+            ]
+        );
+
+        let mut leave_screen = EventState::new(EventId::Ssssserpent);
+        leave_screen.current_screen = 99;
+        let leave_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &leave_screen,
+            )
+            .expect("Ssssserpent final screen should expose leave semantics");
+        assert_eq!(leave_options.len(), 1);
+        assert_eq!(leave_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            leave_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
     }
 
     #[test]
