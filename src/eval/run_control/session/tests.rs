@@ -710,6 +710,55 @@ fn run_control_auto_run_purges_curse_at_shop() {
 }
 
 #[test]
+fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_policy() {
+    let mut session = test_session_at_shop();
+    session
+        .reward_automation
+        .claim_safe_relic_without_sapphire_key = false;
+    session
+        .run_state
+        .add_card_to_deck_without_interception_from(
+            crate::content::cards::CardId::Doubt,
+            0,
+            crate::state::selection::DomainEventSource::DeckMutation,
+        );
+    let EngineState::Shop(shop) = &mut session.engine_state else {
+        panic!("test session should start in shop");
+    };
+    let mut pending = crate::state::rewards::RewardState::new();
+    pending.items = vec![crate::state::rewards::RewardItem::Relic {
+        relic_id: crate::content::relics::RelicId::Anchor,
+    }];
+    shop.pending_reward_overlay = Some(pending);
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should reopen pending reward overlay before shop policy");
+
+    assert!(outcome.message.contains("routine: Open pending rewards"));
+    assert!(outcome
+        .message
+        .contains("Reason: relic reward requires human choice"));
+    assert!(
+        session
+            .run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == crate::content::cards::CardId::Doubt),
+        "shop purge policy must not run before pending overlay rewards are restored"
+    );
+    assert!(matches!(
+        session.engine_state,
+        EngineState::RewardOverlay { .. }
+    ));
+}
+
+#[test]
 fn run_control_auto_run_does_not_purge_starter_shell_at_shop() {
     let mut session = test_session_at_shop();
 

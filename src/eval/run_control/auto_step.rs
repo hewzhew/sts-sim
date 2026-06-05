@@ -197,6 +197,14 @@ pub(super) fn apply_guarded_auto_step(
             }
         }
 
+        if let Some((outcome, summary)) = apply_pending_shop_reward_overlay(session)? {
+            let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            trace_annotations.extend(outcome.trace_annotations);
+            applied.push(summary);
+            applied.extend(auto_capture_summaries);
+            continue;
+        }
+
         if options.route == super::commands::RunControlRouteAutomationMode::Planner {
             if let Some(application) =
                 super::noncombat_auto::apply_planner_noncombat_policy(session)?
@@ -273,6 +281,30 @@ pub(super) fn apply_guarded_auto_step(
         format!("operation budget exhausted at {max_operations} automatic operations"),
         None,
     )
+}
+
+fn apply_pending_shop_reward_overlay(
+    session: &mut RunControlSession,
+) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
+    let EngineState::Shop(shop) = &session.engine_state else {
+        return Ok(None);
+    };
+    if shop.pending_reward_overlay.is_none() {
+        return Ok(None);
+    }
+
+    let view = build_run_control_view_model(session);
+    let Some(candidate) = view.candidates.iter().find(|candidate| {
+        candidate.action.executable_input() == Some(ClientInput::OpenRewardOverlay)
+    }) else {
+        return Ok(None);
+    };
+    let label = candidate.label.clone();
+    let outcome = session.apply_input(ClientInput::OpenRewardOverlay)?;
+    Ok(Some((
+        outcome,
+        format!("routine: {label} (pending shop reward overlay)"),
+    )))
 }
 
 fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<String> {
@@ -387,7 +419,6 @@ fn auto_advance_candidate<'a>(
                 });
         }
     }
-
     if view.candidates.len() == 1
         && view.candidates[0].note.as_deref() == Some("routine")
         && view.candidates[0].action.executable_input().is_some()
