@@ -656,6 +656,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::Purifier => {
             crate::content::events::purification_shrine::get_options(run_state, event_state)
         }
+        EventId::Transmorgrifier => {
+            crate::content::events::transmogrifier::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
