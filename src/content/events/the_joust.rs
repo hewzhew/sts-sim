@@ -10,21 +10,92 @@
 // Java uses miscRng.randomBoolean(0.3f) — owner wins 30%, murderer wins 70%
 
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+const BET_AMT: i32 = 50;
+const WIN_MURDERER: i32 = 100;
+const WIN_OWNER: i32 = 250;
+
+fn bet_for_owner(event_state: &EventState) -> bool {
+    (event_state.internal_state & 1) != 0
+}
+
+pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
-        0 => vec![EventChoiceMeta::new(
-            "[Approach] Investigate the commotion.",
+        0 => vec![EventOption::new(
+            EventChoiceMeta::new("[Approach] Investigate the commotion."),
+            EventOptionSemantics {
+                action: EventActionKind::Continue,
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
         )],
         1 => vec![
-            EventChoiceMeta::new("[Bet Against Owner] Pay 50 Gold. Win 100 Gold if Murderer wins."),
-            EventChoiceMeta::new("[Bet For Owner] Pay 50 Gold. Win 250 Gold if Owner wins."),
+            EventOption::new(
+                EventChoiceMeta::new(
+                    "[Bet Against Owner] Pay 50 Gold. Win 100 Gold if Murderer wins.",
+                ),
+                EventOptionSemantics {
+                    action: EventActionKind::Trade,
+                    effects: vec![
+                        EventEffect::LoseGold(BET_AMT),
+                        EventEffect::GainGoldRange {
+                            min: 0,
+                            max: WIN_MURDERER,
+                        },
+                    ],
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            ),
+            EventOption::new(
+                EventChoiceMeta::new("[Bet For Owner] Pay 50 Gold. Win 250 Gold if Owner wins."),
+                EventOptionSemantics {
+                    action: EventActionKind::Trade,
+                    effects: vec![
+                        EventEffect::LoseGold(BET_AMT),
+                        EventEffect::GainGoldRange {
+                            min: 0,
+                            max: WIN_OWNER,
+                        },
+                    ],
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            ),
         ],
-        2 => vec![EventChoiceMeta::new("[Continue] Watch the joust!")],
-        3 => vec![EventChoiceMeta::new("[Continue] Resolve the joust.")],
+        2 => vec![EventOption::new(
+            EventChoiceMeta::new("[Continue] Watch the joust!"),
+            EventOptionSemantics {
+                action: EventActionKind::Continue,
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        )],
+        3 => {
+            let max_payout = if bet_for_owner(event_state) {
+                WIN_OWNER
+            } else {
+                WIN_MURDERER
+            };
+            vec![EventOption::new(
+                EventChoiceMeta::new("[Continue] Resolve the joust."),
+                EventOptionSemantics {
+                    action: EventActionKind::Continue,
+                    effects: vec![EventEffect::GainGoldRange {
+                        min: 0,
+                        max: max_payout,
+                    }],
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            )]
+        }
         4 => {
             // internal_state encodes: bit0 = betFor, bit1 = ownerWins
             let bet_for = (event_state.internal_state & 1) != 0;
@@ -42,10 +113,33 @@ pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<Event
                     "Murderer wins! You won 100 Gold!"
                 }
             };
-            vec![EventChoiceMeta::new(format!("{} [Leave]", msg))]
+            vec![EventOption::new(
+                EventChoiceMeta::new(format!("{} [Leave]", msg)),
+                EventOptionSemantics {
+                    action: EventActionKind::Leave,
+                    transition: EventOptionTransition::Complete,
+                    terminal: true,
+                    ..Default::default()
+                },
+            )]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -59,7 +153,8 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
         1 => {
             // Place bet
             let bet_for = choice_idx == 1;
-            run_state.change_gold_with_source(-50, DomainEventSource::Event(EventId::TheJoust));
+            run_state
+                .change_gold_with_source(-BET_AMT, DomainEventSource::Event(EventId::TheJoust));
             event_state.internal_state = if bet_for { 1 } else { 0 };
             event_state.current_screen = 2;
         }
@@ -79,9 +174,15 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 
             // Calculate gold payout
             if owner_wins && bet_for {
-                run_state.change_gold_with_source(250, DomainEventSource::Event(EventId::TheJoust));
+                run_state.change_gold_with_source(
+                    WIN_OWNER,
+                    DomainEventSource::Event(EventId::TheJoust),
+                );
             } else if !owner_wins && !bet_for {
-                run_state.change_gold_with_source(100, DomainEventSource::Event(EventId::TheJoust));
+                run_state.change_gold_with_source(
+                    WIN_MURDERER,
+                    DomainEventSource::Event(EventId::TheJoust),
+                );
             }
             // else: bet lost, gold already deducted
 
@@ -97,9 +198,11 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 
 #[cfg(test)]
 mod tests {
-    use super::handle_choice;
+    use super::{get_options, handle_choice};
     use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionTransition, EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -112,6 +215,68 @@ mod tests {
         run_state.event_state = Some(event_state);
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn structured_options_expose_bet_cost_and_possible_payout_ranges() {
+        let run_state = joust_run(1, 0, 50);
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Trade);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseGold(50)));
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::GainGoldRange { min: 0, max: 100 }));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        assert_eq!(options[1].semantics.action, EventActionKind::Trade);
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::LoseGold(50)));
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::GainGoldRange { min: 0, max: 250 }));
+    }
+
+    #[test]
+    fn structured_roll_and_result_screens_preserve_java_reveal_boundary() {
+        let run_state = joust_run(2, 0, 50);
+        let roll_options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+        assert_eq!(roll_options[0].semantics.action, EventActionKind::Continue);
+        assert_eq!(
+            roll_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let run_state = joust_run(3, 1, 50);
+        let reveal_options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+        assert_eq!(
+            reveal_options[0].semantics.action,
+            EventActionKind::Continue
+        );
+        assert!(reveal_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::GainGoldRange { min: 0, max: 250 }));
+
+        let run_state = joust_run(4, 0, 50);
+        let leave_options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+        assert_eq!(leave_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            leave_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
+        assert!(leave_options[0].semantics.terminal);
     }
 
     #[test]
