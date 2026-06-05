@@ -714,6 +714,12 @@ pub fn try_get_structured_event_options_for_state(
         EventId::NoteForYourself => {
             crate::content::events::note_for_yourself::get_options(run_state, event_state)
         }
+        EventId::Mushrooms => {
+            crate::content::events::mushrooms::get_options(run_state, event_state)
+        }
+        EventId::MysteriousSphere => {
+            crate::content::events::mysterious_sphere::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }

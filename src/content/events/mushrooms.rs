@@ -2,29 +2,112 @@ use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;
 use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+fn fight_gold_range(run_state: &RunState) -> (i32, i32) {
+    if run_state.is_daily_run {
+        (0, 24)
+    } else {
+        (20, 30)
+    }
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             let heal_amt = (run_state.max_hp as f32 * 0.25) as i32;
             vec![
-                EventChoiceMeta::new("[Stomp] Fight the mushrooms!"),
-                EventChoiceMeta::new(format!(
-                    "[Eat] Heal {} HP. Become Cursed - Parasite.",
-                    heal_amt
-                )),
+                EventOption::new(
+                    EventChoiceMeta::new("[Stomp] Fight the mushrooms!"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Fight,
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Eat] Heal {} HP. Become Cursed - Parasite.",
+                        heal_amt
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: vec![
+                            EventEffect::Heal(heal_amt),
+                            EventEffect::ObtainCurse {
+                                count: 1,
+                                kind: EventCardKind::Specific(CardId::Parasite),
+                            },
+                        ],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
         1 => {
             // Post-heal leave screen.
-            vec![EventChoiceMeta::new("[Leave]")]
+            vec![EventOption::new(
+                EventChoiceMeta::new("[Leave]"),
+                EventOptionSemantics {
+                    action: EventActionKind::Leave,
+                    transition: EventOptionTransition::Complete,
+                    terminal: true,
+                    ..Default::default()
+                },
+            )]
         }
-        2 => vec![EventChoiceMeta::new("[Fight]")],
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        2 => {
+            let (min, max) = fight_gold_range(run_state);
+            let relic = if run_state
+                .relics
+                .iter()
+                .any(|r| r.id == RelicId::OddMushroom)
+            {
+                RelicId::Circlet
+            } else {
+                RelicId::OddMushroom
+            };
+            vec![EventOption::new(
+                EventChoiceMeta::new("[Fight]"),
+                EventOptionSemantics {
+                    action: EventActionKind::Fight,
+                    effects: vec![
+                        EventEffect::GainGoldRange { min, max },
+                        EventEffect::ObtainRelic {
+                            count: 1,
+                            kind: EventRelicKind::Specific(relic),
+                        },
+                        EventEffect::StartCombat,
+                    ],
+                    transition: EventOptionTransition::StartCombat,
+                    terminal: true,
+                    ..Default::default()
+                },
+            )]
+        }
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -106,7 +189,94 @@ mod tests {
     use super::*;
     use crate::content::relics::RelicState;
     use crate::state::core::CombatContext;
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventOptionTransition, EventRelicKind,
+    };
     use crate::state::selection::DomainEvent;
+
+    #[test]
+    fn structured_options_split_prepare_fight_confirm_fight_and_eat() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = 20;
+        run_state.max_hp = 80;
+        run_state.event_state = Some(EventState::new(EventId::Mushrooms));
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            run_state.event_state.as_ref().unwrap(),
+        )
+        .expect("Mushrooms should expose structured event options");
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Fight);
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Trade);
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::Heal(20)));
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainCurse {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::Parasite),
+            }));
+
+        let mut confirm = EventState::new(EventId::Mushrooms);
+        confirm.current_screen = 2;
+        let confirm_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state, &confirm,
+            )
+            .expect("Mushrooms confirm screen should expose structured event options");
+
+        assert_eq!(confirm_options[0].semantics.action, EventActionKind::Fight);
+        assert!(confirm_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::GainGoldRange { min: 20, max: 30 }));
+        assert!(confirm_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::Specific(RelicId::OddMushroom),
+            }));
+        assert!(confirm_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::StartCombat));
+        assert_eq!(
+            confirm_options[0].semantics.transition,
+            EventOptionTransition::StartCombat
+        );
+    }
+
+    #[test]
+    fn structured_fight_reward_exposes_circlet_when_odd_mushroom_is_already_owned() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.push(RelicState::new(RelicId::OddMushroom));
+        let mut event_state = EventState::new(EventId::Mushrooms);
+        event_state.current_screen = 2;
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            &event_state,
+        )
+        .expect("Mushrooms confirm screen should expose structured event options");
+
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::Specific(RelicId::Circlet),
+            }));
+    }
 
     #[test]
     fn fight_path_requires_java_confirm_screen_before_combat() {

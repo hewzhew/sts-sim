@@ -1,22 +1,77 @@
 use crate::content::monsters::factory::EncounterId;
 use crate::state::core::{CombatStartRequest, EngineState, PostCombatReturn};
-use crate::state::events::{EventChoiceMeta, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+fn fight_gold_range(run_state: &RunState) -> (i32, i32) {
+    if run_state.is_daily_run {
+        (0, 49)
+    } else {
+        (45, 55)
+    }
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
-        0 => {
-            vec![
+        0 => vec![
+            EventOption::new(
                 EventChoiceMeta::new("[Open] Fight the guardians for a rare Relic!"),
+                EventOptionSemantics {
+                    action: EventActionKind::Fight,
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            ),
+            EventOption::new(
                 EventChoiceMeta::new("[Leave]"),
-            ]
-        }
+                EventOptionSemantics {
+                    action: EventActionKind::Leave,
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            ),
+        ],
         1 => {
             // Confirm fight
-            vec![EventChoiceMeta::new("[Fight]")]
+            let (min, max) = fight_gold_range(run_state);
+            vec![EventOption::new(
+                EventChoiceMeta::new("[Fight]"),
+                EventOptionSemantics {
+                    action: EventActionKind::Fight,
+                    effects: vec![
+                        EventEffect::GainGoldRange { min, max },
+                        EventEffect::ObtainRelic {
+                            count: 1,
+                            kind: EventRelicKind::RandomRareRelic,
+                        },
+                        EventEffect::StartCombat,
+                    ],
+                    transition: EventOptionTransition::StartCombat,
+                    terminal: true,
+                    ..Default::default()
+                },
+            )]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -82,6 +137,62 @@ mod tests {
     use super::*;
     use crate::content::relics::RelicId;
     use crate::state::core::CombatContext;
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionTransition, EventRelicKind,
+    };
+
+    #[test]
+    fn structured_options_split_open_leave_and_confirm_fight() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(EventState::new(EventId::MysteriousSphere));
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            run_state.event_state.as_ref().unwrap(),
+        )
+        .expect("Mysterious Sphere should expose structured event options");
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Fight);
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut confirm = EventState::new(EventId::MysteriousSphere);
+        confirm.current_screen = 1;
+        let confirm_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state, &confirm,
+            )
+            .expect("Mysterious Sphere confirm screen should expose structured event options");
+
+        assert_eq!(confirm_options[0].semantics.action, EventActionKind::Fight);
+        assert!(confirm_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::GainGoldRange { min: 45, max: 55 }));
+        assert!(confirm_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::RandomRareRelic,
+            }));
+        assert!(confirm_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::StartCombat));
+        assert_eq!(
+            confirm_options[0].semantics.transition,
+            EventOptionTransition::StartCombat
+        );
+    }
 
     #[test]
     fn leave_path_preserves_java_end_screen_before_map() {
