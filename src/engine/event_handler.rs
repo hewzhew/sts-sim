@@ -726,7 +726,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::DeadAdventurer => {
             crate::content::events::dead_adventurer::get_options(run_state, event_state)
         }
-        _ => return None,
+        EventId::MatchAndKeep => {
+            crate::content::events::match_and_keep::get_options(run_state, event_state)
+        }
     })
 }
 

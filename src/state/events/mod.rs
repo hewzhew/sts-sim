@@ -234,6 +234,7 @@ pub enum EventEffect {
 pub enum EventRandomOutcomeKind {
     GremlinWheel,
     DeadAdventurerSearch,
+    MatchAndKeepFlip,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

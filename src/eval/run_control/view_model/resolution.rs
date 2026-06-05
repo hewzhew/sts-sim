@@ -169,6 +169,7 @@ pub enum SelectionBoundary {
 pub enum RandomEventOutcomeBoundary {
     GremlinWheel,
     DeadAdventurerSearch,
+    MatchAndKeepFlip,
 }
 
 impl CandidateResolution {
@@ -484,6 +485,7 @@ impl RandomEventOutcomeBoundary {
         match self {
             RandomEventOutcomeBoundary::GremlinWheel => "Gremlin Wheel",
             RandomEventOutcomeBoundary::DeadAdventurerSearch => "Dead Adventurer search",
+            RandomEventOutcomeBoundary::MatchAndKeepFlip => "Match and Keep flip",
         }
     }
 }
@@ -745,6 +747,7 @@ fn random_event_outcome_boundary(kind: EventRandomOutcomeKind) -> RandomEventOut
         EventRandomOutcomeKind::DeadAdventurerSearch => {
             RandomEventOutcomeBoundary::DeadAdventurerSearch
         }
+        EventRandomOutcomeKind::MatchAndKeepFlip => RandomEventOutcomeBoundary::MatchAndKeepFlip,
     }
 }
 

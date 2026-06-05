@@ -25,7 +25,10 @@
 
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventRandomOutcomeKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -211,7 +214,7 @@ fn first_flipped(extra_data: &[i32]) -> i32 {
     extra_data[14]
 }
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+fn build_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
         0 => {
             vec![EventChoiceMeta::new("[Play Match and Keep!]")]
@@ -281,6 +284,102 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         }
         _ => vec![EventChoiceMeta::new("[Leave]")],
     }
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
+    let choices = build_choices(run_state, event_state);
+
+    match event_state.current_screen {
+        0 => choices
+            .into_iter()
+            .map(|ui| {
+                EventOption::new(
+                    ui,
+                    EventOptionSemantics {
+                        action: EventActionKind::Continue,
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect(),
+        1 | 2 => {
+            if choices.len() == 1 && choices[0].text.contains("[Leave]") {
+                return vec![EventOption::new(
+                    choices.into_iter().next().unwrap(),
+                    EventOptionSemantics {
+                        action: EventActionKind::Leave,
+                        transition: EventOptionTransition::Complete,
+                        terminal: true,
+                        ..Default::default()
+                    },
+                )];
+            }
+            choices
+                .into_iter()
+                .map(|ui| {
+                    EventOption::new(
+                        ui,
+                        EventOptionSemantics {
+                            action: EventActionKind::Special,
+                            effects: vec![EventEffect::RandomOutcome {
+                                kind: EventRandomOutcomeKind::MatchAndKeepFlip,
+                            }],
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect()
+        }
+        3 => {
+            let leaves = choices
+                .first()
+                .is_some_and(|choice| choice.text.contains("[Leave]"));
+            choices
+                .into_iter()
+                .map(|ui| {
+                    EventOption::new(
+                        ui,
+                        EventOptionSemantics {
+                            action: if leaves {
+                                EventActionKind::Leave
+                            } else {
+                                EventActionKind::Continue
+                            },
+                            transition: if leaves {
+                                EventOptionTransition::Complete
+                            } else {
+                                EventOptionTransition::AdvanceScreen
+                            },
+                            terminal: leaves,
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect()
+        }
+        _ => choices
+            .into_iter()
+            .map(|ui| {
+                EventOption::new(
+                    ui,
+                    EventOptionSemantics {
+                        action: EventActionKind::Leave,
+                        transition: EventOptionTransition::Complete,
+                        terminal: true,
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect(),
+    }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -368,7 +467,120 @@ mod tests {
     use super::*;
     use crate::content::cards::CardType;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventOptionTransition, EventRandomOutcomeKind,
+    };
     use crate::state::selection::DomainEvent;
+
+    #[test]
+    fn structured_options_expose_hidden_flip_boundaries_without_revealing_cards() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+        let mut event_state = EventState::new(EventId::MatchAndKeep);
+        event_state.current_screen = 1;
+        event_state.extra_data = board_with_entries(&[
+            (CardId::Bash, 1),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Clumsy, 0),
+            (CardId::IronWave, 0),
+            (CardId::Cleave, 0),
+        ]);
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            &event_state,
+        )
+        .expect("Match and Keep should expose structured event options");
+
+        assert_eq!(options.len(), 12);
+        assert_eq!(options[0].ui.text, "[Flip card 0]");
+        assert_eq!(options[0].semantics.action, EventActionKind::Special);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![EventEffect::RandomOutcome {
+                kind: EventRandomOutcomeKind::MatchAndKeepFlip,
+            }]
+        );
+        assert_eq!(options[0].semantics.transition, EventOptionTransition::None);
+
+        let mut second_flip = event_state;
+        second_flip.current_screen = 2;
+        second_flip.extra_data[14] = 0;
+        let second_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &second_flip,
+            )
+            .expect("Match and Keep second flip should expose structured event options");
+
+        assert_eq!(second_options.len(), 11);
+        assert!(second_options
+            .iter()
+            .all(|option| option.ui.text != "[Flip card 0]"));
+        assert!(second_options.iter().all(|option| {
+            option.semantics.effects
+                == vec![EventEffect::RandomOutcome {
+                    kind: EventRandomOutcomeKind::MatchAndKeepFlip,
+                }]
+        }));
+    }
+
+    #[test]
+    fn structured_intro_result_and_complete_boundaries() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+        let intro = EventState::new(EventId::MatchAndKeep);
+        let intro_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state, &intro,
+            )
+            .expect("Match and Keep intro should expose structured event options");
+
+        assert_eq!(intro_options[0].semantics.action, EventActionKind::Continue);
+        assert_eq!(
+            intro_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut result = EventState::new(EventId::MatchAndKeep);
+        result.current_screen = 3;
+        result.extra_data = board_with_entries(&[
+            (CardId::Bash, 1),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Clumsy, 0),
+            (CardId::IronWave, 0),
+            (CardId::Cleave, 0),
+        ]);
+        let result_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state, &result,
+            )
+            .expect("Match and Keep result screen should expose structured event options");
+
+        assert_eq!(
+            result_options[0].semantics.action,
+            EventActionKind::Continue
+        );
+        assert_eq!(
+            result_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut complete = result;
+        complete.current_screen = 4;
+        let complete_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state, &complete,
+            )
+            .expect("Match and Keep complete screen should expose structured event options");
+
+        assert_eq!(complete_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            complete_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
+        assert!(complete_options[0].semantics.terminal);
+    }
 
     #[test]
     fn match_and_keep_start_card_matches_java_player_get_start_card_for_event() {
