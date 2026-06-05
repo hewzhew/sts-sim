@@ -1,6 +1,9 @@
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -16,14 +19,56 @@ fn is_fountain_removable_curse(
         && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
 }
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+fn removable_curse_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| is_fountain_removable_curse(card, run_state))
+        .count()
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => vec![
-            EventChoiceMeta::new("[Drink] Remove all removable Curses."),
-            EventChoiceMeta::new("[Leave]"),
+            EventOption::new(
+                EventChoiceMeta::new("[Drink] Remove all removable Curses."),
+                EventOptionSemantics {
+                    action: EventActionKind::DeckOperation,
+                    effects: vec![EventEffect::RemoveCard {
+                        count: removable_curse_count(run_state),
+                        target_uuid: None,
+                        kind: EventCardKind::Unknown,
+                    }],
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            ),
+            EventOption::new(
+                EventChoiceMeta::new("[Leave]"),
+                EventOptionSemantics {
+                    action: EventActionKind::Leave,
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            ),
         ],
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -63,14 +108,59 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
 
 #[cfg(test)]
 mod tests {
-    use super::{get_choices, handle_choice};
+    use super::{get_choices, get_options, handle_choice};
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::CombatCard;
     use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventId, EventOptionTransition, EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
+
+    #[test]
+    fn structured_options_expose_clickable_curse_removal_without_disabling_empty_decks() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.master_deck = vec![
+            CombatCard::new(CardId::Injury, 11),
+            CombatCard::new(CardId::Parasite, 12),
+            CombatCard::new(CardId::AscendersBane, 13),
+            CombatCard::new(CardId::Strike, 14),
+        ];
+        run_state.event_state = Some(EventState::new(EventId::FountainOfCurseCleansing));
+
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::DeckOperation);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::RemoveCard {
+                count: 2,
+                target_uuid: None,
+                kind: EventCardKind::Unknown,
+            }));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert!(!options[0].ui.disabled);
+        assert_eq!(options[1].semantics.action, EventActionKind::Leave);
+
+        run_state.master_deck = vec![CombatCard::new(CardId::Strike, 21)];
+        let empty_options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+        assert!(empty_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::RemoveCard {
+                count: 0,
+                target_uuid: None,
+                kind: EventCardKind::Unknown,
+            }));
+        assert!(!empty_options[0].ui.disabled);
+    }
 
     #[test]
     fn fountain_removes_only_non_bottled_removable_curses_with_event_source() {
