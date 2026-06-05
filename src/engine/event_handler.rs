@@ -635,6 +635,7 @@ pub fn try_get_structured_event_options_for_state(
         EventId::Cleric => crate::content::events::cleric::get_options(run_state, event_state),
         EventId::Nloth => crate::content::events::nloth::get_options(run_state, event_state),
         EventId::Neow => crate::content::events::neow::get_options(run_state, event_state),
+        EventId::Addict => crate::content::events::addict::get_options(run_state, event_state),
         _ => return None,
     })
 }
