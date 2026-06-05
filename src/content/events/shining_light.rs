@@ -1,5 +1,8 @@
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionConstraint,
+    EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
@@ -18,28 +21,74 @@ fn has_upgradable_cards(run_state: &RunState) -> bool {
         .any(crate::state::core::master_deck_card_can_upgrade)
 }
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     if event_state.current_screen == 1 {
-        return vec![EventChoiceMeta::new("[Leave]")];
+        return vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )];
     }
 
     let damage = get_damage(run_state);
     let mut choices = Vec::new();
 
     if has_upgradable_cards(run_state) {
-        choices.push(EventChoiceMeta::new(format!(
-            "[Enter the Light] Take {} damage. Upgrade 2 random cards.",
-            damage
-        )));
+        choices.push(EventOption::new(
+            EventChoiceMeta::new(format!(
+                "[Enter the Light] Take {} damage. Upgrade 2 random cards.",
+                damage
+            )),
+            EventOptionSemantics {
+                action: EventActionKind::Trade,
+                effects: vec![
+                    EventEffect::LoseHp(damage),
+                    EventEffect::UpgradeCard { count: 2 },
+                ],
+                constraints: vec![EventOptionConstraint::RequiresUpgradeableCard],
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
+        ));
     } else {
-        choices.push(EventChoiceMeta::disabled(
-            "[Enter the Light] No upgradable cards.",
-            "No upgradable cards in your deck.",
+        choices.push(EventOption::new(
+            EventChoiceMeta::disabled(
+                "[Enter the Light] No upgradable cards.",
+                "No upgradable cards in your deck.",
+            ),
+            EventOptionSemantics {
+                action: EventActionKind::Trade,
+                effects: vec![
+                    EventEffect::LoseHp(damage),
+                    EventEffect::UpgradeCard { count: 2 },
+                ],
+                constraints: vec![EventOptionConstraint::RequiresUpgradeableCard],
+                transition: EventOptionTransition::AdvanceScreen,
+                ..Default::default()
+            },
         ));
     }
 
-    choices.push(EventChoiceMeta::new("[Leave]"));
+    choices.push(EventOption::new(
+        EventChoiceMeta::new("[Leave]"),
+        EventOptionSemantics {
+            action: EventActionKind::Leave,
+            transition: EventOptionTransition::AdvanceScreen,
+            ..Default::default()
+        },
+    ));
     choices
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -88,7 +137,10 @@ mod tests {
     use super::handle_choice;
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionConstraint, EventOptionTransition,
+        EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -99,6 +151,72 @@ mod tests {
         run_state.event_state = Some(EventState::new(EventId::ShiningLight));
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn options_expose_structured_damage_random_upgrade_and_leave_semantics() {
+        let run_state = shining_run(80, 80);
+        let event_state = run_state.event_state.as_ref().unwrap();
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            event_state,
+        )
+        .expect("Shining Light should expose structured event semantics");
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Trade);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![
+                EventEffect::LoseHp(16),
+                EventEffect::UpgradeCard { count: 2 }
+            ]
+        );
+        assert!(options[0]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresUpgradeableCard));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut no_upgrade = shining_run(80, 80);
+        no_upgrade.master_deck = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Injury,
+            11,
+        )];
+        let disabled = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &no_upgrade,
+            no_upgrade.event_state.as_ref().unwrap(),
+        )
+        .expect("Shining Light disabled option should still expose semantics");
+        assert!(disabled[0].ui.disabled);
+        assert!(disabled[0]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresUpgradeableCard));
+
+        let mut result_screen = EventState::new(EventId::ShiningLight);
+        result_screen.current_screen = 1;
+        let leave_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &result_screen,
+            )
+            .expect("Shining Light result screen should expose leave semantics");
+        assert_eq!(leave_options.len(), 1);
+        assert_eq!(leave_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            leave_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
     }
 
     #[test]
