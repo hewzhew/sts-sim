@@ -1,21 +1,86 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventSelectionKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(_run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+fn upgradeable_starter_basic_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| {
+            crate::content::cards::is_starter_basic(card.id)
+                && crate::state::core::master_deck_card_can_upgrade(card)
+        })
+        .count()
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             // Simplicity: Purge a card; Basics: Upgrade all Strikes/Defends
+            let simplicity_transition =
+                if crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state) {
+                    EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard)
+                } else {
+                    EventOptionTransition::AdvanceScreen
+                };
             vec![
-                EventChoiceMeta::new("[Simplicity] Remove a card from your deck."),
-                EventChoiceMeta::new("[Basics] Upgrade all Strikes and Defends."),
-                EventChoiceMeta::new("[Leave]"),
+                EventOption::new(
+                    EventChoiceMeta::new("[Simplicity] Remove a card from your deck."),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects: vec![EventEffect::RemoveCard {
+                            count: 1,
+                            target_uuid: None,
+                            kind: EventCardKind::Unknown,
+                        }],
+                        transition: simplicity_transition,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Basics] Upgrade all Strikes and Defends."),
+                    EventOptionSemantics {
+                        action: EventActionKind::DeckOperation,
+                        effects: vec![EventEffect::UpgradeCard {
+                            count: upgradeable_starter_basic_count(run_state),
+                        }],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Leave]"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Leave,
+                        transition: EventOptionTransition::Complete,
+                        terminal: true,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
         // After purge returns
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -70,13 +135,16 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 
 #[cfg(test)]
 mod tests {
-    use super::handle_choice;
+    use super::{get_options, handle_choice};
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionTransition, EventSelectionKind,
+        EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{
         DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
@@ -87,6 +155,59 @@ mod tests {
         let mut card = CombatCard::new(id, uuid);
         card.upgrades = upgrades;
         card
+    }
+
+    #[test]
+    fn structured_options_expose_dynamic_simplicity_and_basics_boundaries() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.master_deck = vec![
+            card(CardId::Strike, 11, 0),
+            card(CardId::Defend, 12, 1),
+            card(CardId::Bash, 13, 0),
+        ];
+        run_state.event_state = Some(EventState::new(EventId::BackTotheBasics));
+
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].semantics.action, EventActionKind::DeckOperation);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::RemoveCard {
+                count: 1,
+                target_uuid: None,
+                kind: crate::state::events::EventCardKind::Unknown,
+            }));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard)
+        );
+        assert!(!options[0].ui.disabled);
+
+        assert_eq!(options[1].semantics.action, EventActionKind::DeckOperation);
+        assert!(options[1]
+            .semantics
+            .effects
+            .contains(&EventEffect::UpgradeCard { count: 1 }));
+        assert_eq!(
+            options[1].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        run_state.master_deck = vec![card(CardId::AscendersBane, 21, 0)];
+        let no_purge_options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+        assert_eq!(
+            no_purge_options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert!(!no_purge_options[0].ui.disabled);
+
+        let mut complete = EventState::new(EventId::BackTotheBasics);
+        complete.current_screen = 1;
+        let complete_options = get_options(&run_state, &complete);
+        assert_eq!(complete_options[0].semantics.action, EventActionKind::Leave);
+        assert!(complete_options[0].semantics.terminal);
     }
 
     #[test]

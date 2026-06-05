@@ -686,6 +686,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::Mausoleum => {
             crate::content::events::mausoleum::get_options(run_state, event_state)
         }
+        EventId::BackTotheBasics => {
+            crate::content::events::back_to_basics::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
