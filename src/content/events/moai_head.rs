@@ -1,38 +1,106 @@
 use crate::content::relics::RelicId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionConstraint,
+    EventOptionSemantics, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+fn hp_loss(run_state: &RunState) -> i32 {
+    let hp_loss_pct = if run_state.ascension_level >= 15 {
+        0.18
+    } else {
+        0.125
+    };
+    (run_state.max_hp as f32 * hp_loss_pct).round() as i32
+}
+
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
-            let hp_loss_pct = if run_state.ascension_level >= 15 {
-                0.18
-            } else {
-                0.125
-            };
-            let hp_loss = (run_state.max_hp as f32 * hp_loss_pct).round() as i32;
+            let hp_loss = hp_loss(run_state);
+            let healed_max_hp = (run_state.max_hp - hp_loss).max(1);
             let has_idol = run_state.relics.iter().any(|r| r.id == RelicId::GoldenIdol);
-            let mut choices = vec![EventChoiceMeta::new(format!(
-                "[Enter] Lose {} Max HP. Heal to full.",
-                hp_loss
-            ))];
+            let mut choices = vec![EventOption::new(
+                EventChoiceMeta::new(format!("[Enter] Lose {} Max HP. Heal to full.", hp_loss)),
+                EventOptionSemantics {
+                    action: EventActionKind::Trade,
+                    effects: vec![
+                        EventEffect::LoseMaxHp(hp_loss),
+                        EventEffect::Heal(healed_max_hp),
+                    ],
+                    transition: EventOptionTransition::AdvanceScreen,
+                    ..Default::default()
+                },
+            )];
             if has_idol {
-                choices.push(EventChoiceMeta::new(
-                    "[Trade] Give Golden Idol. Gain 333 Gold.",
+                choices.push(EventOption::new(
+                    EventChoiceMeta::new("[Trade] Give Golden Idol. Gain 333 Gold."),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: vec![
+                            EventEffect::LoseRelic {
+                                specific: Some(RelicId::GoldenIdol),
+                                starter_only: false,
+                            },
+                            EventEffect::GainGold(333),
+                        ],
+                        constraints: vec![EventOptionConstraint::RequiresRelic(
+                            RelicId::GoldenIdol,
+                        )],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
                 ));
             } else {
-                choices.push(EventChoiceMeta::disabled(
-                    "[Trade] Requires Golden Idol.",
-                    "No Golden Idol",
+                choices.push(EventOption::new(
+                    EventChoiceMeta::disabled("[Trade] Requires Golden Idol.", "No Golden Idol"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: vec![
+                            EventEffect::LoseRelic {
+                                specific: Some(RelicId::GoldenIdol),
+                                starter_only: false,
+                            },
+                            EventEffect::GainGold(333),
+                        ],
+                        constraints: vec![EventOptionConstraint::RequiresRelic(
+                            RelicId::GoldenIdol,
+                        )],
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
                 ));
             }
-            choices.push(EventChoiceMeta::new("[Leave]"));
+            choices.push(EventOption::new(
+                EventChoiceMeta::new("[Leave]"),
+                EventOptionSemantics {
+                    action: EventActionKind::Leave,
+                    transition: EventOptionTransition::Complete,
+                    terminal: true,
+                    ..Default::default()
+                },
+            ));
             choices
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -43,12 +111,7 @@ pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, 
             match choice_idx {
                 0 => {
                     // Enter: lose max HP, heal to full
-                    let hp_loss_pct = if run_state.ascension_level >= 15 {
-                        0.18
-                    } else {
-                        0.125
-                    };
-                    let hp_loss = (run_state.max_hp as f32 * hp_loss_pct).round() as i32;
+                    let hp_loss = hp_loss(run_state);
                     let source = DomainEventSource::Event(EventId::MoaiHead);
                     run_state.lose_max_hp_with_source(hp_loss, source);
                     run_state.heal_with_source(run_state.max_hp, source);
@@ -90,7 +153,10 @@ mod tests {
     use super::{get_choices, handle_choice};
     use crate::content::relics::{RelicId, RelicState};
     use crate::state::core::EngineState;
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionConstraint, EventOptionTransition,
+        EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
 
@@ -102,6 +168,78 @@ mod tests {
         run_state.event_state = Some(EventState::new(EventId::MoaiHead));
         run_state.emitted_events.clear();
         run_state
+    }
+
+    #[test]
+    fn options_expose_structured_enter_trade_and_leave_semantics() {
+        let mut run_state = moai_run(20, 80);
+        run_state.relics.push(RelicState::new(RelicId::GoldenIdol));
+        let event_state = run_state.event_state.as_ref().unwrap();
+
+        let options = crate::engine::event_handler::try_get_structured_event_options_for_state(
+            &run_state,
+            event_state,
+        )
+        .expect("Moai Head should expose structured event semantics");
+
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].semantics.action, EventActionKind::Trade);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![EventEffect::LoseMaxHp(10), EventEffect::Heal(70)]
+        );
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+        assert_eq!(options[1].semantics.action, EventActionKind::Trade);
+        assert_eq!(
+            options[1].semantics.effects,
+            vec![
+                EventEffect::LoseRelic {
+                    specific: Some(RelicId::GoldenIdol),
+                    starter_only: false,
+                },
+                EventEffect::GainGold(333),
+            ]
+        );
+        assert!(options[1]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresRelic(RelicId::GoldenIdol)));
+        assert_eq!(options[2].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            options[2].semantics.transition,
+            EventOptionTransition::Complete
+        );
+
+        let no_idol = moai_run(20, 80);
+        let no_idol_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &no_idol,
+                no_idol.event_state.as_ref().unwrap(),
+            )
+            .expect("Moai Head without Golden Idol should still expose disabled trade semantics");
+        assert!(no_idol_options[1].ui.disabled);
+        assert!(no_idol_options[1]
+            .semantics
+            .constraints
+            .contains(&EventOptionConstraint::RequiresRelic(RelicId::GoldenIdol)));
+
+        let mut result_screen = EventState::new(EventId::MoaiHead);
+        result_screen.current_screen = 1;
+        let leave_options =
+            crate::engine::event_handler::try_get_structured_event_options_for_state(
+                &run_state,
+                &result_screen,
+            )
+            .expect("Moai Head result screen should expose leave semantics");
+        assert_eq!(leave_options.len(), 1);
+        assert_eq!(leave_options[0].semantics.action, EventActionKind::Leave);
+        assert_eq!(
+            leave_options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
     }
 
     #[test]

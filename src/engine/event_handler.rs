@@ -643,6 +643,7 @@ pub fn try_get_structured_event_options_for_state(
         EventId::AccursedBlacksmith => {
             crate::content::events::accursed_blacksmith::get_options(run_state, event_state)
         }
+        EventId::MoaiHead => crate::content::events::moai_head::get_options(run_state, event_state),
         _ => return None,
     })
 }
