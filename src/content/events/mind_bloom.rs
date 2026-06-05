@@ -43,7 +43,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                     EventOptionSemantics {
                         action: EventActionKind::Accept,
                         effects: vec![
-                            EventEffect::UpgradeCard { count: usize::MAX },
+                            EventEffect::UpgradeAllCards,
                             EventEffect::ObtainRelic {
                                 count: 1,
                                 kind: EventRelicKind::Specific(RelicId::MarkOfTheBloom),
@@ -325,6 +325,20 @@ mod tests {
                 ..
             } if before.uuid == 12 || before.uuid == 14
         )));
+    }
+
+    #[test]
+    fn remember_option_uses_explicit_all_card_upgrade_effect() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let state = EventState::new(EventId::MindBloom);
+
+        let options = get_options(&rs, &state);
+
+        assert_eq!(
+            options[1].semantics.effects[0],
+            EventEffect::UpgradeAllCards,
+            "Mind Bloom Remember should expose an explicit all-card upgrade effect"
+        );
     }
 
     #[test]

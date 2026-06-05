@@ -690,9 +690,7 @@ fn push_effect_resolution(
                 known_effects.push(KnownEffect::RemoveCard { count: *count });
             }
         }
-        EventEffect::UpgradeCard { count } if *count == usize::MAX => {
-            known_effects.push(KnownEffect::UpgradeAllCards);
-        }
+        EventEffect::UpgradeAllCards => known_effects.push(KnownEffect::UpgradeAllCards),
         EventEffect::UpgradeCard { count } => {
             known_effects.push(KnownEffect::UpgradeCard { count: *count });
         }
@@ -933,7 +931,7 @@ mod tests {
             EventChoiceMeta::new("[Remember] Upgrade all cards. Obtain Mark of the Bloom."),
             EventOptionSemantics {
                 action: EventActionKind::Accept,
-                effects: vec![EventEffect::UpgradeCard { count: usize::MAX }],
+                effects: vec![EventEffect::UpgradeAllCards],
                 constraints: Vec::new(),
                 transition: EventOptionTransition::AdvanceScreen,
                 repeatable: false,

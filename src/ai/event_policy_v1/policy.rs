@@ -191,6 +191,7 @@ fn has_selection_or_deck_mutation(option: &EventOption) -> bool {
                 | EventEffect::TransformCard { .. }
                 | EventEffect::DuplicateCard { .. }
                 | EventEffect::UpgradeCard { .. }
+                | EventEffect::UpgradeAllCards
         )
     })
 }

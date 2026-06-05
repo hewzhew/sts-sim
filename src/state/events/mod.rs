@@ -211,6 +211,7 @@ pub enum EventEffect {
     UpgradeCard {
         count: usize,
     },
+    UpgradeAllCards,
     TransformCard {
         count: usize,
     },
