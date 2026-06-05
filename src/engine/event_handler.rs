@@ -769,6 +769,9 @@ pub fn try_build_event_state_from_screen_state(
         EventId::WorldOfGoop if current_screen == 0 => {
             decode_goop_puddle_internal_state(screen_state.get("event_semantics_state")?)?
         }
+        EventId::ScrapOoze if current_screen == 0 => {
+            decode_scrap_ooze_internal_state(run_state, screen_state.get("event_semantics_state")?)?
+        }
         EventId::TheJoust if current_screen == 2 || current_screen == 3 => {
             decode_joust_internal_state(current_screen, screen_state.get("event_semantics_state")?)?
         }
@@ -812,6 +815,13 @@ pub fn event_semantics_state(run_state: &RunState, event_state: &EventState) -> 
         EventId::WorldOfGoop if event_state.current_screen == 0 => Some(json!({
             "gold_loss": event_state.internal_state,
         })),
+        EventId::ScrapOoze if event_state.current_screen == 0 => {
+            let (relic_chance, damage) = scrap_ooze_reach_in_terms(run_state, event_state);
+            Some(json!({
+                "relic_chance": relic_chance,
+                "damage": damage,
+            }))
+        }
         EventId::TheLibrary if event_state.current_screen == 1 => {
             Some(library_extra_data_semantics(&event_state.extra_data))
         }
@@ -851,6 +861,7 @@ pub fn live_event_requires_semantics_state(event_id: EventId, current_screen: us
         (EventId::Designer, 1)
             | (EventId::Nloth, 0)
             | (EventId::WorldOfGoop, 0)
+            | (EventId::ScrapOoze, 0)
             | (EventId::TheLibrary, 1)
             | (EventId::TheJoust, 2)
             | (EventId::TheJoust, 3)
@@ -867,6 +878,7 @@ pub fn live_event_semantics_state_keys(
         (EventId::Designer, 1) => Some(&["adjust_upgrades_one", "clean_up_removes_cards"]),
         (EventId::Nloth, 0) => Some(&["choice1_relic_index", "choice2_relic_index"]),
         (EventId::WorldOfGoop, 0) => Some(&["gold_loss"]),
+        (EventId::ScrapOoze, 0) => Some(&["relic_chance", "damage"]),
         (EventId::TheLibrary, 1) => Some(&["cards"]),
         (EventId::TheJoust, 2) => Some(&["bet_for_owner"]),
         (EventId::TheJoust, 3) => Some(&["bet_for_owner", "owner_wins_privileged"]),
@@ -909,6 +921,47 @@ fn decode_goop_puddle_internal_state(event_semantics_state: &Value) -> Option<i3
         .get("gold_loss")
         .and_then(Value::as_i64)?;
     i32::try_from(gold_loss).ok().filter(|loss| *loss >= 0)
+}
+
+fn scrap_ooze_base_damage(run_state: &RunState) -> i32 {
+    if run_state.ascension_level >= 15 {
+        5
+    } else {
+        3
+    }
+}
+
+fn scrap_ooze_reach_in_terms(run_state: &RunState, event_state: &EventState) -> (i32, i32) {
+    if event_state.internal_state == 0 {
+        (25, scrap_ooze_base_damage(run_state))
+    } else {
+        (
+            event_state.internal_state & 0xFFFF,
+            (event_state.internal_state >> 16) & 0xFFFF,
+        )
+    }
+}
+
+fn decode_scrap_ooze_internal_state(
+    run_state: &RunState,
+    event_semantics_state: &Value,
+) -> Option<i32> {
+    let relic_chance = event_semantics_state
+        .get("relic_chance")
+        .and_then(Value::as_i64)?;
+    let damage = event_semantics_state
+        .get("damage")
+        .and_then(Value::as_i64)?;
+    let relic_chance = i32::try_from(relic_chance).ok()?;
+    let damage = i32::try_from(damage).ok()?;
+    if !(0..=100).contains(&relic_chance) || !(0..=255).contains(&damage) {
+        return None;
+    }
+    if relic_chance == 25 && damage == scrap_ooze_base_damage(run_state) {
+        Some(0)
+    } else {
+        Some((damage << 16) | (relic_chance & 0xFFFF))
+    }
 }
 
 fn library_extra_data_semantics(extra_data: &[i32]) -> Value {
@@ -1342,5 +1395,33 @@ mod tests {
 
         assert_eq!(rebuilt.internal_state, event_state.internal_state);
         assert!(live_event_requires_semantics_state(EventId::TheJoust, 3));
+    }
+
+    #[test]
+    fn scrap_ooze_event_semantics_state_round_trips_current_reach_in_terms() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: EventId::ScrapOoze,
+            current_screen: 0,
+            internal_state: (4 << 16) | 35,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+
+        let semantics = event_semantics_state(&rs, &event_state).unwrap();
+        assert_eq!(semantics["relic_chance"], 35);
+        assert_eq!(semantics["damage"], 4);
+        let screen_state = json!({
+            "event_name": "Scrap Ooze",
+            "current_screen": 0,
+            "event_semantics_state": semantics,
+        });
+        let rebuilt =
+            try_build_event_state_from_screen_state(&rs, EventId::ScrapOoze, 0, &screen_state)
+                .unwrap();
+
+        assert_eq!(rebuilt.internal_state, event_state.internal_state);
+        assert!(live_event_requires_semantics_state(EventId::ScrapOoze, 0));
     }
 }
