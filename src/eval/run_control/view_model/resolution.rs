@@ -4,8 +4,8 @@ use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::{get_potion_definition, PotionId};
 use crate::content::relics::RelicId;
 use crate::state::events::{
-    EventCardKind, EventEffect, EventOption, EventOptionTransition, EventRelicKind,
-    EventSelectionKind,
+    EventCardKind, EventEffect, EventOption, EventOptionTransition, EventRandomOutcomeKind,
+    EventRelicKind, EventSelectionKind,
 };
 use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext, RewardState};
 use crate::state::run::RunState;
@@ -97,6 +97,10 @@ pub enum UnresolvedEffect {
         count: usize,
         visibility: HiddenInfoVisibility,
     },
+    RandomEventOutcome {
+        kind: RandomEventOutcomeBoundary,
+        visibility: HiddenInfoVisibility,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -159,6 +163,11 @@ pub enum SelectionBoundary {
     DuplicateCard,
     OfferCard,
     Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum RandomEventOutcomeBoundary {
+    GremlinWheel,
 }
 
 impl CandidateResolution {
@@ -407,6 +416,9 @@ impl UnresolvedEffect {
             UnresolvedEffect::TransformOutput { .. } => {
                 "transform result hidden until resolved".to_string()
             }
+            UnresolvedEffect::RandomEventOutcome { kind, .. } => {
+                format!("random {} outcome", kind.brief())
+            }
         }
     }
 
@@ -456,6 +468,20 @@ impl UnresolvedEffect {
             UnresolvedEffect::TransformOutput { count, .. } => {
                 format!("{count} transform result; distribution known, result hidden")
             }
+            UnresolvedEffect::RandomEventOutcome { kind, .. } => {
+                format!(
+                    "random {} result; outcome hidden until resolved",
+                    kind.brief()
+                )
+            }
+        }
+    }
+}
+
+impl RandomEventOutcomeBoundary {
+    fn brief(self) -> &'static str {
+        match self {
+            RandomEventOutcomeBoundary::GremlinWheel => "Gremlin Wheel",
         }
     }
 }
@@ -701,7 +727,19 @@ fn push_effect_resolution(
                 known_effects.push(KnownEffect::LoseRelic { starter_only: true });
             }
         }
+        EventEffect::RandomOutcome { kind } => {
+            unresolved_effects.push(UnresolvedEffect::RandomEventOutcome {
+                kind: random_event_outcome_boundary(*kind),
+                visibility: HiddenInfoVisibility::DistributionKnownResultHiddenUntilResolved,
+            });
+        }
         EventEffect::StartCombat => known_effects.push(KnownEffect::StartCombat),
+    }
+}
+
+fn random_event_outcome_boundary(kind: EventRandomOutcomeKind) -> RandomEventOutcomeBoundary {
+    match kind {
+        EventRandomOutcomeKind::GremlinWheel => RandomEventOutcomeBoundary::GremlinWheel,
     }
 }
 
@@ -930,5 +968,32 @@ mod tests {
             .expect("specific remove should produce a visible note");
 
         assert_eq!(note, "remove specific card Shrug It Off");
+    }
+
+    #[test]
+    fn random_event_outcome_effect_is_unresolved_not_flattened() {
+        let option = EventOption::new(
+            EventChoiceMeta::new("[Spin] Spin the wheel!"),
+            EventOptionSemantics {
+                action: EventActionKind::Special,
+                effects: vec![EventEffect::RandomOutcome {
+                    kind: crate::state::events::EventRandomOutcomeKind::GremlinWheel,
+                }],
+                constraints: Vec::new(),
+                transition: EventOptionTransition::None,
+                repeatable: false,
+                terminal: false,
+            },
+        );
+
+        let resolution =
+            CandidateResolution::from_event_option(&option).expect("random outcome should resolve");
+
+        assert_eq!(resolution.status, ResolutionStatus::Partial);
+        assert_eq!(
+            resolution.main_note().as_deref(),
+            Some("random Gremlin Wheel outcome")
+        );
+        assert!(resolution.known_effects.is_empty());
     }
 }

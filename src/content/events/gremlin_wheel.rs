@@ -10,13 +10,26 @@
 // Screen 1: [Leave] after result applied
 
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventRandomOutcomeKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
-        0 => vec![EventChoiceMeta::new("[Spin] Spin the wheel!")],
+        0 => vec![EventOption::new(
+            EventChoiceMeta::new("[Spin] Spin the wheel!"),
+            EventOptionSemantics {
+                action: EventActionKind::Special,
+                effects: vec![EventEffect::RandomOutcome {
+                    kind: EventRandomOutcomeKind::GremlinWheel,
+                }],
+                transition: EventOptionTransition::None,
+                ..Default::default()
+            },
+        )],
         1 => {
             // Show result description
             let desc = match event_state.internal_state {
@@ -41,10 +54,33 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
                     format!("The wheel damages you! Lost {}% max HP.", pct)
                 }
             };
-            vec![EventChoiceMeta::new(format!("{} [Leave]", desc))]
+            vec![EventOption::new(
+                EventChoiceMeta::new(format!("{} [Leave]", desc)),
+                EventOptionSemantics {
+                    action: EventActionKind::Leave,
+                    transition: EventOptionTransition::Complete,
+                    terminal: true,
+                    ..Default::default()
+                },
+            )]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _choice_idx: usize) {
@@ -144,14 +180,17 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
 
 #[cfg(test)]
 mod tests {
-    use super::handle_choice;
+    use super::{get_options, handle_choice};
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::engine::run_loop::tick_run;
     use crate::runtime::combat::CombatCard;
     use crate::runtime::rng::StsRng;
     use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
-    use crate::state::events::{EventId, EventState};
+    use crate::state::events::{
+        EventActionKind, EventEffect, EventId, EventOptionTransition, EventRandomOutcomeKind,
+        EventState,
+    };
     use crate::state::run::RunState;
     use crate::state::selection::{
         DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
@@ -178,6 +217,42 @@ mod tests {
 
     fn deck_card(id: CardId, uuid: u32) -> CombatCard {
         CombatCard::new(id, uuid)
+    }
+
+    #[test]
+    fn structured_spin_exposes_random_wheel_outcome_boundary() {
+        let run_state = wheel_run(20, 80, 0);
+
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].semantics.action, EventActionKind::Special);
+        assert_eq!(
+            options[0].semantics.effects,
+            vec![EventEffect::RandomOutcome {
+                kind: EventRandomOutcomeKind::GremlinWheel,
+            }]
+        );
+        assert_eq!(options[0].semantics.transition, EventOptionTransition::None);
+    }
+
+    #[test]
+    fn structured_result_screen_is_terminal_leave_without_reapplying_result() {
+        let run_state = wheel_run(20, 80, 0);
+        let mut event_state = EventState::new(EventId::GremlinWheelGame);
+        event_state.current_screen = 1;
+        event_state.internal_state = 0;
+
+        let options = get_options(&run_state, &event_state);
+
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].semantics.action, EventActionKind::Leave);
+        assert!(options[0].semantics.effects.is_empty());
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::Complete
+        );
+        assert!(options[0].semantics.terminal);
     }
 
     #[test]

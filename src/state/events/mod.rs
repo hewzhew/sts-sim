@@ -224,7 +224,15 @@ pub enum EventEffect {
     LoseStarterRelic {
         specific: Option<RelicId>,
     },
+    RandomOutcome {
+        kind: EventRandomOutcomeKind,
+    },
     StartCombat,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EventRandomOutcomeKind {
+    GremlinWheel,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

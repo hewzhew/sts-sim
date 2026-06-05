@@ -708,6 +708,9 @@ pub fn try_get_structured_event_options_for_state(
         EventId::ScrapOoze => {
             crate::content::events::scrap_ooze::get_options(run_state, event_state)
         }
+        EventId::GremlinWheelGame => {
+            crate::content::events::gremlin_wheel::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
