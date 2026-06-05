@@ -759,9 +759,30 @@ pub fn try_build_event_state_from_screen_state(
         });
     }
 
+    if event_id == EventId::MatchAndKeep && current_screen <= 3 {
+        let extra_data = decode_privileged_i32_vec(
+            screen_state.get("event_semantics_state")?,
+            "extra_data_privileged",
+        )?;
+        return Some(EventState {
+            id: event_id,
+            current_screen,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data,
+        });
+    }
+
     let internal_state = match event_id {
         EventId::Designer if current_screen == 1 => {
             decode_designer_internal_state(screen_state.get("event_semantics_state")?)?
+        }
+        EventId::DeadAdventurer if current_screen == 0 || current_screen == 1 => {
+            decode_privileged_i32(
+                screen_state.get("event_semantics_state")?,
+                "internal_state_privileged",
+            )?
         }
         EventId::Nloth if current_screen == 0 => {
             decode_nloth_internal_state(run_state, screen_state.get("event_semantics_state")?)?
@@ -795,6 +816,16 @@ pub fn event_semantics_state(run_state: &RunState, event_state: &EventState) -> 
         EventId::Designer if event_state.current_screen == 1 => Some(json!({
             "adjust_upgrades_one": event_state.internal_state & 1 != 0,
             "clean_up_removes_cards": event_state.internal_state & 2 != 0,
+        })),
+        EventId::DeadAdventurer
+            if event_state.current_screen == 0 || event_state.current_screen == 1 =>
+        {
+            Some(json!({
+                "internal_state_privileged": event_state.internal_state,
+            }))
+        }
+        EventId::MatchAndKeep if event_state.current_screen <= 3 => Some(json!({
+            "extra_data_privileged": event_state.extra_data,
         })),
         EventId::Nloth if event_state.current_screen == 0 => {
             let choice1_relic_index = (event_state.internal_state & 0xFF) as usize;
@@ -859,6 +890,12 @@ pub fn live_event_requires_semantics_state(event_id: EventId, current_screen: us
     matches!(
         (event_id, current_screen),
         (EventId::Designer, 1)
+            | (EventId::DeadAdventurer, 0)
+            | (EventId::DeadAdventurer, 1)
+            | (EventId::MatchAndKeep, 0)
+            | (EventId::MatchAndKeep, 1)
+            | (EventId::MatchAndKeep, 2)
+            | (EventId::MatchAndKeep, 3)
             | (EventId::Nloth, 0)
             | (EventId::WorldOfGoop, 0)
             | (EventId::ScrapOoze, 0)
@@ -876,6 +913,8 @@ pub fn live_event_semantics_state_keys(
 ) -> Option<&'static [&'static str]> {
     match (event_id, current_screen) {
         (EventId::Designer, 1) => Some(&["adjust_upgrades_one", "clean_up_removes_cards"]),
+        (EventId::DeadAdventurer, 0 | 1) => Some(&["internal_state_privileged"]),
+        (EventId::MatchAndKeep, 0 | 1 | 2 | 3) => Some(&["extra_data_privileged"]),
         (EventId::Nloth, 0) => Some(&["choice1_relic_index", "choice2_relic_index"]),
         (EventId::WorldOfGoop, 0) => Some(&["gold_loss"]),
         (EventId::ScrapOoze, 0) => Some(&["relic_chance", "damage"]),
@@ -896,6 +935,22 @@ fn decode_designer_internal_state(event_semantics_state: &Value) -> Option<i32> 
         .get("clean_up_removes_cards")
         .and_then(Value::as_bool)? as i32;
     Some(adjust_upgrades_one | (clean_up_removes_cards << 1))
+}
+
+fn decode_privileged_i32(event_semantics_state: &Value, key: &str) -> Option<i32> {
+    let value = event_semantics_state.get(key).and_then(Value::as_i64)?;
+    i32::try_from(value).ok()
+}
+
+fn decode_privileged_i32_vec(event_semantics_state: &Value, key: &str) -> Option<Vec<i32>> {
+    let values = event_semantics_state.get(key).and_then(Value::as_array)?;
+    values
+        .iter()
+        .map(|value| {
+            let value = value.as_i64()?;
+            i32::try_from(value).ok()
+        })
+        .collect()
 }
 
 fn decode_nloth_internal_state(run_state: &RunState, event_semantics_state: &Value) -> Option<i32> {
@@ -1423,5 +1478,98 @@ mod tests {
 
         assert_eq!(rebuilt.internal_state, event_state.internal_state);
         assert!(live_event_requires_semantics_state(EventId::ScrapOoze, 0));
+    }
+
+    #[test]
+    fn dead_adventurer_event_semantics_state_round_trips_privileged_state() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: EventId::DeadAdventurer,
+            current_screen: 0,
+            internal_state: 0x12_345,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        };
+
+        let semantics = event_semantics_state(&rs, &event_state).unwrap();
+        assert_eq!(semantics["internal_state_privileged"], 0x12_345);
+        let screen_state = json!({
+            "event_name": "Dead Adventurer",
+            "current_screen": 0,
+            "event_semantics_state": semantics,
+        });
+        let rebuilt =
+            try_build_event_state_from_screen_state(&rs, EventId::DeadAdventurer, 0, &screen_state)
+                .unwrap();
+
+        assert_eq!(rebuilt.internal_state, event_state.internal_state);
+        assert!(live_event_requires_semantics_state(
+            EventId::DeadAdventurer,
+            0
+        ));
+    }
+
+    #[test]
+    fn match_and_keep_event_semantics_state_round_trips_privileged_board() {
+        let rs = RunState::new(1, 0, true, "Ironclad");
+        let event_state = EventState {
+            id: EventId::MatchAndKeep,
+            current_screen: 1,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data: vec![
+                0,
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                1,
+                2,
+                3,
+                4,
+                5,
+                0,
+                5,
+                -1,
+                CardId::Strike as i32,
+                0,
+                CardId::Defend as i32,
+                0,
+                CardId::Bash as i32,
+                0,
+                CardId::Cleave as i32,
+                0,
+                CardId::IronWave as i32,
+                0,
+                CardId::TwinStrike as i32,
+                0,
+                -1,
+                -1,
+            ],
+        };
+
+        let semantics = event_semantics_state(&rs, &event_state).unwrap();
+        assert_eq!(
+            semantics["extra_data_privileged"].as_array().unwrap().len(),
+            event_state.extra_data.len()
+        );
+        let screen_state = json!({
+            "event_name": "Match and Keep!",
+            "current_screen": 1,
+            "event_semantics_state": semantics,
+        });
+        let rebuilt =
+            try_build_event_state_from_screen_state(&rs, EventId::MatchAndKeep, 1, &screen_state)
+                .unwrap();
+
+        assert_eq!(rebuilt.extra_data, event_state.extra_data);
+        assert!(live_event_requires_semantics_state(
+            EventId::MatchAndKeep,
+            1
+        ));
     }
 }
