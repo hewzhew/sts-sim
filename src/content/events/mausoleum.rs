@@ -1,10 +1,13 @@
 use crate::content::cards::CardId;
 use crate::state::core::EngineState;
-use crate::state::events::{EventChoiceMeta, EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
+    EventOptionSemantics, EventOptionTransition, EventRelicKind, EventState,
+};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
-pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
             let curse_chance = if run_state.ascension_level >= 15 {
@@ -12,16 +15,56 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
             } else {
                 50
             };
+            let mut open_effects = vec![EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::RandomRelic,
+            }];
+            if run_state.ascension_level >= 15 {
+                open_effects.push(EventEffect::ObtainCurse {
+                    count: 1,
+                    kind: EventCardKind::Specific(CardId::Writhe),
+                });
+            }
             vec![
-                EventChoiceMeta::new(format!(
-                    "[Open] {}% chance of Writhe. Obtain a random Relic.",
-                    curse_chance
-                )),
-                EventChoiceMeta::new("[Leave]"),
+                EventOption::new(
+                    EventChoiceMeta::new(format!(
+                        "[Open] {}% chance of Writhe. Obtain a random Relic.",
+                        curse_chance
+                    )),
+                    EventOptionSemantics {
+                        action: EventActionKind::Trade,
+                        effects: open_effects,
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
+                EventOption::new(
+                    EventChoiceMeta::new("[Leave]"),
+                    EventOptionSemantics {
+                        action: EventActionKind::Leave,
+                        transition: EventOptionTransition::AdvanceScreen,
+                        ..Default::default()
+                    },
+                ),
             ]
         }
-        _ => vec![EventChoiceMeta::new("[Leave]")],
+        _ => vec![EventOption::new(
+            EventChoiceMeta::new("[Leave]"),
+            EventOptionSemantics {
+                action: EventActionKind::Leave,
+                transition: EventOptionTransition::Complete,
+                terminal: true,
+                ..Default::default()
+            },
+        )],
     }
+}
+
+pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
+    get_options(run_state, event_state)
+        .into_iter()
+        .map(|option| option.ui)
+        .collect()
 }
 
 pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
@@ -63,7 +106,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     event_state.current_screen = 1;
                 }
                 _ => {
-                    event_state.completed = true;
+                    event_state.current_screen = 1;
                 }
             }
         }
@@ -79,6 +122,9 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
 mod tests {
     use super::*;
     use crate::content::relics::{RelicId, RelicState};
+    use crate::state::events::{
+        EventActionKind, EventCardKind, EventEffect, EventOptionTransition, EventRelicKind,
+    };
     use crate::state::selection::DomainEvent;
 
     fn mausoleum_run() -> RunState {
@@ -97,6 +143,50 @@ mod tests {
             extra_data: Vec::new(),
         });
         run_state
+    }
+
+    #[test]
+    fn structured_options_expose_random_relic_and_only_certain_writhe_at_a15() {
+        let run_state = mausoleum_run();
+        let options = get_options(&run_state, run_state.event_state.as_ref().unwrap());
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].semantics.action, EventActionKind::Trade);
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::RandomRelic,
+            }));
+        assert!(options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainCurse {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::Writhe),
+            }));
+        assert_eq!(
+            options[0].semantics.transition,
+            EventOptionTransition::AdvanceScreen
+        );
+
+        let mut a0_run = mausoleum_run();
+        a0_run.ascension_level = 0;
+        let a0_options = get_options(&a0_run, a0_run.event_state.as_ref().unwrap());
+        assert!(!a0_options[0]
+            .semantics
+            .effects
+            .contains(&EventEffect::ObtainCurse {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::Writhe),
+            }));
+
+        let mut result = EventState::new(EventId::Mausoleum);
+        result.current_screen = 1;
+        let result_options = get_options(&run_state, &result);
+        assert_eq!(result_options[0].semantics.action, EventActionKind::Leave);
+        assert!(result_options[0].semantics.terminal);
     }
 
     #[test]
@@ -241,5 +331,21 @@ mod tests {
             relic_pos < fish_gold_pos && fish_gold_pos < obtained_pos,
             "Java Mausoleum constructs the Writhe effect before spawnRelicAndObtain, but the effect resolves after the new relic is owned and runs onObtainCard before Soul.obtain"
         );
+    }
+
+    #[test]
+    fn leave_from_intro_goes_to_java_result_screen_before_map() {
+        let mut run_state = mausoleum_run();
+        let mut engine_state = EngineState::EventRoom;
+
+        handle_choice(&mut engine_state, &mut run_state, 1);
+
+        let event_state = run_state.event_state.as_ref().unwrap();
+        assert!(!event_state.completed);
+        assert_eq!(event_state.current_screen, 1);
+
+        handle_choice(&mut engine_state, &mut run_state, 0);
+
+        assert!(run_state.event_state.as_ref().unwrap().completed);
     }
 }

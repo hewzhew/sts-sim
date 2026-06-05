@@ -683,6 +683,9 @@ pub fn try_get_structured_event_options_for_state(
         }
         EventId::Lab => crate::content::events::lab::get_options(run_state, event_state),
         EventId::TheJoust => crate::content::events::the_joust::get_options(run_state, event_state),
+        EventId::Mausoleum => {
+            crate::content::events::mausoleum::get_options(run_state, event_state)
+        }
         _ => return None,
     })
 }
