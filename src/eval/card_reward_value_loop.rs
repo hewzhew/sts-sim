@@ -139,6 +139,10 @@ pub struct CardRewardValueLoopSummaryV1 {
     pub value_source_counts: Vec<HistogramEntryV1>,
     pub value_status_counts: Vec<HistogramEntryV1>,
     pub evidence_gap_counts: Vec<HistogramEntryV1>,
+    pub picked_card_drawn_observation_count: usize,
+    pub picked_card_played_observation_count: usize,
+    pub picked_card_upgraded_observation_count: usize,
+    pub picked_card_removed_observation_count: usize,
 }
 
 pub fn extract_card_reward_value_loop_examples_v1(
@@ -256,6 +260,10 @@ pub fn summarize_card_reward_value_loop_examples_v1(
     let mut evidence_gap_counts = BTreeMap::<String, usize>::new();
     let mut attached_outcome_count = 0;
     let mut missing_outcome_count = 0;
+    let mut picked_card_drawn_observation_count = 0;
+    let mut picked_card_played_observation_count = 0;
+    let mut picked_card_upgraded_observation_count = 0;
+    let mut picked_card_removed_observation_count = 0;
 
     for example in examples {
         increment(
@@ -273,6 +281,24 @@ pub fn summarize_card_reward_value_loop_examples_v1(
         match example.outcome_status {
             CardRewardValueLoopOutcomeStatusV1::Attached => attached_outcome_count += 1,
             CardRewardValueLoopOutcomeStatusV1::Missing => missing_outcome_count += 1,
+        }
+        if let Some(card_reward) = example
+            .outcome
+            .as_ref()
+            .and_then(|outcome| outcome.card_reward.as_ref())
+        {
+            if card_reward.picked_card_drawn_count.is_some() {
+                picked_card_drawn_observation_count += 1;
+            }
+            if card_reward.picked_card_played_count.is_some() {
+                picked_card_played_observation_count += 1;
+            }
+            if card_reward.picked_card_upgraded_before_boss.is_some() {
+                picked_card_upgraded_observation_count += 1;
+            }
+            if card_reward.picked_card_removed_later.is_some() {
+                picked_card_removed_observation_count += 1;
+            }
         }
         for value in &example.source_record.values {
             for component in &value.components {
@@ -304,6 +330,10 @@ pub fn summarize_card_reward_value_loop_examples_v1(
         value_source_counts: histogram_entries(value_source_counts),
         value_status_counts: histogram_entries(value_status_counts),
         evidence_gap_counts: histogram_entries(evidence_gap_counts),
+        picked_card_drawn_observation_count,
+        picked_card_played_observation_count,
+        picked_card_upgraded_observation_count,
+        picked_card_removed_observation_count,
     }
 }
 
@@ -677,6 +707,35 @@ mod tests {
         assert_eq!(bucket.mean_picked_card_played_count, Some(1.0));
         assert_eq!(bucket.picked_card_drawn_observation_count, 1);
         assert_eq!(bucket.mean_picked_card_drawn_count, Some(1.0));
+    }
+
+    #[test]
+    fn summary_reports_card_usage_observation_coverage() {
+        let mut examples = vec![
+            test_card_reward_example(CardId::TwinStrike, 521, 8),
+            test_card_reward_example(CardId::Cleave, 522, 4),
+        ];
+        let first = examples[0]
+            .outcome
+            .as_mut()
+            .and_then(|outcome| outcome.card_reward.as_mut())
+            .expect("test outcome should contain card reward");
+        first.picked_card_played_count = Some(2);
+        first.picked_card_upgraded_before_boss = Some(true);
+        let second = examples[1]
+            .outcome
+            .as_mut()
+            .and_then(|outcome| outcome.card_reward.as_mut())
+            .expect("test outcome should contain card reward");
+        second.picked_card_drawn_count = Some(1);
+        second.picked_card_removed_later = Some(false);
+
+        let summary = summarize_card_reward_value_loop_examples_v1(&examples);
+
+        assert_eq!(summary.picked_card_played_observation_count, 1);
+        assert_eq!(summary.picked_card_drawn_observation_count, 1);
+        assert_eq!(summary.picked_card_upgraded_observation_count, 1);
+        assert_eq!(summary.picked_card_removed_observation_count, 1);
     }
 
     #[test]

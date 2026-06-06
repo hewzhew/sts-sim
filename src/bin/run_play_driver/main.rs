@@ -667,9 +667,21 @@ fn card_reward_calibration_loaded_message(
         .as_deref()
         .filter(|ruleset| !ruleset.trim().is_empty())
         .unwrap_or("unknown");
+    let mean_played = calibration
+        .global
+        .mean_picked_card_played_count
+        .map(|value| format!("{value:.3}"))
+        .unwrap_or_else(|| "unknown".to_string());
+    let mean_drawn = calibration
+        .global
+        .mean_picked_card_drawn_count
+        .map(|value| format!("{value:.3}"))
+        .unwrap_or_else(|| "unknown".to_string());
 
     format!(
-        "card reward calibration loaded: {source} [buckets={bucket_count} value_usable={value_usable_count} gate_usable={gate_usable_count} distinct_seeds={distinct_seed_count} short_horizon_gate_approved={} ruleset={ruleset}]",
+        "card reward calibration loaded: {source} [buckets={bucket_count} value_usable={value_usable_count} gate_usable={gate_usable_count} distinct_seeds={distinct_seed_count} played_obs={} mean_played={mean_played} drawn_obs={} mean_drawn={mean_drawn} short_horizon_gate_approved={} ruleset={ruleset}]",
+        calibration.global.picked_card_played_observation_count,
+        calibration.global.picked_card_drawn_observation_count,
         calibration
             .provenance
             .short_horizon_autopilot_gate_approved,
@@ -961,10 +973,10 @@ mod tests {
                     selected_count: 3,
                     outcome_attached_count: 3,
                     mean_next_combat_hp_loss: Some(5.0),
-                    picked_card_drawn_observation_count: 0,
-                    mean_picked_card_drawn_count: None,
-                    picked_card_played_observation_count: 0,
-                    mean_picked_card_played_count: None,
+                    picked_card_drawn_observation_count: 1,
+                    mean_picked_card_drawn_count: Some(1.0),
+                    picked_card_played_observation_count: 2,
+                    mean_picked_card_played_count: Some(1.5),
                 },
             card_id_buckets: Vec::new(),
         };
@@ -1022,6 +1034,10 @@ mod tests {
         assert!(message.contains("gate_usable=1"));
         assert!(message.contains("distinct_seeds=2"));
         assert!(message.contains("short_horizon_gate_approved=true"));
+        assert!(message.contains("played_obs=2"));
+        assert!(message.contains("mean_played=1.500"));
+        assert!(message.contains("drawn_obs=1"));
+        assert!(message.contains("mean_drawn=1.000"));
     }
 
     #[test]
