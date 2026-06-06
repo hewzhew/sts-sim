@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum BranchRetentionSlotV1 {
     Package,
+    EngineSetup,
     Scaling,
     DefenseEngine,
     Survival,
@@ -55,8 +56,9 @@ pub struct BranchRetentionSelectionV1 {
     pub frontier_limit_hit: bool,
 }
 
-const SLOT_ORDER: [BranchRetentionSlotV1; 7] = [
+const SLOT_ORDER: [BranchRetentionSlotV1; 8] = [
     BranchRetentionSlotV1::Package,
+    BranchRetentionSlotV1::EngineSetup,
     BranchRetentionSlotV1::Scaling,
     BranchRetentionSlotV1::DefenseEngine,
     BranchRetentionSlotV1::Survival,
@@ -159,6 +161,10 @@ pub fn decide_branch_retention_v1(
     if complete_package_count(&candidate.trajectory) > 0 {
         slots.push(BranchRetentionSlotV1::Package);
         reasons.push("contains both setup and payoff for a trajectory package".to_string());
+    }
+    if has_engine_setup(&candidate.trajectory) {
+        slots.push(BranchRetentionSlotV1::EngineSetup);
+        reasons.push("contains a long-horizon engine or package setup seed".to_string());
     }
     if candidate
         .choice_profiles
@@ -511,6 +517,12 @@ fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetention
                 + complete_package_count(&candidate.trajectory) * 25_000
                 + candidate.hp * 10
         }
+        BranchRetentionSlotV1::EngineSetup => {
+            candidate.trajectory.setup_keys.len() as i32 * 10_000
+                + candidate.trajectory.engine_generator_picks as i32 * 5_000
+                + candidate.trajectory.draw_energy_picks as i32 * 2_500
+                + candidate.hp * 10
+        }
         BranchRetentionSlotV1::Scaling => {
             count_profiles_with_any_role(&candidate.choice_profiles, SCALING_ROLES) * 10_000
                 + candidate.hp * 10
@@ -551,6 +563,12 @@ fn complete_package_count(trajectory: &BranchTrajectorySignatureV1) -> i32 {
         .iter()
         .filter(|package| setup_keys.contains(package))
         .count() as i32
+}
+
+fn has_engine_setup(trajectory: &BranchTrajectorySignatureV1) -> bool {
+    !trajectory.setup_keys.is_empty()
+        || trajectory.engine_generator_picks > 0
+        || trajectory.draw_energy_picks > 0
 }
 
 fn transition_attack_count(profiles: &[CardRewardSemanticProfileV1]) -> i32 {
@@ -1101,6 +1119,26 @@ mod tests {
         assert!(
             selection.keep_indices.contains(&1),
             "a branch with both setup and payoff should be the package representative"
+        );
+    }
+
+    #[test]
+    fn setup_only_branch_gets_engine_setup_retention_slot() {
+        let setup_only = semantic_retention_candidate(
+            0,
+            10_500,
+            70,
+            80,
+            trajectory_with(&["exhaust_engine"], &[], 0, 1, 0, 0),
+            &[CardRewardSemanticRoleV1::ExhaustGenerator],
+        );
+
+        let decision = decide_branch_retention_v1(&setup_only);
+
+        assert_eq!(decision.primary_slot, BranchRetentionSlotV1::EngineSetup);
+        assert!(
+            decision.slots.contains(&BranchRetentionSlotV1::EngineSetup),
+            "setup-only engine branches should be preserved by an explicit long-horizon slot"
         );
     }
 

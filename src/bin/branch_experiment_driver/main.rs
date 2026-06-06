@@ -483,6 +483,7 @@ fn render_retention_slots(slots: &[BranchRetentionSlotV1]) -> String {
         .iter()
         .map(|slot| match slot {
             BranchRetentionSlotV1::Package => "package",
+            BranchRetentionSlotV1::EngineSetup => "engine_setup",
             BranchRetentionSlotV1::Scaling => "scaling",
             BranchRetentionSlotV1::DefenseEngine => "defense",
             BranchRetentionSlotV1::Survival => "survival",
@@ -674,6 +675,16 @@ mod tests {
     }
 
     #[test]
+    fn compact_report_renders_engine_setup_retention_slot() {
+        let rendered = render_retention_slots(&[
+            BranchRetentionSlotV1::EngineSetup,
+            BranchRetentionSlotV1::Diversity,
+        ]);
+
+        assert_eq!(rendered, "engine_setup,diversity");
+    }
+
+    #[test]
     fn prefix_script_ignores_blank_lines_and_comments() {
         let commands = parse_prefix_script(
             r#"
@@ -702,7 +713,7 @@ mod tests {
     fn empty_report() -> BranchExperimentReportV1 {
         BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
-            schema_version: 6,
+            schema_version: 7,
             label_role: "diagnostic_not_teacher_label".to_string(),
             policy_quality_claim: false,
             seed: 1,

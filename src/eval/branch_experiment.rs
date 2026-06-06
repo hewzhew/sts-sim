@@ -32,7 +32,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 6;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -607,12 +607,13 @@ fn apply_branch_retention(
 fn retention_report_slot_priority(slot: BranchRetentionSlotV1) -> usize {
     match slot {
         BranchRetentionSlotV1::Package => 0,
-        BranchRetentionSlotV1::Scaling => 1,
-        BranchRetentionSlotV1::DefenseEngine => 2,
-        BranchRetentionSlotV1::Survival => 3,
-        BranchRetentionSlotV1::Frontload => 4,
-        BranchRetentionSlotV1::CleanDeck => 5,
-        BranchRetentionSlotV1::Diversity => 6,
+        BranchRetentionSlotV1::EngineSetup => 1,
+        BranchRetentionSlotV1::Scaling => 2,
+        BranchRetentionSlotV1::DefenseEngine => 3,
+        BranchRetentionSlotV1::Survival => 4,
+        BranchRetentionSlotV1::Frontload => 5,
+        BranchRetentionSlotV1::CleanDeck => 6,
+        BranchRetentionSlotV1::Diversity => 7,
     }
 }
 
