@@ -910,6 +910,41 @@ fn strategy_package_v2_reports_upgrade_sink_missing_route_budget() {
 }
 
 #[test]
+fn strategy_package_v2_reports_weak_control_missing_source() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 13,
+            attacks: 7,
+            skills: 5,
+            powers: 1,
+            starter_strikes: 4,
+            starter_defends: 3,
+            weak_sources: 0,
+            total_attack_damage: 48,
+            total_block: 25,
+            ..Default::default()
+        },
+        Some(StrategyRouteFutureV1 {
+            min_fires: 1,
+            max_fires: 2,
+            first_fire_floor: Some(6),
+            max_early_pressure: 3,
+            need_heal: 0.2,
+            avoid_damage: 0.4,
+        }),
+        None,
+    );
+    let weak_control = snapshot
+        .package(super::StrategyPackageIdV2::WeakControl)
+        .expect("weak control package");
+
+    assert_eq!(weak_control.support, StrategyPlanSupportV1::Strong);
+    assert!(weak_control
+        .missing_roles
+        .contains(&StrategyPackageGapV2::Generator));
+}
+
+#[test]
 fn run_strategy_snapshot_v2_exposes_boss_threat_tags() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 2;

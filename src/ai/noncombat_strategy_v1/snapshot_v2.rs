@@ -235,6 +235,13 @@ fn archetype_missing_roles(
 ) -> Vec<StrategyPackageGapV2> {
     match plan.id {
         StrategyPlanIdV1::UpgradeSink => upgrade_sink_missing_roles(plan, deck),
+        StrategyPlanIdV1::WeakControl => {
+            if deck.weak_sources == 0 && plan.support != StrategyPlanSupportV1::Blocked {
+                vec![StrategyPackageGapV2::Generator]
+            } else {
+                Vec::new()
+            }
+        }
         StrategyPlanIdV1::StrengthScaling => {
             generator_payoff_missing_roles(deck.strength_sources, deck.strength_payoffs)
         }

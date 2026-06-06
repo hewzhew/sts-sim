@@ -390,6 +390,20 @@ fn clothesline_exports_weak_frontload_patch_but_uncalibrated_gate_stops() {
         .plan_delta
         .effects
         .contains(&CardRewardPlanEffectV1::WeakCoverage));
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::Clothesline
+        })
+        .expect("Clothesline strategy package estimate");
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_gap_weak_control_generator_filled" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_weak_control" && component.value > 0.0
+    }));
     assert!(!decision.autopilot_gate.value_source_eligible);
 }
 
@@ -598,7 +612,11 @@ fn route_risk_values_are_consumed_by_gate_but_cannot_certify_pick_without_promot
         .contains(&CardRewardEvidenceGapV1::IneligibleValueSource));
     assert_eq!(
         decision.value_arbitration.gate_value_estimates[0].source,
-        CardRewardValueSourceV1::RouteRisk
+        CardRewardValueSourceV1::StrategyPackage
+    );
+    assert_eq!(
+        decision.value_arbitration.gate_value_estimates[0].status,
+        CardRewardValueStatusV1::StrategyPackageEstimate
     );
     assert!(!decision.value_arbitration.candidate_reports[0].selected_estimate_gate_eligible);
 }
@@ -634,9 +652,9 @@ fn route_risk_blocks_even_when_old_rule_would_have_matched_without_promotion() {
     );
     assert!(decision
         .value_arbitration
-        .gate_value_estimates
+        .candidate_reports
         .iter()
-        .all(|estimate| estimate.source == CardRewardValueSourceV1::RouteRisk));
+        .all(|report| !report.selected_estimate_gate_eligible));
     assert!(decision
         .autopilot_gate
         .blocked_reasons
@@ -968,11 +986,11 @@ fn replay_harness_exports_value_loop_gate_state_without_selecting() {
     assert_eq!(replay.value_arbitration.gate_value_estimates.len(), 1);
     assert_eq!(
         replay.value_arbitration.gate_value_estimates[0].source,
-        CardRewardValueSourceV1::RouteRisk
+        CardRewardValueSourceV1::StrategyPackage
     );
     assert_eq!(
         replay.value_arbitration.gate_value_estimates[0].status,
-        CardRewardValueStatusV1::RouteRiskEstimate
+        CardRewardValueStatusV1::StrategyPackageEstimate
     );
     assert!(!replay.autopilot_gate.value_source_eligible);
     assert!(replay.selected_candidate_id.is_none());

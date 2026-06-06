@@ -28,6 +28,12 @@ const STRATEGY_PACKAGE_GAP_RULES: &[StrategyPackageGapRule] = &[
         component_name: "strategy_gap_upgrade_sink_consumer_filled",
     },
     StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::WeakControl,
+        gap: StrategyPackageGapV2::Generator,
+        effect: StrategyPlanEffectV1::WeakCoverage,
+        component_name: "strategy_gap_weak_control_generator_filled",
+    },
+    StrategyPackageGapRule {
         package_id: StrategyPackageIdV2::BlockEngine,
         gap: StrategyPackageGapV2::BlockRetention,
         effect: StrategyPlanEffectV1::BlockRetention,
@@ -186,6 +192,10 @@ fn strategy_package_completion_components(
         (
             StrategyPackageIdV2::UpgradeSink,
             "strategy_package_completion_upgrade_sink",
+        ),
+        (
+            StrategyPackageIdV2::WeakControl,
+            "strategy_package_completion_weak_control",
         ),
         (
             StrategyPackageIdV2::StrengthScaling,

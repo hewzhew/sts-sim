@@ -77,10 +77,10 @@ fn card_reward_stop_exports_hidden_free_non_gate_value_inputs() {
     assert_eq!(record.candidates.len(), decision.candidates.len());
     assert_eq!(record.values.len(), decision.candidates.len());
     assert!(record.values.iter().all(|value| {
-        value
-            .components
-            .iter()
-            .any(|component| component.name == "value_status_route_risk_estimate")
+        value.components.iter().any(|component| {
+            component.name == "value_status_route_risk_estimate"
+                || component.name == "value_status_strategy_package_estimate"
+        })
     }));
     assert!(record.values.iter().all(|value| {
         value.components.iter().any(|component| {
