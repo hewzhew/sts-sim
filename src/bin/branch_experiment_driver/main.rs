@@ -146,6 +146,16 @@ fn render_compact_report(report: &BranchExperimentReportV1) -> String {
                 .to_string(),
         );
     }
+    if report.explored_branch_points == 0 {
+        let boundary = report
+            .frontier_groups
+            .first()
+            .map(|group| group.boundary_title.as_str())
+            .unwrap_or("unknown boundary");
+        lines.push(format!(
+            "no card reward branch point reached before {boundary}; provide --prefix commands or start from a trace/goto point that reaches a card reward"
+        ));
+    }
     if !report.reward_option_portfolios.is_empty() {
         lines.push("".to_string());
         lines.push("Reward option portfolios:".to_string());
@@ -566,6 +576,27 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn compact_report_explains_when_no_card_reward_branch_point_was_reached() {
+        let mut report = empty_report();
+        report.explored_branch_points = 0;
+        report.frontier_groups = vec![
+            sts_simulator::eval::branch_experiment::BranchExperimentFrontierGroupV1 {
+                key: "neow".to_string(),
+                branch_count: 1,
+                representative_branch_id: "root".to_string(),
+                boundary_title: "Neow Bonus".to_string(),
+                next_card_reward_offer: None,
+                lineage_flags: Vec::new(),
+            },
+        ];
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("no card reward branch point reached"));
+        assert!(rendered.contains("--prefix"));
     }
 
     fn empty_report() -> BranchExperimentReportV1 {
