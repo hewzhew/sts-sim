@@ -6,9 +6,10 @@ use clap::Parser;
 use sts_simulator::eval::card_reward_value_loop::{
     build_card_reward_closed_loop_report_v1, build_card_reward_runtime_calibration_pipeline_v1,
     calibrate_card_reward_outcomes_v1, calibrate_card_reward_route_risk_v1,
-    extract_card_reward_value_loop_examples_v1, promote_card_reward_outcome_calibration_v1,
-    replay_card_reward_records_with_calibration_v1, summarize_card_reward_value_loop_examples_v1,
-    CardRewardOutcomeCalibrationPromotionConfigV1, CardRewardOutcomeCalibrationV1,
+    calibrate_card_reward_strategy_package_v1, extract_card_reward_value_loop_examples_v1,
+    promote_card_reward_outcome_calibration_v1, replay_card_reward_records_with_calibration_v1,
+    summarize_card_reward_value_loop_examples_v1, CardRewardOutcomeCalibrationPromotionConfigV1,
+    CardRewardOutcomeCalibrationV1,
 };
 use sts_simulator::eval::run_control::load_session_trace_v1;
 
@@ -43,6 +44,9 @@ struct Args {
     route_risk_calibration: bool,
 
     #[arg(long)]
+    strategy_package_calibration: bool,
+
+    #[arg(long)]
     promote_calibration: bool,
 
     #[arg(long)]
@@ -59,6 +63,9 @@ struct Args {
 
     #[arg(long, value_name = "PATH")]
     route_risk_calibration_out: Option<PathBuf>,
+
+    #[arg(long, value_name = "PATH")]
+    strategy_package_calibration_out: Option<PathBuf>,
 
     #[arg(long, value_name = "PATH")]
     closed_loop_report: Option<PathBuf>,
@@ -94,6 +101,7 @@ fn run(args: Args) -> Result<(), String> {
         args.replay_calibration,
         args.closed_loop,
         args.route_risk_calibration,
+        args.strategy_package_calibration,
         args.promote_calibration,
         args.runtime_calibration,
     ]
@@ -103,7 +111,7 @@ fn run(args: Args) -> Result<(), String> {
         > 1
     {
         return Err(
-            "use only one of --summary, --calibration, --replay-calibration, --closed-loop, --route-risk-calibration, --promote-calibration, or --runtime-calibration"
+            "use only one of --summary, --calibration, --replay-calibration, --closed-loop, --route-risk-calibration, --strategy-package-calibration, --promote-calibration, or --runtime-calibration"
                 .to_string(),
         );
     }
@@ -163,6 +171,13 @@ fn run(args: Args) -> Result<(), String> {
             write_payload(
                 path,
                 serde_json::to_string_pretty(&pipeline.route_risk_calibration)
+                    .map_err(|err| err.to_string())?,
+            )?;
+        }
+        if let Some(path) = args.strategy_package_calibration_out.as_ref() {
+            write_payload(
+                path,
+                serde_json::to_string_pretty(&pipeline.strategy_package_calibration)
                     .map_err(|err| err.to_string())?,
             )?;
         }
@@ -230,6 +245,13 @@ fn run(args: Args) -> Result<(), String> {
         }
     } else if args.route_risk_calibration {
         let calibration = calibrate_card_reward_route_risk_v1(&examples);
+        if args.json_lines {
+            serde_json::to_string(&calibration).map_err(|err| err.to_string())?
+        } else {
+            serde_json::to_string_pretty(&calibration).map_err(|err| err.to_string())?
+        }
+    } else if args.strategy_package_calibration {
+        let calibration = calibrate_card_reward_strategy_package_v1(&examples);
         if args.json_lines {
             serde_json::to_string(&calibration).map_err(|err| err.to_string())?
         } else {
@@ -336,6 +358,18 @@ mod tests {
     }
 
     #[test]
+    fn strategy_package_calibration_is_mutually_exclusive_with_summary_mode() {
+        let mut args = empty_args();
+        args.summary = true;
+        args.strategy_package_calibration = true;
+
+        let err =
+            run(args).expect_err("strategy-package calibration should be a single output mode");
+
+        assert!(err.contains("--strategy-package-calibration"));
+    }
+
+    #[test]
     fn promote_calibration_writes_runtime_calibration_and_report() {
         let input = unique_temp_path("promotion_input.calibration.json");
         let output = unique_temp_path("promotion_output.calibration.json");
@@ -383,12 +417,14 @@ mod tests {
             replay_calibration: false,
             closed_loop: false,
             route_risk_calibration: false,
+            strategy_package_calibration: false,
             promote_calibration: false,
             runtime_calibration: false,
             calibration_path: None,
             promotion_report: None,
             raw_calibration_out: None,
             route_risk_calibration_out: None,
+            strategy_package_calibration_out: None,
             closed_loop_report: None,
             approve_short_horizon_gate: false,
             min_distinct_seeds: 3,

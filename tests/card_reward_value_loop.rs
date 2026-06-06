@@ -1,14 +1,19 @@
 use sts_simulator::ai::card_reward_policy_v1::{
     build_card_reward_decision_context_v1, plan_card_reward_decision_v1, CardRewardPolicyConfigV1,
-    CardRewardValueSourceV1, CardRewardValueStatusV1, PublicRewardDecisionPacketV1,
+    CardRewardRouteEvidenceV1, CardRewardSelectedRouteV1, CardRewardValueSourceV1,
+    CardRewardValueStatusV1, PublicRewardDecisionPacketV1,
 };
 use sts_simulator::ai::noncombat_decision_v1::{
     attach_noncombat_outcome_v1, DecisionSiteKindV1, NonCombatDecisionRecordV1,
     NonCombatOutcomeSnapshotV1, NonCombatOutcomeWindowV1, PolicySelectionStatusV1,
 };
+use sts_simulator::ai::noncombat_strategy_v1::{
+    StrategyCandidatePlanDeltaV1, StrategyPlanEffectV1, StrategyPlanSupportV1,
+};
 use sts_simulator::content::cards::CardId;
 use sts_simulator::eval::card_reward_value_loop::{
-    calibrate_card_reward_outcomes_v1, estimate_card_reward_value_from_calibration_v1,
+    calibrate_card_reward_outcomes_v1, calibrate_card_reward_strategy_package_v1,
+    estimate_card_reward_value_from_calibration_v1,
     estimate_card_reward_values_from_calibration_v1, extract_card_reward_value_loop_examples_v1,
     replay_card_reward_records_with_calibration_v1, summarize_card_reward_value_loop_examples_v1,
     CardRewardValueLoopOutcomeStatusV1, CardRewardValueLoopReplayStatusV1,
@@ -359,6 +364,38 @@ fn replays_public_packet_policy_with_outcome_calibration_inputs() {
         .contains(&"OutcomeCalibration".to_string()));
 }
 
+#[test]
+fn calibrates_strategy_package_estimates_by_selected_candidate_plan_evidence() {
+    let examples = vec![
+        strategy_package_example(CardId::SearingBlow, 7),
+        strategy_package_example(CardId::Clothesline, 14),
+    ];
+
+    let calibration = calibrate_card_reward_strategy_package_v1(&examples);
+
+    assert_eq!(calibration.total_examples, 2);
+    assert_eq!(calibration.evaluated_examples, 2);
+    assert_eq!(
+        calibration.estimator_kind,
+        "strategy_package_selected_candidate_alignment_v1"
+    );
+    assert!(calibration
+        .buckets
+        .iter()
+        .any(|bucket| bucket.bucket_key == "plan_support:Strong"));
+    let upgrade_bucket = calibration
+        .buckets
+        .iter()
+        .find(|bucket| bucket.bucket_key == "plan_effect:UpgradeSink")
+        .expect("selected SearingBlow should create an UpgradeSink bucket");
+    assert_eq!(upgrade_bucket.evaluated_count, 1);
+    assert!(upgrade_bucket.usable_for_value_estimate);
+    assert!(!upgrade_bucket.usable_for_autopilot_gate);
+    assert_eq!(calibration.label_role, "diagnostic_not_teacher_label");
+    assert!(!calibration.trainable_as_action_label);
+    assert!(!calibration.policy_quality_claim);
+}
+
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {
     selected_card_reward_record_with_packet(card).0
 }
@@ -376,6 +413,98 @@ fn selected_card_reward_record_with_packet(
     record.selection.reason = "test selected visible card reward".to_string();
     record.selection.confidence = 1.0;
     (record, packet)
+}
+
+fn strategy_package_example(
+    selected_card: CardId,
+    hp_loss: i32,
+) -> sts_simulator::eval::card_reward_value_loop::CardRewardValueLoopExampleV1 {
+    let (record, packet) = selected_strategy_package_record_with_packet(selected_card);
+    let outcome = attach_noncombat_outcome_v1(
+        &record,
+        NonCombatOutcomeWindowV1::AfterOneFloor,
+        outcome_snapshot(1, 80, 0),
+        outcome_snapshot(2, 80 - hp_loss, 1),
+    )
+    .expect("selected card reward record should accept outcome");
+    let mut trace = trace_with_card_reward_record_and_packet(record, Some(packet));
+    trace.noncombat_outcome_attachments.push(outcome);
+    extract_card_reward_value_loop_examples_v1(&trace)
+        .expect("trace should extract")
+        .into_iter()
+        .next()
+        .expect("one card reward example should be extracted")
+}
+
+fn selected_strategy_package_record_with_packet(
+    selected_card: CardId,
+) -> (NonCombatDecisionRecordV1, PublicRewardDecisionPacketV1) {
+    let run = RunState::new(521, 0, false, "Ironclad");
+    let mut context = build_card_reward_decision_context_v1(
+        &run,
+        vec![
+            RewardCard::new(CardId::SearingBlow, 0),
+            RewardCard::new(CardId::Clothesline, 0),
+        ],
+        None,
+    );
+    context.route = Some(route_with_upgrade_budget());
+    context.candidates[0].plan_delta = StrategyCandidatePlanDeltaV1 {
+        effects: vec![
+            StrategyPlanEffectV1::FrontloadDamage,
+            StrategyPlanEffectV1::UpgradeSink,
+            StrategyPlanEffectV1::UpgradeBudgetConsumer,
+        ],
+        support: StrategyPlanSupportV1::Strong,
+        notes: Vec::new(),
+    };
+    context.candidates[1].plan_delta = StrategyCandidatePlanDeltaV1 {
+        effects: vec![
+            StrategyPlanEffectV1::FrontloadDamage,
+            StrategyPlanEffectV1::WeakCoverage,
+            StrategyPlanEffectV1::DamageMitigation,
+        ],
+        support: StrategyPlanSupportV1::Plausible,
+        notes: Vec::new(),
+    };
+    let packet = PublicRewardDecisionPacketV1::from_context(&context);
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let selected_index = context
+        .candidates
+        .iter()
+        .position(|candidate| candidate.card == selected_card)
+        .expect("selected card should be a candidate");
+    let selected_candidate_id = format!("card_reward:{selected_index}:{selected_card:?}");
+    let mut record = decision.to_noncombat_decision_record_v1();
+    record.selection.status = PolicySelectionStatusV1::Selected;
+    record.selection.selected_candidate_id = Some(selected_candidate_id);
+    record.selection.reason = "test selected strategy package card reward".to_string();
+    record.selection.confidence = 1.0;
+    (record, packet)
+}
+
+fn route_with_upgrade_budget() -> CardRewardRouteEvidenceV1 {
+    CardRewardRouteEvidenceV1 {
+        route_policy: "test_route_evidence".to_string(),
+        selected_route: Some(CardRewardSelectedRouteV1 {
+            next_x: 2,
+            next_y: 2,
+            min_fires: 2,
+            max_fires: 4,
+            first_fire_floor: Some(5),
+            min_elites: 0,
+            max_elites: 1,
+            min_early_pressure: 1,
+            max_early_pressure: 2,
+        }),
+        candidate_count: 2,
+        need_card_rewards: 0.7,
+        need_upgrade: 0.9,
+        need_heal: 0.1,
+        can_take_elite: 0.5,
+        avoid_damage: 0.3,
+        warnings: Vec::new(),
+    }
 }
 
 fn example_for_card_with_next_combat_hp_loss(

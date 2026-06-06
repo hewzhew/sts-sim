@@ -7,6 +7,7 @@ mod closed_loop;
 mod promotion;
 mod replay;
 mod route_risk_calibration;
+mod strategy_package_calibration;
 pub use calibration::{
     calibrate_card_reward_outcomes_v1, estimate_card_reward_value_from_calibration_v1,
     estimate_card_reward_values_from_calibration_v1, CardRewardOutcomeCalibrationBucketV1,
@@ -39,6 +40,12 @@ pub use route_risk_calibration::{
     CardRewardRouteRiskCalibrationBucketV1, CardRewardRouteRiskCalibrationGlobalV1,
     CardRewardRouteRiskCalibrationV1, CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_NAME,
     CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_VERSION,
+};
+pub use strategy_package_calibration::{
+    calibrate_card_reward_strategy_package_v1, CardRewardStrategyPackageCalibrationBucketV1,
+    CardRewardStrategyPackageCalibrationGlobalV1, CardRewardStrategyPackageCalibrationV1,
+    CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_NAME,
+    CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_VERSION,
 };
 
 use crate::ai::card_reward_policy_v1::PublicRewardDecisionPacketV1;
@@ -751,6 +758,8 @@ mod tests {
         assert_eq!(pipeline.promotion_report.promoted_bucket_count, 1);
         assert_eq!(pipeline.route_risk_calibration.total_examples, 2);
         assert_eq!(pipeline.route_risk_calibration.evaluated_examples, 0);
+        assert_eq!(pipeline.strategy_package_calibration.total_examples, 2);
+        assert_eq!(pipeline.strategy_package_calibration.evaluated_examples, 0);
         assert_eq!(
             pipeline
                 .closed_loop_report

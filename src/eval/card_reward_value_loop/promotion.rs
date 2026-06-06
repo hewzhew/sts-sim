@@ -2,9 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     build_card_reward_closed_loop_report_v1, calibrate_card_reward_outcomes_v1,
-    calibrate_card_reward_route_risk_v1, CardRewardClosedLoopReportV1,
-    CardRewardOutcomeCalibrationBucketV1, CardRewardOutcomeCalibrationV1,
-    CardRewardRouteRiskCalibrationV1, CardRewardValueLoopExampleV1, HistogramEntryV1,
+    calibrate_card_reward_route_risk_v1, calibrate_card_reward_strategy_package_v1,
+    CardRewardClosedLoopReportV1, CardRewardOutcomeCalibrationBucketV1,
+    CardRewardOutcomeCalibrationV1, CardRewardRouteRiskCalibrationV1,
+    CardRewardStrategyPackageCalibrationV1, CardRewardValueLoopExampleV1, HistogramEntryV1,
 };
 
 pub const CARD_REWARD_OUTCOME_CALIBRATION_PROMOTION_SCHEMA_NAME: &str =
@@ -81,6 +82,7 @@ pub struct CardRewardRuntimeCalibrationPipelineV1 {
     pub promoted_calibration: CardRewardOutcomeCalibrationV1,
     pub promotion_report: CardRewardOutcomeCalibrationPromotionReportV1,
     pub route_risk_calibration: CardRewardRouteRiskCalibrationV1,
+    pub strategy_package_calibration: CardRewardStrategyPackageCalibrationV1,
     pub closed_loop_report: CardRewardClosedLoopReportV1,
 }
 
@@ -90,6 +92,7 @@ pub fn build_card_reward_runtime_calibration_pipeline_v1(
 ) -> CardRewardRuntimeCalibrationPipelineV1 {
     let raw_calibration = calibrate_card_reward_outcomes_v1(examples);
     let route_risk_calibration = calibrate_card_reward_route_risk_v1(examples);
+    let strategy_package_calibration = calibrate_card_reward_strategy_package_v1(examples);
     let (promoted_calibration, promotion_report) =
         promote_card_reward_outcome_calibration_v1(&raw_calibration, config);
     let closed_loop_report = build_card_reward_closed_loop_report_v1(
@@ -103,6 +106,7 @@ pub fn build_card_reward_runtime_calibration_pipeline_v1(
         promoted_calibration,
         promotion_report,
         route_risk_calibration,
+        strategy_package_calibration,
         closed_loop_report,
     }
 }
