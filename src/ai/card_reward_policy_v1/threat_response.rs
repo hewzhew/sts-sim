@@ -2,7 +2,8 @@ use crate::ai::noncombat_strategy_v1::StrategyThreatTagV1;
 use crate::content::cards::CardType;
 
 use super::types::{
-    CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardValueComponentV1,
+    CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardPickDependencyV1,
+    CardRewardValueComponentV1,
 };
 
 #[derive(Default)]
@@ -36,6 +37,16 @@ pub(crate) fn threat_response_delta(
         });
     }
 
+    if has_threat(context, StrategyThreatTagV1::MultiHit) && candidate.facts.enemy_strength_down > 0
+    {
+        let value = candidate.facts.enemy_strength_down as f32 * 0.12;
+        response.survival_delta += value;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "boss_threat_multi_hit_strength_down_response".to_string(),
+            value,
+        });
+    }
+
     if has_threat(context, StrategyThreatTagV1::WeakValuable) && candidate.facts.weak > 0 {
         let value = candidate.facts.weak as f32 * 0.08;
         response.survival_delta += value;
@@ -50,6 +61,31 @@ pub(crate) fn threat_response_delta(
         response.components.push(CardRewardValueComponentV1 {
             name: "boss_threat_aoe_response".to_string(),
             value: 0.10,
+        });
+    }
+
+    if has_threat(context, StrategyThreatTagV1::StatusFlood)
+        && candidate
+            .facts
+            .pick_dependencies
+            .contains(&CardRewardPickDependencyV1::StatusPackage)
+    {
+        response.survival_delta += 0.08;
+        response.progress_delta += 0.12;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "boss_threat_status_flood_payoff_response".to_string(),
+            value: 0.12,
+        });
+    }
+
+    if has_threat(context, StrategyThreatTagV1::SkillPunish)
+        && candidate.facts.card_type == CardType::Skill
+    {
+        response.survival_delta -= 0.05;
+        response.progress_delta -= 0.03;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "elite_pool_skill_punish_penalty".to_string(),
+            value: -0.05,
         });
     }
 
