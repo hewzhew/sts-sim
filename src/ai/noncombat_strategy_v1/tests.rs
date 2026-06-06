@@ -30,6 +30,9 @@ fn run_strategy_snapshot_keeps_multiple_plan_hypotheses() {
             exhaust_payoffs: 0,
             status_generators: 0,
             status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
             total_attack_damage: 42,
             total_block: 20,
         },
@@ -80,6 +83,9 @@ fn candidate_plan_delta_uses_strategy_snapshot_not_card_score() {
             exhaust_payoffs: 0,
             status_generators: 0,
             status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
             total_attack_damage: 36,
             total_block: 15,
         },
@@ -141,6 +147,9 @@ fn starter_shell_formation_marks_frontload_and_scaling_needs() {
             exhaust_payoffs: 0,
             status_generators: 0,
             status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
             total_attack_damage: 36,
             total_block: 15,
         },
@@ -190,6 +199,9 @@ fn supported_engine_formation_marks_plan_committed() {
             exhaust_payoffs: 0,
             status_generators: 0,
             status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
             total_attack_damage: 86,
             total_block: 32,
         },
@@ -239,6 +251,9 @@ fn route_packages_link_upgrade_commitment_to_visible_fire_budget() {
             exhaust_payoffs: 0,
             status_generators: 0,
             status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
             total_attack_damage: 36,
             total_block: 15,
         },
@@ -284,6 +299,9 @@ fn route_packages_mark_combat_patch_window_under_pressure() {
             exhaust_payoffs: 0,
             status_generators: 0,
             status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
             total_attack_damage: 36,
             total_block: 15,
         },
@@ -329,6 +347,9 @@ fn route_packages_protect_committed_core_plan() {
             exhaust_payoffs: 0,
             status_generators: 0,
             status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
             total_attack_damage: 86,
             total_block: 32,
         },
@@ -374,6 +395,9 @@ fn strategy_snapshot_v2_unifies_archetype_route_and_resource_packages() {
             exhaust_payoffs: 0,
             status_generators: 0,
             status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
             total_attack_damage: 86,
             total_block: 32,
         },
@@ -481,6 +505,9 @@ fn strategy_snapshot_v2_exposes_formation_and_candidate_delta_without_v1_access(
             exhaust_payoffs: 0,
             status_generators: 0,
             status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
             total_attack_damage: 48,
             total_block: 20,
         },
@@ -500,4 +527,118 @@ fn strategy_snapshot_v2_exposes_formation_and_candidate_delta_without_v1_access(
         &snapshot,
     );
     assert_eq!(delta.support, StrategyPlanSupportV1::Strong);
+}
+
+#[test]
+fn block_engine_package_recognizes_barricade_body_slam_followup() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 14,
+            attacks: 7,
+            skills: 5,
+            powers: 2,
+            starter_strikes: 4,
+            starter_defends: 3,
+            strength_sources: 0,
+            strength_payoffs: 0,
+            weak_sources: 1,
+            draw_sources: 1,
+            energy_sources: 1,
+            vulnerable_sources: 1,
+            route_upgrade_payoffs: 0,
+            important_cards_unupgraded: 0,
+            exhaust_generators: 0,
+            exhaust_payoffs: 0,
+            status_generators: 0,
+            status_payoffs: 0,
+            block_retention_sources: 1,
+            block_payoffs: 0,
+            block_multipliers: 1,
+            total_attack_damage: 58,
+            total_block: 38,
+        },
+        Some(StrategyRouteFutureV1 {
+            min_fires: 2,
+            max_fires: 3,
+            first_fire_floor: Some(5),
+            max_early_pressure: 1,
+            need_heal: 0.1,
+            avoid_damage: 0.1,
+        }),
+        None,
+    );
+
+    let delta = super::candidate_plan_delta_v2(
+        StrategyCandidateFactsV1 {
+            card: CardId::BodySlam,
+            damage_total: 0,
+            weak: 0,
+            strength_gain: 0,
+        },
+        &snapshot,
+    );
+
+    assert_eq!(
+        snapshot.support(super::StrategyPackageIdV2::BlockEngine),
+        StrategyPlanSupportV1::Strong
+    );
+    assert_eq!(delta.support, StrategyPlanSupportV1::Strong);
+    assert!(delta.effects.contains(&StrategyPlanEffectV1::BlockPayoff));
+    assert!(delta
+        .notes
+        .iter()
+        .any(|note| note.contains("block retention sources=1")));
+}
+
+#[test]
+fn body_slam_without_block_engine_remains_blocked_package_candidate() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 11,
+            attacks: 7,
+            skills: 4,
+            powers: 0,
+            starter_strikes: 5,
+            starter_defends: 4,
+            strength_sources: 0,
+            strength_payoffs: 0,
+            weak_sources: 0,
+            draw_sources: 0,
+            energy_sources: 0,
+            vulnerable_sources: 1,
+            route_upgrade_payoffs: 0,
+            important_cards_unupgraded: 1,
+            exhaust_generators: 0,
+            exhaust_payoffs: 0,
+            status_generators: 0,
+            status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
+            total_attack_damage: 42,
+            total_block: 15,
+        },
+        Some(StrategyRouteFutureV1 {
+            min_fires: 1,
+            max_fires: 2,
+            first_fire_floor: Some(6),
+            max_early_pressure: 2,
+            need_heal: 0.3,
+            avoid_damage: 0.4,
+        }),
+        None,
+    );
+
+    let delta = super::candidate_plan_delta_v2(
+        StrategyCandidateFactsV1 {
+            card: CardId::BodySlam,
+            damage_total: 0,
+            weak: 0,
+            strength_gain: 0,
+        },
+        &snapshot,
+    );
+
+    assert_eq!(delta.support, StrategyPlanSupportV1::Blocked);
+    assert!(delta.effects.contains(&StrategyPlanEffectV1::BlockPayoff));
 }

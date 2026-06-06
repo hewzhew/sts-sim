@@ -45,6 +45,9 @@ fn deck_facts_from_run_state_v1(run_state: &RunState) -> StrategyDeckFactsV1 {
         exhaust_payoffs: 0,
         status_generators: 0,
         status_payoffs: 0,
+        block_retention_sources: 0,
+        block_payoffs: 0,
+        block_multipliers: 0,
         total_attack_damage: 0,
         total_block: 0,
     };
@@ -255,6 +258,15 @@ fn add_card_package_facts(card_id: CardId, facts: &mut StrategyDeckFactsV1) {
     }
     if matches!(card_id, CardId::Evolve | CardId::FireBreathing) {
         facts.status_payoffs = facts.status_payoffs.saturating_add(1);
+    }
+    if matches!(card_id, CardId::Barricade) {
+        facts.block_retention_sources = facts.block_retention_sources.saturating_add(1);
+    }
+    if matches!(card_id, CardId::BodySlam | CardId::Juggernaut) {
+        facts.block_payoffs = facts.block_payoffs.saturating_add(1);
+    }
+    if matches!(card_id, CardId::Entrench) {
+        facts.block_multipliers = facts.block_multipliers.saturating_add(1);
     }
 }
 

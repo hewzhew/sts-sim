@@ -30,7 +30,7 @@ pub enum StrategyPlanPressureV1 {
     High,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct StrategyDeckFactsV1 {
     pub deck_size: usize,
     pub attacks: u8,
@@ -50,6 +50,9 @@ pub struct StrategyDeckFactsV1 {
     pub exhaust_payoffs: u8,
     pub status_generators: u8,
     pub status_payoffs: u8,
+    pub block_retention_sources: u8,
+    pub block_payoffs: u8,
+    pub block_multipliers: u8,
     pub total_attack_damage: i32,
     pub total_block: i32,
 }
@@ -139,6 +142,9 @@ pub enum StrategyPlanEffectV1 {
     FrontloadDamage,
     WeakCoverage,
     DamageMitigation,
+    BlockRetention,
+    BlockPayoff,
+    BlockMultiplier,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

@@ -63,6 +63,44 @@ pub fn candidate_plan_delta_v1(
                 notes.extend(plan.opportunity_costs.clone());
             }
         }
+        CardId::Barricade => {
+            effects.push(StrategyPlanEffectV1::BlockRetention);
+            effects.push(StrategyPlanEffectV1::DamageMitigation);
+            let plan = snapshot.plan(StrategyPlanIdV1::BlockEngine);
+            support = plan
+                .map(|plan| plan.support)
+                .unwrap_or(StrategyPlanSupportV1::Blocked);
+            if let Some(plan) = plan {
+                notes.extend(plan.evidence.clone());
+                notes.extend(plan.blockers.clone());
+                notes.extend(plan.opportunity_costs.clone());
+            }
+        }
+        CardId::BodySlam => {
+            effects.push(StrategyPlanEffectV1::BlockPayoff);
+            let plan = snapshot.plan(StrategyPlanIdV1::BlockEngine);
+            support = plan
+                .map(|plan| plan.support)
+                .unwrap_or(StrategyPlanSupportV1::Blocked);
+            if let Some(plan) = plan {
+                notes.extend(plan.evidence.clone());
+                notes.extend(plan.blockers.clone());
+                notes.extend(plan.opportunity_costs.clone());
+            }
+        }
+        CardId::Entrench => {
+            effects.push(StrategyPlanEffectV1::BlockMultiplier);
+            effects.push(StrategyPlanEffectV1::DamageMitigation);
+            let plan = snapshot.plan(StrategyPlanIdV1::BlockEngine);
+            support = plan
+                .map(|plan| plan.support)
+                .unwrap_or(StrategyPlanSupportV1::Blocked);
+            if let Some(plan) = plan {
+                notes.extend(plan.evidence.clone());
+                notes.extend(plan.blockers.clone());
+                notes.extend(plan.opportunity_costs.clone());
+            }
+        }
         _ => {
             if facts.weak > 0 {
                 effects.push(StrategyPlanEffectV1::WeakCoverage);

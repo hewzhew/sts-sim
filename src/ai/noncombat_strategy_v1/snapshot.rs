@@ -180,9 +180,18 @@ fn exhaust_engine_plan(deck: &StrategyDeckFactsV1) -> DeckPlanHypothesisV1 {
 }
 
 fn block_engine_plan(deck: &StrategyDeckFactsV1) -> DeckPlanHypothesisV1 {
-    let support = if deck.total_block >= 35 {
+    let has_retention = deck.block_retention_sources > 0;
+    let has_payoff = deck.block_payoffs > 0;
+    let has_multiplier = deck.block_multipliers > 0;
+    let support = if has_retention && (has_payoff || has_multiplier) && deck.total_block >= 25 {
+        StrategyPlanSupportV1::Strong
+    } else if has_payoff && deck.total_block >= 30 {
         StrategyPlanSupportV1::Plausible
-    } else if deck.total_block > 0 {
+    } else if has_retention && deck.total_block >= 25 {
+        StrategyPlanSupportV1::Plausible
+    } else if deck.total_block >= 35 {
+        StrategyPlanSupportV1::Plausible
+    } else if deck.total_block >= 25 || has_retention || has_payoff || has_multiplier {
         StrategyPlanSupportV1::Weak
     } else {
         StrategyPlanSupportV1::Blocked
@@ -190,8 +199,17 @@ fn block_engine_plan(deck: &StrategyDeckFactsV1) -> DeckPlanHypothesisV1 {
     DeckPlanHypothesisV1 {
         id: StrategyPlanIdV1::BlockEngine,
         support,
-        evidence: vec![format!("total block fact is {}", deck.total_block)],
-        blockers: Vec::new(),
+        evidence: vec![
+            format!("total block fact is {}", deck.total_block),
+            format!("block retention sources={}", deck.block_retention_sources),
+            format!("block payoffs={}", deck.block_payoffs),
+            format!("block multipliers={}", deck.block_multipliers),
+        ],
+        blockers: if support == StrategyPlanSupportV1::Blocked {
+            vec!["block engine needs block generation plus retention/payoff evidence".to_string()]
+        } else {
+            Vec::new()
+        },
         opportunity_costs: vec![
             "block engine needs payoff density before it can be a plan".to_string()
         ],

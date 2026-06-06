@@ -984,6 +984,155 @@ fn strategy_package_estimator_exports_plan_alignment_without_certifying_autopick
 }
 
 #[test]
+fn strategy_package_estimator_recognizes_block_engine_payoff() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::Barricade);
+    run_state.add_card_to_deck(CardId::Entrench);
+    run_state.add_card_to_deck(CardId::FlameBarrier);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::BodySlam, 0),
+            RewardCard::new(CardId::HeavyBlade, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    assert_eq!(
+        context.strategy.support(StrategyPackageIdV2::BlockEngine),
+        StrategyPlanSupportV1::Strong
+    );
+
+    let body_slam = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::BodySlam)
+        .expect("Body Slam candidate");
+    assert_eq!(body_slam.plan_delta.support, StrategyPlanSupportV1::Strong);
+    assert!(body_slam
+        .plan_delta
+        .effects
+        .contains(&CardRewardPlanEffectV1::BlockPayoff));
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let body_slam_strategy_estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::BodySlam
+        })
+        .expect("Body Slam strategy package estimate");
+
+    assert!(body_slam_strategy_estimate.progress_delta > 0.0);
+    assert!(body_slam_strategy_estimate
+        .components
+        .iter()
+        .any(|component| component.name == "plan_effect_BlockPayoff"));
+    assert!(body_slam_strategy_estimate
+        .components
+        .iter()
+        .any(|component| component.name == "strategy_support_block_engine"));
+    assert!(
+        !body_slam_strategy_estimate
+            .eligibility
+            .usable_for_autopilot_gate
+    );
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+}
+
+#[test]
+fn strategy_package_estimator_blocks_naked_body_slam() {
+    let context = context_for_cards_with_route(
+        vec![RewardCard::new(CardId::BodySlam, 0)],
+        route_with_combat_pressure(),
+    );
+    let body_slam = &context.candidates[0];
+
+    assert_eq!(
+        context.strategy.support(StrategyPackageIdV2::BlockEngine),
+        StrategyPlanSupportV1::Blocked
+    );
+    assert_eq!(body_slam.plan_delta.support, StrategyPlanSupportV1::Blocked);
+    assert!(body_slam
+        .plan_delta
+        .effects
+        .contains(&CardRewardPlanEffectV1::BlockPayoff));
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let body_slam_strategy_estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::BodySlam
+        })
+        .expect("Body Slam strategy package estimate");
+
+    assert!(body_slam_strategy_estimate.progress_delta <= 0.0);
+    assert!(body_slam_strategy_estimate.deck_consistency_delta <= 0.0);
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+}
+
+#[test]
+fn strategy_package_estimator_recognizes_block_engine_missing_pieces() {
+    let mut needs_retention = RunState::new(521, 0, false, "Ironclad");
+    needs_retention.add_card_to_deck(CardId::BodySlam);
+    needs_retention.add_card_to_deck(CardId::Entrench);
+    needs_retention.add_card_to_deck(CardId::FlameBarrier);
+    let barricade_context = context_for_run_with_route(
+        &needs_retention,
+        vec![RewardCard::new(CardId::Barricade, 0)],
+        route_with_combat_pressure(),
+    );
+    let barricade = &barricade_context.candidates[0];
+
+    assert_eq!(
+        barricade_context
+            .strategy
+            .support(StrategyPackageIdV2::BlockEngine),
+        StrategyPlanSupportV1::Plausible
+    );
+    assert_eq!(
+        barricade.plan_delta.support,
+        StrategyPlanSupportV1::Plausible
+    );
+    assert!(barricade
+        .plan_delta
+        .effects
+        .contains(&CardRewardPlanEffectV1::BlockRetention));
+
+    let mut needs_multiplier = RunState::new(521, 0, false, "Ironclad");
+    needs_multiplier.add_card_to_deck(CardId::Barricade);
+    needs_multiplier.add_card_to_deck(CardId::BodySlam);
+    needs_multiplier.add_card_to_deck(CardId::FlameBarrier);
+    let entrench_context = context_for_run_with_route(
+        &needs_multiplier,
+        vec![RewardCard::new(CardId::Entrench, 0)],
+        route_with_combat_pressure(),
+    );
+    let entrench = &entrench_context.candidates[0];
+
+    assert_eq!(
+        entrench_context
+            .strategy
+            .support(StrategyPackageIdV2::BlockEngine),
+        StrategyPlanSupportV1::Strong
+    );
+    assert_eq!(entrench.plan_delta.support, StrategyPlanSupportV1::Strong);
+    assert!(entrench
+        .plan_delta
+        .effects
+        .contains(&CardRewardPlanEffectV1::BlockMultiplier));
+}
+
+#[test]
 fn route_risk_estimator_values_frontload_more_under_early_route_pressure() {
     let context = context_for_cards_with_route(
         vec![

@@ -55,44 +55,11 @@ fn strategy_package_components(
     context: &CardRewardDecisionContextV1,
     candidate: &super::types::CardRewardCandidateEvidenceV1,
 ) -> Vec<CardRewardValueComponentV1> {
-    let mut components = vec![
-        CardRewardValueComponentV1 {
-            name: "candidate_plan_support".to_string(),
-            value: support_score(candidate.plan_delta.support),
-        },
-        CardRewardValueComponentV1 {
-            name: "strategy_support_core_plan_protection".to_string(),
-            value: support_score(
-                context
-                    .strategy
-                    .support(StrategyPackageIdV2::CorePlanProtection),
-            ),
-        },
-        CardRewardValueComponentV1 {
-            name: "strategy_support_combat_patch_window".to_string(),
-            value: support_score(
-                context
-                    .strategy
-                    .support(StrategyPackageIdV2::CombatPatchWindow),
-            ),
-        },
-        CardRewardValueComponentV1 {
-            name: "strategy_support_upgrade_commitment".to_string(),
-            value: support_score(
-                context
-                    .strategy
-                    .support(StrategyPackageIdV2::UpgradeCommitment),
-            ),
-        },
-        CardRewardValueComponentV1 {
-            name: "strategy_support_strength_scaling".to_string(),
-            value: support_score(
-                context
-                    .strategy
-                    .support(StrategyPackageIdV2::StrengthScaling),
-            ),
-        },
-    ];
+    let mut components = vec![CardRewardValueComponentV1 {
+        name: "candidate_plan_support".to_string(),
+        value: support_score(candidate.plan_delta.support),
+    }];
+    components.extend(package_support_components(context));
     components.extend(candidate.plan_delta.effects.iter().map(|effect| {
         CardRewardValueComponentV1 {
             name: format!("plan_effect_{effect:?}"),
@@ -100,6 +67,44 @@ fn strategy_package_components(
         }
     }));
     components
+}
+
+fn package_support_components(
+    context: &CardRewardDecisionContextV1,
+) -> Vec<CardRewardValueComponentV1> {
+    [
+        ("frontload_survival", StrategyPackageIdV2::FrontloadSurvival),
+        ("weak_control", StrategyPackageIdV2::WeakControl),
+        ("strength_scaling", StrategyPackageIdV2::StrengthScaling),
+        ("upgrade_sink", StrategyPackageIdV2::UpgradeSink),
+        ("exhaust_engine", StrategyPackageIdV2::ExhaustEngine),
+        ("block_engine", StrategyPackageIdV2::BlockEngine),
+        ("strike_density", StrategyPackageIdV2::StrikeDensity),
+        ("status_package", StrategyPackageIdV2::StatusPackage),
+        ("self_damage", StrategyPackageIdV2::SelfDamage),
+        ("energy_draw", StrategyPackageIdV2::EnergyDraw),
+        (
+            "combat_patch_window",
+            StrategyPackageIdV2::CombatPatchWindow,
+        ),
+        ("upgrade_commitment", StrategyPackageIdV2::UpgradeCommitment),
+        (
+            "core_plan_protection",
+            StrategyPackageIdV2::CorePlanProtection,
+        ),
+        ("recovery_pressure", StrategyPackageIdV2::RecoveryPressure),
+        ("gold_plan", StrategyPackageIdV2::GoldPlan),
+        ("potion_capacity", StrategyPackageIdV2::PotionCapacity),
+        ("hp_safety", StrategyPackageIdV2::HpSafety),
+        ("shop_remove_window", StrategyPackageIdV2::ShopRemoveWindow),
+        ("relic_constraints", StrategyPackageIdV2::RelicConstraints),
+    ]
+    .into_iter()
+    .map(|(name, package)| CardRewardValueComponentV1 {
+        name: format!("strategy_support_{name}"),
+        value: support_score(context.strategy.support(package)),
+    })
+    .collect()
 }
 
 fn survival_effect_weight(effects: &[StrategyPlanEffectV1]) -> f32 {
@@ -111,6 +116,8 @@ fn survival_effect_weight(effects: &[StrategyPlanEffectV1]) -> f32 {
                 StrategyPlanEffectV1::FrontloadDamage
                     | StrategyPlanEffectV1::WeakCoverage
                     | StrategyPlanEffectV1::DamageMitigation
+                    | StrategyPlanEffectV1::BlockRetention
+                    | StrategyPlanEffectV1::BlockMultiplier
             )
         })
         .count() as f32;
@@ -126,6 +133,7 @@ fn progress_effect_weight(effects: &[StrategyPlanEffectV1]) -> f32 {
                 StrategyPlanEffectV1::FrontloadDamage
                     | StrategyPlanEffectV1::StrengthPayoff
                     | StrategyPlanEffectV1::UpgradeSink
+                    | StrategyPlanEffectV1::BlockPayoff
             )
         })
         .count() as f32;
