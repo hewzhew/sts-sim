@@ -160,6 +160,81 @@ pub(crate) fn threat_response_delta(
     response
 }
 
+pub(crate) fn candidate_response_threat_tags_v1(
+    candidate: &CardRewardCandidateEvidenceV1,
+) -> Vec<StrategyThreatTagV1> {
+    let mut tags = Vec::new();
+
+    if candidate.facts.block > 0
+        || candidate.facts.weak > 0
+        || candidate.facts.enemy_strength_down > 0
+        || candidate.plan_delta.effects.iter().any(|effect| {
+            matches!(
+                effect,
+                StrategyPlanEffectV1::DamageMitigation
+                    | StrategyPlanEffectV1::BlockRetention
+                    | StrategyPlanEffectV1::BlockMultiplier
+            )
+        })
+    {
+        push_unique(&mut tags, StrategyThreatTagV1::HighIncomingDamage);
+    }
+    if candidate.facts.enemy_strength_down > 0 {
+        push_unique(&mut tags, StrategyThreatTagV1::StrengthDebuffValuable);
+        push_unique(&mut tags, StrategyThreatTagV1::MultiHit);
+    }
+    if candidate.facts.weak > 0 {
+        push_unique(&mut tags, StrategyThreatTagV1::WeakValuable);
+    }
+    if candidate.facts.is_aoe {
+        push_unique(&mut tags, StrategyThreatTagV1::AoEValuable);
+    }
+    if candidate
+        .facts
+        .pick_dependencies
+        .contains(&CardRewardPickDependencyV1::StatusPackage)
+        || candidate
+            .plan_delta
+            .effects
+            .contains(&StrategyPlanEffectV1::StatusPayoff)
+    {
+        push_unique(&mut tags, StrategyThreatTagV1::StatusFlood);
+    }
+    if scaling_candidate(candidate) {
+        push_unique(&mut tags, StrategyThreatTagV1::LongFightScaling);
+    }
+    if setup_candidate(candidate) {
+        push_unique(&mut tags, StrategyThreatTagV1::SetupWindow);
+    }
+    if candidate.facts.card_type == CardType::Skill {
+        push_unique(&mut tags, StrategyThreatTagV1::SkillPunish);
+    }
+    if candidate.facts.weak > 0
+        || candidate.facts.vulnerable > 0
+        || candidate.facts.enemy_strength_down > 0
+    {
+        push_unique(&mut tags, StrategyThreatTagV1::ArtifactBlocksDebuff);
+    }
+    if candidate.facts.card_type == CardType::Power {
+        push_unique(&mut tags, StrategyThreatTagV1::PowerPunish);
+    }
+    if low_density_card_play(candidate) || dense_card_play(candidate) {
+        push_unique(&mut tags, StrategyThreatTagV1::CardPlayLimit);
+    }
+    if candidate.facts.damage.total_damage >= 15 {
+        push_unique(&mut tags, StrategyThreatTagV1::SplitThreshold);
+        push_unique(&mut tags, StrategyThreatTagV1::ModeShiftThreshold);
+    }
+
+    tags
+}
+
+fn push_unique(tags: &mut Vec<StrategyThreatTagV1>, tag: StrategyThreatTagV1) {
+    if !tags.contains(&tag) {
+        tags.push(tag);
+    }
+}
+
 fn has_threat(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
     context.strategy.threats.tags.contains(&tag)
 }
