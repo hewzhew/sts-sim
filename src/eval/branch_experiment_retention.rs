@@ -156,6 +156,10 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Package);
         reasons.push("contains a semantic package payoff candidate".to_string());
     }
+    if complete_package_count(&candidate.trajectory) > 0 {
+        slots.push(BranchRetentionSlotV1::Package);
+        reasons.push("contains both setup and payoff for a trajectory package".to_string());
+    }
     if candidate
         .choice_profiles
         .iter()
@@ -402,7 +406,9 @@ fn cap_redundant_choice_prefixes(
 fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetentionSlotV1) -> i32 {
     match slot {
         BranchRetentionSlotV1::Package => {
-            package_score(&candidate.choice_profiles) * 10_000 + candidate.hp * 10
+            package_score(&candidate.choice_profiles) * 10_000
+                + complete_package_count(&candidate.trajectory) * 25_000
+                + candidate.hp * 10
         }
         BranchRetentionSlotV1::Scaling => {
             count_profiles_with_any_role(&candidate.choice_profiles, SCALING_ROLES) * 10_000
@@ -435,6 +441,15 @@ fn has_package_candidate(profiles: &[CardRewardSemanticProfileV1]) -> bool {
 
 fn package_score(profiles: &[CardRewardSemanticProfileV1]) -> i32 {
     count_profiles_with_any_role(profiles, PACKAGE_PAYOFF_ROLES)
+}
+
+fn complete_package_count(trajectory: &BranchTrajectorySignatureV1) -> i32 {
+    let setup_keys = trajectory.setup_keys.iter().collect::<BTreeSet<_>>();
+    trajectory
+        .package_keys
+        .iter()
+        .filter(|package| setup_keys.contains(package))
+        .count() as i32
 }
 
 fn transition_attack_count(profiles: &[CardRewardSemanticProfileV1]) -> i32 {
@@ -794,6 +809,149 @@ mod tests {
     }
 
     #[test]
+    fn portfolio_budget_keeps_setup_payoff_clean_and_survival_representatives() {
+        let candidates = vec![
+            semantic_retention_candidate(
+                0,
+                10_900,
+                78,
+                80,
+                trajectory_with(&[], &[], 3, 0, 0, 0),
+                &[CardRewardSemanticRoleV1::FrontloadDamage],
+            ),
+            semantic_retention_candidate(
+                1,
+                10_890,
+                77,
+                80,
+                trajectory_with(&["exhaust_engine"], &[], 2, 1, 0, 0),
+                &[CardRewardSemanticRoleV1::ExhaustGenerator],
+            ),
+            semantic_retention_candidate(
+                2,
+                10_880,
+                76,
+                80,
+                trajectory_with(&["exhaust_engine"], &[], 2, 1, 0, 0),
+                &[CardRewardSemanticRoleV1::ExhaustGenerator],
+            ),
+            semantic_retention_candidate(
+                3,
+                10_700,
+                70,
+                80,
+                trajectory_with(&[], &["block_engine"], 0, 0, 1, 2),
+                &[CardRewardSemanticRoleV1::BlockPayoff],
+            ),
+            semantic_retention_candidate(
+                4,
+                10_650,
+                72,
+                80,
+                trajectory_with(&[], &[], 0, 0, 0, 1),
+                &[CardRewardSemanticRoleV1::Block],
+            ),
+            semantic_retention_candidate(
+                5,
+                10_600,
+                50,
+                80,
+                trajectory_with(&["status_package"], &[], 0, 1, 0, 0),
+                &[CardRewardSemanticRoleV1::StatusGenerator],
+            ),
+            semantic_retention_candidate(
+                6,
+                10_550,
+                74,
+                80,
+                trajectory_with(&[], &["strength_scaling"], 1, 0, 1, 0),
+                &[CardRewardSemanticRoleV1::StrengthPayoff],
+            ),
+            semantic_retention_candidate(
+                7,
+                10_500,
+                73,
+                80,
+                trajectory_with(&["block_engine"], &["block_engine"], 0, 1, 1, 2),
+                &[
+                    CardRewardSemanticRoleV1::BlockRetention,
+                    CardRewardSemanticRoleV1::BlockPayoff,
+                ],
+            ),
+        ];
+
+        let selection = select_branch_retention_portfolio_v1(
+            &candidates,
+            BranchRetentionConfigV1 {
+                max_total: 6,
+                max_per_frontier: Some(6),
+            },
+        );
+
+        assert!(
+            selection.keep_indices.contains(&0),
+            "survival/frontload representative"
+        );
+        assert!(
+            selection.keep_indices.contains(&1),
+            "setup-only representative"
+        );
+        assert!(
+            !selection.keep_indices.contains(&2),
+            "duplicate setup family should not displace other buckets"
+        );
+        assert!(selection.keep_indices.contains(&3), "payoff representative");
+        assert!(
+            selection.keep_indices.contains(&4),
+            "clean/defense representative"
+        );
+        assert!(
+            selection.keep_indices.contains(&6),
+            "second payoff family representative"
+        );
+        assert!(
+            selection.keep_indices.contains(&7),
+            "setup+payoff engine representative"
+        );
+    }
+
+    #[test]
+    fn package_slot_prefers_setup_and_payoff_closure_over_payoff_only() {
+        let payoff_only = semantic_retention_candidate(
+            0,
+            10_900,
+            78,
+            80,
+            trajectory_with(&[], &["block_engine"], 0, 0, 1, 1),
+            &[CardRewardSemanticRoleV1::BlockPayoff],
+        );
+        let setup_and_payoff = semantic_retention_candidate(
+            1,
+            10_500,
+            72,
+            80,
+            trajectory_with(&["block_engine"], &["block_engine"], 0, 1, 1, 2),
+            &[
+                CardRewardSemanticRoleV1::BlockRetention,
+                CardRewardSemanticRoleV1::BlockPayoff,
+            ],
+        );
+
+        let selection = select_branch_retention_portfolio_v1(
+            &[payoff_only, setup_and_payoff],
+            BranchRetentionConfigV1 {
+                max_total: 1,
+                max_per_frontier: Some(1),
+            },
+        );
+
+        assert!(
+            selection.keep_indices.contains(&1),
+            "a branch with both setup and payoff should be the package representative"
+        );
+    }
+
+    #[test]
     fn retention_slots_come_from_semantic_profiles_not_card_names() {
         let candidate = BranchRetentionCandidateInputV1 {
             index: 0,
@@ -861,6 +1019,53 @@ mod tests {
             roles: roles.to_vec(),
             dependencies: Vec::new(),
             unsupported_mechanics: Vec::new(),
+        }
+    }
+
+    fn semantic_retention_candidate(
+        index: usize,
+        rank_key: i32,
+        hp: i32,
+        max_hp: i32,
+        trajectory: BranchTrajectorySignatureV1,
+        roles: &[CardRewardSemanticRoleV1],
+    ) -> BranchRetentionCandidateInputV1 {
+        BranchRetentionCandidateInputV1 {
+            index,
+            frontier_key: "same-frontier".to_string(),
+            rank_key,
+            hp,
+            max_hp,
+            gold: 120,
+            deck_count: 14,
+            strategy_formation: Some(formation(
+                StrategyDeckFormationStageV1::PlanSeeded,
+                &[StrategyDeckFormationNeedV1::Scaling],
+                &[],
+            )),
+            trajectory,
+            choice_profiles: vec![semantic_profile("Semantic Candidate", roles)],
+        }
+    }
+
+    fn trajectory_with(
+        setup_keys: &[&str],
+        package_keys: &[&str],
+        transition_frontload_picks: u8,
+        engine_generator_picks: u8,
+        engine_payoff_picks: u8,
+        defense_picks: u8,
+    ) -> BranchTrajectorySignatureV1 {
+        BranchTrajectorySignatureV1 {
+            frontload_picks: transition_frontload_picks,
+            transition_frontload_picks,
+            scaling_picks: engine_payoff_picks,
+            defense_picks,
+            engine_generator_picks,
+            engine_payoff_picks,
+            draw_energy_picks: 0,
+            setup_keys: setup_keys.iter().map(|key| key.to_string()).collect(),
+            package_keys: package_keys.iter().map(|key| key.to_string()).collect(),
         }
     }
 
