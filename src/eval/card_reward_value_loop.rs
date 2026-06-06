@@ -45,6 +45,7 @@ pub use route_risk_calibration::{
 };
 pub use runtime_inputs::{
     build_card_reward_runtime_estimator_inputs_v1, CardRewardRuntimeEstimatorCalibrationsV1,
+    CardRewardRuntimeEstimatorSourcesV1,
 };
 pub use strategy_package_calibration::{
     calibrate_card_reward_strategy_package_v1,

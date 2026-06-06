@@ -309,6 +309,7 @@ pub enum CardRewardValueEligibilityReasonV1 {
 pub enum CardRewardValueHorizonV1 {
     NextCombatHpLoss,
     NextCombatPublicProbe,
+    NextCombatCounterfactualProbe,
     VisibleRouteRisk,
     CurrentStrategyPackage,
 }

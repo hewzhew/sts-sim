@@ -1,7 +1,10 @@
 use sts_simulator::ai::card_reward_policy_v1::{
-    build_card_reward_decision_context_v1, plan_card_reward_decision_v1, CardRewardPolicyConfigV1,
-    CardRewardRouteEvidenceV1, CardRewardSelectedRouteV1, CardRewardValueSourceV1,
-    CardRewardValueStatusV1, PublicRewardDecisionPacketV1,
+    build_card_reward_decision_context_v1, plan_card_reward_decision_v1,
+    plan_card_reward_decision_with_estimator_inputs_v1, CardRewardPolicyActionV1,
+    CardRewardPolicyConfigV1, CardRewardRouteEvidenceV1, CardRewardSelectedRouteV1,
+    CardRewardValueEligibilityReasonV1, CardRewardValueEligibilityV1, CardRewardValueEstimateV1,
+    CardRewardValueHorizonV1, CardRewardValueSourceV1, CardRewardValueStatusV1,
+    PublicRewardDecisionPacketV1,
 };
 use sts_simulator::ai::noncombat_decision_v1::{
     attach_noncombat_outcome_v1, DecisionSiteKindV1, NonCombatDecisionRecordV1,
@@ -20,8 +23,8 @@ use sts_simulator::eval::card_reward_value_loop::{
     extract_card_reward_value_loop_examples_v1, replay_card_reward_records_with_calibration_v1,
     replay_card_reward_records_with_runtime_calibrations_v1,
     summarize_card_reward_value_loop_examples_v1, CardRewardRuntimeEstimatorCalibrationsV1,
-    CardRewardValueLoopOutcomeStatusV1, CardRewardValueLoopReplayStatusV1,
-    CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
+    CardRewardRuntimeEstimatorSourcesV1, CardRewardValueLoopOutcomeStatusV1,
+    CardRewardValueLoopReplayStatusV1, CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
 };
 use sts_simulator::eval::run_control::{
     RunActionApplyStatusV1, RunActionResultV1, RunControlConfig, RunControlSession,
@@ -498,8 +501,157 @@ fn runtime_estimator_input_builder_combines_all_calibration_sources() {
     assert!(sources.contains(&CardRewardValueSourceV1::StrategyPackage));
 }
 
+#[test]
+fn runtime_estimator_input_builder_filters_counterfactual_probe_sources() {
+    let example = strategy_package_example(CardId::SearingBlow, 7);
+    let context = example
+        .public_packet
+        .as_ref()
+        .expect("fixture should include a full public packet")
+        .context
+        .clone();
+    let searing = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::SearingBlow)
+        .expect("Searing Blow candidate should exist");
+    let clothesline = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::Clothesline)
+        .expect("Clothesline candidate should exist");
+    let valid_probe = counterfactual_probe_estimate(searing.index, searing.card, true);
+    let public_heuristic = CardRewardValueEstimateV1 {
+        source: CardRewardValueSourceV1::PublicCombatHeuristic,
+        status: CardRewardValueStatusV1::PublicCombatHeuristic,
+        ..counterfactual_probe_estimate(clothesline.index, clothesline.card, true)
+    };
+    let wrong_status = CardRewardValueEstimateV1 {
+        status: CardRewardValueStatusV1::PublicCombatHeuristic,
+        ..counterfactual_probe_estimate(clothesline.index, clothesline.card, true)
+    };
+    let wrong_candidate = counterfactual_probe_estimate(99, CardId::TwinStrike, true);
+    let not_value_usable =
+        counterfactual_probe_estimate(clothesline.index, clothesline.card, false);
+    let probes = vec![
+        valid_probe,
+        public_heuristic,
+        wrong_status,
+        wrong_candidate,
+        not_value_usable,
+    ];
+
+    let inputs = build_card_reward_runtime_estimator_inputs_v1(
+        &context,
+        CardRewardRuntimeEstimatorSourcesV1 {
+            calibrations: CardRewardRuntimeEstimatorCalibrationsV1::default(),
+            counterfactual_probe_estimates: &probes,
+        },
+    );
+
+    assert_eq!(inputs.external_value_estimates.len(), 1);
+    assert_eq!(
+        inputs.external_value_estimates[0].source,
+        CardRewardValueSourceV1::CombatProbe
+    );
+    assert_eq!(
+        inputs.external_value_estimates[0].status,
+        CardRewardValueStatusV1::CounterfactualProbe
+    );
+    assert_eq!(inputs.external_value_estimates[0].card, CardId::SearingBlow);
+}
+
+#[test]
+fn runtime_counterfactual_probe_estimates_can_drive_generic_value_gate() {
+    let run = RunState::new(521, 0, false, "Ironclad");
+    let mut context = build_card_reward_decision_context_v1(
+        &run,
+        vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::Cleave, 0),
+        ],
+        None,
+    );
+    context.route = Some(route_with_upgrade_budget());
+    let twin = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::TwinStrike)
+        .expect("Twin Strike candidate should exist");
+    let cleave = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::Cleave)
+        .expect("Cleave candidate should exist");
+    let probes = vec![
+        counterfactual_probe_estimate(twin.index, twin.card, true),
+        CardRewardValueEstimateV1 {
+            survival_delta: 0.2,
+            progress_delta: 0.0,
+            ..counterfactual_probe_estimate(cleave.index, cleave.card, true)
+        },
+    ];
+    let inputs = build_card_reward_runtime_estimator_inputs_v1(
+        &context,
+        CardRewardRuntimeEstimatorSourcesV1 {
+            calibrations: CardRewardRuntimeEstimatorCalibrationsV1::default(),
+            counterfactual_probe_estimates: &probes,
+        },
+    );
+
+    let decision = plan_card_reward_decision_with_estimator_inputs_v1(
+        &context,
+        &CardRewardPolicyConfigV1::default(),
+        &inputs,
+    );
+
+    assert!(decision
+        .value_arbitration
+        .gate_value_estimates
+        .iter()
+        .all(|estimate| estimate.source == CardRewardValueSourceV1::CombatProbe));
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Pick {
+            card: CardId::TwinStrike,
+            ..
+        }
+    ));
+    assert!(decision.pick_certificate.is_some());
+}
+
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {
     selected_card_reward_record_with_packet(card).0
+}
+
+fn counterfactual_probe_estimate(
+    index: usize,
+    card: CardId,
+    usable_for_value_estimate: bool,
+) -> CardRewardValueEstimateV1 {
+    CardRewardValueEstimateV1 {
+        index,
+        card,
+        source: CardRewardValueSourceV1::CombatProbe,
+        status: CardRewardValueStatusV1::CounterfactualProbe,
+        survival_delta: 2.0,
+        progress_delta: 0.5,
+        deck_consistency_delta: 0.0,
+        uncertainty: 0.2,
+        eligibility: CardRewardValueEligibilityV1 {
+            usable_for_value_estimate,
+            usable_for_autopilot_gate: usable_for_value_estimate,
+            reasons: if usable_for_value_estimate {
+                Vec::new()
+            } else {
+                vec![CardRewardValueEligibilityReasonV1::CounterfactualProbeNotGateEligible]
+            },
+            bucket_key: None,
+            horizon: Some(CardRewardValueHorizonV1::NextCombatCounterfactualProbe),
+            outcome_sample_count: None,
+        },
+        components: Vec::new(),
+    }
 }
 
 fn selected_card_reward_record_with_packet(
