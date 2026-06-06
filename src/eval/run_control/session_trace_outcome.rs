@@ -109,6 +109,16 @@ pub(super) fn update_pending_outcome_observations(
     }
     for change in &action_result.changes {
         match change {
+            ActionResultChange::CombatCardDrawn { card } => {
+                for pending in pending_outcomes.iter_mut() {
+                    if selected_card_reward_matches_card(pending, card) {
+                        increment_observation_count(
+                            &mut pending.card_reward_observation.picked_card_drawn_count,
+                            1,
+                        );
+                    }
+                }
+            }
             ActionResultChange::CardUpgraded { before, .. } => {
                 for pending in pending_outcomes.iter_mut() {
                     if selected_card_reward_matches_card(pending, before) {
@@ -145,6 +155,17 @@ pub(super) fn update_pending_outcome_observations(
                 increment_observation_count(
                     &mut pending.card_reward_observation.picked_card_played_count,
                     played_count,
+                );
+            }
+            let drawn_count = actions
+                .iter()
+                .flat_map(|action| action.drawn_cards.iter())
+                .filter(|card| selected_card_reward_matches_card(pending, card))
+                .count() as u32;
+            if drawn_count > 0 {
+                increment_observation_count(
+                    &mut pending.card_reward_observation.picked_card_drawn_count,
+                    drawn_count,
                 );
             }
         }
@@ -282,6 +303,11 @@ fn selected_card_reward_matches_card(
     pending: &SessionTracePendingOutcome,
     card: &crate::eval::run_control::transition_report::CardSnapshot,
 ) -> bool {
+    if let Some(selected_card_uuid) = pending.selected_card_uuid {
+        return card.uuid == selected_card_uuid
+            && selected_card_reward_card_id(pending)
+                .is_some_and(|selected_card| selected_card == card.id);
+    }
     selected_card_reward_card_id(pending).is_some_and(|selected_card| selected_card == card.id)
 }
 
@@ -527,11 +553,13 @@ mod tests {
                             card_index: 1,
                             target: Some(1),
                         },
+                        drawn_cards: Vec::new(),
                     },
                     super::super::trace_annotation::CombatAutomationActionV1 {
                         step_index: 1,
                         action_key: "combat/end_turn".to_string(),
                         input: ClientInput::EndTurn,
+                        drawn_cards: Vec::new(),
                     },
                     super::super::trace_annotation::CombatAutomationActionV1 {
                         step_index: 2,
@@ -542,6 +570,7 @@ mod tests {
                             card_index: 0,
                             target: Some(1),
                         },
+                        drawn_cards: Vec::new(),
                     },
                 ],
                 label_role: "simulator_generated_not_teacher_label".to_string(),
@@ -559,6 +588,79 @@ mod tests {
                 .card_reward_observation
                 .picked_card_drawn_count,
             None
+        );
+    }
+
+    #[test]
+    fn pending_card_reward_outcome_counts_selected_card_drawn_by_uuid() {
+        let mut pending_outcomes = queued_twin_strike_reward_pending(100);
+
+        update_pending_outcome_observations(
+            &mut pending_outcomes,
+            &ActionResult {
+                chosen_label: "draw".to_string(),
+                status: RunApplyStatus::Running,
+                changes: vec![
+                    ActionResultChange::CombatCardDrawn {
+                        card: CardSnapshot {
+                            id: CardId::TwinStrike,
+                            uuid: 999,
+                            upgrades: 0,
+                        },
+                    },
+                    ActionResultChange::CombatCardDrawn {
+                        card: CardSnapshot {
+                            id: CardId::TwinStrike,
+                            uuid: 100,
+                            upgrades: 0,
+                        },
+                    },
+                ],
+            },
+            &[],
+        );
+
+        assert_eq!(
+            pending_outcomes[0]
+                .card_reward_observation
+                .picked_card_drawn_count,
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn pending_card_reward_outcome_counts_selected_card_drawn_by_combat_automation_annotation() {
+        let mut pending_outcomes = queued_twin_strike_reward_pending(100);
+
+        update_pending_outcome_observations(
+            &mut pending_outcomes,
+            &ActionResult {
+                chosen_label: "search-combat applied 1 actions".to_string(),
+                status: RunApplyStatus::Running,
+                changes: Vec::new(),
+            },
+            &[RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+                source: "test_search".to_string(),
+                action_count: 1,
+                actions: vec![super::super::trace_annotation::CombatAutomationActionV1 {
+                    step_index: 0,
+                    action_key: "combat/end_turn".to_string(),
+                    input: ClientInput::EndTurn,
+                    drawn_cards: vec![CardSnapshot {
+                        id: CardId::TwinStrike,
+                        uuid: 100,
+                        upgrades: 0,
+                    }],
+                }],
+                label_role: "simulator_generated_not_teacher_label".to_string(),
+            }],
+        );
+
+        assert_eq!(
+            pending_outcomes[0]
+                .card_reward_observation
+                .picked_card_drawn_count,
+            Some(1)
         );
     }
 
@@ -619,6 +721,7 @@ mod tests {
                             card_index: 1,
                             target: Some(1),
                         },
+                        drawn_cards: Vec::new(),
                     },
                     super::super::trace_annotation::CombatAutomationActionV1 {
                         step_index: 1,
@@ -629,6 +732,7 @@ mod tests {
                             card_index: 0,
                             target: Some(1),
                         },
+                        drawn_cards: Vec::new(),
                     },
                 ],
                 label_role: "simulator_generated_not_teacher_label".to_string(),
@@ -854,6 +958,7 @@ mod tests {
                 step_index: 0,
                 action_key: "combat/end_turn".to_string(),
                 input: ClientInput::EndTurn,
+                drawn_cards: Vec::new(),
             }],
             label_role: "behavior_policy_not_teacher".to_string(),
         }];
@@ -928,5 +1033,42 @@ mod tests {
                 selection_mode: "test".to_string(),
             },
         }
+    }
+
+    fn queued_twin_strike_reward_pending(selected_uuid: u32) -> Vec<SessionTracePendingOutcome> {
+        let mut pending_outcomes = Vec::new();
+        queue_selected_noncombat_outcomes(
+            &mut pending_outcomes,
+            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record: selected_card_reward_record(CardId::TwinStrike),
+                card_reward_packet: None,
+            }],
+            NonCombatOutcomeSnapshotV1 {
+                act: 1,
+                floor: 1,
+                current_hp: 80,
+                max_hp: 80,
+                gold: 99,
+                deck_size: 10,
+                relic_count: 1,
+                potion_count: 0,
+                combats_completed: 0,
+                elites_completed: 0,
+                bosses_completed: 0,
+                run_terminal: None,
+            },
+            Some(&ActionResult {
+                chosen_label: "pick Twin Strike".to_string(),
+                status: RunApplyStatus::Running,
+                changes: vec![ActionResultChange::CardAdded {
+                    card: CardSnapshot {
+                        id: CardId::TwinStrike,
+                        uuid: selected_uuid,
+                        upgrades: 0,
+                    },
+                }],
+            }),
+        );
+        pending_outcomes
     }
 }

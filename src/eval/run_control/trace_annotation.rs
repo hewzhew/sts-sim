@@ -7,12 +7,16 @@ use crate::ai::noncombat_decision_v1::{
 };
 use crate::state::core::ClientInput;
 
+use super::transition_report::CardSnapshot;
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatAutomationActionV1 {
     pub step_index: usize,
     pub action_key: String,
     pub input: ClientInput,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drawn_cards: Vec<CardSnapshot>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

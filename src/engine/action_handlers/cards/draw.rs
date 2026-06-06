@@ -2,6 +2,7 @@ use crate::content::cards::CardId;
 use crate::content::powers::{store, PowerId};
 use crate::runtime::action::Action;
 use crate::runtime::combat::CombatState;
+use crate::state::selection::{DomainCardSnapshot, DomainEvent, DomainEventSource};
 
 fn apply_card_trigger_when_drawn(
     card: &mut crate::runtime::combat::CombatCard,
@@ -148,6 +149,14 @@ fn handle_draw_cards_inner(amount: u32, mode: DrawHistoryMode, state: &mut Comba
                     card_id: card.id,
                 });
         }
+        state.emit_event(DomainEvent::CardDrawn {
+            card: DomainCardSnapshot {
+                id: card.id,
+                upgrades: card.upgrades,
+                uuid: card.uuid,
+            },
+            source: DomainEventSource::CombatDraw,
+        });
 
         // Apply pre-draw powers (like Corruption, Confusion)
         for power in &store::powers_snapshot_for(state, 0) {
@@ -169,5 +178,33 @@ fn handle_draw_cards_inner(amount: u32, mode: DrawHistoryMode, state: &mut Comba
                 state.queue_action_back(a);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::combat::CombatCard;
+
+    #[test]
+    fn ordinary_draw_emits_exact_draw_event() {
+        let mut state = crate::test_support::blank_test_combat();
+        state.zones.draw_pile = vec![CombatCard::new(CardId::DefendB, 377)];
+
+        crate::engine::action_handlers::execute_action(Action::DrawCards(1), &mut state);
+
+        assert!(state.runtime.emitted_events.iter().any(|event| {
+            matches!(
+                event,
+                DomainEvent::CardDrawn {
+                    card: DomainCardSnapshot {
+                        id: CardId::DefendB,
+                        upgrades: 0,
+                        uuid: 377,
+                    },
+                    source: DomainEventSource::CombatDraw,
+                }
+            )
+        }));
     }
 }

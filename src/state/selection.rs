@@ -118,6 +118,7 @@ pub enum DomainEventSource {
     RewardScreen,
     Shop,
     BossRelicChoice,
+    CombatDraw,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -193,6 +194,10 @@ pub enum DomainEvent {
     CardTransformed {
         before: DomainCardSnapshot,
         after: DomainCardSnapshot,
+        source: DomainEventSource,
+    },
+    CardDrawn {
+        card: DomainCardSnapshot,
         source: DomainEventSource,
     },
     CardsExhausted {

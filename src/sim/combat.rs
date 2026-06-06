@@ -171,12 +171,13 @@ pub fn stable_boundary(engine: &EngineState, combat: &CombatState) -> bool {
 
 fn step_result(
     engine: EngineState,
-    combat: CombatState,
+    mut combat: CombatState,
     alive: bool,
     truncated: bool,
     timed_out: bool,
     engine_steps: usize,
 ) -> CombatStepResult {
+    combat.clear_card_draw_observation_events();
     let terminal = combat_terminal(&engine, &combat);
     CombatStepResult {
         position: CombatPosition { engine, combat },

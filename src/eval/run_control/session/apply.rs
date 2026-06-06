@@ -16,8 +16,8 @@ use crate::eval::run_control::render::{
 use crate::eval::run_control::reward_auto::set_reward_automation;
 use crate::eval::run_control::trace_annotation::RunControlTraceAnnotationV1;
 use crate::eval::run_control::transition_report::{
-    action_result_from_transition, render_action_result, transition_action_for_input,
-    RunApplyStatus, RunVisibleSnapshot,
+    action_result_changes_from_domain_events, action_result_from_transition_with_extra_changes,
+    render_action_result, transition_action_for_input, RunApplyStatus, RunVisibleSnapshot,
 };
 
 const MAX_STABLE_ADVANCE_TICKS: usize = 2_000;
@@ -295,6 +295,13 @@ impl RunControlSession {
             });
         self.combat_outcomes
             .observe_input_after(potion_observation, after_combat);
+        let combat_observation_changes = if let Some(finished) = finished_combat.as_mut() {
+            action_result_changes_from_domain_events(finished.combat_state.take_emitted_events())
+        } else if let Some(active) = self.active_combat.as_mut() {
+            action_result_changes_from_domain_events(active.combat_state.take_emitted_events())
+        } else {
+            Vec::new()
+        };
         if let Some(finished) = finished_combat.as_ref() {
             self.combat_outcomes.finish("last_combat", finished);
             self.last_completed_combat_sequence = Some(self.combat_sequence);
@@ -328,8 +335,13 @@ impl RunControlSession {
             }
         };
         let after_snapshot = RunVisibleSnapshot::capture(self);
-        let action_result =
-            action_result_from_transition(action_report, &before_snapshot, &after_snapshot, status);
+        let action_result = action_result_from_transition_with_extra_changes(
+            action_report,
+            &before_snapshot,
+            &after_snapshot,
+            status,
+            combat_observation_changes,
+        );
         let report = render_action_result(&action_result);
         let report = if reward_automation.is_empty() {
             report

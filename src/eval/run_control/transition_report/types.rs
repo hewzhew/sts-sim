@@ -144,6 +144,9 @@ pub enum ActionResultChange {
         monsters: Vec<MonsterSnapshot>,
     },
     CombatEnded,
+    CombatCardDrawn {
+        card: CardSnapshot,
+    },
     CombatPlayerChanged {
         before: CombatPlayerResult,
         after: CombatPlayerResult,

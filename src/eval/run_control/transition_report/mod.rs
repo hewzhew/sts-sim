@@ -5,6 +5,7 @@ use crate::content::potions::{get_potion_definition, PotionId};
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::ClientInput;
+use crate::state::selection::DomainEvent;
 
 use super::session::RunControlSession;
 use super::view_model::{build_run_control_view_model, client_input_hint};
@@ -86,6 +87,44 @@ pub(super) fn action_result_from_transition(
         status,
         changes,
     }
+}
+
+pub(super) fn action_result_from_transition_with_extra_changes(
+    action: TransitionAction,
+    before: &RunVisibleSnapshot,
+    after: &RunVisibleSnapshot,
+    status: RunApplyStatus,
+    mut extra_changes: Vec<ActionResultChange>,
+) -> ActionResult {
+    let mut result = action_result_from_transition(action, before, after, status);
+    if !extra_changes.is_empty() {
+        if matches!(
+            result.changes.as_slice(),
+            [ActionResultChange::NoVisibleStateChanges]
+        ) {
+            result.changes.clear();
+        }
+        result.changes.append(&mut extra_changes);
+    }
+    result
+}
+
+pub(super) fn action_result_changes_from_domain_events(
+    events: Vec<DomainEvent>,
+) -> Vec<ActionResultChange> {
+    events
+        .into_iter()
+        .filter_map(|event| match event {
+            DomainEvent::CardDrawn { card, .. } => Some(ActionResultChange::CombatCardDrawn {
+                card: CardSnapshot {
+                    id: card.id,
+                    uuid: card.uuid,
+                    upgrades: card.upgrades,
+                },
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 pub(super) fn render_action_result(result: &ActionResult) -> String {
@@ -317,6 +356,9 @@ fn render_action_result_change(change: &ActionResultChange, lines: &mut Vec<Stri
             }
         }
         ActionResultChange::CombatEnded => lines.push("  Combat ended.".to_string()),
+        ActionResultChange::CombatCardDrawn { card } => {
+            lines.push(format!("  Drew card: {}", card_label(card)));
+        }
         ActionResultChange::CombatPlayerChanged { before, after } => {
             lines.push(format!(
                 "  Player: HP {}/{} -> {}/{} | Block {} -> {} | Energy {} -> {}",

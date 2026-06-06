@@ -58,6 +58,29 @@ fn combat_dominance_key_separates_state_progress_from_resource_vector() {
 }
 
 #[test]
+fn combat_keys_ignore_card_draw_observation_events() {
+    let baseline = blank_test_combat();
+    let mut observed = baseline.clone();
+    observed.emit_event(crate::state::selection::DomainEvent::CardDrawn {
+        card: crate::state::selection::DomainCardSnapshot {
+            id: CardId::DefendB,
+            upgrades: 0,
+            uuid: 377,
+        },
+        source: crate::state::selection::DomainEventSource::CombatDraw,
+    });
+
+    assert_eq!(
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &baseline),
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &observed),
+    );
+    assert_eq!(
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &baseline),
+        combat_dominance_key(&EngineState::CombatPlayerTurn, &observed),
+    );
+}
+
+#[test]
 fn combat_dominance_key_keeps_special_monster_runtime_state() {
     let mut lagavulin = blank_test_combat();
     lagavulin

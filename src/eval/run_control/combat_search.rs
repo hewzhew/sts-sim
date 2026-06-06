@@ -16,8 +16,8 @@ use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenc
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::{CombatAutomationActionV1, RunControlTraceAnnotationV1};
 use super::transition_report::{
-    action_result_from_transition, render_action_result, RunApplyStatus, RunVisibleSnapshot,
-    TransitionAction,
+    action_result_from_transition, render_action_result, ActionResult, ActionResultChange,
+    CardSnapshot, RunApplyStatus, RunVisibleSnapshot, TransitionAction,
 };
 use super::view_model::client_input_hint;
 
@@ -79,9 +79,16 @@ pub(super) fn apply_search_combat(
 
     let before_snapshot = RunVisibleSnapshot::capture(session);
     let applied = trajectory.actions.clone();
+    let mut automation_actions = Vec::new();
     session.mark_current_combat_search_resolved();
     for action in &applied {
-        session.apply_input(action.input.clone())?;
+        let outcome = session.apply_input(action.input.clone())?;
+        automation_actions.push(CombatAutomationActionV1 {
+            step_index: action.step_index,
+            action_key: action.action_key.clone(),
+            input: action.input.clone(),
+            drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
+        });
     }
     let after_snapshot = RunVisibleSnapshot::capture(session);
     let status = current_run_apply_status(session);
@@ -106,7 +113,7 @@ pub(super) fn apply_search_combat(
     );
     let mut outcome =
         RunControlCommandOutcome::action(message, action_result).with_trace_annotations(vec![
-            combat_automation_trace_annotation("search_combat", &applied),
+            combat_automation_trace_annotation("search_combat", automation_actions),
         ]);
     outcome.search_evidence_path = saved_evidence;
     Ok(outcome)
@@ -114,21 +121,25 @@ pub(super) fn apply_search_combat(
 
 fn combat_automation_trace_annotation(
     source: impl Into<String>,
-    actions: &[CombatSearchV2ActionTrace],
+    actions: Vec<CombatAutomationActionV1>,
 ) -> RunControlTraceAnnotationV1 {
     RunControlTraceAnnotationV1::CombatAutomationTrajectory {
         source: source.into(),
         action_count: actions.len(),
-        actions: actions
-            .iter()
-            .map(|action| CombatAutomationActionV1 {
-                step_index: action.step_index,
-                action_key: action.action_key.clone(),
-                input: action.input.clone(),
-            })
-            .collect(),
+        actions,
         label_role: "simulator_generated_not_teacher_label".to_string(),
     }
+}
+
+fn drawn_cards_from_action_result(action_result: Option<&ActionResult>) -> Vec<CardSnapshot> {
+    action_result
+        .into_iter()
+        .flat_map(|result| result.changes.iter())
+        .filter_map(|change| match change {
+            ActionResultChange::CombatCardDrawn { card } => Some(card.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn save_search_evidence_if_requested(
@@ -488,8 +499,10 @@ mod tests {
         combat_automation_trace_annotation, effective_hp_loss_limit, high_stakes_search_options,
         next_available_evidence_path, search_config,
     };
-    use crate::ai::combat_search_v2::{CombatSearchV2ActionTrace, CombatSearchV2PotionPolicy};
-    use crate::eval::run_control::trace_annotation::RunControlTraceAnnotationV1;
+    use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+    use crate::eval::run_control::trace_annotation::{
+        CombatAutomationActionV1, RunControlTraceAnnotationV1,
+    };
     use crate::eval::run_control::{
         RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     };
@@ -546,12 +559,11 @@ mod tests {
     fn combat_automation_trace_annotation_preserves_action_inputs() {
         let annotation = combat_automation_trace_annotation(
             "unit_test",
-            &[CombatSearchV2ActionTrace {
+            vec![CombatAutomationActionV1 {
                 step_index: 7,
-                action_id: 3,
                 action_key: "combat/end_turn".to_string(),
-                action_debug: "EndTurn".to_string(),
                 input: ClientInput::EndTurn,
+                drawn_cards: Vec::new(),
             }],
         );
 

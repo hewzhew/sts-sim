@@ -379,6 +379,12 @@ impl CombatState {
         std::mem::take(&mut self.runtime.emitted_events)
     }
 
+    pub fn clear_card_draw_observation_events(&mut self) {
+        self.runtime
+            .emitted_events
+            .retain(|event| !matches!(event, DomainEvent::CardDrawn { .. }));
+    }
+
     pub fn emit_diagnostic(&mut self, diagnostic: EngineDiagnostic) {
         self.runtime.engine_diagnostics.push(diagnostic);
     }
