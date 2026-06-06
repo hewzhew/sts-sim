@@ -408,6 +408,72 @@ fn clothesline_exports_weak_frontload_patch_but_uncalibrated_gate_stops() {
 }
 
 #[test]
+fn weak_control_completion_aligns_with_act2_multihit_elite_threats() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::Clothesline, 0)],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::Clothesline
+        })
+        .expect("Clothesline strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_weak_control" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_weak_control_elite_high_incoming"
+            && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_weak_control_elite_multihit"
+            && component.value > 0.0
+    }));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
+fn weak_control_completion_ignores_elite_threats_when_route_has_no_elites() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::Clothesline, 0)],
+        route_without_elites(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::Clothesline
+        })
+        .expect("Clothesline strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_weak_control" && component.value > 0.0
+    }));
+    assert!(!estimate.components.iter().any(|component| {
+        component
+            .name
+            .starts_with("strategy_threat_alignment_weak_control_elite_")
+    }));
+}
+
+#[test]
 fn early_transition_attack_exports_frontload_patch_but_uncalibrated_gate_stops() {
     let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
     run_state.floor_num = 1;

@@ -1,5 +1,6 @@
 use crate::ai::noncombat_strategy_v1::{
     StrategyPackageGapV2, StrategyPackageIdV2, StrategyPlanEffectV1, StrategyPlanSupportV1,
+    StrategyThreatSourceV1, StrategyThreatTagV1,
 };
 
 use super::types::{
@@ -12,6 +13,7 @@ const STRONG_CORE_PLAN_DILUTION_PENALTY: f32 = 0.18;
 const PACKAGE_ALIGNMENT_UNCERTAINTY: f32 = 0.74;
 const PACKAGE_GAP_FILL_PROGRESS_BONUS: f32 = 0.10;
 const PACKAGE_COMPLETION_PROGRESS_BONUS: f32 = 0.20;
+const PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS: f32 = 0.08;
 
 struct StrategyPackageGapRule {
     package_id: StrategyPackageIdV2,
@@ -99,8 +101,11 @@ pub(crate) fn estimate_strategy_package_values(
             let support_score = support_score(candidate.plan_delta.support);
             let gap_fill_bonus = strategy_package_gap_fill_bonus(context, candidate);
             let package_completion_bonus = strategy_package_completion_bonus(context, candidate);
-            let survival_delta =
-                support_score * survival_effect_weight(&candidate.plan_delta.effects);
+            let threat_alignment_bonus =
+                strategy_package_threat_alignment_bonus(context, candidate);
+            let survival_delta = support_score
+                * survival_effect_weight(&candidate.plan_delta.effects)
+                + threat_alignment_bonus;
             let progress_delta = support_score
                 * progress_effect_weight(&candidate.plan_delta.effects)
                 + gap_fill_bonus
@@ -151,6 +156,9 @@ fn strategy_package_components(
     }));
     components.extend(strategy_package_gap_fill_components(context, candidate));
     components.extend(strategy_package_completion_components(context, candidate));
+    components.extend(strategy_package_threat_alignment_components(
+        context, candidate,
+    ));
     components
 }
 
@@ -168,6 +176,14 @@ fn strategy_package_completion_bonus(
 ) -> f32 {
     strategy_package_completion_components(context, candidate).len() as f32
         * PACKAGE_COMPLETION_PROGRESS_BONUS
+}
+
+fn strategy_package_threat_alignment_bonus(
+    context: &CardRewardDecisionContextV1,
+    candidate: &super::types::CardRewardCandidateEvidenceV1,
+) -> f32 {
+    strategy_package_threat_alignment_components(context, candidate).len() as f32
+        * PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS
 }
 
 fn strategy_package_gap_fill_components(
@@ -256,6 +272,76 @@ fn package_would_be_completed(
                     && candidate.plan_delta.effects.contains(&rule.effect)
             })
         })
+}
+
+fn strategy_package_threat_alignment_components(
+    context: &CardRewardDecisionContextV1,
+    candidate: &super::types::CardRewardCandidateEvidenceV1,
+) -> Vec<CardRewardValueComponentV1> {
+    let mut components = Vec::new();
+    if package_would_be_completed(context, candidate, StrategyPackageIdV2::WeakControl)
+        && candidate
+            .plan_delta
+            .effects
+            .contains(&StrategyPlanEffectV1::WeakCoverage)
+    {
+        if boss_threat(context, StrategyThreatTagV1::HighIncomingDamage) {
+            components.push(CardRewardValueComponentV1 {
+                name: "strategy_threat_alignment_weak_control_boss_high_incoming".to_string(),
+                value: PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS,
+            });
+        }
+        if boss_threat(context, StrategyThreatTagV1::MultiHit) {
+            components.push(CardRewardValueComponentV1 {
+                name: "strategy_threat_alignment_weak_control_boss_multihit".to_string(),
+                value: PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS,
+            });
+        }
+        if elite_threat_visible_for_route(context, StrategyThreatTagV1::HighIncomingDamage) {
+            components.push(CardRewardValueComponentV1 {
+                name: "strategy_threat_alignment_weak_control_elite_high_incoming".to_string(),
+                value: PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS,
+            });
+        }
+        if elite_threat_visible_for_route(context, StrategyThreatTagV1::MultiHit) {
+            components.push(CardRewardValueComponentV1 {
+                name: "strategy_threat_alignment_weak_control_elite_multihit".to_string(),
+                value: PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS,
+            });
+        }
+    }
+    components
+}
+
+fn boss_threat(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
+    context
+        .strategy
+        .threats
+        .sources
+        .iter()
+        .any(|source| source.source == StrategyThreatSourceV1::ActBoss && source.tag == tag)
+}
+
+fn elite_threat_visible_for_route(
+    context: &CardRewardDecisionContextV1,
+    tag: StrategyThreatTagV1,
+) -> bool {
+    route_allows_elites(context)
+        && context.strategy.threats.sources.iter().any(|source| {
+            matches!(
+                source.source,
+                StrategyThreatSourceV1::ActElitePool | StrategyThreatSourceV1::ActEliteEncounter
+            ) && source.tag == tag
+        })
+}
+
+fn route_allows_elites(context: &CardRewardDecisionContextV1) -> bool {
+    context
+        .route
+        .as_ref()
+        .and_then(|route| route.selected_route.as_ref())
+        .map(|route| route.max_elites > 0)
+        .unwrap_or(true)
 }
 
 fn package_support_components(
