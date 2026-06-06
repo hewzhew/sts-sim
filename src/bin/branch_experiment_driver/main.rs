@@ -519,7 +519,7 @@ mod tests {
             0,
             "Reward Screen",
             vec![
-                portfolio_entry("rp 0", "Shrug It Off", "stabilizer:defense1:draw_energy1"),
+                portfolio_entry("rp 0", "Shrug It Off", "stabilizer:Block+CardDraw"),
                 portfolio_entry("rp 2", "Body Slam", "payoff:block_engine"),
             ],
             vec![portfolio_entry(

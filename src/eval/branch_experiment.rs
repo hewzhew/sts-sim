@@ -718,13 +718,7 @@ fn reward_option_semantic_class(profile: &CardRewardSemanticProfileV1) -> (usize
         return (2, format!("setup:{setup}"));
     }
     if signature.defense_picks > 0 || signature.draw_energy_picks > 0 {
-        return (
-            3,
-            format!(
-                "stabilizer:defense{}:draw_energy{}",
-                signature.defense_picks, signature.draw_energy_picks
-            ),
-        );
+        return (3, format!("stabilizer:{}", stabilizer_role_key(profile)));
     }
     if signature.transition_frontload_picks > 0 {
         return (4, "pure_transition_frontload".to_string());
@@ -737,6 +731,27 @@ fn join_or_dash(values: &[String]) -> String {
         "-".to_string()
     } else {
         values.join("+")
+    }
+}
+
+fn stabilizer_role_key(profile: &CardRewardSemanticProfileV1) -> String {
+    let roles = profile
+        .roles
+        .iter()
+        .filter(|role| {
+            !matches!(
+                role,
+                crate::ai::card_reward_policy_v1::CardRewardSemanticRoleV1::FrontloadDamage
+                    | crate::ai::card_reward_policy_v1::CardRewardSemanticRoleV1::AoeDamage
+                    | crate::ai::card_reward_policy_v1::CardRewardSemanticRoleV1::PackagePayoff
+            )
+        })
+        .map(|role| format!("{role:?}"))
+        .collect::<Vec<_>>();
+    if roles.is_empty() {
+        "none".to_string()
+    } else {
+        roles.join("+")
     }
 }
 
@@ -1179,6 +1194,20 @@ mod tests {
             .pruned_options
             .iter()
             .any(|option| option.semantic_class == "pure_transition_frontload"));
+    }
+
+    #[test]
+    fn reward_option_semantic_class_distinguishes_stabilizer_roles() {
+        let shockwave = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Shockwave, 0));
+        let armaments = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Armaments, 0));
+
+        let (_, shockwave_class) = reward_option_semantic_class(&shockwave);
+        let (_, armaments_class) = reward_option_semantic_class(&armaments);
+
+        assert_ne!(
+            shockwave_class, armaments_class,
+            "control/debuff stabilizers and plain block/upgrade stabilizers should not collapse into one option class"
+        );
     }
 
     #[test]
