@@ -1,12 +1,16 @@
 use crate::content::monsters::factory::EncounterId;
 use crate::state::run::RunState;
 
-use super::types::{StrategyThreatProfileV1, StrategyThreatTagV1};
+use super::types::{
+    StrategyThreatProfileV1, StrategyThreatSourceRecordV1, StrategyThreatSourceV1,
+    StrategyThreatTagV1,
+};
 
 pub fn threat_profile_from_run_state_v1(run_state: &RunState) -> StrategyThreatProfileV1 {
     let mut profile = StrategyThreatProfileV1 {
         boss: run_state.boss_key.map(|boss| format!("{boss:?}")),
         tags: Vec::new(),
+        sources: Vec::new(),
         evidence: Vec::new(),
     };
 
@@ -25,100 +29,121 @@ pub fn empty_threat_profile_v1() -> StrategyThreatProfileV1 {
 fn add_boss_threats(boss: EncounterId, profile: &mut StrategyThreatProfileV1) {
     match boss {
         EncounterId::TheGuardian => {
+            let evidence =
+                "Act boss The Guardian: mode shift and large attacks reward controlled damage timing and mitigation";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActBoss,
+                "TheGuardian",
                 &[
                     StrategyThreatTagV1::HighIncomingDamage,
                     StrategyThreatTagV1::ModeShiftThreshold,
                     StrategyThreatTagV1::WeakValuable,
                 ],
+                evidence,
             );
-            profile
-                .evidence
-                .push("Act boss The Guardian: mode shift and large attacks reward controlled damage timing and mitigation".to_string());
+            profile.evidence.push(evidence.to_string());
         }
         EncounterId::Hexaghost => {
+            let evidence =
+                "Act boss Hexaghost: multi-hit attacks and Burn pressure reward mitigation and race damage";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActBoss,
+                "Hexaghost",
                 &[
                     StrategyThreatTagV1::MultiHit,
                     StrategyThreatTagV1::StatusFlood,
                     StrategyThreatTagV1::HighIncomingDamage,
                 ],
+                evidence,
             );
-            profile
-                .evidence
-                .push("Act boss Hexaghost: multi-hit attacks and Burn pressure reward mitigation and race damage".to_string());
+            profile.evidence.push(evidence.to_string());
         }
         EncounterId::SlimeBoss => {
+            let evidence =
+                "Act boss Slime Boss: split threshold and status pressure reward burst timing and post-split AoE";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActBoss,
+                "SlimeBoss",
                 &[
                     StrategyThreatTagV1::SplitThreshold,
                     StrategyThreatTagV1::StatusFlood,
                     StrategyThreatTagV1::AoEValuable,
                     StrategyThreatTagV1::HighIncomingDamage,
                 ],
+                evidence,
             );
-            profile
-                .evidence
-                .push("Act boss Slime Boss: split threshold and status pressure reward burst timing and post-split AoE".to_string());
+            profile.evidence.push(evidence.to_string());
         }
         EncounterId::Automaton => {
+            let evidence =
+                "Act boss Bronze Automaton: artifact, minions, and Hyper Beam reward setup plus artifact-aware control";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActBoss,
+                "Automaton",
                 &[
                     StrategyThreatTagV1::ArtifactBlocksDebuff,
                     StrategyThreatTagV1::AoEValuable,
                     StrategyThreatTagV1::HighIncomingDamage,
                     StrategyThreatTagV1::SetupWindow,
                 ],
+                evidence,
             );
-            profile
-                .evidence
-                .push("Act boss Bronze Automaton: artifact, minions, and Hyper Beam reward setup plus artifact-aware control".to_string());
+            profile.evidence.push(evidence.to_string());
         }
         EncounterId::TheChamp => {
+            let evidence =
+                "Act boss Champ: long fight and execute phase reward strength down, weak, and scaling";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActBoss,
+                "TheChamp",
                 &[
                     StrategyThreatTagV1::StrengthDebuffValuable,
                     StrategyThreatTagV1::WeakValuable,
                     StrategyThreatTagV1::HighIncomingDamage,
                     StrategyThreatTagV1::LongFightScaling,
                 ],
+                evidence,
             );
-            profile
-                .evidence
-                .push("Act boss Champ: long fight and execute phase reward strength down, weak, and scaling".to_string());
+            profile.evidence.push(evidence.to_string());
         }
         EncounterId::AwakenedOne => {
+            let evidence =
+                "Act boss Awakened One: power scaling, cultists, and second phase reward careful power use and long-fight plans";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActBoss,
+                "AwakenedOne",
                 &[
                     StrategyThreatTagV1::PowerPunish,
                     StrategyThreatTagV1::AoEValuable,
                     StrategyThreatTagV1::LongFightScaling,
                     StrategyThreatTagV1::HighIncomingDamage,
                 ],
+                evidence,
             );
-            profile
-                .evidence
-                .push("Act boss Awakened One: power scaling, cultists, and second phase reward careful power use and long-fight plans".to_string());
+            profile.evidence.push(evidence.to_string());
         }
         EncounterId::TimeEater => {
+            let evidence =
+                "Act boss Time Eater: card play limit and long fight reward dense turns, mitigation, and scaling";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActBoss,
+                "TimeEater",
                 &[
                     StrategyThreatTagV1::CardPlayLimit,
                     StrategyThreatTagV1::LongFightScaling,
                     StrategyThreatTagV1::HighIncomingDamage,
                     StrategyThreatTagV1::WeakValuable,
                 ],
+                evidence,
             );
-            profile
-                .evidence
-                .push("Act boss Time Eater: card play limit and long fight reward dense turns, mitigation, and scaling".to_string());
+            profile.evidence.push(evidence.to_string());
         }
         _ => {}
     }
@@ -127,8 +152,12 @@ fn add_boss_threats(boss: EncounterId, profile: &mut StrategyThreatProfileV1) {
 fn add_act_elite_pool_threats(act: u8, profile: &mut StrategyThreatProfileV1) {
     match act {
         1 => {
+            let evidence =
+                "Act 1 elite pool: Nob punishes skills, Sentries flood statuses, Lagavulin rewards setup/debuff answers";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActElitePool,
+                "Act1ElitePool",
                 &[
                     StrategyThreatTagV1::SkillPunish,
                     StrategyThreatTagV1::StatusFlood,
@@ -136,48 +165,65 @@ fn add_act_elite_pool_threats(act: u8, profile: &mut StrategyThreatProfileV1) {
                     StrategyThreatTagV1::StrengthDebuffValuable,
                     StrategyThreatTagV1::SetupWindow,
                 ],
+                evidence,
             );
-            profile.evidence.push(
-                "Act 1 elite pool: Nob punishes skills, Sentries flood statuses, Lagavulin rewards setup/debuff answers"
-                    .to_string(),
-            );
+            profile.evidence.push(evidence.to_string());
         }
         2 => {
+            let evidence =
+                "Act 2 elite pool: Slavers/Gremlin Leader/Book reward frontload, AoE, and mitigation";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActElitePool,
+                "Act2ElitePool",
                 &[
                     StrategyThreatTagV1::HighIncomingDamage,
                     StrategyThreatTagV1::AoEValuable,
                     StrategyThreatTagV1::MultiHit,
                 ],
+                evidence,
             );
-            profile.evidence.push(
-                "Act 2 elite pool: Slavers/Gremlin Leader/Book reward frontload, AoE, and mitigation"
-                    .to_string(),
-            );
+            profile.evidence.push(evidence.to_string());
         }
         3 => {
+            let evidence =
+                "Act 3 elite pool: Reptomancer/Nemesis/Giant Head reward burst control, AoE, and long-fight scaling";
             push_tags(
                 profile,
+                StrategyThreatSourceV1::ActElitePool,
+                "Act3ElitePool",
                 &[
                     StrategyThreatTagV1::HighIncomingDamage,
                     StrategyThreatTagV1::AoEValuable,
                     StrategyThreatTagV1::LongFightScaling,
                 ],
+                evidence,
             );
-            profile.evidence.push(
-                "Act 3 elite pool: Reptomancer/Nemesis/Giant Head reward burst control, AoE, and long-fight scaling"
-                    .to_string(),
-            );
+            profile.evidence.push(evidence.to_string());
         }
         _ => {}
     }
 }
 
-fn push_tags(profile: &mut StrategyThreatProfileV1, tags: &[StrategyThreatTagV1]) {
+fn push_tags(
+    profile: &mut StrategyThreatProfileV1,
+    source: StrategyThreatSourceV1,
+    subject: &str,
+    tags: &[StrategyThreatTagV1],
+    evidence: &str,
+) {
     for tag in tags {
         if !profile.tags.contains(tag) {
             profile.tags.push(*tag);
+        }
+        let source_record = StrategyThreatSourceRecordV1 {
+            tag: *tag,
+            source,
+            subject: subject.to_string(),
+            evidence: evidence.to_string(),
+        };
+        if !profile.sources.contains(&source_record) {
+            profile.sources.push(source_record);
         }
     }
 }

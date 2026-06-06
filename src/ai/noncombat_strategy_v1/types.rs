@@ -265,10 +265,26 @@ pub enum StrategyThreatTagV1 {
     SetupWindow,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum StrategyThreatSourceV1 {
+    ActBoss,
+    ActElitePool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct StrategyThreatSourceRecordV1 {
+    pub tag: StrategyThreatTagV1,
+    pub source: StrategyThreatSourceV1,
+    pub subject: String,
+    pub evidence: String,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct StrategyThreatProfileV1 {
     pub boss: Option<String>,
     pub tags: Vec<StrategyThreatTagV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<StrategyThreatSourceRecordV1>,
     pub evidence: Vec<String>,
 }
 

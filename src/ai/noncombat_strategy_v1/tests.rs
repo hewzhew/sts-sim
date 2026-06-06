@@ -7,7 +7,7 @@ use super::snapshot::build_run_strategy_snapshot_v1;
 use super::types::{
     StrategyCandidateFactsV1, StrategyDeckFactsV1, StrategyDeckFormationNeedV1,
     StrategyDeckFormationStageV1, StrategyPlanEffectV1, StrategyPlanIdV1, StrategyPlanSupportV1,
-    StrategyRouteFutureV1, StrategyRoutePackageIdV1, StrategyThreatTagV1,
+    StrategyRouteFutureV1, StrategyRoutePackageIdV1, StrategyThreatSourceV1, StrategyThreatTagV1,
 };
 
 #[test]
@@ -758,4 +758,14 @@ fn run_strategy_snapshot_v2_exposes_boss_threat_tags() {
         .evidence
         .iter()
         .any(|entry| entry.contains("Champ")));
+    assert!(snapshot.threats.sources.iter().any(|source| {
+        source.tag == StrategyThreatTagV1::StrengthDebuffValuable
+            && source.source == StrategyThreatSourceV1::ActBoss
+            && source.subject == "TheChamp"
+    }));
+    assert!(snapshot.threats.sources.iter().any(|source| {
+        source.tag == StrategyThreatTagV1::MultiHit
+            && source.source == StrategyThreatSourceV1::ActElitePool
+            && source.subject == "Act2ElitePool"
+    }));
 }

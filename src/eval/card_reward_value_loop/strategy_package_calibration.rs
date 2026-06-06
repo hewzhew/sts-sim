@@ -8,7 +8,7 @@ use crate::ai::card_reward_policy_v1::{
     CardRewardValueEligibilityV1, CardRewardValueEstimateV1, CardRewardValueHorizonV1,
     CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
-use crate::ai::noncombat_strategy_v1::StrategyThreatTagV1;
+use crate::ai::noncombat_strategy_v1::{StrategyThreatSourceRecordV1, StrategyThreatTagV1};
 use crate::content::cards::CardId;
 
 use super::CardRewardValueLoopExampleV1;
@@ -119,6 +119,7 @@ pub fn calibrate_card_reward_strategy_package_v1(
             bucket_keys: strategy_package_bucket_keys(
                 candidate,
                 &packet.context.strategy.threats.tags,
+                &packet.context.strategy.threats.sources,
             ),
         });
     }
@@ -255,7 +256,11 @@ fn best_matching_bucket<'a>(
     candidate: &crate::ai::card_reward_policy_v1::CardRewardCandidateEvidenceV1,
     calibration: &'a CardRewardStrategyPackageCalibrationV1,
 ) -> Option<&'a CardRewardStrategyPackageCalibrationBucketV1> {
-    let keys = strategy_package_bucket_keys(candidate, &context.strategy.threats.tags);
+    let keys = strategy_package_bucket_keys(
+        candidate,
+        &context.strategy.threats.tags,
+        &context.strategy.threats.sources,
+    );
     calibration
         .buckets
         .iter()
@@ -275,7 +280,10 @@ fn best_matching_bucket<'a>(
 }
 
 fn bucket_specificity(bucket: &CardRewardStrategyPackageCalibrationBucketV1) -> u8 {
-    match bucket.bucket_key.as_str() {
+    let key = bucket.bucket_key.as_str();
+    match key {
+        _ if key.starts_with("threat_source:ActBoss:") => 10 + threat_tag_specificity(key),
+        _ if key.starts_with("threat_source:ActElitePool:") => 7 + threat_tag_specificity(key),
         "threat:StrengthDebuffValuable"
         | "threat:WeakValuable"
         | "threat:ArtifactBlocksDebuff"
@@ -291,6 +299,26 @@ fn bucket_specificity(bucket: &CardRewardStrategyPackageCalibrationBucketV1) -> 
         _ if bucket.bucket_key.starts_with("plan_effect:") => 2,
         _ if bucket.bucket_key.starts_with("plan_support:") => 1,
         _ => 0,
+    }
+}
+
+fn threat_tag_specificity(key: &str) -> u8 {
+    if key.ends_with(":StrengthDebuffValuable")
+        || key.ends_with(":WeakValuable")
+        || key.ends_with(":ArtifactBlocksDebuff")
+        || key.ends_with(":StatusFlood")
+        || key.ends_with(":SplitThreshold")
+        || key.ends_with(":ModeShiftThreshold")
+        || key.ends_with(":PowerPunish")
+        || key.ends_with(":CardPlayLimit")
+        || key.ends_with(":LongFightScaling")
+        || key.ends_with(":SetupWindow")
+    {
+        2
+    } else if key.ends_with(":MultiHit") || key.ends_with(":AoEValuable") {
+        1
+    } else {
+        0
     }
 }
 
@@ -373,6 +401,7 @@ fn actual_hp_loss(example: &CardRewardValueLoopExampleV1) -> Option<i32> {
 fn strategy_package_bucket_keys(
     candidate: &crate::ai::card_reward_policy_v1::CardRewardCandidateEvidenceV1,
     threat_tags: &[StrategyThreatTagV1],
+    threat_sources: &[StrategyThreatSourceRecordV1],
 ) -> Vec<String> {
     let mut keys = vec![format!("plan_support:{:?}", candidate.plan_delta.support)];
     keys.extend(
@@ -388,6 +417,17 @@ fn strategy_package_bucket_keys(
             .iter()
             .filter(|tag| candidate_response_tags.contains(tag))
             .map(|tag| format!("threat:{tag:?}")),
+    );
+    keys.extend(
+        threat_sources
+            .iter()
+            .filter(|source| candidate_response_tags.contains(&source.tag))
+            .map(|source| {
+                format!(
+                    "threat_source:{:?}:{}:{:?}",
+                    source.source, source.subject, source.tag
+                )
+            }),
     );
     keys.sort();
     keys.dedup();
@@ -447,6 +487,10 @@ mod tests {
         let calibration = calibrate_card_reward_strategy_package_v1(&[example]);
 
         assert!(calibration.buckets.iter().any(|bucket| {
+            bucket.bucket_key == "threat_source:ActBoss:TheChamp:StrengthDebuffValuable"
+                && bucket.evaluated_count == 1
+        }));
+        assert!(calibration.buckets.iter().any(|bucket| {
             bucket.bucket_key == "threat:StrengthDebuffValuable" && bucket.evaluated_count == 1
         }));
         assert!(calibration.buckets.iter().any(|bucket| {
@@ -476,7 +520,7 @@ mod tests {
             .expect("Disarm calibrated estimate");
         assert_eq!(
             disarm.eligibility.bucket_key.as_deref(),
-            Some("threat:StrengthDebuffValuable")
+            Some("threat_source:ActBoss:TheChamp:StrengthDebuffValuable")
         );
         assert!(!disarm.eligibility.usable_for_autopilot_gate);
     }

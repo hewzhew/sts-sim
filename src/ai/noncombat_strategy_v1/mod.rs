@@ -18,7 +18,8 @@ pub use types::{
     RunStrategySnapshotV2, StrategyCandidateFactsV1, StrategyCandidatePlanDeltaV1,
     StrategyDeckFactsV1, StrategyPackageDomainV2, StrategyPackageIdV2, StrategyPackageV2,
     StrategyPlanEffectV1, StrategyPlanSupportV1, StrategyResourceFactsV2, StrategyRouteFutureV1,
-    StrategyThreatProfileV1, StrategyThreatTagV1,
+    StrategyThreatProfileV1, StrategyThreatSourceRecordV1, StrategyThreatSourceV1,
+    StrategyThreatTagV1,
 };
 
 #[cfg(test)]
