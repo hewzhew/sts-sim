@@ -118,6 +118,7 @@ fn survival_effect_weight(effects: &[StrategyPlanEffectV1]) -> f32 {
                     | StrategyPlanEffectV1::DamageMitigation
                     | StrategyPlanEffectV1::BlockRetention
                     | StrategyPlanEffectV1::BlockMultiplier
+                    | StrategyPlanEffectV1::ExhaustPayoff
             )
         })
         .count() as f32;
@@ -134,6 +135,10 @@ fn progress_effect_weight(effects: &[StrategyPlanEffectV1]) -> f32 {
                     | StrategyPlanEffectV1::StrengthPayoff
                     | StrategyPlanEffectV1::UpgradeSink
                     | StrategyPlanEffectV1::BlockPayoff
+                    | StrategyPlanEffectV1::ExhaustGenerator
+                    | StrategyPlanEffectV1::ExhaustPayoff
+                    | StrategyPlanEffectV1::StatusGenerator
+                    | StrategyPlanEffectV1::StatusPayoff
             )
         })
         .count() as f32;

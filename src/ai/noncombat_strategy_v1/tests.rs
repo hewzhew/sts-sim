@@ -642,3 +642,93 @@ fn body_slam_without_block_engine_remains_blocked_package_candidate() {
     assert_eq!(delta.support, StrategyPlanSupportV1::Blocked);
     assert!(delta.effects.contains(&StrategyPlanEffectV1::BlockPayoff));
 }
+
+#[test]
+fn exhaust_engine_candidate_delta_uses_generator_and_payoff_roles() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 13,
+            attacks: 7,
+            skills: 5,
+            powers: 1,
+            starter_strikes: 4,
+            starter_defends: 3,
+            exhaust_payoffs: 1,
+            total_attack_damage: 48,
+            total_block: 22,
+            ..Default::default()
+        },
+        Some(StrategyRouteFutureV1 {
+            min_fires: 1,
+            max_fires: 2,
+            first_fire_floor: Some(7),
+            max_early_pressure: 2,
+            need_heal: 0.2,
+            avoid_damage: 0.3,
+        }),
+        None,
+    );
+
+    let burning_pact = super::candidate_plan_delta_v2(
+        StrategyCandidateFactsV1 {
+            card: CardId::BurningPact,
+            damage_total: 0,
+            weak: 0,
+            strength_gain: 0,
+        },
+        &snapshot,
+    );
+
+    assert_eq!(
+        snapshot.support(super::StrategyPackageIdV2::ExhaustEngine),
+        StrategyPlanSupportV1::Plausible
+    );
+    assert_eq!(burning_pact.support, StrategyPlanSupportV1::Plausible);
+    assert!(burning_pact
+        .effects
+        .contains(&StrategyPlanEffectV1::ExhaustGenerator));
+}
+
+#[test]
+fn status_package_candidate_delta_uses_generator_and_payoff_roles() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 13,
+            attacks: 7,
+            skills: 5,
+            powers: 1,
+            starter_strikes: 4,
+            starter_defends: 3,
+            status_generators: 1,
+            total_attack_damage: 48,
+            total_block: 25,
+            ..Default::default()
+        },
+        Some(StrategyRouteFutureV1 {
+            min_fires: 1,
+            max_fires: 2,
+            first_fire_floor: Some(7),
+            max_early_pressure: 2,
+            need_heal: 0.2,
+            avoid_damage: 0.3,
+        }),
+        None,
+    );
+
+    let evolve = super::candidate_plan_delta_v2(
+        StrategyCandidateFactsV1 {
+            card: CardId::Evolve,
+            damage_total: 0,
+            weak: 0,
+            strength_gain: 0,
+        },
+        &snapshot,
+    );
+
+    assert_eq!(
+        snapshot.support(super::StrategyPackageIdV2::StatusPackage),
+        StrategyPlanSupportV1::Plausible
+    );
+    assert_eq!(evolve.support, StrategyPlanSupportV1::Plausible);
+    assert!(evolve.effects.contains(&StrategyPlanEffectV1::StatusPayoff));
+}

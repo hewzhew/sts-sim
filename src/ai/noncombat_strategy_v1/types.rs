@@ -145,6 +145,10 @@ pub enum StrategyPlanEffectV1 {
     BlockRetention,
     BlockPayoff,
     BlockMultiplier,
+    ExhaustGenerator,
+    ExhaustPayoff,
+    StatusGenerator,
+    StatusPayoff,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

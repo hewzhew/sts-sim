@@ -101,6 +101,47 @@ pub fn candidate_plan_delta_v1(
                 notes.extend(plan.opportunity_costs.clone());
             }
         }
+        CardId::BurningPact
+        | CardId::TrueGrit
+        | CardId::SecondWind
+        | CardId::SeverSoul
+        | CardId::FiendFire
+        | CardId::Exhume => {
+            effects.push(StrategyPlanEffectV1::ExhaustGenerator);
+            apply_plan_context(
+                snapshot,
+                StrategyPlanIdV1::ExhaustEngine,
+                &mut support,
+                &mut notes,
+            );
+        }
+        CardId::FeelNoPain | CardId::DarkEmbrace | CardId::Corruption => {
+            effects.push(StrategyPlanEffectV1::ExhaustPayoff);
+            apply_plan_context(
+                snapshot,
+                StrategyPlanIdV1::ExhaustEngine,
+                &mut support,
+                &mut notes,
+            );
+        }
+        CardId::WildStrike | CardId::RecklessCharge | CardId::PowerThrough | CardId::Immolate => {
+            effects.push(StrategyPlanEffectV1::StatusGenerator);
+            apply_plan_context(
+                snapshot,
+                StrategyPlanIdV1::StatusPackage,
+                &mut support,
+                &mut notes,
+            );
+        }
+        CardId::Evolve | CardId::FireBreathing => {
+            effects.push(StrategyPlanEffectV1::StatusPayoff);
+            apply_plan_context(
+                snapshot,
+                StrategyPlanIdV1::StatusPackage,
+                &mut support,
+                &mut notes,
+            );
+        }
         _ => {
             if facts.weak > 0 {
                 effects.push(StrategyPlanEffectV1::WeakCoverage);
@@ -121,5 +162,22 @@ pub fn candidate_plan_delta_v1(
         effects,
         support,
         notes,
+    }
+}
+
+fn apply_plan_context(
+    snapshot: &RunStrategySnapshotV1,
+    plan_id: StrategyPlanIdV1,
+    support: &mut StrategyPlanSupportV1,
+    notes: &mut Vec<String>,
+) {
+    let plan = snapshot.plan(plan_id);
+    *support = plan
+        .map(|plan| plan.support)
+        .unwrap_or(StrategyPlanSupportV1::Blocked);
+    if let Some(plan) = plan {
+        notes.extend(plan.evidence.clone());
+        notes.extend(plan.blockers.clone());
+        notes.extend(plan.opportunity_costs.clone());
     }
 }

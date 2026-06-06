@@ -1133,6 +1133,88 @@ fn strategy_package_estimator_recognizes_block_engine_missing_pieces() {
 }
 
 #[test]
+fn strategy_package_estimator_exports_exhaust_engine_roles() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::FeelNoPain);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::BurningPact, 0)],
+        route_with_combat_pressure(),
+    );
+
+    assert_eq!(
+        context.strategy.support(StrategyPackageIdV2::ExhaustEngine),
+        StrategyPlanSupportV1::Plausible
+    );
+    assert!(context.candidates[0]
+        .plan_delta
+        .effects
+        .contains(&CardRewardPlanEffectV1::ExhaustGenerator));
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::BurningPact
+        })
+        .expect("Burning Pact strategy package estimate");
+
+    assert!(estimate.progress_delta > 0.0);
+    assert!(estimate
+        .components
+        .iter()
+        .any(|component| component.name == "strategy_support_exhaust_engine"));
+    assert!(estimate
+        .components
+        .iter()
+        .any(|component| component.name == "plan_effect_ExhaustGenerator"));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
+fn strategy_package_estimator_exports_status_package_roles() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::PowerThrough);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::Evolve, 0)],
+        route_with_combat_pressure(),
+    );
+
+    assert_eq!(
+        context.strategy.support(StrategyPackageIdV2::StatusPackage),
+        StrategyPlanSupportV1::Plausible
+    );
+    assert!(context.candidates[0]
+        .plan_delta
+        .effects
+        .contains(&CardRewardPlanEffectV1::StatusPayoff));
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::Evolve
+        })
+        .expect("Evolve strategy package estimate");
+
+    assert!(estimate.progress_delta > 0.0);
+    assert!(estimate
+        .components
+        .iter()
+        .any(|component| component.name == "strategy_support_status_package"));
+    assert!(estimate
+        .components
+        .iter()
+        .any(|component| component.name == "plan_effect_StatusPayoff"));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
 fn route_risk_estimator_values_frontload_more_under_early_route_pressure() {
     let context = context_for_cards_with_route(
         vec![
