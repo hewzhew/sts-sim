@@ -1,4 +1,5 @@
 mod arbitration;
+mod combat_probe;
 mod context;
 mod facts;
 mod gate;

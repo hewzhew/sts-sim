@@ -291,6 +291,7 @@ pub enum CardRewardValueEligibilityReasonV1 {
     MissingDataRoleProvenance,
     HiddenSimulatorStateUsed,
     ShortHorizonMetricOnly,
+    CounterfactualProbeNotGateEligible,
     RouteRiskEstimateNotPromoted,
     RouteRiskCalibrationNotGateEligible,
 }
@@ -299,6 +300,7 @@ pub enum CardRewardValueEligibilityReasonV1 {
 #[serde(rename_all = "snake_case")]
 pub enum CardRewardValueHorizonV1 {
     NextCombatHpLoss,
+    NextCombatPublicProbe,
     VisibleRouteRisk,
 }
 

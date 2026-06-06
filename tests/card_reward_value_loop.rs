@@ -201,11 +201,11 @@ fn summarizes_card_reward_value_loop_examples_without_strategy_claims() {
             &summary.value_status_counts,
             "value_status_uncalibrated_prior"
         ),
-        2
+        0
     );
     assert_eq!(
         histogram_count(&summary.evidence_gap_counts, "UncalibratedValueEstimate"),
-        2
+        0
     );
     assert_eq!(summary.attached_outcome_count, 1);
     assert_eq!(summary.missing_outcome_count, 1);

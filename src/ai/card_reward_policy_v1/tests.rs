@@ -780,7 +780,7 @@ fn card_reward_policy_routes_value_estimates_through_arbitration() {
         .len(),
         2
     );
-    assert_eq!(decision.value_arbitration.input_estimate_count, 4);
+    assert_eq!(decision.value_arbitration.input_estimate_count, 6);
     assert_eq!(decision.value_arbitration.gate_value_estimates.len(), 2);
     assert!(decision
         .value_arbitration
@@ -817,7 +817,7 @@ fn policy_accepts_external_calibrated_estimates_before_arbitration_without_autop
         &inputs,
     );
 
-    assert_eq!(decision.value_estimates.len(), 5);
+    assert_eq!(decision.value_estimates.len(), 7);
     assert_eq!(
         decision.value_arbitration.gate_value_estimates[0].source,
         CardRewardValueSourceV1::OutcomeCalibration
@@ -844,8 +844,8 @@ fn replay_harness_exports_value_loop_gate_state_without_selecting() {
         replay_card_reward_decision_v1(&packet, &CardRewardPolicyConfigV1::default(), None);
 
     assert_eq!(replay.candidates.len(), 1);
-    assert_eq!(replay.value_estimates.len(), 2);
-    assert_eq!(replay.value_arbitration.input_estimate_count, 2);
+    assert_eq!(replay.value_estimates.len(), 3);
+    assert_eq!(replay.value_arbitration.input_estimate_count, 3);
     assert_eq!(replay.value_arbitration.gate_value_estimates.len(), 1);
     assert_eq!(
         replay.value_arbitration.gate_value_estimates[0].source,
@@ -888,8 +888,8 @@ fn replay_harness_accepts_external_estimator_inputs() {
         None,
     );
 
-    assert_eq!(replay.value_estimates.len(), 5);
-    assert_eq!(replay.value_arbitration.input_estimate_count, 5);
+    assert_eq!(replay.value_estimates.len(), 7);
+    assert_eq!(replay.value_arbitration.input_estimate_count, 7);
     assert_eq!(
         replay.value_arbitration.gate_value_estimates[0].source,
         CardRewardValueSourceV1::OutcomeCalibration
@@ -967,6 +967,41 @@ fn route_risk_estimator_values_frontload_more_under_early_route_pressure() {
         .components
         .iter()
         .any(|component| component.name == "route_risk_pressure"));
+}
+
+#[test]
+fn counterfactual_probe_values_enter_arbitration_without_certifying_autopick() {
+    let context = context_for_cards(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Warcry, 0),
+    ]);
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let combat_probe_estimates = estimates_for_source(
+        &decision.value_estimates,
+        CardRewardValueSourceV1::CombatProbe,
+    );
+
+    assert_eq!(combat_probe_estimates.len(), context.candidates.len());
+    assert!(combat_probe_estimates
+        .iter()
+        .all(|estimate| estimate.status == CardRewardValueStatusV1::CounterfactualProbe));
+    assert!(combat_probe_estimates
+        .iter()
+        .all(|estimate| estimate.eligibility.usable_for_value_estimate));
+    assert!(combat_probe_estimates
+        .iter()
+        .all(|estimate| !estimate.eligibility.usable_for_autopilot_gate));
+    assert!(decision
+        .value_arbitration
+        .candidate_reports
+        .iter()
+        .all(|report| report.selected_source == Some(CardRewardValueSourceV1::CombatProbe)));
+    assert!(!decision.autopilot_gate.value_source_eligible);
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
 }
 
 fn test_value_estimate(

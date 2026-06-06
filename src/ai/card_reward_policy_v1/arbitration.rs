@@ -126,9 +126,9 @@ fn compare_estimates_for_arbitration(
 fn source_rank(source: CardRewardValueSourceV1) -> u8 {
     match source {
         CardRewardValueSourceV1::LearnedValue => 50,
-        CardRewardValueSourceV1::CombatProbe => 40,
         CardRewardValueSourceV1::OutcomeCalibration => 35,
-        CardRewardValueSourceV1::RouteRisk => 20,
+        CardRewardValueSourceV1::RouteRisk => 25,
+        CardRewardValueSourceV1::CombatProbe => 10,
         CardRewardValueSourceV1::UncalibratedImpactPrior => 0,
     }
 }

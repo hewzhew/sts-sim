@@ -32,6 +32,7 @@ pub(crate) fn estimate_card_reward_values(
             components: impact_prior_components(context, candidate),
         })
         .collect::<Vec<_>>();
+    estimates.extend(super::combat_probe::estimate_combat_probe_values(context));
     estimates.extend(super::route_risk::estimate_route_risk_values(context));
     estimates
 }
