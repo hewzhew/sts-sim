@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -170,7 +171,7 @@ fn render_compact_report(report: &BranchExperimentReportV1) -> String {
     }
     lines.push("".to_string());
     lines.push("Kept branch examples:".to_string());
-    for branch in report.branches.iter().take(10) {
+    for branch in ordered_branch_examples(report).into_iter().take(10) {
         lines.push(render_branch_line(branch));
     }
     if report.branches.len() > 10 {
@@ -180,6 +181,38 @@ fn render_compact_report(report: &BranchExperimentReportV1) -> String {
         ));
     }
     lines.join("\n")
+}
+
+fn ordered_branch_examples(
+    report: &BranchExperimentReportV1,
+) -> Vec<&BranchExperimentBranchReportV1> {
+    let mut ordered = Vec::new();
+    let mut used_indices = BTreeSet::new();
+    let mut covered_frontier_and_first_pick = BTreeSet::new();
+
+    for (index, branch) in report.branches.iter().enumerate() {
+        let key = branch_example_diversity_key(branch);
+        if covered_frontier_and_first_pick.insert(key) {
+            ordered.push(branch);
+            used_indices.insert(index);
+        }
+    }
+
+    for (index, branch) in report.branches.iter().enumerate() {
+        if used_indices.insert(index) {
+            ordered.push(branch);
+        }
+    }
+    ordered
+}
+
+fn branch_example_diversity_key(branch: &BranchExperimentBranchReportV1) -> String {
+    let first_pick = branch
+        .choices
+        .first()
+        .map(|choice| choice.label.as_str())
+        .unwrap_or("-");
+    format!("{}|{first_pick}", branch.frontier.key)
 }
 
 fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {

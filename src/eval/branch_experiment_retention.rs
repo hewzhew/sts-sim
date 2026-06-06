@@ -209,24 +209,31 @@ fn select_positions_for_slots(
     if limit == 0 {
         return Vec::new();
     }
-    let mut selected = BTreeSet::<usize>::new();
+    let mut selected = Vec::<usize>::new();
+    let mut selected_set = BTreeSet::<usize>::new();
     for slot in SLOT_ORDER {
         if selected.len() >= limit {
             break;
         }
-        if let Some(position) =
-            best_position_for_slot(candidates, decisions_by_index, positions, slot, &selected)
-        {
-            selected.insert(position);
+        if let Some(position) = best_position_for_slot(
+            candidates,
+            decisions_by_index,
+            positions,
+            slot,
+            &selected_set,
+        ) {
+            selected.push(position);
+            selected_set.insert(position);
         }
     }
     while selected.len() < limit {
-        let Some(position) = best_fill_position(candidates, positions, &selected) else {
+        let Some(position) = best_fill_position(candidates, positions, &selected_set) else {
             break;
         };
-        selected.insert(position);
+        selected.push(position);
+        selected_set.insert(position);
     }
-    selected.into_iter().collect()
+    cap_redundant_choice_prefixes(candidates, positions, selected, limit)
 }
 
 fn best_position_for_slot(
@@ -329,6 +336,35 @@ fn choice_prefix_key(candidate: &BranchRetentionCandidateInputV1) -> String {
         .first()
         .map(|profile| profile.name.clone())
         .unwrap_or_else(|| "no_card_reward_choice".to_string())
+}
+
+fn cap_redundant_choice_prefixes(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    selected_positions: Vec<usize>,
+    limit: usize,
+) -> Vec<usize> {
+    let distinct_prefixes = available_positions
+        .iter()
+        .map(|position| choice_prefix_key(&candidates[*position]))
+        .collect::<BTreeSet<_>>();
+    if distinct_prefixes.len() <= 1 {
+        return selected_positions;
+    }
+
+    let max_per_prefix = limit.div_ceil(distinct_prefixes.len()).max(1);
+    let mut counts = BTreeMap::<String, usize>::new();
+    let mut kept = Vec::new();
+    for position in selected_positions {
+        let prefix = choice_prefix_key(&candidates[position]);
+        let count = counts.entry(prefix).or_default();
+        if *count >= max_per_prefix {
+            continue;
+        }
+        *count += 1;
+        kept.push(position);
+    }
+    kept
 }
 
 fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetentionSlotV1) -> i32 {
@@ -565,6 +601,44 @@ mod tests {
             "fill stage should keep a lower-ranked new first-pick family before a duplicate prefix"
         );
         assert!(!selection.keep_indices.contains(&1));
+    }
+
+    #[test]
+    fn portfolio_retention_does_not_fill_budget_with_redundant_first_pick_variants() {
+        let candidates = vec![
+            retention_candidate(0, 10_900, &["Twin Strike", "Iron Wave"]),
+            retention_candidate(1, 10_890, &["Twin Strike", "Uppercut"]),
+            retention_candidate(2, 10_880, &["Twin Strike", "Clothesline"]),
+            retention_candidate(3, 10_870, &["Twin Strike", "Pommel Strike"]),
+            retention_candidate(4, 10_860, &["Twin Strike", "Cleave"]),
+            retention_candidate(5, 10_700, &["Shockwave", "Body Slam"]),
+            retention_candidate(6, 10_650, &["Armaments", "Searing Blow"]),
+        ];
+
+        let selection = select_branch_retention_portfolio_v1(
+            &candidates,
+            BranchRetentionConfigV1 {
+                max_total: 6,
+                max_per_frontier: Some(6),
+            },
+        );
+
+        let twin_strike_kept = selection
+            .keep_indices
+            .iter()
+            .filter(|index| candidates[**index].choice_profiles[0].name == "Twin Strike")
+            .count();
+
+        assert!(
+            twin_strike_kept <= 2,
+            "same first-pick variants should not fill most of an exploration budget"
+        );
+        assert!(selection.keep_indices.contains(&5));
+        assert!(selection.keep_indices.contains(&6));
+        assert!(
+            selection.keep_indices.len() < 6,
+            "max_total is an upper bound; redundant filler branches can be left unkept"
+        );
     }
 
     #[test]
