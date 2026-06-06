@@ -141,6 +141,7 @@ fn status_rank(status: CardRewardValueStatusV1) -> u8 {
         CardRewardValueStatusV1::OutcomeCalibrated => 20,
         CardRewardValueStatusV1::RouteRiskCalibrated => 15,
         CardRewardValueStatusV1::RouteRiskEstimate => 10,
+        CardRewardValueStatusV1::PublicCombatHeuristic => 7,
         CardRewardValueStatusV1::StrategyPackageCalibrated => 8,
         CardRewardValueStatusV1::StrategyPackageEstimate => 5,
         CardRewardValueStatusV1::UncalibratedPrior => 0,

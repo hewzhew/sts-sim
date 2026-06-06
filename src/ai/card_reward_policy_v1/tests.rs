@@ -660,7 +660,7 @@ fn arbitration_prefers_gate_eligible_estimate_over_higher_rank_non_gate_estimate
         0,
         CardId::TwinStrike,
         CardRewardValueSourceV1::RouteRisk,
-        CardRewardValueStatusV1::CounterfactualProbe,
+        CardRewardValueStatusV1::PublicCombatHeuristic,
         10.0,
         0.2,
     );
@@ -1018,7 +1018,7 @@ fn route_risk_estimator_values_frontload_more_under_early_route_pressure() {
 }
 
 #[test]
-fn counterfactual_probe_values_enter_arbitration_without_certifying_autopick() {
+fn public_combat_heuristic_values_enter_arbitration_without_certifying_autopick() {
     let context = context_for_cards(vec![
         RewardCard::new(CardId::TwinStrike, 0),
         RewardCard::new(CardId::Warcry, 0),
@@ -1033,7 +1033,7 @@ fn counterfactual_probe_values_enter_arbitration_without_certifying_autopick() {
     assert_eq!(combat_probe_estimates.len(), context.candidates.len());
     assert!(combat_probe_estimates
         .iter()
-        .all(|estimate| estimate.status == CardRewardValueStatusV1::CounterfactualProbe));
+        .all(|estimate| estimate.status == CardRewardValueStatusV1::PublicCombatHeuristic));
     assert!(combat_probe_estimates
         .iter()
         .all(|estimate| estimate.eligibility.usable_for_value_estimate));

@@ -52,7 +52,7 @@ pub(crate) fn estimate_combat_probe_values(
                 index: candidate.index,
                 card: candidate.card,
                 source: CardRewardValueSourceV1::CombatProbe,
-                status: CardRewardValueStatusV1::CounterfactualProbe,
+                status: CardRewardValueStatusV1::PublicCombatHeuristic,
                 survival_delta,
                 progress_delta,
                 deck_consistency_delta: -deck_size_drag,
@@ -61,7 +61,7 @@ pub(crate) fn estimate_combat_probe_values(
                     usable_for_value_estimate: true,
                     usable_for_autopilot_gate: false,
                     reasons: vec![
-                        CardRewardValueEligibilityReasonV1::CounterfactualProbeNotGateEligible,
+                        CardRewardValueEligibilityReasonV1::PublicCombatHeuristicNotGateEligible,
                     ],
                     bucket_key: None,
                     horizon: Some(CardRewardValueHorizonV1::NextCombatPublicProbe),
