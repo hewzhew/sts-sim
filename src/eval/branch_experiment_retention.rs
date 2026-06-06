@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
+use crate::ai::noncombat_strategy_v1::StrategyFormationSummaryV2;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -24,6 +25,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub max_hp: i32,
     pub gold: i32,
     pub deck_count: usize,
+    pub strategy_formation: Option<StrategyFormationSummaryV2>,
     pub choice_profiles: Vec<CardRewardSemanticProfileV1>,
 }
 
@@ -243,9 +245,9 @@ fn best_position_for_slot(
     slot: BranchRetentionSlotV1,
     selected: &BTreeSet<usize>,
 ) -> Option<usize> {
-    let covered_prefixes = selected
+    let covered_families = selected
         .iter()
-        .map(|position| choice_prefix_key(&candidates[*position]))
+        .map(|position| branch_family_key(&candidates[*position]))
         .collect::<BTreeSet<_>>();
     positions
         .iter()
@@ -257,7 +259,7 @@ fn best_position_for_slot(
                 .is_some_and(|decision| decision.slots.contains(&slot))
         })
         .max_by(|left, right| {
-            compare_prefix_then_slot_score(candidates, *left, *right, slot, &covered_prefixes)
+            compare_family_then_slot_score(candidates, *left, *right, slot, &covered_families)
         })
 }
 
@@ -266,21 +268,21 @@ fn best_fill_position(
     positions: &[usize],
     selected: &BTreeSet<usize>,
 ) -> Option<usize> {
-    let covered_prefixes = selected
+    let covered_families = selected
         .iter()
-        .map(|position| choice_prefix_key(&candidates[*position]))
+        .map(|position| branch_family_key(&candidates[*position]))
         .collect::<BTreeSet<_>>();
     positions
         .iter()
         .copied()
         .filter(|position| !selected.contains(position))
         .max_by(|left, right| {
-            let left_new_prefix =
-                !covered_prefixes.contains(&choice_prefix_key(&candidates[*left]));
-            let right_new_prefix =
-                !covered_prefixes.contains(&choice_prefix_key(&candidates[*right]));
-            left_new_prefix
-                .cmp(&right_new_prefix)
+            let left_new_family =
+                !covered_families.contains(&branch_family_key(&candidates[*left]));
+            let right_new_family =
+                !covered_families.contains(&branch_family_key(&candidates[*right]));
+            left_new_family
+                .cmp(&right_new_family)
                 .then_with(|| compare_rank(candidates, *left, *right))
         })
 }
@@ -316,17 +318,17 @@ fn compare_slot_score(
         .then_with(|| compare_rank(candidates, left, right))
 }
 
-fn compare_prefix_then_slot_score(
+fn compare_family_then_slot_score(
     candidates: &[BranchRetentionCandidateInputV1],
     left: usize,
     right: usize,
     slot: BranchRetentionSlotV1,
-    covered_prefixes: &BTreeSet<String>,
+    covered_families: &BTreeSet<String>,
 ) -> std::cmp::Ordering {
-    let left_new_prefix = !covered_prefixes.contains(&choice_prefix_key(&candidates[left]));
-    let right_new_prefix = !covered_prefixes.contains(&choice_prefix_key(&candidates[right]));
-    left_new_prefix
-        .cmp(&right_new_prefix)
+    let left_new_family = !covered_families.contains(&branch_family_key(&candidates[left]));
+    let right_new_family = !covered_families.contains(&branch_family_key(&candidates[right]));
+    left_new_family
+        .cmp(&right_new_family)
         .then_with(|| compare_slot_score(candidates, left, right, slot))
 }
 
@@ -338,27 +340,52 @@ fn choice_prefix_key(candidate: &BranchRetentionCandidateInputV1) -> String {
         .unwrap_or_else(|| "no_card_reward_choice".to_string())
 }
 
+fn branch_family_key(candidate: &BranchRetentionCandidateInputV1) -> String {
+    let formation = candidate
+        .strategy_formation
+        .as_ref()
+        .map(strategy_formation_key)
+        .unwrap_or_else(|| "formation_unknown".to_string());
+    format!("{}|{formation}", choice_prefix_key(candidate))
+}
+
+fn strategy_formation_key(formation: &StrategyFormationSummaryV2) -> String {
+    let needs = formation
+        .needs
+        .iter()
+        .map(|need| format!("{need:?}"))
+        .collect::<Vec<_>>()
+        .join("+");
+    let strengths = formation
+        .strengths
+        .iter()
+        .map(|strength| format!("{strength:?}"))
+        .collect::<Vec<_>>()
+        .join("+");
+    format!("{:?}|needs={needs}|strengths={strengths}", formation.stage)
+}
+
 fn cap_redundant_choice_prefixes(
     candidates: &[BranchRetentionCandidateInputV1],
     available_positions: &[usize],
     selected_positions: Vec<usize>,
     limit: usize,
 ) -> Vec<usize> {
-    let distinct_prefixes = available_positions
+    let distinct_families = available_positions
         .iter()
-        .map(|position| choice_prefix_key(&candidates[*position]))
+        .map(|position| branch_family_key(&candidates[*position]))
         .collect::<BTreeSet<_>>();
-    if distinct_prefixes.len() <= 1 {
+    if distinct_families.len() <= 1 {
         return selected_positions;
     }
 
-    let max_per_prefix = limit.div_ceil(distinct_prefixes.len()).max(1);
+    let max_per_family = limit.div_ceil(distinct_families.len()).max(1);
     let mut counts = BTreeMap::<String, usize>::new();
     let mut kept = Vec::new();
     for position in selected_positions {
-        let prefix = choice_prefix_key(&candidates[position]);
-        let count = counts.entry(prefix).or_default();
-        if *count >= max_per_prefix {
+        let family = branch_family_key(&candidates[position]);
+        let count = counts.entry(family).or_default();
+        if *count >= max_per_family {
             continue;
         }
         *count += 1;
@@ -501,6 +528,9 @@ const NON_TRANSITION_ROLES: &[CardRewardSemanticRoleV1] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::noncombat_strategy_v1::{
+        StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1, StrategyPackageIdV2,
+    };
 
     #[test]
     fn portfolio_retention_keeps_package_branch_over_second_frontload_branch() {
@@ -514,6 +544,7 @@ mod tests {
                 max_hp: 80,
                 gold: 120,
                 deck_count: 14,
+                strategy_formation: None,
                 choice_profiles: vec![
                     semantic_profile("Barricade", &[CardRewardSemanticRoleV1::BlockPayoff]),
                     semantic_profile("Entrench", &[CardRewardSemanticRoleV1::BlockPayoff]),
@@ -642,6 +673,57 @@ mod tests {
     }
 
     #[test]
+    fn portfolio_retention_preserves_distinct_formations_under_same_first_pick() {
+        let mut starter = retention_candidate(0, 10_900, &["Twin Strike", "Iron Wave"]);
+        starter.strategy_formation = Some(formation(
+            StrategyDeckFormationStageV1::StarterShell,
+            &[StrategyDeckFormationNeedV1::Frontload],
+            &[],
+        ));
+        let mut duplicate_starter =
+            retention_candidate(1, 10_890, &["Twin Strike", "Pommel Strike"]);
+        duplicate_starter.strategy_formation = starter.strategy_formation.clone();
+        let mut block_plan = retention_candidate(2, 10_760, &["Twin Strike", "Body Slam"]);
+        block_plan.strategy_formation = Some(formation(
+            StrategyDeckFormationStageV1::PlanSeeded,
+            &[StrategyDeckFormationNeedV1::DrawEnergy],
+            &[StrategyPackageIdV2::BlockEngine],
+        ));
+        let mut strength_plan = retention_candidate(3, 10_740, &["Twin Strike", "Heavy Blade"]);
+        strength_plan.strategy_formation = Some(formation(
+            StrategyDeckFormationStageV1::PlanSeeded,
+            &[StrategyDeckFormationNeedV1::Block],
+            &[StrategyPackageIdV2::StrengthScaling],
+        ));
+        let mut other_first_pick = retention_candidate(4, 10_700, &["Shockwave", "Cleave"]);
+        other_first_pick.strategy_formation = Some(formation(
+            StrategyDeckFormationStageV1::StarterShell,
+            &[StrategyDeckFormationNeedV1::Frontload],
+            &[],
+        ));
+
+        let selection = select_branch_retention_portfolio_v1(
+            &[
+                starter,
+                duplicate_starter,
+                block_plan,
+                strength_plan,
+                other_first_pick,
+            ],
+            BranchRetentionConfigV1 {
+                max_total: 4,
+                max_per_frontier: Some(4),
+            },
+        );
+
+        assert!(selection.keep_indices.contains(&0));
+        assert!(!selection.keep_indices.contains(&1));
+        assert!(selection.keep_indices.contains(&2));
+        assert!(selection.keep_indices.contains(&3));
+        assert!(selection.keep_indices.contains(&4));
+    }
+
+    #[test]
     fn retention_slots_come_from_semantic_profiles_not_card_names() {
         let candidate = BranchRetentionCandidateInputV1 {
             index: 0,
@@ -651,6 +733,7 @@ mod tests {
             max_hp: 80,
             gold: 120,
             deck_count: 12,
+            strategy_formation: None,
             choice_profiles: vec![semantic_profile(
                 "Unfamiliar Card Name",
                 &[CardRewardSemanticRoleV1::BlockPayoff],
@@ -679,6 +762,7 @@ mod tests {
             max_hp: 80,
             gold: 120,
             deck_count: 14,
+            strategy_formation: None,
             choice_profiles: choice_labels
                 .iter()
                 .map(|label| semantic_profile(label, &[CardRewardSemanticRoleV1::FrontloadDamage]))
@@ -696,6 +780,18 @@ mod tests {
             roles: roles.to_vec(),
             dependencies: Vec::new(),
             unsupported_mechanics: Vec::new(),
+        }
+    }
+
+    fn formation(
+        stage: StrategyDeckFormationStageV1,
+        needs: &[StrategyDeckFormationNeedV1],
+        strengths: &[StrategyPackageIdV2],
+    ) -> StrategyFormationSummaryV2 {
+        StrategyFormationSummaryV2 {
+            stage,
+            needs: needs.to_vec(),
+            strengths: strengths.to_vec(),
         }
     }
 }

@@ -4,6 +4,10 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+use crate::ai::noncombat_strategy_v1::{
+    build_run_strategy_snapshot_from_run_state_v2, StrategyDeckFormationNeedV1,
+    StrategyDeckFormationStageV1, StrategyFormationSummaryV2, StrategyPackageIdV2,
+};
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment_retention::{
@@ -20,7 +24,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 2;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -127,6 +131,9 @@ pub struct BranchExperimentRunSummaryV1 {
     pub deck_count: usize,
     pub relic_count: usize,
     pub potion_count: usize,
+    pub formation_stage: StrategyDeckFormationStageV1,
+    pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
+    pub formation_strengths: Vec<StrategyPackageIdV2>,
     pub boundary_title: String,
 }
 
@@ -434,6 +441,7 @@ fn apply_branch_retention(
             max_hp: branch.session.run_state.max_hp,
             gold: branch.session.run_state.gold,
             deck_count: branch.session.run_state.master_deck.len(),
+            strategy_formation: Some(strategy_formation_summary(&branch.session)),
             choice_profiles: branch
                 .choices
                 .iter()
@@ -581,6 +589,7 @@ fn branch_rank_key(branch: &BranchWork) -> i32 {
 }
 
 fn run_summary(session: &RunControlSession) -> BranchExperimentRunSummaryV1 {
+    let formation = strategy_formation_summary(session);
     BranchExperimentRunSummaryV1 {
         act: session.run_state.act_num,
         floor: session.run_state.floor_num,
@@ -595,8 +604,15 @@ fn run_summary(session: &RunControlSession) -> BranchExperimentRunSummaryV1 {
             .iter()
             .filter(|potion| potion.is_some())
             .count(),
+        formation_stage: formation.stage,
+        formation_needs: formation.needs,
+        formation_strengths: formation.strengths,
         boundary_title: current_boundary_title(session),
     }
+}
+
+fn strategy_formation_summary(session: &RunControlSession) -> StrategyFormationSummaryV2 {
+    build_run_strategy_snapshot_from_run_state_v2(&session.run_state).formation_summary()
 }
 
 fn branch_frontier(session: &RunControlSession) -> BranchExperimentFrontierV1 {
@@ -811,6 +827,9 @@ fn frontier_groups(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::noncombat_strategy_v1::{
+        StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1,
+    };
     use crate::content::cards::CardId;
     use crate::content::relics::RelicState;
     use crate::state::rewards::RewardState;
@@ -940,6 +959,33 @@ mod tests {
             report.frontier_groups[0].lineage_flags,
             lineage.sequence_breakers_present
         );
+    }
+
+    #[test]
+    fn branch_report_exposes_strategy_formation_summary_used_for_retention() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut reward = RewardState::new();
+        reward.pending_card_choice = Some(vec![RewardCard::new(CardId::TwinStrike, 0)]);
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let report = run_branch_experiment_from_session(
+            session,
+            &BranchExperimentConfigV1 {
+                max_depth: 1,
+                max_branches: 2,
+                auto_max_operations: 0,
+                ..BranchExperimentConfigV1::default()
+            },
+        );
+
+        let summary = &report.branches[0].summary;
+        assert_eq!(
+            summary.formation_stage,
+            StrategyDeckFormationStageV1::StarterShell
+        );
+        assert!(summary
+            .formation_needs
+            .contains(&StrategyDeckFormationNeedV1::Frontload));
     }
 
     #[test]

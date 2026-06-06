@@ -118,6 +118,13 @@ pub struct StrategyDeckFormationV1 {
     pub notes: Vec<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct StrategyFormationSummaryV2 {
+    pub stage: StrategyDeckFormationStageV1,
+    pub needs: Vec<StrategyDeckFormationNeedV1>,
+    pub strengths: Vec<StrategyPackageIdV2>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyRoutePackageIdV1 {
     CombatPatchWindow,
@@ -329,5 +336,19 @@ impl RunStrategySnapshotV2 {
             .strengths
             .iter()
             .any(|strength| StrategyPackageIdV2::from_plan_v1(*strength) == id)
+    }
+
+    pub fn formation_summary(&self) -> StrategyFormationSummaryV2 {
+        StrategyFormationSummaryV2 {
+            stage: self.v1.formation.stage,
+            needs: self.v1.formation.needs.clone(),
+            strengths: self
+                .v1
+                .formation
+                .strengths
+                .iter()
+                .map(|strength| StrategyPackageIdV2::from_plan_v1(*strength))
+                .collect(),
+        }
     }
 }

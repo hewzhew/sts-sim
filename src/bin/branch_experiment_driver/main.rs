@@ -225,8 +225,9 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
         .unwrap_or_else(|| "-".to_string());
     let status = branch_status_suffix(branch.status);
     let retention = render_retention_slots(&branch.retention.slots);
+    let formation = render_formation_summary(branch);
     format!(
-        "  A{}F{} HP {}/{} gold {} | {}{} | keep=[{}] | choices: {} | next_reward=[{}]",
+        "  A{}F{} HP {}/{} gold {} | {}{} | {} | keep=[{}] | choices: {} | next_reward=[{}]",
         branch.summary.act,
         branch.summary.floor,
         branch.summary.hp,
@@ -234,9 +235,39 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
         branch.summary.gold,
         branch.summary.boundary_title,
         status,
+        formation,
         retention,
         choices,
         next_reward
+    )
+}
+
+fn render_formation_summary(branch: &BranchExperimentBranchReportV1) -> String {
+    let strengths = branch
+        .summary
+        .formation_strengths
+        .iter()
+        .map(|strength| format!("{strength:?}"))
+        .collect::<Vec<_>>();
+    let needs = branch
+        .summary
+        .formation_needs
+        .iter()
+        .map(|need| format!("{need:?}"))
+        .collect::<Vec<_>>();
+    let strengths = if strengths.is_empty() {
+        "-".to_string()
+    } else {
+        strengths.join("+")
+    };
+    let needs = if needs.is_empty() {
+        "-".to_string()
+    } else {
+        needs.join("+")
+    };
+    format!(
+        "formation={:?} strengths={} needs={}",
+        branch.summary.formation_stage, strengths, needs
     )
 }
 
@@ -358,7 +389,7 @@ mod tests {
     fn compact_report_is_human_sized() {
         let report = sts_simulator::eval::branch_experiment::BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
-            schema_version: 2,
+            schema_version: 3,
             label_role: "diagnostic_not_teacher_label".to_string(),
             policy_quality_claim: false,
             seed: 1,
