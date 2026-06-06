@@ -21,7 +21,7 @@ pub use policy::{
 };
 pub use replay::{
     replay_card_reward_decision_v1, replay_card_reward_decision_with_estimator_inputs_v1,
-    PublicRewardDecisionPacketV1,
+    CardRewardDecisionReplayV1, PublicRewardDecisionPacketV1,
 };
 pub(crate) use threat_response::candidate_response_threat_tags_v1;
 pub use types::{

@@ -382,6 +382,7 @@ mod tests {
             card_id: Some("TwinStrike".to_string()),
             original_value_sources: Vec::new(),
             original_value_statuses: Vec::new(),
+            policy_value_summary: Vec::new(),
             calibration_estimate: Some(
                 crate::eval::card_reward_value_loop::CardRewardCalibrationReplayEstimateV1 {
                     source: "OutcomeCalibration".to_string(),

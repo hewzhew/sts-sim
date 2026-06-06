@@ -14,6 +14,7 @@ use sts_simulator::ai::noncombat_strategy_v1::{
     StrategyCandidatePlanDeltaV1, StrategyPlanEffectV1, StrategyPlanSupportV1,
 };
 use sts_simulator::content::cards::CardId;
+use sts_simulator::content::monsters::factory::EncounterId;
 use sts_simulator::eval::card_reward_value_loop::{
     build_card_reward_runtime_estimator_inputs_v1, calibrate_card_reward_outcomes_v1,
     calibrate_card_reward_route_risk_v1, calibrate_card_reward_strategy_package_v1,
@@ -469,6 +470,27 @@ fn replay_calibration_can_include_strategy_package_runtime_inputs() {
 }
 
 #[test]
+fn replay_calibration_candidates_include_policy_value_summary() {
+    let example = block_engine_value_summary_example();
+
+    let replay =
+        replay_card_reward_records_with_runtime_calibrations_v1(&[example], None, None, None);
+
+    let body_slam = replay.examples[0]
+        .candidate_replays
+        .iter()
+        .find(|candidate| candidate.card_id.as_deref() == Some("BodySlam"))
+        .expect("Body Slam candidate should be replayed");
+    assert!(body_slam
+        .policy_value_summary
+        .contains(&"selected_value_source=StrategyPackage".to_string()));
+    assert!(body_slam
+        .policy_value_summary
+        .iter()
+        .any(|line| line == "component=strategy_package_completion_block_engine"));
+}
+
+#[test]
 fn replay_calibration_can_include_counterfactual_probe_runtime_inputs() {
     let example = strategy_package_example(CardId::SearingBlow, 7);
     let context = example
@@ -851,6 +873,53 @@ fn selected_strategy_package_record_with_packet(
     (record, packet)
 }
 
+fn block_engine_value_summary_example(
+) -> sts_simulator::eval::card_reward_value_loop::CardRewardValueLoopExampleV1 {
+    let (record, packet) = selected_block_engine_record_with_packet();
+    let outcome = attach_noncombat_outcome_v1(
+        &record,
+        NonCombatOutcomeWindowV1::AfterOneFloor,
+        outcome_snapshot(1, 80, 0),
+        outcome_snapshot(2, 73, 1),
+    )
+    .expect("selected card reward record should accept outcome");
+    let mut trace = trace_with_card_reward_record_and_packet(record, Some(packet));
+    trace.noncombat_outcome_attachments.push(outcome);
+    extract_card_reward_value_loop_examples_v1(&trace)
+        .expect("trace should extract")
+        .into_iter()
+        .next()
+        .expect("one card reward example should be extracted")
+}
+
+fn selected_block_engine_record_with_packet(
+) -> (NonCombatDecisionRecordV1, PublicRewardDecisionPacketV1) {
+    let mut run = RunState::new(521, 0, false, "Ironclad");
+    run.act_num = 3;
+    run.boss_key = Some(EncounterId::TimeEater);
+    run.add_card_to_deck(CardId::Barricade);
+    run.add_card_to_deck(CardId::Entrench);
+    run.add_card_to_deck(CardId::FlameBarrier);
+    let mut context = build_card_reward_decision_context_v1(
+        &run,
+        vec![
+            RewardCard::new(CardId::BodySlam, 0),
+            RewardCard::new(CardId::HeavyBlade, 0),
+        ],
+        None,
+    );
+    context.route = Some(route_with_combat_pressure());
+    let packet = PublicRewardDecisionPacketV1::from_context(&context);
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let selected_candidate_id = "card_reward:0:BodySlam".to_string();
+    let mut record = decision.to_noncombat_decision_record_v1();
+    record.selection.status = PolicySelectionStatusV1::Selected;
+    record.selection.selected_candidate_id = Some(selected_candidate_id);
+    record.selection.reason = "test selected block engine card reward".to_string();
+    record.selection.confidence = 1.0;
+    (record, packet)
+}
+
 fn route_with_upgrade_budget() -> CardRewardRouteEvidenceV1 {
     CardRewardRouteEvidenceV1 {
         route_policy: "test_route_evidence".to_string(),
@@ -871,6 +940,30 @@ fn route_with_upgrade_budget() -> CardRewardRouteEvidenceV1 {
         need_heal: 0.1,
         can_take_elite: 0.5,
         avoid_damage: 0.3,
+        warnings: Vec::new(),
+    }
+}
+
+fn route_with_combat_pressure() -> CardRewardRouteEvidenceV1 {
+    CardRewardRouteEvidenceV1 {
+        route_policy: "test_route_evidence".to_string(),
+        selected_route: Some(CardRewardSelectedRouteV1 {
+            next_x: 3,
+            next_y: 1,
+            min_fires: 1,
+            max_fires: 2,
+            first_fire_floor: Some(6),
+            min_elites: 0,
+            max_elites: 1,
+            min_early_pressure: 1,
+            max_early_pressure: 3,
+        }),
+        candidate_count: 2,
+        need_card_rewards: 1.0,
+        need_upgrade: 0.5,
+        need_heal: 0.1,
+        can_take_elite: 0.6,
+        avoid_damage: 0.4,
         warnings: Vec::new(),
     }
 }

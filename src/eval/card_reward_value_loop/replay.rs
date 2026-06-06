@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -7,7 +9,8 @@ use super::{
     CardRewardStrategyPackageCalibrationV1, CardRewardValueLoopExampleV1,
 };
 use crate::ai::card_reward_policy_v1::{
-    replay_card_reward_decision_with_estimator_inputs_v1, CardRewardPolicyConfigV1,
+    replay_card_reward_decision_with_estimator_inputs_v1, CardRewardDecisionReplayV1,
+    CardRewardPolicyConfigV1,
 };
 
 pub const CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME: &str = "CardRewardCalibrationReplayReportV1";
@@ -49,6 +52,8 @@ pub struct CardRewardCalibrationReplayCandidateV1 {
     pub card_id: Option<String>,
     pub original_value_sources: Vec<String>,
     pub original_value_statuses: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub policy_value_summary: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calibration_estimate: Option<CardRewardCalibrationReplayEstimateV1>,
 }
@@ -122,6 +127,19 @@ fn card_reward_calibration_replay_example(
     example: &CardRewardValueLoopExampleV1,
     sources: CardRewardRuntimeEstimatorSourcesV1<'_>,
 ) -> CardRewardCalibrationReplayExampleV1 {
+    let policy_replay = example.public_packet.as_ref().map(|packet| {
+        let inputs = build_card_reward_runtime_estimator_inputs_v1(&packet.context, sources);
+        replay_card_reward_decision_with_estimator_inputs_v1(
+            packet,
+            &CardRewardPolicyConfigV1::default(),
+            &inputs,
+            None,
+        )
+    });
+    let policy_value_summaries = policy_replay
+        .as_ref()
+        .map(policy_value_summaries_by_candidate_id)
+        .unwrap_or_default();
     let candidate_replays = example
         .source_record
         .candidates
@@ -145,6 +163,10 @@ fn card_reward_calibration_replay_example(
                     .iter()
                     .flat_map(|value| value_status_components(value))
                     .collect(),
+                policy_value_summary: policy_value_summaries
+                    .get(&candidate.candidate_id)
+                    .cloned()
+                    .unwrap_or_default(),
                 calibration_estimate: card_id.and_then(|card_id| {
                     sources
                         .calibrations
@@ -154,15 +176,6 @@ fn card_reward_calibration_replay_example(
             }
         })
         .collect::<Vec<_>>();
-    let policy_replay = example.public_packet.as_ref().map(|packet| {
-        let inputs = build_card_reward_runtime_estimator_inputs_v1(&packet.context, sources);
-        replay_card_reward_decision_with_estimator_inputs_v1(
-            packet,
-            &CardRewardPolicyConfigV1::default(),
-            &inputs,
-            None,
-        )
-    });
     let policy_value_sources = policy_replay
         .as_ref()
         .map(|replay| {
@@ -216,6 +229,21 @@ fn card_reward_calibration_replay_example(
         original_value_count: example.source_record.values.len(),
         candidate_replays,
     }
+}
+
+fn policy_value_summaries_by_candidate_id(
+    replay: &CardRewardDecisionReplayV1,
+) -> BTreeMap<String, Vec<String>> {
+    replay
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                format!("card_reward:{}:{}", candidate.index, candidate.card),
+                candidate.value_summary.clone(),
+            )
+        })
+        .collect()
 }
 
 fn replay_status_label(total_examples: usize, full_packet_count: usize) -> &'static str {
