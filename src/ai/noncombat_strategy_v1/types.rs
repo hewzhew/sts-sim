@@ -196,6 +196,15 @@ pub enum StrategyPackageIdV2 {
     RelicConstraints,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum StrategyPackageGapV2 {
+    Generator,
+    Payoff,
+    BlockRetention,
+    BlockPayoff,
+    BlockMultiplier,
+}
+
 impl StrategyPackageIdV2 {
     pub(crate) fn from_plan_v1(id: StrategyPlanIdV1) -> Self {
         match id {
@@ -227,6 +236,8 @@ pub struct StrategyPackageV2 {
     pub id: StrategyPackageIdV2,
     pub domain: StrategyPackageDomainV2,
     pub support: StrategyPlanSupportV1,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing_roles: Vec<StrategyPackageGapV2>,
     pub evidence: Vec<String>,
     pub blockers: Vec<String>,
     pub risks: Vec<String>,

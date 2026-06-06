@@ -6,8 +6,9 @@ use super::candidate::candidate_plan_delta_v1;
 use super::snapshot::build_run_strategy_snapshot_v1;
 use super::types::{
     StrategyCandidateFactsV1, StrategyDeckFactsV1, StrategyDeckFormationNeedV1,
-    StrategyDeckFormationStageV1, StrategyPlanEffectV1, StrategyPlanIdV1, StrategyPlanSupportV1,
-    StrategyRouteFutureV1, StrategyRoutePackageIdV1, StrategyThreatSourceV1, StrategyThreatTagV1,
+    StrategyDeckFormationStageV1, StrategyPackageGapV2, StrategyPlanEffectV1, StrategyPlanIdV1,
+    StrategyPlanSupportV1, StrategyRouteFutureV1, StrategyRoutePackageIdV1, StrategyThreatSourceV1,
+    StrategyThreatTagV1,
 };
 
 #[test]
@@ -733,6 +734,83 @@ fn status_package_candidate_delta_uses_generator_and_payoff_roles() {
     );
     assert_eq!(evolve.support, StrategyPlanSupportV1::Plausible);
     assert!(evolve.effects.contains(&StrategyPlanEffectV1::StatusPayoff));
+}
+
+#[test]
+fn strategy_package_v2_reports_block_engine_missing_roles() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 13,
+            attacks: 7,
+            skills: 5,
+            powers: 1,
+            starter_strikes: 4,
+            starter_defends: 3,
+            block_retention_sources: 1,
+            block_payoffs: 0,
+            block_multipliers: 0,
+            total_attack_damage: 48,
+            total_block: 32,
+            ..Default::default()
+        },
+        None,
+        None,
+    );
+
+    let block_engine = snapshot
+        .package(super::StrategyPackageIdV2::BlockEngine)
+        .expect("block engine package");
+
+    assert!(block_engine
+        .missing_roles
+        .contains(&StrategyPackageGapV2::BlockPayoff));
+    assert!(block_engine
+        .missing_roles
+        .contains(&StrategyPackageGapV2::BlockMultiplier));
+    assert!(!block_engine
+        .missing_roles
+        .contains(&StrategyPackageGapV2::BlockRetention));
+}
+
+#[test]
+fn strategy_package_v2_reports_exhaust_and_status_package_missing_roles() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 13,
+            attacks: 7,
+            skills: 5,
+            powers: 1,
+            starter_strikes: 4,
+            starter_defends: 3,
+            exhaust_generators: 1,
+            exhaust_payoffs: 0,
+            status_generators: 0,
+            status_payoffs: 1,
+            total_attack_damage: 48,
+            total_block: 25,
+            ..Default::default()
+        },
+        None,
+        None,
+    );
+
+    let exhaust = snapshot
+        .package(super::StrategyPackageIdV2::ExhaustEngine)
+        .expect("exhaust package");
+    let status = snapshot
+        .package(super::StrategyPackageIdV2::StatusPackage)
+        .expect("status package");
+
+    assert!(exhaust
+        .missing_roles
+        .contains(&StrategyPackageGapV2::Payoff));
+    assert!(!exhaust
+        .missing_roles
+        .contains(&StrategyPackageGapV2::Generator));
+    assert!(status
+        .missing_roles
+        .contains(&StrategyPackageGapV2::Generator));
+    assert!(!status.missing_roles.contains(&StrategyPackageGapV2::Payoff));
 }
 
 #[test]

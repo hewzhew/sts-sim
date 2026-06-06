@@ -2,9 +2,9 @@ use super::snapshot::build_run_strategy_snapshot_v1;
 use super::threat::empty_threat_profile_v1;
 use super::types::{
     DeckPlanHypothesisV1, RunStrategySnapshotV1, RunStrategySnapshotV2, StrategyDeckFactsV1,
-    StrategyPackageDomainV2, StrategyPackageIdV2, StrategyPackageV2, StrategyPlanSupportV1,
-    StrategyResourceFactsV2, StrategyRouteFutureV1, StrategyRoutePackageV1,
-    StrategyThreatProfileV1,
+    StrategyPackageDomainV2, StrategyPackageGapV2, StrategyPackageIdV2, StrategyPackageV2,
+    StrategyPlanIdV1, StrategyPlanSupportV1, StrategyResourceFactsV2, StrategyRouteFutureV1,
+    StrategyRoutePackageV1, StrategyThreatProfileV1,
 };
 
 pub fn build_run_strategy_snapshot_v2(
@@ -29,7 +29,11 @@ pub fn build_run_strategy_snapshot_v2_from_v1_with_threat(
     threats: StrategyThreatProfileV1,
 ) -> RunStrategySnapshotV2 {
     let mut packages = Vec::new();
-    packages.extend(v1.plans.iter().map(archetype_package));
+    packages.extend(
+        v1.plans
+            .iter()
+            .map(|plan| archetype_package(plan, &v1.deck)),
+    );
     packages.extend(v1.route_packages.iter().map(route_package));
     packages.extend(resource_packages(&resources));
 
@@ -41,11 +45,12 @@ pub fn build_run_strategy_snapshot_v2_from_v1_with_threat(
     }
 }
 
-fn archetype_package(plan: &DeckPlanHypothesisV1) -> StrategyPackageV2 {
+fn archetype_package(plan: &DeckPlanHypothesisV1, deck: &StrategyDeckFactsV1) -> StrategyPackageV2 {
     StrategyPackageV2 {
         id: StrategyPackageIdV2::from_plan_v1(plan.id),
         domain: StrategyPackageDomainV2::Archetype,
         support: plan.support,
+        missing_roles: archetype_missing_roles(plan.id, deck),
         evidence: plan.evidence.clone(),
         blockers: plan.blockers.clone(),
         risks: plan.opportunity_costs.clone(),
@@ -57,6 +62,7 @@ fn route_package(package: &StrategyRoutePackageV1) -> StrategyPackageV2 {
         id: StrategyPackageIdV2::from_route_package_v1(package.id),
         domain: StrategyPackageDomainV2::Route,
         support: package.support,
+        missing_roles: Vec::new(),
         evidence: package.evidence.clone(),
         blockers: Vec::new(),
         risks: package.risks.clone(),
@@ -91,6 +97,7 @@ fn hp_safety_package(resources: &StrategyResourceFactsV2) -> StrategyPackageV2 {
         id: StrategyPackageIdV2::HpSafety,
         domain: StrategyPackageDomainV2::Resource,
         support,
+        missing_roles: Vec::new(),
         evidence: vec![format!(
             "hp={}/{} ratio={:.2}",
             resources.current_hp, resources.max_hp, hp_ratio
@@ -123,6 +130,7 @@ fn gold_plan_package(resources: &StrategyResourceFactsV2) -> StrategyPackageV2 {
         id: StrategyPackageIdV2::GoldPlan,
         domain: StrategyPackageDomainV2::Resource,
         support,
+        missing_roles: Vec::new(),
         evidence: vec![
             format!("gold={}", resources.gold),
             format!("estimated purge cost={}", resources.estimated_purge_cost),
@@ -149,6 +157,7 @@ fn potion_capacity_package(resources: &StrategyResourceFactsV2) -> StrategyPacka
         id: StrategyPackageIdV2::PotionCapacity,
         domain: StrategyPackageDomainV2::Resource,
         support,
+        missing_roles: Vec::new(),
         evidence: vec![format!(
             "potions={}/{} empty_slots={}",
             resources.potion_count, resources.potion_slots, resources.empty_potion_slots
@@ -178,6 +187,7 @@ fn shop_remove_window_package(resources: &StrategyResourceFactsV2) -> StrategyPa
         id: StrategyPackageIdV2::ShopRemoveWindow,
         domain: StrategyPackageDomainV2::Resource,
         support,
+        missing_roles: Vec::new(),
         evidence: vec![
             format!("curses={}", resources.curses),
             format!("removable_curses={}", resources.removable_curses),
@@ -208,6 +218,7 @@ fn relic_constraints_package(resources: &StrategyResourceFactsV2) -> StrategyPac
         id: StrategyPackageIdV2::RelicConstraints,
         domain: StrategyPackageDomainV2::Resource,
         support,
+        missing_roles: Vec::new(),
         evidence: resources.relic_constraints.clone(),
         blockers: Vec::new(),
         risks: resources
@@ -216,6 +227,47 @@ fn relic_constraints_package(resources: &StrategyResourceFactsV2) -> StrategyPac
             .map(|constraint| format!("relic constraint active: {constraint}"))
             .collect(),
     }
+}
+
+fn archetype_missing_roles(
+    id: StrategyPlanIdV1,
+    deck: &StrategyDeckFactsV1,
+) -> Vec<StrategyPackageGapV2> {
+    match id {
+        StrategyPlanIdV1::BlockEngine => block_engine_missing_roles(deck),
+        StrategyPlanIdV1::ExhaustEngine => {
+            generator_payoff_missing_roles(deck.exhaust_generators, deck.exhaust_payoffs)
+        }
+        StrategyPlanIdV1::StatusPackage => {
+            generator_payoff_missing_roles(deck.status_generators, deck.status_payoffs)
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn generator_payoff_missing_roles(generators: u8, payoffs: u8) -> Vec<StrategyPackageGapV2> {
+    let mut roles = Vec::new();
+    if generators == 0 {
+        roles.push(StrategyPackageGapV2::Generator);
+    }
+    if payoffs == 0 {
+        roles.push(StrategyPackageGapV2::Payoff);
+    }
+    roles
+}
+
+fn block_engine_missing_roles(deck: &StrategyDeckFactsV1) -> Vec<StrategyPackageGapV2> {
+    let mut roles = Vec::new();
+    if deck.block_retention_sources == 0 {
+        roles.push(StrategyPackageGapV2::BlockRetention);
+    }
+    if deck.block_payoffs == 0 {
+        roles.push(StrategyPackageGapV2::BlockPayoff);
+    }
+    if deck.block_multipliers == 0 {
+        roles.push(StrategyPackageGapV2::BlockMultiplier);
+    }
+    roles
 }
 
 fn hp_ratio(resources: &StrategyResourceFactsV2) -> f32 {
