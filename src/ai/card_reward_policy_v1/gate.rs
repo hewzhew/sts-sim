@@ -126,9 +126,9 @@ fn evaluate_autopilot_gate(
 ) -> CardRewardAutopilotGateReportV1 {
     let candidate_coverage_complete = value_estimates.len() == context.candidates.len()
         && context.candidates.iter().all(|candidate| {
-            value_estimates
-                .iter()
-                .any(|estimate| estimate.index == candidate.index)
+            value_estimates.iter().any(|estimate| {
+                estimate.index == candidate.index && estimate_eligible_for_autopilot_gate(estimate)
+            })
         });
 
     let eligible_values = value_estimates

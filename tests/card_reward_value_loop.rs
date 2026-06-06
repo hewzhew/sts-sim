@@ -620,6 +620,46 @@ fn runtime_counterfactual_probe_estimates_can_drive_generic_value_gate() {
     assert!(decision.pick_certificate.is_some());
 }
 
+#[test]
+fn runtime_counterfactual_probe_gate_requires_probe_coverage_for_every_candidate() {
+    let run = RunState::new(521, 0, false, "Ironclad");
+    let mut context = build_card_reward_decision_context_v1(
+        &run,
+        vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::Cleave, 0),
+        ],
+        None,
+    );
+    context.route = Some(route_with_upgrade_budget());
+    let twin = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::TwinStrike)
+        .expect("Twin Strike candidate should exist");
+    let probes = vec![counterfactual_probe_estimate(twin.index, twin.card, true)];
+    let inputs = build_card_reward_runtime_estimator_inputs_v1(
+        &context,
+        CardRewardRuntimeEstimatorSourcesV1 {
+            calibrations: CardRewardRuntimeEstimatorCalibrationsV1::default(),
+            counterfactual_probe_estimates: &probes,
+        },
+    );
+
+    let decision = plan_card_reward_decision_with_estimator_inputs_v1(
+        &context,
+        &CardRewardPolicyConfigV1::default(),
+        &inputs,
+    );
+
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
+    assert!(!decision.autopilot_gate.candidate_coverage_complete);
+}
+
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {
     selected_card_reward_record_with_packet(card).0
 }
