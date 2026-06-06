@@ -379,8 +379,13 @@ impl SessionTraceRecorder {
         before_outcome.combats_completed = self.outcome_counters.combats_completed;
         before_outcome.elites_completed = self.outcome_counters.elites_completed;
         before_outcome.bosses_completed = self.outcome_counters.bosses_completed;
-        queue_selected_noncombat_outcomes(&mut self.pending_outcomes, annotations, before_outcome);
-        update_pending_outcome_observations(&mut self.pending_outcomes, action_result);
+        queue_selected_noncombat_outcomes(
+            &mut self.pending_outcomes,
+            annotations,
+            before_outcome,
+            Some(action_result),
+        );
+        update_pending_outcome_observations(&mut self.pending_outcomes, action_result, annotations);
         update_outcome_counters(
             &mut self.outcome_counters,
             action_result,
@@ -514,6 +519,7 @@ impl SessionTraceRecorder {
             &mut self.pending_outcomes,
             annotations,
             before_snapshot,
+            None,
         );
         let resolved = resolve_pending_outcomes(
             &mut self.pending_outcomes,

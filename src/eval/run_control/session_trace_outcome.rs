@@ -4,6 +4,7 @@ use crate::ai::noncombat_decision_v1::{
     NonCombatOutcomeSnapshotV1, NonCombatOutcomeWindowV1, NonCombatRunTerminalV1,
     PolicySelectionStatusV1,
 };
+use crate::content::cards::{java_id, CardId};
 use crate::state::core::{EngineState, RunResult};
 use crate::state::map::RoomType;
 
@@ -24,21 +25,25 @@ pub(super) struct SessionTracePendingOutcome {
     window: NonCombatOutcomeWindowV1,
     before: NonCombatOutcomeSnapshotV1,
     card_reward_observation: CardRewardOutcomeObservationV1,
+    selected_card_uuid: Option<u32>,
 }
 
 pub(super) fn queue_selected_noncombat_outcomes(
     pending_outcomes: &mut Vec<SessionTracePendingOutcome>,
     annotations: &[RunControlTraceAnnotationV1],
     before: NonCombatOutcomeSnapshotV1,
+    action_result: Option<&ActionResult>,
 ) -> bool {
     let mut queued = false;
     for record in selected_noncombat_records(annotations) {
+        let selected_card_uuid = selected_card_uuid_from_action_result(&record, action_result);
         for window in outcome_windows_for_record(&record) {
             pending_outcomes.push(SessionTracePendingOutcome {
                 record: record.clone(),
                 window,
                 before: before.clone(),
                 card_reward_observation: CardRewardOutcomeObservationV1::default(),
+                selected_card_uuid,
             });
         }
         queued = true;
@@ -97,6 +102,7 @@ pub(super) fn update_outcome_counters(
 pub(super) fn update_pending_outcome_observations(
     pending_outcomes: &mut [SessionTracePendingOutcome],
     action_result: &ActionResult,
+    annotations: &[RunControlTraceAnnotationV1],
 ) {
     if pending_outcomes.is_empty() {
         return;
@@ -120,6 +126,27 @@ pub(super) fn update_pending_outcome_observations(
                 }
             }
             _ => {}
+        }
+    }
+
+    for annotation in annotations {
+        let RunControlTraceAnnotationV1::CombatAutomationTrajectory { actions, .. } = annotation
+        else {
+            continue;
+        };
+        for pending in pending_outcomes.iter_mut() {
+            let played_count = actions
+                .iter()
+                .filter(|action| {
+                    selected_card_reward_matches_action_key(pending, &action.action_key)
+                })
+                .count() as u32;
+            if played_count > 0 {
+                increment_observation_count(
+                    &mut pending.card_reward_observation.picked_card_played_count,
+                    played_count,
+                );
+            }
         }
     }
 }
@@ -221,6 +248,23 @@ fn selected_noncombat_records(
         .collect()
 }
 
+fn selected_card_uuid_from_action_result(
+    record: &NonCombatDecisionRecordV1,
+    action_result: Option<&ActionResult>,
+) -> Option<u32> {
+    if record.site != DecisionSiteKindV1::CardReward {
+        return None;
+    }
+    let selected_card = selected_card_reward_card_id_from_record(record)?;
+    action_result?
+        .changes
+        .iter()
+        .find_map(|change| match change {
+            ActionResultChange::CardAdded { card } if card.id == selected_card => Some(card.uuid),
+            _ => None,
+        })
+}
+
 fn outcome_windows_for_record(record: &NonCombatDecisionRecordV1) -> Vec<NonCombatOutcomeWindowV1> {
     if record.site == DecisionSiteKindV1::CardReward {
         vec![
@@ -238,17 +282,41 @@ fn selected_card_reward_matches_card(
     pending: &SessionTracePendingOutcome,
     card: &crate::eval::run_control::transition_report::CardSnapshot,
 ) -> bool {
-    if pending.record.site != DecisionSiteKindV1::CardReward {
-        return false;
-    }
-    let Some(selected_candidate_id) = pending.record.selection.selected_candidate_id.as_deref()
-    else {
+    selected_card_reward_card_id(pending).is_some_and(|selected_card| selected_card == card.id)
+}
+
+fn selected_card_reward_matches_action_key(
+    pending: &SessionTracePendingOutcome,
+    action_key: &str,
+) -> bool {
+    let Some(selected_card) = selected_card_reward_card_id(pending) else {
         return false;
     };
-    selected_candidate_id
-        .rsplit(':')
-        .next()
-        .is_some_and(|card_id| card_id == format!("{:?}", card.id))
+    if !action_key.starts_with("combat/play_card/") {
+        return false;
+    }
+    if let Some(selected_card_uuid) = pending.selected_card_uuid {
+        return action_key.contains(&format!("#{selected_card_uuid}/target:"))
+            && action_key.contains(&format!("/card:{}+", java_id(selected_card)));
+    }
+    action_key.contains(&format!("/card:{}+", java_id(selected_card)))
+}
+
+fn selected_card_reward_card_id(pending: &SessionTracePendingOutcome) -> Option<CardId> {
+    selected_card_reward_card_id_from_record(&pending.record)
+}
+
+fn selected_card_reward_card_id_from_record(record: &NonCombatDecisionRecordV1) -> Option<CardId> {
+    if record.site != DecisionSiteKindV1::CardReward {
+        return None;
+    }
+    let selected_candidate_id = record.selection.selected_candidate_id.as_deref()?;
+    let card_id = selected_candidate_id.rsplit(':').next()?;
+    serde_json::from_str(&format!("\"{card_id}\"")).ok()
+}
+
+fn increment_observation_count(count: &mut Option<u32>, delta: u32) {
+    *count = Some(count.unwrap_or(0).saturating_add(delta));
 }
 
 fn outcome_window_reached(
@@ -349,6 +417,7 @@ mod tests {
                 card_reward_packet: None,
             }],
             before,
+            None,
         );
 
         update_pending_outcome_observations(
@@ -369,6 +438,7 @@ mod tests {
                     },
                 }],
             },
+            &[],
         );
         update_pending_outcome_observations(
             &mut pending_outcomes,
@@ -383,6 +453,7 @@ mod tests {
                     },
                 }],
             },
+            &[],
         );
 
         assert_eq!(
@@ -396,6 +467,179 @@ mod tests {
                 .card_reward_observation
                 .picked_card_removed_later,
             Some(true)
+        );
+    }
+
+    #[test]
+    fn pending_card_reward_outcome_counts_selected_card_played_by_combat_automation() {
+        let mut pending_outcomes = Vec::new();
+        let before = NonCombatOutcomeSnapshotV1 {
+            act: 1,
+            floor: 1,
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_size: 10,
+            relic_count: 1,
+            potion_count: 0,
+            combats_completed: 0,
+            elites_completed: 0,
+            bosses_completed: 0,
+            run_terminal: None,
+        };
+        queue_selected_noncombat_outcomes(
+            &mut pending_outcomes,
+            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record: selected_card_reward_record(CardId::TwinStrike),
+                card_reward_packet: None,
+            }],
+            before,
+            Some(&ActionResult {
+                chosen_label: "pick Twin Strike".to_string(),
+                status: RunApplyStatus::Running,
+                changes: vec![ActionResultChange::CardAdded {
+                    card: CardSnapshot {
+                        id: CardId::TwinStrike,
+                        uuid: 100,
+                        upgrades: 0,
+                    },
+                }],
+            }),
+        );
+
+        update_pending_outcome_observations(
+            &mut pending_outcomes,
+            &ActionResult {
+                chosen_label: "search-combat applied 3 actions".to_string(),
+                status: RunApplyStatus::Running,
+                changes: Vec::new(),
+            },
+            &[RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+                source: "test_search".to_string(),
+                action_count: 3,
+                actions: vec![
+                    super::super::trace_annotation::CombatAutomationActionV1 {
+                        step_index: 0,
+                        action_key:
+                            "combat/play_card/hand:1/card:Twin Strike+0#100/target:monster_slot:0"
+                                .to_string(),
+                        input: ClientInput::PlayCard {
+                            card_index: 1,
+                            target: Some(1),
+                        },
+                    },
+                    super::super::trace_annotation::CombatAutomationActionV1 {
+                        step_index: 1,
+                        action_key: "combat/end_turn".to_string(),
+                        input: ClientInput::EndTurn,
+                    },
+                    super::super::trace_annotation::CombatAutomationActionV1 {
+                        step_index: 2,
+                        action_key:
+                            "combat/play_card/hand:0/card:Twin Strike+1#100/target:monster_slot:0"
+                                .to_string(),
+                        input: ClientInput::PlayCard {
+                            card_index: 0,
+                            target: Some(1),
+                        },
+                    },
+                ],
+                label_role: "simulator_generated_not_teacher_label".to_string(),
+            }],
+        );
+
+        assert_eq!(
+            pending_outcomes[0]
+                .card_reward_observation
+                .picked_card_played_count,
+            Some(2)
+        );
+        assert_eq!(
+            pending_outcomes[0]
+                .card_reward_observation
+                .picked_card_drawn_count,
+            None
+        );
+    }
+
+    #[test]
+    fn pending_card_reward_outcome_uses_selected_card_uuid_when_known() {
+        let mut pending_outcomes = Vec::new();
+        let before = NonCombatOutcomeSnapshotV1 {
+            act: 1,
+            floor: 1,
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_size: 10,
+            relic_count: 1,
+            potion_count: 0,
+            combats_completed: 0,
+            elites_completed: 0,
+            bosses_completed: 0,
+            run_terminal: None,
+        };
+        queue_selected_noncombat_outcomes(
+            &mut pending_outcomes,
+            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record: selected_card_reward_record(CardId::TwinStrike),
+                card_reward_packet: None,
+            }],
+            before,
+            Some(&ActionResult {
+                chosen_label: "pick Twin Strike".to_string(),
+                status: RunApplyStatus::Running,
+                changes: vec![ActionResultChange::CardAdded {
+                    card: CardSnapshot {
+                        id: CardId::TwinStrike,
+                        uuid: 777,
+                        upgrades: 0,
+                    },
+                }],
+            }),
+        );
+
+        update_pending_outcome_observations(
+            &mut pending_outcomes,
+            &ActionResult {
+                chosen_label: "search-combat applied 2 actions".to_string(),
+                status: RunApplyStatus::Running,
+                changes: Vec::new(),
+            },
+            &[RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+                source: "test_search".to_string(),
+                action_count: 2,
+                actions: vec![
+                    super::super::trace_annotation::CombatAutomationActionV1 {
+                        step_index: 0,
+                        action_key:
+                            "combat/play_card/hand:1/card:Twin Strike+0#100/target:monster_slot:0"
+                                .to_string(),
+                        input: ClientInput::PlayCard {
+                            card_index: 1,
+                            target: Some(1),
+                        },
+                    },
+                    super::super::trace_annotation::CombatAutomationActionV1 {
+                        step_index: 1,
+                        action_key:
+                            "combat/play_card/hand:0/card:Twin Strike+0#777/target:monster_slot:0"
+                                .to_string(),
+                        input: ClientInput::PlayCard {
+                            card_index: 0,
+                            target: Some(1),
+                        },
+                    },
+                ],
+                label_role: "simulator_generated_not_teacher_label".to_string(),
+            }],
+        );
+
+        assert_eq!(
+            pending_outcomes[0]
+                .card_reward_observation
+                .picked_card_played_count,
+            Some(1)
         );
     }
 
@@ -424,6 +668,7 @@ mod tests {
                 card_reward_packet: None,
             }],
             before,
+            None,
         );
 
         let windows = pending_outcomes
@@ -461,6 +706,7 @@ mod tests {
                 card_reward_packet: None,
             }],
             before,
+            None,
         );
 
         let mut session = RunControlSession::new(RunControlConfig::default());
@@ -538,6 +784,7 @@ mod tests {
                 card_reward_packet: None,
             }],
             before,
+            None,
         );
 
         let mut session = RunControlSession::new(RunControlConfig::default());
@@ -597,6 +844,7 @@ mod tests {
                 card_reward_packet: None,
             }],
             before,
+            None,
         );
 
         let annotations = vec![RunControlTraceAnnotationV1::CombatAutomationTrajectory {

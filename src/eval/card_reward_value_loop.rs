@@ -559,6 +559,10 @@ mod tests {
                 selected_count: 4,
                 outcome_attached_count: 4,
                 mean_next_combat_hp_loss: Some(12.0),
+                picked_card_drawn_observation_count: 0,
+                mean_picked_card_drawn_count: None,
+                picked_card_played_observation_count: 0,
+                mean_picked_card_played_count: None,
             },
             card_id_buckets: vec![CardRewardOutcomeCalibrationBucketV1 {
                 bucket_key: "card_id:TwinStrike".to_string(),
@@ -570,6 +574,10 @@ mod tests {
                 hp_loss_bucket_counts: Vec::new(),
                 upgraded_count: 0,
                 removed_count: 0,
+                picked_card_drawn_observation_count: 0,
+                mean_picked_card_drawn_count: None,
+                picked_card_played_observation_count: 0,
+                mean_picked_card_played_count: None,
                 confidence: 0.8,
                 uncertainty: 0.2,
                 usable_for_value_estimate: true,
@@ -627,6 +635,48 @@ mod tests {
         );
         assert!(calibration.provenance.ruleset_version.is_some());
         assert!(!calibration.provenance.short_horizon_autopilot_gate_approved);
+    }
+
+    #[test]
+    fn generated_outcome_calibration_summarizes_card_usage_observations() {
+        let mut examples = vec![
+            test_card_reward_example(CardId::TwinStrike, 521, 8),
+            test_card_reward_example(CardId::TwinStrike, 522, 4),
+        ];
+        examples[0]
+            .outcome
+            .as_mut()
+            .and_then(|outcome| outcome.card_reward.as_mut())
+            .expect("test outcome should contain card reward")
+            .picked_card_played_count = Some(2);
+        examples[1]
+            .outcome
+            .as_mut()
+            .and_then(|outcome| outcome.card_reward.as_mut())
+            .expect("test outcome should contain card reward")
+            .picked_card_played_count = Some(0);
+        examples[1]
+            .outcome
+            .as_mut()
+            .and_then(|outcome| outcome.card_reward.as_mut())
+            .expect("test outcome should contain card reward")
+            .picked_card_drawn_count = Some(1);
+
+        let calibration = calibrate_card_reward_outcomes_v1(&examples);
+        let bucket = calibration
+            .card_id_buckets
+            .iter()
+            .find(|bucket| bucket.card_id == "TwinStrike")
+            .expect("TwinStrike bucket should be present");
+
+        assert_eq!(calibration.global.picked_card_played_observation_count, 2);
+        assert_eq!(calibration.global.mean_picked_card_played_count, Some(1.0));
+        assert_eq!(calibration.global.picked_card_drawn_observation_count, 1);
+        assert_eq!(calibration.global.mean_picked_card_drawn_count, Some(1.0));
+        assert_eq!(bucket.picked_card_played_observation_count, 2);
+        assert_eq!(bucket.mean_picked_card_played_count, Some(1.0));
+        assert_eq!(bucket.picked_card_drawn_observation_count, 1);
+        assert_eq!(bucket.mean_picked_card_drawn_count, Some(1.0));
     }
 
     #[test]

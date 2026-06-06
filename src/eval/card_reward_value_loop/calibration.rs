@@ -75,6 +75,14 @@ pub struct CardRewardOutcomeCalibrationGlobalV1 {
     pub selected_count: usize,
     pub outcome_attached_count: usize,
     pub mean_next_combat_hp_loss: Option<f32>,
+    #[serde(default)]
+    pub picked_card_drawn_observation_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_picked_card_drawn_count: Option<f32>,
+    #[serde(default)]
+    pub picked_card_played_observation_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_picked_card_played_count: Option<f32>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -89,6 +97,14 @@ pub struct CardRewardOutcomeCalibrationBucketV1 {
     pub hp_loss_bucket_counts: Vec<HistogramEntryV1>,
     pub upgraded_count: usize,
     pub removed_count: usize,
+    #[serde(default)]
+    pub picked_card_drawn_observation_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_picked_card_drawn_count: Option<f32>,
+    #[serde(default)]
+    pub picked_card_played_observation_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_picked_card_played_count: Option<f32>,
     pub confidence: f32,
     pub uncertainty: f32,
     pub usable_for_value_estimate: bool,
@@ -100,6 +116,8 @@ pub fn calibrate_card_reward_outcomes_v1(
 ) -> CardRewardOutcomeCalibrationV1 {
     let mut buckets = BTreeMap::<String, CardRewardOutcomeCalibrationAccumulatorV1>::new();
     let mut global_hp_losses = Vec::new();
+    let mut global_drawn_counts = Vec::new();
+    let mut global_played_counts = Vec::new();
     let mut global_selected_count = 0;
     let mut missing_outcome_examples = 0;
 
@@ -130,6 +148,19 @@ pub fn calibrate_card_reward_outcomes_v1(
         } else {
             accumulator.missing_outcome_count += 1;
             missing_outcome_examples += 1;
+        }
+
+        if let Some(drawn_count) =
+            card_reward.and_then(|card_reward| card_reward.picked_card_drawn_count)
+        {
+            accumulator.picked_card_drawn_counts.push(drawn_count);
+            global_drawn_counts.push(drawn_count);
+        }
+        if let Some(played_count) =
+            card_reward.and_then(|card_reward| card_reward.picked_card_played_count)
+        {
+            accumulator.picked_card_played_counts.push(played_count);
+            global_played_counts.push(played_count);
         }
 
         if card_reward
@@ -167,6 +198,10 @@ pub fn calibrate_card_reward_outcomes_v1(
             selected_count: global_selected_count,
             outcome_attached_count: usable_outcome_examples,
             mean_next_combat_hp_loss: mean_i32(&global_hp_losses),
+            picked_card_drawn_observation_count: global_drawn_counts.len(),
+            mean_picked_card_drawn_count: mean_u32(&global_drawn_counts),
+            picked_card_played_observation_count: global_played_counts.len(),
+            mean_picked_card_played_count: mean_u32(&global_played_counts),
         },
         card_id_buckets,
     }
@@ -332,6 +367,8 @@ struct CardRewardOutcomeCalibrationAccumulatorV1 {
     hp_loss_bucket_counts: BTreeMap<String, usize>,
     upgraded_count: usize,
     removed_count: usize,
+    picked_card_drawn_counts: Vec<u32>,
+    picked_card_played_counts: Vec<u32>,
 }
 
 impl CardRewardOutcomeCalibrationAccumulatorV1 {
@@ -349,6 +386,10 @@ impl CardRewardOutcomeCalibrationAccumulatorV1 {
             hp_loss_bucket_counts: histogram_entries(self.hp_loss_bucket_counts),
             upgraded_count: self.upgraded_count,
             removed_count: self.removed_count,
+            picked_card_drawn_observation_count: self.picked_card_drawn_counts.len(),
+            mean_picked_card_drawn_count: mean_u32(&self.picked_card_drawn_counts),
+            picked_card_played_observation_count: self.picked_card_played_counts.len(),
+            mean_picked_card_played_count: mean_u32(&self.picked_card_played_counts),
             confidence,
             uncertainty,
             usable_for_value_estimate: outcome_attached_count > 0,
@@ -374,6 +415,13 @@ fn mean_i32(values: &[i32]) -> Option<f32> {
         return None;
     }
     Some(values.iter().sum::<i32>() as f32 / values.len() as f32)
+}
+
+fn mean_u32(values: &[u32]) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    Some(values.iter().sum::<u32>() as f32 / values.len() as f32)
 }
 
 fn hp_loss_bucket_label(hp_loss: i32) -> &'static str {

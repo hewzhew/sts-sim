@@ -2451,6 +2451,10 @@ fn test_card_reward_calibration_for_twin_strike(
             selected_count: 4,
             outcome_attached_count: 4,
             mean_next_combat_hp_loss: Some(12.0),
+            picked_card_drawn_observation_count: 0,
+            mean_picked_card_drawn_count: None,
+            picked_card_played_observation_count: 0,
+            mean_picked_card_played_count: None,
         },
         card_id_buckets: vec![
             crate::eval::card_reward_value_loop::CardRewardOutcomeCalibrationBucketV1 {
@@ -2463,6 +2467,10 @@ fn test_card_reward_calibration_for_twin_strike(
                 hp_loss_bucket_counts: Vec::new(),
                 upgraded_count: 0,
                 removed_count: 0,
+                picked_card_drawn_observation_count: 0,
+                mean_picked_card_drawn_count: None,
+                picked_card_played_observation_count: 0,
+                mean_picked_card_played_count: None,
                 confidence: 0.8,
                 uncertainty: 0.15,
                 usable_for_value_estimate: true,
