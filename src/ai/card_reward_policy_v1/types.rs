@@ -234,6 +234,8 @@ pub enum CardRewardValueStatusV1 {
     UncalibratedPrior,
     CounterfactualProbe,
     OutcomeCalibrated,
+    RouteRiskEstimate,
+    RouteRiskCalibrated,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -246,7 +248,58 @@ pub struct CardRewardValueEstimateV1 {
     pub progress_delta: f32,
     pub deck_consistency_delta: f32,
     pub uncertainty: f32,
+    #[serde(default)]
+    pub eligibility: CardRewardValueEligibilityV1,
     pub components: Vec<CardRewardValueComponentV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardRewardValueEligibilityV1 {
+    pub usable_for_value_estimate: bool,
+    pub usable_for_autopilot_gate: bool,
+    pub reasons: Vec<CardRewardValueEligibilityReasonV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horizon: Option<CardRewardValueHorizonV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome_sample_count: Option<usize>,
+}
+
+impl Default for CardRewardValueEligibilityV1 {
+    fn default() -> Self {
+        Self {
+            usable_for_value_estimate: false,
+            usable_for_autopilot_gate: false,
+            reasons: vec![CardRewardValueEligibilityReasonV1::MissingEligibilityMetadata],
+            bucket_key: None,
+            horizon: None,
+            outcome_sample_count: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardRewardValueEligibilityReasonV1 {
+    MissingEligibilityMetadata,
+    UncalibratedPriorNeverGateEligible,
+    OutcomeCalibrationBucketNotGateEligible,
+    MissingDistinctSeedCount,
+    MissingRulesetVersion,
+    MissingDataRoleProvenance,
+    HiddenSimulatorStateUsed,
+    ShortHorizonMetricOnly,
+    RouteRiskEstimateNotPromoted,
+    RouteRiskCalibrationNotGateEligible,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardRewardValueHorizonV1 {
+    NextCombatHpLoss,
+    VisibleRouteRisk,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -268,6 +321,7 @@ pub struct CardRewardEstimatorCandidateArbitrationV1 {
     pub selected_status: Option<CardRewardValueStatusV1>,
     pub selected_for_gate: bool,
     pub autopilot_source_eligible: bool,
+    pub selected_estimate_gate_eligible: bool,
     pub rejected_reasons: Vec<CardRewardEvidenceGapV1>,
 }
 

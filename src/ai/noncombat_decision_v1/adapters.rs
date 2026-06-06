@@ -423,6 +423,8 @@ fn card_reward_value_estimate(estimate: &CardRewardValueEstimateV1) -> ValueEsti
             CardRewardValueStatusV1::UncalibratedPrior => 0.0,
             CardRewardValueStatusV1::CounterfactualProbe => 0.5,
             CardRewardValueStatusV1::OutcomeCalibrated => 0.75,
+            CardRewardValueStatusV1::RouteRiskEstimate => 0.35,
+            CardRewardValueStatusV1::RouteRiskCalibrated => 0.45,
         },
         components: card_reward_value_components(estimate),
         evidence_refs: vec![estimate.index],
@@ -452,8 +454,31 @@ fn card_reward_value_components(estimate: &CardRewardValueEstimateV1) -> Vec<Val
             CardRewardValueStatusV1::UncalibratedPrior => "value_status_uncalibrated_prior",
             CardRewardValueStatusV1::CounterfactualProbe => "value_status_counterfactual_probe",
             CardRewardValueStatusV1::OutcomeCalibrated => "value_status_outcome_calibrated",
+            CardRewardValueStatusV1::RouteRiskEstimate => "value_status_route_risk_estimate",
+            CardRewardValueStatusV1::RouteRiskCalibrated => "value_status_route_risk_calibrated",
         },
         1.0,
     ));
+    components.push(ValueComponentV1::new(
+        "value_usable_for_value_estimate",
+        if estimate.eligibility.usable_for_value_estimate {
+            1.0
+        } else {
+            0.0
+        },
+    ));
+    components.push(ValueComponentV1::new(
+        "value_usable_for_autopilot_gate",
+        if estimate.eligibility.usable_for_autopilot_gate {
+            1.0
+        } else {
+            0.0
+        },
+    ));
+    components.extend(
+        estimate.eligibility.reasons.iter().map(|reason| {
+            ValueComponentV1::new(format!("value_eligibility_reason_{reason:?}"), 1.0)
+        }),
+    );
     components
 }

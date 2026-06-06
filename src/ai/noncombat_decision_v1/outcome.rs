@@ -135,8 +135,14 @@ pub fn attach_noncombat_outcome_with_card_reward_observation_v1(
     })?;
 
     let metrics = outcome_metrics(&before, &after);
-    let card_reward =
-        card_reward_outcome(record, &before, &after, &metrics, card_reward_observation);
+    let card_reward = card_reward_outcome(
+        record,
+        window,
+        &before,
+        &after,
+        &metrics,
+        card_reward_observation,
+    );
     Ok(NonCombatOutcomeAttachmentV1 {
         schema_name: NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_NAME.to_string(),
         schema_version: NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_VERSION,
@@ -155,6 +161,7 @@ pub fn attach_noncombat_outcome_with_card_reward_observation_v1(
 
 fn card_reward_outcome(
     record: &NonCombatDecisionRecordV1,
+    window: NonCombatOutcomeWindowV1,
     before: &NonCombatOutcomeSnapshotV1,
     after: &NonCombatOutcomeSnapshotV1,
     metrics: &NonCombatOutcomeMetricsV1,
@@ -178,10 +185,14 @@ fn card_reward_outcome(
         selected_candidate_id,
         picked_card_label,
         floor_reached_after_decision: after.floor,
-        next_combat_hp_loss: (metrics.combats_completed_delta > 0)
+        next_combat_hp_loss: (matches!(window, NonCombatOutcomeWindowV1::AfterOneFloor)
+            && metrics.combats_completed_delta > 0)
             .then_some((before.current_hp - after.current_hp).max(0)),
-        hp_before_next_elite: None,
-        hp_after_next_elite: None,
+        hp_before_next_elite: matches!(window, NonCombatOutcomeWindowV1::BeforeNextElite)
+            .then_some(after.current_hp),
+        hp_after_next_elite: (matches!(window, NonCombatOutcomeWindowV1::AfterNextElite)
+            && metrics.elites_completed_delta > 0)
+            .then_some(after.current_hp),
         hp_before_boss: None,
         picked_card_drawn_count: observation.picked_card_drawn_count,
         picked_card_played_count: observation.picked_card_played_count,

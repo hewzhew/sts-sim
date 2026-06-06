@@ -54,7 +54,7 @@ fn route_trace_exports_hidden_free_noncombat_record() {
 }
 
 #[test]
-fn card_reward_stop_exports_hidden_free_uncalibrated_value_inputs() {
+fn card_reward_stop_exports_hidden_free_non_gate_value_inputs() {
     let run = RunState::new(521, 0, false, "Ironclad");
     let route_trace = plan_route_decision_v1(&run, &EngineState::MapNavigation, Default::default());
     let context = build_card_reward_decision_context_v1(
@@ -76,12 +76,16 @@ fn card_reward_stop_exports_hidden_free_uncalibrated_value_inputs() {
     assert!(!record.information_boundary.hidden_simulator_state_used);
     assert_eq!(record.candidates.len(), decision.candidates.len());
     assert_eq!(record.values.len(), decision.candidates.len());
-    assert!(record.values.iter().all(|value| value.confidence == 0.0));
     assert!(record.values.iter().all(|value| {
         value
             .components
             .iter()
-            .any(|component| component.name == "value_status_uncalibrated_prior")
+            .any(|component| component.name == "value_status_route_risk_estimate")
+    }));
+    assert!(record.values.iter().all(|value| {
+        value.components.iter().any(|component| {
+            component.name == "value_usable_for_autopilot_gate" && component.value == 0.0
+        })
     }));
     assert!(matches!(
         decision.action,

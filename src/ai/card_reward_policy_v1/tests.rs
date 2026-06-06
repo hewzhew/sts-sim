@@ -196,10 +196,25 @@ fn searing_blow_exports_upgrade_commitment_but_uncalibrated_gate_stops() {
             .support(StrategyPackageIdV2::UpgradeCommitment),
         StrategyPlanSupportV1::Strong
     );
-    assert!(decision
-        .value_estimates
+    assert_eq!(
+        estimates_for_source(
+            &decision.value_estimates,
+            CardRewardValueSourceV1::UncalibratedImpactPrior
+        )
+        .len(),
+        1
+    );
+    let route_risk = estimates_for_source(
+        &decision.value_estimates,
+        CardRewardValueSourceV1::RouteRisk,
+    );
+    assert_eq!(route_risk.len(), 1);
+    assert!(route_risk
         .iter()
-        .all(|estimate| estimate.status == CardRewardValueStatusV1::UncalibratedPrior));
+        .all(|estimate| estimate.status == CardRewardValueStatusV1::RouteRiskEstimate));
+    assert!(route_risk
+        .iter()
+        .all(|estimate| !estimate.eligibility.usable_for_autopilot_gate));
     assert!(!decision.autopilot_gate.value_source_eligible);
 }
 
@@ -428,25 +443,35 @@ fn decision_builds_prior_value_estimates_for_every_candidate() {
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
-    assert_eq!(decision.value_estimates.len(), 2);
-    assert!(decision
-        .value_estimates
-        .iter()
-        .all(|estimate| estimate.source == CardRewardValueSourceV1::UncalibratedImpactPrior));
-    assert!(decision
-        .value_estimates
+    let priors = estimates_for_source(
+        &decision.value_estimates,
+        CardRewardValueSourceV1::UncalibratedImpactPrior,
+    );
+    assert_eq!(priors.len(), context.candidates.len());
+    assert!(priors
         .iter()
         .all(|estimate| estimate.status == CardRewardValueStatusV1::UncalibratedPrior));
-    assert!(decision.value_estimates.iter().all(|estimate| {
+    assert!(priors.iter().all(|estimate| {
         estimate.survival_delta == 0.0
             && estimate.progress_delta == 0.0
             && estimate.deck_consistency_delta == 0.0
             && estimate.uncertainty == 1.0
     }));
+    let route_risk = estimates_for_source(
+        &decision.value_estimates,
+        CardRewardValueSourceV1::RouteRisk,
+    );
+    assert_eq!(route_risk.len(), context.candidates.len());
+    assert!(route_risk
+        .iter()
+        .all(|estimate| estimate.status == CardRewardValueStatusV1::RouteRiskEstimate));
+    assert!(route_risk
+        .iter()
+        .all(|estimate| !estimate.eligibility.usable_for_autopilot_gate));
 }
 
 #[test]
-fn uncalibrated_prior_values_are_consumed_by_gate_but_cannot_certify_pick() {
+fn route_risk_values_are_consumed_by_gate_but_cannot_certify_pick_without_promotion() {
     let mut context = context_for_cards(vec![RewardCard::new(CardId::Shockwave, 0)]);
     context.route = Some(route_with_combat_pressure());
 
@@ -459,11 +484,16 @@ fn uncalibrated_prior_values_are_consumed_by_gate_but_cannot_certify_pick() {
     assert!(decision.pick_certificate.is_none());
     assert!(decision
         .evidence_gaps
-        .contains(&CardRewardEvidenceGapV1::UncalibratedValueEstimate));
+        .contains(&CardRewardEvidenceGapV1::IneligibleValueSource));
+    assert_eq!(
+        decision.value_arbitration.gate_value_estimates[0].source,
+        CardRewardValueSourceV1::RouteRisk
+    );
+    assert!(!decision.value_arbitration.candidate_reports[0].selected_estimate_gate_eligible);
 }
 
 #[test]
-fn uncalibrated_prior_blocks_even_when_old_rule_would_have_matched() {
+fn route_risk_blocks_even_when_old_rule_would_have_matched_without_promotion() {
     let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
     run_state.floor_num = 1;
     let context = context_for_run_with_route(
@@ -484,17 +514,22 @@ fn uncalibrated_prior_blocks_even_when_old_rule_would_have_matched() {
     ));
     assert!(decision.pick_certificate.is_none());
     assert_eq!(
-        decision.value_estimates[0].source,
-        CardRewardValueSourceV1::UncalibratedImpactPrior
+        estimates_for_source(
+            &decision.value_estimates,
+            CardRewardValueSourceV1::UncalibratedImpactPrior
+        )
+        .len(),
+        context.candidates.len()
     );
-    assert_eq!(
-        decision.value_estimates[0].status,
-        CardRewardValueStatusV1::UncalibratedPrior
-    );
+    assert!(decision
+        .value_arbitration
+        .gate_value_estimates
+        .iter()
+        .all(|estimate| estimate.source == CardRewardValueSourceV1::RouteRisk));
     assert!(decision
         .autopilot_gate
         .blocked_reasons
-        .contains(&CardRewardEvidenceGapV1::UncalibratedValueEstimate));
+        .contains(&CardRewardEvidenceGapV1::IneligibleValueSource));
     assert!(!decision.autopilot_gate.value_source_eligible);
 }
 
@@ -521,6 +556,7 @@ fn outcome_calibration_estimates_are_not_autopilot_eligible_without_arbitration_
             progress_delta: 0.0,
             deck_consistency_delta: 0.0,
             uncertainty: 0.1,
+            eligibility: Default::default(),
             components: Vec::new(),
         })
         .collect::<Vec<_>>();
@@ -538,6 +574,123 @@ fn outcome_calibration_estimates_are_not_autopilot_eligible_without_arbitration_
         .blocked_reasons
         .contains(&CardRewardEvidenceGapV1::IneligibleValueSource));
     assert!(gaps.contains(&CardRewardEvidenceGapV1::IneligibleValueSource));
+}
+
+#[test]
+fn outcome_calibration_gate_eligibility_is_estimate_level_not_source_level() {
+    let mut context = context_for_cards(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    context.route = Some(route_with_combat_pressure());
+    let mut value_estimates = vec![
+        test_value_estimate(
+            0,
+            CardId::TwinStrike,
+            CardRewardValueSourceV1::OutcomeCalibration,
+            CardRewardValueStatusV1::OutcomeCalibrated,
+            2.0,
+            0.1,
+        ),
+        test_value_estimate(
+            1,
+            CardId::Cleave,
+            CardRewardValueSourceV1::OutcomeCalibration,
+            CardRewardValueStatusV1::OutcomeCalibrated,
+            0.5,
+            0.1,
+        ),
+    ];
+    value_estimates[0].eligibility.usable_for_autopilot_gate = true;
+    value_estimates[0].eligibility.reasons.clear();
+    value_estimates[1].eligibility.usable_for_autopilot_gate = true;
+    value_estimates[1].eligibility.reasons.clear();
+
+    let (action, gate_report, gaps, certificate) = super::gate::pick_gate(
+        &context,
+        &value_estimates,
+        &CardRewardPolicyConfigV1::default(),
+    );
+
+    assert!(gate_report.value_source_eligible);
+    assert!(!gate_report
+        .blocked_reasons
+        .contains(&CardRewardEvidenceGapV1::IneligibleValueSource));
+    assert!(gaps.is_empty());
+    assert!(matches!(
+        action,
+        CardRewardPolicyActionV1::Pick {
+            card: CardId::TwinStrike,
+            ..
+        }
+    ));
+    assert!(certificate.is_some());
+}
+
+#[test]
+fn arbitration_reports_estimate_level_gate_eligibility_separately_from_source_allowlist() {
+    let mut context = context_for_cards(vec![RewardCard::new(CardId::TwinStrike, 0)]);
+    context.route = Some(route_with_combat_pressure());
+    let mut value_estimates = vec![test_value_estimate(
+        0,
+        CardId::TwinStrike,
+        CardRewardValueSourceV1::OutcomeCalibration,
+        CardRewardValueStatusV1::OutcomeCalibrated,
+        2.0,
+        0.1,
+    )];
+    value_estimates[0].eligibility.usable_for_autopilot_gate = true;
+    value_estimates[0].eligibility.reasons.clear();
+
+    let arbitration = arbitrate_card_reward_value_estimates_v1(&context, &value_estimates);
+    let report = arbitration
+        .candidate_reports
+        .first()
+        .expect("candidate report should exist");
+
+    assert!(!report.autopilot_source_eligible);
+    assert!(report.selected_estimate_gate_eligible);
+}
+
+#[test]
+fn arbitration_prefers_gate_eligible_estimate_over_higher_rank_non_gate_estimate_for_gate() {
+    let mut context = context_for_cards(vec![RewardCard::new(CardId::TwinStrike, 0)]);
+    context.route = Some(route_with_combat_pressure());
+    let route_risk = test_value_estimate(
+        0,
+        CardId::TwinStrike,
+        CardRewardValueSourceV1::RouteRisk,
+        CardRewardValueStatusV1::CounterfactualProbe,
+        10.0,
+        0.2,
+    );
+    let mut outcome_calibration = test_value_estimate(
+        0,
+        CardId::TwinStrike,
+        CardRewardValueSourceV1::OutcomeCalibration,
+        CardRewardValueStatusV1::OutcomeCalibrated,
+        1.0,
+        0.2,
+    );
+    outcome_calibration.eligibility.usable_for_autopilot_gate = true;
+    outcome_calibration.eligibility.reasons.clear();
+
+    let arbitration =
+        arbitrate_card_reward_value_estimates_v1(&context, &[route_risk, outcome_calibration]);
+    let report = arbitration
+        .candidate_reports
+        .first()
+        .expect("candidate report should exist");
+
+    assert_eq!(
+        arbitration.gate_value_estimates[0].source,
+        CardRewardValueSourceV1::OutcomeCalibration
+    );
+    assert_eq!(
+        report.selected_source,
+        Some(CardRewardValueSourceV1::OutcomeCalibration)
+    );
+    assert!(report.selected_estimate_gate_eligible);
 }
 
 #[test]
@@ -611,14 +764,32 @@ fn card_reward_policy_routes_value_estimates_through_arbitration() {
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
-    assert_eq!(decision.value_estimates.len(), 2);
-    assert_eq!(decision.value_arbitration.input_estimate_count, 2);
+    assert_eq!(
+        estimates_for_source(
+            &decision.value_estimates,
+            CardRewardValueSourceV1::UncalibratedImpactPrior
+        )
+        .len(),
+        2
+    );
+    assert_eq!(
+        estimates_for_source(
+            &decision.value_estimates,
+            CardRewardValueSourceV1::RouteRisk
+        )
+        .len(),
+        2
+    );
+    assert_eq!(decision.value_arbitration.input_estimate_count, 4);
     assert_eq!(decision.value_arbitration.gate_value_estimates.len(), 2);
     assert!(decision
         .value_arbitration
         .candidate_reports
         .iter()
-        .all(|report| report.selected_for_gate));
+        .all(|report| {
+            report.selected_for_gate
+                && report.selected_source == Some(CardRewardValueSourceV1::RouteRisk)
+        }));
     assert!(decision.pick_certificate.is_none());
 }
 
@@ -646,10 +817,14 @@ fn policy_accepts_external_calibrated_estimates_before_arbitration_without_autop
         &inputs,
     );
 
-    assert_eq!(decision.value_estimates.len(), 3);
+    assert_eq!(decision.value_estimates.len(), 5);
     assert_eq!(
         decision.value_arbitration.gate_value_estimates[0].source,
         CardRewardValueSourceV1::OutcomeCalibration
+    );
+    assert_eq!(
+        decision.value_arbitration.gate_value_estimates[1].source,
+        CardRewardValueSourceV1::RouteRisk
     );
     assert!(!decision.autopilot_gate.value_source_eligible);
     assert!(matches!(
@@ -669,16 +844,16 @@ fn replay_harness_exports_value_loop_gate_state_without_selecting() {
         replay_card_reward_decision_v1(&packet, &CardRewardPolicyConfigV1::default(), None);
 
     assert_eq!(replay.candidates.len(), 1);
-    assert_eq!(replay.value_estimates.len(), 1);
-    assert_eq!(replay.value_arbitration.input_estimate_count, 1);
+    assert_eq!(replay.value_estimates.len(), 2);
+    assert_eq!(replay.value_arbitration.input_estimate_count, 2);
     assert_eq!(replay.value_arbitration.gate_value_estimates.len(), 1);
     assert_eq!(
-        replay.value_estimates[0].source,
-        CardRewardValueSourceV1::UncalibratedImpactPrior
+        replay.value_arbitration.gate_value_estimates[0].source,
+        CardRewardValueSourceV1::RouteRisk
     );
     assert_eq!(
-        replay.value_estimates[0].status,
-        CardRewardValueStatusV1::UncalibratedPrior
+        replay.value_arbitration.gate_value_estimates[0].status,
+        CardRewardValueStatusV1::RouteRiskEstimate
     );
     assert!(!replay.autopilot_gate.value_source_eligible);
     assert!(replay.selected_candidate_id.is_none());
@@ -713,13 +888,85 @@ fn replay_harness_accepts_external_estimator_inputs() {
         None,
     );
 
-    assert_eq!(replay.value_estimates.len(), 3);
-    assert_eq!(replay.value_arbitration.input_estimate_count, 3);
+    assert_eq!(replay.value_estimates.len(), 5);
+    assert_eq!(replay.value_arbitration.input_estimate_count, 5);
     assert_eq!(
         replay.value_arbitration.gate_value_estimates[0].source,
         CardRewardValueSourceV1::OutcomeCalibration
     );
+    assert_eq!(
+        replay.value_arbitration.gate_value_estimates[1].source,
+        CardRewardValueSourceV1::RouteRisk
+    );
     assert!(replay.selected_candidate_id.is_none());
+}
+
+#[test]
+fn route_risk_estimator_adds_non_gate_value_estimates_when_route_evidence_exists() {
+    let mut context = context_for_cards(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Warcry, 0),
+    ]);
+    assert!(context.route.is_none());
+    let without_route =
+        plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    assert!(!without_route
+        .value_estimates
+        .iter()
+        .any(|estimate| estimate.source == CardRewardValueSourceV1::RouteRisk));
+
+    context.route = Some(route_with_combat_pressure());
+    let with_route = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let route_risk_estimates = with_route
+        .value_estimates
+        .iter()
+        .filter(|estimate| estimate.source == CardRewardValueSourceV1::RouteRisk)
+        .collect::<Vec<_>>();
+
+    assert_eq!(route_risk_estimates.len(), 2);
+    assert!(route_risk_estimates
+        .iter()
+        .all(|estimate| estimate.status == CardRewardValueStatusV1::RouteRiskEstimate));
+    assert!(route_risk_estimates
+        .iter()
+        .all(|estimate| estimate.eligibility.usable_for_value_estimate));
+    assert!(route_risk_estimates
+        .iter()
+        .all(|estimate| !estimate.eligibility.usable_for_autopilot_gate));
+}
+
+#[test]
+fn route_risk_estimator_values_frontload_more_under_early_route_pressure() {
+    let context = context_for_cards_with_route(
+        vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::Warcry, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let twin = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::RouteRisk
+                && estimate.card == CardId::TwinStrike
+        })
+        .expect("Twin Strike should have a route risk estimate");
+    let warcry = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::RouteRisk && estimate.card == CardId::Warcry
+        })
+        .expect("Warcry should have a route risk estimate");
+
+    assert!(twin.survival_delta > warcry.survival_delta);
+    assert!(twin
+        .components
+        .iter()
+        .any(|component| component.name == "route_risk_pressure"));
 }
 
 fn test_value_estimate(
@@ -739,8 +986,19 @@ fn test_value_estimate(
         progress_delta: 0.0,
         deck_consistency_delta: 0.0,
         uncertainty,
+        eligibility: Default::default(),
         components: Vec::new(),
     }
+}
+
+fn estimates_for_source(
+    estimates: &[CardRewardValueEstimateV1],
+    source: CardRewardValueSourceV1,
+) -> Vec<&CardRewardValueEstimateV1> {
+    estimates
+        .iter()
+        .filter(|estimate| estimate.source == source)
+        .collect()
 }
 
 #[test]

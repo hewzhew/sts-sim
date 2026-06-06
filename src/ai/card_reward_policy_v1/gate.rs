@@ -1,9 +1,8 @@
-use super::arbitration::{value_source_autopilot_eligible_v1, value_status_autopilot_eligible_v1};
+use super::arbitration::{estimate_source_gate_eligible_v1, value_status_autopilot_eligible_v1};
 use super::types::{
     CardRewardAutopilotGateReportV1, CardRewardDecisionContextV1, CardRewardEvidenceGapV1,
     CardRewardPickCertificateV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
-    CardRewardStopDispositionV1, CardRewardValueEstimateV1, CardRewardValueSourceV1,
-    CardRewardValueStatusV1,
+    CardRewardStopDispositionV1, CardRewardValueEstimateV1, CardRewardValueStatusV1,
 };
 
 pub(crate) fn pick_gate(
@@ -134,7 +133,7 @@ fn evaluate_autopilot_gate(
 
     let eligible_values = value_estimates
         .iter()
-        .filter(|estimate| value_source_eligible(estimate.source))
+        .filter(|estimate| estimate_eligible_for_autopilot_gate(estimate))
         .filter(|estimate| calibration_status_allowed(estimate.status))
         .filter(|estimate| estimate.uncertainty <= 0.35)
         .filter(|estimate| total_value_delta(estimate) > 0.0)
@@ -143,7 +142,7 @@ fn evaluate_autopilot_gate(
 
     let value_source_eligible = value_estimates
         .iter()
-        .any(|estimate| value_source_eligible(estimate.source));
+        .any(estimate_eligible_for_autopilot_gate);
     let calibration_status_allowed = value_estimates
         .iter()
         .any(|estimate| calibration_status_allowed(estimate.status));
@@ -267,8 +266,8 @@ fn generic_certificate(
     })
 }
 
-fn value_source_eligible(source: CardRewardValueSourceV1) -> bool {
-    value_source_autopilot_eligible_v1(source)
+fn estimate_eligible_for_autopilot_gate(estimate: &CardRewardValueEstimateV1) -> bool {
+    estimate_source_gate_eligible_v1(estimate)
 }
 
 fn calibration_status_allowed(status: CardRewardValueStatusV1) -> bool {

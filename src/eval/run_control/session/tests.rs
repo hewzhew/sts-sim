@@ -480,6 +480,33 @@ fn run_control_auto_run_event_policy_takes_free_known_benefit() {
 }
 
 #[test]
+fn run_control_auto_step_collapses_terminal_event_leave_to_map() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(crate::state::events::EventState::new(
+        crate::state::events::EventId::ScrapOoze,
+    ));
+    session.engine_state = EngineState::EventRoom;
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-step should decline Scrap Ooze and leave the event");
+
+    assert!(
+        !outcome.message.contains("repeated boundary detected"),
+        "{}",
+        outcome.message
+    );
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
+    assert!(session.run_state.event_state.is_none());
+}
+
+#[test]
 fn run_control_auto_step_shop_stop_exports_human_boundary_record() {
     let mut session = test_session_at_shop();
 
@@ -1243,7 +1270,7 @@ fn run_control_auto_run_stops_on_card_reward_without_pick_certificate() {
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
     );
     assert_eq!(record.values.len(), record.candidates.len());
-    assert!(record.values.iter().all(|value| value.confidence == 0.0));
+    assert_record_values_not_autopilot_gate_usable(record);
     assert!(!session
         .run_state
         .master_deck
@@ -1327,6 +1354,60 @@ fn run_control_auto_run_stops_on_non_premium_early_attack_reward_item() {
         panic!("card reward should stay on reward screen");
     };
     assert!(reward.pending_card_choice.is_some());
+}
+
+#[test]
+fn run_control_card_reward_uses_runtime_outcome_calibration_estimates() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::TwinStrike,
+        crate::content::cards::CardId::Cleave,
+        crate::content::cards::CardId::SeverSoul,
+    ]);
+    session.card_reward_outcome_calibration = Some(test_card_reward_calibration_for_twin_strike());
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should evaluate card reward with runtime calibration");
+
+    assert!(outcome.message.contains("value_source_outcome_calibration"));
+    assert!(outcome.message.contains("value_status_outcome_calibrated"));
+    assert!(outcome
+        .message
+        .contains("gate estimates: OutcomeCalibration=1, RouteRisk=2"));
+    assert!(outcome
+        .message
+        .contains("non-gate value candidates: Twin Strike (OutcomeCalibration), Cleave (RouteRisk), Sever Soul (RouteRisk)"));
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(!session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::TwinStrike));
+
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+                ..
+            } => Some(record),
+            _ => None,
+        })
+        .expect("declined card reward policy should attach a noncombat record");
+    assert!(record.values.iter().any(|value| {
+        value
+            .components
+            .iter()
+            .any(|component| component.name == "value_source_outcome_calibration")
+    }));
 }
 
 #[test]
@@ -1486,7 +1567,7 @@ fn run_control_auto_run_stops_on_ambiguous_card_reward() {
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
     );
     assert_eq!(record.values.len(), record.candidates.len());
-    assert!(record.values.iter().all(|value| value.confidence == 0.0));
+    assert_record_values_not_autopilot_gate_usable(record);
     assert!(!session.run_state.master_deck.iter().any(|card| matches!(
         card.id,
         crate::content::cards::CardId::PommelStrike
@@ -1536,7 +1617,7 @@ fn run_control_auto_run_opens_ambiguous_card_reward_item_before_stopping() {
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
     );
     assert_eq!(record.values.len(), record.candidates.len());
-    assert!(record.values.iter().all(|value| value.confidence == 0.0));
+    assert_record_values_not_autopilot_gate_usable(record);
     assert!(outcome.action_result.is_some());
     assert!(outcome
         .message
@@ -1706,16 +1787,25 @@ fn run_control_recorded_card_reward_pick_selects_card_with_noncombat_record() {
         .master_deck
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Clash));
-    let annotation = outcome
+    let annotations = outcome
         .trace_annotations
         .iter()
-        .find_map(|annotation| match annotation {
+        .filter_map(|annotation| match annotation {
             crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
                 record,
                 card_reward_packet,
             } => Some((record, card_reward_packet)),
             _ => None,
         })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        annotations.len(),
+        1,
+        "recorded card reward pick should not duplicate selected records"
+    );
+    let annotation = annotations
+        .first()
+        .copied()
         .expect("recorded pick should attach a card reward noncombat record");
     let (record, packet) = annotation;
     crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
@@ -1736,6 +1826,61 @@ fn run_control_recorded_card_reward_pick_selects_card_with_noncombat_record() {
     assert_eq!(
         record.provenance.source_policy,
         "run_control_recorded_card_reward_pick_v1"
+    );
+    assert!(packet.is_some());
+}
+
+#[test]
+fn run_control_manual_card_reward_pick_selects_card_with_noncombat_record() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::Shockwave,
+        crate::content::cards::CardId::Clash,
+        crate::content::cards::CardId::SeverSoul,
+    ]);
+
+    let outcome = session
+        .apply_command(RunControlCommand::Candidate("1".to_string()))
+        .expect("manual visible card reward pick should select a card reward");
+
+    assert!(outcome.action_result.is_some());
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == crate::content::cards::CardId::Clash));
+    let annotation = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+                card_reward_packet,
+            } => Some((record, card_reward_packet)),
+            _ => None,
+        })
+        .expect("manual pick should attach a card reward noncombat record");
+    let (record, packet) = annotation;
+    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
+        .expect("manual card reward record should validate");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
+    );
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
+    );
+    assert_eq!(
+        record.selection.selected_candidate_id.as_deref(),
+        Some("card_reward:1:Clash")
+    );
+    assert_eq!(
+        record.selection.selection_mode,
+        "human_visible_card_reward_pick"
+    );
+    assert_eq!(
+        record.provenance.source_policy,
+        "run_control_manual_card_reward_pick_v1"
     );
     assert!(packet.is_some());
 }
@@ -2286,6 +2431,47 @@ fn test_session_at_card_reward(card_ids: Vec<crate::content::cards::CardId>) -> 
     session
 }
 
+fn test_card_reward_calibration_for_twin_strike(
+) -> crate::eval::card_reward_value_loop::CardRewardOutcomeCalibrationV1 {
+    crate::eval::card_reward_value_loop::CardRewardOutcomeCalibrationV1 {
+        schema_name:
+            crate::eval::card_reward_value_loop::CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME
+                .to_string(),
+        schema_version:
+            crate::eval::card_reward_value_loop::CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION,
+        label_role: "diagnostic_not_teacher_label".to_string(),
+        trainable_as_action_label: false,
+        policy_quality_claim: false,
+        estimator_kind: "selected_outcome_card_id_prior_v1".to_string(),
+        provenance: Default::default(),
+        total_examples: 4,
+        usable_outcome_examples: 4,
+        missing_outcome_examples: 0,
+        global: crate::eval::card_reward_value_loop::CardRewardOutcomeCalibrationGlobalV1 {
+            selected_count: 4,
+            outcome_attached_count: 4,
+            mean_next_combat_hp_loss: Some(12.0),
+        },
+        card_id_buckets: vec![
+            crate::eval::card_reward_value_loop::CardRewardOutcomeCalibrationBucketV1 {
+                bucket_key: "card_id:TwinStrike".to_string(),
+                card_id: "TwinStrike".to_string(),
+                selected_count: 4,
+                outcome_attached_count: 4,
+                missing_outcome_count: 0,
+                mean_next_combat_hp_loss: Some(6.0),
+                hp_loss_bucket_counts: Vec::new(),
+                upgraded_count: 0,
+                removed_count: 0,
+                confidence: 0.8,
+                uncertainty: 0.15,
+                usable_for_value_estimate: true,
+                usable_for_autopilot_gate: false,
+            },
+        ],
+    }
+}
+
 fn test_session_at_reward_items(
     items: Vec<crate::state::rewards::RewardItem>,
 ) -> RunControlSession {
@@ -2318,6 +2504,16 @@ fn noncombat_human_boundary_record(
     crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
         .expect("noncombat human boundary record should validate");
     record
+}
+
+fn assert_record_values_not_autopilot_gate_usable(
+    record: &crate::ai::noncombat_decision_v1::NonCombatDecisionRecordV1,
+) {
+    assert!(record.values.iter().all(|value| {
+        value.components.iter().any(|component| {
+            component.name == "value_usable_for_autopilot_gate" && component.value == 0.0
+        })
+    }));
 }
 
 fn unique_temp_dir(label: &str) -> PathBuf {

@@ -2,22 +2,49 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+mod calibration;
+mod closed_loop;
+mod promotion;
 mod replay;
+mod route_risk_calibration;
+pub use calibration::{
+    calibrate_card_reward_outcomes_v1, estimate_card_reward_value_from_calibration_v1,
+    estimate_card_reward_values_from_calibration_v1, CardRewardOutcomeCalibrationBucketV1,
+    CardRewardOutcomeCalibrationGlobalV1, CardRewardOutcomeCalibrationProvenanceV1,
+    CardRewardOutcomeCalibrationV1, CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME,
+    CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION,
+};
+pub use closed_loop::{
+    build_card_reward_closed_loop_report_v1, summarize_card_reward_closed_loop_v1,
+    CardRewardClosedLoopExampleV1, CardRewardClosedLoopReportV1, CardRewardClosedLoopStatusV1,
+    CardRewardClosedLoopSummaryV1, CARD_REWARD_CLOSED_LOOP_REPORT_SCHEMA_NAME,
+    CARD_REWARD_CLOSED_LOOP_REPORT_SCHEMA_VERSION,
+};
+pub use promotion::{
+    build_card_reward_runtime_calibration_pipeline_v1, promote_card_reward_outcome_calibration_v1,
+    CardRewardOutcomeCalibrationPromotionBlockerV1, CardRewardOutcomeCalibrationPromotionBucketV1,
+    CardRewardOutcomeCalibrationPromotionConfigV1, CardRewardOutcomeCalibrationPromotionReportV1,
+    CardRewardRuntimeCalibrationPipelineV1, CARD_REWARD_OUTCOME_CALIBRATION_PROMOTION_SCHEMA_NAME,
+    CARD_REWARD_OUTCOME_CALIBRATION_PROMOTION_SCHEMA_VERSION,
+};
 pub use replay::{
     replay_card_reward_records_with_calibration_v1, CardRewardCalibrationReplayCandidateV1,
     CardRewardCalibrationReplayEstimateV1, CardRewardCalibrationReplayExampleV1,
     CardRewardCalibrationReplayReportV1, CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME,
     CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_VERSION,
 };
-
-use crate::ai::card_reward_policy_v1::{
-    CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardValueComponentV1,
-    CardRewardValueEstimateV1, CardRewardValueSourceV1, CardRewardValueStatusV1,
-    PublicRewardDecisionPacketV1,
+pub use route_risk_calibration::{
+    calibrate_card_reward_route_risk_v1,
+    estimate_card_reward_values_from_route_risk_calibration_v1,
+    CardRewardRouteRiskCalibrationBucketV1, CardRewardRouteRiskCalibrationGlobalV1,
+    CardRewardRouteRiskCalibrationV1, CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_NAME,
+    CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_VERSION,
 };
+
+use crate::ai::card_reward_policy_v1::PublicRewardDecisionPacketV1;
 use crate::ai::noncombat_decision_v1::{
-    noncombat_decision_record_hash_v1, DecisionSiteKindV1, NonCombatDecisionRecordV1,
-    NonCombatOutcomeAttachmentV1, PolicySelectionStatusV1,
+    noncombat_decision_record_hash_v1, CardRewardOutcomeAttachmentV1, DecisionSiteKindV1,
+    NonCombatDecisionRecordV1, NonCombatOutcomeAttachmentV1, PolicySelectionStatusV1,
 };
 use crate::eval::run_control::{
     RunControlTraceAnnotationV1, SessionTraceBoundaryRecordV1, SessionTraceStepV1, SessionTraceV1,
@@ -27,8 +54,6 @@ pub const CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME: &str = "CardRewardValueLoo
 pub const CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_VERSION: u32 = 1;
 pub const CARD_REWARD_VALUE_LOOP_SUMMARY_SCHEMA_NAME: &str = "CardRewardValueLoopSummaryV1";
 pub const CARD_REWARD_VALUE_LOOP_SUMMARY_SCHEMA_VERSION: u32 = 1;
-pub const CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME: &str = "CardRewardOutcomeCalibrationV1";
-pub const CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -53,6 +78,13 @@ pub struct CardRewardValueLoopExampleV1 {
     pub trainable_as_action_label: bool,
     pub policy_quality_claim: bool,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_trace_schema_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_trace_schema_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_run_config: Option<CardRewardValueLoopRunConfigV1>,
+
     pub trace_step_index: Option<usize>,
     pub trace_boundary_record_index: Option<usize>,
     pub decision_record_hash: String,
@@ -72,6 +104,15 @@ pub struct CardRewardValueLoopExampleV1 {
     pub public_packet: Option<PublicRewardDecisionPacketV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<NonCombatOutcomeAttachmentV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardRewardValueLoopRunConfigV1 {
+    pub seed: u64,
+    pub ascension_level: u8,
+    pub player_class: String,
+    pub final_act: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -100,56 +141,10 @@ pub struct CardRewardValueLoopSummaryV1 {
     pub evidence_gap_counts: Vec<HistogramEntryV1>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CardRewardOutcomeCalibrationV1 {
-    pub schema_name: String,
-    pub schema_version: u32,
-    pub label_role: String,
-    pub trainable_as_action_label: bool,
-    pub policy_quality_claim: bool,
-    pub estimator_kind: String,
-    pub total_examples: usize,
-    pub usable_outcome_examples: usize,
-    pub missing_outcome_examples: usize,
-    pub global: CardRewardOutcomeCalibrationGlobalV1,
-    pub card_id_buckets: Vec<CardRewardOutcomeCalibrationBucketV1>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CardRewardOutcomeCalibrationGlobalV1 {
-    pub selected_count: usize,
-    pub outcome_attached_count: usize,
-    pub mean_next_combat_hp_loss: Option<f32>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CardRewardOutcomeCalibrationBucketV1 {
-    pub bucket_key: String,
-    pub card_id: String,
-    pub selected_count: usize,
-    pub outcome_attached_count: usize,
-    pub missing_outcome_count: usize,
-    pub mean_next_combat_hp_loss: Option<f32>,
-    pub hp_loss_bucket_counts: Vec<HistogramEntryV1>,
-    pub upgraded_count: usize,
-    pub removed_count: usize,
-    pub confidence: f32,
-    pub uncertainty: f32,
-    pub usable_for_value_estimate: bool,
-    pub usable_for_autopilot_gate: bool,
-}
-
 pub fn extract_card_reward_value_loop_examples_v1(
     trace: &SessionTraceV1,
 ) -> Result<Vec<CardRewardValueLoopExampleV1>, String> {
-    let outcomes_by_hash = trace
-        .noncombat_outcome_attachments
-        .iter()
-        .map(|outcome| (outcome.decision_record_hash.clone(), outcome.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let outcomes_by_hash = merged_outcomes_by_hash(&trace.noncombat_outcome_attachments);
     let mut seen_hashes = BTreeSet::new();
     let mut examples = Vec::new();
 
@@ -165,144 +160,89 @@ pub fn extract_card_reward_value_loop_examples_v1(
     Ok(examples)
 }
 
-pub fn calibrate_card_reward_outcomes_v1(
-    examples: &[CardRewardValueLoopExampleV1],
-) -> CardRewardOutcomeCalibrationV1 {
-    let mut buckets = BTreeMap::<String, CardRewardOutcomeCalibrationAccumulatorV1>::new();
-    let mut global_hp_losses = Vec::new();
-    let mut global_selected_count = 0;
-    let mut missing_outcome_examples = 0;
-
-    for example in examples {
-        if example.selection_status != PolicySelectionStatusV1::Selected {
-            continue;
-        }
-        let Some(card_id) = selected_card_id_from_example(example) else {
-            continue;
-        };
-        global_selected_count += 1;
-        let accumulator = buckets.entry(card_id.clone()).or_default();
-        accumulator.selected_count += 1;
-
-        let card_reward = example
-            .outcome
-            .as_ref()
-            .and_then(|outcome| outcome.card_reward.as_ref());
-        let hp_loss = card_reward.and_then(|card_reward| card_reward.next_combat_hp_loss);
-
-        if let Some(hp_loss) = hp_loss {
-            accumulator.hp_losses.push(hp_loss);
-            global_hp_losses.push(hp_loss);
-            increment(
-                &mut accumulator.hp_loss_bucket_counts,
-                hp_loss_bucket_label(hp_loss),
-            );
-        } else {
-            accumulator.missing_outcome_count += 1;
-            missing_outcome_examples += 1;
-        }
-
-        if card_reward
-            .and_then(|card_reward| card_reward.picked_card_upgraded_before_boss)
-            .unwrap_or(false)
-        {
-            accumulator.upgraded_count += 1;
-        }
-        if card_reward
-            .and_then(|card_reward| card_reward.picked_card_removed_later)
-            .unwrap_or(false)
-        {
-            accumulator.removed_count += 1;
-        }
+fn merged_outcomes_by_hash(
+    outcomes: &[NonCombatOutcomeAttachmentV1],
+) -> BTreeMap<String, NonCombatOutcomeAttachmentV1> {
+    let mut merged = BTreeMap::new();
+    for outcome in outcomes {
+        merged
+            .entry(outcome.decision_record_hash.clone())
+            .and_modify(|existing| merge_noncombat_outcome(existing, outcome))
+            .or_insert_with(|| outcome.clone());
     }
+    merged
+}
 
-    let card_id_buckets = buckets
-        .into_iter()
-        .map(|(card_id, accumulator)| accumulator.into_bucket(card_id))
-        .collect::<Vec<_>>();
-    let usable_outcome_examples = global_hp_losses.len();
-
-    CardRewardOutcomeCalibrationV1 {
-        schema_name: CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME.to_string(),
-        schema_version: CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION,
-        label_role: "diagnostic_not_teacher_label".to_string(),
-        trainable_as_action_label: false,
-        policy_quality_claim: false,
-        estimator_kind: "selected_outcome_card_id_prior_v1".to_string(),
-        total_examples: examples.len(),
-        usable_outcome_examples,
-        missing_outcome_examples,
-        global: CardRewardOutcomeCalibrationGlobalV1 {
-            selected_count: global_selected_count,
-            outcome_attached_count: usable_outcome_examples,
-            mean_next_combat_hp_loss: mean_i32(&global_hp_losses),
-        },
-        card_id_buckets,
+fn merge_noncombat_outcome(
+    existing: &mut NonCombatOutcomeAttachmentV1,
+    incoming: &NonCombatOutcomeAttachmentV1,
+) {
+    match (&mut existing.card_reward, &incoming.card_reward) {
+        (Some(existing_card_reward), Some(incoming_card_reward)) => {
+            merge_card_reward_outcome(existing_card_reward, incoming_card_reward);
+        }
+        (None, Some(incoming_card_reward)) => {
+            existing.card_reward = Some(incoming_card_reward.clone());
+        }
+        (Some(_), None) | (None, None) => {}
     }
 }
 
-pub fn estimate_card_reward_value_from_calibration_v1(
-    candidate: &CardRewardCandidateEvidenceV1,
-    calibration: &CardRewardOutcomeCalibrationV1,
-) -> Option<CardRewardValueEstimateV1> {
-    let card_id = format!("{:?}", candidate.card);
-    let bucket = calibration
-        .card_id_buckets
-        .iter()
-        .find(|bucket| bucket.card_id == card_id && bucket.usable_for_value_estimate)?;
-    let card_mean = bucket.mean_next_combat_hp_loss?;
-    let global_mean = calibration.global.mean_next_combat_hp_loss?;
-    let survival_delta = global_mean - card_mean;
-
-    Some(CardRewardValueEstimateV1 {
-        index: candidate.index,
-        card: candidate.card,
-        source: CardRewardValueSourceV1::OutcomeCalibration,
-        status: CardRewardValueStatusV1::OutcomeCalibrated,
-        survival_delta,
-        progress_delta: 0.0,
-        deck_consistency_delta: 0.0,
-        uncertainty: bucket.uncertainty,
-        components: vec![
-            CardRewardValueComponentV1 {
-                name: "outcome_sample_count".to_string(),
-                value: bucket.outcome_attached_count as f32,
-            },
-            CardRewardValueComponentV1 {
-                name: "mean_next_combat_hp_loss".to_string(),
-                value: card_mean,
-            },
-            CardRewardValueComponentV1 {
-                name: "global_mean_next_combat_hp_loss".to_string(),
-                value: global_mean,
-            },
-            CardRewardValueComponentV1 {
-                name: "survival_delta_from_global".to_string(),
-                value: survival_delta,
-            },
-            CardRewardValueComponentV1 {
-                name: "outcome_calibration_confidence".to_string(),
-                value: bucket.confidence,
-            },
-            CardRewardValueComponentV1 {
-                name: "outcome_calibration_uncertainty".to_string(),
-                value: bucket.uncertainty,
-            },
-        ],
-    })
+fn merge_card_reward_outcome(
+    existing: &mut CardRewardOutcomeAttachmentV1,
+    incoming: &CardRewardOutcomeAttachmentV1,
+) {
+    fill_option(
+        &mut existing.next_combat_hp_loss,
+        incoming.next_combat_hp_loss,
+    );
+    fill_option(
+        &mut existing.hp_before_next_elite,
+        incoming.hp_before_next_elite,
+    );
+    fill_option(
+        &mut existing.hp_after_next_elite,
+        incoming.hp_after_next_elite,
+    );
+    fill_option(&mut existing.hp_before_boss, incoming.hp_before_boss);
+    merge_max_option(
+        &mut existing.picked_card_drawn_count,
+        incoming.picked_card_drawn_count,
+    );
+    merge_max_option(
+        &mut existing.picked_card_played_count,
+        incoming.picked_card_played_count,
+    );
+    merge_bool_or_option(
+        &mut existing.picked_card_upgraded_before_boss,
+        incoming.picked_card_upgraded_before_boss,
+    );
+    merge_bool_or_option(
+        &mut existing.picked_card_removed_later,
+        incoming.picked_card_removed_later,
+    );
 }
 
-pub fn estimate_card_reward_values_from_calibration_v1(
-    context: &CardRewardDecisionContextV1,
-    calibration: &CardRewardOutcomeCalibrationV1,
-) -> Vec<CardRewardValueEstimateV1> {
-    context
-        .candidates
-        .iter()
-        .filter_map(|candidate| {
-            estimate_card_reward_value_from_calibration_v1(candidate, calibration)
-        })
-        .collect()
+fn fill_option<T: Copy>(existing: &mut Option<T>, incoming: Option<T>) {
+    if existing.is_none() {
+        *existing = incoming;
+    }
+}
+
+fn merge_max_option<T: Copy + Ord>(existing: &mut Option<T>, incoming: Option<T>) {
+    match (*existing, incoming) {
+        (Some(current), Some(next)) => *existing = Some(current.max(next)),
+        (None, Some(next)) => *existing = Some(next),
+        (Some(_), None) | (None, None) => {}
+    }
+}
+
+fn merge_bool_or_option(existing: &mut Option<bool>, incoming: Option<bool>) {
+    match (*existing, incoming) {
+        (Some(current), Some(next)) => *existing = Some(current || next),
+        (None, Some(next)) => *existing = Some(next),
+        (Some(_), None) | (None, None) => {}
+    }
 }
 
 pub fn summarize_card_reward_value_loop_examples_v1(
@@ -383,6 +323,9 @@ fn card_reward_value_loop_example(
         label_role: "diagnostic_not_teacher_label".to_string(),
         trainable_as_action_label: false,
         policy_quality_claim: false,
+        source_trace_schema_name: source.source_trace_schema_name.cloned(),
+        source_trace_schema_version: source.source_trace_schema_version,
+        source_run_config: source.run_config.map(CardRewardValueLoopRunConfigV1::from),
         trace_step_index: source.trace_step_index,
         trace_boundary_record_index: source.trace_boundary_record_index,
         decision_record_hash,
@@ -439,106 +382,69 @@ fn histogram_entries(histogram: BTreeMap<String, usize>) -> Vec<HistogramEntryV1
         .collect()
 }
 
-#[derive(Default)]
-struct CardRewardOutcomeCalibrationAccumulatorV1 {
-    selected_count: usize,
-    missing_outcome_count: usize,
-    hp_losses: Vec<i32>,
-    hp_loss_bucket_counts: BTreeMap<String, usize>,
-    upgraded_count: usize,
-    removed_count: usize,
-}
-
-impl CardRewardOutcomeCalibrationAccumulatorV1 {
-    fn into_bucket(self, card_id: String) -> CardRewardOutcomeCalibrationBucketV1 {
-        let outcome_attached_count = self.hp_losses.len();
-        let confidence = outcome_attached_count as f32 / (outcome_attached_count as f32 + 3.0);
-        let uncertainty = 1.0 - confidence;
-        CardRewardOutcomeCalibrationBucketV1 {
-            bucket_key: format!("card_id:{card_id}"),
-            card_id,
-            selected_count: self.selected_count,
-            outcome_attached_count,
-            missing_outcome_count: self.missing_outcome_count,
-            mean_next_combat_hp_loss: mean_i32(&self.hp_losses),
-            hp_loss_bucket_counts: histogram_entries(self.hp_loss_bucket_counts),
-            upgraded_count: self.upgraded_count,
-            removed_count: self.removed_count,
-            confidence,
-            uncertainty,
-            usable_for_value_estimate: outcome_attached_count > 0,
-            usable_for_autopilot_gate: false,
-        }
-    }
-}
-
-fn selected_card_id_from_example(example: &CardRewardValueLoopExampleV1) -> Option<String> {
-    example
-        .selected_candidate_id
-        .as_ref()
-        .and_then(|candidate_id| candidate_id.rsplit_once(':'))
-        .map(|(_, card_id)| card_id.to_string())
-}
-
-fn mean_i32(values: &[i32]) -> Option<f32> {
-    if values.is_empty() {
-        return None;
-    }
-    Some(values.iter().sum::<i32>() as f32 / values.len() as f32)
-}
-
-fn hp_loss_bucket_label(hp_loss: i32) -> &'static str {
-    match hp_loss {
-        i32::MIN..=-1 => "negative",
-        0 => "0",
-        1..=5 => "1_5",
-        6..=10 => "6_10",
-        11..=20 => "11_20",
-        _ => "21_plus",
-    }
-}
-
 #[derive(Clone, Copy)]
 struct CardRewardDecisionRecordSource<'a> {
     trace_step_index: Option<usize>,
     trace_boundary_record_index: Option<usize>,
+    source_trace_schema_name: Option<&'a String>,
+    source_trace_schema_version: Option<u32>,
+    run_config: Option<&'a crate::eval::run_control::SessionTraceRunConfigV1>,
     record: &'a NonCombatDecisionRecordV1,
     public_packet: Option<&'a PublicRewardDecisionPacketV1>,
+}
+
+impl From<&crate::eval::run_control::SessionTraceRunConfigV1> for CardRewardValueLoopRunConfigV1 {
+    fn from(run_config: &crate::eval::run_control::SessionTraceRunConfigV1) -> Self {
+        Self {
+            seed: run_config.seed,
+            ascension_level: run_config.ascension_level,
+            player_class: run_config.player_class.clone(),
+            final_act: run_config.final_act,
+        }
+    }
 }
 
 fn card_reward_record_sources(trace: &SessionTraceV1) -> Vec<CardRewardDecisionRecordSource<'_>> {
     let mut sources = Vec::new();
     for step in &trace.steps {
-        sources.extend(card_reward_record_sources_from_step(step));
+        sources.extend(card_reward_record_sources_from_step(trace, step));
     }
     for boundary in &trace.boundary_records {
-        sources.extend(card_reward_record_sources_from_boundary(boundary));
+        sources.extend(card_reward_record_sources_from_boundary(trace, boundary));
     }
     sources
 }
 
-fn card_reward_record_sources_from_step(
-    step: &SessionTraceStepV1,
-) -> Vec<CardRewardDecisionRecordSource<'_>> {
+fn card_reward_record_sources_from_step<'a>(
+    trace: &'a SessionTraceV1,
+    step: &'a SessionTraceStepV1,
+) -> Vec<CardRewardDecisionRecordSource<'a>> {
     card_reward_records_from_annotations(&step.annotations)
         .into_iter()
         .map(|(record, public_packet)| CardRewardDecisionRecordSource {
             trace_step_index: Some(step.step_index),
             trace_boundary_record_index: None,
+            source_trace_schema_name: Some(&trace.schema_name),
+            source_trace_schema_version: Some(trace.schema_version),
+            run_config: Some(&trace.run_config),
             record,
             public_packet,
         })
         .collect()
 }
 
-fn card_reward_record_sources_from_boundary(
-    boundary: &SessionTraceBoundaryRecordV1,
-) -> Vec<CardRewardDecisionRecordSource<'_>> {
+fn card_reward_record_sources_from_boundary<'a>(
+    trace: &'a SessionTraceV1,
+    boundary: &'a SessionTraceBoundaryRecordV1,
+) -> Vec<CardRewardDecisionRecordSource<'a>> {
     card_reward_records_from_annotations(&boundary.annotations)
         .into_iter()
         .map(|(record, public_packet)| CardRewardDecisionRecordSource {
             trace_step_index: None,
             trace_boundary_record_index: Some(boundary.record_index),
+            source_trace_schema_name: Some(&trace.schema_name),
+            source_trace_schema_version: Some(trace.schema_version),
+            run_config: Some(&trace.run_config),
             record,
             public_packet,
         })
@@ -609,5 +515,492 @@ fn card_reward_record_from_annotation(
         | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
         | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
         | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::calibration::outcome_calibration_eligibility;
+    use super::*;
+    use crate::ai::noncombat_decision_v1::{
+        CandidateDescriptorV1, CardRewardOutcomeAttachmentV1, DataRoleV1, DecisionSiteKindV1,
+        EvidenceBundleV1, InformationBoundaryV1, InformationClassV1, NonCombatDecisionRecordV1,
+        NonCombatOutcomeAttachmentV1, NonCombatOutcomeMetricsV1, NonCombatOutcomeSnapshotV1,
+        NonCombatOutcomeWindowV1, PolicyProvenanceV1, PolicySelectionStatusV1, PolicySelectionV1,
+        PublicActionPlanV1, NONCOMBAT_DECISION_RECORD_SCHEMA_NAME,
+        NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION, NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_NAME,
+        NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_VERSION,
+    };
+    use crate::content::cards::CardId;
+
+    #[test]
+    fn outcome_calibration_estimate_carries_structured_non_gate_eligibility_metadata() {
+        let run_state = crate::state::run::RunState::new(521, 0, false, "Ironclad");
+        let context = crate::ai::card_reward_policy_v1::build_card_reward_decision_context_v1(
+            &run_state,
+            vec![crate::state::rewards::RewardCard::new(
+                crate::content::cards::CardId::TwinStrike,
+                0,
+            )],
+            None,
+        );
+        let calibration = CardRewardOutcomeCalibrationV1 {
+            schema_name: CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME.to_string(),
+            schema_version: CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION,
+            label_role: "diagnostic_not_teacher_label".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            estimator_kind: "selected_outcome_card_id_prior_v1".to_string(),
+            provenance: Default::default(),
+            total_examples: 4,
+            usable_outcome_examples: 4,
+            missing_outcome_examples: 0,
+            global: CardRewardOutcomeCalibrationGlobalV1 {
+                selected_count: 4,
+                outcome_attached_count: 4,
+                mean_next_combat_hp_loss: Some(12.0),
+            },
+            card_id_buckets: vec![CardRewardOutcomeCalibrationBucketV1 {
+                bucket_key: "card_id:TwinStrike".to_string(),
+                card_id: "TwinStrike".to_string(),
+                selected_count: 4,
+                outcome_attached_count: 4,
+                missing_outcome_count: 0,
+                mean_next_combat_hp_loss: Some(6.0),
+                hp_loss_bucket_counts: Vec::new(),
+                upgraded_count: 0,
+                removed_count: 0,
+                confidence: 0.8,
+                uncertainty: 0.2,
+                usable_for_value_estimate: true,
+                usable_for_autopilot_gate: false,
+            }],
+        };
+
+        let estimates = estimate_card_reward_values_from_calibration_v1(&context, &calibration);
+
+        assert_eq!(estimates.len(), 1);
+        let eligibility = &estimates[0].eligibility;
+        assert!(eligibility.usable_for_value_estimate);
+        assert!(!eligibility.usable_for_autopilot_gate);
+        assert_eq!(
+            eligibility.bucket_key.as_deref(),
+            Some("card_id:TwinStrike")
+        );
+        assert_eq!(
+            eligibility.horizon,
+            Some(crate::ai::card_reward_policy_v1::CardRewardValueHorizonV1::NextCombatHpLoss)
+        );
+        assert!(eligibility.reasons.contains(
+            &crate::ai::card_reward_policy_v1::CardRewardValueEligibilityReasonV1::OutcomeCalibrationBucketNotGateEligible,
+        ));
+        assert!(eligibility.reasons.contains(
+            &crate::ai::card_reward_policy_v1::CardRewardValueEligibilityReasonV1::MissingDistinctSeedCount,
+        ));
+        assert!(eligibility.reasons.contains(
+            &crate::ai::card_reward_policy_v1::CardRewardValueEligibilityReasonV1::ShortHorizonMetricOnly,
+        ));
+    }
+
+    #[test]
+    fn generated_outcome_calibration_carries_source_provenance() {
+        let examples = vec![
+            test_card_reward_example(CardId::TwinStrike, 521, 8),
+            test_card_reward_example(CardId::Cleave, 522, 4),
+        ];
+
+        let calibration = calibrate_card_reward_outcomes_v1(&examples);
+
+        assert_eq!(
+            calibration.provenance.source_example_schema_name,
+            CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME
+        );
+        assert_eq!(
+            calibration.provenance.source_example_schema_version,
+            CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_VERSION
+        );
+        assert_eq!(calibration.provenance.source_run_count, 2);
+        assert_eq!(calibration.provenance.distinct_seed_count, Some(2));
+        assert_eq!(
+            calibration.provenance.data_roles,
+            vec!["BehaviorPolicyNotTeacher".to_string()]
+        );
+        assert!(calibration.provenance.ruleset_version.is_some());
+        assert!(!calibration.provenance.short_horizon_autopilot_gate_approved);
+    }
+
+    #[test]
+    fn complete_provenance_clears_metadata_missing_reasons_without_opening_short_horizon_gate() {
+        let calibration = test_calibration_with_provenance(CardId::TwinStrike, true, false);
+        let bucket = calibration.card_id_buckets.first().unwrap();
+
+        let eligibility = outcome_calibration_eligibility(&calibration, bucket);
+
+        assert!(!eligibility.usable_for_autopilot_gate);
+        assert!(!eligibility.reasons.contains(
+            &crate::ai::card_reward_policy_v1::CardRewardValueEligibilityReasonV1::MissingDistinctSeedCount,
+        ));
+        assert!(!eligibility.reasons.contains(
+            &crate::ai::card_reward_policy_v1::CardRewardValueEligibilityReasonV1::MissingRulesetVersion,
+        ));
+        assert!(!eligibility.reasons.contains(
+            &crate::ai::card_reward_policy_v1::CardRewardValueEligibilityReasonV1::MissingDataRoleProvenance,
+        ));
+        assert!(eligibility.reasons.contains(
+            &crate::ai::card_reward_policy_v1::CardRewardValueEligibilityReasonV1::ShortHorizonMetricOnly,
+        ));
+    }
+
+    #[test]
+    fn bucket_can_be_gate_eligible_only_when_provenance_and_horizon_are_explicitly_approved() {
+        let calibration = test_calibration_with_provenance(CardId::TwinStrike, true, true);
+        let bucket = calibration.card_id_buckets.first().unwrap();
+
+        let eligibility = outcome_calibration_eligibility(&calibration, bucket);
+
+        assert!(eligibility.usable_for_autopilot_gate);
+        assert!(eligibility.reasons.is_empty());
+    }
+
+    #[test]
+    fn hidden_state_provenance_keeps_outcome_calibration_out_of_autopilot_gate() {
+        let mut calibration = test_calibration_with_provenance(CardId::TwinStrike, true, true);
+        calibration.provenance.hidden_simulator_state_used = true;
+        let bucket = calibration.card_id_buckets.first().unwrap();
+
+        let eligibility = outcome_calibration_eligibility(&calibration, bucket);
+
+        assert!(eligibility.usable_for_value_estimate);
+        assert!(!eligibility.usable_for_autopilot_gate);
+        assert!(eligibility.reasons.contains(
+            &crate::ai::card_reward_policy_v1::CardRewardValueEligibilityReasonV1::HiddenSimulatorStateUsed,
+        ));
+    }
+
+    #[test]
+    fn runtime_calibration_pipeline_builds_promoted_artifact_and_reports_from_examples() {
+        let examples = vec![
+            test_card_reward_example(CardId::TwinStrike, 521, 4),
+            test_card_reward_example(CardId::TwinStrike, 522, 6),
+        ];
+        let config = CardRewardOutcomeCalibrationPromotionConfigV1 {
+            approve_short_horizon_autopilot_gate: true,
+            min_distinct_seeds: 2,
+            min_bucket_outcome_attached_count: 2,
+            min_bucket_confidence: 0.3,
+            max_bucket_uncertainty: 0.8,
+            reject_hidden_simulator_state: true,
+        };
+
+        let pipeline = build_card_reward_runtime_calibration_pipeline_v1(&examples, &config);
+
+        assert!(
+            pipeline
+                .promoted_calibration
+                .provenance
+                .short_horizon_autopilot_gate_approved
+        );
+        assert_eq!(pipeline.promotion_report.promoted_bucket_count, 1);
+        assert_eq!(pipeline.route_risk_calibration.total_examples, 2);
+        assert_eq!(pipeline.route_risk_calibration.evaluated_examples, 0);
+        assert_eq!(
+            pipeline
+                .closed_loop_report
+                .route_risk_calibration
+                .total_examples,
+            2
+        );
+        assert_eq!(
+            pipeline
+                .closed_loop_report
+                .route_risk_calibration
+                .missing_public_packet_examples,
+            2
+        );
+        assert_eq!(pipeline.closed_loop_report.calibration_bucket_count, 1);
+        assert_eq!(
+            pipeline
+                .closed_loop_report
+                .summary
+                .calibration_autopilot_gate_blocked_candidate_count,
+            0
+        );
+    }
+
+    #[test]
+    fn extractor_merges_multiple_outcome_windows_for_same_card_reward_decision() {
+        let card_id = CardId::TwinStrike;
+        let mut trace = crate::eval::run_control::SessionTraceV1::new(
+            &crate::eval::run_control::RunControlSession::new(
+                crate::eval::run_control::RunControlConfig::default(),
+            ),
+        );
+        let candidate_id = format!("card_reward:0:{card_id:?}");
+        let source_record = test_card_reward_record(card_id, &candidate_id);
+        let decision_record_hash = noncombat_decision_record_hash_v1(&source_record)
+            .expect("test decision record should hash");
+        trace
+            .boundary_records
+            .push(crate::eval::run_control::SessionTraceBoundaryRecordV1 {
+                record_index: 0,
+                raw_command_line: "0".to_string(),
+                decision_step: 1,
+                screen_title: "Card Reward".to_string(),
+                decision_kind: "card_reward".to_string(),
+                boundary: test_boundary_fingerprint(),
+                annotations: vec![RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                    record: source_record,
+                    card_reward_packet: None,
+                }],
+            });
+        trace.noncombat_outcome_attachments = vec![
+            test_outcome_attachment(
+                &decision_record_hash,
+                &candidate_id,
+                NonCombatOutcomeWindowV1::AfterOneFloor,
+                Some(9),
+                None,
+                None,
+            ),
+            test_outcome_attachment(
+                &decision_record_hash,
+                &candidate_id,
+                NonCombatOutcomeWindowV1::AfterNextElite,
+                None,
+                Some(70),
+                Some(51),
+            ),
+        ];
+
+        let examples = extract_card_reward_value_loop_examples_v1(&trace)
+            .expect("extractor should merge multi-window outcomes");
+
+        assert_eq!(examples.len(), 1);
+        let card_reward = examples[0]
+            .outcome
+            .as_ref()
+            .and_then(|outcome| outcome.card_reward.as_ref())
+            .expect("card reward outcome should be attached");
+        assert_eq!(card_reward.next_combat_hp_loss, Some(9));
+        assert_eq!(card_reward.hp_before_next_elite, Some(70));
+        assert_eq!(card_reward.hp_after_next_elite, Some(51));
+    }
+
+    fn test_calibration_with_provenance(
+        card_id: CardId,
+        bucket_gate_eligible: bool,
+        short_horizon_approved: bool,
+    ) -> CardRewardOutcomeCalibrationV1 {
+        let mut calibration = calibrate_card_reward_outcomes_v1(&[
+            test_card_reward_example(card_id, 521, 5),
+            test_card_reward_example(card_id, 522, 3),
+        ]);
+        calibration.provenance.short_horizon_autopilot_gate_approved = short_horizon_approved;
+        calibration.card_id_buckets[0].usable_for_autopilot_gate = bucket_gate_eligible;
+        calibration
+    }
+
+    fn test_card_reward_record(card_id: CardId, candidate_id: &str) -> NonCombatDecisionRecordV1 {
+        NonCombatDecisionRecordV1 {
+            schema_name: NONCOMBAT_DECISION_RECORD_SCHEMA_NAME.to_string(),
+            schema_version: NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
+            site: DecisionSiteKindV1::CardReward,
+            data_role: DataRoleV1::BehaviorPolicyNotTeacher,
+            information_boundary: InformationBoundaryV1::hidden_free(vec![
+                InformationClassV1::PublicObservation,
+            ]),
+            provenance: PolicyProvenanceV1 {
+                source_policy: "test_card_reward_policy".to_string(),
+                source_schema_name: "TestCardRewardPolicy".to_string(),
+                source_schema_version: 1,
+            },
+            candidates: vec![CandidateDescriptorV1 {
+                candidate_id: candidate_id.to_string(),
+                site: DecisionSiteKindV1::CardReward,
+                label: format!("{card_id:?}"),
+                action_plan: PublicActionPlanV1 {
+                    summary: format!("pick {card_id:?}"),
+                    command: Some("pick 0".to_string()),
+                },
+                information_classes: vec![InformationClassV1::PublicObservation],
+                uncertainty_notes: Vec::new(),
+            }],
+            evidence: EvidenceBundleV1::default(),
+            values: Vec::new(),
+            selection: PolicySelectionV1 {
+                status: PolicySelectionStatusV1::Selected,
+                selected_candidate_id: Some(candidate_id.to_string()),
+                reason: "test selected card reward".to_string(),
+                confidence: 1.0,
+                selection_mode: "test".to_string(),
+            },
+        }
+    }
+
+    fn test_outcome_attachment(
+        decision_record_hash: &str,
+        candidate_id: &str,
+        window: NonCombatOutcomeWindowV1,
+        next_combat_hp_loss: Option<i32>,
+        hp_before_next_elite: Option<i32>,
+        hp_after_next_elite: Option<i32>,
+    ) -> NonCombatOutcomeAttachmentV1 {
+        NonCombatOutcomeAttachmentV1 {
+            schema_name: NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_NAME.to_string(),
+            schema_version: NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_VERSION,
+            label_role: "diagnostic_not_teacher_label".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            site: DecisionSiteKindV1::CardReward,
+            decision_record_hash: decision_record_hash.to_string(),
+            window,
+            before: test_outcome_snapshot(80),
+            after: test_outcome_snapshot(hp_after_next_elite.unwrap_or(80)),
+            metrics: NonCombatOutcomeMetricsV1 {
+                act_delta: 0,
+                floor_delta: 1,
+                hp_delta: -next_combat_hp_loss.unwrap_or(0),
+                max_hp_delta: 0,
+                gold_delta: 0,
+                deck_size_delta: 0,
+                relic_count_delta: 0,
+                potion_count_delta: 0,
+                combats_completed_delta: i32::from(next_combat_hp_loss.is_some()),
+                elites_completed_delta: i32::from(hp_after_next_elite.is_some()),
+                bosses_completed_delta: 0,
+                terminal_changed: false,
+            },
+            card_reward: Some(CardRewardOutcomeAttachmentV1 {
+                selected_candidate_id: candidate_id.to_string(),
+                picked_card_label: candidate_id.to_string(),
+                floor_reached_after_decision: 2,
+                next_combat_hp_loss,
+                hp_before_next_elite,
+                hp_after_next_elite,
+                hp_before_boss: None,
+                picked_card_drawn_count: None,
+                picked_card_played_count: None,
+                picked_card_upgraded_before_boss: None,
+                picked_card_removed_later: None,
+            }),
+        }
+    }
+
+    fn test_boundary_fingerprint() -> crate::eval::run_control::SessionTraceBoundaryFingerprintV1 {
+        crate::eval::run_control::SessionTraceBoundaryFingerprintV1 {
+            decision_step: 1,
+            engine_state: "RewardScreen".to_string(),
+            active_combat_engine_state: None,
+            screen_title: "Card Reward".to_string(),
+            decision_kind: "card_reward".to_string(),
+            decision_label: "Card Reward".to_string(),
+            act: 1,
+            floor: 1,
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            boss: "The Guardian".to_string(),
+            candidate_count: 1,
+            candidate_set_hash: "set".to_string(),
+            candidate_order_hash: "order".to_string(),
+            combat: None,
+        }
+    }
+
+    fn test_card_reward_example(
+        card_id: CardId,
+        seed: u64,
+        next_combat_hp_loss: i32,
+    ) -> CardRewardValueLoopExampleV1 {
+        let candidate_id = format!("card_reward:0:{card_id:?}");
+        let source_record = test_card_reward_record(card_id, &candidate_id);
+        CardRewardValueLoopExampleV1 {
+            schema_name: CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME.to_string(),
+            schema_version: CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_VERSION,
+            label_role: "diagnostic_not_teacher_label".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            source_trace_schema_name: Some(
+                crate::eval::run_control::SESSION_TRACE_SCHEMA_NAME.to_string(),
+            ),
+            source_trace_schema_version: Some(
+                crate::eval::run_control::SESSION_TRACE_SCHEMA_VERSION,
+            ),
+            source_run_config: Some(CardRewardValueLoopRunConfigV1 {
+                seed,
+                ascension_level: 0,
+                player_class: "Ironclad".to_string(),
+                final_act: false,
+            }),
+            trace_step_index: Some(0),
+            trace_boundary_record_index: None,
+            decision_record_hash: format!("hash-{seed}-{card_id:?}"),
+            decision_site: DecisionSiteKindV1::CardReward,
+            replay_status: CardRewardValueLoopReplayStatusV1::FullPublicPacket,
+            outcome_status: CardRewardValueLoopOutcomeStatusV1::Attached,
+            selected_candidate_id: Some(candidate_id.clone()),
+            selection_status: PolicySelectionStatusV1::Selected,
+            selection_reason: "test selected card reward".to_string(),
+            candidate_count: 1,
+            value_estimate_count: 0,
+            source_record,
+            public_packet: None,
+            outcome: Some(NonCombatOutcomeAttachmentV1 {
+                schema_name: NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_NAME.to_string(),
+                schema_version: NONCOMBAT_OUTCOME_ATTACHMENT_SCHEMA_VERSION,
+                label_role: "diagnostic_not_teacher_label".to_string(),
+                trainable_as_action_label: false,
+                policy_quality_claim: false,
+                site: DecisionSiteKindV1::CardReward,
+                decision_record_hash: format!("hash-{seed}-{card_id:?}"),
+                window: NonCombatOutcomeWindowV1::AfterOneFloor,
+                before: test_outcome_snapshot(80),
+                after: test_outcome_snapshot(80 - next_combat_hp_loss),
+                metrics: NonCombatOutcomeMetricsV1 {
+                    act_delta: 0,
+                    floor_delta: 1,
+                    hp_delta: -next_combat_hp_loss,
+                    max_hp_delta: 0,
+                    gold_delta: 0,
+                    deck_size_delta: 0,
+                    relic_count_delta: 0,
+                    potion_count_delta: 0,
+                    combats_completed_delta: 1,
+                    elites_completed_delta: 0,
+                    bosses_completed_delta: 0,
+                    terminal_changed: false,
+                },
+                card_reward: Some(CardRewardOutcomeAttachmentV1 {
+                    selected_candidate_id: candidate_id,
+                    picked_card_label: format!("{card_id:?}"),
+                    floor_reached_after_decision: 2,
+                    next_combat_hp_loss: Some(next_combat_hp_loss),
+                    hp_before_next_elite: None,
+                    hp_after_next_elite: None,
+                    hp_before_boss: None,
+                    picked_card_drawn_count: None,
+                    picked_card_played_count: None,
+                    picked_card_upgraded_before_boss: None,
+                    picked_card_removed_later: None,
+                }),
+            }),
+        }
+    }
+
+    fn test_outcome_snapshot(current_hp: i32) -> NonCombatOutcomeSnapshotV1 {
+        NonCombatOutcomeSnapshotV1 {
+            act: 1,
+            floor: 1,
+            current_hp,
+            max_hp: 80,
+            gold: 99,
+            deck_size: 10,
+            relic_count: 1,
+            potion_count: 0,
+            combats_completed: 0,
+            elites_completed: 0,
+            bosses_completed: 0,
+            run_terminal: None,
+        }
     }
 }

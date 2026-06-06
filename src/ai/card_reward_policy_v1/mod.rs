@@ -6,6 +6,7 @@ mod impact;
 mod policy;
 mod profile;
 mod replay;
+mod route_risk;
 mod types;
 mod value;
 
@@ -24,8 +25,10 @@ pub use types::{
     CardRewardEstimatorCandidateArbitrationV1, CardRewardEstimatorInputsV1,
     CardRewardEvidenceGapV1, CardRewardFactsV1, CardRewardPickCertificateV1,
     CardRewardPickDependencyV1, CardRewardPlanEffectV1, CardRewardPolicyActionV1,
-    CardRewardPolicyConfigV1, CardRewardStopDispositionV1, CardRewardValueComponentV1,
-    CardRewardValueEstimateV1, CardRewardValueSourceV1, CardRewardValueStatusV1,
+    CardRewardPolicyConfigV1, CardRewardRouteEvidenceV1, CardRewardSelectedRouteV1,
+    CardRewardStopDispositionV1, CardRewardValueComponentV1, CardRewardValueEligibilityReasonV1,
+    CardRewardValueEligibilityV1, CardRewardValueEstimateV1, CardRewardValueHorizonV1,
+    CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
 
 #[cfg(test)]

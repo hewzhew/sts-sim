@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    estimate_card_reward_values_from_calibration_v1, CardRewardOutcomeCalibrationV1,
-    CardRewardValueLoopExampleV1,
+    calibration::outcome_calibration_eligibility, estimate_card_reward_values_from_calibration_v1,
+    CardRewardOutcomeCalibrationV1, CardRewardValueLoopExampleV1,
 };
 use crate::ai::card_reward_policy_v1::{
     replay_card_reward_decision_with_estimator_inputs_v1, CardRewardEstimatorInputsV1,
@@ -35,6 +35,7 @@ pub struct CardRewardCalibrationReplayExampleV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub policy_selected_candidate_id: Option<String>,
     pub policy_value_sources: Vec<String>,
+    pub policy_gate_blockers: Vec<String>,
     pub original_value_count: usize,
     pub candidate_replays: Vec<CardRewardCalibrationReplayCandidateV1>,
 }
@@ -59,6 +60,8 @@ pub struct CardRewardCalibrationReplayEstimateV1 {
     pub uncertainty: f32,
     pub outcome_sample_count: usize,
     pub usable_for_autopilot_gate: bool,
+    pub eligibility_reasons: Vec<String>,
+    pub horizon: Option<String>,
 }
 
 pub fn replay_card_reward_records_with_calibration_v1(
@@ -143,6 +146,17 @@ fn card_reward_calibration_replay_example(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let policy_gate_blockers = policy_replay
+        .as_ref()
+        .map(|replay| {
+            replay
+                .autopilot_gate
+                .blocked_reasons
+                .iter()
+                .map(|reason| format!("{reason:?}"))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     CardRewardCalibrationReplayExampleV1 {
         decision_record_hash: example.decision_record_hash.clone(),
@@ -156,6 +170,7 @@ fn card_reward_calibration_replay_example(
             .as_ref()
             .and_then(|replay| replay.selected_candidate_id.clone()),
         policy_value_sources,
+        policy_gate_blockers,
         original_value_count: example.source_record.values.len(),
         candidate_replays,
     }
@@ -180,13 +195,20 @@ fn calibration_replay_estimate(
         .find(|bucket| bucket.card_id == card_id && bucket.usable_for_value_estimate)?;
     let card_mean = bucket.mean_next_combat_hp_loss?;
     let global_mean = calibration.global.mean_next_combat_hp_loss?;
+    let eligibility = outcome_calibration_eligibility(calibration, bucket);
     Some(CardRewardCalibrationReplayEstimateV1 {
         source: "OutcomeCalibration".to_string(),
         status: "OutcomeCalibrated".to_string(),
         survival_delta: global_mean - card_mean,
         uncertainty: bucket.uncertainty,
         outcome_sample_count: bucket.outcome_attached_count,
-        usable_for_autopilot_gate: bucket.usable_for_autopilot_gate,
+        usable_for_autopilot_gate: eligibility.usable_for_autopilot_gate,
+        eligibility_reasons: eligibility
+            .reasons
+            .iter()
+            .map(|reason| format!("{reason:?}"))
+            .collect(),
+        horizon: eligibility.horizon.map(|horizon| format!("{horizon:?}")),
     })
 }
 

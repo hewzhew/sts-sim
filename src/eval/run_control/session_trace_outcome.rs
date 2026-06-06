@@ -33,12 +33,14 @@ pub(super) fn queue_selected_noncombat_outcomes(
 ) -> bool {
     let mut queued = false;
     for record in selected_noncombat_records(annotations) {
-        pending_outcomes.push(SessionTracePendingOutcome {
-            record,
-            window: NonCombatOutcomeWindowV1::AfterOneFloor,
-            before: before.clone(),
-            card_reward_observation: CardRewardOutcomeObservationV1::default(),
-        });
+        for window in outcome_windows_for_record(&record) {
+            pending_outcomes.push(SessionTracePendingOutcome {
+                record: record.clone(),
+                window,
+                before: before.clone(),
+                card_reward_observation: CardRewardOutcomeObservationV1::default(),
+            });
+        }
         queued = true;
     }
     queued
@@ -127,19 +129,27 @@ pub(super) fn resolve_pending_outcomes(
     attachments: &mut Vec<NonCombatOutcomeAttachmentV1>,
     session: &RunControlSession,
     counters: SessionTraceOutcomeCounters,
+    action_result: Option<&ActionResult>,
 ) -> Result<bool, String> {
     if pending_outcomes.is_empty() {
         return Ok(false);
     }
     let after = noncombat_outcome_snapshot(session, counters);
-    if !is_noncombat_outcome_boundary(session) {
+    let is_noncombat_boundary = is_noncombat_outcome_boundary(session);
+    let is_before_next_elite_boundary = is_before_next_elite_boundary(session, action_result);
+    if !is_noncombat_boundary && !is_before_next_elite_boundary {
         return Ok(false);
     }
 
     let mut remaining = Vec::new();
     let mut resolved = false;
     for pending in std::mem::take(pending_outcomes) {
-        if outcome_window_reached(&pending, &after) {
+        if outcome_window_reached(
+            &pending,
+            &after,
+            is_noncombat_boundary,
+            is_before_next_elite_boundary,
+        ) {
             let attachment = attach_noncombat_outcome_with_card_reward_observation_v1(
                 &pending.record,
                 pending.window,
@@ -211,6 +221,19 @@ fn selected_noncombat_records(
         .collect()
 }
 
+fn outcome_windows_for_record(record: &NonCombatDecisionRecordV1) -> Vec<NonCombatOutcomeWindowV1> {
+    if record.site == DecisionSiteKindV1::CardReward {
+        vec![
+            NonCombatOutcomeWindowV1::AfterOneFloor,
+            NonCombatOutcomeWindowV1::BeforeNextElite,
+            NonCombatOutcomeWindowV1::AfterNextElite,
+            NonCombatOutcomeWindowV1::AfterBoss,
+        ]
+    } else {
+        vec![NonCombatOutcomeWindowV1::AfterOneFloor]
+    }
+}
+
 fn selected_card_reward_matches_card(
     pending: &SessionTracePendingOutcome,
     card: &crate::eval::run_control::transition_report::CardSnapshot,
@@ -231,23 +254,47 @@ fn selected_card_reward_matches_card(
 fn outcome_window_reached(
     pending: &SessionTracePendingOutcome,
     after: &NonCombatOutcomeSnapshotV1,
+    is_noncombat_boundary: bool,
+    is_before_next_elite_boundary: bool,
 ) -> bool {
-    if pending.before.run_terminal != after.run_terminal && after.run_terminal.is_some() {
+    if is_noncombat_boundary
+        && pending.before.run_terminal != after.run_terminal
+        && after.run_terminal.is_some()
+    {
         return true;
     }
     match pending.window {
         NonCombatOutcomeWindowV1::AfterOneFloor => {
-            after.act > pending.before.act || after.floor >= pending.before.floor + 1
+            is_noncombat_boundary
+                && (after.act > pending.before.act || after.floor >= pending.before.floor + 1)
         }
         NonCombatOutcomeWindowV1::AfterThreeFloors => {
-            after.act > pending.before.act || after.floor >= pending.before.floor + 3
+            is_noncombat_boundary
+                && (after.act > pending.before.act || after.floor >= pending.before.floor + 3)
         }
-        NonCombatOutcomeWindowV1::BeforeNextElite
-        | NonCombatOutcomeWindowV1::AfterNextElite
-        | NonCombatOutcomeWindowV1::BeforeBoss
-        | NonCombatOutcomeWindowV1::AfterBoss
-        | NonCombatOutcomeWindowV1::Manual => false,
+        NonCombatOutcomeWindowV1::BeforeNextElite => is_before_next_elite_boundary,
+        NonCombatOutcomeWindowV1::AfterNextElite => {
+            is_noncombat_boundary && after.elites_completed > pending.before.elites_completed
+        }
+        NonCombatOutcomeWindowV1::AfterBoss => {
+            is_noncombat_boundary && after.bosses_completed > pending.before.bosses_completed
+        }
+        NonCombatOutcomeWindowV1::BeforeBoss | NonCombatOutcomeWindowV1::Manual => false,
     }
+}
+
+fn is_before_next_elite_boundary(
+    session: &RunControlSession,
+    action_result: Option<&ActionResult>,
+) -> bool {
+    let Some(action_result) = action_result else {
+        return false;
+    };
+    action_result
+        .changes
+        .iter()
+        .any(|change| matches!(change, ActionResultChange::CombatStarted { .. }))
+        && session.run_state.map.get_current_room_type() == Some(RoomType::MonsterRoomElite)
 }
 
 fn is_noncombat_outcome_boundary(session: &RunControlSession) -> bool {
@@ -272,10 +319,11 @@ mod tests {
     };
     use crate::content::cards::CardId;
     use crate::eval::run_control::transition_report::{
-        ActionResult, ActionResultChange, CardSnapshot, RunApplyStatus,
+        ActionResult, ActionResultChange, CardSnapshot, CombatPlayerResult, RunApplyStatus,
     };
     use crate::eval::run_control::{RunControlConfig, RunControlSession};
     use crate::state::core::{ClientInput, EngineState};
+    use crate::state::map::{MapRoomNode, MapState};
 
     #[test]
     fn pending_card_reward_outcome_records_selected_card_upgrade_and_removal() {
@@ -352,6 +400,178 @@ mod tests {
     }
 
     #[test]
+    fn selected_card_reward_queues_short_elite_and_boss_outcome_windows() {
+        let mut pending_outcomes = Vec::new();
+        let before = NonCombatOutcomeSnapshotV1 {
+            act: 1,
+            floor: 1,
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_size: 11,
+            relic_count: 1,
+            potion_count: 0,
+            combats_completed: 0,
+            elites_completed: 0,
+            bosses_completed: 0,
+            run_terminal: None,
+        };
+
+        queue_selected_noncombat_outcomes(
+            &mut pending_outcomes,
+            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record: selected_card_reward_record(CardId::TwinStrike),
+                card_reward_packet: None,
+            }],
+            before,
+        );
+
+        let windows = pending_outcomes
+            .iter()
+            .map(|pending| pending.window)
+            .collect::<Vec<_>>();
+        assert!(windows.contains(&NonCombatOutcomeWindowV1::AfterOneFloor));
+        assert!(windows.contains(&NonCombatOutcomeWindowV1::BeforeNextElite));
+        assert!(windows.contains(&NonCombatOutcomeWindowV1::AfterNextElite));
+        assert!(windows.contains(&NonCombatOutcomeWindowV1::AfterBoss));
+    }
+
+    #[test]
+    fn before_next_elite_window_records_card_reward_hp_before_elite() {
+        let mut pending_outcomes = Vec::new();
+        let mut attachments = Vec::new();
+        let before = NonCombatOutcomeSnapshotV1 {
+            act: 1,
+            floor: 1,
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_size: 11,
+            relic_count: 1,
+            potion_count: 0,
+            combats_completed: 0,
+            elites_completed: 0,
+            bosses_completed: 0,
+            run_terminal: None,
+        };
+        queue_selected_noncombat_outcomes(
+            &mut pending_outcomes,
+            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record: selected_card_reward_record(CardId::TwinStrike),
+                card_reward_packet: None,
+            }],
+            before,
+        );
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 6;
+        session.run_state.current_hp = 63;
+        let mut elite = MapRoomNode::new(0, 0);
+        elite.class = Some(RoomType::MonsterRoomElite);
+        session.run_state.map = MapState::new(vec![vec![elite]]);
+        session.run_state.map.current_x = 0;
+        session.run_state.map.current_y = 0;
+        session.engine_state = EngineState::CombatPlayerTurn;
+        let action_result = ActionResult {
+            chosen_label: "go elite".to_string(),
+            status: RunApplyStatus::Running,
+            changes: vec![ActionResultChange::CombatStarted {
+                player: CombatPlayerResult {
+                    hp: 63,
+                    max_hp: 80,
+                    block: 0,
+                    energy: 3,
+                },
+                monsters: Vec::new(),
+            }],
+        };
+
+        resolve_pending_outcomes(
+            &mut pending_outcomes,
+            &mut attachments,
+            &session,
+            SessionTraceOutcomeCounters {
+                combats_completed: 3,
+                elites_completed: 0,
+                bosses_completed: 0,
+            },
+            Some(&action_result),
+        )
+        .expect("before-next-elite should resolve at elite combat start");
+
+        let before_elite_attachment = attachments
+            .iter()
+            .find(|attachment| attachment.window == NonCombatOutcomeWindowV1::BeforeNextElite)
+            .expect("before-next-elite attachment should be emitted");
+        let card_reward = before_elite_attachment
+            .card_reward
+            .as_ref()
+            .expect("card reward outcome should be present");
+        assert_eq!(card_reward.hp_before_next_elite, Some(63));
+        assert_eq!(card_reward.hp_after_next_elite, None);
+        assert_eq!(card_reward.next_combat_hp_loss, None);
+    }
+
+    #[test]
+    fn after_next_elite_window_records_card_reward_hp_after_elite() {
+        let mut pending_outcomes = Vec::new();
+        let mut attachments = Vec::new();
+        let before = NonCombatOutcomeSnapshotV1 {
+            act: 1,
+            floor: 1,
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_size: 11,
+            relic_count: 1,
+            potion_count: 0,
+            combats_completed: 0,
+            elites_completed: 0,
+            bosses_completed: 0,
+            run_terminal: None,
+        };
+        queue_selected_noncombat_outcomes(
+            &mut pending_outcomes,
+            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record: selected_card_reward_record(CardId::TwinStrike),
+                card_reward_packet: None,
+            }],
+            before,
+        );
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 6;
+        session.run_state.current_hp = 57;
+        session.engine_state = EngineState::RewardScreen(crate::state::rewards::RewardState::new());
+
+        resolve_pending_outcomes(
+            &mut pending_outcomes,
+            &mut attachments,
+            &session,
+            SessionTraceOutcomeCounters {
+                combats_completed: 4,
+                elites_completed: 1,
+                bosses_completed: 0,
+            },
+            None,
+        )
+        .expect("after-next-elite card reward outcome should resolve");
+
+        let elite_attachment = attachments
+            .iter()
+            .find(|attachment| attachment.window == NonCombatOutcomeWindowV1::AfterNextElite)
+            .expect("after-next-elite attachment should be emitted");
+        let card_reward = elite_attachment
+            .card_reward
+            .as_ref()
+            .expect("card reward outcome should be present");
+        assert_eq!(card_reward.hp_after_next_elite, Some(57));
+        assert_eq!(card_reward.next_combat_hp_loss, None);
+    }
+
+    #[test]
     fn combat_automation_trajectory_counts_as_completed_combat_for_card_reward_outcome() {
         let mut pending_outcomes = Vec::new();
         let mut attachments = Vec::new();
@@ -406,8 +626,14 @@ mod tests {
         session.engine_state = EngineState::RewardScreen(crate::state::rewards::RewardState::new());
 
         update_outcome_counters(&mut counters, &action_result, &session, &annotations);
-        resolve_pending_outcomes(&mut pending_outcomes, &mut attachments, &session, counters)
-            .expect("pending card reward outcome should resolve");
+        resolve_pending_outcomes(
+            &mut pending_outcomes,
+            &mut attachments,
+            &session,
+            counters,
+            None,
+        )
+        .expect("pending card reward outcome should resolve");
 
         assert_eq!(attachments.len(), 1);
         let card_reward = attachments[0]

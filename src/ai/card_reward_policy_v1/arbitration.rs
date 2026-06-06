@@ -22,7 +22,7 @@ pub fn arbitrate_card_reward_value_estimates_v1(
             .filter(|estimate| estimate.index == candidate.index && estimate.card == candidate.card)
             .collect::<Vec<_>>();
         candidate_estimates.sort_by(|left, right| compare_estimates_for_arbitration(left, right));
-        let selected = candidate_estimates.first().copied();
+        let selected = select_gate_estimate(&candidate_estimates);
         let mut rejected_reasons = Vec::new();
         if selected.is_none() {
             rejected_reasons.push(CardRewardEvidenceGapV1::MissingValueEstimate);
@@ -42,6 +42,9 @@ pub fn arbitrate_card_reward_value_estimates_v1(
             autopilot_source_eligible: selected
                 .map(|estimate| value_source_autopilot_eligible_v1(estimate.source))
                 .unwrap_or(false),
+            selected_estimate_gate_eligible: selected
+                .map(estimate_source_gate_eligible_v1)
+                .unwrap_or(false),
             rejected_reasons,
         });
     }
@@ -56,6 +59,17 @@ pub fn arbitrate_card_reward_value_estimates_v1(
     }
 }
 
+fn select_gate_estimate<'a>(
+    candidate_estimates: &[&'a CardRewardValueEstimateV1],
+) -> Option<&'a CardRewardValueEstimateV1> {
+    candidate_estimates
+        .iter()
+        .copied()
+        .filter(|estimate| estimate_source_gate_eligible_v1(estimate))
+        .min_by(|left, right| compare_estimates_for_arbitration(left, right))
+        .or_else(|| candidate_estimates.first().copied())
+}
+
 pub(crate) fn value_source_autopilot_eligible_v1(source: CardRewardValueSourceV1) -> bool {
     matches!(
         source,
@@ -65,10 +79,28 @@ pub(crate) fn value_source_autopilot_eligible_v1(source: CardRewardValueSourceV1
     )
 }
 
+pub(crate) fn estimate_source_gate_eligible_v1(estimate: &CardRewardValueEstimateV1) -> bool {
+    match estimate.source {
+        CardRewardValueSourceV1::UncalibratedImpactPrior => false,
+        CardRewardValueSourceV1::OutcomeCalibration => {
+            estimate.eligibility.usable_for_autopilot_gate
+        }
+        CardRewardValueSourceV1::CombatProbe
+        | CardRewardValueSourceV1::RouteRisk
+        | CardRewardValueSourceV1::LearnedValue => {
+            value_source_autopilot_eligible_v1(estimate.source)
+                && estimate.eligibility.usable_for_autopilot_gate
+        }
+    }
+}
+
 pub(crate) fn value_status_autopilot_eligible_v1(status: CardRewardValueStatusV1) -> bool {
     matches!(
         status,
-        CardRewardValueStatusV1::CounterfactualProbe | CardRewardValueStatusV1::OutcomeCalibrated
+        CardRewardValueStatusV1::CounterfactualProbe
+            | CardRewardValueStatusV1::OutcomeCalibrated
+            | CardRewardValueStatusV1::RouteRiskEstimate
+            | CardRewardValueStatusV1::RouteRiskCalibrated
     )
 }
 
@@ -95,8 +127,8 @@ fn source_rank(source: CardRewardValueSourceV1) -> u8 {
     match source {
         CardRewardValueSourceV1::LearnedValue => 50,
         CardRewardValueSourceV1::CombatProbe => 40,
-        CardRewardValueSourceV1::RouteRisk => 35,
-        CardRewardValueSourceV1::OutcomeCalibration => 20,
+        CardRewardValueSourceV1::OutcomeCalibration => 35,
+        CardRewardValueSourceV1::RouteRisk => 20,
         CardRewardValueSourceV1::UncalibratedImpactPrior => 0,
     }
 }
@@ -105,6 +137,8 @@ fn status_rank(status: CardRewardValueStatusV1) -> u8 {
     match status {
         CardRewardValueStatusV1::CounterfactualProbe => 30,
         CardRewardValueStatusV1::OutcomeCalibrated => 20,
+        CardRewardValueStatusV1::RouteRiskCalibrated => 15,
+        CardRewardValueStatusV1::RouteRiskEstimate => 10,
         CardRewardValueStatusV1::UncalibratedPrior => 0,
     }
 }

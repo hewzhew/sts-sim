@@ -1,12 +1,13 @@
 use super::types::{
-    CardRewardDecisionContextV1, CardRewardValueComponentV1, CardRewardValueEstimateV1,
-    CardRewardValueSourceV1, CardRewardValueStatusV1,
+    CardRewardDecisionContextV1, CardRewardValueComponentV1, CardRewardValueEligibilityReasonV1,
+    CardRewardValueEligibilityV1, CardRewardValueEstimateV1, CardRewardValueSourceV1,
+    CardRewardValueStatusV1,
 };
 
 pub(crate) fn estimate_card_reward_values(
     context: &CardRewardDecisionContextV1,
 ) -> Vec<CardRewardValueEstimateV1> {
-    context
+    let mut estimates = context
         .candidates
         .iter()
         .map(|candidate| CardRewardValueEstimateV1 {
@@ -18,9 +19,21 @@ pub(crate) fn estimate_card_reward_values(
             progress_delta: 0.0,
             deck_consistency_delta: 0.0,
             uncertainty: 1.0,
+            eligibility: CardRewardValueEligibilityV1 {
+                usable_for_value_estimate: true,
+                usable_for_autopilot_gate: false,
+                reasons: vec![
+                    CardRewardValueEligibilityReasonV1::UncalibratedPriorNeverGateEligible,
+                ],
+                bucket_key: None,
+                horizon: None,
+                outcome_sample_count: None,
+            },
             components: impact_prior_components(context, candidate),
         })
-        .collect()
+        .collect::<Vec<_>>();
+    estimates.extend(super::route_risk::estimate_route_risk_values(context));
+    estimates
 }
 
 fn impact_prior_components(

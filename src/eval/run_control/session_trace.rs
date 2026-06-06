@@ -392,6 +392,7 @@ impl SessionTraceRecorder {
             &mut self.trace.noncombat_outcome_attachments,
             session_after,
             self.outcome_counters,
+            Some(action_result),
         )?;
         self.save()
     }
@@ -519,6 +520,7 @@ impl SessionTraceRecorder {
             &mut self.trace.noncombat_outcome_attachments,
             session,
             self.outcome_counters,
+            None,
         )?;
         let should_record_boundary = annotations.iter().any(is_boundary_record_annotation);
         if !should_record_boundary {

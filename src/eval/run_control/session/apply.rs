@@ -221,8 +221,35 @@ impl RunControlSession {
         &mut self,
         input: ClientInput,
     ) -> Result<RunControlCommandOutcome, String> {
+        self.apply_input_inner(input, true)
+    }
+
+    pub(in crate::eval::run_control) fn apply_input_without_manual_card_reward_trace(
+        &mut self,
+        input: ClientInput,
+    ) -> Result<RunControlCommandOutcome, String> {
+        self.apply_input_inner(input, false)
+    }
+
+    fn apply_input_inner(
+        &mut self,
+        input: ClientInput,
+        trace_manual_card_reward_selection: bool,
+    ) -> Result<RunControlCommandOutcome, String> {
         self.ensure_combat_started_if_needed()?;
         self.validate_input_for_current_state(&input)?;
+        let manual_card_reward_annotation = if trace_manual_card_reward_selection {
+            match &input {
+                ClientInput::SelectCard(index) => {
+                    super::super::card_reward_auto::manual_card_reward_selection_annotation(
+                        self, *index,
+                    )?
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
         let before_snapshot = RunVisibleSnapshot::capture(self);
         let action_report = transition_action_for_input(self, &input);
         self.observe_active_combat_started();
@@ -257,6 +284,7 @@ impl RunControlSession {
                 finished_combat = tick.finished_combat.take();
             }
         }
+        self.collapse_completed_event_room();
         let after_combat = finished_combat
             .as_ref()
             .map(|finished| &finished.combat_state)
@@ -283,7 +311,11 @@ impl RunControlSession {
         self.ensure_combat_started_if_needed()?;
         self.observe_active_combat_started();
         let auto_capture = super::super::auto_capture::maybe_auto_capture_combat_start(self)?;
-        let mut trace_annotations = reward_automation.trace_annotations.clone();
+        let mut trace_annotations = Vec::new();
+        if let Some(annotation) = manual_card_reward_annotation {
+            trace_annotations.push(annotation);
+        }
+        trace_annotations.extend(reward_automation.trace_annotations.clone());
         self.decision_step = self.decision_step.saturating_add(1);
 
         let status = if tick.keep_running {
@@ -322,5 +354,18 @@ impl RunControlSession {
             action_result,
         )
         .with_trace_annotations(trace_annotations))
+    }
+
+    fn collapse_completed_event_room(&mut self) {
+        if !matches!(self.engine_state, EngineState::EventRoom) {
+            return;
+        }
+        let Some(event_state) = self.run_state.event_state.as_ref() else {
+            return;
+        };
+        if event_state.completed && !event_state.combat_pending {
+            self.run_state.event_state = None;
+            self.engine_state = EngineState::MapNavigation;
+        }
     }
 }
