@@ -412,6 +412,7 @@ mod tests {
         NONCOMBAT_DECISION_RECORD_SCHEMA_NAME, NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
     };
     use crate::content::cards::CardId;
+    use crate::eval::run_control::trace_annotation::CombatAutomationActionV1;
     use crate::eval::run_control::transition_report::{
         ActionResult, ActionResultChange, CardSnapshot, CombatPlayerResult, RunApplyStatus,
     };
@@ -422,27 +423,10 @@ mod tests {
     #[test]
     fn pending_card_reward_outcome_records_selected_card_upgrade_and_removal() {
         let mut pending_outcomes = Vec::new();
-        let before = NonCombatOutcomeSnapshotV1 {
-            act: 1,
-            floor: 1,
-            current_hp: 80,
-            max_hp: 80,
-            gold: 99,
-            deck_size: 10,
-            relic_count: 1,
-            potion_count: 0,
-            combats_completed: 0,
-            elites_completed: 0,
-            bosses_completed: 0,
-            run_terminal: None,
-        };
         queue_selected_noncombat_outcomes(
             &mut pending_outcomes,
-            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record: selected_card_reward_record(CardId::TwinStrike),
-                card_reward_packet: None,
-            }],
-            before,
+            &[selected_card_reward_annotation(CardId::TwinStrike)],
+            test_outcome_snapshot(10),
             None,
         );
 
@@ -498,40 +482,7 @@ mod tests {
 
     #[test]
     fn pending_card_reward_outcome_counts_selected_card_played_by_combat_automation() {
-        let mut pending_outcomes = Vec::new();
-        let before = NonCombatOutcomeSnapshotV1 {
-            act: 1,
-            floor: 1,
-            current_hp: 80,
-            max_hp: 80,
-            gold: 99,
-            deck_size: 10,
-            relic_count: 1,
-            potion_count: 0,
-            combats_completed: 0,
-            elites_completed: 0,
-            bosses_completed: 0,
-            run_terminal: None,
-        };
-        queue_selected_noncombat_outcomes(
-            &mut pending_outcomes,
-            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record: selected_card_reward_record(CardId::TwinStrike),
-                card_reward_packet: None,
-            }],
-            before,
-            Some(&ActionResult {
-                chosen_label: "pick Twin Strike".to_string(),
-                status: RunApplyStatus::Running,
-                changes: vec![ActionResultChange::CardAdded {
-                    card: CardSnapshot {
-                        id: CardId::TwinStrike,
-                        uuid: 100,
-                        upgrades: 0,
-                    },
-                }],
-            }),
-        );
+        let mut pending_outcomes = queued_twin_strike_reward_pending(100);
 
         update_pending_outcome_observations(
             &mut pending_outcomes,
@@ -544,34 +495,23 @@ mod tests {
                 source: "test_search".to_string(),
                 action_count: 3,
                 actions: vec![
-                    super::super::trace_annotation::CombatAutomationActionV1 {
-                        step_index: 0,
-                        action_key:
-                            "combat/play_card/hand:1/card:Twin Strike+0#100/target:monster_slot:0"
-                                .to_string(),
-                        input: ClientInput::PlayCard {
+                    combat_automation_action(
+                        0,
+                        "combat/play_card/hand:1/card:Twin Strike+0#100/target:monster_slot:0",
+                        ClientInput::PlayCard {
                             card_index: 1,
                             target: Some(1),
                         },
-                        drawn_cards: Vec::new(),
-                    },
-                    super::super::trace_annotation::CombatAutomationActionV1 {
-                        step_index: 1,
-                        action_key: "combat/end_turn".to_string(),
-                        input: ClientInput::EndTurn,
-                        drawn_cards: Vec::new(),
-                    },
-                    super::super::trace_annotation::CombatAutomationActionV1 {
-                        step_index: 2,
-                        action_key:
-                            "combat/play_card/hand:0/card:Twin Strike+1#100/target:monster_slot:0"
-                                .to_string(),
-                        input: ClientInput::PlayCard {
+                    ),
+                    combat_automation_action(1, "combat/end_turn", ClientInput::EndTurn),
+                    combat_automation_action(
+                        2,
+                        "combat/play_card/hand:0/card:Twin Strike+1#100/target:monster_slot:0",
+                        ClientInput::PlayCard {
                             card_index: 0,
                             target: Some(1),
                         },
-                        drawn_cards: Vec::new(),
-                    },
+                    ),
                 ],
                 label_role: "simulator_generated_not_teacher_label".to_string(),
             }],
@@ -642,16 +582,16 @@ mod tests {
             &[RunControlTraceAnnotationV1::CombatAutomationTrajectory {
                 source: "test_search".to_string(),
                 action_count: 1,
-                actions: vec![super::super::trace_annotation::CombatAutomationActionV1 {
-                    step_index: 0,
-                    action_key: "combat/end_turn".to_string(),
-                    input: ClientInput::EndTurn,
-                    drawn_cards: vec![CardSnapshot {
+                actions: vec![combat_automation_action_with_draws(
+                    0,
+                    "combat/end_turn",
+                    ClientInput::EndTurn,
+                    vec![CardSnapshot {
                         id: CardId::TwinStrike,
                         uuid: 100,
                         upgrades: 0,
                     }],
-                }],
+                )],
                 label_role: "simulator_generated_not_teacher_label".to_string(),
             }],
         );
@@ -666,40 +606,7 @@ mod tests {
 
     #[test]
     fn pending_card_reward_outcome_uses_selected_card_uuid_when_known() {
-        let mut pending_outcomes = Vec::new();
-        let before = NonCombatOutcomeSnapshotV1 {
-            act: 1,
-            floor: 1,
-            current_hp: 80,
-            max_hp: 80,
-            gold: 99,
-            deck_size: 10,
-            relic_count: 1,
-            potion_count: 0,
-            combats_completed: 0,
-            elites_completed: 0,
-            bosses_completed: 0,
-            run_terminal: None,
-        };
-        queue_selected_noncombat_outcomes(
-            &mut pending_outcomes,
-            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record: selected_card_reward_record(CardId::TwinStrike),
-                card_reward_packet: None,
-            }],
-            before,
-            Some(&ActionResult {
-                chosen_label: "pick Twin Strike".to_string(),
-                status: RunApplyStatus::Running,
-                changes: vec![ActionResultChange::CardAdded {
-                    card: CardSnapshot {
-                        id: CardId::TwinStrike,
-                        uuid: 777,
-                        upgrades: 0,
-                    },
-                }],
-            }),
-        );
+        let mut pending_outcomes = queued_twin_strike_reward_pending(777);
 
         update_pending_outcome_observations(
             &mut pending_outcomes,
@@ -712,28 +619,22 @@ mod tests {
                 source: "test_search".to_string(),
                 action_count: 2,
                 actions: vec![
-                    super::super::trace_annotation::CombatAutomationActionV1 {
-                        step_index: 0,
-                        action_key:
-                            "combat/play_card/hand:1/card:Twin Strike+0#100/target:monster_slot:0"
-                                .to_string(),
-                        input: ClientInput::PlayCard {
+                    combat_automation_action(
+                        0,
+                        "combat/play_card/hand:1/card:Twin Strike+0#100/target:monster_slot:0",
+                        ClientInput::PlayCard {
                             card_index: 1,
                             target: Some(1),
                         },
-                        drawn_cards: Vec::new(),
-                    },
-                    super::super::trace_annotation::CombatAutomationActionV1 {
-                        step_index: 1,
-                        action_key:
-                            "combat/play_card/hand:0/card:Twin Strike+0#777/target:monster_slot:0"
-                                .to_string(),
-                        input: ClientInput::PlayCard {
+                    ),
+                    combat_automation_action(
+                        1,
+                        "combat/play_card/hand:0/card:Twin Strike+0#777/target:monster_slot:0",
+                        ClientInput::PlayCard {
                             card_index: 0,
                             target: Some(1),
                         },
-                        drawn_cards: Vec::new(),
-                    },
+                    ),
                 ],
                 label_role: "simulator_generated_not_teacher_label".to_string(),
             }],
@@ -750,28 +651,11 @@ mod tests {
     #[test]
     fn selected_card_reward_queues_short_elite_and_boss_outcome_windows() {
         let mut pending_outcomes = Vec::new();
-        let before = NonCombatOutcomeSnapshotV1 {
-            act: 1,
-            floor: 1,
-            current_hp: 80,
-            max_hp: 80,
-            gold: 99,
-            deck_size: 11,
-            relic_count: 1,
-            potion_count: 0,
-            combats_completed: 0,
-            elites_completed: 0,
-            bosses_completed: 0,
-            run_terminal: None,
-        };
 
         queue_selected_noncombat_outcomes(
             &mut pending_outcomes,
-            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record: selected_card_reward_record(CardId::TwinStrike),
-                card_reward_packet: None,
-            }],
-            before,
+            &[selected_card_reward_annotation(CardId::TwinStrike)],
+            test_outcome_snapshot(11),
             None,
         );
 
@@ -789,27 +673,10 @@ mod tests {
     fn before_next_elite_window_records_card_reward_hp_before_elite() {
         let mut pending_outcomes = Vec::new();
         let mut attachments = Vec::new();
-        let before = NonCombatOutcomeSnapshotV1 {
-            act: 1,
-            floor: 1,
-            current_hp: 80,
-            max_hp: 80,
-            gold: 99,
-            deck_size: 11,
-            relic_count: 1,
-            potion_count: 0,
-            combats_completed: 0,
-            elites_completed: 0,
-            bosses_completed: 0,
-            run_terminal: None,
-        };
         queue_selected_noncombat_outcomes(
             &mut pending_outcomes,
-            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record: selected_card_reward_record(CardId::TwinStrike),
-                card_reward_packet: None,
-            }],
-            before,
+            &[selected_card_reward_annotation(CardId::TwinStrike)],
+            test_outcome_snapshot(11),
             None,
         );
 
@@ -867,27 +734,10 @@ mod tests {
     fn after_next_elite_window_records_card_reward_hp_after_elite() {
         let mut pending_outcomes = Vec::new();
         let mut attachments = Vec::new();
-        let before = NonCombatOutcomeSnapshotV1 {
-            act: 1,
-            floor: 1,
-            current_hp: 80,
-            max_hp: 80,
-            gold: 99,
-            deck_size: 11,
-            relic_count: 1,
-            potion_count: 0,
-            combats_completed: 0,
-            elites_completed: 0,
-            bosses_completed: 0,
-            run_terminal: None,
-        };
         queue_selected_noncombat_outcomes(
             &mut pending_outcomes,
-            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record: selected_card_reward_record(CardId::TwinStrike),
-                card_reward_packet: None,
-            }],
-            before,
+            &[selected_card_reward_annotation(CardId::TwinStrike)],
+            test_outcome_snapshot(11),
             None,
         );
 
@@ -927,39 +777,21 @@ mod tests {
         let mut pending_outcomes = Vec::new();
         let mut attachments = Vec::new();
         let mut counters = SessionTraceOutcomeCounters::default();
-        let before = NonCombatOutcomeSnapshotV1 {
-            act: 1,
-            floor: 1,
-            current_hp: 80,
-            max_hp: 80,
-            gold: 99,
-            deck_size: 11,
-            relic_count: 1,
-            potion_count: 0,
-            combats_completed: 0,
-            elites_completed: 0,
-            bosses_completed: 0,
-            run_terminal: None,
-        };
         queue_selected_noncombat_outcomes(
             &mut pending_outcomes,
-            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record: selected_card_reward_record(CardId::TwinStrike),
-                card_reward_packet: None,
-            }],
-            before,
+            &[selected_card_reward_annotation(CardId::TwinStrike)],
+            test_outcome_snapshot(11),
             None,
         );
 
         let annotations = vec![RunControlTraceAnnotationV1::CombatAutomationTrajectory {
             source: "test_combat_search".to_string(),
             action_count: 2,
-            actions: vec![super::super::trace_annotation::CombatAutomationActionV1 {
-                step_index: 0,
-                action_key: "combat/end_turn".to_string(),
-                input: ClientInput::EndTurn,
-                drawn_cards: Vec::new(),
-            }],
+            actions: vec![combat_automation_action(
+                0,
+                "combat/end_turn",
+                ClientInput::EndTurn,
+            )],
             label_role: "behavior_policy_not_teacher".to_string(),
         }];
         let action_result = ActionResult {
@@ -1039,24 +871,8 @@ mod tests {
         let mut pending_outcomes = Vec::new();
         queue_selected_noncombat_outcomes(
             &mut pending_outcomes,
-            &[RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record: selected_card_reward_record(CardId::TwinStrike),
-                card_reward_packet: None,
-            }],
-            NonCombatOutcomeSnapshotV1 {
-                act: 1,
-                floor: 1,
-                current_hp: 80,
-                max_hp: 80,
-                gold: 99,
-                deck_size: 10,
-                relic_count: 1,
-                potion_count: 0,
-                combats_completed: 0,
-                elites_completed: 0,
-                bosses_completed: 0,
-                run_terminal: None,
-            },
+            &[selected_card_reward_annotation(CardId::TwinStrike)],
+            test_outcome_snapshot(10),
             Some(&ActionResult {
                 chosen_label: "pick Twin Strike".to_string(),
                 status: RunApplyStatus::Running,
@@ -1070,5 +886,51 @@ mod tests {
             }),
         );
         pending_outcomes
+    }
+
+    fn selected_card_reward_annotation(card_id: CardId) -> RunControlTraceAnnotationV1 {
+        RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+            record: selected_card_reward_record(card_id),
+            card_reward_packet: None,
+        }
+    }
+
+    fn combat_automation_action(
+        step_index: usize,
+        action_key: &str,
+        input: ClientInput,
+    ) -> CombatAutomationActionV1 {
+        combat_automation_action_with_draws(step_index, action_key, input, Vec::new())
+    }
+
+    fn combat_automation_action_with_draws(
+        step_index: usize,
+        action_key: &str,
+        input: ClientInput,
+        drawn_cards: Vec<CardSnapshot>,
+    ) -> CombatAutomationActionV1 {
+        CombatAutomationActionV1 {
+            step_index,
+            action_key: action_key.to_string(),
+            input,
+            drawn_cards,
+        }
+    }
+
+    fn test_outcome_snapshot(deck_size: usize) -> NonCombatOutcomeSnapshotV1 {
+        NonCombatOutcomeSnapshotV1 {
+            act: 1,
+            floor: 1,
+            current_hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_size,
+            relic_count: 1,
+            potion_count: 0,
+            combats_completed: 0,
+            elites_completed: 0,
+            bosses_completed: 0,
+            run_terminal: None,
+        }
     }
 }
