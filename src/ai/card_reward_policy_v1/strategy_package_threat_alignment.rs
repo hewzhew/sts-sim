@@ -39,6 +39,10 @@ const EXHAUST_ENGINE_ALIGNMENT_EFFECTS: &[StrategyPlanEffectV1] = &[
     StrategyPlanEffectV1::ExhaustGenerator,
     StrategyPlanEffectV1::ExhaustPayoff,
 ];
+const STATUS_PACKAGE_ALIGNMENT_EFFECTS: &[StrategyPlanEffectV1] = &[
+    StrategyPlanEffectV1::StatusGenerator,
+    StrategyPlanEffectV1::StatusPayoff,
+];
 
 const STRATEGY_PACKAGE_THREAT_ALIGNMENT_RULES: &[StrategyPackageThreatAlignmentRule] = &[
     StrategyPackageThreatAlignmentRule {
@@ -224,6 +228,54 @@ const STRATEGY_PACKAGE_THREAT_ALIGNMENT_RULES: &[StrategyPackageThreatAlignmentR
         source: StrategyThreatAlignmentSource::Elite,
         tag: StrategyThreatTagV1::SetupWindow,
         tag_name: "setup_window",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StatusPackage,
+        package_name: "status_package",
+        required_effects: STATUS_PACKAGE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::StatusFlood,
+        tag_name: "status_flood",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StatusPackage,
+        package_name: "status_package",
+        required_effects: STATUS_PACKAGE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::AoEValuable,
+        tag_name: "aoe",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StatusPackage,
+        package_name: "status_package",
+        required_effects: STATUS_PACKAGE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::LongFightScaling,
+        tag_name: "long_fight",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StatusPackage,
+        package_name: "status_package",
+        required_effects: STATUS_PACKAGE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::StatusFlood,
+        tag_name: "status_flood",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StatusPackage,
+        package_name: "status_package",
+        required_effects: STATUS_PACKAGE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::AoEValuable,
+        tag_name: "aoe",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StatusPackage,
+        package_name: "status_package",
+        required_effects: STATUS_PACKAGE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::LongFightScaling,
+        tag_name: "long_fight",
     },
 ];
 

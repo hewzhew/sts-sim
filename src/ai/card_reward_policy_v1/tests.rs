@@ -1675,6 +1675,80 @@ fn strategy_package_estimator_exports_status_package_roles() {
 }
 
 #[test]
+fn status_package_completion_aligns_with_status_flood_and_aoe_threats() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.boss_key = Some(EncounterId::SlimeBoss);
+    run_state.add_card_to_deck(CardId::PowerThrough);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::Evolve, 0)],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::Evolve
+        })
+        .expect("Evolve strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_status_package" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_status_package_boss_status_flood"
+            && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_status_package_boss_aoe"
+            && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_status_package_elite_status_flood"
+            && component.value > 0.0
+    }));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
+fn status_package_completion_does_not_take_elite_alignment_without_elite_route() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.boss_key = Some(EncounterId::SlimeBoss);
+    run_state.add_card_to_deck(CardId::PowerThrough);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::Evolve, 0)],
+        route_without_elites(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::Evolve
+        })
+        .expect("Evolve strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_status_package_boss_status_flood"
+            && component.value > 0.0
+    }));
+    assert!(!estimate.components.iter().any(|component| {
+        component
+            .name
+            .starts_with("strategy_threat_alignment_status_package_elite_")
+    }));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
 fn route_risk_estimator_values_frontload_more_under_early_route_pressure() {
     let context = context_for_cards_with_route(
         vec![
