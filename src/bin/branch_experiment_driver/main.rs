@@ -177,6 +177,14 @@ fn render_compact_report(report: &BranchExperimentReportV1) -> String {
                 .unwrap_or("not_recorded")
         ));
     }
+    let primary_retention_slots = report
+        .branches
+        .iter()
+        .map(|branch| branch.retention.primary_slot)
+        .collect::<Vec<_>>();
+    if let Some(line) = render_primary_retention_slot_count_line(&primary_retention_slots) {
+        lines.push(line);
+    }
     if report.explored_branch_points == 0 {
         let boundary = report
             .frontier_groups
@@ -481,18 +489,53 @@ fn render_lineage_flags(flags: &[String]) -> String {
 fn render_retention_slots(slots: &[BranchRetentionSlotV1]) -> String {
     slots
         .iter()
-        .map(|slot| match slot {
-            BranchRetentionSlotV1::Package => "package",
-            BranchRetentionSlotV1::EngineSetup => "engine_setup",
-            BranchRetentionSlotV1::Scaling => "scaling",
-            BranchRetentionSlotV1::DefenseEngine => "defense",
-            BranchRetentionSlotV1::Survival => "survival",
-            BranchRetentionSlotV1::Frontload => "frontload",
-            BranchRetentionSlotV1::CleanDeck => "clean",
-            BranchRetentionSlotV1::Diversity => "diversity",
-        })
+        .map(|slot| retention_slot_name(*slot))
         .collect::<Vec<_>>()
         .join(",")
+}
+
+fn render_primary_retention_slot_count_line(slots: &[BranchRetentionSlotV1]) -> Option<String> {
+    let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
+    for slot in slots {
+        *counts.entry(*slot).or_default() += 1;
+    }
+    if counts.is_empty() {
+        return None;
+    }
+    let rendered = RETENTION_SLOT_DISPLAY_ORDER
+        .iter()
+        .filter_map(|slot| {
+            counts
+                .get(slot)
+                .filter(|count| **count > 0)
+                .map(|count| format!("{}={count}", retention_slot_name(*slot)))
+        })
+        .collect::<Vec<_>>();
+    Some(format!("Primary retention slots: {}", rendered.join(" ")))
+}
+
+const RETENTION_SLOT_DISPLAY_ORDER: [BranchRetentionSlotV1; 8] = [
+    BranchRetentionSlotV1::Package,
+    BranchRetentionSlotV1::EngineSetup,
+    BranchRetentionSlotV1::Scaling,
+    BranchRetentionSlotV1::DefenseEngine,
+    BranchRetentionSlotV1::Survival,
+    BranchRetentionSlotV1::Frontload,
+    BranchRetentionSlotV1::CleanDeck,
+    BranchRetentionSlotV1::Diversity,
+];
+
+fn retention_slot_name(slot: BranchRetentionSlotV1) -> &'static str {
+    match slot {
+        BranchRetentionSlotV1::Package => "package",
+        BranchRetentionSlotV1::EngineSetup => "engine_setup",
+        BranchRetentionSlotV1::Scaling => "scaling",
+        BranchRetentionSlotV1::DefenseEngine => "defense",
+        BranchRetentionSlotV1::Survival => "survival",
+        BranchRetentionSlotV1::Frontload => "frontload",
+        BranchRetentionSlotV1::CleanDeck => "clean",
+        BranchRetentionSlotV1::Diversity => "diversity",
+    }
 }
 
 fn parse_hp_loss_limit(value: Option<&str>) -> Result<Option<RunControlHpLossLimit>, String> {
@@ -682,6 +725,23 @@ mod tests {
         ]);
 
         assert_eq!(rendered, "engine_setup,diversity");
+    }
+
+    #[test]
+    fn primary_retention_slot_count_line_summarizes_kept_branch_shape() {
+        let rendered = render_primary_retention_slot_count_line(&[
+            BranchRetentionSlotV1::Package,
+            BranchRetentionSlotV1::EngineSetup,
+            BranchRetentionSlotV1::Frontload,
+            BranchRetentionSlotV1::EngineSetup,
+            BranchRetentionSlotV1::Frontload,
+        ])
+        .expect("slot count line");
+
+        assert_eq!(
+            rendered,
+            "Primary retention slots: package=1 engine_setup=2 frontload=2"
+        );
     }
 
     #[test]
