@@ -3,14 +3,15 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use sts_simulator::ai::card_reward_policy_v1::CardRewardValueEstimateV1;
 use sts_simulator::eval::card_reward_value_loop::{
     build_card_reward_closed_loop_report_v1, build_card_reward_runtime_calibration_pipeline_v1,
     calibrate_card_reward_outcomes_v1, calibrate_card_reward_route_risk_v1,
     calibrate_card_reward_strategy_package_v1, extract_card_reward_value_loop_examples_v1,
-    promote_card_reward_outcome_calibration_v1, replay_card_reward_records_with_calibration_v1,
-    replay_card_reward_records_with_runtime_calibrations_v1,
-    summarize_card_reward_value_loop_examples_v1, CardRewardOutcomeCalibrationPromotionConfigV1,
-    CardRewardOutcomeCalibrationV1,
+    promote_card_reward_outcome_calibration_v1, replay_card_reward_records_with_runtime_sources_v1,
+    summarize_card_reward_value_loop_examples_v1, CardRewardCounterfactualProbeEstimateSetV1,
+    CardRewardOutcomeCalibrationPromotionConfigV1, CardRewardOutcomeCalibrationV1,
+    CardRewardRuntimeEstimatorCalibrationsV1, CardRewardRuntimeEstimatorSourcesV1,
 };
 use sts_simulator::eval::run_control::load_session_trace_v1;
 
@@ -55,6 +56,9 @@ struct Args {
 
     #[arg(long, value_name = "PATH")]
     calibration_path: Option<PathBuf>,
+
+    #[arg(long = "counterfactual-probes", value_name = "PATH")]
+    counterfactual_probe_path: Option<PathBuf>,
 
     #[arg(long, value_name = "PATH")]
     promotion_report: Option<PathBuf>,
@@ -115,6 +119,10 @@ fn run(args: Args) -> Result<(), String> {
             "use only one of --summary, --calibration, --replay-calibration, --closed-loop, --route-risk-calibration, --strategy-package-calibration, --promote-calibration, or --runtime-calibration"
                 .to_string(),
         );
+    }
+
+    if args.counterfactual_probe_path.is_some() && !args.replay_calibration {
+        return Err("--counterfactual-probes requires --replay-calibration".to_string());
     }
 
     if args.promote_calibration {
@@ -216,21 +224,37 @@ fn run(args: Args) -> Result<(), String> {
             serde_json::to_string_pretty(&calibration).map_err(|err| err.to_string())?
         }
     } else if args.replay_calibration {
+        let counterfactual_probe_estimates = load_counterfactual_probe_estimates(&args)?;
         let replay = match args.calibration_path.as_ref() {
             Some(path) => {
                 let calibration = load_card_reward_outcome_calibration(path)?;
-                replay_card_reward_records_with_calibration_v1(&examples, &calibration)
+                replay_card_reward_records_with_runtime_sources_v1(
+                    &examples,
+                    CardRewardRuntimeEstimatorSourcesV1 {
+                        calibrations: CardRewardRuntimeEstimatorCalibrationsV1 {
+                            outcome: Some(&calibration),
+                            route_risk: None,
+                            strategy_package: None,
+                        },
+                        counterfactual_probe_estimates: &counterfactual_probe_estimates,
+                    },
+                )
             }
             None => {
                 let pipeline = build_card_reward_runtime_calibration_pipeline_v1(
                     &examples,
                     &promotion_config(&args),
                 );
-                replay_card_reward_records_with_runtime_calibrations_v1(
+                replay_card_reward_records_with_runtime_sources_v1(
                     &examples,
-                    Some(&pipeline.promoted_calibration),
-                    Some(&pipeline.route_risk_calibration),
-                    Some(&pipeline.strategy_package_calibration),
+                    CardRewardRuntimeEstimatorSourcesV1 {
+                        calibrations: CardRewardRuntimeEstimatorCalibrationsV1 {
+                            outcome: Some(&pipeline.promoted_calibration),
+                            route_risk: Some(&pipeline.route_risk_calibration),
+                            strategy_package: Some(&pipeline.strategy_package_calibration),
+                        },
+                        counterfactual_probe_estimates: &counterfactual_probe_estimates,
+                    },
                 )
             }
         };
@@ -318,13 +342,30 @@ fn load_card_reward_outcome_calibration(
     serde_json::from_str(&payload).map_err(|err| err.to_string())
 }
 
+fn load_counterfactual_probe_estimates(
+    args: &Args,
+) -> Result<Vec<CardRewardValueEstimateV1>, String> {
+    let Some(path) = args.counterfactual_probe_path.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;
+    let set: CardRewardCounterfactualProbeEstimateSetV1 =
+        serde_json::from_str(&payload).map_err(|err| err.to_string())?;
+    Ok(set.valid_estimates())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::ai::card_reward_policy_v1::{
+        CardRewardValueEligibilityReasonV1, CardRewardValueEligibilityV1, CardRewardValueHorizonV1,
+        CardRewardValueSourceV1, CardRewardValueStatusV1,
+    };
+    use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::card_reward_value_loop::{
-        CardRewardOutcomeCalibrationBucketV1, CardRewardOutcomeCalibrationGlobalV1,
-        CardRewardOutcomeCalibrationPromotionReportV1, CardRewardOutcomeCalibrationProvenanceV1,
-        CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME,
+        CardRewardCounterfactualProbeEstimateSetV1, CardRewardOutcomeCalibrationBucketV1,
+        CardRewardOutcomeCalibrationGlobalV1, CardRewardOutcomeCalibrationPromotionReportV1,
+        CardRewardOutcomeCalibrationProvenanceV1, CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME,
         CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION,
     };
 
@@ -384,6 +425,48 @@ mod tests {
     }
 
     #[test]
+    fn counterfactual_probes_require_replay_calibration_mode() {
+        let mut args = empty_args();
+        args.summary = true;
+        args.counterfactual_probe_path = Some(PathBuf::from("probes.json"));
+
+        let err = run(args).expect_err("counterfactual probes should only feed replay");
+
+        assert!(err.contains("--counterfactual-probes"));
+        assert!(err.contains("--replay-calibration"));
+    }
+
+    #[test]
+    fn counterfactual_probe_loader_keeps_only_valid_probe_estimates() {
+        let input = unique_temp_path("counterfactual.probes.json");
+        let valid = counterfactual_probe_estimate_fixture(0, CardId::TwinStrike, true);
+        let invalid = CardRewardValueEstimateV1 {
+            source: CardRewardValueSourceV1::PublicCombatHeuristic,
+            status: CardRewardValueStatusV1::PublicCombatHeuristic,
+            ..counterfactual_probe_estimate_fixture(1, CardId::Cleave, true)
+        };
+        fs::write(
+            &input,
+            serde_json::to_string_pretty(
+                &CardRewardCounterfactualProbeEstimateSetV1::from_estimates(vec![
+                    valid.clone(),
+                    invalid,
+                ]),
+            )
+            .expect("probe set should serialize"),
+        )
+        .expect("probe set should write");
+        let mut args = empty_args();
+        args.replay_calibration = true;
+        args.counterfactual_probe_path = Some(input.clone());
+
+        let estimates = load_counterfactual_probe_estimates(&args).expect("probe set should load");
+
+        assert_eq!(estimates, vec![valid]);
+        let _ = fs::remove_file(input);
+    }
+
+    #[test]
     fn promote_calibration_writes_runtime_calibration_and_report() {
         let input = unique_temp_path("promotion_input.calibration.json");
         let output = unique_temp_path("promotion_output.calibration.json");
@@ -435,6 +518,7 @@ mod tests {
             promote_calibration: false,
             runtime_calibration: false,
             calibration_path: None,
+            counterfactual_probe_path: None,
             promotion_report: None,
             raw_calibration_out: None,
             route_risk_calibration_out: None,
@@ -508,5 +592,35 @@ mod tests {
             std::process::id(),
             name
         ))
+    }
+
+    fn counterfactual_probe_estimate_fixture(
+        index: usize,
+        card: CardId,
+        usable_for_value_estimate: bool,
+    ) -> CardRewardValueEstimateV1 {
+        CardRewardValueEstimateV1 {
+            index,
+            card,
+            source: CardRewardValueSourceV1::CombatProbe,
+            status: CardRewardValueStatusV1::CounterfactualProbe,
+            survival_delta: 1.0,
+            progress_delta: 0.5,
+            deck_consistency_delta: 0.0,
+            uncertainty: 0.2,
+            eligibility: CardRewardValueEligibilityV1 {
+                usable_for_value_estimate,
+                usable_for_autopilot_gate: usable_for_value_estimate,
+                reasons: if usable_for_value_estimate {
+                    Vec::new()
+                } else {
+                    vec![CardRewardValueEligibilityReasonV1::CounterfactualProbeNotGateEligible]
+                },
+                bucket_key: None,
+                horizon: Some(CardRewardValueHorizonV1::NextCombatCounterfactualProbe),
+                outcome_sample_count: None,
+            },
+            components: Vec::new(),
+        }
     }
 }

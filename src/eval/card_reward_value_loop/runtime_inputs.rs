@@ -1,6 +1,5 @@
 use crate::ai::card_reward_policy_v1::{
     CardRewardDecisionContextV1, CardRewardEstimatorInputsV1, CardRewardValueEstimateV1,
-    CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
 
 use super::{
@@ -84,9 +83,7 @@ fn is_valid_counterfactual_probe_estimate(
     context: &CardRewardDecisionContextV1,
     estimate: &CardRewardValueEstimateV1,
 ) -> bool {
-    estimate.source == CardRewardValueSourceV1::CombatProbe
-        && estimate.status == CardRewardValueStatusV1::CounterfactualProbe
-        && estimate.eligibility.usable_for_value_estimate
+    super::is_counterfactual_probe_estimate_v1(estimate)
         && context
             .candidates
             .iter()

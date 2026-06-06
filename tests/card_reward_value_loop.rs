@@ -22,9 +22,11 @@ use sts_simulator::eval::card_reward_value_loop::{
     estimate_card_reward_values_from_strategy_package_calibration_v1,
     extract_card_reward_value_loop_examples_v1, replay_card_reward_records_with_calibration_v1,
     replay_card_reward_records_with_runtime_calibrations_v1,
-    summarize_card_reward_value_loop_examples_v1, CardRewardRuntimeEstimatorCalibrationsV1,
-    CardRewardRuntimeEstimatorSourcesV1, CardRewardValueLoopOutcomeStatusV1,
-    CardRewardValueLoopReplayStatusV1, CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
+    replay_card_reward_records_with_runtime_sources_v1,
+    summarize_card_reward_value_loop_examples_v1, CardRewardCounterfactualProbeEstimateSetV1,
+    CardRewardRuntimeEstimatorCalibrationsV1, CardRewardRuntimeEstimatorSourcesV1,
+    CardRewardValueLoopOutcomeStatusV1, CardRewardValueLoopReplayStatusV1,
+    CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
 };
 use sts_simulator::eval::run_control::{
     RunActionApplyStatusV1, RunActionResultV1, RunControlConfig, RunControlSession,
@@ -464,6 +466,78 @@ fn replay_calibration_can_include_strategy_package_runtime_inputs() {
     assert!(replay.examples.iter().any(|example| example
         .policy_input_value_sources
         .contains(&"StrategyPackage".to_string())));
+}
+
+#[test]
+fn replay_calibration_can_include_counterfactual_probe_runtime_inputs() {
+    let example = strategy_package_example(CardId::SearingBlow, 7);
+    let context = example
+        .public_packet
+        .as_ref()
+        .expect("fixture should include a full public packet")
+        .context
+        .clone();
+    let searing = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::SearingBlow)
+        .expect("Searing Blow candidate should exist");
+    let clothesline = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::Clothesline)
+        .expect("Clothesline candidate should exist");
+    let probes = vec![
+        counterfactual_probe_estimate(searing.index, searing.card, true),
+        CardRewardValueEstimateV1 {
+            survival_delta: 0.1,
+            progress_delta: 0.0,
+            ..counterfactual_probe_estimate(clothesline.index, clothesline.card, true)
+        },
+    ];
+
+    let replay = replay_card_reward_records_with_runtime_sources_v1(
+        &[example],
+        CardRewardRuntimeEstimatorSourcesV1 {
+            calibrations: CardRewardRuntimeEstimatorCalibrationsV1::default(),
+            counterfactual_probe_estimates: &probes,
+        },
+    );
+
+    assert_eq!(replay.policy_replay_status, "full_public_packet_replay");
+    assert!(replay.examples[0]
+        .policy_input_value_sources
+        .contains(&"CombatProbe".to_string()));
+    assert!(replay.examples[0]
+        .policy_value_sources
+        .contains(&"CombatProbe".to_string()));
+    assert!(!replay.examples[0]
+        .policy_gate_blockers
+        .contains(&"MissingValueEstimate".to_string()));
+    assert!(!replay.examples[0]
+        .policy_gate_blockers
+        .contains(&"IneligibleValueSource".to_string()));
+}
+
+#[test]
+fn counterfactual_probe_estimate_set_keeps_only_probe_shaped_estimates() {
+    let valid = counterfactual_probe_estimate(0, CardId::TwinStrike, true);
+    let public_heuristic = CardRewardValueEstimateV1 {
+        source: CardRewardValueSourceV1::PublicCombatHeuristic,
+        status: CardRewardValueStatusV1::PublicCombatHeuristic,
+        ..counterfactual_probe_estimate(1, CardId::Cleave, true)
+    };
+    let not_value_usable = counterfactual_probe_estimate(2, CardId::Clothesline, false);
+    let set = CardRewardCounterfactualProbeEstimateSetV1::from_estimates(vec![
+        valid.clone(),
+        public_heuristic,
+        not_value_usable,
+    ]);
+
+    assert_eq!(set.label_role, "diagnostic_not_teacher_label");
+    assert!(!set.trainable_as_action_label);
+    assert!(!set.policy_quality_claim);
+    assert_eq!(set.valid_estimates(), vec![valid]);
 }
 
 #[test]
