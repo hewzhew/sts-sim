@@ -34,6 +34,9 @@ struct Args {
     #[arg(long)]
     max_per_frontier_group: Option<usize>,
 
+    #[arg(long)]
+    max_reward_options: Option<usize>,
+
     #[arg(long, default_value_t = 4)]
     max_depth: usize,
 
@@ -82,6 +85,7 @@ fn run(args: Args) -> Result<(), String> {
         final_act: args.final_act,
         max_branches: args.max_branches,
         max_branches_per_frontier_group: args.max_per_frontier_group,
+        max_reward_options_per_branch: args.max_reward_options,
         max_depth: args.max_depth,
         auto_max_operations: args.auto_max_ops,
         experiment_wall_ms: args.experiment_wall_ms,

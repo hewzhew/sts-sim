@@ -1,9 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+use crate::ai::card_reward_policy_v1::{
+    card_reward_semantic_profile_v1, CardRewardSemanticProfileV1,
+};
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyDeckFormationNeedV1,
     StrategyDeckFormationStageV1, StrategyFormationSummaryV2, StrategyPackageIdV2,
@@ -37,6 +39,7 @@ pub struct BranchExperimentConfigV1 {
     pub final_act: bool,
     pub max_branches: usize,
     pub max_branches_per_frontier_group: Option<usize>,
+    pub max_reward_options_per_branch: Option<usize>,
     pub max_depth: usize,
     pub auto_max_operations: usize,
     pub experiment_wall_ms: Option<u64>,
@@ -56,6 +59,7 @@ impl Default for BranchExperimentConfigV1 {
             final_act: false,
             max_branches: 12,
             max_branches_per_frontier_group: None,
+            max_reward_options_per_branch: None,
             max_depth: 4,
             auto_max_operations: 128,
             experiment_wall_ms: None,
@@ -261,6 +265,13 @@ fn run_branch_experiment_from_session(
                 next.push(branch);
                 continue;
             };
+            let options = select_card_reward_branch_options(options, config);
+            if options.is_empty() {
+                branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
+                branch.stop_reason = "card reward option portfolio is empty".to_string();
+                next.push(branch);
+                continue;
+            }
 
             explored_branch_points = explored_branch_points.saturating_add(1);
             expanded_any = true;
@@ -527,6 +538,93 @@ fn card_reward_branch_options(session: &RunControlSession) -> Option<Vec<CardRew
         return None;
     }
     Some(options)
+}
+
+fn select_card_reward_branch_options(
+    options: Vec<CardRewardBranchOption>,
+    config: &BranchExperimentConfigV1,
+) -> Vec<CardRewardBranchOption> {
+    let Some(limit) = config.max_reward_options_per_branch else {
+        return options;
+    };
+    let limit = limit.min(options.len());
+    if limit == 0 || options.len() <= limit {
+        return options.into_iter().take(limit).collect();
+    }
+
+    let mut annotated = options
+        .iter()
+        .enumerate()
+        .map(|(index, option)| {
+            let profile =
+                card_reward_semantic_profile_v1(&RewardCard::new(option.card, option.upgrades));
+            let (priority, class_key) = reward_option_semantic_class(&profile);
+            (index, priority, class_key)
+        })
+        .collect::<Vec<_>>();
+    annotated.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+
+    let mut selected = Vec::new();
+    let mut selected_classes = BTreeSet::new();
+    for (index, _, class_key) in &annotated {
+        if selected.len() >= limit {
+            break;
+        }
+        if selected_classes.insert(class_key.clone()) {
+            selected.push(*index);
+        }
+    }
+    for index in 0..options.len() {
+        if selected.len() >= limit {
+            break;
+        }
+        if !selected.contains(&index) {
+            selected.push(index);
+        }
+    }
+
+    selected.sort_unstable();
+    options
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, option)| selected.contains(&index).then_some(option))
+        .collect()
+}
+
+fn reward_option_semantic_class(profile: &CardRewardSemanticProfileV1) -> (usize, String) {
+    let signature = summarize_branch_trajectory_v1(std::slice::from_ref(profile));
+    let setup = join_or_dash(&signature.setup_keys);
+    let package = join_or_dash(&signature.package_keys);
+    if !signature.setup_keys.is_empty() && !signature.package_keys.is_empty() {
+        return (0, format!("closed_package:{setup}->{package}"));
+    }
+    if !signature.package_keys.is_empty() {
+        return (1, format!("payoff:{package}"));
+    }
+    if !signature.setup_keys.is_empty() {
+        return (2, format!("setup:{setup}"));
+    }
+    if signature.defense_picks > 0 || signature.draw_energy_picks > 0 {
+        return (
+            3,
+            format!(
+                "stabilizer:defense{}:draw_energy{}",
+                signature.defense_picks, signature.draw_energy_picks
+            ),
+        );
+    }
+    if signature.transition_frontload_picks > 0 {
+        return (4, "pure_transition_frontload".to_string());
+    }
+    (5, "other".to_string())
+}
+
+fn join_or_dash(values: &[String]) -> String {
+    if values.is_empty() {
+        "-".to_string()
+    } else {
+        values.join("+")
+    }
 }
 
 fn active_or_visible_reward_cards(session: &RunControlSession) -> Option<Vec<RewardCard>> {
@@ -851,6 +949,8 @@ fn frontier_groups(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
     use crate::ai::noncombat_strategy_v1::{
         StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1,
     };
@@ -885,6 +985,49 @@ mod tests {
         assert!(report.branches.iter().any(|branch| {
             branch.choices[0].command == "rp 1" && branch.choices[0].label == "Cleave"
         }));
+    }
+
+    #[test]
+    fn branch_experiment_can_limit_reward_options_by_semantic_portfolio() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut reward = RewardState::new();
+        reward.pending_card_choice = Some(vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::Cleave, 0),
+            RewardCard::new(CardId::ShrugItOff, 0),
+        ]);
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let report = run_branch_experiment_from_session(
+            session,
+            &BranchExperimentConfigV1 {
+                max_depth: 1,
+                max_branches: 4,
+                max_reward_options_per_branch: Some(2),
+                auto_max_operations: 0,
+                ..BranchExperimentConfigV1::default()
+            },
+        );
+
+        let picked_labels = report
+            .branches
+            .iter()
+            .map(|branch| branch.choices[0].label.as_str())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(report.branches.len(), 2);
+        assert!(
+            picked_labels.contains("Shrug It Off"),
+            "non-transition defense/draw candidate should not be crowded out"
+        );
+        assert_eq!(
+            picked_labels
+                .iter()
+                .filter(|label| **label == "Twin Strike" || **label == "Cleave")
+                .count(),
+            1,
+            "pure transition options should be represented, not exhaustively expanded"
+        );
     }
 
     #[test]
