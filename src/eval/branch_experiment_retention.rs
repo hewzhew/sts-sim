@@ -2,6 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
 use crate::ai::noncombat_strategy_v1::StrategyFormationSummaryV2;
+use crate::eval::branch_experiment_trajectory::{
+    branch_trajectory_family_key_v1, BranchTrajectorySignatureV1,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -26,6 +29,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub gold: i32,
     pub deck_count: usize,
     pub strategy_formation: Option<StrategyFormationSummaryV2>,
+    pub trajectory: BranchTrajectorySignatureV1,
     pub choice_profiles: Vec<CardRewardSemanticProfileV1>,
 }
 
@@ -346,7 +350,8 @@ fn branch_family_key(candidate: &BranchRetentionCandidateInputV1) -> String {
         .as_ref()
         .map(strategy_formation_key)
         .unwrap_or_else(|| "formation_unknown".to_string());
-    format!("{}|{formation}", choice_prefix_key(candidate))
+    let trajectory = branch_trajectory_family_key_v1(&candidate.trajectory);
+    format!("{}|{formation}|{trajectory}", choice_prefix_key(candidate))
 }
 
 fn strategy_formation_key(formation: &StrategyFormationSummaryV2) -> String {
@@ -545,6 +550,12 @@ mod tests {
                 gold: 120,
                 deck_count: 14,
                 strategy_formation: None,
+                trajectory:
+                    super::super::branch_experiment_trajectory::summarize_branch_trajectory_v1(&[
+                        semantic_profile("Barricade", &[CardRewardSemanticRoleV1::BlockPayoff]),
+                        semantic_profile("Entrench", &[CardRewardSemanticRoleV1::BlockPayoff]),
+                        semantic_profile("Body Slam", &[CardRewardSemanticRoleV1::BlockPayoff]),
+                    ]),
                 choice_profiles: vec![
                     semantic_profile("Barricade", &[CardRewardSemanticRoleV1::BlockPayoff]),
                     semantic_profile("Entrench", &[CardRewardSemanticRoleV1::BlockPayoff]),
@@ -724,6 +735,65 @@ mod tests {
     }
 
     #[test]
+    fn portfolio_retention_preserves_distinct_trajectories_under_same_formation() {
+        let formation = formation(
+            StrategyDeckFormationStageV1::PlanSeeded,
+            &[StrategyDeckFormationNeedV1::Scaling],
+            &[],
+        );
+        let mut transition = retention_candidate(0, 10_900, &["Twin Strike", "Cleave"]);
+        transition.strategy_formation = Some(formation.clone());
+        transition.trajectory =
+            super::super::branch_experiment_trajectory::summarize_branch_trajectory_v1(
+                &transition.choice_profiles,
+            );
+        let mut duplicate_transition =
+            retention_candidate(1, 10_890, &["Twin Strike", "Pommel Strike"]);
+        duplicate_transition.strategy_formation = Some(formation.clone());
+        duplicate_transition.trajectory = transition.trajectory.clone();
+        let block_engine = BranchRetentionCandidateInputV1 {
+            index: 2,
+            frontier_key: "same-frontier".to_string(),
+            rank_key: 10_760,
+            hp: 70,
+            max_hp: 80,
+            gold: 120,
+            deck_count: 14,
+            strategy_formation: Some(formation.clone()),
+            trajectory: super::super::branch_experiment_trajectory::summarize_branch_trajectory_v1(
+                &[
+                    semantic_profile("Barricade", &[CardRewardSemanticRoleV1::BlockRetention]),
+                    semantic_profile("Body Slam", &[CardRewardSemanticRoleV1::BlockPayoff]),
+                ],
+            ),
+            choice_profiles: vec![
+                semantic_profile("Barricade", &[CardRewardSemanticRoleV1::BlockRetention]),
+                semantic_profile("Body Slam", &[CardRewardSemanticRoleV1::BlockPayoff]),
+            ],
+        };
+        let mut other_first_pick = retention_candidate(3, 10_700, &["Shockwave", "Clash"]);
+        other_first_pick.strategy_formation = Some(formation);
+
+        let selection = select_branch_retention_portfolio_v1(
+            &[
+                transition,
+                duplicate_transition,
+                block_engine,
+                other_first_pick,
+            ],
+            BranchRetentionConfigV1 {
+                max_total: 3,
+                max_per_frontier: Some(3),
+            },
+        );
+
+        assert!(selection.keep_indices.contains(&0));
+        assert!(!selection.keep_indices.contains(&1));
+        assert!(selection.keep_indices.contains(&2));
+        assert!(selection.keep_indices.contains(&3));
+    }
+
+    #[test]
     fn retention_slots_come_from_semantic_profiles_not_card_names() {
         let candidate = BranchRetentionCandidateInputV1 {
             index: 0,
@@ -734,6 +804,12 @@ mod tests {
             gold: 120,
             deck_count: 12,
             strategy_formation: None,
+            trajectory: super::super::branch_experiment_trajectory::summarize_branch_trajectory_v1(
+                &[semantic_profile(
+                    "Unfamiliar Card Name",
+                    &[CardRewardSemanticRoleV1::BlockPayoff],
+                )],
+            ),
             choice_profiles: vec![semantic_profile(
                 "Unfamiliar Card Name",
                 &[CardRewardSemanticRoleV1::BlockPayoff],
@@ -754,6 +830,13 @@ mod tests {
         rank_key: i32,
         choice_labels: &[&str],
     ) -> BranchRetentionCandidateInputV1 {
+        let choice_profiles = choice_labels
+            .iter()
+            .map(|label| semantic_profile(label, &[CardRewardSemanticRoleV1::FrontloadDamage]))
+            .collect::<Vec<_>>();
+        let trajectory = super::super::branch_experiment_trajectory::summarize_branch_trajectory_v1(
+            &choice_profiles,
+        );
         BranchRetentionCandidateInputV1 {
             index,
             frontier_key: "same-frontier".to_string(),
@@ -763,10 +846,8 @@ mod tests {
             gold: 120,
             deck_count: 14,
             strategy_formation: None,
-            choice_profiles: choice_labels
-                .iter()
-                .map(|label| semantic_profile(label, &[CardRewardSemanticRoleV1::FrontloadDamage]))
-                .collect(),
+            trajectory,
+            choice_profiles,
         }
     }
 

@@ -15,6 +15,9 @@ use crate::eval::branch_experiment_retention::{
     BranchRetentionCandidateInputV1, BranchRetentionConfigV1, BranchRetentionDecisionV1,
     BranchRetentionSlotV1,
 };
+use crate::eval::branch_experiment_trajectory::{
+    summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
+};
 use crate::eval::run_control::{
     build_decision_surface, parse_run_control_command, RunControlAutoStepOptions,
     RunControlCommand, RunControlConfig, RunControlHpLossLimit, RunControlRouteAutomationMode,
@@ -24,7 +27,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 3;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -134,6 +137,7 @@ pub struct BranchExperimentRunSummaryV1 {
     pub formation_stage: StrategyDeckFormationStageV1,
     pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
     pub formation_strengths: Vec<StrategyPackageIdV2>,
+    pub trajectory: BranchTrajectorySignatureV1,
     pub boundary_title: String,
 }
 
@@ -307,7 +311,7 @@ fn run_branch_experiment_from_session(
     let mut branch_reports = branches
         .into_iter()
         .map(|branch| {
-            let summary = run_summary(&branch.session);
+            let summary = run_summary(&branch.session, &branch.choices);
             let frontier = branch_frontier(&branch.session);
             BranchExperimentBranchReportV1 {
                 rank_key: branch_rank_key(&branch),
@@ -433,22 +437,20 @@ fn apply_branch_retention(
     let candidates = branches
         .iter()
         .enumerate()
-        .map(|(index, branch)| BranchRetentionCandidateInputV1 {
-            index,
-            frontier_key: branch_frontier(&branch.session).key,
-            rank_key: branch_rank_key(branch),
-            hp: branch.session.run_state.current_hp,
-            max_hp: branch.session.run_state.max_hp,
-            gold: branch.session.run_state.gold,
-            deck_count: branch.session.run_state.master_deck.len(),
-            strategy_formation: Some(strategy_formation_summary(&branch.session)),
-            choice_profiles: branch
-                .choices
-                .iter()
-                .map(|choice| {
-                    card_reward_semantic_profile_v1(&RewardCard::new(choice.card, choice.upgrades))
-                })
-                .collect(),
+        .map(|(index, branch)| {
+            let choice_profiles = branch_choice_profiles(branch);
+            BranchRetentionCandidateInputV1 {
+                index,
+                frontier_key: branch_frontier(&branch.session).key,
+                rank_key: branch_rank_key(branch),
+                hp: branch.session.run_state.current_hp,
+                max_hp: branch.session.run_state.max_hp,
+                gold: branch.session.run_state.gold,
+                deck_count: branch.session.run_state.master_deck.len(),
+                strategy_formation: Some(strategy_formation_summary(&branch.session)),
+                trajectory: summarize_branch_trajectory_v1(&choice_profiles),
+                choice_profiles,
+            }
         })
         .collect::<Vec<_>>();
     let selection = select_branch_retention_portfolio_v1(
@@ -588,8 +590,12 @@ fn branch_rank_key(branch: &BranchWork) -> i32 {
     }
 }
 
-fn run_summary(session: &RunControlSession) -> BranchExperimentRunSummaryV1 {
+fn run_summary(
+    session: &RunControlSession,
+    choices: &[BranchExperimentChoiceV1],
+) -> BranchExperimentRunSummaryV1 {
     let formation = strategy_formation_summary(session);
+    let choice_profiles = choice_profiles_from_choices(choices);
     BranchExperimentRunSummaryV1 {
         act: session.run_state.act_num,
         floor: session.run_state.floor_num,
@@ -607,12 +613,30 @@ fn run_summary(session: &RunControlSession) -> BranchExperimentRunSummaryV1 {
         formation_stage: formation.stage,
         formation_needs: formation.needs,
         formation_strengths: formation.strengths,
+        trajectory: summarize_branch_trajectory_v1(&choice_profiles),
         boundary_title: current_boundary_title(session),
     }
 }
 
 fn strategy_formation_summary(session: &RunControlSession) -> StrategyFormationSummaryV2 {
     build_run_strategy_snapshot_from_run_state_v2(&session.run_state).formation_summary()
+}
+
+fn branch_choice_profiles(
+    branch: &BranchWork,
+) -> Vec<crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1> {
+    choice_profiles_from_choices(&branch.choices)
+}
+
+fn choice_profiles_from_choices(
+    choices: &[BranchExperimentChoiceV1],
+) -> Vec<crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1> {
+    choices
+        .iter()
+        .map(|choice| {
+            card_reward_semantic_profile_v1(&RewardCard::new(choice.card, choice.upgrades))
+        })
+        .collect()
 }
 
 fn branch_frontier(session: &RunControlSession) -> BranchExperimentFrontierV1 {
@@ -986,6 +1010,8 @@ mod tests {
         assert!(summary
             .formation_needs
             .contains(&StrategyDeckFormationNeedV1::Frontload));
+        assert_eq!(summary.trajectory.frontload_picks, 1);
+        assert_eq!(summary.trajectory.transition_frontload_picks, 1);
     }
 
     #[test]

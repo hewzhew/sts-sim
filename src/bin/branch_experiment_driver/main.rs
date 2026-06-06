@@ -226,8 +226,9 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
     let status = branch_status_suffix(branch.status);
     let retention = render_retention_slots(&branch.retention.slots);
     let formation = render_formation_summary(branch);
+    let trajectory = render_trajectory_summary(branch);
     format!(
-        "  A{}F{} HP {}/{} gold {} | {}{} | {} | keep=[{}] | choices: {} | next_reward=[{}]",
+        "  A{}F{} HP {}/{} gold {} | {}{} | {} | {} | keep=[{}] | choices: {} | next_reward=[{}]",
         branch.summary.act,
         branch.summary.floor,
         branch.summary.hp,
@@ -236,6 +237,7 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
         branch.summary.boundary_title,
         status,
         formation,
+        trajectory,
         retention,
         choices,
         next_reward
@@ -268,6 +270,30 @@ fn render_formation_summary(branch: &BranchExperimentBranchReportV1) -> String {
     format!(
         "formation={:?} strengths={} needs={}",
         branch.summary.formation_stage, strengths, needs
+    )
+}
+
+fn render_trajectory_summary(branch: &BranchExperimentBranchReportV1) -> String {
+    let trajectory = &branch.summary.trajectory;
+    let setups = if trajectory.setup_keys.is_empty() {
+        "-".to_string()
+    } else {
+        trajectory.setup_keys.join("+")
+    };
+    let packages = if trajectory.package_keys.is_empty() {
+        "-".to_string()
+    } else {
+        trajectory.package_keys.join("+")
+    };
+    format!(
+        "traj=setup:{} pkg:{} trans:{} eng:{}/{} def:{} de:{}",
+        setups,
+        packages,
+        trajectory.transition_frontload_picks,
+        trajectory.engine_generator_picks,
+        trajectory.engine_payoff_picks,
+        trajectory.defense_picks,
+        trajectory.draw_energy_picks
     )
 }
 
@@ -389,7 +415,7 @@ mod tests {
     fn compact_report_is_human_sized() {
         let report = sts_simulator::eval::branch_experiment::BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
-            schema_version: 3,
+            schema_version: 4,
             label_role: "diagnostic_not_teacher_label".to_string(),
             policy_quality_claim: false,
             seed: 1,
