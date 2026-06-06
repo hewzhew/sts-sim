@@ -59,6 +59,13 @@ struct Args {
     prefix_commands: Vec<String>,
 
     #[arg(
+        long = "script",
+        value_name = "PATH",
+        help = "Read prefix commands from a text file; blank lines and # comments are ignored"
+    )]
+    prefix_scripts: Vec<PathBuf>,
+
+    #[arg(
         long,
         help = "Replay a SessionTraceV1 before starting branch exploration"
     )]
@@ -87,6 +94,8 @@ fn main() {
 
 fn run(args: Args) -> Result<(), String> {
     let player_class = canonical_player_class(&args.player_class)?;
+    let script_prefix_commands = load_prefix_scripts(&args.prefix_scripts)?;
+    let prefix_commands = merge_prefix_commands(script_prefix_commands, args.prefix_commands);
     let report = run_branch_experiment_v1(&BranchExperimentConfigV1 {
         seed: args.seed,
         ascension_level: args.ascension,
@@ -102,7 +111,7 @@ fn run(args: Args) -> Result<(), String> {
         search_wall_ms: args.search_wall_ms.or(Some(100)),
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
         include_skip: args.include_skip,
-        prefix_commands: args.prefix_commands,
+        prefix_commands,
         replay_trace_path: args.replay_trace,
         replay_trace_max_steps: args.replay_steps,
     })?;
@@ -498,6 +507,35 @@ fn parse_hp_loss_limit(value: Option<&str>) -> Result<Option<RunControlHpLossLim
     Ok(Some(RunControlHpLossLimit::Limit(limit)))
 }
 
+fn load_prefix_scripts(paths: &[PathBuf]) -> Result<Vec<String>, String> {
+    let mut commands = Vec::new();
+    for path in paths {
+        let content = fs::read_to_string(path)
+            .map_err(|err| format!("failed to read prefix script {}: {err}", path.display()))?;
+        commands.extend(parse_prefix_script(&content));
+    }
+    Ok(commands)
+}
+
+fn parse_prefix_script(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn merge_prefix_commands(
+    script_prefix_commands: Vec<String>,
+    inline_prefix_commands: Vec<String>,
+) -> Vec<String> {
+    script_prefix_commands
+        .into_iter()
+        .chain(inline_prefix_commands)
+        .collect()
+}
+
 fn canonical_player_class(value: &str) -> Result<&'static str, String> {
     match value.to_ascii_lowercase().as_str() {
         "ironclad" => Ok("Ironclad"),
@@ -633,6 +671,32 @@ mod tests {
         assert!(rendered.contains("replay trace:"));
         assert!(rendered.contains("applied_steps=7"));
         assert!(rendered.contains("stop=TraceEnd"));
+    }
+
+    #[test]
+    fn prefix_script_ignores_blank_lines_and_comments() {
+        let commands = parse_prefix_script(
+            r#"
+            # Start from Neow.
+            0
+
+            2
+              # Choose the visible map path.
+            go 5
+            "#,
+        );
+
+        assert_eq!(commands, vec!["0", "2", "go 5"]);
+    }
+
+    #[test]
+    fn prefix_script_commands_precede_inline_prefix_commands() {
+        let commands = merge_prefix_commands(
+            vec!["0".to_string(), "2".to_string()],
+            vec!["go 5".to_string()],
+        );
+
+        assert_eq!(commands, vec!["0", "2", "go 5"]);
     }
 
     fn empty_report() -> BranchExperimentReportV1 {
