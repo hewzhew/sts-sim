@@ -247,10 +247,36 @@ pub struct StrategyResourceFactsV2 {
     pub relic_constraints: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum StrategyThreatTagV1 {
+    HighIncomingDamage,
+    MultiHit,
+    StrengthDebuffValuable,
+    WeakValuable,
+    AoEValuable,
+    ArtifactBlocksDebuff,
+    StatusFlood,
+    SplitThreshold,
+    ModeShiftThreshold,
+    SkillPunish,
+    PowerPunish,
+    CardPlayLimit,
+    LongFightScaling,
+    SetupWindow,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct StrategyThreatProfileV1 {
+    pub boss: Option<String>,
+    pub tags: Vec<StrategyThreatTagV1>,
+    pub evidence: Vec<String>,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RunStrategySnapshotV2 {
     pub(crate) v1: RunStrategySnapshotV1,
     pub resources: StrategyResourceFactsV2,
+    pub threats: StrategyThreatProfileV1,
     pub packages: Vec<StrategyPackageV2>,
 }
 

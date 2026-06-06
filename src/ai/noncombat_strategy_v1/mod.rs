@@ -5,6 +5,7 @@ mod route_package;
 mod run_snapshot;
 mod snapshot;
 mod snapshot_v2;
+mod threat;
 mod types;
 
 pub use candidate::candidate_plan_delta_v2;
@@ -17,6 +18,7 @@ pub use types::{
     RunStrategySnapshotV2, StrategyCandidateFactsV1, StrategyCandidatePlanDeltaV1,
     StrategyDeckFactsV1, StrategyPackageDomainV2, StrategyPackageIdV2, StrategyPackageV2,
     StrategyPlanEffectV1, StrategyPlanSupportV1, StrategyResourceFactsV2, StrategyRouteFutureV1,
+    StrategyThreatProfileV1, StrategyThreatTagV1,
 };
 
 #[cfg(test)]

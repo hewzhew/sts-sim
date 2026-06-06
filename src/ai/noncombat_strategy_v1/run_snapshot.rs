@@ -3,7 +3,8 @@ use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 
 use super::snapshot::build_run_strategy_snapshot_v1;
-use super::snapshot_v2::build_run_strategy_snapshot_v2_from_v1;
+use super::snapshot_v2::build_run_strategy_snapshot_v2_from_v1_with_threat;
+use super::threat::threat_profile_from_run_state_v1;
 use super::types::{
     RunStrategySnapshotV2, StrategyDeckFactsV1, StrategyResourceFactsV2, StrategyRouteFutureV1,
 };
@@ -22,7 +23,11 @@ pub fn build_run_strategy_snapshot_from_run_state_with_route_v2(
     route: Option<StrategyRouteFutureV1>,
 ) -> RunStrategySnapshotV2 {
     let v1 = build_run_strategy_snapshot_v1(deck_facts_from_run_state_v1(run_state), route);
-    build_run_strategy_snapshot_v2_from_v1(v1, resource_facts_from_run_state_v2(run_state))
+    build_run_strategy_snapshot_v2_from_v1_with_threat(
+        v1,
+        resource_facts_from_run_state_v2(run_state),
+        threat_profile_from_run_state_v1(run_state),
+    )
 }
 
 fn deck_facts_from_run_state_v1(run_state: &RunState) -> StrategyDeckFactsV1 {

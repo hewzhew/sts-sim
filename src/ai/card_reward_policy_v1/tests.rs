@@ -8,6 +8,7 @@ use crate::ai::card_reward_policy_v1::{
 };
 use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
 use crate::content::cards::CardId;
+use crate::content::monsters::factory::EncounterId;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
@@ -1283,6 +1284,41 @@ fn public_combat_heuristic_values_enter_arbitration_without_certifying_autopick(
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
+}
+
+#[test]
+fn public_combat_heuristic_uses_boss_threat_profile_for_strength_down() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Disarm, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let disarm = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Disarm
+        })
+        .expect("Disarm public combat heuristic estimate");
+
+    assert!(disarm.survival_delta > 0.0);
+    assert!(disarm.components.iter().any(|component| {
+        component.name == "boss_threat_strength_down_response" && component.value > 0.0
+    }));
+    assert!(disarm.components.iter().any(|component| {
+        component.name == "strategy_threat_high_incoming_damage" && component.value > 0.0
+    }));
+    assert!(!disarm.eligibility.usable_for_autopilot_gate);
 }
 
 fn test_value_estimate(

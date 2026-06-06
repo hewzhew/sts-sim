@@ -1,8 +1,10 @@
 use super::snapshot::build_run_strategy_snapshot_v1;
+use super::threat::empty_threat_profile_v1;
 use super::types::{
     DeckPlanHypothesisV1, RunStrategySnapshotV1, RunStrategySnapshotV2, StrategyDeckFactsV1,
     StrategyPackageDomainV2, StrategyPackageIdV2, StrategyPackageV2, StrategyPlanSupportV1,
     StrategyResourceFactsV2, StrategyRouteFutureV1, StrategyRoutePackageV1,
+    StrategyThreatProfileV1,
 };
 
 pub fn build_run_strategy_snapshot_v2(
@@ -18,6 +20,14 @@ pub fn build_run_strategy_snapshot_v2_from_v1(
     v1: RunStrategySnapshotV1,
     resources: StrategyResourceFactsV2,
 ) -> RunStrategySnapshotV2 {
+    build_run_strategy_snapshot_v2_from_v1_with_threat(v1, resources, empty_threat_profile_v1())
+}
+
+pub fn build_run_strategy_snapshot_v2_from_v1_with_threat(
+    v1: RunStrategySnapshotV1,
+    resources: StrategyResourceFactsV2,
+    threats: StrategyThreatProfileV1,
+) -> RunStrategySnapshotV2 {
     let mut packages = Vec::new();
     packages.extend(v1.plans.iter().map(archetype_package));
     packages.extend(v1.route_packages.iter().map(route_package));
@@ -26,6 +36,7 @@ pub fn build_run_strategy_snapshot_v2_from_v1(
     RunStrategySnapshotV2 {
         v1,
         resources,
+        threats,
         packages,
     }
 }

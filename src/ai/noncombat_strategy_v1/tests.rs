@@ -1,11 +1,13 @@
 use crate::content::cards::CardId;
+use crate::content::monsters::factory::EncounterId;
+use crate::state::run::RunState;
 
 use super::candidate::candidate_plan_delta_v1;
 use super::snapshot::build_run_strategy_snapshot_v1;
 use super::types::{
     StrategyCandidateFactsV1, StrategyDeckFactsV1, StrategyDeckFormationNeedV1,
     StrategyDeckFormationStageV1, StrategyPlanEffectV1, StrategyPlanIdV1, StrategyPlanSupportV1,
-    StrategyRouteFutureV1, StrategyRoutePackageIdV1,
+    StrategyRouteFutureV1, StrategyRoutePackageIdV1, StrategyThreatTagV1,
 };
 
 #[test]
@@ -731,4 +733,29 @@ fn status_package_candidate_delta_uses_generator_and_payoff_roles() {
     );
     assert_eq!(evolve.support, StrategyPlanSupportV1::Plausible);
     assert!(evolve.effects.contains(&StrategyPlanEffectV1::StatusPayoff));
+}
+
+#[test]
+fn run_strategy_snapshot_v2_exposes_boss_threat_tags() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+
+    let snapshot = super::build_run_strategy_snapshot_from_run_state_v2(&run_state);
+
+    assert_eq!(snapshot.threats.boss.as_deref(), Some("TheChamp"));
+    assert!(snapshot
+        .threats
+        .tags
+        .contains(&StrategyThreatTagV1::StrengthDebuffValuable));
+    assert!(snapshot
+        .threats
+        .tags
+        .contains(&StrategyThreatTagV1::HighIncomingDamage));
+    assert!(snapshot
+        .threats
+        .evidence
+        .iter()
+        .any(|entry| entry.contains("Champ")));
 }
