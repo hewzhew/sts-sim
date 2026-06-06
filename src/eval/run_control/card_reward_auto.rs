@@ -222,35 +222,14 @@ fn card_reward_estimator_inputs(
     session: &RunControlSession,
     context: &crate::ai::card_reward_policy_v1::CardRewardDecisionContextV1,
 ) -> crate::ai::card_reward_policy_v1::CardRewardEstimatorInputsV1 {
-    let mut external_value_estimates = session
-        .card_reward_outcome_calibration
-        .as_ref()
-        .map(|calibration| {
-            crate::eval::card_reward_value_loop::estimate_card_reward_values_from_calibration_v1(
-                context,
-                calibration,
-            )
-        })
-        .unwrap_or_default();
-    if let Some(calibration) = session.card_reward_route_risk_calibration.as_ref() {
-        external_value_estimates.extend(
-            crate::eval::card_reward_value_loop::estimate_card_reward_values_from_route_risk_calibration_v1(
-                context,
-                calibration,
-            ),
-        );
-    }
-    if let Some(calibration) = session.card_reward_strategy_package_calibration.as_ref() {
-        external_value_estimates.extend(
-            crate::eval::card_reward_value_loop::estimate_card_reward_values_from_strategy_package_calibration_v1(
-                context,
-                calibration,
-            ),
-        );
-    }
-    crate::ai::card_reward_policy_v1::CardRewardEstimatorInputsV1 {
-        external_value_estimates,
-    }
+    crate::eval::card_reward_value_loop::build_card_reward_runtime_estimator_inputs_v1(
+        context,
+        crate::eval::card_reward_value_loop::CardRewardRuntimeEstimatorCalibrationsV1 {
+            outcome: session.card_reward_outcome_calibration.as_ref(),
+            route_risk: session.card_reward_route_risk_calibration.as_ref(),
+            strategy_package: session.card_reward_strategy_package_calibration.as_ref(),
+        },
+    )
 }
 
 fn card_reward_policy_stop_detail(

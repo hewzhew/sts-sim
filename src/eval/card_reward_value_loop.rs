@@ -7,6 +7,7 @@ mod closed_loop;
 mod promotion;
 mod replay;
 mod route_risk_calibration;
+mod runtime_inputs;
 mod strategy_package_calibration;
 pub use calibration::{
     calibrate_card_reward_outcomes_v1, estimate_card_reward_value_from_calibration_v1,
@@ -41,6 +42,9 @@ pub use route_risk_calibration::{
     CardRewardRouteRiskCalibrationBucketV1, CardRewardRouteRiskCalibrationGlobalV1,
     CardRewardRouteRiskCalibrationV1, CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_NAME,
     CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_VERSION,
+};
+pub use runtime_inputs::{
+    build_card_reward_runtime_estimator_inputs_v1, CardRewardRuntimeEstimatorCalibrationsV1,
 };
 pub use strategy_package_calibration::{
     calibrate_card_reward_strategy_package_v1,

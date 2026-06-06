@@ -1,15 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    calibration::outcome_calibration_eligibility, estimate_card_reward_values_from_calibration_v1,
-    estimate_card_reward_values_from_route_risk_calibration_v1,
-    estimate_card_reward_values_from_strategy_package_calibration_v1,
+    build_card_reward_runtime_estimator_inputs_v1, calibration::outcome_calibration_eligibility,
     CardRewardOutcomeCalibrationV1, CardRewardRouteRiskCalibrationV1,
-    CardRewardStrategyPackageCalibrationV1, CardRewardValueLoopExampleV1,
+    CardRewardRuntimeEstimatorCalibrationsV1, CardRewardStrategyPackageCalibrationV1,
+    CardRewardValueLoopExampleV1,
 };
 use crate::ai::card_reward_policy_v1::{
-    replay_card_reward_decision_with_estimator_inputs_v1, CardRewardEstimatorInputsV1,
-    CardRewardPolicyConfigV1,
+    replay_card_reward_decision_with_estimator_inputs_v1, CardRewardPolicyConfigV1,
 };
 
 pub const CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME: &str = "CardRewardCalibrationReplayReportV1";
@@ -147,30 +145,14 @@ fn card_reward_calibration_replay_example(
         })
         .collect::<Vec<_>>();
     let policy_replay = example.public_packet.as_ref().map(|packet| {
-        let mut external_value_estimates = outcome_calibration
-            .map(|calibration| {
-                estimate_card_reward_values_from_calibration_v1(&packet.context, calibration)
-            })
-            .unwrap_or_default();
-        if let Some(calibration) = route_risk_calibration {
-            external_value_estimates.extend(
-                estimate_card_reward_values_from_route_risk_calibration_v1(
-                    &packet.context,
-                    calibration,
-                ),
-            );
-        }
-        if let Some(calibration) = strategy_package_calibration {
-            external_value_estimates.extend(
-                estimate_card_reward_values_from_strategy_package_calibration_v1(
-                    &packet.context,
-                    calibration,
-                ),
-            );
-        }
-        let inputs = CardRewardEstimatorInputsV1 {
-            external_value_estimates,
-        };
+        let inputs = build_card_reward_runtime_estimator_inputs_v1(
+            &packet.context,
+            CardRewardRuntimeEstimatorCalibrationsV1 {
+                outcome: outcome_calibration,
+                route_risk: route_risk_calibration,
+                strategy_package: strategy_package_calibration,
+            },
+        );
         replay_card_reward_decision_with_estimator_inputs_v1(
             packet,
             &CardRewardPolicyConfigV1::default(),

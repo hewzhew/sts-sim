@@ -12,14 +12,16 @@ use sts_simulator::ai::noncombat_strategy_v1::{
 };
 use sts_simulator::content::cards::CardId;
 use sts_simulator::eval::card_reward_value_loop::{
-    calibrate_card_reward_outcomes_v1, calibrate_card_reward_strategy_package_v1,
+    build_card_reward_runtime_estimator_inputs_v1, calibrate_card_reward_outcomes_v1,
+    calibrate_card_reward_route_risk_v1, calibrate_card_reward_strategy_package_v1,
     estimate_card_reward_value_from_calibration_v1,
     estimate_card_reward_values_from_calibration_v1,
     estimate_card_reward_values_from_strategy_package_calibration_v1,
     extract_card_reward_value_loop_examples_v1, replay_card_reward_records_with_calibration_v1,
     replay_card_reward_records_with_runtime_calibrations_v1,
-    summarize_card_reward_value_loop_examples_v1, CardRewardValueLoopOutcomeStatusV1,
-    CardRewardValueLoopReplayStatusV1, CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
+    summarize_card_reward_value_loop_examples_v1, CardRewardRuntimeEstimatorCalibrationsV1,
+    CardRewardValueLoopOutcomeStatusV1, CardRewardValueLoopReplayStatusV1,
+    CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
 };
 use sts_simulator::eval::run_control::{
     RunActionApplyStatusV1, RunActionResultV1, RunControlConfig, RunControlSession,
@@ -452,6 +454,41 @@ fn replay_calibration_can_include_strategy_package_runtime_inputs() {
     assert!(replay.examples.iter().any(|example| example
         .policy_input_value_sources
         .contains(&"StrategyPackage".to_string())));
+}
+
+#[test]
+fn runtime_estimator_input_builder_combines_all_calibration_sources() {
+    let examples = vec![
+        strategy_package_example(CardId::SearingBlow, 7),
+        strategy_package_example(CardId::Clothesline, 14),
+    ];
+    let outcome_calibration = calibrate_card_reward_outcomes_v1(&examples);
+    let route_risk_calibration = calibrate_card_reward_route_risk_v1(&examples);
+    let strategy_package_calibration = calibrate_card_reward_strategy_package_v1(&examples);
+    let context = examples[0]
+        .public_packet
+        .as_ref()
+        .expect("fixture should include a full public packet")
+        .context
+        .clone();
+
+    let inputs = build_card_reward_runtime_estimator_inputs_v1(
+        &context,
+        CardRewardRuntimeEstimatorCalibrationsV1 {
+            outcome: Some(&outcome_calibration),
+            route_risk: Some(&route_risk_calibration),
+            strategy_package: Some(&strategy_package_calibration),
+        },
+    );
+    let sources = inputs
+        .external_value_estimates
+        .iter()
+        .map(|estimate| estimate.source)
+        .collect::<Vec<_>>();
+
+    assert!(sources.contains(&CardRewardValueSourceV1::OutcomeCalibration));
+    assert!(sources.contains(&CardRewardValueSourceV1::RouteRisk));
+    assert!(sources.contains(&CardRewardValueSourceV1::StrategyPackage));
 }
 
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {
