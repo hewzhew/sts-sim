@@ -1,4 +1,4 @@
-use crate::ai::noncombat_strategy_v1::StrategyThreatTagV1;
+use crate::ai::noncombat_strategy_v1::{StrategyPlanEffectV1, StrategyThreatTagV1};
 use crate::content::cards::CardType;
 
 use super::types::{
@@ -75,6 +75,22 @@ pub(crate) fn threat_response_delta(
         response.components.push(CardRewardValueComponentV1 {
             name: "boss_threat_status_flood_payoff_response".to_string(),
             value: 0.12,
+        });
+    }
+
+    if has_threat(context, StrategyThreatTagV1::LongFightScaling) && scaling_candidate(candidate) {
+        response.progress_delta += 0.12;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "boss_threat_long_fight_scaling_response".to_string(),
+            value: 0.12,
+        });
+    }
+
+    if has_threat(context, StrategyThreatTagV1::SetupWindow) && setup_candidate(candidate) {
+        response.progress_delta += 0.10;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "boss_threat_setup_window_response".to_string(),
+            value: 0.10,
         });
     }
 
@@ -157,4 +173,25 @@ fn dense_card_play(candidate: &CardRewardCandidateEvidenceV1) -> bool {
         && (candidate.facts.damage.total_damage >= 15
             || candidate.facts.block >= 12
             || candidate.facts.enemy_strength_down > 0)
+}
+
+fn scaling_candidate(candidate: &CardRewardCandidateEvidenceV1) -> bool {
+    candidate.facts.strength_gain > 0
+        || candidate
+            .plan_delta
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, StrategyPlanEffectV1::StrengthPayoff))
+}
+
+fn setup_candidate(candidate: &CardRewardCandidateEvidenceV1) -> bool {
+    candidate.facts.card_type == CardType::Power
+        || candidate.plan_delta.effects.iter().any(|effect| {
+            matches!(
+                effect,
+                StrategyPlanEffectV1::BlockRetention
+                    | StrategyPlanEffectV1::ExhaustPayoff
+                    | StrategyPlanEffectV1::StatusPayoff
+            )
+        })
 }

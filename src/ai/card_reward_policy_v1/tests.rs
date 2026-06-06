@@ -1519,6 +1519,68 @@ fn public_combat_heuristic_marks_act1_skill_punish() {
     assert!(!armaments.eligibility.usable_for_autopilot_gate);
 }
 
+#[test]
+fn public_combat_heuristic_marks_long_fight_scaling() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Inflame, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let inflame = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Inflame
+        })
+        .expect("Inflame public combat heuristic estimate");
+
+    assert!(inflame.components.iter().any(|component| {
+        component.name == "boss_threat_long_fight_scaling_response" && component.value > 0.0
+    }));
+    assert!(!inflame.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
+fn public_combat_heuristic_marks_setup_window_power_response() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    run_state.boss_key = Some(EncounterId::Automaton);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Barricade, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let barricade = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Barricade
+        })
+        .expect("Barricade public combat heuristic estimate");
+
+    assert!(barricade.components.iter().any(|component| {
+        component.name == "boss_threat_setup_window_response" && component.value > 0.0
+    }));
+    assert!(!barricade.eligibility.usable_for_autopilot_gate);
+}
+
 fn test_value_estimate(
     index: usize,
     card: CardId,
