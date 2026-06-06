@@ -775,12 +775,20 @@ fn card_reward_policy_routes_value_estimates_through_arbitration() {
     assert_eq!(
         estimates_for_source(
             &decision.value_estimates,
+            CardRewardValueSourceV1::StrategyPackage
+        )
+        .len(),
+        2
+    );
+    assert_eq!(
+        estimates_for_source(
+            &decision.value_estimates,
             CardRewardValueSourceV1::RouteRisk
         )
         .len(),
         2
     );
-    assert_eq!(decision.value_arbitration.input_estimate_count, 6);
+    assert_eq!(decision.value_arbitration.input_estimate_count, 8);
     assert_eq!(decision.value_arbitration.gate_value_estimates.len(), 2);
     assert!(decision
         .value_arbitration
@@ -817,7 +825,7 @@ fn policy_accepts_external_calibrated_estimates_before_arbitration_without_autop
         &inputs,
     );
 
-    assert_eq!(decision.value_estimates.len(), 7);
+    assert_eq!(decision.value_estimates.len(), 9);
     assert_eq!(
         decision.value_arbitration.gate_value_estimates[0].source,
         CardRewardValueSourceV1::OutcomeCalibration
@@ -844,8 +852,8 @@ fn replay_harness_exports_value_loop_gate_state_without_selecting() {
         replay_card_reward_decision_v1(&packet, &CardRewardPolicyConfigV1::default(), None);
 
     assert_eq!(replay.candidates.len(), 1);
-    assert_eq!(replay.value_estimates.len(), 3);
-    assert_eq!(replay.value_arbitration.input_estimate_count, 3);
+    assert_eq!(replay.value_estimates.len(), 4);
+    assert_eq!(replay.value_arbitration.input_estimate_count, 4);
     assert_eq!(replay.value_arbitration.gate_value_estimates.len(), 1);
     assert_eq!(
         replay.value_arbitration.gate_value_estimates[0].source,
@@ -888,8 +896,8 @@ fn replay_harness_accepts_external_estimator_inputs() {
         None,
     );
 
-    assert_eq!(replay.value_estimates.len(), 7);
-    assert_eq!(replay.value_arbitration.input_estimate_count, 7);
+    assert_eq!(replay.value_estimates.len(), 9);
+    assert_eq!(replay.value_arbitration.input_estimate_count, 9);
     assert_eq!(
         replay.value_arbitration.gate_value_estimates[0].source,
         CardRewardValueSourceV1::OutcomeCalibration
@@ -933,6 +941,46 @@ fn route_risk_estimator_adds_non_gate_value_estimates_when_route_evidence_exists
     assert!(route_risk_estimates
         .iter()
         .all(|estimate| !estimate.eligibility.usable_for_autopilot_gate));
+}
+
+#[test]
+fn strategy_package_estimator_exports_plan_alignment_without_certifying_autopick() {
+    let context = context_for_cards_with_route(
+        vec![
+            RewardCard::new(CardId::SearingBlow, 0),
+            RewardCard::new(CardId::Clothesline, 0),
+        ],
+        route_with_upgrade_budget(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let strategy_estimates = estimates_for_source(
+        &decision.value_estimates,
+        CardRewardValueSourceV1::StrategyPackage,
+    );
+
+    assert_eq!(strategy_estimates.len(), context.candidates.len());
+    assert!(strategy_estimates
+        .iter()
+        .all(|estimate| estimate.status == CardRewardValueStatusV1::StrategyPackageEstimate));
+    assert!(strategy_estimates
+        .iter()
+        .all(|estimate| estimate.eligibility.usable_for_value_estimate));
+    assert!(strategy_estimates
+        .iter()
+        .all(|estimate| !estimate.eligibility.usable_for_autopilot_gate));
+    assert!(strategy_estimates.iter().any(|estimate| {
+        estimate.card == CardId::SearingBlow
+            && estimate
+                .components
+                .iter()
+                .any(|component| component.name == "plan_effect_UpgradeSink")
+    }));
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
 }
 
 #[test]

@@ -82,6 +82,7 @@ pub(crate) fn value_source_autopilot_eligible_v1(source: CardRewardValueSourceV1
 pub(crate) fn estimate_source_gate_eligible_v1(estimate: &CardRewardValueEstimateV1) -> bool {
     match estimate.source {
         CardRewardValueSourceV1::UncalibratedImpactPrior => false,
+        CardRewardValueSourceV1::StrategyPackage => false,
         CardRewardValueSourceV1::OutcomeCalibration => {
             estimate.eligibility.usable_for_autopilot_gate
         }
@@ -129,6 +130,7 @@ fn source_rank(source: CardRewardValueSourceV1) -> u8 {
         CardRewardValueSourceV1::OutcomeCalibration => 35,
         CardRewardValueSourceV1::RouteRisk => 25,
         CardRewardValueSourceV1::CombatProbe => 10,
+        CardRewardValueSourceV1::StrategyPackage => 5,
         CardRewardValueSourceV1::UncalibratedImpactPrior => 0,
     }
 }
@@ -139,6 +141,7 @@ fn status_rank(status: CardRewardValueStatusV1) -> u8 {
         CardRewardValueStatusV1::OutcomeCalibrated => 20,
         CardRewardValueStatusV1::RouteRiskCalibrated => 15,
         CardRewardValueStatusV1::RouteRiskEstimate => 10,
+        CardRewardValueStatusV1::StrategyPackageEstimate => 5,
         CardRewardValueStatusV1::UncalibratedPrior => 0,
     }
 }

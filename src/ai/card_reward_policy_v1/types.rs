@@ -223,6 +223,7 @@ pub enum CardRewardEvidenceGapV1 {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CardRewardValueSourceV1 {
     UncalibratedImpactPrior,
+    StrategyPackage,
     OutcomeCalibration,
     CombatProbe,
     RouteRisk,
@@ -232,6 +233,7 @@ pub enum CardRewardValueSourceV1 {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CardRewardValueStatusV1 {
     UncalibratedPrior,
+    StrategyPackageEstimate,
     CounterfactualProbe,
     OutcomeCalibrated,
     RouteRiskEstimate,
@@ -291,6 +293,7 @@ pub enum CardRewardValueEligibilityReasonV1 {
     MissingDataRoleProvenance,
     HiddenSimulatorStateUsed,
     ShortHorizonMetricOnly,
+    StrategyPackageEstimateNotPromoted,
     CounterfactualProbeNotGateEligible,
     RouteRiskEstimateNotPromoted,
     RouteRiskCalibrationNotGateEligible,
@@ -302,6 +305,7 @@ pub enum CardRewardValueHorizonV1 {
     NextCombatHpLoss,
     NextCombatPublicProbe,
     VisibleRouteRisk,
+    CurrentStrategyPackage,
 }
 
 #[derive(Clone, Debug, PartialEq)]
