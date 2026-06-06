@@ -234,6 +234,29 @@ fn searing_blow_exports_upgrade_commitment_but_uncalibrated_gate_stops() {
 }
 
 #[test]
+fn arbitration_keeps_strategy_package_completion_ahead_of_shallow_route_risk() {
+    let context = context_for_cards_with_route(
+        vec![RewardCard::new(CardId::SearingBlow, 0)],
+        route_with_upgrade_budget(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let report = decision
+        .value_arbitration
+        .candidate_reports
+        .iter()
+        .find(|report| report.index == 0)
+        .expect("candidate arbitration report");
+
+    assert_eq!(
+        report.selected_source,
+        Some(CardRewardValueSourceV1::StrategyPackage)
+    );
+    assert!(!report.selected_estimate_gate_eligible);
+    assert!(!decision.autopilot_gate.value_source_eligible);
+}
+
+#[test]
 fn searing_blow_does_not_complete_upgrade_package_without_route_budget() {
     let context = context_for_cards_with_route(
         vec![RewardCard::new(CardId::SearingBlow, 0)],

@@ -110,8 +110,8 @@ fn compare_estimates_for_arbitration(
     left: &CardRewardValueEstimateV1,
     right: &CardRewardValueEstimateV1,
 ) -> Ordering {
-    source_rank(right.source)
-        .cmp(&source_rank(left.source))
+    estimate_rank(right)
+        .cmp(&estimate_rank(left))
         .then_with(|| status_rank(right.status).cmp(&status_rank(left.status)))
         .then_with(|| {
             left.uncertainty
@@ -123,6 +123,23 @@ fn compare_estimates_for_arbitration(
                 .partial_cmp(&total_delta(left))
                 .unwrap_or(Ordering::Equal)
         })
+}
+
+fn estimate_rank(estimate: &CardRewardValueEstimateV1) -> u8 {
+    if estimate.source == CardRewardValueSourceV1::StrategyPackage
+        && has_strategy_package_completion(estimate)
+    {
+        26
+    } else {
+        source_rank(estimate.source)
+    }
+}
+
+fn has_strategy_package_completion(estimate: &CardRewardValueEstimateV1) -> bool {
+    estimate
+        .components
+        .iter()
+        .any(|component| component.name.starts_with("strategy_package_completion_"))
 }
 
 fn source_rank(source: CardRewardValueSourceV1) -> u8 {
