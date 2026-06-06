@@ -814,6 +814,64 @@ fn strategy_package_v2_reports_exhaust_and_status_package_missing_roles() {
 }
 
 #[test]
+fn strategy_package_v2_reports_strength_scaling_missing_roles() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 13,
+            attacks: 7,
+            skills: 5,
+            powers: 1,
+            starter_strikes: 4,
+            starter_defends: 3,
+            strength_sources: 1,
+            strength_payoffs: 0,
+            total_attack_damage: 48,
+            total_block: 25,
+            ..Default::default()
+        },
+        None,
+        None,
+    );
+    let strength = snapshot
+        .package(super::StrategyPackageIdV2::StrengthScaling)
+        .expect("strength package");
+
+    assert!(strength
+        .missing_roles
+        .contains(&StrategyPackageGapV2::Payoff));
+    assert!(!strength
+        .missing_roles
+        .contains(&StrategyPackageGapV2::Generator));
+
+    let payoff_only = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 13,
+            attacks: 7,
+            skills: 5,
+            powers: 1,
+            starter_strikes: 4,
+            starter_defends: 3,
+            strength_sources: 0,
+            strength_payoffs: 1,
+            total_attack_damage: 48,
+            total_block: 25,
+            ..Default::default()
+        },
+        None,
+        None,
+    );
+    let payoff_strength = payoff_only
+        .package(super::StrategyPackageIdV2::StrengthScaling)
+        .expect("strength package");
+    assert!(payoff_strength
+        .missing_roles
+        .contains(&StrategyPackageGapV2::Generator));
+    assert!(!payoff_strength
+        .missing_roles
+        .contains(&StrategyPackageGapV2::Payoff));
+}
+
+#[test]
 fn run_strategy_snapshot_v2_exposes_boss_threat_tags() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 2;

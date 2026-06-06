@@ -28,6 +28,18 @@ const STRATEGY_PACKAGE_GAP_RULES: &[StrategyPackageGapRule] = &[
         component_name: "strategy_gap_block_engine_block_retention_filled",
     },
     StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::StrengthScaling,
+        gap: StrategyPackageGapV2::Generator,
+        effect: StrategyPlanEffectV1::StrengthGenerator,
+        component_name: "strategy_gap_strength_scaling_generator_filled",
+    },
+    StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::StrengthScaling,
+        gap: StrategyPackageGapV2::Payoff,
+        effect: StrategyPlanEffectV1::StrengthPayoff,
+        component_name: "strategy_gap_strength_scaling_payoff_filled",
+    },
+    StrategyPackageGapRule {
         package_id: StrategyPackageIdV2::BlockEngine,
         gap: StrategyPackageGapV2::BlockPayoff,
         effect: StrategyPlanEffectV1::BlockPayoff,
@@ -166,6 +178,10 @@ fn strategy_package_completion_components(
 ) -> Vec<CardRewardValueComponentV1> {
     [
         (
+            StrategyPackageIdV2::StrengthScaling,
+            "strategy_package_completion_strength_scaling",
+        ),
+        (
             StrategyPackageIdV2::BlockEngine,
             "strategy_package_completion_block_engine",
         ),
@@ -285,6 +301,7 @@ fn progress_effect_weight(effects: &[StrategyPlanEffectV1]) -> f32 {
             matches!(
                 effect,
                 StrategyPlanEffectV1::FrontloadDamage
+                    | StrategyPlanEffectV1::StrengthGenerator
                     | StrategyPlanEffectV1::StrengthPayoff
                     | StrategyPlanEffectV1::UpgradeSink
                     | StrategyPlanEffectV1::BlockPayoff

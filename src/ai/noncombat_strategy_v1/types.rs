@@ -138,6 +138,7 @@ pub struct StrategyRoutePackageV1 {
 pub enum StrategyPlanEffectV1 {
     UpgradeSink,
     UpgradeBudgetConsumer,
+    StrengthGenerator,
     StrengthPayoff,
     FrontloadDamage,
     WeakCoverage,

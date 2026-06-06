@@ -242,7 +242,50 @@ fn heavy_blade_exports_strength_plan_but_uncalibrated_gate_stops() {
             .support(StrategyPackageIdV2::StrengthScaling),
         StrategyPlanSupportV1::Strong
     );
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::HeavyBlade
+        })
+        .expect("Heavy Blade strategy package estimate");
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_gap_strength_scaling_payoff_filled" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_strength_scaling" && component.value > 0.0
+    }));
     assert!(!decision.autopilot_gate.value_source_eligible);
+}
+
+#[test]
+fn strategy_package_estimator_recognizes_strength_generator_completion() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::HeavyBlade);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::Inflame, 0)],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::Inflame
+        })
+        .expect("Inflame strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_gap_strength_scaling_generator_filled" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_strength_scaling" && component.value > 0.0
+    }));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
 }
 
 #[test]

@@ -152,8 +152,13 @@ pub fn candidate_plan_delta_v1(
                     .unwrap_or(StrategyPlanSupportV1::Weak);
             }
             if facts.strength_gain > 0 {
-                support = StrategyPlanSupportV1::Plausible;
-                notes.push("card contributes a visible strength source".to_string());
+                effects.push(StrategyPlanEffectV1::StrengthGenerator);
+                apply_plan_context(
+                    snapshot,
+                    StrategyPlanIdV1::StrengthScaling,
+                    &mut support,
+                    &mut notes,
+                );
             }
         }
     }

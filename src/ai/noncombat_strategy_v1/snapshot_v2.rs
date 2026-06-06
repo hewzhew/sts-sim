@@ -234,6 +234,9 @@ fn archetype_missing_roles(
     deck: &StrategyDeckFactsV1,
 ) -> Vec<StrategyPackageGapV2> {
     match id {
+        StrategyPlanIdV1::StrengthScaling => {
+            generator_payoff_missing_roles(deck.strength_sources, deck.strength_payoffs)
+        }
         StrategyPlanIdV1::BlockEngine => block_engine_missing_roles(deck),
         StrategyPlanIdV1::ExhaustEngine => {
             generator_payoff_missing_roles(deck.exhaust_generators, deck.exhaust_payoffs)
