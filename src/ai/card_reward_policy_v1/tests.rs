@@ -1143,6 +1143,42 @@ fn replay_harness_exports_value_loop_gate_state_without_selecting() {
 }
 
 #[test]
+fn replay_harness_summarizes_selected_package_and_threat_value_components() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.boss_key = Some(EncounterId::TimeEater);
+    run_state.add_card_to_deck(CardId::Barricade);
+    run_state.add_card_to_deck(CardId::Entrench);
+    run_state.add_card_to_deck(CardId::FlameBarrier);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::BodySlam, 0)],
+        route_with_combat_pressure(),
+    );
+    let packet = PublicRewardDecisionPacketV1::from_context(&context);
+
+    let replay =
+        replay_card_reward_decision_v1(&packet, &CardRewardPolicyConfigV1::default(), None);
+    let summary = replay.candidates.first().expect("candidate summary");
+
+    assert!(summary
+        .value_summary
+        .iter()
+        .any(|line| line == "selected_value_source=StrategyPackage"));
+    assert!(summary
+        .value_summary
+        .iter()
+        .any(|line| line == "selected_value_status=StrategyPackageEstimate"));
+    assert!(summary
+        .value_summary
+        .iter()
+        .any(|line| { line == "component=strategy_package_completion_block_engine" }));
+    assert!(summary.value_summary.iter().any(|line| {
+        line == "component=strategy_threat_alignment_block_engine_boss_long_fight"
+    }));
+}
+
+#[test]
 fn replay_harness_accepts_external_estimator_inputs() {
     let mut context = context_for_cards(vec![
         RewardCard::new(CardId::TwinStrike, 0),

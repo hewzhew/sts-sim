@@ -3,7 +3,8 @@ use super::policy::{
 };
 use super::types::{
     CardRewardAutopilotGateReportV1, CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1,
-    CardRewardDecisionV1, CardRewardEstimatorArbitrationV1, CardRewardEstimatorInputsV1,
+    CardRewardDecisionV1, CardRewardEstimatorArbitrationV1,
+    CardRewardEstimatorCandidateArbitrationV1, CardRewardEstimatorInputsV1,
     CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
 };
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,7 @@ pub struct CardRewardReplayCandidateSummaryV1 {
     pub card: String,
     pub facts_summary: Vec<String>,
     pub impact_summary: Vec<String>,
+    pub value_summary: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -85,7 +87,11 @@ fn card_reward_decision_replay(
     });
 
     CardRewardDecisionReplayV1 {
-        candidates: decision.candidates.iter().map(candidate_summary).collect(),
+        candidates: decision
+            .candidates
+            .iter()
+            .map(|candidate| candidate_summary(candidate, &decision))
+            .collect(),
         value_estimates: decision.value_estimates.clone(),
         value_arbitration: decision.value_arbitration.clone(),
         autopilot_gate: decision.autopilot_gate.clone(),
@@ -98,6 +104,7 @@ fn card_reward_decision_replay(
 
 fn candidate_summary(
     candidate: &CardRewardCandidateEvidenceV1,
+    decision: &CardRewardDecisionV1,
 ) -> CardRewardReplayCandidateSummaryV1 {
     CardRewardReplayCandidateSummaryV1 {
         index: candidate.index,
@@ -121,7 +128,63 @@ fn candidate_summary(
             format!("energy_delta={}", candidate.impact.energy_delta),
             format!("plan_support={:?}", candidate.plan_delta.support),
         ],
+        value_summary: candidate_value_summary(candidate, decision),
     }
+}
+
+fn candidate_value_summary(
+    candidate: &CardRewardCandidateEvidenceV1,
+    decision: &CardRewardDecisionV1,
+) -> Vec<String> {
+    let Some(report) = selected_arbitration_report(candidate, decision) else {
+        return vec!["selected_value_source=none".to_string()];
+    };
+    let Some(estimate) = selected_arbitration_estimate(candidate, decision) else {
+        return vec!["selected_value_source=none".to_string()];
+    };
+
+    let mut summary = vec![
+        format!("selected_value_source={:?}", estimate.source),
+        format!("selected_value_status={:?}", estimate.status),
+        format!("selected_for_gate={}", report.selected_for_gate),
+        format!(
+            "selected_estimate_gate_eligible={}",
+            report.selected_estimate_gate_eligible
+        ),
+    ];
+    summary.extend(
+        estimate
+            .components
+            .iter()
+            .filter(|component| {
+                component.name.starts_with("strategy_package_completion_")
+                    || component.name.starts_with("strategy_threat_alignment_")
+            })
+            .map(|component| format!("component={}", component.name)),
+    );
+    summary
+}
+
+fn selected_arbitration_report<'a>(
+    candidate: &CardRewardCandidateEvidenceV1,
+    decision: &'a CardRewardDecisionV1,
+) -> Option<&'a CardRewardEstimatorCandidateArbitrationV1> {
+    decision
+        .value_arbitration
+        .candidate_reports
+        .iter()
+        .find(|report| report.index == candidate.index && report.card == candidate.card)
+}
+
+fn selected_arbitration_estimate<'a>(
+    candidate: &CardRewardCandidateEvidenceV1,
+    decision: &'a CardRewardDecisionV1,
+) -> Option<&'a CardRewardValueEstimateV1> {
+    decision
+        .value_arbitration
+        .gate_value_estimates
+        .iter()
+        .find(|estimate| estimate.index == candidate.index && estimate.card == candidate.card)
 }
 
 fn decision_selected_candidate_id(decision: &CardRewardDecisionV1) -> Option<String> {
