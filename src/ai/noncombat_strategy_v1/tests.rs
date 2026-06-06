@@ -872,6 +872,44 @@ fn strategy_package_v2_reports_strength_scaling_missing_roles() {
 }
 
 #[test]
+fn strategy_package_v2_reports_upgrade_sink_missing_route_budget() {
+    let no_budget = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 13,
+            attacks: 7,
+            skills: 5,
+            powers: 1,
+            starter_strikes: 4,
+            starter_defends: 3,
+            route_upgrade_payoffs: 1,
+            important_cards_unupgraded: 1,
+            total_attack_damage: 48,
+            total_block: 25,
+            ..Default::default()
+        },
+        Some(StrategyRouteFutureV1 {
+            min_fires: 1,
+            max_fires: 2,
+            first_fire_floor: Some(6),
+            max_early_pressure: 3,
+            need_heal: 0.4,
+            avoid_damage: 0.5,
+        }),
+        None,
+    );
+    let upgrade = no_budget
+        .package(super::StrategyPackageIdV2::UpgradeSink)
+        .expect("upgrade package");
+
+    assert!(upgrade
+        .missing_roles
+        .contains(&StrategyPackageGapV2::UpgradeBudget));
+    assert!(!upgrade
+        .missing_roles
+        .contains(&StrategyPackageGapV2::UpgradeConsumer));
+}
+
+#[test]
 fn run_strategy_snapshot_v2_exposes_boss_threat_tags() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 2;

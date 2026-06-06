@@ -22,6 +22,12 @@ struct StrategyPackageGapRule {
 
 const STRATEGY_PACKAGE_GAP_RULES: &[StrategyPackageGapRule] = &[
     StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::UpgradeSink,
+        gap: StrategyPackageGapV2::UpgradeConsumer,
+        effect: StrategyPlanEffectV1::UpgradeBudgetConsumer,
+        component_name: "strategy_gap_upgrade_sink_consumer_filled",
+    },
+    StrategyPackageGapRule {
         package_id: StrategyPackageIdV2::BlockEngine,
         gap: StrategyPackageGapV2::BlockRetention,
         effect: StrategyPlanEffectV1::BlockRetention,
@@ -177,6 +183,10 @@ fn strategy_package_completion_components(
     candidate: &super::types::CardRewardCandidateEvidenceV1,
 ) -> Vec<CardRewardValueComponentV1> {
     [
+        (
+            StrategyPackageIdV2::UpgradeSink,
+            "strategy_package_completion_upgrade_sink",
+        ),
         (
             StrategyPackageIdV2::StrengthScaling,
             "strategy_package_completion_strength_scaling",

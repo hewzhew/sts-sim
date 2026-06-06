@@ -50,7 +50,7 @@ fn archetype_package(plan: &DeckPlanHypothesisV1, deck: &StrategyDeckFactsV1) ->
         id: StrategyPackageIdV2::from_plan_v1(plan.id),
         domain: StrategyPackageDomainV2::Archetype,
         support: plan.support,
-        missing_roles: archetype_missing_roles(plan.id, deck),
+        missing_roles: archetype_missing_roles(plan, deck),
         evidence: plan.evidence.clone(),
         blockers: plan.blockers.clone(),
         risks: plan.opportunity_costs.clone(),
@@ -230,10 +230,11 @@ fn relic_constraints_package(resources: &StrategyResourceFactsV2) -> StrategyPac
 }
 
 fn archetype_missing_roles(
-    id: StrategyPlanIdV1,
+    plan: &DeckPlanHypothesisV1,
     deck: &StrategyDeckFactsV1,
 ) -> Vec<StrategyPackageGapV2> {
-    match id {
+    match plan.id {
+        StrategyPlanIdV1::UpgradeSink => upgrade_sink_missing_roles(plan, deck),
         StrategyPlanIdV1::StrengthScaling => {
             generator_payoff_missing_roles(deck.strength_sources, deck.strength_payoffs)
         }
@@ -246,6 +247,23 @@ fn archetype_missing_roles(
         }
         _ => Vec::new(),
     }
+}
+
+fn upgrade_sink_missing_roles(
+    plan: &DeckPlanHypothesisV1,
+    deck: &StrategyDeckFactsV1,
+) -> Vec<StrategyPackageGapV2> {
+    let mut roles = Vec::new();
+    if deck.route_upgrade_payoffs == 0 {
+        roles.push(StrategyPackageGapV2::UpgradeConsumer);
+    }
+    if matches!(
+        plan.support,
+        StrategyPlanSupportV1::Blocked | StrategyPlanSupportV1::Weak
+    ) {
+        roles.push(StrategyPackageGapV2::UpgradeBudget);
+    }
+    roles
 }
 
 fn generator_payoff_missing_roles(generators: u8, payoffs: u8) -> Vec<StrategyPackageGapV2> {

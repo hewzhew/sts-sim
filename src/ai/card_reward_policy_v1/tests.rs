@@ -216,7 +216,51 @@ fn searing_blow_exports_upgrade_commitment_but_uncalibrated_gate_stops() {
     assert!(route_risk
         .iter()
         .all(|estimate| !estimate.eligibility.usable_for_autopilot_gate));
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::SearingBlow
+        })
+        .expect("Searing Blow strategy package estimate");
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_gap_upgrade_sink_consumer_filled" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_upgrade_sink" && component.value > 0.0
+    }));
     assert!(!decision.autopilot_gate.value_source_eligible);
+}
+
+#[test]
+fn searing_blow_does_not_complete_upgrade_package_without_route_budget() {
+    let context = context_for_cards_with_route(
+        vec![RewardCard::new(CardId::SearingBlow, 0)],
+        route_with_combat_pressure(),
+    );
+
+    assert_eq!(
+        context.strategy.support(StrategyPackageIdV2::UpgradeSink),
+        StrategyPlanSupportV1::Weak
+    );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::SearingBlow
+        })
+        .expect("Searing Blow strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_gap_upgrade_sink_consumer_filled" && component.value > 0.0
+    }));
+    assert!(!estimate
+        .components
+        .iter()
+        .any(|component| component.name == "strategy_package_completion_upgrade_sink"));
 }
 
 #[test]

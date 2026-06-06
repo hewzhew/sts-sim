@@ -199,6 +199,8 @@ pub enum StrategyPackageIdV2 {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum StrategyPackageGapV2 {
+    UpgradeBudget,
+    UpgradeConsumer,
     Generator,
     Payoff,
     BlockRetention,
