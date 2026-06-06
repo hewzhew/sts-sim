@@ -10,6 +10,60 @@ use super::types::{
 
 const STRONG_CORE_PLAN_DILUTION_PENALTY: f32 = 0.18;
 const PACKAGE_ALIGNMENT_UNCERTAINTY: f32 = 0.74;
+const PACKAGE_GAP_FILL_PROGRESS_BONUS: f32 = 0.10;
+const PACKAGE_COMPLETION_PROGRESS_BONUS: f32 = 0.20;
+
+struct StrategyPackageGapRule {
+    package_id: StrategyPackageIdV2,
+    gap: StrategyPackageGapV2,
+    effect: StrategyPlanEffectV1,
+    component_name: &'static str,
+}
+
+const STRATEGY_PACKAGE_GAP_RULES: &[StrategyPackageGapRule] = &[
+    StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        gap: StrategyPackageGapV2::BlockRetention,
+        effect: StrategyPlanEffectV1::BlockRetention,
+        component_name: "strategy_gap_block_engine_block_retention_filled",
+    },
+    StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        gap: StrategyPackageGapV2::BlockPayoff,
+        effect: StrategyPlanEffectV1::BlockPayoff,
+        component_name: "strategy_gap_block_engine_block_payoff_filled",
+    },
+    StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        gap: StrategyPackageGapV2::BlockMultiplier,
+        effect: StrategyPlanEffectV1::BlockMultiplier,
+        component_name: "strategy_gap_block_engine_block_multiplier_filled",
+    },
+    StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::ExhaustEngine,
+        gap: StrategyPackageGapV2::Generator,
+        effect: StrategyPlanEffectV1::ExhaustGenerator,
+        component_name: "strategy_gap_exhaust_engine_generator_filled",
+    },
+    StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::ExhaustEngine,
+        gap: StrategyPackageGapV2::Payoff,
+        effect: StrategyPlanEffectV1::ExhaustPayoff,
+        component_name: "strategy_gap_exhaust_engine_payoff_filled",
+    },
+    StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::StatusPackage,
+        gap: StrategyPackageGapV2::Generator,
+        effect: StrategyPlanEffectV1::StatusGenerator,
+        component_name: "strategy_gap_status_package_generator_filled",
+    },
+    StrategyPackageGapRule {
+        package_id: StrategyPackageIdV2::StatusPackage,
+        gap: StrategyPackageGapV2::Payoff,
+        effect: StrategyPlanEffectV1::StatusPayoff,
+        component_name: "strategy_gap_status_package_payoff_filled",
+    },
+];
 
 pub(crate) fn estimate_strategy_package_values(
     context: &CardRewardDecisionContextV1,
@@ -20,13 +74,16 @@ pub(crate) fn estimate_strategy_package_values(
         .map(|candidate| {
             let support_score = support_score(candidate.plan_delta.support);
             let gap_fill_bonus = strategy_package_gap_fill_bonus(context, candidate);
+            let package_completion_bonus = strategy_package_completion_bonus(context, candidate);
             let survival_delta =
                 support_score * survival_effect_weight(&candidate.plan_delta.effects);
             let progress_delta = support_score
                 * progress_effect_weight(&candidate.plan_delta.effects)
-                + gap_fill_bonus;
-            let deck_consistency_delta = support_score * 0.15 + gap_fill_bonus * 0.5
-                - core_plan_dilution_penalty(context, support_score);
+                + gap_fill_bonus
+                + package_completion_bonus;
+            let deck_consistency_delta =
+                support_score * 0.15 + gap_fill_bonus * 0.5 + package_completion_bonus * 0.75
+                    - core_plan_dilution_penalty(context, support_score);
 
             CardRewardValueEstimateV1 {
                 index: candidate.index,
@@ -69,6 +126,7 @@ fn strategy_package_components(
         }
     }));
     components.extend(strategy_package_gap_fill_components(context, candidate));
+    components.extend(strategy_package_completion_components(context, candidate));
     components
 }
 
@@ -76,104 +134,92 @@ fn strategy_package_gap_fill_bonus(
     context: &CardRewardDecisionContextV1,
     candidate: &super::types::CardRewardCandidateEvidenceV1,
 ) -> f32 {
-    strategy_package_gap_fill_components(context, candidate).len() as f32 * 0.10
+    strategy_package_gap_fill_components(context, candidate).len() as f32
+        * PACKAGE_GAP_FILL_PROGRESS_BONUS
+}
+
+fn strategy_package_completion_bonus(
+    context: &CardRewardDecisionContextV1,
+    candidate: &super::types::CardRewardCandidateEvidenceV1,
+) -> f32 {
+    strategy_package_completion_components(context, candidate).len() as f32
+        * PACKAGE_COMPLETION_PROGRESS_BONUS
 }
 
 fn strategy_package_gap_fill_components(
     context: &CardRewardDecisionContextV1,
     candidate: &super::types::CardRewardCandidateEvidenceV1,
 ) -> Vec<CardRewardValueComponentV1> {
-    let mut components = Vec::new();
-    push_gap_component(
-        &mut components,
-        context,
-        candidate,
-        StrategyPackageIdV2::BlockEngine,
-        StrategyPackageGapV2::BlockRetention,
-        StrategyPlanEffectV1::BlockRetention,
-        "strategy_gap_block_engine_block_retention_filled",
-    );
-    push_gap_component(
-        &mut components,
-        context,
-        candidate,
-        StrategyPackageIdV2::BlockEngine,
-        StrategyPackageGapV2::BlockPayoff,
-        StrategyPlanEffectV1::BlockPayoff,
-        "strategy_gap_block_engine_block_payoff_filled",
-    );
-    push_gap_component(
-        &mut components,
-        context,
-        candidate,
-        StrategyPackageIdV2::BlockEngine,
-        StrategyPackageGapV2::BlockMultiplier,
-        StrategyPlanEffectV1::BlockMultiplier,
-        "strategy_gap_block_engine_block_multiplier_filled",
-    );
-    push_gap_component(
-        &mut components,
-        context,
-        candidate,
-        StrategyPackageIdV2::ExhaustEngine,
-        StrategyPackageGapV2::Generator,
-        StrategyPlanEffectV1::ExhaustGenerator,
-        "strategy_gap_exhaust_engine_generator_filled",
-    );
-    push_gap_component(
-        &mut components,
-        context,
-        candidate,
-        StrategyPackageIdV2::ExhaustEngine,
-        StrategyPackageGapV2::Payoff,
-        StrategyPlanEffectV1::ExhaustPayoff,
-        "strategy_gap_exhaust_engine_payoff_filled",
-    );
-    push_gap_component(
-        &mut components,
-        context,
-        candidate,
-        StrategyPackageIdV2::StatusPackage,
-        StrategyPackageGapV2::Generator,
-        StrategyPlanEffectV1::StatusGenerator,
-        "strategy_gap_status_package_generator_filled",
-    );
-    push_gap_component(
-        &mut components,
-        context,
-        candidate,
-        StrategyPackageIdV2::StatusPackage,
-        StrategyPackageGapV2::Payoff,
-        StrategyPlanEffectV1::StatusPayoff,
-        "strategy_gap_status_package_payoff_filled",
-    );
-    components
+    STRATEGY_PACKAGE_GAP_RULES
+        .iter()
+        .filter(|rule| package_gap_is_filled(context, candidate, rule))
+        .map(|rule| CardRewardValueComponentV1 {
+            name: rule.component_name.to_string(),
+            value: 1.0,
+        })
+        .collect()
 }
 
-fn push_gap_component(
-    components: &mut Vec<CardRewardValueComponentV1>,
+fn strategy_package_completion_components(
+    context: &CardRewardDecisionContextV1,
+    candidate: &super::types::CardRewardCandidateEvidenceV1,
+) -> Vec<CardRewardValueComponentV1> {
+    [
+        (
+            StrategyPackageIdV2::BlockEngine,
+            "strategy_package_completion_block_engine",
+        ),
+        (
+            StrategyPackageIdV2::ExhaustEngine,
+            "strategy_package_completion_exhaust_engine",
+        ),
+        (
+            StrategyPackageIdV2::StatusPackage,
+            "strategy_package_completion_status_package",
+        ),
+    ]
+    .into_iter()
+    .filter(|(package_id, _)| package_would_be_completed(context, candidate, *package_id))
+    .map(|(_, name)| CardRewardValueComponentV1 {
+        name: name.to_string(),
+        value: 1.0,
+    })
+    .collect()
+}
+
+fn package_gap_is_filled(
+    context: &CardRewardDecisionContextV1,
+    candidate: &super::types::CardRewardCandidateEvidenceV1,
+    rule: &StrategyPackageGapRule,
+) -> bool {
+    context
+        .strategy
+        .package(rule.package_id)
+        .map(|package| {
+            package.support != StrategyPlanSupportV1::Blocked
+                && package.missing_roles.contains(&rule.gap)
+        })
+        .unwrap_or(false)
+        && candidate.plan_delta.effects.contains(&rule.effect)
+}
+
+fn package_would_be_completed(
     context: &CardRewardDecisionContextV1,
     candidate: &super::types::CardRewardCandidateEvidenceV1,
     package_id: StrategyPackageIdV2,
-    gap: StrategyPackageGapV2,
-    effect: StrategyPlanEffectV1,
-    name: &'static str,
-) {
-    let fills_gap = context
-        .strategy
-        .package(package_id)
-        .map(|package| {
-            package.support != StrategyPlanSupportV1::Blocked
-                && package.missing_roles.contains(&gap)
+) -> bool {
+    let Some(package) = context.strategy.package(package_id) else {
+        return false;
+    };
+    package.support != StrategyPlanSupportV1::Blocked
+        && !package.missing_roles.is_empty()
+        && package.missing_roles.iter().all(|gap| {
+            STRATEGY_PACKAGE_GAP_RULES.iter().any(|rule| {
+                rule.package_id == package_id
+                    && rule.gap == *gap
+                    && candidate.plan_delta.effects.contains(&rule.effect)
+            })
         })
-        .unwrap_or(false)
-        && candidate.plan_delta.effects.contains(&effect);
-    if fills_gap {
-        components.push(CardRewardValueComponentV1 {
-            name: name.to_string(),
-            value: 1.0,
-        });
-    }
 }
 
 fn package_support_components(

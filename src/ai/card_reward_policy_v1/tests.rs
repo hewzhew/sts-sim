@@ -1041,6 +1041,12 @@ fn strategy_package_estimator_recognizes_block_engine_payoff() {
             component.name == "strategy_gap_block_engine_block_payoff_filled"
                 && component.value > 0.0
         }));
+    assert!(body_slam_strategy_estimate
+        .components
+        .iter()
+        .any(|component| {
+            component.name == "strategy_package_completion_block_engine" && component.value > 0.0
+        }));
     assert!(
         !body_slam_strategy_estimate
             .eligibility
@@ -1181,6 +1187,9 @@ fn strategy_package_estimator_exports_exhaust_engine_roles() {
     assert!(estimate.components.iter().any(|component| {
         component.name == "strategy_gap_exhaust_engine_generator_filled" && component.value > 0.0
     }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_exhaust_engine" && component.value > 0.0
+    }));
     assert!(!estimate.eligibility.usable_for_autopilot_gate);
 }
 
@@ -1224,6 +1233,9 @@ fn strategy_package_estimator_exports_status_package_roles() {
         .any(|component| component.name == "plan_effect_StatusPayoff"));
     assert!(estimate.components.iter().any(|component| {
         component.name == "strategy_gap_status_package_payoff_filled" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_status_package" && component.value > 0.0
     }));
     assert!(!estimate.eligibility.usable_for_autopilot_gate);
 }
