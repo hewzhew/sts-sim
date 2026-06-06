@@ -243,7 +243,8 @@ fn select_positions_for_slots(
         selected.push(position);
         selected_set.insert(position);
     }
-    cap_redundant_choice_prefixes(candidates, positions, selected, limit)
+    let selected = cap_redundant_choice_prefixes(candidates, positions, selected, limit);
+    cap_pure_transition_saturation(candidates, positions, selected, limit)
 }
 
 fn best_position_for_slot(
@@ -276,6 +277,18 @@ fn best_fill_position(
     positions: &[usize],
     selected: &BTreeSet<usize>,
 ) -> Option<usize> {
+    best_fill_position_allowed(candidates, positions, selected, |_| true)
+}
+
+fn best_fill_position_allowed<F>(
+    candidates: &[BranchRetentionCandidateInputV1],
+    positions: &[usize],
+    selected: &BTreeSet<usize>,
+    is_allowed: F,
+) -> Option<usize>
+where
+    F: Fn(usize) -> bool,
+{
     let covered_families = selected
         .iter()
         .map(|position| branch_family_key(&candidates[*position]))
@@ -284,6 +297,7 @@ fn best_fill_position(
         .iter()
         .copied()
         .filter(|position| !selected.contains(position))
+        .filter(|position| is_allowed(*position))
         .max_by(|left, right| {
             let left_new_family =
                 !covered_families.contains(&branch_family_key(&candidates[*left]));
@@ -401,6 +415,93 @@ fn cap_redundant_choice_prefixes(
         kept.push(position);
     }
     kept
+}
+
+fn cap_pure_transition_saturation(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    selected_positions: Vec<usize>,
+    limit: usize,
+) -> Vec<usize> {
+    if !available_positions
+        .iter()
+        .any(|position| !is_pure_transition_branch(&candidates[*position]))
+    {
+        return selected_positions;
+    }
+
+    let max_pure_transition = pure_transition_branch_cap(candidates, available_positions, limit);
+    let mut pure_transition_count = 0usize;
+    let mut capped = false;
+    let mut kept = Vec::new();
+
+    for position in selected_positions {
+        if is_pure_transition_branch(&candidates[position]) {
+            if pure_transition_count >= max_pure_transition {
+                capped = true;
+                continue;
+            }
+            pure_transition_count += 1;
+        }
+        kept.push(position);
+    }
+
+    if !capped {
+        return kept;
+    }
+
+    let mut selected = kept.iter().copied().collect::<BTreeSet<_>>();
+    while kept.len() < limit {
+        let allow_more_pure_transition = pure_transition_count < max_pure_transition;
+        let Some(position) =
+            best_fill_position_allowed(candidates, available_positions, &selected, |position| {
+                allow_more_pure_transition || !is_pure_transition_branch(&candidates[position])
+            })
+        else {
+            break;
+        };
+
+        if is_pure_transition_branch(&candidates[position]) {
+            pure_transition_count += 1;
+        }
+        selected.insert(position);
+        kept.push(position);
+    }
+
+    kept
+}
+
+fn pure_transition_branch_cap(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    limit: usize,
+) -> usize {
+    let non_transition_families = available_positions
+        .iter()
+        .filter(|position| !is_pure_transition_branch(&candidates[**position]))
+        .map(|position| branch_family_key(&candidates[*position]))
+        .collect::<BTreeSet<_>>();
+    limit
+        .saturating_sub(non_transition_families.len())
+        .max(1)
+        .min(3)
+}
+
+fn is_pure_transition_branch(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    let has_committed_formation_strength = candidate
+        .strategy_formation
+        .as_ref()
+        .is_some_and(|formation| !formation.strengths.is_empty());
+
+    candidate.trajectory.transition_frontload_picks > 0
+        && !has_committed_formation_strength
+        && candidate.trajectory.setup_keys.is_empty()
+        && candidate.trajectory.package_keys.is_empty()
+        && candidate.trajectory.scaling_picks == 0
+        && candidate.trajectory.defense_picks == 0
+        && candidate.trajectory.engine_generator_picks == 0
+        && candidate.trajectory.engine_payoff_picks == 0
+        && candidate.trajectory.draw_energy_picks == 0
 }
 
 fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetentionSlotV1) -> i32 {
@@ -912,6 +1013,58 @@ mod tests {
         assert!(
             selection.keep_indices.contains(&7),
             "setup+payoff engine representative"
+        );
+    }
+
+    #[test]
+    fn portfolio_budget_does_not_saturate_with_pure_transition_branches() {
+        let candidates = vec![
+            retention_candidate(0, 10_900, &["Twin Strike", "Clash"]),
+            retention_candidate(1, 10_890, &["Wild Strike", "Cleave"]),
+            retention_candidate(2, 10_880, &["Pommel Strike", "Sword Boomerang"]),
+            semantic_retention_candidate(
+                3,
+                10_500,
+                50,
+                80,
+                trajectory_with(&["exhaust_engine"], &[], 0, 1, 0, 0),
+                &[CardRewardSemanticRoleV1::ExhaustGenerator],
+            ),
+            semantic_retention_candidate(
+                4,
+                10_450,
+                50,
+                80,
+                trajectory_with(&["status_package"], &[], 0, 1, 0, 0),
+                &[CardRewardSemanticRoleV1::StatusGenerator],
+            ),
+        ];
+
+        let selection = select_branch_retention_portfolio_v1(
+            &candidates,
+            BranchRetentionConfigV1 {
+                max_total: 3,
+                max_per_frontier: Some(3),
+            },
+        );
+
+        let pure_transition_kept = selection
+            .keep_indices
+            .iter()
+            .filter(|index| **index <= 2)
+            .count();
+
+        assert_eq!(
+            pure_transition_kept, 1,
+            "pure transition output should have a representative, but not saturate the budget"
+        );
+        assert!(
+            selection.keep_indices.contains(&3),
+            "an exhaust setup branch should survive short-horizon transition pressure"
+        );
+        assert!(
+            selection.keep_indices.contains(&4),
+            "a status setup branch should survive short-horizon transition pressure"
         );
     }
 
