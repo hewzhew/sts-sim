@@ -42,9 +42,10 @@ pub use route_risk_calibration::{
     CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_VERSION,
 };
 pub use strategy_package_calibration::{
-    calibrate_card_reward_strategy_package_v1, CardRewardStrategyPackageCalibrationBucketV1,
-    CardRewardStrategyPackageCalibrationGlobalV1, CardRewardStrategyPackageCalibrationV1,
-    CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_NAME,
+    calibrate_card_reward_strategy_package_v1,
+    estimate_card_reward_values_from_strategy_package_calibration_v1,
+    CardRewardStrategyPackageCalibrationBucketV1, CardRewardStrategyPackageCalibrationGlobalV1,
+    CardRewardStrategyPackageCalibrationV1, CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_NAME,
     CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_VERSION,
 };
 

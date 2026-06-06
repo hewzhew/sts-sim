@@ -3,8 +3,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::card_reward_policy_v1::{
-    replay_card_reward_decision_v1, CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
-    CardRewardValueSourceV1,
+    replay_card_reward_decision_v1, CardRewardDecisionContextV1, CardRewardPolicyConfigV1,
+    CardRewardValueComponentV1, CardRewardValueEligibilityReasonV1, CardRewardValueEligibilityV1,
+    CardRewardValueEstimateV1, CardRewardValueHorizonV1, CardRewardValueSourceV1,
+    CardRewardValueStatusV1,
 };
 use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
 use crate::content::cards::CardId;
@@ -169,12 +171,105 @@ pub fn calibrate_card_reward_strategy_package_v1(
     }
 }
 
+pub fn estimate_card_reward_values_from_strategy_package_calibration_v1(
+    context: &CardRewardDecisionContextV1,
+    calibration: &CardRewardStrategyPackageCalibrationV1,
+) -> Vec<CardRewardValueEstimateV1> {
+    let packet =
+        crate::ai::card_reward_policy_v1::PublicRewardDecisionPacketV1::from_context(context);
+    let replay =
+        replay_card_reward_decision_v1(&packet, &CardRewardPolicyConfigV1::default(), None);
+    replay
+        .value_estimates
+        .iter()
+        .filter(|estimate| estimate.source == CardRewardValueSourceV1::StrategyPackage)
+        .filter_map(|estimate| {
+            let candidate = context.candidates.iter().find(|candidate| {
+                candidate.index == estimate.index && candidate.card == estimate.card
+            })?;
+            corrected_strategy_package_estimate(estimate, candidate, calibration)
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct StrategyPackageCalibrationRowV1 {
     actual_route_hp_loss: i32,
     next_combat_hp_loss: Option<i32>,
     predicted_strategy_package_delta: f32,
     bucket_keys: Vec<String>,
+}
+
+fn corrected_strategy_package_estimate(
+    estimate: &CardRewardValueEstimateV1,
+    candidate: &crate::ai::card_reward_policy_v1::CardRewardCandidateEvidenceV1,
+    calibration: &CardRewardStrategyPackageCalibrationV1,
+) -> Option<CardRewardValueEstimateV1> {
+    let bucket = best_matching_bucket(candidate, calibration)?;
+    let raw_total = total_value_delta(estimate);
+    let signed_error = bucket.mean_signed_error.unwrap_or(0.0);
+    let corrected_total = raw_total - signed_error;
+    Some(CardRewardValueEstimateV1 {
+        index: estimate.index,
+        card: estimate.card,
+        source: CardRewardValueSourceV1::StrategyPackage,
+        status: CardRewardValueStatusV1::StrategyPackageCalibrated,
+        survival_delta: corrected_total,
+        progress_delta: 0.0,
+        deck_consistency_delta: 0.0,
+        uncertainty: bucket.uncertainty.max(0.45),
+        eligibility: CardRewardValueEligibilityV1 {
+            usable_for_value_estimate: true,
+            usable_for_autopilot_gate: false,
+            reasons: vec![
+                CardRewardValueEligibilityReasonV1::StrategyPackageCalibrationNotGateEligible,
+            ],
+            bucket_key: Some(bucket.bucket_key.clone()),
+            horizon: Some(CardRewardValueHorizonV1::CurrentStrategyPackage),
+            outcome_sample_count: Some(bucket.evaluated_count),
+        },
+        components: vec![
+            CardRewardValueComponentV1 {
+                name: "strategy_package_raw_total_delta".to_string(),
+                value: raw_total,
+            },
+            CardRewardValueComponentV1 {
+                name: "strategy_package_bucket_mean_signed_error".to_string(),
+                value: signed_error,
+            },
+            CardRewardValueComponentV1 {
+                name: "strategy_package_corrected_total_delta".to_string(),
+                value: corrected_total,
+            },
+            CardRewardValueComponentV1 {
+                name: "strategy_package_calibration_bucket_count".to_string(),
+                value: bucket.evaluated_count as f32,
+            },
+        ],
+    })
+}
+
+fn best_matching_bucket<'a>(
+    candidate: &crate::ai::card_reward_policy_v1::CardRewardCandidateEvidenceV1,
+    calibration: &'a CardRewardStrategyPackageCalibrationV1,
+) -> Option<&'a CardRewardStrategyPackageCalibrationBucketV1> {
+    let keys =
+        strategy_package_bucket_keys(candidate.plan_delta.support, &candidate.plan_delta.effects);
+    calibration
+        .buckets
+        .iter()
+        .filter(|bucket| bucket.usable_for_value_estimate && keys.contains(&bucket.bucket_key))
+        .max_by(|left, right| {
+            left.evaluated_count
+                .cmp(&right.evaluated_count)
+                .then_with(|| {
+                    right
+                        .uncertainty
+                        .partial_cmp(&left.uncertainty)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| right.bucket_key.cmp(&left.bucket_key))
+        })
 }
 
 #[derive(Default)]

@@ -14,10 +14,11 @@ use sts_simulator::content::cards::CardId;
 use sts_simulator::eval::card_reward_value_loop::{
     calibrate_card_reward_outcomes_v1, calibrate_card_reward_strategy_package_v1,
     estimate_card_reward_value_from_calibration_v1,
-    estimate_card_reward_values_from_calibration_v1, extract_card_reward_value_loop_examples_v1,
-    replay_card_reward_records_with_calibration_v1, summarize_card_reward_value_loop_examples_v1,
-    CardRewardValueLoopOutcomeStatusV1, CardRewardValueLoopReplayStatusV1,
-    CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
+    estimate_card_reward_values_from_calibration_v1,
+    estimate_card_reward_values_from_strategy_package_calibration_v1,
+    extract_card_reward_value_loop_examples_v1, replay_card_reward_records_with_calibration_v1,
+    summarize_card_reward_value_loop_examples_v1, CardRewardValueLoopOutcomeStatusV1,
+    CardRewardValueLoopReplayStatusV1, CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
 };
 use sts_simulator::eval::run_control::{
     RunActionApplyStatusV1, RunActionResultV1, RunControlConfig, RunControlSession,
@@ -394,6 +395,41 @@ fn calibrates_strategy_package_estimates_by_selected_candidate_plan_evidence() {
     assert_eq!(calibration.label_role, "diagnostic_not_teacher_label");
     assert!(!calibration.trainable_as_action_label);
     assert!(!calibration.policy_quality_claim);
+}
+
+#[test]
+fn strategy_package_calibration_generates_non_gate_external_estimates() {
+    let examples = vec![
+        strategy_package_example(CardId::SearingBlow, 7),
+        strategy_package_example(CardId::Clothesline, 14),
+    ];
+    let calibration = calibrate_card_reward_strategy_package_v1(&examples);
+    let context = examples[0]
+        .public_packet
+        .as_ref()
+        .expect("fixture should include a full public packet")
+        .context
+        .clone();
+
+    let estimates =
+        estimate_card_reward_values_from_strategy_package_calibration_v1(&context, &calibration);
+
+    let searing = estimates
+        .iter()
+        .find(|estimate| estimate.card == CardId::SearingBlow)
+        .expect("SearingBlow should get a calibrated StrategyPackage estimate");
+    assert_eq!(searing.source, CardRewardValueSourceV1::StrategyPackage);
+    assert_eq!(
+        searing.status,
+        CardRewardValueStatusV1::StrategyPackageCalibrated
+    );
+    assert!(searing.eligibility.usable_for_value_estimate);
+    assert!(!searing.eligibility.usable_for_autopilot_gate);
+    assert!(searing.eligibility.bucket_key.is_some());
+    assert!(searing
+        .components
+        .iter()
+        .any(|component| component.name == "strategy_package_calibration_bucket_count"));
 }
 
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {

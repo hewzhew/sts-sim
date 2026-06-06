@@ -234,6 +234,7 @@ pub enum CardRewardValueSourceV1 {
 pub enum CardRewardValueStatusV1 {
     UncalibratedPrior,
     StrategyPackageEstimate,
+    StrategyPackageCalibrated,
     CounterfactualProbe,
     OutcomeCalibrated,
     RouteRiskEstimate,
@@ -294,6 +295,7 @@ pub enum CardRewardValueEligibilityReasonV1 {
     HiddenSimulatorStateUsed,
     ShortHorizonMetricOnly,
     StrategyPackageEstimateNotPromoted,
+    StrategyPackageCalibrationNotGateEligible,
     CounterfactualProbeNotGateEligible,
     RouteRiskEstimateNotPromoted,
     RouteRiskCalibrationNotGateEligible,

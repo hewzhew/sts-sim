@@ -422,6 +422,7 @@ fn card_reward_value_estimate(estimate: &CardRewardValueEstimateV1) -> ValueEsti
         confidence: match estimate.status {
             CardRewardValueStatusV1::UncalibratedPrior => 0.0,
             CardRewardValueStatusV1::StrategyPackageEstimate => 0.25,
+            CardRewardValueStatusV1::StrategyPackageCalibrated => 0.35,
             CardRewardValueStatusV1::CounterfactualProbe => 0.5,
             CardRewardValueStatusV1::OutcomeCalibrated => 0.75,
             CardRewardValueStatusV1::RouteRiskEstimate => 0.35,
@@ -456,6 +457,9 @@ fn card_reward_value_components(estimate: &CardRewardValueEstimateV1) -> Vec<Val
             CardRewardValueStatusV1::UncalibratedPrior => "value_status_uncalibrated_prior",
             CardRewardValueStatusV1::StrategyPackageEstimate => {
                 "value_status_strategy_package_estimate"
+            }
+            CardRewardValueStatusV1::StrategyPackageCalibrated => {
+                "value_status_strategy_package_calibrated"
             }
             CardRewardValueStatusV1::CounterfactualProbe => "value_status_counterfactual_probe",
             CardRewardValueStatusV1::OutcomeCalibrated => "value_status_outcome_calibrated",

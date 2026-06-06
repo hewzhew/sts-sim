@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use crate::eval::card_reward_value_loop::{
     CardRewardOutcomeCalibrationV1, CardRewardRouteRiskCalibrationV1,
+    CardRewardStrategyPackageCalibrationV1,
 };
 use crate::state::core::{ActiveCombat, EngineState};
 use crate::state::run::RunState;
@@ -31,6 +32,7 @@ pub struct RunControlConfig {
     pub search_max_potions_used: Option<u32>,
     pub card_reward_outcome_calibration: Option<CardRewardOutcomeCalibrationV1>,
     pub card_reward_route_risk_calibration: Option<CardRewardRouteRiskCalibrationV1>,
+    pub card_reward_strategy_package_calibration: Option<CardRewardStrategyPackageCalibrationV1>,
 }
 
 impl Default for RunControlConfig {
@@ -49,6 +51,7 @@ impl Default for RunControlConfig {
             search_max_potions_used: None,
             card_reward_outcome_calibration: None,
             card_reward_route_risk_calibration: None,
+            card_reward_strategy_package_calibration: None,
         }
     }
 }
@@ -70,6 +73,8 @@ pub struct RunControlSession {
         Option<CardRewardOutcomeCalibrationV1>,
     pub(in crate::eval::run_control) card_reward_route_risk_calibration:
         Option<CardRewardRouteRiskCalibrationV1>,
+    pub(in crate::eval::run_control) card_reward_strategy_package_calibration:
+        Option<CardRewardStrategyPackageCalibrationV1>,
     pub(super) combat_outcomes: CombatOutcomeTracker,
     pub(in crate::eval::run_control) combat_sequence: u64,
     pub(in crate::eval::run_control) auto_capture_last_combat_sequence: Option<u64>,
@@ -168,6 +173,8 @@ impl RunControlSession {
             search_max_potions_used: config.search_max_potions_used,
             card_reward_outcome_calibration: config.card_reward_outcome_calibration,
             card_reward_route_risk_calibration: config.card_reward_route_risk_calibration,
+            card_reward_strategy_package_calibration: config
+                .card_reward_strategy_package_calibration,
             combat_outcomes: CombatOutcomeTracker::default(),
             combat_sequence: 0,
             auto_capture_last_combat_sequence: None,

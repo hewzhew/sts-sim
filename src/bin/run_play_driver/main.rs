@@ -6,9 +6,12 @@ use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use sts_simulator::eval::card_reward_value_loop::{
     build_card_reward_runtime_calibration_pipeline_v1, extract_card_reward_value_loop_examples_v1,
     CardRewardOutcomeCalibrationPromotionConfigV1, CardRewardOutcomeCalibrationV1,
-    CardRewardRouteRiskCalibrationV1, CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME,
-    CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION, CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_NAME,
+    CardRewardRouteRiskCalibrationV1, CardRewardStrategyPackageCalibrationV1,
+    CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME, CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION,
+    CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_NAME,
     CARD_REWARD_ROUTE_RISK_CALIBRATION_SCHEMA_VERSION,
+    CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_NAME,
+    CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_VERSION,
 };
 use sts_simulator::eval::run_control::{
     canonical_player_class, load_session_trace_v1, render_run_control_state,
@@ -148,6 +151,13 @@ struct Args {
     card_reward_route_risk_calibration: Option<PathBuf>,
 
     #[arg(
+        long,
+        value_name = "PATH",
+        help = "Load CardRewardStrategyPackageCalibrationV1 and feed corrected StrategyPackage estimates into card reward value arbitration"
+    )]
+    card_reward_strategy_package_calibration: Option<PathBuf>,
+
+    #[arg(
         long = "card-reward-calibration-trace",
         value_name = "PATH",
         help = "Build a runtime CardRewardOutcomeCalibrationV1 from SessionTraceV1 trace(s) at startup"
@@ -218,6 +228,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|(source, calibration)| {
                 card_reward_route_risk_calibration_loaded_message(&source, calibration)
             });
+    let card_reward_strategy_package_calibration_loaded_message =
+        card_reward_strategy_package_calibration_source_label(&args)
+            .zip(config.card_reward_strategy_package_calibration.as_ref())
+            .map(|(source, calibration)| {
+                card_reward_strategy_package_calibration_loaded_message(&source, calibration)
+            });
     let replay_options = SessionTraceReplayOptions {
         max_steps: goto_plan
             .as_ref()
@@ -261,6 +277,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{message}");
     }
     if let Some(message) = card_reward_route_risk_calibration_loaded_message.as_ref() {
+        println!("{message}");
+    }
+    if let Some(message) = card_reward_strategy_package_calibration_loaded_message.as_ref() {
         println!("{message}");
     }
     if let (Some(path), Some(replay_trace)) = (replay_trace_path.as_ref(), replay_trace.as_ref()) {
@@ -472,12 +491,14 @@ fn run_config_from_args(
         search_max_potions_used: args.search_max_potions_used,
         card_reward_outcome_calibration: card_reward_calibrations.outcome,
         card_reward_route_risk_calibration: card_reward_calibrations.route_risk,
+        card_reward_strategy_package_calibration: card_reward_calibrations.strategy_package,
     })
 }
 
 struct CardRewardRuntimeCalibrationsFromArgs {
     outcome: Option<CardRewardOutcomeCalibrationV1>,
     route_risk: Option<CardRewardRouteRiskCalibrationV1>,
+    strategy_package: Option<CardRewardStrategyPackageCalibrationV1>,
 }
 
 fn card_reward_calibrations_from_args(
@@ -490,9 +511,15 @@ fn card_reward_calibrations_from_args(
             .as_deref()
             .map(load_card_reward_route_risk_calibration)
             .transpose()?;
+        let strategy_package = args
+            .card_reward_strategy_package_calibration
+            .as_deref()
+            .map(load_card_reward_strategy_package_calibration)
+            .transpose()?;
         return Ok(CardRewardRuntimeCalibrationsFromArgs {
             outcome: Some(outcome),
             route_risk,
+            strategy_package,
         });
     }
     if args.card_reward_calibration_traces.is_empty() {
@@ -501,9 +528,15 @@ fn card_reward_calibrations_from_args(
             .as_deref()
             .map(load_card_reward_route_risk_calibration)
             .transpose()?;
+        let strategy_package = args
+            .card_reward_strategy_package_calibration
+            .as_deref()
+            .map(load_card_reward_strategy_package_calibration)
+            .transpose()?;
         return Ok(CardRewardRuntimeCalibrationsFromArgs {
             outcome: None,
             route_risk,
+            strategy_package,
         });
     }
 
@@ -521,9 +554,16 @@ fn card_reward_calibrations_from_args(
     } else {
         pipeline.route_risk_calibration
     };
+    let strategy_package =
+        if let Some(path) = args.card_reward_strategy_package_calibration.as_deref() {
+            load_card_reward_strategy_package_calibration(path)?
+        } else {
+            pipeline.strategy_package_calibration
+        };
     Ok(CardRewardRuntimeCalibrationsFromArgs {
         outcome: Some(pipeline.promoted_calibration),
         route_risk: Some(route_risk),
+        strategy_package: Some(strategy_package),
     })
 }
 
@@ -560,6 +600,19 @@ fn card_reward_calibration_source_label(args: &Args) -> Option<String> {
 
 fn card_reward_route_risk_calibration_source_label(args: &Args) -> Option<String> {
     if let Some(path) = args.card_reward_route_risk_calibration.as_ref() {
+        return Some(path.display().to_string());
+    }
+    (!args.card_reward_calibration_traces.is_empty()).then(|| {
+        format!(
+            "generated from {} trace(s) using {:?} profile",
+            args.card_reward_calibration_traces.len(),
+            args.card_reward_calibration_profile,
+        )
+    })
+}
+
+fn card_reward_strategy_package_calibration_source_label(args: &Args) -> Option<String> {
+    if let Some(path) = args.card_reward_strategy_package_calibration.as_ref() {
         return Some(path.display().to_string());
     }
     (!args.card_reward_calibration_traces.is_empty()).then(|| {
@@ -641,6 +694,41 @@ fn load_card_reward_route_risk_calibration(
     Ok(calibration)
 }
 
+fn load_card_reward_strategy_package_calibration(
+    path: &Path,
+) -> Result<CardRewardStrategyPackageCalibrationV1, String> {
+    let raw = fs::read_to_string(path).map_err(|err| {
+        format!(
+            "failed to read card reward StrategyPackage calibration {}: {err}",
+            path.display()
+        )
+    })?;
+    let calibration = serde_json::from_str::<CardRewardStrategyPackageCalibrationV1>(&raw)
+        .map_err(|err| {
+            format!(
+                "failed to parse CardRewardStrategyPackageCalibrationV1 {}: {err}",
+                path.display()
+            )
+        })?;
+    if calibration.schema_name != CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_NAME {
+        return Err(format!(
+            "card reward StrategyPackage calibration {} has schema_name {}, expected {}",
+            path.display(),
+            calibration.schema_name,
+            CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_NAME
+        ));
+    }
+    if calibration.schema_version != CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_VERSION {
+        return Err(format!(
+            "card reward StrategyPackage calibration {} has schema_version {}, expected {}",
+            path.display(),
+            calibration.schema_version,
+            CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_VERSION
+        ));
+    }
+    Ok(calibration)
+}
+
 fn card_reward_calibration_loaded_message(
     source: &str,
     calibration: &CardRewardOutcomeCalibrationV1,
@@ -685,6 +773,28 @@ fn card_reward_calibration_loaded_message(
         calibration
             .provenance
             .short_horizon_autopilot_gate_approved,
+    )
+}
+
+fn card_reward_strategy_package_calibration_loaded_message(
+    source: &str,
+    calibration: &CardRewardStrategyPackageCalibrationV1,
+) -> String {
+    format!(
+        "card reward StrategyPackage calibration loaded: {source} [examples={} evaluated={} buckets={} mean_route_hp_loss={} mean_abs_error={}]",
+        calibration.total_examples,
+        calibration.evaluated_examples,
+        calibration.buckets.len(),
+        calibration
+            .global
+            .mean_actual_route_hp_loss
+            .map(|value| format!("{value:.3}"))
+            .unwrap_or_else(|| "unknown".to_string()),
+        calibration
+            .global
+            .mean_absolute_error
+            .map(|value| format!("{value:.3}"))
+            .unwrap_or_else(|| "unknown".to_string()),
     )
 }
 
@@ -780,6 +890,7 @@ mod tests {
             search_max_potions_used: None,
             card_reward_calibration: None,
             card_reward_route_risk_calibration: None,
+            card_reward_strategy_package_calibration: None,
             card_reward_calibration_traces: Vec::new(),
             card_reward_calibration_profile: CliCardRewardCalibrationProfile::Strict,
         }
@@ -898,6 +1009,11 @@ mod tests {
             .expect("trace-derived RouteRisk calibration should be present");
         assert_eq!(route_risk.total_examples, 0);
         assert_eq!(route_risk.evaluated_examples, 0);
+        let strategy_package = config
+            .card_reward_strategy_package_calibration
+            .expect("trace-derived StrategyPackage calibration should be present");
+        assert_eq!(strategy_package.total_examples, 0);
+        assert_eq!(strategy_package.evaluated_examples, 0);
         let _ = fs::remove_file(path);
     }
 
@@ -922,6 +1038,32 @@ mod tests {
             config
                 .card_reward_route_risk_calibration
                 .expect("RouteRisk calibration should be present"),
+            calibration
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn card_reward_strategy_package_calibration_arg_loads_runtime_config() {
+        let path = unique_temp_path("card_reward_strategy_package_calibration.json");
+        let calibration = empty_strategy_package_calibration();
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&calibration)
+                .expect("strategy package calibration should serialize"),
+        )
+        .expect("strategy package calibration fixture should write");
+        let mut args = empty_args();
+        args.card_reward_strategy_package_calibration = Some(path.clone());
+
+        let config = run_config_from_args(&args, None)
+            .expect("config should load StrategyPackage calibration");
+
+        assert!(config.card_reward_outcome_calibration.is_none());
+        assert_eq!(
+            config
+                .card_reward_strategy_package_calibration
+                .expect("StrategyPackage calibration should be present"),
             calibration
         );
         let _ = fs::remove_file(path);
@@ -1174,6 +1316,33 @@ mod tests {
                 mean_signed_error: None,
                 mean_absolute_error: None,
             },
+            buckets: Vec::new(),
+        }
+    }
+
+    fn empty_strategy_package_calibration() -> CardRewardStrategyPackageCalibrationV1 {
+        CardRewardStrategyPackageCalibrationV1 {
+            schema_name: CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_NAME.to_string(),
+            schema_version: CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_VERSION,
+            label_role: "diagnostic_not_teacher_label".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            estimator_kind: "strategy_package_selected_candidate_alignment_v1".to_string(),
+            total_examples: 0,
+            evaluated_examples: 0,
+            missing_public_packet_examples: 0,
+            missing_outcome_examples: 0,
+            missing_selected_strategy_package_estimate_examples: 0,
+            global:
+                sts_simulator::eval::card_reward_value_loop::CardRewardStrategyPackageCalibrationGlobalV1 {
+                    evaluated_count: 0,
+                    mean_actual_route_hp_loss: None,
+                    mean_actual_next_combat_hp_loss: None,
+                    mean_predicted_strategy_package_delta: None,
+                    mean_actual_survival_delta: None,
+                    mean_signed_error: None,
+                    mean_absolute_error: None,
+                },
             buckets: Vec::new(),
         }
     }

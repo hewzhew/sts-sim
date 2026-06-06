@@ -240,6 +240,14 @@ fn card_reward_estimator_inputs(
             ),
         );
     }
+    if let Some(calibration) = session.card_reward_strategy_package_calibration.as_ref() {
+        external_value_estimates.extend(
+            crate::eval::card_reward_value_loop::estimate_card_reward_values_from_strategy_package_calibration_v1(
+                context,
+                calibration,
+            ),
+        );
+    }
     crate::ai::card_reward_policy_v1::CardRewardEstimatorInputsV1 {
         external_value_estimates,
     }
