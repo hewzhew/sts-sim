@@ -22,6 +22,29 @@ struct StrategyPackageGapRule {
     component_name: &'static str,
 }
 
+#[derive(Clone, Copy)]
+enum StrategyThreatAlignmentSource {
+    Boss,
+    Elite,
+}
+
+struct StrategyPackageThreatAlignmentRule {
+    package_id: StrategyPackageIdV2,
+    package_name: &'static str,
+    required_effects: &'static [StrategyPlanEffectV1],
+    source: StrategyThreatAlignmentSource,
+    tag: StrategyThreatTagV1,
+    tag_name: &'static str,
+}
+
+const WEAK_CONTROL_ALIGNMENT_EFFECTS: &[StrategyPlanEffectV1] =
+    &[StrategyPlanEffectV1::WeakCoverage];
+const BLOCK_ENGINE_ALIGNMENT_EFFECTS: &[StrategyPlanEffectV1] = &[
+    StrategyPlanEffectV1::BlockRetention,
+    StrategyPlanEffectV1::BlockPayoff,
+    StrategyPlanEffectV1::BlockMultiplier,
+];
+
 const STRATEGY_PACKAGE_GAP_RULES: &[StrategyPackageGapRule] = &[
     StrategyPackageGapRule {
         package_id: StrategyPackageIdV2::UpgradeSink,
@@ -88,6 +111,97 @@ const STRATEGY_PACKAGE_GAP_RULES: &[StrategyPackageGapRule] = &[
         gap: StrategyPackageGapV2::Payoff,
         effect: StrategyPlanEffectV1::StatusPayoff,
         component_name: "strategy_gap_status_package_payoff_filled",
+    },
+];
+
+const STRATEGY_PACKAGE_THREAT_ALIGNMENT_RULES: &[StrategyPackageThreatAlignmentRule] = &[
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::WeakControl,
+        package_name: "weak_control",
+        required_effects: WEAK_CONTROL_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::HighIncomingDamage,
+        tag_name: "high_incoming",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::WeakControl,
+        package_name: "weak_control",
+        required_effects: WEAK_CONTROL_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::MultiHit,
+        tag_name: "multihit",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::WeakControl,
+        package_name: "weak_control",
+        required_effects: WEAK_CONTROL_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::HighIncomingDamage,
+        tag_name: "high_incoming",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::WeakControl,
+        package_name: "weak_control",
+        required_effects: WEAK_CONTROL_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::MultiHit,
+        tag_name: "multihit",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        package_name: "block_engine",
+        required_effects: BLOCK_ENGINE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::HighIncomingDamage,
+        tag_name: "high_incoming",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        package_name: "block_engine",
+        required_effects: BLOCK_ENGINE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::LongFightScaling,
+        tag_name: "long_fight",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        package_name: "block_engine",
+        required_effects: BLOCK_ENGINE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::SetupWindow,
+        tag_name: "setup_window",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        package_name: "block_engine",
+        required_effects: BLOCK_ENGINE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::HighIncomingDamage,
+        tag_name: "high_incoming",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        package_name: "block_engine",
+        required_effects: BLOCK_ENGINE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::MultiHit,
+        tag_name: "multihit",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        package_name: "block_engine",
+        required_effects: BLOCK_ENGINE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::LongFightScaling,
+        tag_name: "long_fight",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::BlockEngine,
+        package_name: "block_engine",
+        required_effects: BLOCK_ENGINE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::SetupWindow,
+        tag_name: "setup_window",
     },
 ];
 
@@ -278,39 +392,57 @@ fn strategy_package_threat_alignment_components(
     context: &CardRewardDecisionContextV1,
     candidate: &super::types::CardRewardCandidateEvidenceV1,
 ) -> Vec<CardRewardValueComponentV1> {
-    let mut components = Vec::new();
-    if package_would_be_completed(context, candidate, StrategyPackageIdV2::WeakControl)
-        && candidate
-            .plan_delta
-            .effects
-            .contains(&StrategyPlanEffectV1::WeakCoverage)
-    {
-        if boss_threat(context, StrategyThreatTagV1::HighIncomingDamage) {
-            components.push(CardRewardValueComponentV1 {
-                name: "strategy_threat_alignment_weak_control_boss_high_incoming".to_string(),
-                value: PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS,
-            });
-        }
-        if boss_threat(context, StrategyThreatTagV1::MultiHit) {
-            components.push(CardRewardValueComponentV1 {
-                name: "strategy_threat_alignment_weak_control_boss_multihit".to_string(),
-                value: PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS,
-            });
-        }
-        if elite_threat_visible_for_route(context, StrategyThreatTagV1::HighIncomingDamage) {
-            components.push(CardRewardValueComponentV1 {
-                name: "strategy_threat_alignment_weak_control_elite_high_incoming".to_string(),
-                value: PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS,
-            });
-        }
-        if elite_threat_visible_for_route(context, StrategyThreatTagV1::MultiHit) {
-            components.push(CardRewardValueComponentV1 {
-                name: "strategy_threat_alignment_weak_control_elite_multihit".to_string(),
-                value: PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS,
-            });
-        }
+    STRATEGY_PACKAGE_THREAT_ALIGNMENT_RULES
+        .iter()
+        .filter(|rule| package_threat_alignment_rule_applies(context, candidate, rule))
+        .map(|rule| threat_alignment_component(rule.package_name, rule.source, rule.tag_name))
+        .collect()
+}
+
+fn candidate_completes_package_with_any_effect(
+    context: &CardRewardDecisionContextV1,
+    candidate: &super::types::CardRewardCandidateEvidenceV1,
+    package_id: StrategyPackageIdV2,
+    effects: &[StrategyPlanEffectV1],
+) -> bool {
+    package_would_be_completed(context, candidate, package_id)
+        && effects
+            .iter()
+            .any(|effect| candidate.plan_delta.effects.contains(effect))
+}
+
+fn package_threat_alignment_rule_applies(
+    context: &CardRewardDecisionContextV1,
+    candidate: &super::types::CardRewardCandidateEvidenceV1,
+    rule: &StrategyPackageThreatAlignmentRule,
+) -> bool {
+    if !candidate_completes_package_with_any_effect(
+        context,
+        candidate,
+        rule.package_id,
+        rule.required_effects,
+    ) {
+        return false;
     }
-    components
+    match rule.source {
+        StrategyThreatAlignmentSource::Boss => boss_threat(context, rule.tag),
+        StrategyThreatAlignmentSource::Elite => elite_threat_visible_for_route(context, rule.tag),
+    }
+}
+
+fn threat_alignment_component(
+    package_name: &str,
+    source: StrategyThreatAlignmentSource,
+    tag_name: &str,
+) -> CardRewardValueComponentV1 {
+    let source_name = match source {
+        StrategyThreatAlignmentSource::Boss => "boss",
+        StrategyThreatAlignmentSource::Elite => "elite",
+    };
+    CardRewardValueComponentV1 {
+        name: format!("strategy_threat_alignment_{package_name}_{source_name}_{tag_name}"),
+        value: PACKAGE_THREAT_ALIGNMENT_SURVIVAL_BONUS,
+    }
 }
 
 fn boss_threat(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {

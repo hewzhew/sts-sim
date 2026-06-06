@@ -1253,6 +1253,99 @@ fn strategy_package_estimator_recognizes_block_engine_payoff() {
 }
 
 #[test]
+fn block_engine_completion_aligns_with_long_fight_boss_threats() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.boss_key = Some(EncounterId::TimeEater);
+    run_state.add_card_to_deck(CardId::Barricade);
+    run_state.add_card_to_deck(CardId::Entrench);
+    run_state.add_card_to_deck(CardId::FlameBarrier);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::BodySlam, 0)],
+        route_without_elites(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::BodySlam
+        })
+        .expect("Body Slam strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_block_engine" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_block_engine_boss_high_incoming"
+            && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_block_engine_boss_long_fight"
+            && component.value > 0.0
+    }));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
+fn block_engine_completion_aligns_with_act2_elites_only_when_route_allows_elites() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.add_card_to_deck(CardId::Barricade);
+    run_state.add_card_to_deck(CardId::Entrench);
+    run_state.add_card_to_deck(CardId::FlameBarrier);
+
+    let with_elites = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::BodySlam, 0)],
+        route_with_combat_pressure(),
+    );
+    let no_elites = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::BodySlam, 0)],
+        route_without_elites(),
+    );
+
+    let with_elites_decision =
+        plan_card_reward_decision_v1(&with_elites, &CardRewardPolicyConfigV1::default());
+    let no_elites_decision =
+        plan_card_reward_decision_v1(&no_elites, &CardRewardPolicyConfigV1::default());
+    let with_elites_estimate = with_elites_decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::BodySlam
+        })
+        .expect("Body Slam strategy package estimate with elites");
+    let no_elites_estimate = no_elites_decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::BodySlam
+        })
+        .expect("Body Slam strategy package estimate without elites");
+
+    assert!(with_elites_estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_block_engine_elite_high_incoming"
+            && component.value > 0.0
+    }));
+    assert!(with_elites_estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_block_engine_elite_multihit"
+            && component.value > 0.0
+    }));
+    assert!(!no_elites_estimate.components.iter().any(|component| {
+        component
+            .name
+            .starts_with("strategy_threat_alignment_block_engine_elite_")
+    }));
+}
+
+#[test]
 fn strategy_package_estimator_blocks_naked_body_slam() {
     let context = context_for_cards_with_route(
         vec![RewardCard::new(CardId::BodySlam, 0)],
