@@ -1027,7 +1027,7 @@ fn public_combat_heuristic_values_enter_arbitration_without_certifying_autopick(
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
     let combat_probe_estimates = estimates_for_source(
         &decision.value_estimates,
-        CardRewardValueSourceV1::CombatProbe,
+        CardRewardValueSourceV1::PublicCombatHeuristic,
     );
 
     assert_eq!(combat_probe_estimates.len(), context.candidates.len());
@@ -1044,7 +1044,9 @@ fn public_combat_heuristic_values_enter_arbitration_without_certifying_autopick(
         .value_arbitration
         .candidate_reports
         .iter()
-        .all(|report| report.selected_source == Some(CardRewardValueSourceV1::CombatProbe)));
+        .all(|report| {
+            report.selected_source == Some(CardRewardValueSourceV1::PublicCombatHeuristic)
+        }));
     assert!(!decision.autopilot_gate.value_source_eligible);
     assert!(matches!(
         decision.action,

@@ -447,6 +447,9 @@ fn card_reward_value_components(estimate: &CardRewardValueEstimateV1) -> Vec<Val
             }
             CardRewardValueSourceV1::StrategyPackage => "value_source_strategy_package",
             CardRewardValueSourceV1::OutcomeCalibration => "value_source_outcome_calibration",
+            CardRewardValueSourceV1::PublicCombatHeuristic => {
+                "value_source_public_combat_heuristic"
+            }
             CardRewardValueSourceV1::CombatProbe => "value_source_combat_probe",
             CardRewardValueSourceV1::RouteRisk => "value_source_route_risk",
             CardRewardValueSourceV1::LearnedValue => "value_source_learned_value",

@@ -225,6 +225,7 @@ pub enum CardRewardValueSourceV1 {
     UncalibratedImpactPrior,
     StrategyPackage,
     OutcomeCalibration,
+    PublicCombatHeuristic,
     CombatProbe,
     RouteRisk,
     LearnedValue,

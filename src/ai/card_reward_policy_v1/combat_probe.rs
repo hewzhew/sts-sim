@@ -51,7 +51,7 @@ pub(crate) fn estimate_combat_probe_values(
             CardRewardValueEstimateV1 {
                 index: candidate.index,
                 card: candidate.card,
-                source: CardRewardValueSourceV1::CombatProbe,
+                source: CardRewardValueSourceV1::PublicCombatHeuristic,
                 status: CardRewardValueStatusV1::PublicCombatHeuristic,
                 survival_delta,
                 progress_delta,
