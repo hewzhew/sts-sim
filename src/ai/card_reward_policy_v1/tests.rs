@@ -1551,6 +1551,96 @@ fn public_combat_heuristic_marks_act1_skill_punish() {
 }
 
 #[test]
+fn public_combat_heuristic_marks_nob_specific_skill_punish() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.floor_num = 4;
+    run_state.boss_key = Some(EncounterId::TheGuardian);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Armaments, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let armaments = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Armaments
+        })
+        .expect("Armaments public combat heuristic estimate");
+
+    assert!(armaments.components.iter().any(|component| {
+        component.name == "elite_encounter_nob_skill_punish_penalty" && component.value < 0.0
+    }));
+}
+
+#[test]
+fn public_combat_heuristic_marks_sentries_specific_status_payoff() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.floor_num = 4;
+    run_state.boss_key = Some(EncounterId::TheGuardian);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Evolve, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let evolve = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Evolve
+        })
+        .expect("Evolve public combat heuristic estimate");
+
+    assert!(evolve.components.iter().any(|component| {
+        component.name == "elite_encounter_sentries_status_payoff_response" && component.value > 0.0
+    }));
+}
+
+#[test]
+fn public_combat_heuristic_marks_book_specific_strength_down() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    run_state.boss_key = Some(EncounterId::Collector);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Disarm, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let disarm = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Disarm
+        })
+        .expect("Disarm public combat heuristic estimate");
+
+    assert!(disarm.components.iter().any(|component| {
+        component.name == "elite_encounter_book_strength_down_response" && component.value > 0.0
+    }));
+}
+
+#[test]
 fn public_combat_heuristic_marks_long_fight_scaling() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 2;

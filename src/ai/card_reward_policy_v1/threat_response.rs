@@ -184,6 +184,45 @@ pub(crate) fn threat_response_delta(
         });
     }
 
+    if has_elite_encounter_threat(context, "GremlinNob", StrategyThreatTagV1::SkillPunish)
+        && candidate.facts.card_type == CardType::Skill
+    {
+        response.survival_delta -= 0.04;
+        response.progress_delta -= 0.03;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "elite_encounter_nob_skill_punish_penalty".to_string(),
+            value: -0.04,
+        });
+    }
+
+    if has_elite_encounter_threat(context, "ThreeSentries", StrategyThreatTagV1::StatusFlood)
+        && candidate
+            .facts
+            .pick_dependencies
+            .contains(&CardRewardPickDependencyV1::StatusPackage)
+    {
+        response.survival_delta += 0.06;
+        response.progress_delta += 0.08;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "elite_encounter_sentries_status_payoff_response".to_string(),
+            value: 0.08,
+        });
+    }
+
+    if has_elite_encounter_threat(
+        context,
+        "BookOfStabbing",
+        StrategyThreatTagV1::StrengthDebuffValuable,
+    ) && candidate.facts.enemy_strength_down > 0
+    {
+        let value = candidate.facts.enemy_strength_down as f32 * 0.10;
+        response.survival_delta += value;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "elite_encounter_book_strength_down_response".to_string(),
+            value,
+        });
+    }
+
     response
 }
 
@@ -279,6 +318,19 @@ fn has_elite_pool_threat(context: &CardRewardDecisionContextV1, tag: StrategyThr
     route_allows_elite_pool_response(context)
         && context.strategy.threats.sources.iter().any(|source| {
             source.source == StrategyThreatSourceV1::ActElitePool && source.tag == tag
+        })
+}
+
+fn has_elite_encounter_threat(
+    context: &CardRewardDecisionContextV1,
+    subject: &str,
+    tag: StrategyThreatTagV1,
+) -> bool {
+    route_allows_elite_pool_response(context)
+        && context.strategy.threats.sources.iter().any(|source| {
+            source.source == StrategyThreatSourceV1::ActEliteEncounter
+                && source.subject == subject
+                && source.tag == tag
         })
 }
 
