@@ -1558,6 +1558,76 @@ fn strategy_package_estimator_exports_exhaust_engine_roles() {
 }
 
 #[test]
+fn exhaust_engine_completion_aligns_with_status_flood_threats() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.boss_key = Some(EncounterId::Hexaghost);
+    run_state.add_card_to_deck(CardId::FeelNoPain);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::BurningPact, 0)],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::BurningPact
+        })
+        .expect("Burning Pact strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_exhaust_engine" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_exhaust_engine_boss_status_flood"
+            && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_exhaust_engine_elite_status_flood"
+            && component.value > 0.0
+    }));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
+fn exhaust_engine_completion_does_not_take_elite_alignment_without_elite_route() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.boss_key = Some(EncounterId::Hexaghost);
+    run_state.add_card_to_deck(CardId::FeelNoPain);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::BurningPact, 0)],
+        route_without_elites(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::BurningPact
+        })
+        .expect("Burning Pact strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_exhaust_engine_boss_status_flood"
+            && component.value > 0.0
+    }));
+    assert!(!estimate.components.iter().any(|component| {
+        component
+            .name
+            .starts_with("strategy_threat_alignment_exhaust_engine_elite_")
+    }));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
 fn strategy_package_estimator_exports_status_package_roles() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.add_card_to_deck(CardId::PowerThrough);
