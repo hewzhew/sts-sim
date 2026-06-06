@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -23,7 +24,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub max_hp: i32,
     pub gold: i32,
     pub deck_count: usize,
-    pub choice_labels: Vec<String>,
+    pub choice_profiles: Vec<CardRewardSemanticProfileV1>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -142,28 +143,25 @@ pub fn select_branch_retention_portfolio_v1(
 pub fn decide_branch_retention_v1(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> BranchRetentionDecisionV1 {
-    let labels = candidate
-        .choice_labels
-        .iter()
-        .map(|label| base_card_label(label))
-        .collect::<Vec<_>>();
     let mut slots = Vec::new();
     let mut reasons = Vec::new();
 
-    if has_package_candidate(&labels) {
+    if has_package_candidate(&candidate.choice_profiles) {
         slots.push(BranchRetentionSlotV1::Package);
-        reasons.push("contains an explicit package candidate".to_string());
+        reasons.push("contains a semantic package payoff candidate".to_string());
     }
-    if labels
+    if candidate
+        .choice_profiles
         .iter()
-        .any(|label| SCALING_CARDS.contains(&label.as_str()))
+        .any(|profile| profile_has_any_role(profile, SCALING_ROLES))
     {
         slots.push(BranchRetentionSlotV1::Scaling);
         reasons.push("contains long-run scaling or engine setup".to_string());
     }
-    if labels
+    if candidate
+        .choice_profiles
         .iter()
-        .any(|label| DEFENSE_ENGINE_CARDS.contains(&label.as_str()))
+        .any(|profile| profile_has_any_role(profile, DEFENSE_ENGINE_ROLES))
     {
         slots.push(BranchRetentionSlotV1::DefenseEngine);
         reasons.push("contains block, weak, or defensive engine support".to_string());
@@ -172,14 +170,15 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Survival);
         reasons.push("preserves high current HP".to_string());
     }
-    if labels
-        .iter()
-        .any(|label| FRONTLOAD_CARDS.contains(&label.as_str()))
-    {
+    if candidate.choice_profiles.iter().any(|profile| {
+        profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
+    }) {
         slots.push(BranchRetentionSlotV1::Frontload);
         reasons.push("contains immediate combat output".to_string());
     }
-    if transition_attack_count(&labels) <= 1 {
+    if transition_attack_count(&candidate.choice_profiles) <= 1 {
         slots.push(BranchRetentionSlotV1::CleanDeck);
         reasons.push("keeps transition-card bloat lower".to_string());
     }
@@ -222,12 +221,7 @@ fn select_positions_for_slots(
         }
     }
     while selected.len() < limit {
-        let Some(position) = positions
-            .iter()
-            .copied()
-            .filter(|position| !selected.contains(position))
-            .max_by(|left, right| compare_rank(candidates, *left, *right))
-        else {
+        let Some(position) = best_fill_position(candidates, positions, &selected) else {
             break;
         };
         selected.insert(position);
@@ -257,6 +251,30 @@ fn best_position_for_slot(
         })
         .max_by(|left, right| {
             compare_prefix_then_slot_score(candidates, *left, *right, slot, &covered_prefixes)
+        })
+}
+
+fn best_fill_position(
+    candidates: &[BranchRetentionCandidateInputV1],
+    positions: &[usize],
+    selected: &BTreeSet<usize>,
+) -> Option<usize> {
+    let covered_prefixes = selected
+        .iter()
+        .map(|position| choice_prefix_key(&candidates[*position]))
+        .collect::<BTreeSet<_>>();
+    positions
+        .iter()
+        .copied()
+        .filter(|position| !selected.contains(position))
+        .max_by(|left, right| {
+            let left_new_prefix =
+                !covered_prefixes.contains(&choice_prefix_key(&candidates[*left]));
+            let right_new_prefix =
+                !covered_prefixes.contains(&choice_prefix_key(&candidates[*right]));
+            left_new_prefix
+                .cmp(&right_new_prefix)
+                .then_with(|| compare_rank(candidates, *left, *right))
         })
 }
 
@@ -307,88 +325,87 @@ fn compare_prefix_then_slot_score(
 
 fn choice_prefix_key(candidate: &BranchRetentionCandidateInputV1) -> String {
     candidate
-        .choice_labels
+        .choice_profiles
         .first()
-        .map(|label| base_card_label(label))
+        .map(|profile| profile.name.clone())
         .unwrap_or_else(|| "no_card_reward_choice".to_string())
 }
 
 fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetentionSlotV1) -> i32 {
-    let labels = candidate
-        .choice_labels
-        .iter()
-        .map(|label| base_card_label(label))
-        .collect::<Vec<_>>();
     match slot {
-        BranchRetentionSlotV1::Package => package_score(&labels) * 10_000 + candidate.hp * 10,
+        BranchRetentionSlotV1::Package => {
+            package_score(&candidate.choice_profiles) * 10_000 + candidate.hp * 10
+        }
         BranchRetentionSlotV1::Scaling => {
-            count_matching(&labels, SCALING_CARDS) * 10_000 + candidate.hp * 10
+            count_profiles_with_any_role(&candidate.choice_profiles, SCALING_ROLES) * 10_000
+                + candidate.hp * 10
         }
         BranchRetentionSlotV1::DefenseEngine => {
-            count_matching(&labels, DEFENSE_ENGINE_CARDS) * 10_000 + candidate.hp * 10
+            count_profiles_with_any_role(&candidate.choice_profiles, DEFENSE_ENGINE_ROLES) * 10_000
+                + candidate.hp * 10
         }
         BranchRetentionSlotV1::Survival => candidate.hp * 100 + candidate.gold,
         BranchRetentionSlotV1::Frontload => {
-            count_matching(&labels, FRONTLOAD_CARDS) * 10_000 + candidate.hp * 10
+            count_profiles_with_role(
+                &candidate.choice_profiles,
+                CardRewardSemanticRoleV1::FrontloadDamage,
+            ) * 10_000
+                + candidate.hp * 10
         }
         BranchRetentionSlotV1::CleanDeck => {
-            -transition_attack_count(&labels) * 10_000 - candidate.deck_count as i32 * 100
+            -transition_attack_count(&candidate.choice_profiles) * 10_000
+                - candidate.deck_count as i32 * 100
                 + candidate.hp * 10
         }
         BranchRetentionSlotV1::Diversity => -(candidate.index as i32),
     }
 }
 
-fn has_package_candidate(labels: &[String]) -> bool {
-    package_score(labels) > 0
+fn has_package_candidate(profiles: &[CardRewardSemanticProfileV1]) -> bool {
+    package_score(profiles) > 0
 }
 
-fn package_score(labels: &[String]) -> i32 {
-    let has = |name: &str| labels.iter().any(|label| label == name);
-    let mut score = 0;
-    if has("Barricade") && (has("Entrench") || has("Body Slam")) {
-        score += 3;
-    }
-    if has("Limit Break")
-        && labels
-            .iter()
-            .any(|label| STRENGTH_CARDS.contains(&label.as_str()))
-    {
-        score += 2;
-    }
-    if labels
+fn package_score(profiles: &[CardRewardSemanticProfileV1]) -> i32 {
+    count_profiles_with_any_role(profiles, PACKAGE_PAYOFF_ROLES)
+}
+
+fn transition_attack_count(profiles: &[CardRewardSemanticProfileV1]) -> i32 {
+    profiles
         .iter()
-        .filter(|label| EXHAUST_PACKAGE_CARDS.contains(&label.as_str()))
-        .count()
-        >= 2
-    {
-        score += 1;
-    }
-    score
-}
-
-fn transition_attack_count(labels: &[String]) -> i32 {
-    count_matching(labels, TRANSITION_ATTACKS)
-}
-
-fn count_matching(labels: &[String], names: &[&str]) -> i32 {
-    labels
-        .iter()
-        .filter(|label| names.contains(&label.as_str()))
+        .filter(|profile| {
+            profile
+                .roles
+                .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
+                && !profile_has_any_role(profile, NON_TRANSITION_ROLES)
+        })
         .count() as i32
 }
 
-fn base_card_label(label: &str) -> String {
-    let trimmed = label.trim();
-    if let Some(base) = trimmed.strip_suffix('+') {
-        return base.to_string();
-    }
-    if let Some((base, suffix)) = trimmed.rsplit_once('+') {
-        if suffix.chars().all(|ch| ch.is_ascii_digit()) {
-            return base.to_string();
-        }
-    }
-    trimmed.to_string()
+fn count_profiles_with_role(
+    profiles: &[CardRewardSemanticProfileV1],
+    role: CardRewardSemanticRoleV1,
+) -> i32 {
+    profiles
+        .iter()
+        .filter(|profile| profile.roles.contains(&role))
+        .count() as i32
+}
+
+fn count_profiles_with_any_role(
+    profiles: &[CardRewardSemanticProfileV1],
+    roles: &[CardRewardSemanticRoleV1],
+) -> i32 {
+    profiles
+        .iter()
+        .filter(|profile| profile_has_any_role(profile, roles))
+        .count() as i32
+}
+
+fn profile_has_any_role(
+    profile: &CardRewardSemanticProfileV1,
+    roles: &[CardRewardSemanticRoleV1],
+) -> bool {
+    roles.iter().any(|role| profile.roles.contains(role))
 }
 
 fn slot_priority(slot: BranchRetentionSlotV1) -> usize {
@@ -398,98 +415,51 @@ fn slot_priority(slot: BranchRetentionSlotV1) -> usize {
         .unwrap_or(SLOT_ORDER.len())
 }
 
-const FRONTLOAD_CARDS: &[&str] = &[
-    "Anger",
-    "Carnage",
-    "Clash",
-    "Cleave",
-    "Clothesline",
-    "Headbutt",
-    "Heavy Blade",
-    "Hemokinesis",
-    "Immolate",
-    "Iron Wave",
-    "Perfected Strike",
-    "Pommel Strike",
-    "Pummel",
-    "Reckless Charge",
-    "Searing Blow",
-    "Sever Soul",
-    "Sword Boomerang",
-    "Thunderclap",
-    "Twin Strike",
-    "Uppercut",
-    "Whirlwind",
-    "Wild Strike",
+const PACKAGE_PAYOFF_ROLES: &[CardRewardSemanticRoleV1] = &[
+    CardRewardSemanticRoleV1::BlockPayoff,
+    CardRewardSemanticRoleV1::StrengthPayoff,
+    CardRewardSemanticRoleV1::StrikePayoff,
+    CardRewardSemanticRoleV1::UpgradePayoff,
+    CardRewardSemanticRoleV1::ExhaustPayoff,
+    CardRewardSemanticRoleV1::StatusPayoff,
+    CardRewardSemanticRoleV1::SelfDamagePayoff,
+    CardRewardSemanticRoleV1::PackagePayoff,
 ];
 
-const TRANSITION_ATTACKS: &[&str] = &[
-    "Carnage",
-    "Clash",
-    "Cleave",
-    "Clothesline",
-    "Iron Wave",
-    "Perfected Strike",
-    "Pommel Strike",
-    "Reckless Charge",
-    "Searing Blow",
-    "Sever Soul",
-    "Sword Boomerang",
-    "Thunderclap",
-    "Twin Strike",
-    "Uppercut",
-    "Wild Strike",
+const DEFENSE_ENGINE_ROLES: &[CardRewardSemanticRoleV1] = &[
+    CardRewardSemanticRoleV1::Block,
+    CardRewardSemanticRoleV1::BlockPayoff,
+    CardRewardSemanticRoleV1::Weak,
+    CardRewardSemanticRoleV1::EnemyStrengthDown,
 ];
 
-const DEFENSE_ENGINE_CARDS: &[&str] = &[
-    "Armaments",
-    "Barricade",
-    "Body Slam",
-    "Disarm",
-    "Entrench",
-    "Feel No Pain",
-    "Flame Barrier",
-    "Impervious",
-    "Metallicize",
-    "Power Through",
-    "Second Wind",
-    "Shockwave",
-    "Shrug It Off",
+const SCALING_ROLES: &[CardRewardSemanticRoleV1] = &[
+    CardRewardSemanticRoleV1::ScalingSource,
+    CardRewardSemanticRoleV1::StrengthPayoff,
+    CardRewardSemanticRoleV1::BlockPayoff,
+    CardRewardSemanticRoleV1::ExhaustPayoff,
+    CardRewardSemanticRoleV1::StatusPayoff,
+    CardRewardSemanticRoleV1::SelfDamagePayoff,
 ];
 
-const SCALING_CARDS: &[&str] = &[
-    "Barricade",
-    "Berserk",
-    "Corruption",
-    "Dark Embrace",
-    "Demon Form",
-    "Feel No Pain",
-    "Inflame",
-    "Limit Break",
-    "Metallicize",
-    "Rupture",
-    "Spot Weakness",
-];
-
-const STRENGTH_CARDS: &[&str] = &[
-    "Demon Form",
-    "Flex",
-    "Inflame",
-    "Limit Break",
-    "Rupture",
-    "Spot Weakness",
-];
-
-const EXHAUST_PACKAGE_CARDS: &[&str] = &[
-    "Burning Pact",
-    "Corruption",
-    "Dark Embrace",
-    "Feel No Pain",
-    "Fiend Fire",
-    "Power Through",
-    "Second Wind",
-    "Sever Soul",
-    "True Grit",
+const NON_TRANSITION_ROLES: &[CardRewardSemanticRoleV1] = &[
+    CardRewardSemanticRoleV1::Block,
+    CardRewardSemanticRoleV1::CardDraw,
+    CardRewardSemanticRoleV1::EnergySource,
+    CardRewardSemanticRoleV1::Vulnerable,
+    CardRewardSemanticRoleV1::Weak,
+    CardRewardSemanticRoleV1::EnemyStrengthDown,
+    CardRewardSemanticRoleV1::ScalingSource,
+    CardRewardSemanticRoleV1::StrengthPayoff,
+    CardRewardSemanticRoleV1::BlockPayoff,
+    CardRewardSemanticRoleV1::StrikePayoff,
+    CardRewardSemanticRoleV1::UpgradePayoff,
+    CardRewardSemanticRoleV1::ExhaustGenerator,
+    CardRewardSemanticRoleV1::ExhaustPayoff,
+    CardRewardSemanticRoleV1::StatusGenerator,
+    CardRewardSemanticRoleV1::StatusPayoff,
+    CardRewardSemanticRoleV1::SelfDamagePayoff,
+    CardRewardSemanticRoleV1::PackagePayoff,
 ];
 
 #[cfg(test)]
@@ -499,20 +469,7 @@ mod tests {
     #[test]
     fn portfolio_retention_keeps_package_branch_over_second_frontload_branch() {
         let candidates = vec![
-            BranchRetentionCandidateInputV1 {
-                index: 0,
-                frontier_key: "same-frontier".to_string(),
-                rank_key: 10_900,
-                hp: 78,
-                max_hp: 80,
-                gold: 120,
-                deck_count: 14,
-                choice_labels: vec![
-                    "Twin Strike".to_string(),
-                    "Perfected Strike".to_string(),
-                    "Iron Wave".to_string(),
-                ],
-            },
+            retention_candidate(0, 10_900, &["Twin Strike", "Perfected Strike", "Iron Wave"]),
             BranchRetentionCandidateInputV1 {
                 index: 1,
                 frontier_key: "same-frontier".to_string(),
@@ -521,26 +478,13 @@ mod tests {
                 max_hp: 80,
                 gold: 120,
                 deck_count: 14,
-                choice_labels: vec![
-                    "Barricade".to_string(),
-                    "Entrench".to_string(),
-                    "Body Slam".to_string(),
+                choice_profiles: vec![
+                    semantic_profile("Barricade", &[CardRewardSemanticRoleV1::BlockPayoff]),
+                    semantic_profile("Entrench", &[CardRewardSemanticRoleV1::BlockPayoff]),
+                    semantic_profile("Body Slam", &[CardRewardSemanticRoleV1::BlockPayoff]),
                 ],
             },
-            BranchRetentionCandidateInputV1 {
-                index: 2,
-                frontier_key: "same-frontier".to_string(),
-                rank_key: 10_840,
-                hp: 75,
-                max_hp: 80,
-                gold: 120,
-                deck_count: 14,
-                choice_labels: vec![
-                    "Wild Strike".to_string(),
-                    "Cleave".to_string(),
-                    "Pommel Strike".to_string(),
-                ],
-            },
+            retention_candidate(2, 10_840, &["Wild Strike", "Cleave", "Pommel Strike"]),
         ];
 
         let selection = select_branch_retention_portfolio_v1(
@@ -594,6 +538,60 @@ mod tests {
         assert!(!selection.keep_indices.contains(&1));
     }
 
+    #[test]
+    fn portfolio_fill_continues_preferring_new_prefixes_after_slot_pass() {
+        let candidates = vec![
+            retention_candidate(0, 10_900, &["Twin Strike", "Iron Wave"]),
+            retention_candidate(1, 10_850, &["Twin Strike", "Uppercut"]),
+            retention_candidate(2, 10_800, &["Clash", "Pommel Strike"]),
+            retention_candidate(3, 10_750, &["Sever Soul", "Clothesline"]),
+            retention_candidate(4, 10_700, &["Shockwave", "Body Slam"]),
+        ];
+
+        let selection = select_branch_retention_portfolio_v1(
+            &candidates,
+            BranchRetentionConfigV1 {
+                max_total: 4,
+                max_per_frontier: Some(4),
+            },
+        );
+
+        assert_eq!(selection.keep_indices.len(), 4);
+        assert!(selection.keep_indices.contains(&0));
+        assert!(selection.keep_indices.contains(&2));
+        assert!(selection.keep_indices.contains(&3));
+        assert!(
+            selection.keep_indices.contains(&4),
+            "fill stage should keep a lower-ranked new first-pick family before a duplicate prefix"
+        );
+        assert!(!selection.keep_indices.contains(&1));
+    }
+
+    #[test]
+    fn retention_slots_come_from_semantic_profiles_not_card_names() {
+        let candidate = BranchRetentionCandidateInputV1 {
+            index: 0,
+            frontier_key: "same-frontier".to_string(),
+            rank_key: 10_000,
+            hp: 70,
+            max_hp: 80,
+            gold: 120,
+            deck_count: 12,
+            choice_profiles: vec![semantic_profile(
+                "Unfamiliar Card Name",
+                &[CardRewardSemanticRoleV1::BlockPayoff],
+            )],
+        };
+
+        let decision = decide_branch_retention_v1(&candidate);
+
+        assert!(decision.slots.contains(&BranchRetentionSlotV1::Package));
+        assert!(decision
+            .slots
+            .contains(&BranchRetentionSlotV1::DefenseEngine));
+        assert!(!decision.slots.contains(&BranchRetentionSlotV1::Frontload));
+    }
+
     fn retention_candidate(
         index: usize,
         rank_key: i32,
@@ -607,10 +605,23 @@ mod tests {
             max_hp: 80,
             gold: 120,
             deck_count: 14,
-            choice_labels: choice_labels
+            choice_profiles: choice_labels
                 .iter()
-                .map(|label| (*label).to_string())
+                .map(|label| semantic_profile(label, &[CardRewardSemanticRoleV1::FrontloadDamage]))
                 .collect(),
+        }
+    }
+
+    fn semantic_profile(
+        name: &str,
+        roles: &[CardRewardSemanticRoleV1],
+    ) -> CardRewardSemanticProfileV1 {
+        CardRewardSemanticProfileV1 {
+            card: crate::content::cards::CardId::Strike,
+            name: name.to_string(),
+            roles: roles.to_vec(),
+            dependencies: Vec::new(),
+            unsupported_mechanics: Vec::new(),
         }
     }
 }

@@ -1,0 +1,107 @@
+use crate::state::rewards::RewardCard;
+
+use super::facts::card_facts;
+use super::types::{
+    CardRewardPickDependencyV1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
+};
+
+pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticProfileV1 {
+    let facts = card_facts(card);
+    let mut roles = Vec::new();
+
+    if facts.damage.total_damage > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::FrontloadDamage);
+    }
+    if facts.is_aoe {
+        push_role(&mut roles, CardRewardSemanticRoleV1::AoeDamage);
+    }
+    if facts.block > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::Block);
+    }
+    if facts.draw_cards > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::CardDraw);
+    }
+    if facts.energy_gain > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::EnergySource);
+    }
+    if facts.vulnerable > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::Vulnerable);
+    }
+    if facts.weak > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::Weak);
+    }
+    if facts.enemy_strength_down > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::EnemyStrengthDown);
+    }
+    if facts.strength_gain > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::ScalingSource);
+    }
+    if facts.exhausts_other_cards {
+        push_role(&mut roles, CardRewardSemanticRoleV1::ExhaustGenerator);
+    }
+    if facts.adds_status_cards > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::StatusGenerator);
+    }
+    if facts.is_random_output {
+        push_role(&mut roles, CardRewardSemanticRoleV1::RandomOutput);
+    }
+    if facts.has_conditional_playability {
+        push_role(&mut roles, CardRewardSemanticRoleV1::ConditionalPlayability);
+    }
+    if !facts.unsupported_mechanics.is_empty() {
+        push_role(&mut roles, CardRewardSemanticRoleV1::UnsupportedMechanics);
+    }
+
+    for dependency in &facts.pick_dependencies {
+        match dependency {
+            CardRewardPickDependencyV1::StrengthScaling => {
+                push_role(&mut roles, CardRewardSemanticRoleV1::StrengthPayoff);
+                push_role(&mut roles, CardRewardSemanticRoleV1::PackagePayoff);
+            }
+            CardRewardPickDependencyV1::BlockDensity => {
+                push_role(&mut roles, CardRewardSemanticRoleV1::BlockPayoff);
+                push_role(&mut roles, CardRewardSemanticRoleV1::PackagePayoff);
+            }
+            CardRewardPickDependencyV1::StrikeDensity => {
+                push_role(&mut roles, CardRewardSemanticRoleV1::StrikePayoff);
+                push_role(&mut roles, CardRewardSemanticRoleV1::PackagePayoff);
+            }
+            CardRewardPickDependencyV1::RouteUpgradeDensity => {
+                push_role(&mut roles, CardRewardSemanticRoleV1::UpgradePayoff);
+                push_role(&mut roles, CardRewardSemanticRoleV1::PackagePayoff);
+            }
+            CardRewardPickDependencyV1::ExhaustPackage => {
+                push_role(&mut roles, CardRewardSemanticRoleV1::ExhaustPayoff);
+                push_role(&mut roles, CardRewardSemanticRoleV1::PackagePayoff);
+            }
+            CardRewardPickDependencyV1::StatusPackage => {
+                push_role(&mut roles, CardRewardSemanticRoleV1::StatusPayoff);
+                push_role(&mut roles, CardRewardSemanticRoleV1::PackagePayoff);
+            }
+            CardRewardPickDependencyV1::SelfDamagePackage => {
+                push_role(&mut roles, CardRewardSemanticRoleV1::SelfDamagePayoff);
+                push_role(&mut roles, CardRewardSemanticRoleV1::PackagePayoff);
+            }
+            CardRewardPickDependencyV1::RandomOutputPolicy
+            | CardRewardPickDependencyV1::ConditionalPlayabilityPolicy
+            | CardRewardPickDependencyV1::UnsupportedMechanics => {}
+        }
+    }
+
+    roles.sort();
+    roles.dedup();
+
+    CardRewardSemanticProfileV1 {
+        card: facts.card,
+        name: facts.name,
+        roles,
+        dependencies: facts.pick_dependencies,
+        unsupported_mechanics: facts.unsupported_mechanics,
+    }
+}
+
+fn push_role(roles: &mut Vec<CardRewardSemanticRoleV1>, role: CardRewardSemanticRoleV1) {
+    if !roles.contains(&role) {
+        roles.push(role);
+    }
+}

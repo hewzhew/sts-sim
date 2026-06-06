@@ -136,6 +136,41 @@ pub struct CardRewardFactsV1 {
     pub unsupported_mechanics: Vec<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CardRewardSemanticProfileV1 {
+    pub card: CardId,
+    pub name: String,
+    pub roles: Vec<CardRewardSemanticRoleV1>,
+    pub dependencies: Vec<CardRewardPickDependencyV1>,
+    pub unsupported_mechanics: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum CardRewardSemanticRoleV1 {
+    FrontloadDamage,
+    AoeDamage,
+    Block,
+    CardDraw,
+    EnergySource,
+    Vulnerable,
+    Weak,
+    EnemyStrengthDown,
+    ScalingSource,
+    StrengthPayoff,
+    BlockPayoff,
+    StrikePayoff,
+    UpgradePayoff,
+    ExhaustGenerator,
+    ExhaustPayoff,
+    StatusGenerator,
+    StatusPayoff,
+    SelfDamagePayoff,
+    PackagePayoff,
+    RandomOutput,
+    ConditionalPlayability,
+    UnsupportedMechanics,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardDamageFactsV1 {
     pub damage_per_hit: i32,

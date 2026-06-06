@@ -3,6 +3,8 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment_retention::{
     default_branch_retention_decision_v1, select_branch_retention_portfolio_v1,
@@ -18,7 +20,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 1;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -108,6 +110,8 @@ pub enum BranchExperimentBranchStatusV1 {
 pub struct BranchExperimentChoiceV1 {
     pub depth: usize,
     pub kind: String,
+    pub card: CardId,
+    pub upgrades: u8,
     pub label: String,
     pub command: String,
 }
@@ -255,6 +259,8 @@ fn run_branch_experiment_from_session(
                 child.choices.push(BranchExperimentChoiceV1 {
                     depth,
                     kind: "card_reward".to_string(),
+                    card: option.card,
+                    upgrades: option.upgrades,
                     label: option.label,
                     command: option.command.clone(),
                 });
@@ -428,10 +434,12 @@ fn apply_branch_retention(
             max_hp: branch.session.run_state.max_hp,
             gold: branch.session.run_state.gold,
             deck_count: branch.session.run_state.master_deck.len(),
-            choice_labels: branch
+            choice_profiles: branch
                 .choices
                 .iter()
-                .map(|choice| choice.label.clone())
+                .map(|choice| {
+                    card_reward_semantic_profile_v1(&RewardCard::new(choice.card, choice.upgrades))
+                })
                 .collect(),
         })
         .collect::<Vec<_>>();
@@ -489,6 +497,8 @@ fn retention_report_slot_priority(slot: BranchRetentionSlotV1) -> usize {
 struct CardRewardBranchOption {
     label: String,
     command: String,
+    card: CardId,
+    upgrades: u8,
 }
 
 fn card_reward_branch_options(session: &RunControlSession) -> Option<Vec<CardRewardBranchOption>> {
@@ -499,6 +509,8 @@ fn card_reward_branch_options(session: &RunControlSession) -> Option<Vec<CardRew
         .map(|(idx, card)| CardRewardBranchOption {
             label: format_reward_card_label(card),
             command: format!("rp {idx}"),
+            card: card.id,
+            upgrades: card.upgrades,
         })
         .collect::<Vec<_>>();
     if options.is_empty() {

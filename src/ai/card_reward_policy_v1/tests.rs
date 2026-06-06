@@ -1,9 +1,10 @@
 use crate::ai::card_reward_policy_v1::{
     arbitrate_card_reward_value_estimates_v1, build_card_reward_decision_context_v1,
-    plan_card_reward_decision_v1, plan_card_reward_decision_with_estimator_inputs_v1,
-    replay_card_reward_decision_v1, replay_card_reward_decision_with_estimator_inputs_v1,
-    CardRewardEstimatorInputsV1, CardRewardEvidenceGapV1, CardRewardPlanEffectV1,
-    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardValueEstimateV1,
+    card_reward_semantic_profile_v1, plan_card_reward_decision_v1,
+    plan_card_reward_decision_with_estimator_inputs_v1, replay_card_reward_decision_v1,
+    replay_card_reward_decision_with_estimator_inputs_v1, CardRewardEstimatorInputsV1,
+    CardRewardEvidenceGapV1, CardRewardPlanEffectV1, CardRewardPolicyActionV1,
+    CardRewardPolicyConfigV1, CardRewardSemanticRoleV1, CardRewardValueEstimateV1,
     CardRewardValueSourceV1, CardRewardValueStatusV1, PublicRewardDecisionPacketV1,
 };
 use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
@@ -31,6 +32,35 @@ fn card_facts_are_mechanical_and_do_not_contain_pick_value() {
     assert_eq!(candidate.facts.damage.total_damage, 10);
     assert!(candidate.facts.pick_dependencies.is_empty());
     assert!(candidate.impact.certification_blockers.is_empty());
+}
+
+#[test]
+fn semantic_profile_exports_roles_without_card_name_scoring() {
+    let body_slam = card_reward_semantic_profile_v1(&RewardCard::new(CardId::BodySlam, 0));
+    let barricade = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Barricade, 0));
+    let entrench = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Entrench, 0));
+    let demon_form = card_reward_semantic_profile_v1(&RewardCard::new(CardId::DemonForm, 0));
+    let twin_strike = card_reward_semantic_profile_v1(&RewardCard::new(CardId::TwinStrike, 0));
+
+    assert!(body_slam
+        .roles
+        .contains(&CardRewardSemanticRoleV1::BlockPayoff));
+    assert!(barricade
+        .roles
+        .contains(&CardRewardSemanticRoleV1::BlockPayoff));
+    assert!(entrench
+        .roles
+        .contains(&CardRewardSemanticRoleV1::BlockPayoff));
+    assert!(demon_form
+        .roles
+        .contains(&CardRewardSemanticRoleV1::ScalingSource));
+    assert!(twin_strike
+        .roles
+        .contains(&CardRewardSemanticRoleV1::FrontloadDamage));
+    assert!(!twin_strike
+        .roles
+        .contains(&CardRewardSemanticRoleV1::PackagePayoff));
+    assert_eq!(twin_strike.name, "Twin Strike");
 }
 
 #[test]

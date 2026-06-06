@@ -325,7 +325,7 @@ mod tests {
     fn compact_report_is_human_sized() {
         let report = sts_simulator::eval::branch_experiment::BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
-            schema_version: 1,
+            schema_version: 2,
             label_role: "diagnostic_not_teacher_label".to_string(),
             policy_quality_claim: false,
             seed: 1,

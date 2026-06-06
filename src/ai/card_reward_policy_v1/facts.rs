@@ -219,7 +219,7 @@ fn pick_dependencies(card_id: CardId) -> Vec<CardRewardPickDependencyV1> {
         CardId::HeavyBlade | CardId::LimitBreak | CardId::Reaper => {
             dependencies.push(CardRewardPickDependencyV1::StrengthScaling)
         }
-        CardId::BodySlam | CardId::Barricade | CardId::Juggernaut => {
+        CardId::BodySlam | CardId::Barricade | CardId::Entrench | CardId::Juggernaut => {
             dependencies.push(CardRewardPickDependencyV1::BlockDensity)
         }
         CardId::PerfectedStrike => dependencies.push(CardRewardPickDependencyV1::StrikeDensity),
