@@ -4,6 +4,11 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::content::relics::RelicId;
+use crate::eval::branch_experiment_retention::{
+    default_branch_retention_decision_v1, select_branch_retention_portfolio_v1,
+    BranchRetentionCandidateInputV1, BranchRetentionConfigV1, BranchRetentionDecisionV1,
+    BranchRetentionSlotV1,
+};
 use crate::eval::run_control::{
     build_decision_surface, parse_run_control_command, RunControlAutoStepOptions,
     RunControlCommand, RunControlConfig, RunControlHpLossLimit, RunControlRouteAutomationMode,
@@ -80,6 +85,7 @@ pub struct BranchExperimentBranchReportV1 {
     pub branch_id: String,
     pub status: BranchExperimentBranchStatusV1,
     pub rank_key: i32,
+    pub retention: BranchRetentionDecisionV1,
     pub choices: Vec<BranchExperimentChoiceV1>,
     pub stop_reason: String,
     pub summary: BranchExperimentRunSummaryV1,
@@ -166,6 +172,7 @@ struct BranchWork {
     choices: Vec<BranchExperimentChoiceV1>,
     status: BranchExperimentBranchStatusV1,
     stop_reason: String,
+    retention: BranchRetentionDecisionV1,
 }
 
 pub fn run_branch_experiment_v1(
@@ -200,6 +207,7 @@ fn run_branch_experiment_from_session(
         choices: Vec::new(),
         status: BranchExperimentBranchStatusV1::Active,
         stop_reason: "initial".to_string(),
+        retention: default_branch_retention_decision_v1(),
     }];
     let mut explored_branch_points = 0usize;
     let mut branch_limit_hit = false;
@@ -264,25 +272,11 @@ fn run_branch_experiment_from_session(
             }
         }
 
-        next.sort_by(|left, right| branch_rank_key(right).cmp(&branch_rank_key(left)));
-        if let Some(group_limit) = config.max_branches_per_frontier_group {
-            let before_len = next.len();
-            next = prune_by_frontier_group_limit(next, group_limit);
-            if next.len() < before_len {
-                frontier_group_limit_hit = true;
-                pruned_branch_count = pruned_branch_count.saturating_add(before_len - next.len());
-            }
-        }
-        if next.len() > config.max_branches {
-            branch_limit_hit = true;
-            pruned_branch_count =
-                pruned_branch_count.saturating_add(next.len() - config.max_branches);
-            for pruned in next.iter_mut().skip(config.max_branches) {
-                pruned.status = BranchExperimentBranchStatusV1::Pruned;
-                pruned.stop_reason = "pruned by max_branches".to_string();
-            }
-            next.truncate(config.max_branches);
-        }
+        let retention = apply_branch_retention(next, config);
+        next = retention.branches;
+        branch_limit_hit |= retention.branch_limit_hit;
+        frontier_group_limit_hit |= retention.frontier_group_limit_hit;
+        pruned_branch_count = pruned_branch_count.saturating_add(retention.pruned_count);
 
         branches = next;
         if !expanded_any {
@@ -304,6 +298,7 @@ fn run_branch_experiment_from_session(
             let frontier = branch_frontier(&branch.session);
             BranchExperimentBranchReportV1 {
                 rank_key: branch_rank_key(&branch),
+                retention: branch.retention,
                 branch_id: branch.id,
                 status: branch.status,
                 choices: branch.choices,
@@ -314,9 +309,11 @@ fn run_branch_experiment_from_session(
         })
         .collect::<Vec<_>>();
     branch_reports.sort_by(|left, right| {
-        right
-            .rank_key
-            .cmp(&left.rank_key)
+        retention_report_slot_priority(left.retention.primary_slot)
+            .cmp(&retention_report_slot_priority(
+                right.retention.primary_slot,
+            ))
+            .then_with(|| right.rank_key.cmp(&left.rank_key))
             .then_with(|| left.branch_id.cmp(&right.branch_id))
     });
 
@@ -407,23 +404,85 @@ fn settle_branch_to_frontier(branch: &mut BranchWork, config: &BranchExperimentC
     }
 }
 
-fn prune_by_frontier_group_limit(branches: Vec<BranchWork>, group_limit: usize) -> Vec<BranchWork> {
-    if group_limit == 0 {
-        return Vec::new();
-    }
-    let mut group_counts = BTreeMap::<String, usize>::new();
-    branches
-        .into_iter()
-        .filter(|branch| {
-            let key = branch_frontier(&branch.session).key;
-            let count = group_counts.entry(key).or_default();
-            if *count >= group_limit {
-                return false;
-            }
-            *count += 1;
-            true
+#[derive(Clone, Debug)]
+struct BranchRetentionApplyResult {
+    branches: Vec<BranchWork>,
+    branch_limit_hit: bool,
+    frontier_group_limit_hit: bool,
+    pruned_count: usize,
+}
+
+fn apply_branch_retention(
+    mut branches: Vec<BranchWork>,
+    config: &BranchExperimentConfigV1,
+) -> BranchRetentionApplyResult {
+    let before_len = branches.len();
+    let candidates = branches
+        .iter()
+        .enumerate()
+        .map(|(index, branch)| BranchRetentionCandidateInputV1 {
+            index,
+            frontier_key: branch_frontier(&branch.session).key,
+            rank_key: branch_rank_key(branch),
+            hp: branch.session.run_state.current_hp,
+            max_hp: branch.session.run_state.max_hp,
+            gold: branch.session.run_state.gold,
+            deck_count: branch.session.run_state.master_deck.len(),
+            choice_labels: branch
+                .choices
+                .iter()
+                .map(|choice| choice.label.clone())
+                .collect(),
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let selection = select_branch_retention_portfolio_v1(
+        &candidates,
+        BranchRetentionConfigV1 {
+            max_total: config.max_branches,
+            max_per_frontier: config.max_branches_per_frontier_group,
+        },
+    );
+
+    for (index, branch) in branches.iter_mut().enumerate() {
+        branch.retention = selection
+            .decisions_by_index
+            .get(&index)
+            .cloned()
+            .unwrap_or_else(default_branch_retention_decision_v1);
+    }
+
+    let mut branches = branches
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, branch)| selection.keep_indices.contains(&index).then_some(branch))
+        .collect::<Vec<_>>();
+    branches.sort_by(|left, right| {
+        retention_report_slot_priority(left.retention.primary_slot)
+            .cmp(&retention_report_slot_priority(
+                right.retention.primary_slot,
+            ))
+            .then_with(|| branch_rank_key(right).cmp(&branch_rank_key(left)))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+
+    BranchRetentionApplyResult {
+        branches,
+        branch_limit_hit: selection.total_limit_hit,
+        frontier_group_limit_hit: selection.frontier_limit_hit,
+        pruned_count: before_len.saturating_sub(selection.keep_indices.len()),
+    }
+}
+
+fn retention_report_slot_priority(slot: BranchRetentionSlotV1) -> usize {
+    match slot {
+        BranchRetentionSlotV1::Package => 0,
+        BranchRetentionSlotV1::Scaling => 1,
+        BranchRetentionSlotV1::DefenseEngine => 2,
+        BranchRetentionSlotV1::Survival => 3,
+        BranchRetentionSlotV1::Frontload => 4,
+        BranchRetentionSlotV1::CleanDeck => 5,
+        BranchRetentionSlotV1::Diversity => 6,
+    }
 }
 
 #[derive(Clone, Debug)]

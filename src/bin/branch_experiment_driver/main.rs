@@ -6,6 +6,7 @@ use sts_simulator::eval::branch_experiment::{
     run_branch_experiment_v1, BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1,
     BranchExperimentConfigV1, BranchExperimentReportV1,
 };
+use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
 use sts_simulator::eval::run_control::RunControlHpLossLimit;
 
 #[derive(Debug, Parser)]
@@ -154,10 +155,11 @@ fn render_compact_report(report: &BranchExperimentReportV1) -> String {
             .find(|branch| branch.branch_id == group.representative_branch_id)
             .map(render_choice_path)
             .unwrap_or_else(|| "-".to_string());
+        let first_picks = render_group_first_picks(report, &group.key);
         let lineage = render_lineage_flags(&group.lineage_flags);
         lines.push(format!(
-            "  {:>2} branch(es) | {} | example: {} | next_reward=[{}]{}",
-            group.branch_count, group.boundary_title, example, offer, lineage
+            "  {:>2} branch(es) | {} | first_picks=[{}] | example: {} | next_reward=[{}]{}",
+            group.branch_count, group.boundary_title, first_picks, example, offer, lineage
         ));
     }
     if report.frontier_groups.len() > 8 {
@@ -189,8 +191,9 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
         .map(|cards| cards.join(", "))
         .unwrap_or_else(|| "-".to_string());
     let status = branch_status_suffix(branch.status);
+    let retention = render_retention_slots(&branch.retention.slots);
     format!(
-        "  A{}F{} HP {}/{} gold {} | {}{} | choices: {} | next_reward=[{}]",
+        "  A{}F{} HP {}/{} gold {} | {}{} | keep=[{}] | choices: {} | next_reward=[{}]",
         branch.summary.act,
         branch.summary.floor,
         branch.summary.hp,
@@ -198,6 +201,7 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
         branch.summary.gold,
         branch.summary.boundary_title,
         status,
+        retention,
         choices,
         next_reward
     )
@@ -213,6 +217,29 @@ fn render_choice_path(branch: &BranchExperimentBranchReportV1) -> String {
         .map(|choice| choice.label.as_str())
         .collect::<Vec<_>>()
         .join(" -> ")
+}
+
+fn render_group_first_picks(report: &BranchExperimentReportV1, group_key: &str) -> String {
+    let mut picks = Vec::<String>::new();
+    for branch in &report.branches {
+        if branch.frontier.key != group_key {
+            continue;
+        }
+        let Some(choice) = branch.choices.first() else {
+            continue;
+        };
+        if !picks.contains(&choice.label) {
+            picks.push(choice.label.clone());
+        }
+        if picks.len() >= 5 {
+            break;
+        }
+    }
+    if picks.is_empty() {
+        "-".to_string()
+    } else {
+        picks.join(", ")
+    }
 }
 
 fn branch_status_suffix(status: BranchExperimentBranchStatusV1) -> &'static str {
@@ -231,6 +258,22 @@ fn render_lineage_flags(flags: &[String]) -> String {
         return String::new();
     }
     format!(" | lineage_flags=[{}]", flags.join(", "))
+}
+
+fn render_retention_slots(slots: &[BranchRetentionSlotV1]) -> String {
+    slots
+        .iter()
+        .map(|slot| match slot {
+            BranchRetentionSlotV1::Package => "package",
+            BranchRetentionSlotV1::Scaling => "scaling",
+            BranchRetentionSlotV1::DefenseEngine => "defense",
+            BranchRetentionSlotV1::Survival => "survival",
+            BranchRetentionSlotV1::Frontload => "frontload",
+            BranchRetentionSlotV1::CleanDeck => "clean",
+            BranchRetentionSlotV1::Diversity => "diversity",
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn parse_hp_loss_limit(value: Option<&str>) -> Result<Option<RunControlHpLossLimit>, String> {

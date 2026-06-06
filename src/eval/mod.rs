@@ -1,6 +1,7 @@
 pub mod artifact;
 pub mod artifact_doctor;
 pub mod branch_experiment;
+pub mod branch_experiment_retention;
 pub mod card_reward_value_loop;
 pub mod combat_capture;
 pub mod combat_search_v2;
