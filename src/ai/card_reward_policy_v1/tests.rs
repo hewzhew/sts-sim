@@ -327,6 +327,83 @@ fn heavy_blade_exports_strength_plan_but_uncalibrated_gate_stops() {
 }
 
 #[test]
+fn strength_payoff_completion_aligns_with_long_fight_boss_and_elite_threats() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.boss_key = Some(EncounterId::TimeEater);
+    run_state.add_card_to_deck(CardId::Inflame);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::HeavyBlade, 0)],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::HeavyBlade
+        })
+        .expect("Heavy Blade strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_strength_scaling" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_strength_scaling_boss_long_fight"
+            && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_strength_scaling_boss_high_incoming"
+            && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_strength_scaling_elite_long_fight"
+            && component.value > 0.0
+    }));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
+fn strength_generator_completion_does_not_take_elite_alignment_without_elite_route() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.boss_key = Some(EncounterId::TimeEater);
+    run_state.add_card_to_deck(CardId::HeavyBlade);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::Inflame, 0)],
+        route_without_elites(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let estimate = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::StrategyPackage
+                && estimate.card == CardId::Inflame
+        })
+        .expect("Inflame strategy package estimate");
+
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_package_completion_strength_scaling" && component.value > 0.0
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_strength_scaling_boss_long_fight"
+            && component.value > 0.0
+    }));
+    assert!(!estimate.components.iter().any(|component| {
+        component
+            .name
+            .starts_with("strategy_threat_alignment_strength_scaling_elite_")
+    }));
+    assert!(!estimate.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
 fn strategy_package_estimator_recognizes_strength_generator_completion() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.add_card_to_deck(CardId::HeavyBlade);

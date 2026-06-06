@@ -44,6 +44,10 @@ const BLOCK_ENGINE_ALIGNMENT_EFFECTS: &[StrategyPlanEffectV1] = &[
     StrategyPlanEffectV1::BlockPayoff,
     StrategyPlanEffectV1::BlockMultiplier,
 ];
+const STRENGTH_SCALING_ALIGNMENT_EFFECTS: &[StrategyPlanEffectV1] = &[
+    StrategyPlanEffectV1::StrengthGenerator,
+    StrategyPlanEffectV1::StrengthPayoff,
+];
 
 const STRATEGY_PACKAGE_GAP_RULES: &[StrategyPackageGapRule] = &[
     StrategyPackageGapRule {
@@ -199,6 +203,54 @@ const STRATEGY_PACKAGE_THREAT_ALIGNMENT_RULES: &[StrategyPackageThreatAlignmentR
         package_id: StrategyPackageIdV2::BlockEngine,
         package_name: "block_engine",
         required_effects: BLOCK_ENGINE_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::SetupWindow,
+        tag_name: "setup_window",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StrengthScaling,
+        package_name: "strength_scaling",
+        required_effects: STRENGTH_SCALING_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::LongFightScaling,
+        tag_name: "long_fight",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StrengthScaling,
+        package_name: "strength_scaling",
+        required_effects: STRENGTH_SCALING_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::HighIncomingDamage,
+        tag_name: "high_incoming",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StrengthScaling,
+        package_name: "strength_scaling",
+        required_effects: STRENGTH_SCALING_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Boss,
+        tag: StrategyThreatTagV1::SetupWindow,
+        tag_name: "setup_window",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StrengthScaling,
+        package_name: "strength_scaling",
+        required_effects: STRENGTH_SCALING_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::LongFightScaling,
+        tag_name: "long_fight",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StrengthScaling,
+        package_name: "strength_scaling",
+        required_effects: STRENGTH_SCALING_ALIGNMENT_EFFECTS,
+        source: StrategyThreatAlignmentSource::Elite,
+        tag: StrategyThreatTagV1::HighIncomingDamage,
+        tag_name: "high_incoming",
+    },
+    StrategyPackageThreatAlignmentRule {
+        package_id: StrategyPackageIdV2::StrengthScaling,
+        package_name: "strength_scaling",
+        required_effects: STRENGTH_SCALING_ALIGNMENT_EFFECTS,
         source: StrategyThreatAlignmentSource::Elite,
         tag: StrategyThreatTagV1::SetupWindow,
         tag_name: "setup_window",
