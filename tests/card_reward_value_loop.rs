@@ -17,6 +17,7 @@ use sts_simulator::eval::card_reward_value_loop::{
     estimate_card_reward_values_from_calibration_v1,
     estimate_card_reward_values_from_strategy_package_calibration_v1,
     extract_card_reward_value_loop_examples_v1, replay_card_reward_records_with_calibration_v1,
+    replay_card_reward_records_with_runtime_calibrations_v1,
     summarize_card_reward_value_loop_examples_v1, CardRewardValueLoopOutcomeStatusV1,
     CardRewardValueLoopReplayStatusV1, CARD_REWARD_VALUE_LOOP_EXAMPLE_SCHEMA_NAME,
 };
@@ -430,6 +431,27 @@ fn strategy_package_calibration_generates_non_gate_external_estimates() {
         .components
         .iter()
         .any(|component| component.name == "strategy_package_calibration_bucket_count"));
+}
+
+#[test]
+fn replay_calibration_can_include_strategy_package_runtime_inputs() {
+    let examples = vec![
+        strategy_package_example(CardId::SearingBlow, 7),
+        strategy_package_example(CardId::Clothesline, 14),
+    ];
+    let strategy_package_calibration = calibrate_card_reward_strategy_package_v1(&examples);
+
+    let replay = replay_card_reward_records_with_runtime_calibrations_v1(
+        &examples,
+        None,
+        None,
+        Some(&strategy_package_calibration),
+    );
+
+    assert_eq!(replay.policy_replay_status, "full_public_packet_replay");
+    assert!(replay.examples.iter().any(|example| example
+        .policy_input_value_sources
+        .contains(&"StrategyPackage".to_string())));
 }
 
 fn selected_card_reward_record(card: CardId) -> NonCombatDecisionRecordV1 {

@@ -8,6 +8,7 @@ use sts_simulator::eval::card_reward_value_loop::{
     calibrate_card_reward_outcomes_v1, calibrate_card_reward_route_risk_v1,
     calibrate_card_reward_strategy_package_v1, extract_card_reward_value_loop_examples_v1,
     promote_card_reward_outcome_calibration_v1, replay_card_reward_records_with_calibration_v1,
+    replay_card_reward_records_with_runtime_calibrations_v1,
     summarize_card_reward_value_loop_examples_v1, CardRewardOutcomeCalibrationPromotionConfigV1,
     CardRewardOutcomeCalibrationV1,
 };
@@ -215,11 +216,24 @@ fn run(args: Args) -> Result<(), String> {
             serde_json::to_string_pretty(&calibration).map_err(|err| err.to_string())?
         }
     } else if args.replay_calibration {
-        let calibration = match args.calibration_path.as_ref() {
-            Some(path) => load_card_reward_outcome_calibration(path)?,
-            None => calibrate_card_reward_outcomes_v1(&examples),
+        let replay = match args.calibration_path.as_ref() {
+            Some(path) => {
+                let calibration = load_card_reward_outcome_calibration(path)?;
+                replay_card_reward_records_with_calibration_v1(&examples, &calibration)
+            }
+            None => {
+                let pipeline = build_card_reward_runtime_calibration_pipeline_v1(
+                    &examples,
+                    &promotion_config(&args),
+                );
+                replay_card_reward_records_with_runtime_calibrations_v1(
+                    &examples,
+                    Some(&pipeline.promoted_calibration),
+                    Some(&pipeline.route_risk_calibration),
+                    Some(&pipeline.strategy_package_calibration),
+                )
+            }
         };
-        let replay = replay_card_reward_records_with_calibration_v1(&examples, &calibration);
         if args.json_lines {
             serde_json::to_string(&replay).map_err(|err| err.to_string())?
         } else {

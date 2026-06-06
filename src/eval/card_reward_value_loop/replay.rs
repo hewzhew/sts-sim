@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     calibration::outcome_calibration_eligibility, estimate_card_reward_values_from_calibration_v1,
-    CardRewardOutcomeCalibrationV1, CardRewardValueLoopExampleV1,
+    estimate_card_reward_values_from_route_risk_calibration_v1,
+    estimate_card_reward_values_from_strategy_package_calibration_v1,
+    CardRewardOutcomeCalibrationV1, CardRewardRouteRiskCalibrationV1,
+    CardRewardStrategyPackageCalibrationV1, CardRewardValueLoopExampleV1,
 };
 use crate::ai::card_reward_policy_v1::{
     replay_card_reward_decision_with_estimator_inputs_v1, CardRewardEstimatorInputsV1,
@@ -34,6 +37,7 @@ pub struct CardRewardCalibrationReplayExampleV1 {
     pub policy_replay_status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub policy_selected_candidate_id: Option<String>,
+    pub policy_input_value_sources: Vec<String>,
     pub policy_value_sources: Vec<String>,
     pub policy_gate_blockers: Vec<String>,
     pub original_value_count: usize,
@@ -68,9 +72,25 @@ pub fn replay_card_reward_records_with_calibration_v1(
     examples: &[CardRewardValueLoopExampleV1],
     calibration: &CardRewardOutcomeCalibrationV1,
 ) -> CardRewardCalibrationReplayReportV1 {
+    replay_card_reward_records_with_runtime_calibrations_v1(examples, Some(calibration), None, None)
+}
+
+pub fn replay_card_reward_records_with_runtime_calibrations_v1(
+    examples: &[CardRewardValueLoopExampleV1],
+    outcome_calibration: Option<&CardRewardOutcomeCalibrationV1>,
+    route_risk_calibration: Option<&CardRewardRouteRiskCalibrationV1>,
+    strategy_package_calibration: Option<&CardRewardStrategyPackageCalibrationV1>,
+) -> CardRewardCalibrationReplayReportV1 {
     let examples_out = examples
         .iter()
-        .map(|example| card_reward_calibration_replay_example(example, calibration))
+        .map(|example| {
+            card_reward_calibration_replay_example(
+                example,
+                outcome_calibration,
+                route_risk_calibration,
+                strategy_package_calibration,
+            )
+        })
         .collect::<Vec<_>>();
     let full_packet_count = examples_out
         .iter()
@@ -92,7 +112,9 @@ pub fn replay_card_reward_records_with_calibration_v1(
 
 fn card_reward_calibration_replay_example(
     example: &CardRewardValueLoopExampleV1,
-    calibration: &CardRewardOutcomeCalibrationV1,
+    outcome_calibration: Option<&CardRewardOutcomeCalibrationV1>,
+    route_risk_calibration: Option<&CardRewardRouteRiskCalibrationV1>,
+    strategy_package_calibration: Option<&CardRewardStrategyPackageCalibrationV1>,
 ) -> CardRewardCalibrationReplayExampleV1 {
     let candidate_replays = example
         .source_record
@@ -117,14 +139,35 @@ fn card_reward_calibration_replay_example(
                     .iter()
                     .flat_map(|value| value_status_components(value))
                     .collect(),
-                calibration_estimate: card_id
-                    .and_then(|card_id| calibration_replay_estimate(&card_id, calibration)),
+                calibration_estimate: card_id.and_then(|card_id| {
+                    outcome_calibration
+                        .and_then(|calibration| calibration_replay_estimate(&card_id, calibration))
+                }),
             }
         })
         .collect::<Vec<_>>();
     let policy_replay = example.public_packet.as_ref().map(|packet| {
-        let external_value_estimates =
-            estimate_card_reward_values_from_calibration_v1(&packet.context, calibration);
+        let mut external_value_estimates = outcome_calibration
+            .map(|calibration| {
+                estimate_card_reward_values_from_calibration_v1(&packet.context, calibration)
+            })
+            .unwrap_or_default();
+        if let Some(calibration) = route_risk_calibration {
+            external_value_estimates.extend(
+                estimate_card_reward_values_from_route_risk_calibration_v1(
+                    &packet.context,
+                    calibration,
+                ),
+            );
+        }
+        if let Some(calibration) = strategy_package_calibration {
+            external_value_estimates.extend(
+                estimate_card_reward_values_from_strategy_package_calibration_v1(
+                    &packet.context,
+                    calibration,
+                ),
+            );
+        }
         let inputs = CardRewardEstimatorInputsV1 {
             external_value_estimates,
         };
@@ -144,6 +187,19 @@ fn card_reward_calibration_replay_example(
                 .iter()
                 .map(|estimate| format!("{:?}", estimate.source))
                 .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let policy_input_value_sources = policy_replay
+        .as_ref()
+        .map(|replay| {
+            let mut sources = replay
+                .value_estimates
+                .iter()
+                .map(|estimate| format!("{:?}", estimate.source))
+                .collect::<Vec<_>>();
+            sources.sort();
+            sources.dedup();
+            sources
         })
         .unwrap_or_default();
     let policy_gate_blockers = policy_replay
@@ -169,6 +225,7 @@ fn card_reward_calibration_replay_example(
         policy_selected_candidate_id: policy_replay
             .as_ref()
             .and_then(|replay| replay.selected_candidate_id.clone()),
+        policy_input_value_sources,
         policy_value_sources,
         policy_gate_blockers,
         original_value_count: example.source_record.values.len(),

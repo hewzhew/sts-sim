@@ -29,10 +29,11 @@ pub use promotion::{
     CARD_REWARD_OUTCOME_CALIBRATION_PROMOTION_SCHEMA_VERSION,
 };
 pub use replay::{
-    replay_card_reward_records_with_calibration_v1, CardRewardCalibrationReplayCandidateV1,
-    CardRewardCalibrationReplayEstimateV1, CardRewardCalibrationReplayExampleV1,
-    CardRewardCalibrationReplayReportV1, CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME,
-    CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_VERSION,
+    replay_card_reward_records_with_calibration_v1,
+    replay_card_reward_records_with_runtime_calibrations_v1,
+    CardRewardCalibrationReplayCandidateV1, CardRewardCalibrationReplayEstimateV1,
+    CardRewardCalibrationReplayExampleV1, CardRewardCalibrationReplayReportV1,
+    CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME, CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_VERSION,
 };
 pub use route_risk_calibration::{
     calibrate_card_reward_route_risk_v1,
