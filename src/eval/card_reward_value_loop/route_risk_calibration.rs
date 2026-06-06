@@ -566,12 +566,15 @@ mod tests {
             .expect("fixture should include a packet")
             .context
             .clone();
-        let inputs = crate::ai::card_reward_policy_v1::CardRewardEstimatorInputsV1 {
-            external_value_estimates: estimate_card_reward_values_from_route_risk_calibration_v1(
+        let inputs =
+            crate::eval::card_reward_value_loop::build_card_reward_runtime_estimator_inputs_v1(
                 &context,
-                &calibration,
-            ),
-        };
+                crate::eval::card_reward_value_loop::CardRewardRuntimeEstimatorCalibrationsV1 {
+                    outcome: None,
+                    route_risk: Some(&calibration),
+                    strategy_package: None,
+                },
+            );
 
         let decision =
             crate::ai::card_reward_policy_v1::plan_card_reward_decision_with_estimator_inputs_v1(

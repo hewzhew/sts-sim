@@ -328,17 +328,20 @@ mod tests {
             None,
         );
         context.route = Some(route_evidence_fixture());
-        let estimates =
-            crate::eval::card_reward_value_loop::estimate_card_reward_values_from_calibration_v1(
-                &context, &promoted,
+        let inputs =
+            crate::eval::card_reward_value_loop::build_card_reward_runtime_estimator_inputs_v1(
+                &context,
+                crate::eval::card_reward_value_loop::CardRewardRuntimeEstimatorCalibrationsV1 {
+                    outcome: Some(&promoted),
+                    route_risk: None,
+                    strategy_package: None,
+                },
             );
         let decision =
             crate::ai::card_reward_policy_v1::plan_card_reward_decision_with_estimator_inputs_v1(
                 &context,
                 &crate::ai::card_reward_policy_v1::CardRewardPolicyConfigV1::default(),
-                &crate::ai::card_reward_policy_v1::CardRewardEstimatorInputsV1 {
-                    external_value_estimates: estimates,
-                },
+                &inputs,
             );
 
         assert!(matches!(
