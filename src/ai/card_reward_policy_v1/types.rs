@@ -150,6 +150,8 @@ pub enum CardRewardSemanticRoleV1 {
     FrontloadDamage,
     AoeDamage,
     Block,
+    BlockRetention,
+    BlockMultiplier,
     CardDraw,
     EnergySource,
     Vulnerable,

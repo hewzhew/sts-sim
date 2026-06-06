@@ -108,6 +108,10 @@ fn candidate_plan_delta_uses_strategy_snapshot_not_card_score() {
             damage_total: 12,
             weak: 0,
             strength_gain: 0,
+            plan_effects: vec![
+                StrategyPlanEffectV1::UpgradeSink,
+                StrategyPlanEffectV1::UpgradeBudgetConsumer,
+            ],
         },
         &snapshot,
     );
@@ -117,6 +121,10 @@ fn candidate_plan_delta_uses_strategy_snapshot_not_card_score() {
             damage_total: 12,
             weak: 2,
             strength_gain: 0,
+            plan_effects: vec![
+                StrategyPlanEffectV1::WeakCoverage,
+                StrategyPlanEffectV1::DamageMitigation,
+            ],
         },
         &snapshot,
     );
@@ -526,6 +534,7 @@ fn strategy_snapshot_v2_exposes_formation_and_candidate_delta_without_v1_access(
             damage_total: 14,
             weak: 0,
             strength_gain: 0,
+            plan_effects: vec![StrategyPlanEffectV1::StrengthPayoff],
         },
         &snapshot,
     );
@@ -577,6 +586,7 @@ fn block_engine_package_recognizes_barricade_body_slam_followup() {
             damage_total: 0,
             weak: 0,
             strength_gain: 0,
+            plan_effects: vec![StrategyPlanEffectV1::BlockPayoff],
         },
         &snapshot,
     );
@@ -591,6 +601,40 @@ fn block_engine_package_recognizes_barricade_body_slam_followup() {
         .notes
         .iter()
         .any(|note| note.contains("block retention sources=1")));
+}
+
+#[test]
+fn candidate_plan_delta_uses_semantic_effects_without_card_identity() {
+    let snapshot = super::build_run_strategy_snapshot_v2(
+        StrategyDeckFactsV1 {
+            deck_size: 14,
+            attacks: 7,
+            skills: 5,
+            powers: 2,
+            weak_sources: 1,
+            block_retention_sources: 1,
+            block_multipliers: 1,
+            total_attack_damage: 58,
+            total_block: 38,
+            ..Default::default()
+        },
+        None,
+        None,
+    );
+
+    let delta = super::candidate_plan_delta_v2(
+        StrategyCandidateFactsV1 {
+            card: CardId::Strike,
+            damage_total: 0,
+            weak: 0,
+            strength_gain: 0,
+            plan_effects: vec![StrategyPlanEffectV1::BlockPayoff],
+        },
+        &snapshot,
+    );
+
+    assert_eq!(delta.support, StrategyPlanSupportV1::Strong);
+    assert!(delta.effects.contains(&StrategyPlanEffectV1::BlockPayoff));
 }
 
 #[test]
@@ -638,6 +682,7 @@ fn body_slam_without_block_engine_remains_blocked_package_candidate() {
             damage_total: 0,
             weak: 0,
             strength_gain: 0,
+            plan_effects: vec![StrategyPlanEffectV1::BlockPayoff],
         },
         &snapshot,
     );
@@ -678,6 +723,7 @@ fn exhaust_engine_candidate_delta_uses_generator_and_payoff_roles() {
             damage_total: 0,
             weak: 0,
             strength_gain: 0,
+            plan_effects: vec![StrategyPlanEffectV1::ExhaustGenerator],
         },
         &snapshot,
     );
@@ -724,6 +770,7 @@ fn status_package_candidate_delta_uses_generator_and_payoff_roles() {
             damage_total: 0,
             weak: 0,
             strength_gain: 0,
+            plan_effects: vec![StrategyPlanEffectV1::StatusPayoff],
         },
         &snapshot,
     );

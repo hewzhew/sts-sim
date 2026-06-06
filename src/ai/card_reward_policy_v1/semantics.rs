@@ -1,3 +1,4 @@
+use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
 
 use super::facts::card_facts;
@@ -17,6 +18,11 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
     }
     if facts.block > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::Block);
+    }
+    match facts.card {
+        CardId::Barricade => push_role(&mut roles, CardRewardSemanticRoleV1::BlockRetention),
+        CardId::Entrench => push_role(&mut roles, CardRewardSemanticRoleV1::BlockMultiplier),
+        _ => {}
     }
     if facts.draw_cards > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::CardDraw);

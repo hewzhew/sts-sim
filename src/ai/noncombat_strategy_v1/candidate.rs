@@ -1,5 +1,3 @@
-use crate::content::cards::CardId;
-
 use super::types::{
     RunStrategySnapshotV1, RunStrategySnapshotV2, StrategyCandidateFactsV1,
     StrategyCandidatePlanDeltaV1, StrategyPlanEffectV1, StrategyPlanIdV1, StrategyPlanSupportV1,
@@ -18,148 +16,33 @@ pub fn candidate_plan_delta_v1(
 ) -> StrategyCandidatePlanDeltaV1 {
     let mut effects = Vec::new();
     let mut notes = Vec::new();
-    let mut support = StrategyPlanSupportV1::Weak;
 
+    for effect in &facts.plan_effects {
+        push_effect(&mut effects, *effect);
+    }
     if facts.damage_total > 0 {
-        effects.push(StrategyPlanEffectV1::FrontloadDamage);
+        push_effect(&mut effects, StrategyPlanEffectV1::FrontloadDamage);
+    }
+    if facts.weak > 0 {
+        push_effect(&mut effects, StrategyPlanEffectV1::WeakCoverage);
+        push_effect(&mut effects, StrategyPlanEffectV1::DamageMitigation);
+    }
+    if facts.strength_gain > 0 {
+        push_effect(&mut effects, StrategyPlanEffectV1::StrengthGenerator);
     }
 
-    match facts.card {
-        CardId::SearingBlow => {
-            effects.push(StrategyPlanEffectV1::UpgradeSink);
-            effects.push(StrategyPlanEffectV1::UpgradeBudgetConsumer);
-            let plan = snapshot.plan(StrategyPlanIdV1::UpgradeSink);
-            support = plan
-                .map(|plan| plan.support)
-                .unwrap_or(StrategyPlanSupportV1::Blocked);
-            if let Some(plan) = plan {
-                notes.extend(plan.evidence.clone());
-                notes.extend(plan.blockers.clone());
-                notes.extend(plan.opportunity_costs.clone());
-            }
-        }
-        CardId::HeavyBlade => {
-            effects.push(StrategyPlanEffectV1::StrengthPayoff);
-            let plan = snapshot.plan(StrategyPlanIdV1::StrengthScaling);
-            support = plan
-                .map(|plan| plan.support)
-                .unwrap_or(StrategyPlanSupportV1::Blocked);
-            if let Some(plan) = plan {
-                notes.extend(plan.evidence.clone());
-                notes.extend(plan.blockers.clone());
-                notes.extend(plan.opportunity_costs.clone());
-            }
-        }
-        CardId::Clothesline => {
-            effects.push(StrategyPlanEffectV1::WeakCoverage);
-            effects.push(StrategyPlanEffectV1::DamageMitigation);
-            let plan = snapshot.plan(StrategyPlanIdV1::WeakControl);
-            support = plan
-                .map(|plan| plan.support)
-                .unwrap_or(StrategyPlanSupportV1::Blocked);
-            if let Some(plan) = plan {
-                notes.extend(plan.evidence.clone());
-                notes.extend(plan.blockers.clone());
-                notes.extend(plan.opportunity_costs.clone());
-            }
-        }
-        CardId::Barricade => {
-            effects.push(StrategyPlanEffectV1::BlockRetention);
-            effects.push(StrategyPlanEffectV1::DamageMitigation);
-            let plan = snapshot.plan(StrategyPlanIdV1::BlockEngine);
-            support = plan
-                .map(|plan| plan.support)
-                .unwrap_or(StrategyPlanSupportV1::Blocked);
-            if let Some(plan) = plan {
-                notes.extend(plan.evidence.clone());
-                notes.extend(plan.blockers.clone());
-                notes.extend(plan.opportunity_costs.clone());
-            }
-        }
-        CardId::BodySlam => {
-            effects.push(StrategyPlanEffectV1::BlockPayoff);
-            let plan = snapshot.plan(StrategyPlanIdV1::BlockEngine);
-            support = plan
-                .map(|plan| plan.support)
-                .unwrap_or(StrategyPlanSupportV1::Blocked);
-            if let Some(plan) = plan {
-                notes.extend(plan.evidence.clone());
-                notes.extend(plan.blockers.clone());
-                notes.extend(plan.opportunity_costs.clone());
-            }
-        }
-        CardId::Entrench => {
-            effects.push(StrategyPlanEffectV1::BlockMultiplier);
-            effects.push(StrategyPlanEffectV1::DamageMitigation);
-            let plan = snapshot.plan(StrategyPlanIdV1::BlockEngine);
-            support = plan
-                .map(|plan| plan.support)
-                .unwrap_or(StrategyPlanSupportV1::Blocked);
-            if let Some(plan) = plan {
-                notes.extend(plan.evidence.clone());
-                notes.extend(plan.blockers.clone());
-                notes.extend(plan.opportunity_costs.clone());
-            }
-        }
-        CardId::BurningPact
-        | CardId::TrueGrit
-        | CardId::SecondWind
-        | CardId::SeverSoul
-        | CardId::FiendFire
-        | CardId::Exhume => {
-            effects.push(StrategyPlanEffectV1::ExhaustGenerator);
-            apply_plan_context(
-                snapshot,
-                StrategyPlanIdV1::ExhaustEngine,
-                &mut support,
-                &mut notes,
-            );
-        }
-        CardId::FeelNoPain | CardId::DarkEmbrace | CardId::Corruption => {
-            effects.push(StrategyPlanEffectV1::ExhaustPayoff);
-            apply_plan_context(
-                snapshot,
-                StrategyPlanIdV1::ExhaustEngine,
-                &mut support,
-                &mut notes,
-            );
-        }
-        CardId::WildStrike | CardId::RecklessCharge | CardId::PowerThrough | CardId::Immolate => {
-            effects.push(StrategyPlanEffectV1::StatusGenerator);
-            apply_plan_context(
-                snapshot,
-                StrategyPlanIdV1::StatusPackage,
-                &mut support,
-                &mut notes,
-            );
-        }
-        CardId::Evolve | CardId::FireBreathing => {
-            effects.push(StrategyPlanEffectV1::StatusPayoff);
-            apply_plan_context(
-                snapshot,
-                StrategyPlanIdV1::StatusPackage,
-                &mut support,
-                &mut notes,
-            );
-        }
-        _ => {
-            if facts.weak > 0 {
-                effects.push(StrategyPlanEffectV1::WeakCoverage);
-                effects.push(StrategyPlanEffectV1::DamageMitigation);
-                support = snapshot
-                    .plan(StrategyPlanIdV1::WeakControl)
-                    .map(|plan| plan.support)
-                    .unwrap_or(StrategyPlanSupportV1::Weak);
-            }
-            if facts.strength_gain > 0 {
-                effects.push(StrategyPlanEffectV1::StrengthGenerator);
-                apply_plan_context(
-                    snapshot,
-                    StrategyPlanIdV1::StrengthScaling,
-                    &mut support,
-                    &mut notes,
-                );
-            }
+    let mut support = if effects
+        .iter()
+        .any(|effect| plan_id_for_effect(*effect).is_some())
+    {
+        StrategyPlanSupportV1::Blocked
+    } else {
+        StrategyPlanSupportV1::Weak
+    };
+
+    for effect in &effects {
+        if let Some(plan_id) = plan_id_for_effect(*effect) {
+            apply_plan_context(snapshot, plan_id, &mut support, &mut notes);
         }
     }
 
@@ -170,6 +53,34 @@ pub fn candidate_plan_delta_v1(
     }
 }
 
+fn push_effect(effects: &mut Vec<StrategyPlanEffectV1>, effect: StrategyPlanEffectV1) {
+    if !effects.contains(&effect) {
+        effects.push(effect);
+    }
+}
+
+fn plan_id_for_effect(effect: StrategyPlanEffectV1) -> Option<StrategyPlanIdV1> {
+    match effect {
+        StrategyPlanEffectV1::UpgradeSink | StrategyPlanEffectV1::UpgradeBudgetConsumer => {
+            Some(StrategyPlanIdV1::UpgradeSink)
+        }
+        StrategyPlanEffectV1::StrengthGenerator | StrategyPlanEffectV1::StrengthPayoff => {
+            Some(StrategyPlanIdV1::StrengthScaling)
+        }
+        StrategyPlanEffectV1::WeakCoverage => Some(StrategyPlanIdV1::WeakControl),
+        StrategyPlanEffectV1::BlockRetention
+        | StrategyPlanEffectV1::BlockPayoff
+        | StrategyPlanEffectV1::BlockMultiplier => Some(StrategyPlanIdV1::BlockEngine),
+        StrategyPlanEffectV1::ExhaustGenerator | StrategyPlanEffectV1::ExhaustPayoff => {
+            Some(StrategyPlanIdV1::ExhaustEngine)
+        }
+        StrategyPlanEffectV1::StatusGenerator | StrategyPlanEffectV1::StatusPayoff => {
+            Some(StrategyPlanIdV1::StatusPackage)
+        }
+        StrategyPlanEffectV1::FrontloadDamage | StrategyPlanEffectV1::DamageMitigation => None,
+    }
+}
+
 fn apply_plan_context(
     snapshot: &RunStrategySnapshotV1,
     plan_id: StrategyPlanIdV1,
@@ -177,12 +88,24 @@ fn apply_plan_context(
     notes: &mut Vec<String>,
 ) {
     let plan = snapshot.plan(plan_id);
-    *support = plan
+    let plan_support = plan
         .map(|plan| plan.support)
         .unwrap_or(StrategyPlanSupportV1::Blocked);
+    if support_priority(plan_support) > support_priority(*support) {
+        *support = plan_support;
+    }
     if let Some(plan) = plan {
         notes.extend(plan.evidence.clone());
         notes.extend(plan.blockers.clone());
         notes.extend(plan.opportunity_costs.clone());
+    }
+}
+
+fn support_priority(support: StrategyPlanSupportV1) -> u8 {
+    match support {
+        StrategyPlanSupportV1::Blocked => 0,
+        StrategyPlanSupportV1::Weak => 1,
+        StrategyPlanSupportV1::Plausible => 2,
+        StrategyPlanSupportV1::Strong => 3,
     }
 }

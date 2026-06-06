@@ -3,6 +3,7 @@ use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
 use super::facts::card_facts;
+use super::semantics::card_reward_semantic_profile_v1;
 use super::types::{
     CardRewardPickDependencyV1, CardRewardRouteEvidenceV1, CardRewardRunContextV1,
     CardRewardSelectedRouteV1, DeckProfileV1,
@@ -186,10 +187,88 @@ pub(crate) fn strategy_route_future(
 pub(crate) fn strategy_candidate_facts(
     facts: &super::types::CardRewardFactsV1,
 ) -> crate::ai::noncombat_strategy_v1::StrategyCandidateFactsV1 {
+    let semantic_profile = card_reward_semantic_profile_v1(&RewardCard::new(facts.card, 0));
     crate::ai::noncombat_strategy_v1::StrategyCandidateFactsV1 {
         card: facts.card,
         damage_total: facts.damage.total_damage,
         weak: facts.weak,
         strength_gain: facts.strength_gain,
+        plan_effects: strategy_plan_effects_from_roles(&semantic_profile.roles),
+    }
+}
+
+fn strategy_plan_effects_from_roles(
+    roles: &[super::types::CardRewardSemanticRoleV1],
+) -> Vec<crate::ai::noncombat_strategy_v1::StrategyPlanEffectV1> {
+    use super::types::CardRewardSemanticRoleV1;
+    use crate::ai::noncombat_strategy_v1::StrategyPlanEffectV1;
+
+    let mut effects = Vec::new();
+    for role in roles {
+        match role {
+            CardRewardSemanticRoleV1::FrontloadDamage => {
+                push_effect(&mut effects, StrategyPlanEffectV1::FrontloadDamage)
+            }
+            CardRewardSemanticRoleV1::Weak | CardRewardSemanticRoleV1::EnemyStrengthDown => {
+                push_effect(&mut effects, StrategyPlanEffectV1::DamageMitigation);
+                if *role == CardRewardSemanticRoleV1::Weak {
+                    push_effect(&mut effects, StrategyPlanEffectV1::WeakCoverage);
+                }
+            }
+            CardRewardSemanticRoleV1::ScalingSource => {
+                push_effect(&mut effects, StrategyPlanEffectV1::StrengthGenerator)
+            }
+            CardRewardSemanticRoleV1::StrengthPayoff => {
+                push_effect(&mut effects, StrategyPlanEffectV1::StrengthPayoff)
+            }
+            CardRewardSemanticRoleV1::UpgradePayoff => {
+                push_effect(&mut effects, StrategyPlanEffectV1::UpgradeSink);
+                push_effect(&mut effects, StrategyPlanEffectV1::UpgradeBudgetConsumer);
+            }
+            CardRewardSemanticRoleV1::BlockRetention => {
+                push_effect(&mut effects, StrategyPlanEffectV1::BlockRetention);
+                push_effect(&mut effects, StrategyPlanEffectV1::DamageMitigation);
+            }
+            CardRewardSemanticRoleV1::BlockPayoff => {
+                push_effect(&mut effects, StrategyPlanEffectV1::BlockPayoff)
+            }
+            CardRewardSemanticRoleV1::BlockMultiplier => {
+                push_effect(&mut effects, StrategyPlanEffectV1::BlockMultiplier);
+                push_effect(&mut effects, StrategyPlanEffectV1::DamageMitigation);
+            }
+            CardRewardSemanticRoleV1::ExhaustGenerator => {
+                push_effect(&mut effects, StrategyPlanEffectV1::ExhaustGenerator)
+            }
+            CardRewardSemanticRoleV1::ExhaustPayoff => {
+                push_effect(&mut effects, StrategyPlanEffectV1::ExhaustPayoff)
+            }
+            CardRewardSemanticRoleV1::StatusGenerator => {
+                push_effect(&mut effects, StrategyPlanEffectV1::StatusGenerator)
+            }
+            CardRewardSemanticRoleV1::StatusPayoff => {
+                push_effect(&mut effects, StrategyPlanEffectV1::StatusPayoff)
+            }
+            CardRewardSemanticRoleV1::AoeDamage
+            | CardRewardSemanticRoleV1::Block
+            | CardRewardSemanticRoleV1::CardDraw
+            | CardRewardSemanticRoleV1::EnergySource
+            | CardRewardSemanticRoleV1::Vulnerable
+            | CardRewardSemanticRoleV1::StrikePayoff
+            | CardRewardSemanticRoleV1::SelfDamagePayoff
+            | CardRewardSemanticRoleV1::PackagePayoff
+            | CardRewardSemanticRoleV1::RandomOutput
+            | CardRewardSemanticRoleV1::ConditionalPlayability
+            | CardRewardSemanticRoleV1::UnsupportedMechanics => {}
+        }
+    }
+    effects
+}
+
+fn push_effect(
+    effects: &mut Vec<crate::ai::noncombat_strategy_v1::StrategyPlanEffectV1>,
+    effect: crate::ai::noncombat_strategy_v1::StrategyPlanEffectV1,
+) {
+    if !effects.contains(&effect) {
+        effects.push(effect);
     }
 }

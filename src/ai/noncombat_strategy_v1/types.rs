@@ -165,6 +165,7 @@ pub struct StrategyCandidateFactsV1 {
     pub damage_total: i32,
     pub weak: i32,
     pub strength_gain: i32,
+    pub plan_effects: Vec<StrategyPlanEffectV1>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
