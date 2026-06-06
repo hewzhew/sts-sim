@@ -269,6 +269,7 @@ pub enum StrategyThreatTagV1 {
 pub enum StrategyThreatSourceV1 {
     ActBoss,
     ActElitePool,
+    ActEliteEncounter,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

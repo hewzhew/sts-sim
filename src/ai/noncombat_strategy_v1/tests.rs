@@ -769,3 +769,29 @@ fn run_strategy_snapshot_v2_exposes_boss_threat_tags() {
             && source.subject == "Act2ElitePool"
     }));
 }
+
+#[test]
+fn run_strategy_snapshot_v2_expands_elite_pool_into_specific_encounter_threats() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.floor_num = 5;
+    run_state.boss_key = Some(EncounterId::TheGuardian);
+
+    let snapshot = super::build_run_strategy_snapshot_from_run_state_v2(&run_state);
+
+    assert!(snapshot.threats.sources.iter().any(|source| {
+        source.tag == StrategyThreatTagV1::SkillPunish
+            && source.source == StrategyThreatSourceV1::ActEliteEncounter
+            && source.subject == "GremlinNob"
+    }));
+    assert!(snapshot.threats.sources.iter().any(|source| {
+        source.tag == StrategyThreatTagV1::SetupWindow
+            && source.source == StrategyThreatSourceV1::ActEliteEncounter
+            && source.subject == "Lagavulin"
+    }));
+    assert!(snapshot.threats.sources.iter().any(|source| {
+        source.tag == StrategyThreatTagV1::StatusFlood
+            && source.source == StrategyThreatSourceV1::ActEliteEncounter
+            && source.subject == "ThreeSentries"
+    }));
+}

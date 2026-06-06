@@ -168,6 +168,34 @@ fn add_act_elite_pool_threats(act: u8, profile: &mut StrategyThreatProfileV1) {
                 evidence,
             );
             profile.evidence.push(evidence.to_string());
+            push_elite_encounter_threats(
+                profile,
+                "GremlinNob",
+                &[
+                    StrategyThreatTagV1::SkillPunish,
+                    StrategyThreatTagV1::HighIncomingDamage,
+                ],
+                "Act 1 elite Gremlin Nob: skills increase Strength and the fight rewards fast frontload",
+            );
+            push_elite_encounter_threats(
+                profile,
+                "Lagavulin",
+                &[
+                    StrategyThreatTagV1::SetupWindow,
+                    StrategyThreatTagV1::StrengthDebuffValuable,
+                    StrategyThreatTagV1::HighIncomingDamage,
+                ],
+                "Act 1 elite Lagavulin: sleep setup window and strength/dexterity debuffs reward setup plus mitigation",
+            );
+            push_elite_encounter_threats(
+                profile,
+                "ThreeSentries",
+                &[
+                    StrategyThreatTagV1::StatusFlood,
+                    StrategyThreatTagV1::AoEValuable,
+                ],
+                "Act 1 elite Three Sentries: Dazed flood and three bodies reward status handling and AoE",
+            );
         }
         2 => {
             let evidence =
@@ -184,6 +212,34 @@ fn add_act_elite_pool_threats(act: u8, profile: &mut StrategyThreatProfileV1) {
                 evidence,
             );
             profile.evidence.push(evidence.to_string());
+            push_elite_encounter_threats(
+                profile,
+                "Slavers",
+                &[
+                    StrategyThreatTagV1::HighIncomingDamage,
+                    StrategyThreatTagV1::AoEValuable,
+                ],
+                "Act 2 elite Slavers: immediate multi-enemy damage pressure rewards frontload and AoE",
+            );
+            push_elite_encounter_threats(
+                profile,
+                "GremlinLeader",
+                &[
+                    StrategyThreatTagV1::AoEValuable,
+                    StrategyThreatTagV1::SetupWindow,
+                ],
+                "Act 2 elite Gremlin Leader: minion summons reward AoE while some turns allow setup",
+            );
+            push_elite_encounter_threats(
+                profile,
+                "BookOfStabbing",
+                &[
+                    StrategyThreatTagV1::MultiHit,
+                    StrategyThreatTagV1::HighIncomingDamage,
+                    StrategyThreatTagV1::StrengthDebuffValuable,
+                ],
+                "Act 2 elite Book of Stabbing: scaling multi-hit attacks reward strength down and mitigation",
+            );
         }
         3 => {
             let evidence =
@@ -200,9 +256,48 @@ fn add_act_elite_pool_threats(act: u8, profile: &mut StrategyThreatProfileV1) {
                 evidence,
             );
             profile.evidence.push(evidence.to_string());
+            push_elite_encounter_threats(
+                profile,
+                "Reptomancer",
+                &[
+                    StrategyThreatTagV1::AoEValuable,
+                    StrategyThreatTagV1::HighIncomingDamage,
+                ],
+                "Act 3 elite Reptomancer: dagger burst pressure rewards AoE and frontload",
+            );
+            push_elite_encounter_threats(
+                profile,
+                "TheNemesis",
+                &[
+                    StrategyThreatTagV1::HighIncomingDamage,
+                    StrategyThreatTagV1::SetupWindow,
+                ],
+                "Act 3 elite Nemesis: intangible turns and burst attacks reward setup timing and mitigation",
+            );
+            push_elite_encounter_threats(
+                profile,
+                "GiantHead",
+                &[StrategyThreatTagV1::LongFightScaling],
+                "Act 3 elite Giant Head: long fight rewards scaling and dense damage turns",
+            );
         }
         _ => {}
     }
+}
+
+fn push_elite_encounter_threats(
+    profile: &mut StrategyThreatProfileV1,
+    subject: &str,
+    tags: &[StrategyThreatTagV1],
+    evidence: &str,
+) {
+    push_tags(
+        profile,
+        StrategyThreatSourceV1::ActEliteEncounter,
+        subject,
+        tags,
+        evidence,
+    );
 }
 
 fn push_tags(

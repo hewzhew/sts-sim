@@ -283,6 +283,7 @@ fn bucket_specificity(bucket: &CardRewardStrategyPackageCalibrationBucketV1) -> 
     let key = bucket.bucket_key.as_str();
     match key {
         _ if key.starts_with("threat_source:ActBoss:") => 10 + threat_tag_specificity(key),
+        _ if key.starts_with("threat_source:ActEliteEncounter:") => 9 + threat_tag_specificity(key),
         _ if key.starts_with("threat_source:ActElitePool:") => 7 + threat_tag_specificity(key),
         "threat:StrengthDebuffValuable"
         | "threat:WeakValuable"
@@ -523,6 +524,38 @@ mod tests {
             Some("threat_source:ActBoss:TheChamp:StrengthDebuffValuable")
         );
         assert!(!disarm.eligibility.usable_for_autopilot_gate);
+    }
+
+    #[test]
+    fn strategy_package_calibrated_estimates_can_match_specific_elite_encounter_buckets() {
+        let example = strategy_package_example(CardId::Disarm, EncounterId::Collector, 6);
+        let context = example
+            .public_packet
+            .as_ref()
+            .expect("fixture has packet")
+            .context
+            .clone();
+        let calibration = calibrate_card_reward_strategy_package_v1(&[example]);
+
+        assert!(calibration.buckets.iter().any(|bucket| {
+            bucket.bucket_key
+                == "threat_source:ActEliteEncounter:BookOfStabbing:StrengthDebuffValuable"
+                && bucket.evaluated_count == 1
+        }));
+
+        let estimates = estimate_card_reward_values_from_strategy_package_calibration_v1(
+            &context,
+            &calibration,
+        );
+        let disarm = estimates
+            .iter()
+            .find(|estimate| estimate.card == CardId::Disarm)
+            .expect("Disarm calibrated estimate");
+
+        assert_eq!(
+            disarm.eligibility.bucket_key.as_deref(),
+            Some("threat_source:ActEliteEncounter:BookOfStabbing:StrengthDebuffValuable")
+        );
     }
 
     fn strategy_package_example(
