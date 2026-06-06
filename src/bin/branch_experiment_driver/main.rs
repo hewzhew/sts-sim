@@ -58,6 +58,15 @@ struct Args {
     #[arg(long = "prefix", value_name = "COMMAND")]
     prefix_commands: Vec<String>,
 
+    #[arg(
+        long,
+        help = "Replay a SessionTraceV1 before starting branch exploration"
+    )]
+    replay_trace: Option<PathBuf>,
+
+    #[arg(long, help = "Only replay the first N recorded trace steps")]
+    replay_steps: Option<usize>,
+
     #[arg(long)]
     include_skip: bool,
 
@@ -94,6 +103,8 @@ fn run(args: Args) -> Result<(), String> {
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
         include_skip: args.include_skip,
         prefix_commands: args.prefix_commands,
+        replay_trace_path: args.replay_trace,
+        replay_trace_max_steps: args.replay_steps,
     })?;
     if let Some(path) = args.out {
         let payload = serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
@@ -145,6 +156,17 @@ fn render_compact_report(report: &BranchExperimentReportV1) -> String {
             "experiment wall-clock limit hit: increase --experiment-wall-ms for more exploration"
                 .to_string(),
         );
+    }
+    if let Some(path) = report.replay_trace_path.as_ref() {
+        lines.push(format!(
+            "replay trace: {} applied_steps={} stop={}",
+            path,
+            report.replay_trace_applied_steps,
+            report
+                .replay_trace_stop
+                .as_deref()
+                .unwrap_or("not_recorded")
+        ));
     }
     if report.explored_branch_points == 0 {
         let boundary = report
@@ -599,13 +621,30 @@ mod tests {
         assert!(rendered.contains("--prefix"));
     }
 
+    #[test]
+    fn compact_report_summarizes_replayed_trace_prefix() {
+        let mut report = empty_report();
+        report.replay_trace_path = Some("tools/artifacts/traces/seed.trace.json".to_string());
+        report.replay_trace_applied_steps = 7;
+        report.replay_trace_stop = Some("TraceEnd".to_string());
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("replay trace:"));
+        assert!(rendered.contains("applied_steps=7"));
+        assert!(rendered.contains("stop=TraceEnd"));
+    }
+
     fn empty_report() -> BranchExperimentReportV1 {
         BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
-            schema_version: 5,
+            schema_version: 6,
             label_role: "diagnostic_not_teacher_label".to_string(),
             policy_quality_claim: false,
             seed: 1,
+            replay_trace_path: None,
+            replay_trace_applied_steps: 0,
+            replay_trace_stop: None,
             max_branches: 4,
             max_depth: 1,
             explored_branch_points: 1,

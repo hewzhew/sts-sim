@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -21,15 +22,17 @@ use crate::eval::branch_experiment_trajectory::{
     summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
 };
 use crate::eval::run_control::{
-    build_decision_surface, parse_run_control_command, RunControlAutoStepOptions,
-    RunControlCommand, RunControlConfig, RunControlHpLossLimit, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions, RunControlSession,
+    build_decision_surface, canonical_player_class, load_session_trace_v1,
+    parse_run_control_command, replay_session_trace, RunControlAutoStepOptions, RunControlCommand,
+    RunControlConfig, RunControlHpLossLimit, RunControlRouteAutomationMode,
+    RunControlSearchCombatOptions, RunControlSession, SessionTraceReplayOptions,
+    SessionTraceReplayStop,
 };
 use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 5;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -48,6 +51,8 @@ pub struct BranchExperimentConfigV1 {
     pub search_max_hp_loss: Option<RunControlHpLossLimit>,
     pub include_skip: bool,
     pub prefix_commands: Vec<String>,
+    pub replay_trace_path: Option<PathBuf>,
+    pub replay_trace_max_steps: Option<usize>,
 }
 
 impl Default for BranchExperimentConfigV1 {
@@ -68,6 +73,8 @@ impl Default for BranchExperimentConfigV1 {
             search_max_hp_loss: None,
             include_skip: false,
             prefix_commands: Vec::new(),
+            replay_trace_path: None,
+            replay_trace_max_steps: None,
         }
     }
 }
@@ -80,6 +87,9 @@ pub struct BranchExperimentReportV1 {
     pub label_role: String,
     pub policy_quality_claim: bool,
     pub seed: u64,
+    pub replay_trace_path: Option<String>,
+    pub replay_trace_applied_steps: usize,
+    pub replay_trace_stop: Option<String>,
     pub max_branches: usize,
     pub max_depth: usize,
     pub explored_branch_points: usize,
@@ -219,27 +229,83 @@ struct BranchWork {
 pub fn run_branch_experiment_v1(
     config: &BranchExperimentConfigV1,
 ) -> Result<BranchExperimentReportV1, String> {
+    let replay_trace = config
+        .replay_trace_path
+        .as_ref()
+        .map(|path| load_session_trace_v1(path))
+        .transpose()?;
+    let player_class = replay_trace
+        .as_ref()
+        .map(|trace| canonical_player_class(&trace.run_config.player_class))
+        .transpose()?
+        .unwrap_or(config.player_class);
     let mut session = RunControlSession::new(RunControlConfig {
-        seed: config.seed,
-        ascension_level: config.ascension_level,
-        final_act: config.final_act,
-        player_class: config.player_class,
+        seed: replay_trace
+            .as_ref()
+            .map(|trace| trace.run_config.seed)
+            .unwrap_or(config.seed),
+        ascension_level: replay_trace
+            .as_ref()
+            .map(|trace| trace.run_config.ascension_level)
+            .unwrap_or(config.ascension_level),
+        final_act: replay_trace
+            .as_ref()
+            .map(|trace| trace.run_config.final_act)
+            .unwrap_or(config.final_act),
+        player_class,
         search_max_nodes: config.search_max_nodes,
         search_wall_ms: config.search_wall_ms,
         ..RunControlConfig::default()
     });
+    let mut replay_applied_steps = 0usize;
+    let mut replay_stop = None;
+    if let Some(trace) = replay_trace.as_ref() {
+        let report = replay_session_trace(
+            &mut session,
+            trace,
+            SessionTraceReplayOptions {
+                max_steps: config.replay_trace_max_steps,
+            },
+        );
+        replay_applied_steps = report.applied_steps.len();
+        replay_stop = Some(format!("{:?}", report.stop));
+        match report.stop {
+            SessionTraceReplayStop::TraceEnd | SessionTraceReplayStop::MaxSteps { .. } => {}
+            _ => {
+                return Err(format!(
+                    "replay trace stopped before a usable prefix: {:?}",
+                    report.stop
+                ));
+            }
+        }
+    }
 
     for command_line in &config.prefix_commands {
         let command = parse_run_control_command(command_line)?;
         session.apply_command(command)?;
     }
 
-    Ok(run_branch_experiment_from_session(session, config))
+    Ok(run_branch_experiment_from_session_with_replay(
+        session,
+        config,
+        replay_applied_steps,
+        replay_stop,
+    ))
 }
 
+#[cfg(test)]
 fn run_branch_experiment_from_session(
     session: RunControlSession,
     config: &BranchExperimentConfigV1,
+) -> BranchExperimentReportV1 {
+    run_branch_experiment_from_session_with_replay(session, config, 0, None)
+}
+
+fn run_branch_experiment_from_session_with_replay(
+    session: RunControlSession,
+    config: &BranchExperimentConfigV1,
+    replay_trace_applied_steps: usize,
+    replay_trace_stop: Option<String>,
 ) -> BranchExperimentReportV1 {
     let started_at = Instant::now();
     let mut branches = vec![BranchWork {
@@ -250,6 +316,7 @@ fn run_branch_experiment_from_session(
         stop_reason: "initial".to_string(),
         retention: default_branch_retention_decision_v1(),
     }];
+    let report_seed = branches[0].session.run_state.seed;
     let mut explored_branch_points = 0usize;
     let mut branch_limit_hit = false;
     let mut frontier_group_limit_hit = false;
@@ -378,7 +445,13 @@ fn run_branch_experiment_from_session(
         schema_version: BRANCH_EXPERIMENT_SCHEMA_VERSION,
         label_role: "diagnostic_not_teacher_label".to_string(),
         policy_quality_claim: false,
-        seed: config.seed,
+        seed: report_seed,
+        replay_trace_path: config
+            .replay_trace_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        replay_trace_applied_steps,
+        replay_trace_stop,
         max_branches: config.max_branches,
         max_depth: config.max_depth,
         explored_branch_points,
@@ -1085,6 +1158,8 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::relics::RelicState;
     use crate::state::rewards::RewardState;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn branch_experiment_expands_pending_card_reward_choices() {
@@ -1113,6 +1188,77 @@ mod tests {
         assert!(report.branches.iter().any(|branch| {
             branch.choices[0].command == "rp 1" && branch.choices[0].label == "Cleave"
         }));
+    }
+
+    #[test]
+    fn branch_experiment_replay_trace_uses_trace_run_config() {
+        let trace_path = write_trace_fixture(
+            "branch_experiment_trace_config",
+            &crate::eval::run_control::SessionTraceV1::new(&RunControlSession::new(
+                RunControlConfig {
+                    seed: 777,
+                    ..RunControlConfig::default()
+                },
+            )),
+        );
+
+        let report = run_branch_experiment_v1(&BranchExperimentConfigV1 {
+            seed: 1,
+            replay_trace_path: Some(trace_path.clone()),
+            max_depth: 0,
+            ..BranchExperimentConfigV1::default()
+        })
+        .expect("empty trace should replay");
+
+        assert_eq!(report.seed, 777);
+        assert_eq!(
+            report.replay_trace_path,
+            Some(trace_path.display().to_string())
+        );
+        assert_eq!(report.replay_trace_applied_steps, 0);
+        assert_eq!(report.replay_trace_stop, Some("TraceEnd".to_string()));
+
+        let _ = fs::remove_dir_all(trace_path.parent().unwrap());
+    }
+
+    #[test]
+    fn branch_experiment_report_counts_replayed_trace_steps() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let trace_path = unique_temp_path("branch_experiment_trace_steps").join("trace.json");
+        let mut recorder =
+            crate::eval::run_control::SessionTraceRecorder::new(trace_path.clone(), &session);
+        let command = RunControlCommand::DefaultCandidate;
+        let pending =
+            crate::eval::run_control::SessionTraceRecorder::prepare_step(&session, "", &command);
+        let outcome = session
+            .apply_command(command)
+            .expect("default candidate applies");
+        recorder
+            .record_action_step(
+                pending,
+                &session,
+                outcome
+                    .action_result
+                    .as_ref()
+                    .expect("command should change state"),
+                &outcome.trace_annotations,
+            )
+            .expect("trace records");
+        let trace = recorder.trace().clone();
+        let trace_path = write_trace_fixture("branch_experiment_trace_steps", &trace);
+
+        let report = run_branch_experiment_v1(&BranchExperimentConfigV1 {
+            replay_trace_path: Some(trace_path.clone()),
+            replay_trace_max_steps: Some(1),
+            max_depth: 0,
+            ..BranchExperimentConfigV1::default()
+        })
+        .expect("one step trace should replay");
+
+        assert_eq!(report.replay_trace_applied_steps, 1);
+        assert_eq!(report.replay_trace_stop, Some("TraceEnd".to_string()));
+
+        let _ = fs::remove_dir_all(trace_path.parent().unwrap());
     }
 
     #[test]
@@ -1415,5 +1561,32 @@ mod tests {
         assert_eq!(report.pruned_branch_count, 1);
         assert_eq!(report.branches.len(), 1);
         assert_eq!(report.frontier_groups.len(), 1);
+    }
+
+    fn write_trace_fixture(
+        label: &str,
+        trace: &crate::eval::run_control::SessionTraceV1,
+    ) -> PathBuf {
+        let path = unique_temp_path(label).join("trace.json");
+        fs::create_dir_all(path.parent().unwrap()).expect("trace parent should exist");
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(trace).expect("trace should serialize"),
+        )
+        .expect("trace fixture should write");
+        path
+    }
+
+    fn unique_temp_path(label: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "sts_simulator_{label}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should be available")
+                .as_nanos()
+        ));
+        path
     }
 }
