@@ -1641,6 +1641,126 @@ fn public_combat_heuristic_marks_book_specific_strength_down() {
 }
 
 #[test]
+fn public_combat_heuristic_marks_slavers_specific_aoe_response() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    run_state.boss_key = Some(EncounterId::Collector);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Whirlwind, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let whirlwind = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Whirlwind
+        })
+        .expect("Whirlwind public combat heuristic estimate");
+
+    assert!(whirlwind.components.iter().any(|component| {
+        component.name == "elite_encounter_slavers_aoe_response" && component.value > 0.0
+    }));
+}
+
+#[test]
+fn public_combat_heuristic_marks_reptomancer_specific_aoe_response() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 38;
+    run_state.boss_key = Some(EncounterId::DonuAndDeca);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Whirlwind, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let whirlwind = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Whirlwind
+        })
+        .expect("Whirlwind public combat heuristic estimate");
+
+    assert!(whirlwind.components.iter().any(|component| {
+        component.name == "elite_encounter_reptomancer_aoe_response" && component.value > 0.0
+    }));
+}
+
+#[test]
+fn public_combat_heuristic_marks_giant_head_specific_scaling_response() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 38;
+    run_state.boss_key = Some(EncounterId::DonuAndDeca);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Inflame, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let inflame = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Inflame
+        })
+        .expect("Inflame public combat heuristic estimate");
+
+    assert!(inflame.components.iter().any(|component| {
+        component.name == "elite_encounter_giant_head_scaling_response" && component.value > 0.0
+    }));
+}
+
+#[test]
+fn public_combat_heuristic_suppresses_elite_encounter_responses_when_route_has_no_elites() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    run_state.boss_key = Some(EncounterId::Collector);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Disarm, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_without_elites(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let disarm = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Disarm
+        })
+        .expect("Disarm public combat heuristic estimate");
+
+    assert!(!disarm.components.iter().any(|component| {
+        component.name.starts_with("elite_encounter_") || component.name.starts_with("elite_pool_")
+    }));
+}
+
+#[test]
 fn public_combat_heuristic_marks_long_fight_scaling() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 2;
@@ -1842,6 +1962,30 @@ fn route_with_combat_pressure() -> CardRewardRouteEvidenceV1 {
         need_heal: 0.1,
         can_take_elite: 0.6,
         avoid_damage: 0.4,
+        warnings: Vec::new(),
+    }
+}
+
+fn route_without_elites() -> CardRewardRouteEvidenceV1 {
+    CardRewardRouteEvidenceV1 {
+        route_policy: "test_route_no_elites".to_string(),
+        selected_route: Some(CardRewardSelectedRouteV1 {
+            next_x: 3,
+            next_y: 1,
+            min_fires: 1,
+            max_fires: 2,
+            first_fire_floor: Some(6),
+            min_elites: 0,
+            max_elites: 0,
+            min_early_pressure: 1,
+            max_early_pressure: 2,
+        }),
+        candidate_count: 2,
+        need_card_rewards: 0.7,
+        need_upgrade: 0.4,
+        need_heal: 0.2,
+        can_take_elite: 0.0,
+        avoid_damage: 0.7,
         warnings: Vec::new(),
     }
 }

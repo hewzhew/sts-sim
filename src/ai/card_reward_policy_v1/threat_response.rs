@@ -223,6 +223,38 @@ pub(crate) fn threat_response_delta(
         });
     }
 
+    if has_elite_encounter_threat(context, "Slavers", StrategyThreatTagV1::AoEValuable)
+        && candidate.facts.is_aoe
+    {
+        response.survival_delta += 0.05;
+        response.progress_delta += 0.08;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "elite_encounter_slavers_aoe_response".to_string(),
+            value: 0.08,
+        });
+    }
+
+    if has_elite_encounter_threat(context, "Reptomancer", StrategyThreatTagV1::AoEValuable)
+        && candidate.facts.is_aoe
+    {
+        response.survival_delta += 0.07;
+        response.progress_delta += 0.10;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "elite_encounter_reptomancer_aoe_response".to_string(),
+            value: 0.10,
+        });
+    }
+
+    if has_elite_encounter_threat(context, "GiantHead", StrategyThreatTagV1::LongFightScaling)
+        && scaling_candidate(candidate)
+    {
+        response.progress_delta += 0.10;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "elite_encounter_giant_head_scaling_response".to_string(),
+            value: 0.10,
+        });
+    }
+
     response
 }
 
