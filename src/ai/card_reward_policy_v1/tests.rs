@@ -1321,6 +1321,111 @@ fn public_combat_heuristic_uses_boss_threat_profile_for_strength_down() {
     assert!(!disarm.eligibility.usable_for_autopilot_gate);
 }
 
+#[test]
+fn public_combat_heuristic_marks_awakened_one_power_punish() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 40;
+    run_state.boss_key = Some(EncounterId::AwakenedOne);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Barricade, 0),
+            RewardCard::new(CardId::ShrugItOff, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let barricade = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Barricade
+        })
+        .expect("Barricade public combat heuristic estimate");
+
+    assert!(barricade.components.iter().any(|component| {
+        component.name == "boss_threat_power_punish_penalty" && component.value < 0.0
+    }));
+    assert!(!barricade.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
+fn public_combat_heuristic_marks_time_eater_card_play_limit() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 40;
+    run_state.boss_key = Some(EncounterId::TimeEater);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Anger, 0),
+            RewardCard::new(CardId::Carnage, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let anger = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Anger
+        })
+        .expect("Anger public combat heuristic estimate");
+    let carnage = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Carnage
+        })
+        .expect("Carnage public combat heuristic estimate");
+
+    assert!(anger.components.iter().any(|component| {
+        component.name == "boss_threat_card_play_limit_low_density_penalty" && component.value < 0.0
+    }));
+    assert!(carnage.components.iter().any(|component| {
+        component.name == "boss_threat_card_play_limit_dense_card_response" && component.value > 0.0
+    }));
+    assert!(!anger.eligibility.usable_for_autopilot_gate);
+    assert!(!carnage.eligibility.usable_for_autopilot_gate);
+}
+
+#[test]
+fn public_combat_heuristic_marks_slime_boss_split_burst() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.floor_num = 10;
+    run_state.boss_key = Some(EncounterId::SlimeBoss);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Carnage, 0),
+            RewardCard::new(CardId::Warcry, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let carnage = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Carnage
+        })
+        .expect("Carnage public combat heuristic estimate");
+
+    assert!(carnage.components.iter().any(|component| {
+        component.name == "boss_threat_split_burst_response" && component.value > 0.0
+    }));
+    assert!(!carnage.eligibility.usable_for_autopilot_gate);
+}
+
 fn test_value_estimate(
     index: usize,
     card: CardId,

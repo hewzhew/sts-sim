@@ -3,7 +3,6 @@ use super::types::{
     CardRewardValueEligibilityV1, CardRewardValueEstimateV1, CardRewardValueHorizonV1,
     CardRewardValueSourceV1, CardRewardValueStatusV1, DeckProfileV1,
 };
-use crate::ai::noncombat_strategy_v1::StrategyThreatTagV1;
 
 const FRONTLOAD_DENSITY_SCALE: f32 = 8.0;
 const BLOCK_DENSITY_SCALE: f32 = 7.0;
@@ -39,7 +38,7 @@ pub(crate) fn estimate_combat_probe_values(
                     / CONTROL_SCALE;
             let progress_control_delta =
                 candidate.facts.vulnerable.max(0) as f32 * PROGRESS_FROM_VULNERABLE;
-            let threat_response = threat_response_delta(context, candidate);
+            let threat_response = super::threat_response::threat_response_delta(context, candidate);
             let deck_size_drag = BASE_DECK_SIZE_DRAG / deck_size_after_pick(&context.deck);
             let survival_delta = scaled(frontload_density_delta, FRONTLOAD_DENSITY_SCALE)
                 * pressure
@@ -102,78 +101,6 @@ pub(crate) fn estimate_combat_probe_values(
             }
         })
         .collect()
-}
-
-#[derive(Default)]
-struct ThreatResponseDeltaV1 {
-    survival_delta: f32,
-    progress_delta: f32,
-    components: Vec<CardRewardValueComponentV1>,
-}
-
-fn threat_response_delta(
-    context: &CardRewardDecisionContextV1,
-    candidate: &super::types::CardRewardCandidateEvidenceV1,
-) -> ThreatResponseDeltaV1 {
-    let mut response = ThreatResponseDeltaV1::default();
-    let threats = &context.strategy.threats;
-
-    if threats
-        .tags
-        .contains(&StrategyThreatTagV1::HighIncomingDamage)
-    {
-        response.components.push(CardRewardValueComponentV1 {
-            name: "strategy_threat_high_incoming_damage".to_string(),
-            value: 1.0,
-        });
-    }
-
-    if threats
-        .tags
-        .contains(&StrategyThreatTagV1::StrengthDebuffValuable)
-        && candidate.facts.enemy_strength_down > 0
-    {
-        let value = candidate.facts.enemy_strength_down as f32 * 0.18;
-        response.survival_delta += value;
-        response.components.push(CardRewardValueComponentV1 {
-            name: "boss_threat_strength_down_response".to_string(),
-            value,
-        });
-    }
-
-    if threats.tags.contains(&StrategyThreatTagV1::WeakValuable) && candidate.facts.weak > 0 {
-        let value = candidate.facts.weak as f32 * 0.08;
-        response.survival_delta += value;
-        response.components.push(CardRewardValueComponentV1 {
-            name: "boss_threat_weak_response".to_string(),
-            value,
-        });
-    }
-
-    if threats.tags.contains(&StrategyThreatTagV1::AoEValuable) && candidate.facts.is_aoe {
-        response.progress_delta += 0.10;
-        response.components.push(CardRewardValueComponentV1 {
-            name: "boss_threat_aoe_response".to_string(),
-            value: 0.10,
-        });
-    }
-
-    if threats
-        .tags
-        .contains(&StrategyThreatTagV1::ArtifactBlocksDebuff)
-        && (candidate.facts.weak > 0
-            || candidate.facts.vulnerable > 0
-            || candidate.facts.enemy_strength_down > 0)
-    {
-        response.survival_delta -= 0.12;
-        response.progress_delta -= 0.04;
-        response.components.push(CardRewardValueComponentV1 {
-            name: "boss_threat_artifact_debuff_penalty".to_string(),
-            value: -0.12,
-        });
-    }
-
-    response
 }
 
 fn density_delta(current_total: i32, added: i32, deck: &DeckProfileV1) -> f32 {

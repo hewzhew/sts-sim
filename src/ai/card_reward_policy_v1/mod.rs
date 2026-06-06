@@ -9,6 +9,7 @@ mod profile;
 mod replay;
 mod route_risk;
 mod strategy_package_value;
+mod threat_response;
 mod types;
 mod value;
 
