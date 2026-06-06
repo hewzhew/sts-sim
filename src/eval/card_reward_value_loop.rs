@@ -574,46 +574,8 @@ mod tests {
             )],
             None,
         );
-        let calibration = CardRewardOutcomeCalibrationV1 {
-            schema_name: CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME.to_string(),
-            schema_version: CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION,
-            label_role: "diagnostic_not_teacher_label".to_string(),
-            trainable_as_action_label: false,
-            policy_quality_claim: false,
-            estimator_kind: "selected_outcome_card_id_prior_v1".to_string(),
-            provenance: Default::default(),
-            total_examples: 4,
-            usable_outcome_examples: 4,
-            missing_outcome_examples: 0,
-            global: CardRewardOutcomeCalibrationGlobalV1 {
-                selected_count: 4,
-                outcome_attached_count: 4,
-                mean_next_combat_hp_loss: Some(12.0),
-                picked_card_drawn_observation_count: 0,
-                mean_picked_card_drawn_count: None,
-                picked_card_played_observation_count: 0,
-                mean_picked_card_played_count: None,
-            },
-            card_id_buckets: vec![CardRewardOutcomeCalibrationBucketV1 {
-                bucket_key: "card_id:TwinStrike".to_string(),
-                card_id: "TwinStrike".to_string(),
-                selected_count: 4,
-                outcome_attached_count: 4,
-                missing_outcome_count: 0,
-                mean_next_combat_hp_loss: Some(6.0),
-                hp_loss_bucket_counts: Vec::new(),
-                upgraded_count: 0,
-                removed_count: 0,
-                picked_card_drawn_observation_count: 0,
-                mean_picked_card_drawn_count: None,
-                picked_card_played_observation_count: 0,
-                mean_picked_card_played_count: None,
-                confidence: 0.8,
-                uncertainty: 0.2,
-                usable_for_value_estimate: true,
-                usable_for_autopilot_gate: false,
-            }],
-        };
+        let mut calibration = test_calibration_with_provenance(CardId::TwinStrike, false, false);
+        calibration.provenance = Default::default();
 
         let estimates = estimate_card_reward_values_from_calibration_v1(&context, &calibration);
 
@@ -673,24 +635,9 @@ mod tests {
             test_card_reward_example(CardId::TwinStrike, 521, 8),
             test_card_reward_example(CardId::TwinStrike, 522, 4),
         ];
-        examples[0]
-            .outcome
-            .as_mut()
-            .and_then(|outcome| outcome.card_reward.as_mut())
-            .expect("test outcome should contain card reward")
-            .picked_card_played_count = Some(2);
-        examples[1]
-            .outcome
-            .as_mut()
-            .and_then(|outcome| outcome.card_reward.as_mut())
-            .expect("test outcome should contain card reward")
-            .picked_card_played_count = Some(0);
-        examples[1]
-            .outcome
-            .as_mut()
-            .and_then(|outcome| outcome.card_reward.as_mut())
-            .expect("test outcome should contain card reward")
-            .picked_card_drawn_count = Some(1);
+        test_card_reward_outcome_mut(&mut examples[0]).picked_card_played_count = Some(2);
+        test_card_reward_outcome_mut(&mut examples[1]).picked_card_played_count = Some(0);
+        test_card_reward_outcome_mut(&mut examples[1]).picked_card_drawn_count = Some(1);
 
         let calibration = calibrate_card_reward_outcomes_v1(&examples);
         let bucket = calibration
@@ -715,18 +662,10 @@ mod tests {
             test_card_reward_example(CardId::TwinStrike, 521, 8),
             test_card_reward_example(CardId::Cleave, 522, 4),
         ];
-        let first = examples[0]
-            .outcome
-            .as_mut()
-            .and_then(|outcome| outcome.card_reward.as_mut())
-            .expect("test outcome should contain card reward");
+        let first = test_card_reward_outcome_mut(&mut examples[0]);
         first.picked_card_played_count = Some(2);
         first.picked_card_upgraded_before_boss = Some(true);
-        let second = examples[1]
-            .outcome
-            .as_mut()
-            .and_then(|outcome| outcome.card_reward.as_mut())
-            .expect("test outcome should contain card reward");
+        let second = test_card_reward_outcome_mut(&mut examples[1]);
         second.picked_card_drawn_count = Some(1);
         second.picked_card_removed_later = Some(false);
 
@@ -907,6 +846,16 @@ mod tests {
         calibration.provenance.short_horizon_autopilot_gate_approved = short_horizon_approved;
         calibration.card_id_buckets[0].usable_for_autopilot_gate = bucket_gate_eligible;
         calibration
+    }
+
+    fn test_card_reward_outcome_mut(
+        example: &mut CardRewardValueLoopExampleV1,
+    ) -> &mut CardRewardOutcomeAttachmentV1 {
+        example
+            .outcome
+            .as_mut()
+            .and_then(|outcome| outcome.card_reward.as_mut())
+            .expect("test outcome should contain card reward")
     }
 
     fn test_card_reward_record(card_id: CardId, candidate_id: &str) -> NonCombatDecisionRecordV1 {

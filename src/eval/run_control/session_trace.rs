@@ -955,23 +955,7 @@ mod tests {
 
     #[test]
     fn recorder_records_stopped_noncombat_policy_boundary_without_human_annotation() {
-        let mut session = RunControlSession::new(RunControlConfig::default());
-        session.run_state.event_state = None;
-        let mut reward = crate::state::rewards::RewardState::new();
-        reward.items = vec![crate::state::rewards::RewardItem::Card {
-            cards: vec![
-                crate::state::rewards::RewardCard::new(
-                    crate::content::cards::CardId::PommelStrike,
-                    0,
-                ),
-                crate::state::rewards::RewardCard::new(
-                    crate::content::cards::CardId::ShrugItOff,
-                    0,
-                ),
-                crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Armaments, 0),
-            ],
-        }];
-        session.engine_state = EngineState::RewardScreen(reward);
+        let mut session = test_session_at_ambiguous_card_reward();
         let path =
             unique_temp_dir("session_trace_stopped_noncombat_policy_boundary").join("trace.json");
         let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
@@ -1213,23 +1197,7 @@ mod tests {
 
     #[test]
     fn recorder_does_not_attach_outcome_for_stopped_noncombat_policy() {
-        let mut session = RunControlSession::new(RunControlConfig::default());
-        session.run_state.event_state = None;
-        let mut reward = crate::state::rewards::RewardState::new();
-        reward.items = vec![crate::state::rewards::RewardItem::Card {
-            cards: vec![
-                crate::state::rewards::RewardCard::new(
-                    crate::content::cards::CardId::PommelStrike,
-                    0,
-                ),
-                crate::state::rewards::RewardCard::new(
-                    crate::content::cards::CardId::ShrugItOff,
-                    0,
-                ),
-                crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Armaments, 0),
-            ],
-        }];
-        session.engine_state = EngineState::RewardScreen(reward);
+        let mut session = test_session_at_ambiguous_card_reward();
         let path = unique_temp_dir("session_trace_stopped_noncombat_outcome").join("trace.json");
         let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
         let outcome = session
@@ -1364,6 +1332,27 @@ mod tests {
         let mut session = RunControlSession::new(RunControlConfig::default());
         session.run_state.event_state = None;
         session.engine_state = EngineState::MapNavigation;
+        session
+    }
+
+    fn test_session_at_ambiguous_card_reward() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        let mut reward = crate::state::rewards::RewardState::new();
+        reward.items = vec![crate::state::rewards::RewardItem::Card {
+            cards: vec![
+                crate::state::rewards::RewardCard::new(
+                    crate::content::cards::CardId::PommelStrike,
+                    0,
+                ),
+                crate::state::rewards::RewardCard::new(
+                    crate::content::cards::CardId::ShrugItOff,
+                    0,
+                ),
+                crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Armaments, 0),
+            ],
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
         session
     }
 

@@ -530,6 +530,40 @@ mod tests {
         session
     }
 
+    fn session_with_combat_flags(is_boss_fight: bool, is_elite_fight: bool) -> RunControlSession {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.meta.is_boss_fight = is_boss_fight;
+        combat.meta.is_elite_fight = is_elite_fight;
+        session_with_active_combat(combat)
+    }
+
+    fn options_with_hp_loss(max_hp_loss: RunControlHpLossLimit) -> RunControlSearchCombatOptions {
+        RunControlSearchCombatOptions {
+            max_hp_loss: Some(max_hp_loss),
+            ..RunControlSearchCombatOptions::default()
+        }
+    }
+
+    fn options_with_potion_budget(
+        potion_policy: CombatSearchV2PotionPolicy,
+        max_potions_used: u32,
+    ) -> RunControlSearchCombatOptions {
+        RunControlSearchCombatOptions {
+            potion_policy: Some(potion_policy),
+            max_potions_used: Some(max_potions_used),
+            ..RunControlSearchCombatOptions::default()
+        }
+    }
+
+    fn assert_potion_budget(
+        options: RunControlSearchCombatOptions,
+        expected_policy: Option<CombatSearchV2PotionPolicy>,
+        expected_max_used: Option<u32>,
+    ) {
+        assert_eq!(options.potion_policy, expected_policy);
+        assert_eq!(options.max_potions_used, expected_max_used);
+    }
+
     #[test]
     fn search_evidence_path_does_not_overwrite_existing_file() {
         let root = std::env::temp_dir().join(format!(
@@ -603,20 +637,14 @@ mod tests {
         assert_eq!(
             effective_hp_loss_limit(
                 &session,
-                &RunControlSearchCombatOptions {
-                    max_hp_loss: Some(RunControlHpLossLimit::Limit(4)),
-                    ..RunControlSearchCombatOptions::default()
-                }
+                &options_with_hp_loss(RunControlHpLossLimit::Limit(4))
             ),
             Some(4)
         );
         assert_eq!(
             search_config(
                 &session,
-                RunControlSearchCombatOptions {
-                    max_hp_loss: Some(RunControlHpLossLimit::Limit(4)),
-                    ..RunControlSearchCombatOptions::default()
-                }
+                options_with_hp_loss(RunControlHpLossLimit::Limit(4))
             )
             .stop_on_win_hp_loss_at_most,
             Some(4)
@@ -624,20 +652,14 @@ mod tests {
         assert_eq!(
             effective_hp_loss_limit(
                 &session,
-                &RunControlSearchCombatOptions {
-                    max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-                    ..RunControlSearchCombatOptions::default()
-                }
+                &options_with_hp_loss(RunControlHpLossLimit::Unlimited)
             ),
             None
         );
         assert_eq!(
             search_config(
                 &session,
-                RunControlSearchCombatOptions {
-                    max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-                    ..RunControlSearchCombatOptions::default()
-                }
+                options_with_hp_loss(RunControlHpLossLimit::Unlimited)
             )
             .stop_on_win_hp_loss_at_most,
             None
@@ -697,66 +719,51 @@ mod tests {
 
     #[test]
     fn high_stakes_search_options_enables_semantic_potions_for_boss_manual_search() {
-        let mut combat = crate::test_support::blank_test_combat();
-        combat.meta.is_boss_fight = true;
-        let session = session_with_active_combat(combat);
+        let session = session_with_combat_flags(true, false);
 
         let options =
             high_stakes_search_options(&session, RunControlSearchCombatOptions::default());
 
-        assert_eq!(
-            options.potion_policy,
-            Some(CombatSearchV2PotionPolicy::SemanticBudgeted)
+        assert_potion_budget(
+            options,
+            Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
+            Some(2),
         );
-        assert_eq!(options.max_potions_used, Some(2));
     }
 
     #[test]
     fn high_stakes_search_options_enables_single_semantic_potion_for_elite_manual_search() {
-        let mut combat = crate::test_support::blank_test_combat();
-        combat.meta.is_elite_fight = true;
-        let session = session_with_active_combat(combat);
+        let session = session_with_combat_flags(false, true);
 
         let options =
             high_stakes_search_options(&session, RunControlSearchCombatOptions::default());
 
-        assert_eq!(
-            options.potion_policy,
-            Some(CombatSearchV2PotionPolicy::SemanticBudgeted)
+        assert_potion_budget(
+            options,
+            Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
+            Some(1),
         );
-        assert_eq!(options.max_potions_used, Some(1));
     }
 
     #[test]
     fn high_stakes_search_options_keeps_ordinary_manual_search_no_potion_default() {
-        let session = session_with_active_combat(crate::test_support::blank_test_combat());
+        let session = session_with_combat_flags(false, false);
 
         let options =
             high_stakes_search_options(&session, RunControlSearchCombatOptions::default());
 
-        assert_eq!(options.potion_policy, None);
-        assert_eq!(options.max_potions_used, None);
+        assert_potion_budget(options, None, None);
     }
 
     #[test]
     fn high_stakes_search_options_respects_user_potion_override() {
-        let mut combat = crate::test_support::blank_test_combat();
-        combat.meta.is_boss_fight = true;
-        let session = session_with_active_combat(combat);
+        let session = session_with_combat_flags(true, false);
 
         let options = high_stakes_search_options(
             &session,
-            RunControlSearchCombatOptions {
-                potion_policy: Some(CombatSearchV2PotionPolicy::Never),
-                max_potions_used: Some(0),
-                ..RunControlSearchCombatOptions::default()
-            },
+            options_with_potion_budget(CombatSearchV2PotionPolicy::Never, 0),
         );
 
-        assert_eq!(
-            options.potion_policy,
-            Some(CombatSearchV2PotionPolicy::Never)
-        );
-        assert_eq!(options.max_potions_used, Some(0));
+        assert_potion_budget(options, Some(CombatSearchV2PotionPolicy::Never), Some(0));
     }
 }
