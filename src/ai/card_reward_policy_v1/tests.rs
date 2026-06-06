@@ -1322,6 +1322,37 @@ fn public_combat_heuristic_uses_boss_threat_profile_for_strength_down() {
 }
 
 #[test]
+fn public_combat_heuristic_does_not_mix_elite_pool_multihit_into_champ_boss_response() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 20;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Disarm, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let disarm = decision
+        .value_estimates
+        .iter()
+        .find(|estimate| {
+            estimate.source == CardRewardValueSourceV1::PublicCombatHeuristic
+                && estimate.card == CardId::Disarm
+        })
+        .expect("Disarm public combat heuristic estimate");
+
+    assert!(!disarm
+        .components
+        .iter()
+        .any(|component| { component.name == "boss_threat_multi_hit_strength_down_response" }));
+}
+
+#[test]
 fn public_combat_heuristic_marks_awakened_one_power_punish() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 3;

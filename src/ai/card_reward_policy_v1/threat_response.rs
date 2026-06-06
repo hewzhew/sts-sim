@@ -1,4 +1,6 @@
-use crate::ai::noncombat_strategy_v1::{StrategyPlanEffectV1, StrategyThreatTagV1};
+use crate::ai::noncombat_strategy_v1::{
+    StrategyPlanEffectV1, StrategyThreatSourceV1, StrategyThreatTagV1,
+};
 use crate::content::cards::CardType;
 
 use super::types::{
@@ -26,7 +28,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::StrengthDebuffValuable)
+    if has_boss_threat(context, StrategyThreatTagV1::StrengthDebuffValuable)
         && candidate.facts.enemy_strength_down > 0
     {
         let value = candidate.facts.enemy_strength_down as f32 * 0.18;
@@ -37,7 +39,8 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::MultiHit) && candidate.facts.enemy_strength_down > 0
+    if has_boss_threat(context, StrategyThreatTagV1::MultiHit)
+        && candidate.facts.enemy_strength_down > 0
     {
         let value = candidate.facts.enemy_strength_down as f32 * 0.12;
         response.survival_delta += value;
@@ -47,7 +50,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::WeakValuable) && candidate.facts.weak > 0 {
+    if has_boss_threat(context, StrategyThreatTagV1::WeakValuable) && candidate.facts.weak > 0 {
         let value = candidate.facts.weak as f32 * 0.08;
         response.survival_delta += value;
         response.components.push(CardRewardValueComponentV1 {
@@ -56,7 +59,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::AoEValuable) && candidate.facts.is_aoe {
+    if has_boss_threat(context, StrategyThreatTagV1::AoEValuable) && candidate.facts.is_aoe {
         response.progress_delta += 0.10;
         response.components.push(CardRewardValueComponentV1 {
             name: "boss_threat_aoe_response".to_string(),
@@ -64,7 +67,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::StatusFlood)
+    if has_boss_threat(context, StrategyThreatTagV1::StatusFlood)
         && candidate
             .facts
             .pick_dependencies
@@ -78,7 +81,9 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::LongFightScaling) && scaling_candidate(candidate) {
+    if has_boss_threat(context, StrategyThreatTagV1::LongFightScaling)
+        && scaling_candidate(candidate)
+    {
         response.progress_delta += 0.12;
         response.components.push(CardRewardValueComponentV1 {
             name: "boss_threat_long_fight_scaling_response".to_string(),
@@ -86,7 +91,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::SetupWindow) && setup_candidate(candidate) {
+    if has_boss_threat(context, StrategyThreatTagV1::SetupWindow) && setup_candidate(candidate) {
         response.progress_delta += 0.10;
         response.components.push(CardRewardValueComponentV1 {
             name: "boss_threat_setup_window_response".to_string(),
@@ -94,7 +99,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::SkillPunish)
+    if has_elite_pool_threat(context, StrategyThreatTagV1::SkillPunish)
         && candidate.facts.card_type == CardType::Skill
     {
         response.survival_delta -= 0.05;
@@ -105,7 +110,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::ArtifactBlocksDebuff)
+    if has_boss_threat(context, StrategyThreatTagV1::ArtifactBlocksDebuff)
         && (candidate.facts.weak > 0
             || candidate.facts.vulnerable > 0
             || candidate.facts.enemy_strength_down > 0)
@@ -118,7 +123,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::PowerPunish)
+    if has_boss_threat(context, StrategyThreatTagV1::PowerPunish)
         && candidate.facts.card_type == CardType::Power
     {
         response.survival_delta -= 0.08;
@@ -129,7 +134,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_threat(context, StrategyThreatTagV1::CardPlayLimit) {
+    if has_boss_threat(context, StrategyThreatTagV1::CardPlayLimit) {
         if low_density_card_play(candidate) {
             response.survival_delta -= 0.06;
             response.progress_delta -= 0.06;
@@ -147,13 +152,35 @@ pub(crate) fn threat_response_delta(
         }
     }
 
-    if has_threat(context, StrategyThreatTagV1::SplitThreshold)
+    if has_boss_threat(context, StrategyThreatTagV1::SplitThreshold)
         && candidate.facts.damage.total_damage >= 15
     {
         response.progress_delta += 0.12;
         response.components.push(CardRewardValueComponentV1 {
             name: "boss_threat_split_burst_response".to_string(),
             value: 0.12,
+        });
+    }
+
+    if has_elite_pool_threat(context, StrategyThreatTagV1::StrengthDebuffValuable)
+        && candidate.facts.enemy_strength_down > 0
+    {
+        let value = candidate.facts.enemy_strength_down as f32 * 0.08;
+        response.survival_delta += value;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "elite_pool_strength_down_response".to_string(),
+            value,
+        });
+    }
+
+    if has_elite_pool_threat(context, StrategyThreatTagV1::MultiHit)
+        && candidate.facts.enemy_strength_down > 0
+    {
+        let value = candidate.facts.enemy_strength_down as f32 * 0.06;
+        response.survival_delta += value;
+        response.components.push(CardRewardValueComponentV1 {
+            name: "elite_pool_multi_hit_strength_down_response".to_string(),
+            value,
         });
     }
 
@@ -237,6 +264,31 @@ fn push_unique(tags: &mut Vec<StrategyThreatTagV1>, tag: StrategyThreatTagV1) {
 
 fn has_threat(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
     context.strategy.threats.tags.contains(&tag)
+}
+
+fn has_boss_threat(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
+    context
+        .strategy
+        .threats
+        .sources
+        .iter()
+        .any(|source| source.source == StrategyThreatSourceV1::ActBoss && source.tag == tag)
+}
+
+fn has_elite_pool_threat(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
+    route_allows_elite_pool_response(context)
+        && context.strategy.threats.sources.iter().any(|source| {
+            source.source == StrategyThreatSourceV1::ActElitePool && source.tag == tag
+        })
+}
+
+fn route_allows_elite_pool_response(context: &CardRewardDecisionContextV1) -> bool {
+    context
+        .route
+        .as_ref()
+        .and_then(|route| route.selected_route.as_ref())
+        .map(|route| route.max_elites > 0)
+        .unwrap_or(true)
 }
 
 fn low_density_card_play(candidate: &CardRewardCandidateEvidenceV1) -> bool {
