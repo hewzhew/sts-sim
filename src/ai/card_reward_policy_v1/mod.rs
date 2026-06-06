@@ -8,6 +8,7 @@ mod policy;
 mod profile;
 mod replay;
 mod route_risk;
+mod strategy_package_threat_alignment;
 mod strategy_package_value;
 mod threat_response;
 mod types;
