@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -146,6 +146,33 @@ fn render_compact_report(report: &BranchExperimentReportV1) -> String {
                 .to_string(),
         );
     }
+    if !report.reward_option_portfolios.is_empty() {
+        lines.push("".to_string());
+        lines.push("Reward option portfolios:".to_string());
+        let summarized = summarize_reward_option_portfolios(&report.reward_option_portfolios);
+        for summary in summarized.iter().take(4) {
+            lines.push(format!(
+                "  {} depth {}: kept {}/{} kept=[{}] pruned=[{}]{}",
+                summary.boundary_title,
+                summary.depth,
+                summary.selected_count,
+                summary.original_count,
+                summary.kept,
+                summary.pruned,
+                if summary.count > 1 {
+                    format!(" x{}", summary.count)
+                } else {
+                    String::new()
+                },
+            ));
+        }
+        if summarized.len() > 4 {
+            lines.push(format!(
+                "  ... {} more reward option portfolio event(s); use --json or --out for full detail",
+                summarized.len() - 4
+            ));
+        }
+    }
     lines.push("".to_string());
     lines.push("Frontier groups:".to_string());
     for group in report.frontier_groups.iter().take(8) {
@@ -185,6 +212,62 @@ fn render_compact_report(report: &BranchExperimentReportV1) -> String {
         ));
     }
     lines.join("\n")
+}
+
+#[derive(Clone, Debug)]
+struct RewardOptionPortfolioSummary {
+    count: usize,
+    depth: usize,
+    boundary_title: String,
+    original_count: usize,
+    selected_count: usize,
+    kept: String,
+    pruned: String,
+}
+
+fn summarize_reward_option_portfolios(
+    portfolios: &[sts_simulator::eval::branch_experiment::BranchExperimentRewardOptionPortfolioV1],
+) -> Vec<RewardOptionPortfolioSummary> {
+    let mut groups = BTreeMap::<String, RewardOptionPortfolioSummary>::new();
+    for portfolio in portfolios {
+        let kept = render_reward_option_entries(&portfolio.selected_options);
+        let pruned = render_reward_option_entries(&portfolio.pruned_options);
+        let key = format!(
+            "{}|{}|{}|{}|{}|{}",
+            portfolio.boundary_title,
+            portfolio.depth,
+            portfolio.original_count,
+            portfolio.selected_count,
+            kept,
+            pruned
+        );
+        groups
+            .entry(key)
+            .and_modify(|summary| summary.count += 1)
+            .or_insert_with(|| RewardOptionPortfolioSummary {
+                count: 1,
+                depth: portfolio.depth,
+                boundary_title: portfolio.boundary_title.clone(),
+                original_count: portfolio.original_count,
+                selected_count: portfolio.selected_count,
+                kept,
+                pruned,
+            });
+    }
+    groups.into_values().collect()
+}
+
+fn render_reward_option_entries(
+    entries: &[sts_simulator::eval::branch_experiment::BranchExperimentRewardOptionPortfolioEntryV1],
+) -> String {
+    if entries.is_empty() {
+        return "-".to_string();
+    }
+    entries
+        .iter()
+        .map(|entry| format!("{}:{}", entry.label, entry.semantic_class))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn ordered_branch_examples(
@@ -398,6 +481,10 @@ fn canonical_player_class(value: &str) -> Result<&'static str, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::eval::branch_experiment::{
+        BranchExperimentReportV1, BranchExperimentRewardOptionPortfolioEntryV1,
+        BranchExperimentRewardOptionPortfolioV1,
+    };
 
     #[test]
     fn parses_unlimited_hp_loss_limit() {
@@ -417,9 +504,74 @@ mod tests {
 
     #[test]
     fn compact_report_is_human_sized() {
-        let report = sts_simulator::eval::branch_experiment::BranchExperimentReportV1 {
+        let report = empty_report();
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("BranchExperimentV1 seed=1"));
+        assert!(!rendered.trim_start().starts_with('{'));
+    }
+
+    #[test]
+    fn compact_report_summarizes_reward_option_portfolio_pruning() {
+        let mut report = empty_report();
+        report.reward_option_portfolios = vec![portfolio_event(
+            0,
+            "Reward Screen",
+            vec![
+                portfolio_entry("rp 0", "Shrug It Off", "stabilizer:defense1:draw_energy1"),
+                portfolio_entry("rp 2", "Body Slam", "payoff:block_engine"),
+            ],
+            vec![portfolio_entry(
+                "rp 1",
+                "Cleave",
+                "pure_transition_frontload",
+            )],
+        )];
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("Reward option portfolios:"));
+        assert!(rendered.contains("Reward Screen depth 0: kept 2/3"));
+        assert!(rendered.contains("pruned=[Cleave:pure_transition_frontload]"));
+    }
+
+    #[test]
+    fn compact_report_groups_duplicate_reward_option_portfolio_events() {
+        let event = portfolio_event(
+            1,
+            "Card Reward",
+            vec![portfolio_entry(
+                "rp 0",
+                "Clash",
+                "pure_transition_frontload",
+            )],
+            vec![portfolio_entry(
+                "rp 1",
+                "Twin Strike",
+                "pure_transition_frontload",
+            )],
+        );
+        let mut duplicate = event.clone();
+        duplicate.frontier_key = "frontier-b".to_string();
+        let mut report = empty_report();
+        report.reward_option_portfolios = vec![event, duplicate];
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("x2"));
+        assert_eq!(
+            rendered
+                .matches("Twin Strike:pure_transition_frontload")
+                .count(),
+            1
+        );
+    }
+
+    fn empty_report() -> BranchExperimentReportV1 {
+        BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
-            schema_version: 4,
+            schema_version: 5,
             label_role: "diagnostic_not_teacher_label".to_string(),
             policy_quality_claim: false,
             seed: 1,
@@ -431,13 +583,39 @@ mod tests {
             wall_limit_hit: false,
             elapsed_wall_ms: 0,
             pruned_branch_count: 0,
+            reward_option_portfolios: Vec::new(),
             frontier_groups: Vec::new(),
             branches: Vec::new(),
-        };
+        }
+    }
 
-        let rendered = render_compact_report(&report);
+    fn portfolio_event(
+        depth: usize,
+        boundary_title: &str,
+        selected_options: Vec<BranchExperimentRewardOptionPortfolioEntryV1>,
+        pruned_options: Vec<BranchExperimentRewardOptionPortfolioEntryV1>,
+    ) -> BranchExperimentRewardOptionPortfolioV1 {
+        BranchExperimentRewardOptionPortfolioV1 {
+            depth,
+            frontier_key: "frontier".to_string(),
+            boundary_title: boundary_title.to_string(),
+            max_reward_options_per_branch: 2,
+            original_count: selected_options.len() + pruned_options.len(),
+            selected_count: selected_options.len(),
+            selected_options,
+            pruned_options,
+        }
+    }
 
-        assert!(rendered.contains("BranchExperimentV1 seed=1"));
-        assert!(!rendered.trim_start().starts_with('{'));
+    fn portfolio_entry(
+        command: &str,
+        label: &str,
+        semantic_class: &str,
+    ) -> BranchExperimentRewardOptionPortfolioEntryV1 {
+        BranchExperimentRewardOptionPortfolioEntryV1 {
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: semantic_class.to_string(),
+        }
     }
 }

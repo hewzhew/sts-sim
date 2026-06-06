@@ -29,7 +29,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 4;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -88,8 +88,30 @@ pub struct BranchExperimentReportV1 {
     pub wall_limit_hit: bool,
     pub elapsed_wall_ms: u64,
     pub pruned_branch_count: usize,
+    pub reward_option_portfolios: Vec<BranchExperimentRewardOptionPortfolioV1>,
     pub frontier_groups: Vec<BranchExperimentFrontierGroupV1>,
     pub branches: Vec<BranchExperimentBranchReportV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentRewardOptionPortfolioV1 {
+    pub depth: usize,
+    pub frontier_key: String,
+    pub boundary_title: String,
+    pub max_reward_options_per_branch: usize,
+    pub original_count: usize,
+    pub selected_count: usize,
+    pub selected_options: Vec<BranchExperimentRewardOptionPortfolioEntryV1>,
+    pub pruned_options: Vec<BranchExperimentRewardOptionPortfolioEntryV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentRewardOptionPortfolioEntryV1 {
+    pub command: String,
+    pub label: String,
+    pub semantic_class: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -233,6 +255,7 @@ fn run_branch_experiment_from_session(
     let mut frontier_group_limit_hit = false;
     let mut wall_limit_hit = false;
     let mut pruned_branch_count = 0usize;
+    let mut reward_option_portfolios = Vec::new();
 
     for depth in 0..config.max_depth {
         if experiment_wall_limit_hit(started_at, config) {
@@ -265,7 +288,12 @@ fn run_branch_experiment_from_session(
                 next.push(branch);
                 continue;
             };
-            let options = select_card_reward_branch_options(options, config);
+            let option_selection =
+                select_card_reward_branch_options(options, config, depth, &branch.session);
+            if let Some(portfolio) = option_selection.portfolio {
+                reward_option_portfolios.push(portfolio);
+            }
+            let options = option_selection.options;
             if options.is_empty() {
                 branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
                 branch.stop_reason = "card reward option portfolio is empty".to_string();
@@ -359,6 +387,7 @@ fn run_branch_experiment_from_session(
         wall_limit_hit,
         elapsed_wall_ms: started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
         pruned_branch_count,
+        reward_option_portfolios,
         frontier_groups: frontier_groups(&branch_reports),
         branches: branch_reports,
     }
@@ -522,6 +551,12 @@ struct CardRewardBranchOption {
     upgrades: u8,
 }
 
+#[derive(Clone, Debug)]
+struct CardRewardBranchOptionSelection {
+    options: Vec<CardRewardBranchOption>,
+    portfolio: Option<BranchExperimentRewardOptionPortfolioV1>,
+}
+
 fn card_reward_branch_options(session: &RunControlSession) -> Option<Vec<CardRewardBranchOption>> {
     let cards = active_or_visible_reward_cards(session)?;
     let options = cards
@@ -543,13 +578,34 @@ fn card_reward_branch_options(session: &RunControlSession) -> Option<Vec<CardRew
 fn select_card_reward_branch_options(
     options: Vec<CardRewardBranchOption>,
     config: &BranchExperimentConfigV1,
-) -> Vec<CardRewardBranchOption> {
+    depth: usize,
+    session: &RunControlSession,
+) -> CardRewardBranchOptionSelection {
     let Some(limit) = config.max_reward_options_per_branch else {
-        return options;
+        return CardRewardBranchOptionSelection {
+            options,
+            portfolio: None,
+        };
     };
-    let limit = limit.min(options.len());
-    if limit == 0 || options.len() <= limit {
-        return options.into_iter().take(limit).collect();
+    let frontier = branch_frontier(session);
+    select_card_reward_branch_options_with_limit(
+        options,
+        limit,
+        Some((depth, frontier.key, frontier.boundary_title)),
+    )
+}
+
+fn select_card_reward_branch_options_with_limit(
+    options: Vec<CardRewardBranchOption>,
+    limit: usize,
+    portfolio_context: Option<(usize, String, String)>,
+) -> CardRewardBranchOptionSelection {
+    let capped_limit = limit.min(options.len());
+    if options.len() <= capped_limit {
+        return CardRewardBranchOptionSelection {
+            options,
+            portfolio: None,
+        };
     }
 
     let mut annotated = options
@@ -584,11 +640,68 @@ fn select_card_reward_branch_options(
     }
 
     selected.sort_unstable();
-    options
+    let selected_indices = selected.iter().copied().collect::<BTreeSet<_>>();
+    let portfolio = portfolio_context.map(|(depth, frontier_key, boundary_title)| {
+        reward_option_portfolio_report(
+            depth,
+            frontier_key,
+            boundary_title,
+            limit,
+            &options,
+            &annotated,
+            &selected_indices,
+        )
+    });
+    let options = options
         .into_iter()
         .enumerate()
-        .filter_map(|(index, option)| selected.contains(&index).then_some(option))
-        .collect()
+        .filter_map(|(index, option)| selected_indices.contains(&index).then_some(option))
+        .collect();
+    CardRewardBranchOptionSelection { options, portfolio }
+}
+
+fn reward_option_portfolio_report(
+    depth: usize,
+    frontier_key: String,
+    boundary_title: String,
+    max_reward_options_per_branch: usize,
+    options: &[CardRewardBranchOption],
+    annotated: &[(usize, usize, String)],
+    selected_indices: &BTreeSet<usize>,
+) -> BranchExperimentRewardOptionPortfolioV1 {
+    let class_by_index = annotated
+        .iter()
+        .map(|(index, _, class_key)| (*index, class_key.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut selected_options = Vec::new();
+    let mut pruned_options = Vec::new();
+
+    for (index, option) in options.iter().enumerate() {
+        let entry = BranchExperimentRewardOptionPortfolioEntryV1 {
+            command: option.command.clone(),
+            label: option.label.clone(),
+            semantic_class: class_by_index
+                .get(&index)
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string()),
+        };
+        if selected_indices.contains(&index) {
+            selected_options.push(entry);
+        } else {
+            pruned_options.push(entry);
+        }
+    }
+
+    BranchExperimentRewardOptionPortfolioV1 {
+        depth,
+        frontier_key,
+        boundary_title,
+        max_reward_options_per_branch,
+        original_count: options.len(),
+        selected_count: selected_options.len(),
+        selected_options,
+        pruned_options,
+    }
 }
 
 fn reward_option_semantic_class(profile: &CardRewardSemanticProfileV1) -> (usize, String) {
@@ -1028,6 +1141,44 @@ mod tests {
             1,
             "pure transition options should be represented, not exhaustively expanded"
         );
+    }
+
+    #[test]
+    fn branch_experiment_reports_reward_option_portfolio_pruning() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut reward = RewardState::new();
+        reward.pending_card_choice = Some(vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::Cleave, 0),
+            RewardCard::new(CardId::ShrugItOff, 0),
+        ]);
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let report = run_branch_experiment_from_session(
+            session,
+            &BranchExperimentConfigV1 {
+                max_depth: 1,
+                max_branches: 4,
+                max_reward_options_per_branch: Some(2),
+                auto_max_operations: 0,
+                ..BranchExperimentConfigV1::default()
+            },
+        );
+
+        assert_eq!(report.reward_option_portfolios.len(), 1);
+        let portfolio = &report.reward_option_portfolios[0];
+        assert_eq!(portfolio.depth, 0);
+        assert_eq!(portfolio.original_count, 3);
+        assert_eq!(portfolio.selected_count, 2);
+        assert_eq!(portfolio.pruned_options.len(), 1);
+        assert!(portfolio
+            .selected_options
+            .iter()
+            .any(|option| option.label == "Shrug It Off"));
+        assert!(portfolio
+            .pruned_options
+            .iter()
+            .any(|option| option.semantic_class == "pure_transition_frontload"));
     }
 
     #[test]
