@@ -359,14 +359,14 @@ fn retention_lane_weights(
 ) -> &'static [(BranchRetentionSlotV1, usize)] {
     match profile {
         BranchRetentionBudgetProfileV1::Balanced => &[
-            (BranchRetentionSlotV1::Package, 3),
-            (BranchRetentionSlotV1::EngineSetup, 2),
+            (BranchRetentionSlotV1::Package, 4),
+            (BranchRetentionSlotV1::EngineSetup, 3),
             (BranchRetentionSlotV1::Scaling, 2),
             (BranchRetentionSlotV1::DefenseEngine, 3),
             (BranchRetentionSlotV1::Survival, 2),
             (BranchRetentionSlotV1::Frontload, 2),
             (BranchRetentionSlotV1::CleanDeck, 2),
-            (BranchRetentionSlotV1::Diversity, 4),
+            (BranchRetentionSlotV1::Diversity, 2),
         ],
         BranchRetentionBudgetProfileV1::Exploration => &[
             (BranchRetentionSlotV1::Package, 5),
@@ -1576,6 +1576,16 @@ mod tests {
     }
 
     #[test]
+    fn balanced_profile_reserves_more_budget_for_long_horizon_than_filler() {
+        let lanes = retention_lane_sequence(BranchRetentionBudgetProfileV1::Balanced, 20);
+        let counts = lane_counts(&lanes);
+
+        assert_eq!(counts[&BranchRetentionSlotV1::Package], 4);
+        assert_eq!(counts[&BranchRetentionSlotV1::EngineSetup], 3);
+        assert_eq!(counts[&BranchRetentionSlotV1::Diversity], 2);
+    }
+
+    #[test]
     fn setup_only_branch_gets_engine_setup_retention_slot() {
         let setup_only = semantic_retention_candidate(
             0,
@@ -1746,6 +1756,14 @@ mod tests {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
+    }
+
+    fn lane_counts(lanes: &[BranchRetentionSlotV1]) -> BTreeMap<BranchRetentionSlotV1, usize> {
+        let mut counts = BTreeMap::new();
+        for lane in lanes {
+            *counts.entry(*lane).or_default() += 1;
+        }
+        counts
     }
 
     fn retention_config(
