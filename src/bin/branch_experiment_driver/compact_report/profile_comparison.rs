@@ -8,7 +8,7 @@ use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
 pub(crate) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) -> String {
     let mut lines = Vec::new();
     lines.push("Profile comparison:".to_string());
-    if let Some(warning) = render_branch_point_comparison_warning(reports) {
+    if let Some(warning) = render_branch_point_warning(reports) {
         lines.push(warning);
     }
     for report in reports {
@@ -32,7 +32,20 @@ pub(crate) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) ->
     lines.join("\n")
 }
 
-fn render_branch_point_comparison_warning(reports: &[BranchExperimentReportV1]) -> Option<String> {
+fn render_branch_point_warning(reports: &[BranchExperimentReportV1]) -> Option<String> {
+    if reports.is_empty() {
+        return None;
+    }
+    if reports
+        .iter()
+        .all(|report| report.explored_branch_points == 0)
+    {
+        return Some(
+            "Warning: no compared profile reached a branch point; provide a prefix/trace that reaches a branchable decision or increase search automation budget"
+                .to_string(),
+        );
+    }
+
     let first = reports.first()?.explored_branch_points;
     if reports
         .iter()

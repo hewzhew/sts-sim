@@ -888,6 +888,41 @@ mod tests {
     }
 
     #[test]
+    fn profile_comparison_warns_when_no_profile_reaches_branch_points() {
+        let mut balanced = empty_report();
+        balanced.retention_profile = BranchRetentionBudgetProfileV1::Balanced;
+        balanced.explored_branch_points = 0;
+        balanced.branches = vec![branch_report(
+            "b0",
+            "-",
+            1,
+            1,
+            56,
+            BranchRetentionSlotV1::Diversity,
+            "Combat",
+        )];
+
+        let mut package = empty_report();
+        package.retention_profile = BranchRetentionBudgetProfileV1::Package;
+        package.explored_branch_points = 0;
+        package.branches = vec![branch_report(
+            "p0",
+            "-",
+            1,
+            1,
+            56,
+            BranchRetentionSlotV1::Diversity,
+            "Combat",
+        )];
+
+        let rendered = render_profile_comparison(&[balanced, package]);
+
+        assert!(rendered.contains(
+            "Warning: no compared profile reached a branch point; provide a prefix/trace that reaches a branchable decision or increase search automation budget"
+        ));
+    }
+
+    #[test]
     fn compact_report_renders_engine_setup_retention_slot() {
         let rendered = render_retention_slots(&[
             BranchRetentionSlotV1::EngineSetup,
