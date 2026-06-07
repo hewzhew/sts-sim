@@ -66,12 +66,12 @@ pub(super) fn render_compact_report_with_options(
                 .unwrap_or("not_recorded")
         ));
     }
-    let primary_retention_slots = report
+    let retention_lanes = report
         .branches
         .iter()
-        .map(|branch| branch.retention.primary_slot)
+        .map(|branch| branch.retention.selected_by_slot)
         .collect::<Vec<_>>();
-    if let Some(line) = render_primary_retention_slot_count_line(&primary_retention_slots) {
+    if let Some(line) = render_retention_lane_count_line(&retention_lanes) {
         lines.push(line);
     }
     if let Some(line) = render_pruned_first_pick_count_line(&report.pruned_first_pick_counts) {
@@ -238,7 +238,7 @@ struct FirstPickOutcomeSummary {
     deepest_floor: i32,
     min_hp: i32,
     max_hp: i32,
-    primary_slots: BTreeMap<BranchRetentionSlotV1, usize>,
+    retention_lanes: BTreeMap<BranchRetentionSlotV1, usize>,
     package_states: BTreeMap<String, usize>,
     frontiers: BTreeMap<String, usize>,
 }
@@ -258,7 +258,7 @@ fn first_pick_outcome_summary_lines(report: &BranchExperimentReportV1) -> Vec<St
                 deepest_floor: branch.summary.floor,
                 min_hp: branch.summary.hp,
                 max_hp: branch.summary.hp,
-                primary_slots: BTreeMap::new(),
+                retention_lanes: BTreeMap::new(),
                 package_states: BTreeMap::new(),
                 frontiers: BTreeMap::new(),
             });
@@ -270,8 +270,8 @@ fn first_pick_outcome_summary_lines(report: &BranchExperimentReportV1) -> Vec<St
         entry.min_hp = entry.min_hp.min(branch.summary.hp);
         entry.max_hp = entry.max_hp.max(branch.summary.hp);
         *entry
-            .primary_slots
-            .entry(branch.retention.primary_slot)
+            .retention_lanes
+            .entry(retention_lane(branch))
             .or_default() += 1;
         for state in branch_package_state_tags(branch) {
             *entry.package_states.entry(state).or_default() += 1;
@@ -299,13 +299,13 @@ fn first_pick_outcome_summary_lines(report: &BranchExperimentReportV1) -> Vec<St
 
 fn render_first_pick_outcome(summary: &FirstPickOutcomeSummary) -> String {
     format!(
-        "  {} | branches={} deepest=A{}F{} hp={} | primary=[{}] | packages=[{}] | frontiers=[{}]",
+        "  {} | branches={} deepest=A{}F{} hp={} | lanes=[{}] | packages=[{}] | frontiers=[{}]",
         summary.label,
         summary.branch_count,
         summary.deepest_act,
         summary.deepest_floor,
         render_hp_range(summary.min_hp, summary.max_hp),
-        render_primary_slot_counts(&summary.primary_slots),
+        render_retention_slot_counts(&summary.retention_lanes),
         render_package_state_counts(&summary.package_states),
         render_string_count_map(&summary.frontiers)
     )
@@ -354,7 +354,7 @@ fn render_package_state_counts(counts: &BTreeMap<String, usize>) -> String {
     render_string_count_map(counts)
 }
 
-fn render_primary_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>) -> String {
+fn render_retention_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>) -> String {
     RETENTION_SLOT_DISPLAY_ORDER
         .iter()
         .filter_map(|slot| {
@@ -416,11 +416,12 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
         .map(|cards| cards.join(", "))
         .unwrap_or_else(|| "-".to_string());
     let status = branch_status_suffix(branch.status);
+    let lane = retention_slot_name(retention_lane(branch));
     let retention = render_retention_slots(&branch.retention.slots);
     let formation = render_formation_summary(branch);
     let trajectory = render_trajectory_summary(branch);
     format!(
-        "  A{}F{} HP {}/{} gold {} | {}{} | {} | {} | keep=[{}] | choices: {} | next_reward=[{}]",
+        "  A{}F{} HP {}/{} gold {} | {}{} | {} | {} | lane={} keep=[{}] | choices: {} | next_reward=[{}]",
         branch.summary.act,
         branch.summary.floor,
         branch.summary.hp,
@@ -430,6 +431,7 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
         status,
         formation,
         trajectory,
+        lane,
         retention,
         choices,
         next_reward
@@ -564,10 +566,19 @@ fn render_retention_slots(slots: &[BranchRetentionSlotV1]) -> String {
         .join(",")
 }
 
-fn render_primary_retention_slot_count_line(slots: &[BranchRetentionSlotV1]) -> Option<String> {
+fn retention_lane(branch: &BranchExperimentBranchReportV1) -> BranchRetentionSlotV1 {
+    branch
+        .retention
+        .selected_by_slot
+        .unwrap_or(BranchRetentionSlotV1::Diversity)
+}
+
+fn render_retention_lane_count_line(slots: &[Option<BranchRetentionSlotV1>]) -> Option<String> {
     let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
     for slot in slots {
-        *counts.entry(*slot).or_default() += 1;
+        *counts
+            .entry(slot.unwrap_or(BranchRetentionSlotV1::Diversity))
+            .or_default() += 1;
     }
     if counts.is_empty() {
         return None;
@@ -581,7 +592,7 @@ fn render_primary_retention_slot_count_line(slots: &[BranchRetentionSlotV1]) -> 
                 .map(|count| format!("{}={count}", retention_slot_name(*slot)))
         })
         .collect::<Vec<_>>();
-    Some(format!("Primary retention slots: {}", rendered.join(" ")))
+    Some(format!("Retention lanes: {}", rendered.join(" ")))
 }
 
 fn render_pruned_first_pick_count_line(
@@ -798,19 +809,19 @@ mod tests {
     }
 
     #[test]
-    fn primary_retention_slot_count_line_summarizes_kept_branch_shape() {
-        let rendered = render_primary_retention_slot_count_line(&[
-            BranchRetentionSlotV1::Package,
-            BranchRetentionSlotV1::EngineSetup,
-            BranchRetentionSlotV1::Frontload,
-            BranchRetentionSlotV1::EngineSetup,
-            BranchRetentionSlotV1::Frontload,
+    fn retention_lane_count_line_summarizes_actual_portfolio_budget() {
+        let rendered = render_retention_lane_count_line(&[
+            Some(BranchRetentionSlotV1::Package),
+            Some(BranchRetentionSlotV1::Survival),
+            Some(BranchRetentionSlotV1::Frontload),
+            Some(BranchRetentionSlotV1::Survival),
+            None,
         ])
         .expect("slot count line");
 
         assert_eq!(
             rendered,
-            "Primary retention slots: package=1 engine_setup=2 frontload=2"
+            "Retention lanes: package=1 survival=2 frontload=1 diversity=1"
         );
     }
 
@@ -853,11 +864,11 @@ mod tests {
 
         assert_eq!(
             lines[0],
-            "  Shockwave | branches=2 deepest=A1F6 hp=60-70 | primary=[package=1 engine_setup=1] | packages=[-] | frontiers=[Campfire=1 Combat=1]"
+            "  Shockwave | branches=2 deepest=A1F6 hp=60-70 | lanes=[package=1 engine_setup=1] | packages=[-] | frontiers=[Campfire=1 Combat=1]"
         );
         assert_eq!(
             lines[1],
-            "  Armaments | branches=1 deepest=A1F5 hp=76 | primary=[defense=1] | packages=[-] | frontiers=[Combat=1]"
+            "  Armaments | branches=1 deepest=A1F5 hp=76 | lanes=[defense=1] | packages=[-] | frontiers=[Combat=1]"
         );
     }
 
@@ -880,7 +891,7 @@ mod tests {
 
         assert_eq!(
             lines[0],
-            "  Body Slam | branches=2 deepest=A1F5 hp=70 | primary=[package=2] | packages=[closed:block_engine=1 open:exhaust_engine=2 payoff_only:upgrade_sink=1] | frontiers=[Combat=2]"
+            "  Body Slam | branches=2 deepest=A1F5 hp=70 | lanes=[package=2] | packages=[closed:block_engine=1 open:exhaust_engine=2 payoff_only:upgrade_sink=1] | frontiers=[Combat=2]"
         );
     }
 
@@ -975,6 +986,7 @@ mod tests {
             rank_key: 0,
             retention: BranchRetentionDecisionV1 {
                 primary_slot,
+                selected_by_slot: Some(primary_slot),
                 slots: vec![primary_slot],
                 reasons: Vec::new(),
             },

@@ -44,6 +44,8 @@ pub struct BranchRetentionConfigV1 {
 #[serde(deny_unknown_fields)]
 pub struct BranchRetentionDecisionV1 {
     pub primary_slot: BranchRetentionSlotV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_by_slot: Option<BranchRetentionSlotV1>,
     pub slots: Vec<BranchRetentionSlotV1>,
     pub reasons: Vec<String>,
 }
@@ -70,16 +72,23 @@ const SLOT_ORDER: [BranchRetentionSlotV1; 8] = [
 pub fn default_branch_retention_decision_v1() -> BranchRetentionDecisionV1 {
     BranchRetentionDecisionV1 {
         primary_slot: BranchRetentionSlotV1::Diversity,
+        selected_by_slot: Some(BranchRetentionSlotV1::Diversity),
         slots: vec![BranchRetentionSlotV1::Diversity],
         reasons: vec!["default branch representative".to_string()],
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BranchRetentionLanePick {
+    position: usize,
+    selected_by_slot: BranchRetentionSlotV1,
 }
 
 pub fn select_branch_retention_portfolio_v1(
     candidates: &[BranchRetentionCandidateInputV1],
     config: BranchRetentionConfigV1,
 ) -> BranchRetentionSelectionV1 {
-    let decisions_by_index = candidates
+    let mut decisions_by_index = candidates
         .iter()
         .map(|candidate| (candidate.index, decide_branch_retention_v1(candidate)))
         .collect::<BTreeMap<_, _>>();
@@ -100,7 +109,7 @@ pub fn select_branch_retention_portfolio_v1(
             .push(candidate_pos);
     }
 
-    let mut keep_indices = BTreeSet::new();
+    let mut selected_picks = Vec::<BranchRetentionLanePick>::new();
     let mut frontier_limit_hit = false;
     for group_positions in groups.into_values() {
         let configured_group_limit = config.max_per_frontier.unwrap_or(config.max_total);
@@ -108,35 +117,45 @@ pub fn select_branch_retention_portfolio_v1(
         if config.max_per_frontier.is_some() && group_limit < group_positions.len() {
             frontier_limit_hit = true;
         }
-        let selected_positions = select_positions_for_slots(
+        let group_picks = select_positions_for_slots(
             candidates,
             &decisions_by_index,
             &group_positions,
             group_limit,
         );
-        for position in selected_positions {
-            keep_indices.insert(candidates[position].index);
-        }
+        selected_picks.extend(group_picks);
     }
 
     let mut total_limit_hit = false;
-    if keep_indices.len() > config.max_total {
+    if selected_picks.len() > config.max_total {
         total_limit_hit = true;
         let positions = candidates
             .iter()
             .enumerate()
             .filter_map(|(position, candidate)| {
-                keep_indices.contains(&candidate.index).then_some(position)
+                selected_picks
+                    .iter()
+                    .any(|pick| candidates[pick.position].index == candidate.index)
+                    .then_some(position)
             })
             .collect::<Vec<_>>();
-        keep_indices.clear();
-        for position in select_positions_for_slots(
+        selected_picks = select_positions_for_slots(
             candidates,
             &decisions_by_index,
             &positions,
             config.max_total,
-        ) {
-            keep_indices.insert(candidates[position].index);
+        );
+    }
+
+    for decision in decisions_by_index.values_mut() {
+        decision.selected_by_slot = None;
+    }
+    let mut keep_indices = BTreeSet::new();
+    for pick in selected_picks {
+        let candidate_index = candidates[pick.position].index;
+        keep_indices.insert(candidate_index);
+        if let Some(decision) = decisions_by_index.get_mut(&candidate_index) {
+            decision.selected_by_slot = Some(pick.selected_by_slot);
         }
     }
 
@@ -211,6 +230,7 @@ pub fn decide_branch_retention_v1(
 
     BranchRetentionDecisionV1 {
         primary_slot,
+        selected_by_slot: None,
         slots,
         reasons,
     }
@@ -221,11 +241,11 @@ fn select_positions_for_slots(
     decisions_by_index: &BTreeMap<usize, BranchRetentionDecisionV1>,
     positions: &[usize],
     limit: usize,
-) -> Vec<usize> {
+) -> Vec<BranchRetentionLanePick> {
     if limit == 0 {
         return Vec::new();
     }
-    let mut selected = Vec::<usize>::new();
+    let mut selected = Vec::<BranchRetentionLanePick>::new();
     let mut selected_set = BTreeSet::<usize>::new();
     for slot in SLOT_ORDER {
         if selected.len() >= limit {
@@ -238,7 +258,10 @@ fn select_positions_for_slots(
             slot,
             &selected_set,
         ) {
-            selected.push(position);
+            selected.push(BranchRetentionLanePick {
+                position,
+                selected_by_slot: slot,
+            });
             selected_set.insert(position);
         }
     }
@@ -246,7 +269,10 @@ fn select_positions_for_slots(
         let Some(position) = best_fill_position(candidates, positions, &selected_set) else {
             break;
         };
-        selected.push(position);
+        selected.push(BranchRetentionLanePick {
+            position,
+            selected_by_slot: BranchRetentionSlotV1::Diversity,
+        });
         selected_set.insert(position);
     }
     let selected = cap_redundant_choice_prefixes(candidates, positions, selected, limit);
@@ -398,28 +424,28 @@ fn strategy_formation_key(formation: &StrategyFormationSummaryV2) -> String {
 fn cap_redundant_choice_prefixes(
     candidates: &[BranchRetentionCandidateInputV1],
     available_positions: &[usize],
-    selected_positions: Vec<usize>,
+    selected_picks: Vec<BranchRetentionLanePick>,
     limit: usize,
-) -> Vec<usize> {
+) -> Vec<BranchRetentionLanePick> {
     let distinct_families = available_positions
         .iter()
         .map(|position| branch_family_key(&candidates[*position]))
         .collect::<BTreeSet<_>>();
     if distinct_families.len() <= 1 {
-        return selected_positions;
+        return selected_picks;
     }
 
     let max_per_family = limit.div_ceil(distinct_families.len()).max(1);
     let mut counts = BTreeMap::<String, usize>::new();
     let mut kept = Vec::new();
-    for position in selected_positions {
-        let family = branch_family_key(&candidates[position]);
+    for pick in selected_picks {
+        let family = branch_family_key(&candidates[pick.position]);
         let count = counts.entry(family).or_default();
         if *count >= max_per_family {
             continue;
         }
         *count += 1;
-        kept.push(position);
+        kept.push(pick);
     }
     kept
 }
@@ -427,37 +453,40 @@ fn cap_redundant_choice_prefixes(
 fn cap_redundant_first_pick_prefixes(
     candidates: &[BranchRetentionCandidateInputV1],
     available_positions: &[usize],
-    selected_positions: Vec<usize>,
+    selected_picks: Vec<BranchRetentionLanePick>,
     limit: usize,
-) -> Vec<usize> {
+) -> Vec<BranchRetentionLanePick> {
     let distinct_prefixes = available_positions
         .iter()
         .map(|position| choice_prefix_key(&candidates[*position]))
         .collect::<BTreeSet<_>>();
     if distinct_prefixes.len() <= 1 {
-        return selected_positions;
+        return selected_picks;
     }
 
     let max_per_prefix = first_pick_prefix_cap(limit, distinct_prefixes.len());
     let mut counts = BTreeMap::<String, usize>::new();
     let mut kept = Vec::new();
     let mut capped = false;
-    for position in selected_positions {
-        let prefix = choice_prefix_key(&candidates[position]);
+    for pick in selected_picks {
+        let prefix = choice_prefix_key(&candidates[pick.position]);
         let count = counts.entry(prefix).or_default();
         if *count >= max_per_prefix {
             capped = true;
             continue;
         }
         *count += 1;
-        kept.push(position);
+        kept.push(pick);
     }
 
     if !capped {
         return kept;
     }
 
-    let mut selected = kept.iter().copied().collect::<BTreeSet<_>>();
+    let mut selected = kept
+        .iter()
+        .map(|pick| pick.position)
+        .collect::<BTreeSet<_>>();
     while kept.len() < limit {
         let Some(position) =
             best_fill_position_allowed(candidates, available_positions, &selected, |position| {
@@ -475,7 +504,10 @@ fn cap_redundant_first_pick_prefixes(
             .entry(choice_prefix_key(&candidates[position]))
             .or_default() += 1;
         selected.insert(position);
-        kept.push(position);
+        kept.push(BranchRetentionLanePick {
+            position,
+            selected_by_slot: BranchRetentionSlotV1::Diversity,
+        });
     }
 
     kept
@@ -496,14 +528,14 @@ fn first_pick_prefix_cap(limit: usize, distinct_prefixes: usize) -> usize {
 fn cap_pure_transition_saturation(
     candidates: &[BranchRetentionCandidateInputV1],
     available_positions: &[usize],
-    selected_positions: Vec<usize>,
+    selected_picks: Vec<BranchRetentionLanePick>,
     limit: usize,
-) -> Vec<usize> {
+) -> Vec<BranchRetentionLanePick> {
     if !available_positions
         .iter()
         .any(|position| !is_pure_transition_branch(&candidates[*position]))
     {
-        return selected_positions;
+        return selected_picks;
     }
 
     let max_pure_transition = pure_transition_branch_cap(candidates, available_positions, limit);
@@ -511,22 +543,25 @@ fn cap_pure_transition_saturation(
     let mut capped = false;
     let mut kept = Vec::new();
 
-    for position in selected_positions {
-        if is_pure_transition_branch(&candidates[position]) {
+    for pick in selected_picks {
+        if is_pure_transition_branch(&candidates[pick.position]) {
             if pure_transition_count >= max_pure_transition {
                 capped = true;
                 continue;
             }
             pure_transition_count += 1;
         }
-        kept.push(position);
+        kept.push(pick);
     }
 
     if !capped {
         return kept;
     }
 
-    let mut selected = kept.iter().copied().collect::<BTreeSet<_>>();
+    let mut selected = kept
+        .iter()
+        .map(|pick| pick.position)
+        .collect::<BTreeSet<_>>();
     while kept.len() < limit {
         let allow_more_pure_transition = pure_transition_count < max_pure_transition;
         let Some(position) =
@@ -541,7 +576,10 @@ fn cap_pure_transition_saturation(
             pure_transition_count += 1;
         }
         selected.insert(position);
-        kept.push(position);
+        kept.push(BranchRetentionLanePick {
+            position,
+            selected_by_slot: BranchRetentionSlotV1::Diversity,
+        });
     }
 
     kept
@@ -1267,6 +1305,52 @@ mod tests {
         assert!(
             selection.keep_indices.contains(&1),
             "a branch with both setup and payoff should be the package representative"
+        );
+    }
+
+    #[test]
+    fn portfolio_records_the_lane_that_selected_each_kept_branch() {
+        let package_closure = semantic_retention_candidate(
+            0,
+            10_300,
+            58,
+            80,
+            trajectory_with(&["block_engine"], &["block_engine"], 0, 1, 1, 2),
+            &[
+                CardRewardSemanticRoleV1::BlockRetention,
+                CardRewardSemanticRoleV1::BlockPayoff,
+            ],
+        );
+        let high_hp_payoff = semantic_retention_candidate(
+            1,
+            10_900,
+            79,
+            80,
+            trajectory_with(&[], &["generic_package"], 1, 0, 1, 0),
+            &[CardRewardSemanticRoleV1::PackagePayoff],
+        );
+
+        let selection = select_branch_retention_portfolio_v1(
+            &[package_closure, high_hp_payoff],
+            BranchRetentionConfigV1 {
+                max_total: 2,
+                max_per_frontier: Some(2),
+            },
+        );
+
+        assert_eq!(
+            selection.decisions_by_index[&0].selected_by_slot,
+            Some(BranchRetentionSlotV1::Package)
+        );
+        assert_eq!(
+            selection.decisions_by_index[&1].primary_slot,
+            BranchRetentionSlotV1::Package,
+            "candidate identity still records the highest semantic slot it qualifies for"
+        );
+        assert_eq!(
+            selection.decisions_by_index[&1].selected_by_slot,
+            Some(BranchRetentionSlotV1::Survival),
+            "portfolio reporting should say this branch consumed the survival lane, not another package lane"
         );
     }
 

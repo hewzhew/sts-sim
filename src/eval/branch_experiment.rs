@@ -34,7 +34,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 11;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 12;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -478,10 +478,10 @@ fn run_branch_experiment_from_session_with_replay(
         })
         .collect::<Vec<_>>();
     branch_reports.sort_by(|left, right| {
-        retention_report_slot_priority(left.retention.primary_slot)
-            .cmp(&retention_report_slot_priority(
-                right.retention.primary_slot,
-            ))
+        retention_report_slot_priority(retention_report_slot(left.retention.selected_by_slot))
+            .cmp(&retention_report_slot_priority(retention_report_slot(
+                right.retention.selected_by_slot,
+            )))
             .then_with(|| right.rank_key.cmp(&left.rank_key))
             .then_with(|| left.branch_id.cmp(&right.branch_id))
     });
@@ -697,10 +697,10 @@ fn apply_branch_retention(
         .filter_map(|(index, branch)| keep_indices.contains(&index).then_some(branch))
         .collect::<Vec<_>>();
     branches.sort_by(|left, right| {
-        retention_report_slot_priority(left.retention.primary_slot)
-            .cmp(&retention_report_slot_priority(
-                right.retention.primary_slot,
-            ))
+        retention_report_slot_priority(retention_report_slot(left.retention.selected_by_slot))
+            .cmp(&retention_report_slot_priority(retention_report_slot(
+                right.retention.selected_by_slot,
+            )))
             .then_with(|| branch_rank_key(right).cmp(&branch_rank_key(left)))
             .then_with(|| left.id.cmp(&right.id))
     });
@@ -772,6 +772,10 @@ fn retention_report_slot_priority(slot: BranchRetentionSlotV1) -> usize {
         BranchRetentionSlotV1::CleanDeck => 6,
         BranchRetentionSlotV1::Diversity => 7,
     }
+}
+
+fn retention_report_slot(slot: Option<BranchRetentionSlotV1>) -> BranchRetentionSlotV1 {
+    slot.unwrap_or(BranchRetentionSlotV1::Diversity)
 }
 
 fn apply_branch_choice(session: &mut RunControlSession, command: &str) -> Result<(), String> {
