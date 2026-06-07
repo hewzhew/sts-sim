@@ -95,6 +95,8 @@ pub(crate) struct CampfireBranchOption {
     pub(crate) card: Option<CardId>,
     pub(crate) upgrades: Option<u8>,
     semantic_class: String,
+    representative_count: usize,
+    suppressed_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -249,8 +251,8 @@ impl BranchBoundaryOptionV1 {
             selected_cards: selected_card_vec(option.card, option.upgrades),
             effect_kind,
             effect_key,
-            representative_count: 1,
-            suppressed_count: 0,
+            representative_count: option.representative_count,
+            suppressed_count: option.suppressed_count,
             success_reason: "campfire branch applied",
         }
     }
@@ -456,10 +458,51 @@ pub(crate) fn campfire_branch_options(
                 card,
                 upgrades,
                 semantic_class,
+                representative_count: 1,
+                suppressed_count: 0,
             })
         })
         .collect::<Vec<_>>();
+    let options = compressed_campfire_branch_options(options);
     (!options.is_empty()).then_some(options)
+}
+
+fn compressed_campfire_branch_options(
+    options: Vec<CampfireBranchOption>,
+) -> Vec<CampfireBranchOption> {
+    let mut groups = Vec::<CampfireBranchOption>::new();
+    let mut counts = Vec::<usize>::new();
+    for option in options {
+        let key = campfire_option_equivalence_key(&option);
+        if let Some((index, _)) = groups
+            .iter()
+            .enumerate()
+            .find(|(_, representative)| campfire_option_equivalence_key(representative) == key)
+        {
+            counts[index] += 1;
+        } else {
+            groups.push(option);
+            counts.push(1);
+        }
+    }
+    groups
+        .into_iter()
+        .zip(counts)
+        .map(|(mut option, count)| {
+            option.representative_count = count;
+            option.suppressed_count = count.saturating_sub(1);
+            option
+        })
+        .collect()
+}
+
+fn campfire_option_equivalence_key(option: &CampfireBranchOption) -> String {
+    format!(
+        "{}:{:?}:{:?}",
+        campfire_effect_kind(option),
+        option.card,
+        option.upgrades
+    )
 }
 
 fn campfire_option_metadata(
@@ -1228,6 +1271,53 @@ mod tests {
             .options
             .iter()
             .all(|option| option.kind == "campfire"));
+    }
+
+    #[test]
+    fn current_boundary_compresses_duplicate_campfire_smith_options() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::Campfire;
+
+        let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+            .expect("campfire boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::Campfire);
+        assert_eq!(
+            boundary
+                .options
+                .iter()
+                .filter(|option| option.effect_kind == "upgrade_card")
+                .map(|option| {
+                    (
+                        option.command.as_str(),
+                        option.effect_label.as_str(),
+                        option.card,
+                        option.upgrades,
+                        option.representative_count,
+                        option.suppressed_count,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "smith 0",
+                    "Smith Strike",
+                    Some(CardId::Strike),
+                    Some(0),
+                    5,
+                    4
+                ),
+                (
+                    "smith 5",
+                    "Smith Defend",
+                    Some(CardId::Defend),
+                    Some(0),
+                    4,
+                    3
+                ),
+                ("smith 9", "Smith Bash", Some(CardId::Bash), Some(0), 1, 0),
+            ]
+        );
     }
 
     #[test]
