@@ -73,6 +73,7 @@ pub fn run_branch_experiment_profiles_from_shared_start_v1(
     let Some(first_config) = configs.first() else {
         return Ok(Vec::new());
     };
+    validate_shared_start_configs(configs)?;
     let prepared = prepare_branch_experiment_start(first_config, true)?;
     configs
         .iter()
@@ -85,6 +86,53 @@ pub fn run_branch_experiment_profiles_from_shared_start_v1(
             ))
         })
         .collect()
+}
+
+fn validate_shared_start_configs(configs: &[BranchExperimentConfigV1]) -> Result<(), String> {
+    let Some(first) = configs.first() else {
+        return Ok(());
+    };
+    for config in configs.iter().skip(1) {
+        macro_rules! require_same {
+            ($field:ident) => {
+                ensure_shared_start_field(stringify!($field), &first.$field, &config.$field)?;
+            };
+        }
+
+        require_same!(seed);
+        require_same!(ascension_level);
+        require_same!(player_class);
+        require_same!(final_act);
+        require_same!(max_branches);
+        require_same!(max_branches_per_frontier_group);
+        require_same!(max_reward_options_per_branch);
+        require_same!(max_campfire_options_per_branch);
+        require_same!(max_depth);
+        require_same!(auto_max_operations);
+        require_same!(experiment_wall_ms);
+        require_same!(search_max_nodes);
+        require_same!(search_wall_ms);
+        require_same!(search_max_hp_loss);
+        require_same!(include_skip);
+        require_same!(prefix_commands);
+        require_same!(replay_trace_path);
+        require_same!(replay_trace_max_steps);
+    }
+    Ok(())
+}
+
+fn ensure_shared_start_field<T: PartialEq + ?Sized>(
+    field: &str,
+    expected: &T,
+    actual: &T,
+) -> Result<(), String> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(format!(
+            "shared-start profile configs differ in {field}; only retention_budget_profile may vary"
+        ))
+    }
 }
 
 fn prepare_branch_experiment_start(

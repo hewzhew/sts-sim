@@ -168,6 +168,27 @@ fn shared_start_profile_runner_reuses_replay_prefix_for_all_profiles() {
 }
 
 #[test]
+fn shared_start_profile_runner_rejects_mismatched_start_inputs() {
+    let configs = vec![
+        BranchExperimentConfigV1 {
+            seed: 1,
+            retention_budget_profile: BranchRetentionBudgetProfileV1::Balanced,
+            ..BranchExperimentConfigV1::default()
+        },
+        BranchExperimentConfigV1 {
+            seed: 2,
+            retention_budget_profile: BranchRetentionBudgetProfileV1::Package,
+            ..BranchExperimentConfigV1::default()
+        },
+    ];
+
+    let err = run_branch_experiment_profiles_from_shared_start_v1(&configs)
+        .expect_err("mismatched start inputs should be rejected");
+
+    assert!(err.contains("shared-start profile configs differ in seed"));
+}
+
+#[test]
 fn branch_experiment_can_limit_reward_options_by_semantic_portfolio() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();
