@@ -51,6 +51,7 @@ pub(crate) struct BranchBoundaryConfigV1 {
     pub(crate) max_reward_options_per_branch: Option<usize>,
     pub(crate) max_campfire_options_per_branch: Option<usize>,
     pub(crate) include_skip: bool,
+    pub(crate) include_event_reward_skip: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -96,7 +97,9 @@ pub(crate) fn current_branch_boundary(
             if has_singing_bowl(session) && card_reward_bowl_available(session) {
                 options.push(BranchBoundaryOptionV1::card_reward_bowl());
             }
-            if card_reward_skip_available(session) {
+            if card_reward_skip_available(session)
+                && (config.include_event_reward_skip || !completed_event_reward_skip(session))
+            {
                 options.push(BranchBoundaryOptionV1::card_reward_skip());
             }
         }
@@ -179,6 +182,14 @@ fn card_reward_skip_available(session: &RunControlSession) -> bool {
         }
         _ => false,
     }
+}
+
+fn completed_event_reward_skip(session: &RunControlSession) -> bool {
+    session
+        .run_state
+        .event_state
+        .as_ref()
+        .is_some_and(|event| event.completed && !event.combat_pending)
 }
 
 fn card_reward_bowl_available(session: &RunControlSession) -> bool {

@@ -134,6 +134,12 @@ struct Args {
     )]
     exclude_skip: bool,
 
+    #[arg(
+        long,
+        help = "Also branch skip for completed event card rewards such as Neow/Sensory Stone rewards; off by default to avoid treating already-committed event rewards like ordinary free skips"
+    )]
+    include_event_reward_skip: bool,
+
     #[arg(long)]
     out: Option<PathBuf>,
 
@@ -256,6 +262,7 @@ fn branch_experiment_config(
         search_wall_ms: args.search_wall_ms.or(Some(100)),
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
         include_skip: args.include_skip || !args.exclude_skip,
+        include_event_reward_skip: args.include_event_reward_skip,
         prefix_commands,
         replay_trace_path: effective_replay_trace(args, goto_plan),
         replay_trace_max_steps: effective_replay_steps(args, goto_plan),
@@ -454,6 +461,35 @@ mod tests {
         .expect("exclude-skip config builds");
 
         assert!(!config.include_skip);
+    }
+
+    #[test]
+    fn cli_only_includes_completed_event_reward_skip_when_requested() {
+        let default_args =
+            Args::try_parse_from(["branch_experiment_driver"]).expect("default args parse");
+        let default_config = branch_experiment_config(
+            &default_args,
+            "Ironclad",
+            Vec::new(),
+            BranchRetentionBudgetProfileV1::Balanced,
+            None,
+        )
+        .expect("default config builds");
+
+        let opted_in_args =
+            Args::try_parse_from(["branch_experiment_driver", "--include-event-reward-skip"])
+                .expect("opt-in args parse");
+        let opted_in_config = branch_experiment_config(
+            &opted_in_args,
+            "Ironclad",
+            Vec::new(),
+            BranchRetentionBudgetProfileV1::Balanced,
+            None,
+        )
+        .expect("opt-in config builds");
+
+        assert!(!default_config.include_event_reward_skip);
+        assert!(opted_in_config.include_event_reward_skip);
     }
 
     #[test]

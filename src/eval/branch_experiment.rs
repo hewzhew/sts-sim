@@ -115,6 +115,7 @@ fn validate_shared_start_configs(configs: &[BranchExperimentConfigV1]) -> Result
         require_same!(search_wall_ms);
         require_same!(search_max_hp_loss);
         require_same!(include_skip);
+        require_same!(include_event_reward_skip);
         require_same!(prefix_commands);
         require_same!(replay_trace_path);
         require_same!(replay_trace_max_steps);
@@ -292,6 +293,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
                 max_reward_options_per_branch: config.max_reward_options_per_branch,
                 max_campfire_options_per_branch: config.max_campfire_options_per_branch,
                 include_skip: config.include_skip,
+                include_event_reward_skip: config.include_event_reward_skip,
             };
             let reward_portfolio_context = config.max_reward_options_per_branch.map(|_| {
                 let frontier = branch_frontier(&branch.session);

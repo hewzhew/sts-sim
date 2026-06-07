@@ -60,6 +60,7 @@ fn current_boundary_wraps_card_reward_options() {
             max_reward_options_per_branch: Some(1),
             max_campfire_options_per_branch: None,
             include_skip: false,
+            include_event_reward_skip: false,
         },
         Some(CardRewardPortfolioContext {
             depth: 0,
@@ -91,6 +92,7 @@ fn current_boundary_does_not_treat_opened_card_reward_back_as_skip_option() {
             max_reward_options_per_branch: None,
             max_campfire_options_per_branch: None,
             include_skip: true,
+            include_event_reward_skip: false,
         },
         None,
     )
@@ -123,6 +125,7 @@ fn current_boundary_can_include_skip_for_unopened_card_reward_item() {
             max_reward_options_per_branch: None,
             max_campfire_options_per_branch: None,
             include_skip: true,
+            include_event_reward_skip: false,
         },
         None,
     )
@@ -137,6 +140,87 @@ fn current_boundary_can_include_skip_for_unopened_card_reward_item() {
     assert_eq!(skip.command, "skip");
     assert_eq!(skip.effect_kind, "skip_card_reward");
     assert!(skip.selected_cards.is_empty());
+}
+
+#[test]
+fn current_boundary_suppresses_completed_event_reward_skip_by_default() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(EventState {
+        id: EventId::Neow,
+        current_screen: 2,
+        internal_state: 0,
+        completed: true,
+        combat_pending: false,
+        extra_data: Vec::new(),
+    });
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Card {
+        cards: vec![
+            RewardCard::new(CardId::Panache, 0),
+            RewardCard::new(CardId::Metamorphosis, 0),
+            RewardCard::new(CardId::ThinkingAhead, 0),
+        ],
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: None,
+            max_campfire_options_per_branch: None,
+            include_skip: true,
+            include_event_reward_skip: false,
+        },
+        None,
+    )
+    .expect("visible Neow card reward boundary");
+
+    assert!(
+        !boundary
+            .options
+            .iter()
+            .any(|option| option.kind == "card_reward_skip"),
+        "completed event rewards have already committed their event choice, so skip is not a default exploration branch"
+    );
+}
+
+#[test]
+fn current_boundary_can_opt_into_completed_event_reward_skip() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(EventState {
+        id: EventId::Neow,
+        current_screen: 2,
+        internal_state: 0,
+        completed: true,
+        combat_pending: false,
+        extra_data: Vec::new(),
+    });
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Card {
+        cards: vec![
+            RewardCard::new(CardId::Panache, 0),
+            RewardCard::new(CardId::Metamorphosis, 0),
+            RewardCard::new(CardId::ThinkingAhead, 0),
+        ],
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: None,
+            max_campfire_options_per_branch: None,
+            include_skip: true,
+            include_event_reward_skip: true,
+        },
+        None,
+    )
+    .expect("visible Neow card reward boundary");
+
+    assert!(boundary
+        .options
+        .iter()
+        .any(|option| option.kind == "card_reward_skip" && option.command == "skip"));
 }
 
 #[test]
@@ -159,6 +243,7 @@ fn current_boundary_can_include_singing_bowl_card_reward_option() {
             max_reward_options_per_branch: None,
             max_campfire_options_per_branch: None,
             include_skip: true,
+            include_event_reward_skip: false,
         },
         None,
     )
@@ -198,6 +283,7 @@ fn current_boundary_can_include_singing_bowl_for_unopened_card_reward_item() {
             max_reward_options_per_branch: None,
             max_campfire_options_per_branch: None,
             include_skip: true,
+            include_event_reward_skip: false,
         },
         None,
     )
@@ -224,6 +310,7 @@ fn current_boundary_wraps_campfire_options() {
             max_reward_options_per_branch: None,
             max_campfire_options_per_branch: Some(2),
             include_skip: false,
+            include_event_reward_skip: false,
         },
         None,
     )
