@@ -923,6 +923,31 @@ mod tests {
     }
 
     #[test]
+    fn profile_comparison_notes_when_retention_budget_does_not_bind() {
+        let mut balanced = empty_report();
+        balanced.retention_profile = BranchRetentionBudgetProfileV1::Balanced;
+        balanced.explored_branch_points = 3;
+        balanced.branches = vec![branch_report(
+            "b0",
+            "Shockwave",
+            1,
+            3,
+            80,
+            BranchRetentionSlotV1::Package,
+            "Combat",
+        )];
+
+        let mut survival = balanced.clone();
+        survival.retention_profile = BranchRetentionBudgetProfileV1::Survival;
+
+        let rendered = render_profile_comparison(&[balanced, survival]);
+
+        assert!(rendered.contains(
+            "Note: retention budget did not bind; profile differences cannot change the kept branch set in this run"
+        ));
+    }
+
+    #[test]
     fn compact_report_renders_engine_setup_retention_slot() {
         let rendered = render_retention_slots(&[
             BranchRetentionSlotV1::EngineSetup,

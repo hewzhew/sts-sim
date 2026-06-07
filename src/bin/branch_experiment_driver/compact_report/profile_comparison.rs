@@ -11,6 +11,9 @@ pub(crate) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) ->
     if let Some(warning) = render_branch_point_warning(reports) {
         lines.push(warning);
     }
+    if let Some(note) = render_retention_inactive_note(reports) {
+        lines.push(note);
+    }
     for report in reports {
         lines.push(format!(
             "  {} branch_points={} kept={} pruned={}{} lanes=[{}] deepest=A{}F{} hp={}{}",
@@ -68,6 +71,29 @@ fn render_branch_point_warning(reports: &[BranchExperimentReportV1]) -> Option<S
     Some(format!(
         "Warning: compared profiles reached different branch-point counts; retention differences may be confounded by search/automation budget. branch_points=[{branch_points}]"
     ))
+}
+
+fn render_retention_inactive_note(reports: &[BranchExperimentReportV1]) -> Option<String> {
+    let baseline = reports.first()?;
+    if reports.len() < 2 || reports.iter().any(|report| report.pruned_branch_count > 0) {
+        return None;
+    }
+    let baseline_keys = report_branch_keys(baseline)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    if reports.iter().skip(1).all(|report| {
+        report_branch_keys(report)
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            == baseline_keys
+    }) {
+        Some(
+            "Note: retention budget did not bind; profile differences cannot change the kept branch set in this run"
+                .to_string(),
+        )
+    } else {
+        None
+    }
 }
 
 fn render_profile_delta_suffix(
