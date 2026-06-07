@@ -2,8 +2,12 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::Parser;
-use compact_report::render_compact_report;
-use sts_simulator::eval::branch_experiment::{run_branch_experiment_v1, BranchExperimentConfigV1};
+use compact_report::{
+    render_compact_report, render_compact_report_with_options, CompactReportOptions,
+};
+use sts_simulator::eval::branch_experiment::{
+    run_branch_experiment_v1, BranchExperimentConfigV1, BranchExperimentReportV1,
+};
 use sts_simulator::eval::run_control::RunControlHpLossLimit;
 
 mod compact_report;
@@ -78,6 +82,13 @@ struct Args {
     #[arg(long)]
     out: Option<PathBuf>,
 
+    #[arg(
+        long,
+        default_value_t = 5,
+        help = "Number of kept branch example lines in compact output"
+    )]
+    branch_examples: usize,
+
     #[arg(long)]
     json: bool,
 }
@@ -113,6 +124,9 @@ fn run(args: Args) -> Result<(), String> {
         replay_trace_path: args.replay_trace,
         replay_trace_max_steps: args.replay_steps,
     })?;
+    let compact_options = CompactReportOptions {
+        kept_branch_examples: args.branch_examples,
+    };
     if let Some(path) = args.out {
         let payload = serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
         if let Some(parent) = path.parent() {
@@ -125,15 +139,23 @@ fn run(args: Args) -> Result<(), String> {
         }
         fs::write(&path, payload)
             .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
-        println!("{}", render_compact_report(&report));
+        println!("{}", render_report(&report, compact_options));
         println!("full JSON written: {}", path.display());
     } else if args.json {
         let payload = serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
         println!("{payload}");
     } else {
-        println!("{}", render_compact_report(&report));
+        println!("{}", render_report(&report, compact_options));
     }
     Ok(())
+}
+
+fn render_report(report: &BranchExperimentReportV1, options: CompactReportOptions) -> String {
+    if options == CompactReportOptions::default() {
+        render_compact_report(report)
+    } else {
+        render_compact_report_with_options(report, options)
+    }
 }
 
 fn parse_hp_loss_limit(value: Option<&str>) -> Result<Option<RunControlHpLossLimit>, String> {

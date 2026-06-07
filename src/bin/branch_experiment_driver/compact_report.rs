@@ -7,7 +7,27 @@ use sts_simulator::eval::branch_experiment::{
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct CompactReportOptions {
+    pub kept_branch_examples: usize,
+}
+
+impl Default for CompactReportOptions {
+    fn default() -> Self {
+        Self {
+            kept_branch_examples: 5,
+        }
+    }
+}
+
 pub(super) fn render_compact_report(report: &BranchExperimentReportV1) -> String {
+    render_compact_report_with_options(report, CompactReportOptions::default())
+}
+
+pub(super) fn render_compact_report_with_options(
+    report: &BranchExperimentReportV1,
+    options: CompactReportOptions,
+) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
         "BranchExperimentV1 seed={} depth={} max_branches={} branch_points={} kept={} pruned={} groups={} elapsed={}ms",
@@ -135,16 +155,21 @@ pub(super) fn render_compact_report(report: &BranchExperimentReportV1) -> String
             report.frontier_groups.len() - 8
         ));
     }
-    lines.push("".to_string());
-    lines.push("Kept branch examples:".to_string());
-    for branch in ordered_branch_examples(report).into_iter().take(10) {
-        lines.push(render_branch_line(branch));
-    }
-    if report.branches.len() > 10 {
-        lines.push(format!(
-            "  ... {} more branch(es); use --json or --out for full detail",
-            report.branches.len() - 10
-        ));
+    if options.kept_branch_examples > 0 {
+        lines.push("".to_string());
+        lines.push("Kept branch examples:".to_string());
+        for branch in ordered_branch_examples(report)
+            .into_iter()
+            .take(options.kept_branch_examples)
+        {
+            lines.push(render_branch_line(branch));
+        }
+        if report.branches.len() > options.kept_branch_examples {
+            lines.push(format!(
+                "  ... {} more branch(es); use --branch-examples N, --json, or --out for full detail",
+                report.branches.len() - options.kept_branch_examples
+            ));
+        }
     }
     lines.join("\n")
 }
@@ -609,6 +634,52 @@ mod tests {
 
         assert!(rendered.contains("BranchExperimentV1 seed=1"));
         assert!(!rendered.trim_start().starts_with('{'));
+    }
+
+    #[test]
+    fn compact_report_respects_kept_branch_example_limit() {
+        let report = BranchExperimentReportV1 {
+            branches: vec![
+                branch_report(
+                    "b0",
+                    "Shockwave",
+                    1,
+                    3,
+                    70,
+                    BranchRetentionSlotV1::Package,
+                    "Combat",
+                ),
+                branch_report(
+                    "b1",
+                    "Armaments",
+                    1,
+                    3,
+                    71,
+                    BranchRetentionSlotV1::DefenseEngine,
+                    "Combat",
+                ),
+                branch_report(
+                    "b2",
+                    "Sever Soul",
+                    1,
+                    3,
+                    72,
+                    BranchRetentionSlotV1::EngineSetup,
+                    "Combat",
+                ),
+            ],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report_with_options(
+            &report,
+            CompactReportOptions {
+                kept_branch_examples: 2,
+            },
+        );
+
+        assert_eq!(rendered.matches(" | choices: ").count(), 2);
+        assert!(rendered.contains("... 1 more branch(es); use --branch-examples N"));
     }
 
     #[test]
