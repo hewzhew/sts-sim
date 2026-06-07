@@ -609,7 +609,7 @@ const RETENTION_SLOT_DISPLAY_ORDER: [BranchRetentionSlotV1; 8] = [
     BranchRetentionSlotV1::Diversity,
 ];
 
-const CHOICE_EFFECT_DISPLAY_ORDER: [&str; 11] = [
+const CHOICE_EFFECT_DISPLAY_ORDER: [&str; 14] = [
     "take_card",
     "skip_reward",
     "singing_bowl",
@@ -619,6 +619,9 @@ const CHOICE_EFFECT_DISPLAY_ORDER: [&str; 11] = [
     "duplicate_card",
     "bottle_card",
     "rest",
+    "dig",
+    "lift",
+    "recall",
     "boss_relic",
     "event_choice",
 ];
@@ -803,6 +806,48 @@ mod tests {
         let rendered = render_compact_report(&report);
 
         assert!(rendered.contains("Kept choice effects: take_card=1 bottle_card=1"));
+    }
+
+    #[test]
+    fn compact_report_summarizes_special_campfire_effect_coverage() {
+        let mut dig = branch_report(
+            "b0",
+            "Dig",
+            1,
+            6,
+            70,
+            BranchRetentionSlotV1::Diversity,
+            "Campfire",
+        );
+        dig.choices[0].effect_kind = "dig".to_string();
+        let mut lift = branch_report(
+            "b1",
+            "Lift",
+            1,
+            6,
+            72,
+            BranchRetentionSlotV1::Diversity,
+            "Campfire",
+        );
+        lift.choices[0].effect_kind = "lift".to_string();
+        let mut recall = branch_report(
+            "b2",
+            "Recall ruby key",
+            1,
+            6,
+            74,
+            BranchRetentionSlotV1::Diversity,
+            "Campfire",
+        );
+        recall.choices[0].effect_kind = "recall".to_string();
+        let report = BranchExperimentReportV1 {
+            branches: vec![dig, lift, recall],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("Kept choice effects: dig=1 lift=1 recall=1"));
     }
 
     #[test]

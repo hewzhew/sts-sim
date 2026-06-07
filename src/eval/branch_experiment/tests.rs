@@ -654,6 +654,13 @@ fn branch_choice_effect_key_preserves_bottle_card_effect() {
     );
 }
 
+#[test]
+fn branch_choice_effect_key_preserves_special_campfire_effects() {
+    assert_eq!(branch_experiment_choice_effect_key_v1("dig"), "dig");
+    assert_eq!(branch_experiment_choice_effect_key_v1("lift"), "lift");
+    assert_eq!(branch_experiment_choice_effect_key_v1("recall"), "recall");
+}
+
 fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
     BranchWork {
         id: branch_id.to_string(),

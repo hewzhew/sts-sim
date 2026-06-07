@@ -160,6 +160,24 @@ fn portfolio_retention_treats_bottle_card_as_distinct_effect_kind() {
 }
 
 #[test]
+fn portfolio_retention_treats_special_campfire_actions_as_distinct_effect_kinds() {
+    let candidates = vec![
+        effect_retention_candidate(0, 10_900, "upgrade_card"),
+        effect_retention_candidate(1, 10_890, "upgrade_card"),
+        effect_retention_candidate(2, 10_100, "dig"),
+        effect_retention_candidate(3, 10_090, "lift"),
+        effect_retention_candidate(4, 10_080, "recall"),
+    ];
+
+    let selection = select_branch_retention_portfolio_v1(&candidates, retention_config(4, Some(4)));
+
+    assert!(selection.keep_indices.contains(&2));
+    assert!(selection.keep_indices.contains(&3));
+    assert!(selection.keep_indices.contains(&4));
+    assert_eq!(selection.keep_indices.len(), 4);
+}
+
+#[test]
 fn portfolio_retention_caps_dominant_first_pick_across_distinct_families() {
     fn sever_soul_candidate(
         index: usize,

@@ -713,6 +713,9 @@ pub fn branch_experiment_choice_effect_key_v1(effect_kind: &str) -> &'static str
         "transform_card" => "transform_card",
         "duplicate_card" => "duplicate_card",
         "bottle_card" => "bottle_card",
+        "dig" => "dig",
+        "lift" => "lift",
+        "recall" => "recall",
         _ => "other",
     }
 }
