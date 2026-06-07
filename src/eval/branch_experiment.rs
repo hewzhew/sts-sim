@@ -32,7 +32,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 7;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 8;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -98,9 +98,17 @@ pub struct BranchExperimentReportV1 {
     pub wall_limit_hit: bool,
     pub elapsed_wall_ms: u64,
     pub pruned_branch_count: usize,
+    pub pruned_first_pick_counts: Vec<BranchExperimentPrunedFirstPickCountV1>,
     pub reward_option_portfolios: Vec<BranchExperimentRewardOptionPortfolioV1>,
     pub frontier_groups: Vec<BranchExperimentFrontierGroupV1>,
     pub branches: Vec<BranchExperimentBranchReportV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentPrunedFirstPickCountV1 {
+    pub first_pick: String,
+    pub count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -322,6 +330,7 @@ fn run_branch_experiment_from_session_with_replay(
     let mut frontier_group_limit_hit = false;
     let mut wall_limit_hit = false;
     let mut pruned_branch_count = 0usize;
+    let mut pruned_first_pick_counts = BTreeMap::<String, usize>::new();
     let mut reward_option_portfolios = Vec::new();
 
     for depth in 0..config.max_depth {
@@ -400,6 +409,10 @@ fn run_branch_experiment_from_session_with_replay(
         branch_limit_hit |= retention.branch_limit_hit;
         frontier_group_limit_hit |= retention.frontier_group_limit_hit;
         pruned_branch_count = pruned_branch_count.saturating_add(retention.pruned_count);
+        merge_pruned_first_pick_counts(
+            &mut pruned_first_pick_counts,
+            retention.pruned_first_pick_counts,
+        );
 
         branches = next;
         if !expanded_any {
@@ -460,6 +473,7 @@ fn run_branch_experiment_from_session_with_replay(
         wall_limit_hit,
         elapsed_wall_ms: started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
         pruned_branch_count,
+        pruned_first_pick_counts: pruned_first_pick_count_reports(pruned_first_pick_counts),
         reward_option_portfolios,
         frontier_groups: frontier_groups(&branch_reports),
         branches: branch_reports,
@@ -540,6 +554,7 @@ struct BranchRetentionApplyResult {
     branch_limit_hit: bool,
     frontier_group_limit_hit: bool,
     pruned_count: usize,
+    pruned_first_pick_counts: BTreeMap<String, usize>,
 }
 
 fn apply_branch_retention(
@@ -582,10 +597,17 @@ fn apply_branch_retention(
             .unwrap_or_else(default_branch_retention_decision_v1);
     }
 
+    let keep_indices = selection
+        .keep_indices
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let pruned_first_pick_counts = pruned_first_pick_counts_for_selection(&branches, &keep_indices);
+
     let mut branches = branches
         .into_iter()
         .enumerate()
-        .filter_map(|(index, branch)| selection.keep_indices.contains(&index).then_some(branch))
+        .filter_map(|(index, branch)| keep_indices.contains(&index).then_some(branch))
         .collect::<Vec<_>>();
     branches.sort_by(|left, right| {
         retention_report_slot_priority(left.retention.primary_slot)
@@ -601,7 +623,55 @@ fn apply_branch_retention(
         branch_limit_hit: selection.total_limit_hit,
         frontier_group_limit_hit: selection.frontier_limit_hit,
         pruned_count: before_len.saturating_sub(selection.keep_indices.len()),
+        pruned_first_pick_counts,
     }
+}
+
+fn pruned_first_pick_counts_for_selection(
+    branches: &[BranchWork],
+    keep_indices: &BTreeSet<usize>,
+) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for (index, branch) in branches.iter().enumerate() {
+        if keep_indices.contains(&index) {
+            continue;
+        }
+        *counts.entry(branch_first_pick_label(branch)).or_default() += 1;
+    }
+    counts
+}
+
+fn branch_first_pick_label(branch: &BranchWork) -> String {
+    branch
+        .choices
+        .first()
+        .map(|choice| choice.label.clone())
+        .unwrap_or_else(|| "no_card_reward_choice".to_string())
+}
+
+fn merge_pruned_first_pick_counts(
+    total: &mut BTreeMap<String, usize>,
+    step_counts: BTreeMap<String, usize>,
+) {
+    for (label, count) in step_counts {
+        *total.entry(label).or_default() += count;
+    }
+}
+
+fn pruned_first_pick_count_reports(
+    counts: BTreeMap<String, usize>,
+) -> Vec<BranchExperimentPrunedFirstPickCountV1> {
+    let mut reports = counts
+        .into_iter()
+        .map(|(first_pick, count)| BranchExperimentPrunedFirstPickCountV1 { first_pick, count })
+        .collect::<Vec<_>>();
+    reports.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.first_pick.cmp(&right.first_pick))
+    });
+    reports
 }
 
 fn retention_report_slot_priority(slot: BranchRetentionSlotV1) -> usize {
@@ -1341,6 +1411,33 @@ mod tests {
             .pruned_options
             .iter()
             .any(|option| option.semantic_class == "pure_transition_frontload"));
+    }
+
+    #[test]
+    fn pruned_first_pick_count_reports_sort_for_stable_comparison() {
+        let reports = pruned_first_pick_count_reports(BTreeMap::from([
+            ("Shockwave".to_string(), 2),
+            ("Armaments".to_string(), 4),
+            ("Clash".to_string(), 4),
+        ]));
+
+        assert_eq!(
+            reports,
+            vec![
+                BranchExperimentPrunedFirstPickCountV1 {
+                    first_pick: "Armaments".to_string(),
+                    count: 4,
+                },
+                BranchExperimentPrunedFirstPickCountV1 {
+                    first_pick: "Clash".to_string(),
+                    count: 4,
+                },
+                BranchExperimentPrunedFirstPickCountV1 {
+                    first_pick: "Shockwave".to_string(),
+                    count: 2,
+                },
+            ]
+        );
     }
 
     #[test]

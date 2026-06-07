@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sts_simulator::eval::branch_experiment::{
-    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentReportV1,
+    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1,
+    BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
@@ -51,6 +52,9 @@ pub(super) fn render_compact_report(report: &BranchExperimentReportV1) -> String
         .map(|branch| branch.retention.primary_slot)
         .collect::<Vec<_>>();
     if let Some(line) = render_primary_retention_slot_count_line(&primary_retention_slots) {
+        lines.push(line);
+    }
+    if let Some(line) = render_pruned_first_pick_count_line(&report.pruned_first_pick_counts) {
         lines.push(line);
     }
     let first_pick_outcomes = first_pick_outcome_summary_lines(report);
@@ -541,6 +545,26 @@ fn render_primary_retention_slot_count_line(slots: &[BranchRetentionSlotV1]) -> 
     Some(format!("Primary retention slots: {}", rendered.join(" ")))
 }
 
+fn render_pruned_first_pick_count_line(
+    counts: &[BranchExperimentPrunedFirstPickCountV1],
+) -> Option<String> {
+    if counts.is_empty() {
+        return None;
+    }
+    let rendered = counts
+        .iter()
+        .take(8)
+        .map(|entry| format!("{}={}", entry.first_pick, entry.count))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let suffix = if counts.len() > 8 {
+        format!(" ... {} more", counts.len() - 8)
+    } else {
+        String::new()
+    };
+    Some(format!("Pruned first picks: {rendered}{suffix}"))
+}
+
 const RETENTION_SLOT_DISPLAY_ORDER: [BranchRetentionSlotV1; 8] = [
     BranchRetentionSlotV1::Package,
     BranchRetentionSlotV1::EngineSetup,
@@ -573,6 +597,7 @@ mod tests {
     use sts_simulator::eval::branch_experiment::{
         BranchExperimentChoiceV1, BranchExperimentFrontierV1, BranchExperimentLineageV1,
         BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRunSummaryV1,
+        BRANCH_EXPERIMENT_SCHEMA_VERSION,
     };
     use sts_simulator::eval::branch_experiment_retention::BranchRetentionDecisionV1;
 
@@ -774,10 +799,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn compact_report_renders_pruned_first_pick_counts() {
+        let report = BranchExperimentReportV1 {
+            pruned_first_pick_counts: vec![
+                BranchExperimentPrunedFirstPickCountV1 {
+                    first_pick: "Armaments".to_string(),
+                    count: 7,
+                },
+                BranchExperimentPrunedFirstPickCountV1 {
+                    first_pick: "Shockwave".to_string(),
+                    count: 3,
+                },
+            ],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("Pruned first picks: Armaments=7 Shockwave=3"));
+    }
+
     fn empty_report() -> BranchExperimentReportV1 {
         BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
-            schema_version: 7,
+            schema_version: BRANCH_EXPERIMENT_SCHEMA_VERSION,
             label_role: "diagnostic_not_teacher_label".to_string(),
             policy_quality_claim: false,
             seed: 1,
@@ -792,6 +838,7 @@ mod tests {
             wall_limit_hit: false,
             elapsed_wall_ms: 0,
             pruned_branch_count: 0,
+            pruned_first_pick_counts: Vec::new(),
             reward_option_portfolios: Vec::new(),
             frontier_groups: Vec::new(),
             branches: Vec::new(),
