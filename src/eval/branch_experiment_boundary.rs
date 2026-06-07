@@ -11,13 +11,17 @@ use crate::eval::branch_experiment::{
 use crate::eval::branch_experiment_trajectory::summarize_branch_trajectory_v1;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
+use crate::state::events::EventOptionTransition;
 use crate::state::rewards::{RewardCard, RewardItem};
+
+const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BranchBoundaryIdV1 {
     CardReward,
     Campfire,
     BossRelic,
+    Event,
 }
 
 impl BranchBoundaryIdV1 {
@@ -26,6 +30,7 @@ impl BranchBoundaryIdV1 {
             BranchBoundaryIdV1::CardReward => "card reward option portfolio is empty",
             BranchBoundaryIdV1::Campfire => "campfire option portfolio is empty",
             BranchBoundaryIdV1::BossRelic => "boss relic option portfolio is empty",
+            BranchBoundaryIdV1::Event => "event option portfolio is empty",
         }
     }
 }
@@ -94,6 +99,12 @@ struct BossRelicBranchOption {
     command: String,
 }
 
+#[derive(Clone, Debug)]
+struct EventBranchOption {
+    label: String,
+    command: String,
+}
+
 pub(crate) fn current_branch_boundary(
     session: &RunControlSession,
     config: BranchBoundaryConfigV1,
@@ -141,6 +152,17 @@ pub(crate) fn current_branch_boundary(
         });
     }
 
+    if let Some(options) = event_branch_options(session) {
+        return Some(BranchBoundarySelectionV1 {
+            id: BranchBoundaryIdV1::Event,
+            options: options
+                .into_iter()
+                .map(BranchBoundaryOptionV1::from_event)
+                .collect(),
+            reward_option_portfolio: None,
+        });
+    }
+
     None
 }
 
@@ -148,6 +170,7 @@ pub(crate) fn branch_boundary_available(session: &RunControlSession) -> bool {
     card_reward_branch_options(session).is_some()
         || campfire_branch_options(session).is_some()
         || boss_relic_branch_options(session).is_some()
+        || event_branch_options(session).is_some()
 }
 
 impl BranchBoundaryOptionV1 {
@@ -181,6 +204,17 @@ impl BranchBoundaryOptionV1 {
             card: None,
             upgrades: None,
             success_reason: "boss relic branch applied",
+        }
+    }
+
+    fn from_event(option: EventBranchOption) -> Self {
+        Self {
+            kind: "event",
+            label: option.label,
+            command: option.command,
+            card: None,
+            upgrades: None,
+            success_reason: "event branch applied",
         }
     }
 }
@@ -427,6 +461,41 @@ fn boss_relic_label(relic: RelicId) -> String {
     format!("{relic:?}")
 }
 
+fn event_branch_options(session: &RunControlSession) -> Option<Vec<EventBranchOption>> {
+    if !matches!(session.engine_state, EngineState::EventRoom) {
+        return None;
+    }
+    let event_options = crate::engine::event_handler::get_event_options(&session.run_state);
+    let surface = build_decision_surface(session);
+    let mut branch_options = Vec::new();
+
+    for candidate in &surface.view.candidates {
+        let Some(ClientInput::EventChoice(index)) = candidate.action.executable_input() else {
+            continue;
+        };
+        let Some(event_option) = event_options.get(index) else {
+            continue;
+        };
+        if event_option.ui.disabled
+            || matches!(
+                event_option.semantics.transition,
+                EventOptionTransition::OpenSelection(_)
+            )
+        {
+            return None;
+        }
+        branch_options.push(EventBranchOption {
+            label: candidate.label.clone(),
+            command: candidate.action.command_hint(),
+        });
+    }
+
+    if branch_options.is_empty() || branch_options.len() > MAX_EVENT_OPTIONS_PER_BRANCH {
+        return None;
+    }
+    Some(branch_options)
+}
+
 fn campfire_option_priority(option: &CampfireBranchOption) -> usize {
     match option.semantic_class.as_str() {
         "rest" => 0,
@@ -581,6 +650,7 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::relics::RelicId;
     use crate::eval::run_control::{RunControlConfig, RunControlSession};
+    use crate::state::events::{EventId, EventState};
     use crate::state::rewards::{BossRelicChoiceState, RewardState};
 
     #[test]
@@ -693,6 +763,42 @@ mod tests {
                 ("boss_relic", "relic 1", None),
                 ("boss_relic", "relic 2", None),
             ]
+        );
+    }
+
+    #[test]
+    fn current_boundary_wraps_low_fanout_event_options() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = Some(EventState::new(EventId::BigFish));
+        session.engine_state = EngineState::EventRoom;
+
+        let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+            .expect("event boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+        assert_eq!(
+            boundary
+                .options
+                .iter()
+                .map(|option| (option.kind, option.command.as_str(), option.card))
+                .collect::<Vec<_>>(),
+            vec![
+                ("event", "event 0", None),
+                ("event", "event 1", None),
+                ("event", "event 2", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn current_boundary_rejects_event_options_that_open_selection() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = Some(EventState::new(EventId::UpgradeShrine));
+        session.engine_state = EngineState::EventRoom;
+
+        assert!(
+            current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
+            "events that open deck/card selection should wait for a dedicated selection portfolio boundary"
         );
     }
 
