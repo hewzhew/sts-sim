@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sts_simulator::eval::branch_experiment::{
-    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceV1,
-    BranchExperimentReportV1, BranchExperimentRewardOptionPortfolioEntryV1,
-    BranchExperimentRewardOptionPortfolioV1,
+    branch_experiment_choice_effect_key_v1, BranchExperimentBranchReportV1,
+    BranchExperimentBranchStatusV1, BranchExperimentChoiceV1, BranchExperimentReportV1,
+    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
 
@@ -272,6 +272,28 @@ fn render_package_state_counts(counts: &BTreeMap<String, usize>) -> String {
     render_string_count_map(counts)
 }
 
+fn render_choice_effect_counts(counts: &BTreeMap<String, usize>) -> String {
+    if counts.is_empty() {
+        return "-".to_string();
+    }
+    CHOICE_EFFECT_DISPLAY_ORDER
+        .iter()
+        .filter_map(|effect| {
+            counts
+                .get(*effect)
+                .filter(|count| **count > 0)
+                .map(|count| format!("{effect}={count}"))
+        })
+        .chain(
+            counts
+                .iter()
+                .filter(|(effect, _)| !CHOICE_EFFECT_DISPLAY_ORDER.contains(&effect.as_str()))
+                .map(|(effect, count)| format!("{effect}={count}")),
+        )
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn render_retention_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>) -> String {
     RETENTION_SLOT_DISPLAY_ORDER
         .iter()
@@ -290,46 +312,21 @@ fn render_choice_effect_count_line(report: &BranchExperimentReportV1) -> Option<
     for branch in &report.branches {
         for choice in &branch.choices {
             *counts
-                .entry(choice_effect_display_name(choice))
+                .entry(branch_experiment_choice_effect_key_v1(&choice.effect_kind))
                 .or_default() += 1;
         }
     }
     if counts.is_empty() {
         return None;
     }
-    let rendered = CHOICE_EFFECT_DISPLAY_ORDER
-        .iter()
-        .filter_map(|effect| {
-            counts
-                .get(effect)
-                .filter(|count| **count > 0)
-                .map(|count| format!("{effect}={count}"))
-        })
-        .chain(
-            counts
-                .iter()
-                .filter(|(effect, _)| !CHOICE_EFFECT_DISPLAY_ORDER.contains(effect))
-                .map(|(effect, count)| format!("{effect}={count}")),
-        )
-        .collect::<Vec<_>>()
-        .join(" ");
-    Some(format!("Kept choice effects: {rendered}"))
-}
-
-fn choice_effect_display_name(choice: &BranchExperimentChoiceV1) -> &'static str {
-    match choice.effect_kind.as_str() {
-        "" | "add_card" => "take_card",
-        "skip_card_reward" => "skip_reward",
-        "singing_bowl" => "singing_bowl",
-        "upgrade_card" => "upgrade_card",
-        "rest" => "rest",
-        "boss_relic" => "boss_relic",
-        "event_choice" => "event_choice",
-        "remove_card" => "remove_card",
-        "transform_card" => "transform_card",
-        "duplicate_card" => "duplicate_card",
-        _ => "other",
-    }
+    let counts = counts
+        .into_iter()
+        .map(|(effect, count)| (effect.to_string(), count))
+        .collect::<BTreeMap<_, _>>();
+    Some(format!(
+        "Kept choice effects: {}",
+        render_choice_effect_counts(&counts)
+    ))
 }
 
 fn render_string_count_map(counts: &BTreeMap<String, usize>) -> String {
@@ -1252,6 +1249,10 @@ mod tests {
                         (BranchRetentionSlotV1::Diversity, 3),
                     ]),
                     package_state_counts: BTreeMap::from([("open:exhaust_engine".to_string(), 1)]),
+                    choice_effect_counts: BTreeMap::from([
+                        ("take_card".to_string(), 2),
+                        ("skip_reward".to_string(), 1),
+                    ]),
                 },
             ..empty_report()
         };
@@ -1260,7 +1261,7 @@ mod tests {
 
         assert!(rendered.contains("Pruned first picks: Armaments=7 Shockwave=3"));
         assert!(rendered.contains(
-            "Pruned branch summary: primary=[engine_setup=1 frontload=2] eligible=[engine_setup=1 frontload=2 diversity=3] packages=[open:exhaust_engine=1]"
+            "Pruned branch summary: primary=[engine_setup=1 frontload=2] eligible=[engine_setup=1 frontload=2 diversity=3] effects=[take_card=2 skip_reward=1] packages=[open:exhaust_engine=1]"
         ));
         assert!(rendered.contains(
             "Coverage note: pruned long-horizon branches primary=[engine_setup=1] packages=[open:exhaust_engine=1]; use --compare-profiles or raise --max-branches before treating missing packages as evidence"

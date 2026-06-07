@@ -543,8 +543,14 @@ fn pruned_branch_summary_counts_semantic_retention_loss() {
         ),
     ]);
     let keep_indices = BTreeSet::from([0]);
+    let branches = vec![
+        branch_with_choice("b0", "add_card"),
+        branch_with_choice("b1", "add_card"),
+        branch_with_choice("b2", "skip_card_reward"),
+    ];
 
-    let summary = pruned_branch_summary_for_selection(&candidates, &decisions, &keep_indices);
+    let summary =
+        pruned_branch_summary_for_selection(&branches, &candidates, &decisions, &keep_indices);
 
     assert_eq!(
         summary.primary_slot_counts[&BranchRetentionSlotV1::EngineSetup],
@@ -560,6 +566,32 @@ fn pruned_branch_summary_counts_semantic_retention_loss() {
     );
     assert_eq!(summary.package_state_counts["open:exhaust_engine"], 1);
     assert_eq!(summary.package_state_counts["closed:block_engine"], 1);
+    assert_eq!(summary.choice_effect_counts["take_card"], 1);
+    assert_eq!(summary.choice_effect_counts["skip_reward"], 1);
+}
+
+fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
+    BranchWork {
+        id: branch_id.to_string(),
+        session: RunControlSession::new(RunControlConfig::default()),
+        choices: vec![BranchExperimentChoiceV1 {
+            depth: 0,
+            kind: "card_reward".to_string(),
+            card: Some(CardId::TwinStrike),
+            upgrades: Some(0),
+            selected_cards: Vec::new(),
+            effect_kind: effect_kind.to_string(),
+            effect_key: effect_kind.to_string(),
+            effect_label: effect_kind.to_string(),
+            representative_count: 1,
+            suppressed_count: 0,
+            label: effect_kind.to_string(),
+            command: "test".to_string(),
+        }],
+        status: BranchExperimentBranchStatusV1::Active,
+        stop_reason: "test".to_string(),
+        retention: default_branch_retention_decision_v1(),
+    }
 }
 
 fn retention_candidate(

@@ -14,7 +14,7 @@ use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::RunControlHpLossLimit;
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 14;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 15;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -107,6 +107,8 @@ pub struct BranchExperimentPrunedBranchSummaryV1 {
     pub primary_slot_counts: BTreeMap<BranchRetentionSlotV1, usize>,
     pub eligible_slot_counts: BTreeMap<BranchRetentionSlotV1, usize>,
     pub package_state_counts: BTreeMap<String, usize>,
+    #[serde(default)]
+    pub choice_effect_counts: BTreeMap<String, usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

@@ -33,9 +33,10 @@ pub(super) fn render_pruned_branch_summary_line(
     }
     let summary = &report.pruned_branch_summary;
     Some(format!(
-        "Pruned branch summary: primary=[{}] eligible=[{}] packages=[{}]",
+        "Pruned branch summary: primary=[{}] eligible=[{}] effects=[{}] packages=[{}]",
         super::render_retention_slot_counts(&summary.primary_slot_counts),
         super::render_retention_slot_counts(&summary.eligible_slot_counts),
+        super::render_choice_effect_counts(&summary.choice_effect_counts),
         super::render_package_state_counts(&summary.package_state_counts)
     ))
 }

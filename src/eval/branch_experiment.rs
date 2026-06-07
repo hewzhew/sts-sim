@@ -603,6 +603,7 @@ fn apply_branch_retention(
         .collect::<BTreeSet<_>>();
     let pruned_first_pick_counts = pruned_first_pick_counts_for_selection(&branches, &keep_indices);
     let pruned_branch_summary = pruned_branch_summary_for_selection(
+        &branches,
         &candidates,
         &selection.decisions_by_index,
         &keep_indices,
@@ -647,6 +648,7 @@ fn pruned_first_pick_counts_for_selection(
 }
 
 fn pruned_branch_summary_for_selection(
+    branches: &[BranchWork],
     candidates: &[BranchRetentionCandidateInputV1],
     decisions_by_index: &BTreeMap<usize, BranchRetentionDecisionV1>,
     keep_indices: &BTreeSet<usize>,
@@ -669,8 +671,36 @@ fn pruned_branch_summary_for_selection(
         for state in branch_trajectory_package_state_tags(&candidate.trajectory) {
             *summary.package_state_counts.entry(state).or_default() += 1;
         }
+        if let Some(branch) = branches.get(candidate.index) {
+            for choice in &branch.choices {
+                *summary
+                    .choice_effect_counts
+                    .entry(branch_choice_effect_key(choice).to_string())
+                    .or_default() += 1;
+            }
+        }
     }
     summary
+}
+
+fn branch_choice_effect_key(choice: &BranchExperimentChoiceV1) -> &'static str {
+    branch_experiment_choice_effect_key_v1(&choice.effect_kind)
+}
+
+pub fn branch_experiment_choice_effect_key_v1(effect_kind: &str) -> &'static str {
+    match effect_kind {
+        "" | "add_card" => "take_card",
+        "skip_card_reward" => "skip_reward",
+        "singing_bowl" => "singing_bowl",
+        "upgrade_card" => "upgrade_card",
+        "rest" => "rest",
+        "boss_relic" => "boss_relic",
+        "event_choice" => "event_choice",
+        "remove_card" => "remove_card",
+        "transform_card" => "transform_card",
+        "duplicate_card" => "duplicate_card",
+        _ => "other",
+    }
 }
 
 fn branch_trajectory_package_state_tags(trajectory: &BranchTrajectorySignatureV1) -> Vec<String> {
@@ -721,6 +751,7 @@ fn merge_pruned_branch_summary(
     merge_count_map(&mut total.primary_slot_counts, step.primary_slot_counts);
     merge_count_map(&mut total.eligible_slot_counts, step.eligible_slot_counts);
     merge_count_map(&mut total.package_state_counts, step.package_state_counts);
+    merge_count_map(&mut total.choice_effect_counts, step.choice_effect_counts);
 }
 
 fn merge_count_map<K: Ord>(total: &mut BTreeMap<K, usize>, step: BTreeMap<K, usize>) {
