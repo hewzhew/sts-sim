@@ -11,7 +11,6 @@ use crate::eval::branch_experiment::{
 use crate::eval::branch_experiment_trajectory::summarize_branch_trajectory_v1;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
-use crate::state::events::EventOptionTransition;
 use crate::state::rewards::{RewardCard, RewardItem};
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 3;
@@ -547,12 +546,7 @@ fn event_branch_options(session: &RunControlSession) -> Option<Vec<EventBranchOp
         let Some(event_option) = event_options.get(index) else {
             continue;
         };
-        if event_option.ui.disabled
-            || matches!(
-                event_option.semantics.transition,
-                EventOptionTransition::OpenSelection(_)
-            )
-        {
+        if event_option.ui.disabled {
             return None;
         }
         branch_options.push(EventBranchOption {
@@ -863,14 +857,22 @@ mod tests {
     }
 
     #[test]
-    fn current_boundary_rejects_event_options_that_open_selection() {
+    fn current_boundary_allows_event_options_that_open_single_card_selection() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         session.run_state.event_state = Some(EventState::new(EventId::UpgradeShrine));
         session.engine_state = EngineState::EventRoom;
 
-        assert!(
-            current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
-            "events that open deck/card selection should wait for a dedicated selection portfolio boundary"
+        let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+            .expect("event boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+        assert_eq!(
+            boundary
+                .options
+                .iter()
+                .map(|option| (option.kind, option.command.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("event", "event 0"), ("event", "event 1")]
         );
     }
 
