@@ -210,6 +210,7 @@ struct FirstPickOutcomeSummary {
     min_hp: i32,
     max_hp: i32,
     primary_slots: BTreeMap<BranchRetentionSlotV1, usize>,
+    package_states: BTreeMap<String, usize>,
     frontiers: BTreeMap<String, usize>,
 }
 
@@ -229,6 +230,7 @@ fn first_pick_outcome_summary_lines(report: &BranchExperimentReportV1) -> Vec<St
                 min_hp: branch.summary.hp,
                 max_hp: branch.summary.hp,
                 primary_slots: BTreeMap::new(),
+                package_states: BTreeMap::new(),
                 frontiers: BTreeMap::new(),
             });
         entry.branch_count += 1;
@@ -242,6 +244,9 @@ fn first_pick_outcome_summary_lines(report: &BranchExperimentReportV1) -> Vec<St
             .primary_slots
             .entry(branch.retention.primary_slot)
             .or_default() += 1;
+        for state in branch_package_state_tags(branch) {
+            *entry.package_states.entry(state).or_default() += 1;
+        }
         *entry
             .frontiers
             .entry(branch.summary.boundary_title.clone())
@@ -265,15 +270,44 @@ fn first_pick_outcome_summary_lines(report: &BranchExperimentReportV1) -> Vec<St
 
 fn render_first_pick_outcome(summary: &FirstPickOutcomeSummary) -> String {
     format!(
-        "  {} | branches={} deepest=A{}F{} hp={} | primary=[{}] | frontiers=[{}]",
+        "  {} | branches={} deepest=A{}F{} hp={} | primary=[{}] | packages=[{}] | frontiers=[{}]",
         summary.label,
         summary.branch_count,
         summary.deepest_act,
         summary.deepest_floor,
         render_hp_range(summary.min_hp, summary.max_hp),
         render_primary_slot_counts(&summary.primary_slots),
+        render_package_state_counts(&summary.package_states),
         render_string_count_map(&summary.frontiers)
     )
+}
+
+fn branch_package_state_tags(branch: &BranchExperimentBranchReportV1) -> Vec<String> {
+    let setup_keys = branch
+        .summary
+        .trajectory
+        .setup_keys
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let package_keys = branch
+        .summary
+        .trajectory
+        .package_keys
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut tags = Vec::new();
+    for key in setup_keys.intersection(&package_keys) {
+        tags.push(format!("closed:{key}"));
+    }
+    for key in setup_keys.difference(&package_keys) {
+        tags.push(format!("open:{key}"));
+    }
+    for key in package_keys.difference(&setup_keys) {
+        tags.push(format!("payoff_only:{key}"));
+    }
+    tags
 }
 
 fn render_hp_range(min_hp: i32, max_hp: i32) -> String {
@@ -282,6 +316,13 @@ fn render_hp_range(min_hp: i32, max_hp: i32) -> String {
     } else {
         format!("{min_hp}-{max_hp}")
     }
+}
+
+fn render_package_state_counts(counts: &BTreeMap<String, usize>) -> String {
+    if counts.is_empty() {
+        return "-".to_string();
+    }
+    render_string_count_map(counts)
 }
 
 fn render_primary_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>) -> String {
@@ -702,11 +743,34 @@ mod tests {
 
         assert_eq!(
             lines[0],
-            "  Shockwave | branches=2 deepest=A1F6 hp=60-70 | primary=[package=1 engine_setup=1] | frontiers=[Campfire=1 Combat=1]"
+            "  Shockwave | branches=2 deepest=A1F6 hp=60-70 | primary=[package=1 engine_setup=1] | packages=[-] | frontiers=[Campfire=1 Combat=1]"
         );
         assert_eq!(
             lines[1],
-            "  Armaments | branches=1 deepest=A1F5 hp=76 | primary=[defense=1] | frontiers=[Combat=1]"
+            "  Armaments | branches=1 deepest=A1F5 hp=76 | primary=[defense=1] | packages=[-] | frontiers=[Combat=1]"
+        );
+    }
+
+    #[test]
+    fn first_pick_outcome_summary_includes_generic_package_state() {
+        let report = BranchExperimentReportV1 {
+            branches: vec![
+                branch_report_with_packages(
+                    "b0",
+                    "Body Slam",
+                    &["block_engine", "exhaust_engine"],
+                    &["block_engine", "upgrade_sink"],
+                ),
+                branch_report_with_packages("b1", "Body Slam", &["exhaust_engine"], &[]),
+            ],
+            ..empty_report()
+        };
+
+        let lines = first_pick_outcome_summary_lines(&report);
+
+        assert_eq!(
+            lines[0],
+            "  Body Slam | branches=2 deepest=A1F5 hp=70 | primary=[package=2] | packages=[closed:block_engine=1 open:exhaust_engine=2 payoff_only:upgrade_sink=1] | frontiers=[Combat=2]"
         );
     }
 
@@ -828,5 +892,27 @@ mod tests {
                 },
             },
         }
+    }
+
+    fn branch_report_with_packages(
+        branch_id: &str,
+        first_pick: &str,
+        setup_keys: &[&str],
+        package_keys: &[&str],
+    ) -> BranchExperimentBranchReportV1 {
+        let mut branch = branch_report(
+            branch_id,
+            first_pick,
+            1,
+            5,
+            70,
+            BranchRetentionSlotV1::Package,
+            "Combat",
+        );
+        branch.summary.trajectory.setup_keys =
+            setup_keys.iter().map(|key| key.to_string()).collect();
+        branch.summary.trajectory.package_keys =
+            package_keys.iter().map(|key| key.to_string()).collect();
+        branch
     }
 }
