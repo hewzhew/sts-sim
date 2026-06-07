@@ -8,6 +8,7 @@ use compact_report::{
 use sts_simulator::eval::branch_experiment::{
     run_branch_experiment_v1, BranchExperimentConfigV1, BranchExperimentReportV1,
 };
+use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::run_control::RunControlHpLossLimit;
 
 mod compact_report;
@@ -35,6 +36,13 @@ struct Args {
 
     #[arg(long)]
     max_per_frontier_group: Option<usize>,
+
+    #[arg(
+        long,
+        default_value = "balanced",
+        help = "Branch retention budget profile: balanced, exploration, survival, or package"
+    )]
+    retention_profile: String,
 
     #[arg(long)]
     max_reward_options: Option<usize>,
@@ -119,6 +127,7 @@ fn run(args: Args) -> Result<(), String> {
         final_act: args.final_act,
         max_branches: args.max_branches,
         max_branches_per_frontier_group: args.max_per_frontier_group,
+        retention_budget_profile: parse_retention_profile(&args.retention_profile)?,
         max_reward_options_per_branch: args.max_reward_options,
         max_campfire_options_per_branch: Some(args.max_campfire_options),
         max_depth: args.max_depth,
@@ -156,6 +165,10 @@ fn run(args: Args) -> Result<(), String> {
         println!("{}", render_report(&report, compact_options));
     }
     Ok(())
+}
+
+fn parse_retention_profile(value: &str) -> Result<BranchRetentionBudgetProfileV1, String> {
+    value.parse()
 }
 
 fn render_report(report: &BranchExperimentReportV1, options: CompactReportOptions) -> String {

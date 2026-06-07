@@ -66,6 +66,7 @@ pub(super) fn render_compact_report_with_options(
                 .unwrap_or("not_recorded")
         ));
     }
+    lines.push(format!("retention_profile={}", report.retention_profile));
     let retention_lanes = report
         .branches
         .iter()
@@ -649,7 +650,9 @@ mod tests {
         BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRunSummaryV1,
         BRANCH_EXPERIMENT_SCHEMA_VERSION,
     };
-    use sts_simulator::eval::branch_experiment_retention::BranchRetentionDecisionV1;
+    use sts_simulator::eval::branch_experiment_retention::{
+        BranchRetentionBudgetProfileV1, BranchRetentionDecisionV1,
+    };
 
     #[test]
     fn compact_report_is_human_sized() {
@@ -799,6 +802,16 @@ mod tests {
     }
 
     #[test]
+    fn compact_report_renders_retention_profile() {
+        let mut report = empty_report();
+        report.retention_profile = BranchRetentionBudgetProfileV1::Exploration;
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("retention_profile=exploration"));
+    }
+
+    #[test]
     fn compact_report_renders_engine_setup_retention_slot() {
         let rendered = render_retention_slots(&[
             BranchRetentionSlotV1::EngineSetup,
@@ -928,6 +941,7 @@ mod tests {
             replay_trace_stop: None,
             max_branches: 4,
             max_depth: 1,
+            retention_profile: BranchRetentionBudgetProfileV1::Balanced,
             explored_branch_points: 1,
             branch_limit_hit: false,
             frontier_group_limit_hit: false,

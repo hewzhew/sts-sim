@@ -17,8 +17,8 @@ use crate::eval::branch_experiment_boundary::{
 };
 use crate::eval::branch_experiment_retention::{
     default_branch_retention_decision_v1, select_branch_retention_portfolio_v1,
-    BranchRetentionCandidateInputV1, BranchRetentionConfigV1, BranchRetentionDecisionV1,
-    BranchRetentionSlotV1,
+    BranchRetentionBudgetProfileV1, BranchRetentionCandidateInputV1, BranchRetentionConfigV1,
+    BranchRetentionDecisionV1, BranchRetentionSlotV1,
 };
 use crate::eval::branch_experiment_trajectory::{
     summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
@@ -34,7 +34,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 12;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 13;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -44,6 +44,7 @@ pub struct BranchExperimentConfigV1 {
     pub final_act: bool,
     pub max_branches: usize,
     pub max_branches_per_frontier_group: Option<usize>,
+    pub retention_budget_profile: BranchRetentionBudgetProfileV1,
     pub max_reward_options_per_branch: Option<usize>,
     pub max_campfire_options_per_branch: Option<usize>,
     pub max_depth: usize,
@@ -67,6 +68,7 @@ impl Default for BranchExperimentConfigV1 {
             final_act: false,
             max_branches: 12,
             max_branches_per_frontier_group: None,
+            retention_budget_profile: BranchRetentionBudgetProfileV1::Balanced,
             max_reward_options_per_branch: None,
             max_campfire_options_per_branch: Some(3),
             max_depth: 4,
@@ -96,6 +98,8 @@ pub struct BranchExperimentReportV1 {
     pub replay_trace_stop: Option<String>,
     pub max_branches: usize,
     pub max_depth: usize,
+    #[serde(default)]
+    pub retention_profile: BranchRetentionBudgetProfileV1,
     pub explored_branch_points: usize,
     pub branch_limit_hit: bool,
     pub frontier_group_limit_hit: bool,
@@ -500,6 +504,7 @@ fn run_branch_experiment_from_session_with_replay(
         replay_trace_stop,
         max_branches: config.max_branches,
         max_depth: config.max_depth,
+        retention_profile: config.retention_budget_profile,
         explored_branch_points,
         branch_limit_hit,
         frontier_group_limit_hit,
@@ -673,6 +678,7 @@ fn apply_branch_retention(
         BranchRetentionConfigV1 {
             max_total: config.max_branches,
             max_per_frontier: config.max_branches_per_frontier_group,
+            budget_profile: config.retention_budget_profile,
         },
     );
 

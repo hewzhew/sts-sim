@@ -6,6 +6,8 @@ use crate::eval::branch_experiment_trajectory::{
     branch_trajectory_family_key_v1, BranchTrajectorySignatureV1,
 };
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -18,6 +20,43 @@ pub enum BranchRetentionSlotV1 {
     Frontload,
     CleanDeck,
     Diversity,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BranchRetentionBudgetProfileV1 {
+    #[default]
+    Balanced,
+    Exploration,
+    Survival,
+    Package,
+}
+
+impl fmt::Display for BranchRetentionBudgetProfileV1 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            BranchRetentionBudgetProfileV1::Balanced => "balanced",
+            BranchRetentionBudgetProfileV1::Exploration => "exploration",
+            BranchRetentionBudgetProfileV1::Survival => "survival",
+            BranchRetentionBudgetProfileV1::Package => "package",
+        })
+    }
+}
+
+impl FromStr for BranchRetentionBudgetProfileV1 {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+            "balanced" => Ok(Self::Balanced),
+            "exploration" | "explore" => Ok(Self::Exploration),
+            "survival" | "safe" => Ok(Self::Survival),
+            "package" | "packages" => Ok(Self::Package),
+            other => Err(format!(
+                "invalid retention profile `{other}`; expected balanced, exploration, survival, or package"
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -38,6 +77,7 @@ pub struct BranchRetentionCandidateInputV1 {
 pub struct BranchRetentionConfigV1 {
     pub max_total: usize,
     pub max_per_frontier: Option<usize>,
+    pub budget_profile: BranchRetentionBudgetProfileV1,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -122,6 +162,7 @@ pub fn select_branch_retention_portfolio_v1(
             &decisions_by_index,
             &group_positions,
             group_limit,
+            config.budget_profile,
         );
         selected_picks.extend(group_picks);
     }
@@ -144,6 +185,7 @@ pub fn select_branch_retention_portfolio_v1(
             &decisions_by_index,
             &positions,
             config.max_total,
+            config.budget_profile,
         );
     }
 
@@ -241,13 +283,14 @@ fn select_positions_for_slots(
     decisions_by_index: &BTreeMap<usize, BranchRetentionDecisionV1>,
     positions: &[usize],
     limit: usize,
+    budget_profile: BranchRetentionBudgetProfileV1,
 ) -> Vec<BranchRetentionLanePick> {
     if limit == 0 {
         return Vec::new();
     }
     let mut selected = Vec::<BranchRetentionLanePick>::new();
     let mut selected_set = BTreeSet::<usize>::new();
-    for slot in SLOT_ORDER {
+    for slot in retention_lane_sequence(budget_profile, limit) {
         if selected.len() >= limit {
             break;
         }
@@ -278,6 +321,84 @@ fn select_positions_for_slots(
     let selected = cap_redundant_choice_prefixes(candidates, positions, selected, limit);
     let selected = cap_redundant_first_pick_prefixes(candidates, positions, selected, limit);
     cap_pure_transition_saturation(candidates, positions, selected, limit)
+}
+
+fn retention_lane_sequence(
+    profile: BranchRetentionBudgetProfileV1,
+    limit: usize,
+) -> Vec<BranchRetentionSlotV1> {
+    let weights = retention_lane_weights(profile);
+    let mut sequence = Vec::new();
+    let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
+    while sequence.len() < limit {
+        let mut added = false;
+        for &(slot, cap) in weights {
+            if counts.get(&slot).copied().unwrap_or_default() < cap {
+                sequence.push(slot);
+                *counts.entry(slot).or_default() += 1;
+                added = true;
+                if sequence.len() >= limit {
+                    break;
+                }
+            }
+        }
+        if !added {
+            for &(slot, _) in weights {
+                sequence.push(slot);
+                if sequence.len() >= limit {
+                    break;
+                }
+            }
+        }
+    }
+    sequence
+}
+
+fn retention_lane_weights(
+    profile: BranchRetentionBudgetProfileV1,
+) -> &'static [(BranchRetentionSlotV1, usize)] {
+    match profile {
+        BranchRetentionBudgetProfileV1::Balanced => &[
+            (BranchRetentionSlotV1::Package, 3),
+            (BranchRetentionSlotV1::EngineSetup, 2),
+            (BranchRetentionSlotV1::Scaling, 2),
+            (BranchRetentionSlotV1::DefenseEngine, 3),
+            (BranchRetentionSlotV1::Survival, 2),
+            (BranchRetentionSlotV1::Frontload, 2),
+            (BranchRetentionSlotV1::CleanDeck, 2),
+            (BranchRetentionSlotV1::Diversity, 4),
+        ],
+        BranchRetentionBudgetProfileV1::Exploration => &[
+            (BranchRetentionSlotV1::Package, 5),
+            (BranchRetentionSlotV1::EngineSetup, 4),
+            (BranchRetentionSlotV1::Scaling, 3),
+            (BranchRetentionSlotV1::DefenseEngine, 2),
+            (BranchRetentionSlotV1::Survival, 1),
+            (BranchRetentionSlotV1::Frontload, 1),
+            (BranchRetentionSlotV1::CleanDeck, 2),
+            (BranchRetentionSlotV1::Diversity, 2),
+        ],
+        BranchRetentionBudgetProfileV1::Survival => &[
+            (BranchRetentionSlotV1::DefenseEngine, 4),
+            (BranchRetentionSlotV1::Survival, 4),
+            (BranchRetentionSlotV1::Frontload, 3),
+            (BranchRetentionSlotV1::CleanDeck, 3),
+            (BranchRetentionSlotV1::Package, 2),
+            (BranchRetentionSlotV1::EngineSetup, 1),
+            (BranchRetentionSlotV1::Scaling, 1),
+            (BranchRetentionSlotV1::Diversity, 2),
+        ],
+        BranchRetentionBudgetProfileV1::Package => &[
+            (BranchRetentionSlotV1::Package, 6),
+            (BranchRetentionSlotV1::EngineSetup, 4),
+            (BranchRetentionSlotV1::Scaling, 3),
+            (BranchRetentionSlotV1::CleanDeck, 2),
+            (BranchRetentionSlotV1::DefenseEngine, 2),
+            (BranchRetentionSlotV1::Survival, 1),
+            (BranchRetentionSlotV1::Frontload, 1),
+            (BranchRetentionSlotV1::Diversity, 1),
+        ],
+    }
 }
 
 fn best_position_for_slot(
@@ -807,13 +928,8 @@ mod tests {
             retention_candidate(2, 10_840, &["Wild Strike", "Cleave", "Pommel Strike"]),
         ];
 
-        let selection = select_branch_retention_portfolio_v1(
-            &candidates,
-            BranchRetentionConfigV1 {
-                max_total: 2,
-                max_per_frontier: Some(2),
-            },
-        );
+        let selection =
+            select_branch_retention_portfolio_v1(&candidates, retention_config(2, Some(2)));
 
         assert_eq!(selection.keep_indices.len(), 2);
         assert!(selection.keep_indices.contains(&0));
@@ -837,13 +953,8 @@ mod tests {
             retention_candidate(3, 10_750, &["Sever Soul", "Clothesline"]),
         ];
 
-        let selection = select_branch_retention_portfolio_v1(
-            &candidates,
-            BranchRetentionConfigV1 {
-                max_total: 3,
-                max_per_frontier: Some(3),
-            },
-        );
+        let selection =
+            select_branch_retention_portfolio_v1(&candidates, retention_config(3, Some(3)));
 
         assert_eq!(selection.keep_indices.len(), 3);
         assert!(selection.keep_indices.contains(&0));
@@ -868,13 +979,8 @@ mod tests {
             retention_candidate(4, 10_700, &["Shockwave", "Body Slam"]),
         ];
 
-        let selection = select_branch_retention_portfolio_v1(
-            &candidates,
-            BranchRetentionConfigV1 {
-                max_total: 4,
-                max_per_frontier: Some(4),
-            },
-        );
+        let selection =
+            select_branch_retention_portfolio_v1(&candidates, retention_config(4, Some(4)));
 
         assert_eq!(selection.keep_indices.len(), 4);
         assert!(selection.keep_indices.contains(&0));
@@ -899,13 +1005,8 @@ mod tests {
             retention_candidate(6, 10_650, &["Armaments", "Searing Blow"]),
         ];
 
-        let selection = select_branch_retention_portfolio_v1(
-            &candidates,
-            BranchRetentionConfigV1 {
-                max_total: 6,
-                max_per_frontier: Some(6),
-            },
-        );
+        let selection =
+            select_branch_retention_portfolio_v1(&candidates, retention_config(6, Some(6)));
 
         let twin_strike_kept = selection
             .keep_indices
@@ -981,13 +1082,8 @@ mod tests {
             ),
         ];
 
-        let selection = select_branch_retention_portfolio_v1(
-            &candidates,
-            BranchRetentionConfigV1 {
-                max_total: 6,
-                max_per_frontier: Some(6),
-            },
-        );
+        let selection =
+            select_branch_retention_portfolio_v1(&candidates, retention_config(6, Some(6)));
 
         let sever_soul_kept = selection
             .keep_indices
@@ -1041,10 +1137,7 @@ mod tests {
                 strength_plan,
                 other_first_pick,
             ],
-            BranchRetentionConfigV1 {
-                max_total: 4,
-                max_per_frontier: Some(4),
-            },
+            retention_config(4, Some(4)),
         );
 
         assert!(selection.keep_indices.contains(&0));
@@ -1101,10 +1194,7 @@ mod tests {
                 block_engine,
                 other_first_pick,
             ],
-            BranchRetentionConfigV1 {
-                max_total: 3,
-                max_per_frontier: Some(3),
-            },
+            retention_config(3, Some(3)),
         );
 
         assert!(selection.keep_indices.contains(&0));
@@ -1185,13 +1275,8 @@ mod tests {
             ),
         ];
 
-        let selection = select_branch_retention_portfolio_v1(
-            &candidates,
-            BranchRetentionConfigV1 {
-                max_total: 6,
-                max_per_frontier: Some(6),
-            },
-        );
+        let selection =
+            select_branch_retention_portfolio_v1(&candidates, retention_config(6, Some(6)));
 
         assert!(
             selection.keep_indices.contains(&0),
@@ -1244,13 +1329,8 @@ mod tests {
             ),
         ];
 
-        let selection = select_branch_retention_portfolio_v1(
-            &candidates,
-            BranchRetentionConfigV1 {
-                max_total: 3,
-                max_per_frontier: Some(3),
-            },
-        );
+        let selection =
+            select_branch_retention_portfolio_v1(&candidates, retention_config(3, Some(3)));
 
         let pure_transition_kept = selection
             .keep_indices
@@ -1296,10 +1376,7 @@ mod tests {
 
         let selection = select_branch_retention_portfolio_v1(
             &[payoff_only, setup_and_payoff],
-            BranchRetentionConfigV1 {
-                max_total: 1,
-                max_per_frontier: Some(1),
-            },
+            retention_config(1, Some(1)),
         );
 
         assert!(
@@ -1335,12 +1412,18 @@ mod tests {
             BranchRetentionConfigV1 {
                 max_total: 2,
                 max_per_frontier: Some(2),
+                budget_profile: BranchRetentionBudgetProfileV1::Survival,
             },
         );
 
         assert_eq!(
             selection.decisions_by_index[&0].selected_by_slot,
-            Some(BranchRetentionSlotV1::Package)
+            Some(BranchRetentionSlotV1::DefenseEngine)
+        );
+        assert_eq!(
+            selection.decisions_by_index[&0].primary_slot,
+            BranchRetentionSlotV1::Package,
+            "a branch can be semantically package-shaped while being retained by the survival profile's defense lane"
         );
         assert_eq!(
             selection.decisions_by_index[&1].primary_slot,
@@ -1351,6 +1434,144 @@ mod tests {
             selection.decisions_by_index[&1].selected_by_slot,
             Some(BranchRetentionSlotV1::Survival),
             "portfolio reporting should say this branch consumed the survival lane, not another package lane"
+        );
+    }
+
+    #[test]
+    fn survival_profile_prioritizes_survival_defense_and_frontload_lanes() {
+        let candidates = vec![
+            semantic_retention_candidate(
+                0,
+                10_900,
+                50,
+                80,
+                trajectory_with(&["exhaust_engine"], &["exhaust_engine"], 0, 1, 1, 0),
+                &[
+                    CardRewardSemanticRoleV1::ExhaustGenerator,
+                    CardRewardSemanticRoleV1::ExhaustPayoff,
+                ],
+            ),
+            semantic_retention_candidate(
+                1,
+                10_850,
+                50,
+                80,
+                trajectory_with(&["status_package"], &[], 0, 1, 0, 0),
+                &[CardRewardSemanticRoleV1::StatusGenerator],
+            ),
+            semantic_retention_candidate(
+                2,
+                10_800,
+                50,
+                80,
+                trajectory_with(&[], &[], 0, 0, 0, 2),
+                &[CardRewardSemanticRoleV1::Weak],
+            ),
+            semantic_retention_candidate(
+                3,
+                10_700,
+                79,
+                80,
+                trajectory_with(&[], &[], 0, 0, 0, 0),
+                &[],
+            ),
+            semantic_retention_candidate(
+                4,
+                10_600,
+                50,
+                80,
+                trajectory_with(&[], &[], 2, 0, 0, 0),
+                &[CardRewardSemanticRoleV1::FrontloadDamage],
+            ),
+        ];
+
+        let selection = select_branch_retention_portfolio_v1(
+            &candidates,
+            BranchRetentionConfigV1 {
+                max_total: 3,
+                max_per_frontier: Some(3),
+                budget_profile: BranchRetentionBudgetProfileV1::Survival,
+            },
+        );
+        let lanes = selected_lanes(&selection);
+
+        assert_eq!(
+            lanes,
+            vec![
+                BranchRetentionSlotV1::DefenseEngine,
+                BranchRetentionSlotV1::Survival,
+                BranchRetentionSlotV1::Frontload,
+            ],
+            "survival profile should spend its small budget on immediate safety lanes before long-horizon setup"
+        );
+    }
+
+    #[test]
+    fn package_profile_prioritizes_package_engine_and_scaling_lanes() {
+        let candidates = vec![
+            semantic_retention_candidate(
+                0,
+                10_900,
+                79,
+                80,
+                trajectory_with(&[], &[], 0, 0, 0, 0),
+                &[],
+            ),
+            semantic_retention_candidate(
+                1,
+                10_800,
+                60,
+                80,
+                trajectory_with(&[], &[], 2, 0, 0, 0),
+                &[CardRewardSemanticRoleV1::FrontloadDamage],
+            ),
+            semantic_retention_candidate(
+                2,
+                10_700,
+                60,
+                80,
+                trajectory_with(&["block_engine"], &["block_engine"], 0, 1, 1, 2),
+                &[
+                    CardRewardSemanticRoleV1::BlockRetention,
+                    CardRewardSemanticRoleV1::BlockPayoff,
+                ],
+            ),
+            semantic_retention_candidate(
+                3,
+                10_600,
+                60,
+                80,
+                trajectory_with(&["exhaust_engine"], &[], 0, 1, 0, 0),
+                &[CardRewardSemanticRoleV1::ExhaustGenerator],
+            ),
+            semantic_retention_candidate(
+                4,
+                10_500,
+                60,
+                80,
+                trajectory_with(&[], &["strength_scaling"], 0, 0, 1, 0),
+                &[CardRewardSemanticRoleV1::StrengthPayoff],
+            ),
+        ];
+
+        let selection = select_branch_retention_portfolio_v1(
+            &candidates,
+            BranchRetentionConfigV1 {
+                max_total: 3,
+                max_per_frontier: Some(3),
+                budget_profile: BranchRetentionBudgetProfileV1::Package,
+            },
+        );
+        let lanes = selected_lanes(&selection);
+
+        assert_eq!(
+            lanes,
+            vec![
+                BranchRetentionSlotV1::Package,
+                BranchRetentionSlotV1::EngineSetup,
+                BranchRetentionSlotV1::Scaling,
+            ],
+            "package profile should preserve long-horizon package structure before short-term safety fillers"
         );
     }
 
@@ -1514,6 +1735,27 @@ mod tests {
             stage,
             needs: needs.to_vec(),
             strengths: strengths.to_vec(),
+        }
+    }
+
+    fn selected_lanes(selection: &BranchRetentionSelectionV1) -> Vec<BranchRetentionSlotV1> {
+        selection
+            .decisions_by_index
+            .values()
+            .filter_map(|decision| decision.selected_by_slot)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn retention_config(
+        max_total: usize,
+        max_per_frontier: Option<usize>,
+    ) -> BranchRetentionConfigV1 {
+        BranchRetentionConfigV1 {
+            max_total,
+            max_per_frontier,
+            budget_profile: BranchRetentionBudgetProfileV1::Balanced,
         }
     }
 }
