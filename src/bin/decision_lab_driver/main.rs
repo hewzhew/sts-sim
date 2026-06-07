@@ -3,11 +3,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use clap::Parser;
 use serde::Serialize;
 
+use sts_simulator::ai::neow_policy_v1::{
+    choices_from_event_options_v1, neow_map_features_from_run_state_v1, rank_neow_choices_v1,
+    NeowDecisionInputV1, NeowGuidanceConfigV1,
+};
+use sts_simulator::content::events::neow;
 use sts_simulator::eval::branch_experiment::{
     run_branch_experiment_v1, BranchExperimentConfigV1, BranchExperimentReportV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
-use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
+use sts_simulator::eval::run_control::{
+    canonical_player_class, parse_run_control_command, RunControlConfig, RunControlHpLossLimit,
+    RunControlSession,
+};
+use sts_simulator::state::events::EventId;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -59,6 +68,9 @@ struct Args {
 
     #[arg(long)]
     include_event_reward_skip: bool,
+
+    #[arg(long)]
+    no_neow_guidance: bool,
 
     #[arg(long)]
     json_lines: bool,
@@ -161,6 +173,7 @@ fn branch_config_for_seed(args: &Args, seed: u64) -> Result<BranchExperimentConf
     let retention_budget_profile = args
         .retention_profile
         .parse::<BranchRetentionBudgetProfileV1>()?;
+    let prefix_commands = neow_guided_prefix_commands(args, seed, player_class)?;
     Ok(BranchExperimentConfigV1 {
         seed,
         ascension_level: args.ascension,
@@ -175,9 +188,49 @@ fn branch_config_for_seed(args: &Args, seed: u64) -> Result<BranchExperimentConf
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
         include_skip: true,
         include_event_reward_skip: args.include_event_reward_skip,
-        prefix_commands: vec!["0".to_string()],
+        prefix_commands,
         ..BranchExperimentConfigV1::default()
     })
+}
+
+fn neow_guided_prefix_commands(
+    args: &Args,
+    seed: u64,
+    player_class: &'static str,
+) -> Result<Vec<String>, String> {
+    let mut prefix = vec!["0".to_string()];
+    if args.no_neow_guidance {
+        return Ok(prefix);
+    }
+
+    let mut session = RunControlSession::new(RunControlConfig {
+        seed,
+        ascension_level: args.ascension,
+        final_act: false,
+        player_class,
+        search_max_nodes: args.search_max_nodes,
+        search_wall_ms: Some(args.search_wall_ms),
+        ..RunControlConfig::default()
+    });
+    session.apply_command(parse_run_control_command("0")?)?;
+    let Some(event_state) = session.run_state.event_state.as_ref() else {
+        return Ok(prefix);
+    };
+    if event_state.id != EventId::Neow || event_state.current_screen != 1 {
+        return Ok(prefix);
+    }
+
+    let options = neow::get_options(&session.run_state, event_state);
+    let trace = rank_neow_choices_v1(NeowDecisionInputV1 {
+        player_class: player_class.to_string(),
+        map: neow_map_features_from_run_state_v1(&session.run_state),
+        choices: choices_from_event_options_v1(&options),
+        config: NeowGuidanceConfigV1::default(),
+    });
+    if let Some(selected) = trace.selected() {
+        prefix.push(selected.index.to_string());
+    }
+    Ok(prefix)
 }
 
 fn expand_lab_seeds(
@@ -449,8 +502,21 @@ mod tests {
     }
 
     #[test]
-    fn branch_config_starts_after_neow_intro_by_default() {
+    fn branch_config_uses_neow_guidance_after_intro_by_default() {
         let args = Args::try_parse_from(["decision_lab_driver"]).expect("args parse");
+        let config = branch_config_for_seed(&args, 521).expect("config builds");
+
+        assert_eq!(
+            config.prefix_commands.first().map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(config.prefix_commands.len(), 2);
+    }
+
+    #[test]
+    fn branch_config_can_disable_neow_guidance() {
+        let args = Args::try_parse_from(["decision_lab_driver", "--no-neow-guidance"])
+            .expect("args parse");
         let config = branch_config_for_seed(&args, 521).expect("config builds");
 
         assert_eq!(config.prefix_commands, vec!["0"]);
