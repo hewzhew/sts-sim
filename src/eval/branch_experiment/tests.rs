@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1};
 use crate::content::cards::CardId;
+use crate::content::relics::RelicId;
 use crate::content::relics::RelicState;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
