@@ -89,6 +89,9 @@ pub(super) fn render_compact_report_with_options(
     if let Some(line) = render_choice_effect_count_line(report) {
         lines.push(line);
     }
+    if let Some(line) = render_kept_lineage_flag_count_line(report) {
+        lines.push(line);
+    }
     if let Some(line) = render_kept_long_horizon_coverage_line(report) {
         lines.push(line);
     }
@@ -326,6 +329,24 @@ fn render_choice_effect_count_line(report: &BranchExperimentReportV1) -> Option<
     Some(format!(
         "Kept choice effects: {}",
         render_choice_effect_counts(&counts)
+    ))
+}
+
+fn render_kept_lineage_flag_count_line(report: &BranchExperimentReportV1) -> Option<String> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for branch in &report.branches {
+        for flag in &branch.frontier.lineage.sequence_breakers_present {
+            if !flag.is_empty() {
+                *counts.entry(flag.clone()).or_default() += 1;
+            }
+        }
+    }
+    if counts.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "Kept lineage flags: {}",
+        render_string_count_map(&counts)
     ))
 }
 
@@ -848,6 +869,32 @@ mod tests {
         let rendered = render_compact_report(&report);
 
         assert!(rendered.contains("Kept choice effects: dig=1 lift=1 recall=1"));
+    }
+
+    #[test]
+    fn compact_report_summarizes_kept_lineage_flags() {
+        let mut question_card = branch_report(
+            "b0",
+            "Shockwave",
+            1,
+            3,
+            70,
+            BranchRetentionSlotV1::Package,
+            "Combat",
+        );
+        question_card
+            .frontier
+            .lineage
+            .sequence_breakers_present
+            .push("question_card_reward_count_plus_1".to_string());
+        let report = BranchExperimentReportV1 {
+            branches: vec![question_card],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("Kept lineage flags: question_card_reward_count_plus_1=1"));
     }
 
     #[test]
