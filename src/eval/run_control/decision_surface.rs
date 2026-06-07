@@ -1,3 +1,4 @@
+use crate::content::relics::RelicId;
 use crate::state::core::{ClientInput, EngineState};
 
 use super::session::RunControlSession;
@@ -224,17 +225,36 @@ fn state_command_hint(session: &RunControlSession) -> String {
             "type a path id to commit, or back/cancel to return".to_string()
         }
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
-            "type visible id to take card; rp <id> records pick; back".to_string()
+            if has_singing_bowl(session) {
+                "type visible id to take card; rp <id> records pick; bowl; back".to_string()
+            } else {
+                "type visible id to take card; rp <id> records pick; back".to_string()
+            }
         }
         EngineState::RewardOverlay { reward_state, .. }
             if reward_state.pending_card_choice.is_some() =>
         {
-            "type visible id to take card; rp <id> records pick; bowl; back".to_string()
+            if has_singing_bowl(session) {
+                "type visible id to take card; rp <id> records pick; bowl; back".to_string()
+            } else {
+                "type visible id to take card; rp <id> records pick; back".to_string()
+            }
         }
-        EngineState::RewardOverlay { .. } => "type visible id, bowl, or back".to_string(),
+        EngineState::RewardOverlay { reward_state, .. } => {
+            if has_singing_bowl(session) && reward_state.has_card_reward_item() {
+                "type visible id, bowl, or back".to_string()
+            } else {
+                "type visible id or back".to_string()
+            }
+        }
         EngineState::RewardScreen(reward) if reward.has_card_reward_item() => {
-            "type visible id to open reward; rp <card_idx> records first card reward pick; skip"
-                .to_string()
+            if has_singing_bowl(session) {
+                "type visible id to open reward; rp <card_idx> records first card reward pick; bowl; skip"
+                    .to_string()
+            } else {
+                "type visible id to open reward; rp <card_idx> records first card reward pick; skip"
+                    .to_string()
+            }
         }
         EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
         EngineState::PendingChoice(_)
@@ -248,4 +268,12 @@ fn state_command_hint(session: &RunControlSession) -> String {
         }
         _ => "type visible id".to_string(),
     }
+}
+
+fn has_singing_bowl(session: &RunControlSession) -> bool {
+    session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::SingingBowl)
 }

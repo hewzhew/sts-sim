@@ -251,6 +251,35 @@ fn decision_surface_shop_exposes_pending_reward_overlay_candidate() {
 }
 
 #[test]
+fn decision_surface_reward_screen_singing_bowl_hints_bowl_command() {
+    let mut pending = reward_card_choice_session();
+    pending
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::SingingBowl));
+    let pending_surface = build_decision_surface(&pending);
+
+    assert!(
+        pending_surface.command_hint.contains("bowl"),
+        "opened card reward with Singing Bowl should advertise bowl: {}",
+        pending_surface.command_hint
+    );
+
+    let mut unopened = reward_screen_session();
+    unopened
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::SingingBowl));
+    let unopened_surface = build_decision_surface(&unopened);
+
+    assert!(
+        unopened_surface.command_hint.contains("bowl"),
+        "visible unopened card reward with Singing Bowl should advertise bowl: {}",
+        unopened_surface.command_hint
+    );
+}
+
+#[test]
 fn decision_surface_label_aliases_cover_leave_and_skip() {
     let candidates = vec![
         DecisionCandidate {
