@@ -76,7 +76,7 @@ fn current_boundary_wraps_card_reward_options() {
 }
 
 #[test]
-fn current_boundary_can_include_card_reward_skip_option() {
+fn current_boundary_does_not_treat_opened_card_reward_back_as_skip_option() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();
     reward.pending_card_choice = Some(vec![
@@ -96,19 +96,17 @@ fn current_boundary_can_include_card_reward_skip_option() {
     )
     .expect("card reward boundary");
 
-    let skip = boundary
-        .options
-        .iter()
-        .find(|option| option.kind == "card_reward_skip")
-        .expect("skip branch should be present");
-
-    assert_eq!(skip.command, "skip");
-    assert_eq!(skip.effect_kind, "skip_card_reward");
-    assert!(skip.selected_cards.is_empty());
+    assert!(
+        !boundary
+            .options
+            .iter()
+            .any(|option| option.kind == "card_reward_skip"),
+        "opened card reward back/cancel does not consume the reward; skip branching belongs to the unopened reward screen"
+    );
 }
 
 #[test]
-fn current_boundary_does_not_skip_unopened_card_reward_item() {
+fn current_boundary_can_include_skip_for_unopened_card_reward_item() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();
     reward.items.push(RewardItem::Card {
@@ -130,13 +128,15 @@ fn current_boundary_does_not_skip_unopened_card_reward_item() {
     )
     .expect("visible card reward boundary");
 
-    assert!(
-        !boundary
-            .options
-            .iter()
-            .any(|option| option.kind == "card_reward_skip"),
-        "skip is only a card-reward branch after the card reward is opened"
-    );
+    let skip = boundary
+        .options
+        .iter()
+        .find(|option| option.kind == "card_reward_skip")
+        .expect("skip branch should be present on unopened reward screen");
+
+    assert_eq!(skip.command, "skip");
+    assert_eq!(skip.effect_kind, "skip_card_reward");
+    assert!(skip.selected_cards.is_empty());
 }
 
 #[test]
@@ -207,13 +207,10 @@ fn current_boundary_can_include_singing_bowl_for_unopened_card_reward_item() {
         .options
         .iter()
         .any(|option| option.kind == "card_reward_bowl" && option.command == "bowl"));
-    assert!(
-        !boundary
-            .options
-            .iter()
-            .any(|option| option.kind == "card_reward_skip"),
-        "plain skip is still not a direct unopened-card-reward branch"
-    );
+    assert!(boundary
+        .options
+        .iter()
+        .any(|option| option.kind == "card_reward_skip" && option.command == "skip"));
 }
 
 #[test]
