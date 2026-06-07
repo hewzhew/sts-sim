@@ -11,6 +11,7 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::branch_experiment_trajectory::summarize_branch_trajectory_v1;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
+use crate::runtime::combat::CombatCard;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState, RunPendingChoiceReason};
 use crate::state::rewards::{RewardCard, RewardItem};
 
@@ -95,6 +96,7 @@ pub(crate) struct CampfireBranchOption {
     pub(crate) card: Option<CardId>,
     pub(crate) upgrades: Option<u8>,
     semantic_class: String,
+    equivalence_key: String,
     representative_count: usize,
     suppressed_count: usize,
 }
@@ -451,13 +453,15 @@ pub(crate) fn campfire_branch_options(
             let ClientInput::CampfireOption(choice) = input else {
                 return None;
             };
-            let (card, upgrades, semantic_class) = campfire_option_metadata(session, choice);
+            let (card, upgrades, semantic_class, equivalence_key) =
+                campfire_option_metadata(session, choice);
             Some(CampfireBranchOption {
                 label: candidate.label.clone(),
                 command: candidate.action.command_hint(),
                 card,
                 upgrades,
                 semantic_class,
+                equivalence_key,
                 representative_count: 1,
                 suppressed_count: 0,
             })
@@ -497,23 +501,23 @@ fn compressed_campfire_branch_options(
 }
 
 fn campfire_option_equivalence_key(option: &CampfireBranchOption) -> String {
-    format!(
-        "{}:{:?}:{:?}",
-        campfire_effect_kind(option),
-        option.card,
-        option.upgrades
-    )
+    option.equivalence_key.clone()
 }
 
 fn campfire_option_metadata(
     session: &RunControlSession,
     choice: CampfireChoice,
-) -> (Option<CardId>, Option<u8>, String) {
+) -> (Option<CardId>, Option<u8>, String, String) {
     match choice {
-        CampfireChoice::Rest => (None, None, "rest".to_string()),
+        CampfireChoice::Rest => (None, None, "rest".to_string(), "rest".to_string()),
         CampfireChoice::Smith(idx) => {
             let Some(card) = session.run_state.master_deck.get(idx) else {
-                return (None, None, "smith:unknown".to_string());
+                return (
+                    None,
+                    None,
+                    "smith:unknown".to_string(),
+                    "smith:unknown".to_string(),
+                );
             };
             let upgraded = card.upgrades.saturating_add(1);
             let profile = card_reward_semantic_profile_v1(&RewardCard::new(card.id, upgraded));
@@ -522,19 +526,22 @@ fn campfire_option_metadata(
                 Some(card.id),
                 Some(card.upgrades),
                 format!("smith:{class_key}"),
+                format!("smith:{}", card_stat_identity_key(card)),
             )
         }
-        CampfireChoice::Dig => (None, None, "dig".to_string()),
-        CampfireChoice::Lift => (None, None, "lift".to_string()),
+        CampfireChoice::Dig => (None, None, "dig".to_string(), "dig".to_string()),
+        CampfireChoice::Lift => (None, None, "lift".to_string(), "lift".to_string()),
         CampfireChoice::Toke(idx) => {
             let card = session.run_state.master_deck.get(idx);
             (
                 card.map(|card| card.id),
                 card.map(|card| card.upgrades),
                 "toke".to_string(),
+                card.map(|card| format!("toke:{}", card_stat_identity_key(card)))
+                    .unwrap_or_else(|| "toke:unknown".to_string()),
             )
         }
-        CampfireChoice::Recall => (None, None, "recall".to_string()),
+        CampfireChoice::Recall => (None, None, "recall".to_string(), "recall".to_string()),
     }
 }
 
@@ -671,7 +678,7 @@ fn run_selection_deck_card_options(
                 upgrades: card.upgrades,
             },
             effect_kind: run_selection_effect_kind(choice.reason).to_string(),
-            effect_key: run_selection_effect_key(choice.reason, card.id, card.upgrades),
+            effect_key: run_selection_effect_key(choice.reason, card),
             effect_label: run_selection_effect_label(
                 choice.reason,
                 &format_reward_card_label(&RewardCard::new(card.id, card.upgrades)),
@@ -912,11 +919,37 @@ fn run_selection_effect_verb(reason: RunPendingChoiceReason) -> &'static str {
     }
 }
 
-fn run_selection_effect_key(reason: RunPendingChoiceReason, card: CardId, upgrades: u8) -> String {
+fn run_selection_effect_key(reason: RunPendingChoiceReason, card: &CombatCard) -> String {
     format!(
-        "run_selection:{}:{card:?}:{upgrades}",
-        run_selection_effect_kind(reason)
+        "run_selection:{}:{}",
+        run_selection_effect_kind(reason),
+        card_stat_identity_key(card)
     )
+}
+
+fn card_stat_identity_key(card: &CombatCard) -> String {
+    let mut key = format!("{:?}:{}", card.id, card.upgrades);
+    let default = CombatCard::new(card.id, 0);
+    let mut extras = Vec::new();
+
+    if card.misc_value != default.misc_value {
+        extras.push(format!("misc={}", card.misc_value));
+    }
+    if let Some(value) = card.base_damage_override {
+        extras.push(format!("base_damage={value}"));
+    }
+    if let Some(value) = card.base_block_override {
+        extras.push(format!("base_block={value}"));
+    }
+    if card.cost_modifier != 0 {
+        extras.push(format!("cost_modifier={}", card.cost_modifier));
+    }
+
+    if !extras.is_empty() {
+        key.push(':');
+        key.push_str(&extras.join(":"));
+    }
+    key
 }
 
 fn run_selection_effect_label(reason: RunPendingChoiceReason, card_label: &str) -> String {
@@ -1321,6 +1354,41 @@ mod tests {
     }
 
     #[test]
+    fn current_boundary_keeps_distinct_campfire_smith_card_state_separate() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut first = CombatCard::new(CardId::RitualDagger, 10);
+        first.misc_value = 17;
+        let mut second = CombatCard::new(CardId::RitualDagger, 11);
+        second.misc_value = 23;
+        session.run_state.master_deck = vec![first, second];
+        session.engine_state = EngineState::Campfire;
+
+        let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+            .expect("campfire boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::Campfire);
+        assert_eq!(
+            boundary
+                .options
+                .iter()
+                .filter(|option| option.effect_kind == "upgrade_card")
+                .map(|option| {
+                    (
+                        option.command.as_str(),
+                        option.effect_label.as_str(),
+                        option.representative_count,
+                        option.suppressed_count,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                ("smith 0", "Smith Ritual Dagger", 1, 0),
+                ("smith 1", "Smith Ritual Dagger", 1, 0),
+            ]
+        );
+    }
+
+    #[test]
     fn current_boundary_wraps_boss_relic_options() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         session.engine_state = EngineState::BossRelicSelect(BossRelicChoiceState::new(vec![
@@ -1451,6 +1519,45 @@ mod tests {
                     1,
                     0,
                 ),
+            ]
+        );
+    }
+
+    #[test]
+    fn current_boundary_keeps_distinct_run_selection_card_state_separate() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut first = CombatCard::new(CardId::RitualDagger, 10);
+        first.misc_value = 17;
+        let mut second = CombatCard::new(CardId::RitualDagger, 11);
+        second.misc_value = 23;
+        session.run_state.master_deck = vec![first, second];
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: RunPendingChoiceReason::Purge,
+            return_state: Box::new(EngineState::EventRoom),
+        });
+
+        let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+            .expect("run selection boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::RunSelection);
+        assert_eq!(
+            boundary
+                .options
+                .iter()
+                .map(|option| {
+                    (
+                        option.command.as_str(),
+                        option.effect_label.as_str(),
+                        option.representative_count,
+                        option.suppressed_count,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                ("select 0", "remove Ritual Dagger", 1, 0),
+                ("select 1", "remove Ritual Dagger", 1, 0),
             ]
         );
     }
