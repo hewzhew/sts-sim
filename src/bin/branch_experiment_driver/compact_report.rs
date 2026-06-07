@@ -15,7 +15,7 @@ pub(super) use first_pick::{branch_package_state_tags, first_pick_outcome_summar
 pub(super) use profile_comparison::render_profile_comparison;
 use pruned::{
     render_pruned_branch_summary_line, render_pruned_first_pick_count_line,
-    render_pruned_long_horizon_coverage_note,
+    render_pruned_long_horizon_coverage_note, render_pruned_next_experiment_line,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,6 +93,9 @@ pub(super) fn render_compact_report_with_options(
         lines.push(line);
     }
     if let Some(line) = render_pruned_long_horizon_coverage_note(report) {
+        lines.push(line);
+    }
+    if let Some(line) = render_pruned_next_experiment_line(report) {
         lines.push(line);
     }
     let first_pick_outcomes = first_pick_outcome_summary_lines(report);
@@ -915,6 +918,9 @@ mod tests {
         ));
         assert!(rendered.contains(
             "Coverage note: pruned long-horizon branches primary=[engine_setup=1] packages=[open:exhaust_engine=1]; use --compare-profiles or raise --max-branches before treating missing packages as evidence"
+        ));
+        assert!(rendered.contains(
+            "Next experiment: add --compare-profiles --retention-profile balanced,package,survival, or retry with --max-branches 8"
         ));
     }
 

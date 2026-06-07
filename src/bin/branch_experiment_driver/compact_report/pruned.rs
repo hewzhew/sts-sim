@@ -57,6 +57,22 @@ pub(super) fn render_pruned_long_horizon_coverage_note(
     ))
 }
 
+pub(super) fn render_pruned_next_experiment_line(
+    report: &BranchExperimentReportV1,
+) -> Option<String> {
+    let primary = long_horizon_slot_counts(&report.pruned_branch_summary.primary_slot_counts);
+    if report.pruned_branch_count == 0 || primary.is_empty() {
+        return None;
+    }
+    let next_branch_budget = report
+        .max_branches
+        .saturating_mul(2)
+        .max(report.max_branches + 1);
+    Some(format!(
+        "Next experiment: add --compare-profiles --retention-profile balanced,package,survival, or retry with --max-branches {next_branch_budget}"
+    ))
+}
+
 fn long_horizon_slot_counts(
     counts: &BTreeMap<BranchRetentionSlotV1, usize>,
 ) -> BTreeMap<BranchRetentionSlotV1, usize> {
