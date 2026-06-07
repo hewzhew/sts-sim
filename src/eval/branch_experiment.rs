@@ -34,7 +34,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 9;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 10;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -167,8 +167,17 @@ pub struct BranchExperimentChoiceV1 {
     pub kind: String,
     pub card: Option<CardId>,
     pub upgrades: Option<u8>,
+    #[serde(default)]
+    pub selected_cards: Vec<BranchExperimentChoiceCardV1>,
     pub label: String,
     pub command: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentChoiceCardV1 {
+    pub card: CardId,
+    pub upgrades: u8,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -399,6 +408,7 @@ fn run_branch_experiment_from_session_with_replay(
                             command: option.command,
                             card: option.card,
                             upgrades: option.upgrades,
+                            selected_cards: option.selected_cards,
                             success_reason: option.success_reason,
                         },
                         config,
@@ -567,6 +577,7 @@ struct BranchChoiceDraft {
     command: String,
     card: Option<CardId>,
     upgrades: Option<u8>,
+    selected_cards: Vec<BranchExperimentChoiceCardV1>,
     success_reason: &'static str,
 }
 
@@ -582,6 +593,7 @@ fn expand_branch_choice(
         kind: draft.kind.to_string(),
         card: draft.card,
         upgrades: draft.upgrades,
+        selected_cards: draft.selected_cards,
         label: draft.label,
         command: draft.command.clone(),
     });
@@ -815,12 +827,29 @@ fn choice_profiles_from_choices(
 ) -> Vec<crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1> {
     choices
         .iter()
-        .filter_map(|choice| {
-            let card = choice.card?;
-            let upgrades = choice.upgrades.unwrap_or_default();
-            Some(card_reward_semantic_profile_v1(&RewardCard::new(
-                card, upgrades,
-            )))
+        .flat_map(|choice| {
+            let selected_cards = if choice.selected_cards.is_empty() {
+                choice
+                    .card
+                    .map(|card| {
+                        vec![BranchExperimentChoiceCardV1 {
+                            card,
+                            upgrades: choice.upgrades.unwrap_or_default(),
+                        }]
+                    })
+                    .unwrap_or_default()
+            } else {
+                choice.selected_cards.clone()
+            };
+            selected_cards
+                .into_iter()
+                .map(|selected| {
+                    card_reward_semantic_profile_v1(&RewardCard::new(
+                        selected.card,
+                        selected.upgrades,
+                    ))
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -1339,6 +1368,11 @@ mod tests {
                 && choice.command.starts_with("select ")
                 && choice.card == Some(CardId::Strike)
                 && choice.upgrades == Some(0)
+                && choice.selected_cards
+                    == vec![BranchExperimentChoiceCardV1 {
+                        card: CardId::Strike,
+                        upgrades: 0,
+                    }]
         }));
     }
 

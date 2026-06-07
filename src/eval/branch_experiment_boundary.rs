@@ -6,7 +6,8 @@ use crate::ai::card_reward_policy_v1::{
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
-    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentChoiceCardV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1,
 };
 use crate::eval::branch_experiment_trajectory::summarize_branch_trajectory_v1;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
@@ -14,7 +15,7 @@ use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 use crate::state::rewards::{RewardCard, RewardItem};
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 3;
-const MAX_RUN_SELECTION_OPTIONS_PER_BRANCH: usize = 6;
+const MAX_RUN_SELECTION_OPTIONS_PER_BRANCH: usize = 12;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BranchBoundaryIdV1 {
@@ -57,6 +58,7 @@ pub(crate) struct BranchBoundaryOptionV1 {
     pub(crate) command: String,
     pub(crate) card: Option<CardId>,
     pub(crate) upgrades: Option<u8>,
+    pub(crate) selected_cards: Vec<BranchExperimentChoiceCardV1>,
     pub(crate) success_reason: &'static str,
 }
 
@@ -107,6 +109,14 @@ struct RunSelectionBranchOption {
     command: String,
     card: Option<CardId>,
     upgrades: Option<u8>,
+    selected_cards: Vec<BranchExperimentChoiceCardV1>,
+}
+
+#[derive(Clone, Debug)]
+struct RunSelectionDeckCardOption {
+    deck_idx: usize,
+    label: String,
+    selected_card: BranchExperimentChoiceCardV1,
 }
 
 #[derive(Clone, Debug)]
@@ -203,6 +213,7 @@ impl BranchBoundaryOptionV1 {
             command: option.command,
             card: Some(option.card),
             upgrades: Some(option.upgrades),
+            selected_cards: selected_card_vec(Some(option.card), Some(option.upgrades)),
             success_reason: "card reward branch applied",
         }
     }
@@ -214,6 +225,7 @@ impl BranchBoundaryOptionV1 {
             command: option.command,
             card: option.card,
             upgrades: option.upgrades,
+            selected_cards: selected_card_vec(option.card, option.upgrades),
             success_reason: "campfire branch applied",
         }
     }
@@ -225,6 +237,7 @@ impl BranchBoundaryOptionV1 {
             command: option.command,
             card: None,
             upgrades: None,
+            selected_cards: Vec::new(),
             success_reason: "boss relic branch applied",
         }
     }
@@ -236,6 +249,7 @@ impl BranchBoundaryOptionV1 {
             command: option.command,
             card: option.card,
             upgrades: option.upgrades,
+            selected_cards: option.selected_cards,
             success_reason: "run selection branch applied",
         }
     }
@@ -247,8 +261,22 @@ impl BranchBoundaryOptionV1 {
             command: option.command,
             card: None,
             upgrades: None,
+            selected_cards: Vec::new(),
             success_reason: "event branch applied",
         }
+    }
+}
+
+fn selected_card_vec(
+    card: Option<CardId>,
+    upgrades: Option<u8>,
+) -> Vec<BranchExperimentChoiceCardV1> {
+    match card {
+        Some(card) => vec![BranchExperimentChoiceCardV1 {
+            card,
+            upgrades: upgrades.unwrap_or_default(),
+        }],
+        None => Vec::new(),
     }
 }
 
@@ -500,35 +528,144 @@ fn run_selection_branch_options(
     let EngineState::RunPendingChoice(choice) = &session.engine_state else {
         return None;
     };
-    if choice.min_choices != 1 || choice.max_choices != 1 {
+    if choice.min_choices == 0 || choice.min_choices != choice.max_choices {
         return None;
     }
 
-    let surface = build_decision_surface(session);
-    let mut options = Vec::new();
-    for candidate in &surface.view.candidates {
-        let Some(input) = candidate.action.executable_input() else {
-            continue;
-        };
-        let ClientInput::SubmitDeckSelect(indices) = input else {
-            return None;
-        };
-        let [idx] = indices.as_slice() else {
-            return None;
-        };
-        let card = session.run_state.master_deck.get(*idx)?;
-        options.push(RunSelectionBranchOption {
-            label: candidate.label.clone(),
-            command: candidate.action.command_hint(),
-            card: Some(card.id),
-            upgrades: Some(card.upgrades),
-        });
-    }
-
-    if options.is_empty() || options.len() > MAX_RUN_SELECTION_OPTIONS_PER_BRANCH {
+    let deck_options = run_selection_deck_card_options(session, choice);
+    let combinations = bounded_index_combinations(
+        deck_options.len(),
+        choice.min_choices,
+        MAX_RUN_SELECTION_OPTIONS_PER_BRANCH,
+    )?;
+    if combinations.is_empty() {
         return None;
     }
-    Some(options)
+
+    Some(
+        combinations
+            .into_iter()
+            .map(|combo| run_selection_branch_option_from_combo(&deck_options, &combo))
+            .collect(),
+    )
+}
+
+fn run_selection_deck_card_options(
+    session: &RunControlSession,
+    choice: &crate::state::core::RunPendingChoiceState,
+) -> Vec<RunSelectionDeckCardOption> {
+    let request = choice.selection_request(&session.run_state);
+    let target_uuids = request
+        .targets
+        .iter()
+        .map(|target| match target {
+            crate::state::selection::SelectionTargetRef::CardUuid(uuid) => *uuid,
+        })
+        .collect::<BTreeSet<_>>();
+    session
+        .run_state
+        .master_deck
+        .iter()
+        .enumerate()
+        .filter(|(_, card)| target_uuids.contains(&card.uuid))
+        .map(|(deck_idx, card)| RunSelectionDeckCardOption {
+            deck_idx,
+            label: format_reward_card_label(&RewardCard::new(card.id, card.upgrades)),
+            selected_card: BranchExperimentChoiceCardV1 {
+                card: card.id,
+                upgrades: card.upgrades,
+            },
+        })
+        .collect()
+}
+
+fn run_selection_branch_option_from_combo(
+    deck_options: &[RunSelectionDeckCardOption],
+    combo: &[usize],
+) -> RunSelectionBranchOption {
+    let selected_options = combo
+        .iter()
+        .filter_map(|idx| deck_options.get(*idx))
+        .collect::<Vec<_>>();
+    let selected_cards = selected_options
+        .iter()
+        .map(|option| option.selected_card.clone())
+        .collect::<Vec<_>>();
+    let (card, upgrades) = match selected_cards.as_slice() {
+        [selected] => (Some(selected.card), Some(selected.upgrades)),
+        _ => (None, None),
+    };
+    RunSelectionBranchOption {
+        label: selected_options
+            .iter()
+            .map(|option| option.label.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+        command: format_select_command(
+            &selected_options
+                .iter()
+                .map(|option| option.deck_idx)
+                .collect::<Vec<_>>(),
+        ),
+        card,
+        upgrades,
+        selected_cards,
+    }
+}
+
+fn format_select_command(indices: &[usize]) -> String {
+    format!(
+        "select {}",
+        indices
+            .iter()
+            .map(|idx| idx.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
+fn bounded_index_combinations(
+    count: usize,
+    choose: usize,
+    limit: usize,
+) -> Option<Vec<Vec<usize>>> {
+    if choose == 0 || choose > count {
+        return None;
+    }
+    let mut combinations = Vec::new();
+    let mut current = Vec::new();
+    if collect_index_combinations(count, choose, limit, 0, &mut current, &mut combinations) {
+        Some(combinations)
+    } else {
+        None
+    }
+}
+
+fn collect_index_combinations(
+    count: usize,
+    choose: usize,
+    limit: usize,
+    start: usize,
+    current: &mut Vec<usize>,
+    combinations: &mut Vec<Vec<usize>>,
+) -> bool {
+    if current.len() == choose {
+        combinations.push(current.clone());
+        return combinations.len() <= limit;
+    }
+
+    let remaining_needed = choose - current.len();
+    let Some(last_start) = count.checked_sub(remaining_needed) else {
+        return true;
+    };
+    for idx in start..=last_start {
+        current.push(idx);
+        if !collect_index_combinations(count, choose, limit, idx + 1, current, combinations) {
+            return false;
+        }
+        current.pop();
+    }
+    true
 }
 
 fn event_branch_options(session: &RunControlSession) -> Option<Vec<EventBranchOption>> {
@@ -910,7 +1047,7 @@ mod tests {
     }
 
     #[test]
-    fn current_boundary_rejects_multi_card_run_selection_options() {
+    fn current_boundary_wraps_small_multi_card_run_selection_options() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         session.run_state.master_deck.truncate(3);
         session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
@@ -920,9 +1057,44 @@ mod tests {
             return_state: Box::new(EngineState::EventRoom),
         });
 
+        let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+            .expect("small multi-card run selection boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::RunSelection);
+        assert_eq!(
+            boundary
+                .options
+                .iter()
+                .map(|option| {
+                    (
+                        option.command.as_str(),
+                        option.card,
+                        option.selected_cards.len(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                ("select 0 1", None, 2),
+                ("select 0 2", None, 2),
+                ("select 1 2", None, 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn current_boundary_rejects_high_fanout_multi_card_run_selection_options() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.master_deck.truncate(6);
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 2,
+            max_choices: 2,
+            reason: RunPendingChoiceReason::Transform,
+            return_state: Box::new(EngineState::EventRoom),
+        });
+
         assert!(
             current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
-            "multi-card run selections need a separate portfolio boundary before branch expansion"
+            "multi-card run selection should stop when exact combinations exceed the branch cap"
         );
     }
 

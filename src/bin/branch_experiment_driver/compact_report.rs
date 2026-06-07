@@ -969,6 +969,7 @@ mod tests {
                 kind: "card_reward".to_string(),
                 card: Some(CardId::Strike),
                 upgrades: Some(0),
+                selected_cards: Vec::new(),
                 label: first_pick.to_string(),
                 command: "rp 0".to_string(),
             }],
