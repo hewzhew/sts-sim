@@ -4,8 +4,8 @@ use clap::Parser;
 use serde::Serialize;
 
 use sts_simulator::ai::neow_policy_v1::{
-    choices_from_event_options_v1, neow_map_features_from_run_state_v1, rank_neow_choices_v1,
-    NeowDecisionInputV1, NeowGuidanceConfigV1,
+    choices_from_event_options_v1, neow_followup_selection_v1, neow_map_features_from_run_state_v1,
+    rank_neow_choices_v1, NeowDecisionInputV1, NeowGuidanceConfigV1,
 };
 use sts_simulator::content::events::neow;
 use sts_simulator::eval::branch_experiment::{
@@ -228,9 +228,33 @@ fn neow_guided_prefix_commands(
         config: NeowGuidanceConfigV1::default(),
     });
     if let Some(selected) = trace.selected() {
-        prefix.push(selected.index.to_string());
+        let neow_choice_command = selected.index.to_string();
+        prefix.push(neow_choice_command.clone());
+        session.apply_command(parse_run_control_command(&neow_choice_command)?)?;
+        if is_neow_followup_selection(&session) {
+            if let sts_simulator::state::core::EngineState::RunPendingChoice(choice) =
+                &session.engine_state
+            {
+                if let Some(decision) =
+                    neow_followup_selection_v1(&session.run_state, choice, player_class)
+                {
+                    prefix.push(decision.command);
+                }
+            }
+        }
     }
     Ok(prefix)
+}
+
+fn is_neow_followup_selection(session: &RunControlSession) -> bool {
+    session.run_state.event_state.as_ref().is_some_and(|event| {
+        event.id == EventId::Neow
+            && event.completed
+            && matches!(
+                session.engine_state,
+                sts_simulator::state::core::EngineState::RunPendingChoice(_)
+            )
+    })
 }
 
 fn expand_lab_seeds(
@@ -520,5 +544,19 @@ mod tests {
         let config = branch_config_for_seed(&args, 521).expect("config builds");
 
         assert_eq!(config.prefix_commands, vec!["0"]);
+    }
+
+    #[test]
+    fn branch_config_applies_neow_followup_selection_when_guidance_opens_run_selection() {
+        let args = Args::try_parse_from(["decision_lab_driver"]).expect("args parse");
+        let config = branch_config_for_seed(&args, 527).expect("config builds");
+
+        assert!(
+            config
+                .prefix_commands
+                .iter()
+                .any(|command| command.starts_with("select ")),
+            "seed 527 previously stopped at Neow follow-up run_selection"
+        );
     }
 }
