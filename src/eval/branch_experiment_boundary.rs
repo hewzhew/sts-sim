@@ -1,4 +1,5 @@
 use crate::content::cards::CardId;
+use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
     BranchExperimentChoiceCardV1, BranchExperimentRewardOptionPortfolioV1,
 };
@@ -92,6 +93,9 @@ pub(crate) fn current_branch_boundary(
             .map(BranchBoundaryOptionV1::from_card_reward)
             .collect::<Vec<_>>();
         if config.include_skip && card_reward_skip_available(session) {
+            if has_singing_bowl(session) {
+                options.push(BranchBoundaryOptionV1::card_reward_bowl());
+            }
             options.push(BranchBoundaryOptionV1::card_reward_skip());
         }
         return Some(BranchBoundarySelectionV1 {
@@ -169,7 +173,32 @@ fn card_reward_skip_available(session: &RunControlSession) -> bool {
     }
 }
 
+fn has_singing_bowl(session: &RunControlSession) -> bool {
+    session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::SingingBowl)
+}
+
 impl BranchBoundaryOptionV1 {
+    fn card_reward_bowl() -> Self {
+        Self {
+            kind: "card_reward_bowl",
+            effect_label: "Singing Bowl | gain 2 max HP".to_string(),
+            label: "Singing Bowl | gain 2 max HP".to_string(),
+            command: "bowl".to_string(),
+            card: None,
+            upgrades: None,
+            selected_cards: Vec::new(),
+            effect_kind: "singing_bowl".to_string(),
+            effect_key: "card_reward:singing_bowl".to_string(),
+            representative_count: 1,
+            suppressed_count: 0,
+            success_reason: "singing bowl card reward branch applied",
+        }
+    }
+
     fn card_reward_skip() -> Self {
         Self {
             kind: "card_reward_skip",

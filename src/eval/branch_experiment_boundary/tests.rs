@@ -4,7 +4,7 @@ use super::card_reward::select_card_reward_branch_options_with_limit;
 use super::*;
 use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
 use crate::content::cards::CardId;
-use crate::content::relics::RelicId;
+use crate::content::relics::{RelicId, RelicState};
 use crate::eval::run_control::{RunControlConfig, RunControlSession};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
@@ -137,6 +137,43 @@ fn current_boundary_does_not_skip_unopened_card_reward_item() {
             .any(|option| option.kind == "card_reward_skip"),
         "skip is only a card-reward branch after the card reward is opened"
     );
+}
+
+#[test]
+fn current_boundary_can_include_singing_bowl_card_reward_option() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::SingingBowl));
+    let mut reward = RewardState::new();
+    reward.pending_card_choice = Some(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::ShrugItOff, 0),
+    ]);
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: None,
+            max_campfire_options_per_branch: None,
+            include_skip: true,
+        },
+        None,
+    )
+    .expect("card reward boundary");
+
+    let bowl = boundary
+        .options
+        .iter()
+        .find(|option| option.kind == "card_reward_bowl")
+        .expect("Singing Bowl branch should be present");
+
+    assert_eq!(bowl.command, "bowl");
+    assert_eq!(bowl.effect_kind, "singing_bowl");
+    assert_eq!(bowl.effect_label, "Singing Bowl | gain 2 max HP");
+    assert!(bowl.selected_cards.is_empty());
 }
 
 #[test]
