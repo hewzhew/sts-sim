@@ -13,6 +13,11 @@ use std::fs;
 use std::path::PathBuf;
 
 #[test]
+fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
+    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 16);
+}
+
+#[test]
 fn branch_experiment_expands_pending_card_reward_choices() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();
