@@ -28,11 +28,11 @@ use crate::eval::run_control::{
     RunControlSearchCombatOptions, RunControlSession, SessionTraceReplayOptions,
     SessionTraceReplayStop,
 };
-use crate::state::core::{EngineState, RunResult};
+use crate::state::core::{CampfireChoice, ClientInput, EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardItem, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 8;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 9;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -43,6 +43,7 @@ pub struct BranchExperimentConfigV1 {
     pub max_branches: usize,
     pub max_branches_per_frontier_group: Option<usize>,
     pub max_reward_options_per_branch: Option<usize>,
+    pub max_campfire_options_per_branch: Option<usize>,
     pub max_depth: usize,
     pub auto_max_operations: usize,
     pub experiment_wall_ms: Option<u64>,
@@ -65,6 +66,7 @@ impl Default for BranchExperimentConfigV1 {
             max_branches: 12,
             max_branches_per_frontier_group: None,
             max_reward_options_per_branch: None,
+            max_campfire_options_per_branch: Some(3),
             max_depth: 4,
             auto_max_operations: 128,
             experiment_wall_ms: None,
@@ -161,8 +163,8 @@ pub enum BranchExperimentBranchStatusV1 {
 pub struct BranchExperimentChoiceV1 {
     pub depth: usize,
     pub kind: String,
-    pub card: CardId,
-    pub upgrades: u8,
+    pub card: Option<CardId>,
+    pub upgrades: Option<u8>,
     pub label: String,
     pub command: String,
 }
@@ -358,50 +360,72 @@ fn run_branch_experiment_from_session_with_replay(
                 continue;
             }
 
-            let Some(options) = card_reward_branch_options(&branch.session) else {
-                branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
-                branch.stop_reason = current_boundary_title(&branch.session);
-                next.push(branch);
-                continue;
-            };
-            let option_selection =
-                select_card_reward_branch_options(options, config, depth, &branch.session);
-            if let Some(portfolio) = option_selection.portfolio {
-                reward_option_portfolios.push(portfolio);
-            }
-            let options = option_selection.options;
-            if options.is_empty() {
-                branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
-                branch.stop_reason = "card reward option portfolio is empty".to_string();
-                next.push(branch);
+            if let Some(options) = card_reward_branch_options(&branch.session) {
+                let option_selection =
+                    select_card_reward_branch_options(options, config, depth, &branch.session);
+                if let Some(portfolio) = option_selection.portfolio {
+                    reward_option_portfolios.push(portfolio);
+                }
+                let options = option_selection.options;
+                if options.is_empty() {
+                    branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
+                    branch.stop_reason = "card reward option portfolio is empty".to_string();
+                    next.push(branch);
+                    continue;
+                }
+
+                explored_branch_points = explored_branch_points.saturating_add(1);
+                expanded_any = true;
+                for option in options {
+                    next.push(expand_branch_choice(
+                        &branch,
+                        BranchChoiceDraft {
+                            depth,
+                            kind: "card_reward",
+                            label: option.label,
+                            command: option.command,
+                            card: Some(option.card),
+                            upgrades: Some(option.upgrades),
+                            success_reason: "card reward branch applied",
+                        },
+                        config,
+                    ));
+                }
                 continue;
             }
 
-            explored_branch_points = explored_branch_points.saturating_add(1);
-            expanded_any = true;
-            for option in options {
-                let mut child = branch.clone();
-                child.id = format!("{}.{}", child.id, option.command);
-                child.choices.push(BranchExperimentChoiceV1 {
-                    depth,
-                    kind: "card_reward".to_string(),
-                    card: option.card,
-                    upgrades: option.upgrades,
-                    label: option.label,
-                    command: option.command.clone(),
-                });
-                match apply_card_reward_branch_choice(&mut child.session, &option.command) {
-                    Ok(()) => {
-                        child.stop_reason = "card reward branch applied".to_string();
-                        settle_branch_to_frontier(&mut child, config);
-                    }
-                    Err(err) => {
-                        child.status = BranchExperimentBranchStatusV1::Failed;
-                        child.stop_reason = err;
-                    }
+            if let Some(options) = campfire_branch_options(&branch.session) {
+                let options = select_campfire_branch_options(options, config).options;
+                if options.is_empty() {
+                    branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
+                    branch.stop_reason = "campfire option portfolio is empty".to_string();
+                    next.push(branch);
+                    continue;
                 }
-                next.push(child);
+
+                explored_branch_points = explored_branch_points.saturating_add(1);
+                expanded_any = true;
+                for option in options {
+                    next.push(expand_branch_choice(
+                        &branch,
+                        BranchChoiceDraft {
+                            depth,
+                            kind: "campfire",
+                            label: option.label,
+                            command: option.command,
+                            card: option.card,
+                            upgrades: option.upgrades,
+                            success_reason: "campfire branch applied",
+                        },
+                        config,
+                    ));
+                }
+                continue;
             }
+
+            branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
+            branch.stop_reason = current_boundary_title(&branch.session);
+            next.push(branch);
         }
 
         let retention = apply_branch_retention(next, config);
@@ -488,7 +512,7 @@ fn experiment_wall_limit_hit(started_at: Instant, config: &BranchExperimentConfi
 }
 
 fn advance_to_experiment_boundary(branch: &mut BranchWork, config: &BranchExperimentConfigV1) {
-    if is_terminal(&branch.session) || card_reward_branch_options(&branch.session).is_some() {
+    if is_terminal(&branch.session) || experiment_branch_options_available(&branch.session) {
         update_terminal_status(branch);
         return;
     }
@@ -542,10 +566,52 @@ fn settle_branch_to_frontier(branch: &mut BranchWork, config: &BranchExperimentC
     if branch.status != BranchExperimentBranchStatusV1::Active || is_terminal(&branch.session) {
         return;
     }
-    if card_reward_branch_options(&branch.session).is_none() {
+    if !experiment_branch_options_available(&branch.session) {
         branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
         branch.stop_reason = current_boundary_title(&branch.session);
     }
+}
+
+fn experiment_branch_options_available(session: &RunControlSession) -> bool {
+    card_reward_branch_options(session).is_some() || campfire_branch_options(session).is_some()
+}
+
+struct BranchChoiceDraft {
+    depth: usize,
+    kind: &'static str,
+    label: String,
+    command: String,
+    card: Option<CardId>,
+    upgrades: Option<u8>,
+    success_reason: &'static str,
+}
+
+fn expand_branch_choice(
+    branch: &BranchWork,
+    draft: BranchChoiceDraft,
+    config: &BranchExperimentConfigV1,
+) -> BranchWork {
+    let mut child = branch.clone();
+    child.id = format!("{}.{}", child.id, draft.command);
+    child.choices.push(BranchExperimentChoiceV1 {
+        depth: draft.depth,
+        kind: draft.kind.to_string(),
+        card: draft.card,
+        upgrades: draft.upgrades,
+        label: draft.label,
+        command: draft.command.clone(),
+    });
+    match apply_branch_choice(&mut child.session, &draft.command) {
+        Ok(()) => {
+            child.stop_reason = draft.success_reason.to_string();
+            settle_branch_to_frontier(&mut child, config);
+        }
+        Err(err) => {
+            child.status = BranchExperimentBranchStatusV1::Failed;
+            child.stop_reason = err;
+        }
+    }
+    child
 }
 
 #[derive(Clone, Debug)]
@@ -701,6 +767,20 @@ struct CardRewardBranchOptionSelection {
     portfolio: Option<BranchExperimentRewardOptionPortfolioV1>,
 }
 
+#[derive(Clone, Debug)]
+struct CampfireBranchOption {
+    label: String,
+    command: String,
+    card: Option<CardId>,
+    upgrades: Option<u8>,
+    semantic_class: String,
+}
+
+#[derive(Clone, Debug)]
+struct CampfireBranchOptionSelection {
+    options: Vec<CampfireBranchOption>,
+}
+
 fn card_reward_branch_options(session: &RunControlSession) -> Option<Vec<CardRewardBranchOption>> {
     let cards = active_or_visible_reward_cards(session)?;
     let options = cards
@@ -802,6 +882,137 @@ fn select_card_reward_branch_options_with_limit(
         .filter_map(|(index, option)| selected_indices.contains(&index).then_some(option))
         .collect();
     CardRewardBranchOptionSelection { options, portfolio }
+}
+
+fn campfire_branch_options(session: &RunControlSession) -> Option<Vec<CampfireBranchOption>> {
+    if !matches!(session.engine_state, EngineState::Campfire) {
+        return None;
+    }
+    let surface = build_decision_surface(session);
+    let options = surface
+        .view
+        .candidates
+        .iter()
+        .filter_map(|candidate| {
+            let input = candidate.action.executable_input()?;
+            let ClientInput::CampfireOption(choice) = input else {
+                return None;
+            };
+            let (card, upgrades, semantic_class) = campfire_option_metadata(session, choice);
+            Some(CampfireBranchOption {
+                label: candidate.label.clone(),
+                command: candidate.action.command_hint(),
+                card,
+                upgrades,
+                semantic_class,
+            })
+        })
+        .collect::<Vec<_>>();
+    (!options.is_empty()).then_some(options)
+}
+
+fn campfire_option_metadata(
+    session: &RunControlSession,
+    choice: CampfireChoice,
+) -> (Option<CardId>, Option<u8>, String) {
+    match choice {
+        CampfireChoice::Rest => (None, None, "rest".to_string()),
+        CampfireChoice::Smith(idx) => {
+            let Some(card) = session.run_state.master_deck.get(idx) else {
+                return (None, None, "smith:unknown".to_string());
+            };
+            let upgraded = card.upgrades.saturating_add(1);
+            let profile = card_reward_semantic_profile_v1(&RewardCard::new(card.id, upgraded));
+            let (_, class_key) = reward_option_semantic_class(&profile);
+            (
+                Some(card.id),
+                Some(card.upgrades),
+                format!("smith:{class_key}"),
+            )
+        }
+        CampfireChoice::Dig => (None, None, "dig".to_string()),
+        CampfireChoice::Lift => (None, None, "lift".to_string()),
+        CampfireChoice::Toke(idx) => {
+            let card = session.run_state.master_deck.get(idx);
+            (
+                card.map(|card| card.id),
+                card.map(|card| card.upgrades),
+                "toke".to_string(),
+            )
+        }
+        CampfireChoice::Recall => (None, None, "recall".to_string()),
+    }
+}
+
+fn select_campfire_branch_options(
+    options: Vec<CampfireBranchOption>,
+    config: &BranchExperimentConfigV1,
+) -> CampfireBranchOptionSelection {
+    let Some(limit) = config.max_campfire_options_per_branch else {
+        return CampfireBranchOptionSelection { options };
+    };
+    select_campfire_branch_options_with_limit(options, limit)
+}
+
+fn select_campfire_branch_options_with_limit(
+    options: Vec<CampfireBranchOption>,
+    limit: usize,
+) -> CampfireBranchOptionSelection {
+    let capped_limit = limit.min(options.len());
+    if options.len() <= capped_limit {
+        return CampfireBranchOptionSelection { options };
+    }
+
+    let mut annotated = options
+        .iter()
+        .enumerate()
+        .map(|(index, option)| {
+            (
+                index,
+                campfire_option_priority(option),
+                option.semantic_class.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    annotated.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+
+    let mut selected = Vec::new();
+    let mut selected_classes = BTreeSet::new();
+    for (index, _, class_key) in &annotated {
+        if selected.len() >= capped_limit {
+            break;
+        }
+        if selected_classes.insert(class_key.clone()) {
+            selected.push(*index);
+        }
+    }
+    for index in 0..options.len() {
+        if selected.len() >= capped_limit {
+            break;
+        }
+        if !selected.contains(&index) {
+            selected.push(index);
+        }
+    }
+
+    selected.sort_unstable();
+    let selected_indices = selected.iter().copied().collect::<BTreeSet<_>>();
+    let options = options
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, option)| selected_indices.contains(&index).then_some(option))
+        .collect();
+    CampfireBranchOptionSelection { options }
+}
+
+fn campfire_option_priority(option: &CampfireBranchOption) -> usize {
+    match option.semantic_class.as_str() {
+        "rest" => 0,
+        class if class.starts_with("smith:") => 1,
+        "dig" | "lift" | "toke" => 2,
+        "recall" => 3,
+        _ => 4,
+    }
 }
 
 fn reward_option_portfolio_report(
@@ -922,10 +1133,7 @@ fn first_visible_card_reward(
     })
 }
 
-fn apply_card_reward_branch_choice(
-    session: &mut RunControlSession,
-    command: &str,
-) -> Result<(), String> {
+fn apply_branch_choice(session: &mut RunControlSession, command: &str) -> Result<(), String> {
     let command = parse_run_control_command(command)?;
     session.apply_command(command).map(|_| ())
 }
@@ -1003,8 +1211,12 @@ fn choice_profiles_from_choices(
 ) -> Vec<crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1> {
     choices
         .iter()
-        .map(|choice| {
-            card_reward_semantic_profile_v1(&RewardCard::new(choice.card, choice.upgrades))
+        .filter_map(|choice| {
+            let card = choice.card?;
+            let upgrades = choice.upgrades.unwrap_or_default();
+            Some(card_reward_semantic_profile_v1(&RewardCard::new(
+                card, upgrades,
+            )))
         })
         .collect()
 }
@@ -1411,6 +1623,58 @@ mod tests {
             .pruned_options
             .iter()
             .any(|option| option.semantic_class == "pure_transition_frontload"));
+    }
+
+    #[test]
+    fn campfire_branch_option_portfolio_keeps_rest_and_smith_classes() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::Campfire;
+
+        let options = campfire_branch_options(&session).expect("campfire options");
+        let selected = select_campfire_branch_options_with_limit(options, 2).options;
+
+        assert!(
+            selected.iter().any(|option| option.command == "rest"),
+            "rest should remain represented when campfire branching is capped"
+        );
+        assert!(
+            selected
+                .iter()
+                .any(|option| option.command.starts_with("smith ")),
+            "at least one smith option should remain represented when campfire branching is capped"
+        );
+    }
+
+    #[test]
+    fn branch_experiment_expands_campfire_choices() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::Campfire;
+
+        let report = run_branch_experiment_from_session(
+            session,
+            &BranchExperimentConfigV1 {
+                max_depth: 1,
+                max_branches: 4,
+                max_campfire_options_per_branch: Some(2),
+                ..BranchExperimentConfigV1::default()
+            },
+        );
+
+        assert_eq!(report.explored_branch_points, 1);
+        assert!(report
+            .branches
+            .iter()
+            .any(|branch| branch.choices.iter().any(|choice| {
+                choice.kind == "campfire" && choice.command == "rest" && choice.card.is_none()
+            })));
+        assert!(report
+            .branches
+            .iter()
+            .any(|branch| branch.choices.iter().any(|choice| {
+                choice.kind == "campfire"
+                    && choice.command.starts_with("smith ")
+                    && choice.card.is_some()
+            })));
     }
 
     #[test]

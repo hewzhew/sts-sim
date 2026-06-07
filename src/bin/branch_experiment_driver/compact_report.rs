@@ -967,8 +967,8 @@ mod tests {
             choices: vec![BranchExperimentChoiceV1 {
                 depth: 0,
                 kind: "card_reward".to_string(),
-                card: CardId::Strike,
-                upgrades: 0,
+                card: Some(CardId::Strike),
+                upgrades: Some(0),
                 label: first_pick.to_string(),
                 command: "rp 0".to_string(),
             }],
