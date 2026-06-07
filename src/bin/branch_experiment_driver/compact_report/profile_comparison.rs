@@ -10,14 +10,15 @@ pub(crate) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) ->
     lines.push("Profile comparison:".to_string());
     for report in reports {
         lines.push(format!(
-            "  {} kept={} pruned={} lanes=[{}] deepest=A{}F{} hp={}",
+            "  {} kept={} pruned={} lanes=[{}] deepest=A{}F{} hp={}{}",
             report.retention_profile,
             report.branches.len(),
             report.pruned_branch_count,
             render_report_lane_counts(report),
             deepest_act(report),
             deepest_floor(report),
-            render_report_hp_range(report)
+            render_report_hp_range(report),
+            render_pruned_long_horizon_suffix(report)
         ));
     }
     let unique_sections = render_profile_unique_branch_sections(reports);
@@ -26,6 +27,18 @@ pub(crate) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) ->
         lines.extend(unique_sections);
     }
     lines.join("\n")
+}
+
+fn render_pruned_long_horizon_suffix(report: &BranchExperimentReportV1) -> String {
+    let primary =
+        super::pruned::long_horizon_slot_counts(&report.pruned_branch_summary.primary_slot_counts);
+    if report.pruned_branch_count == 0 || primary.is_empty() {
+        return String::new();
+    }
+    format!(
+        " pruned_long=[{}]",
+        super::render_retention_slot_counts(&primary)
+    )
 }
 
 fn render_report_lane_counts(report: &BranchExperimentReportV1) -> String {

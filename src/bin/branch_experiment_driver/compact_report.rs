@@ -711,6 +711,10 @@ mod tests {
         let mut balanced = empty_report();
         balanced.retention_profile = BranchRetentionBudgetProfileV1::Balanced;
         balanced.pruned_branch_count = 3;
+        balanced.pruned_branch_summary.primary_slot_counts = BTreeMap::from([
+            (BranchRetentionSlotV1::EngineSetup, 1),
+            (BranchRetentionSlotV1::Frontload, 2),
+        ]);
         balanced.branches = vec![
             branch_report(
                 "b0",
@@ -765,7 +769,7 @@ mod tests {
 
         assert!(rendered.contains("Profile comparison:"));
         assert!(rendered.contains(
-            "balanced kept=2 pruned=3 lanes=[package=1 survival=1] deepest=A1F5 hp=70-74"
+            "balanced kept=2 pruned=3 lanes=[package=1 survival=1] deepest=A1F5 hp=70-74 pruned_long=[engine_setup=1]"
         ));
         assert!(rendered.contains(
             "package kept=2 pruned=1 lanes=[package=1 engine_setup=1] deepest=A1F6 hp=65-70"

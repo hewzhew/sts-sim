@@ -73,7 +73,7 @@ pub(super) fn render_pruned_next_experiment_line(
     ))
 }
 
-fn long_horizon_slot_counts(
+pub(super) fn long_horizon_slot_counts(
     counts: &BTreeMap<BranchRetentionSlotV1, usize>,
 ) -> BTreeMap<BranchRetentionSlotV1, usize> {
     [
