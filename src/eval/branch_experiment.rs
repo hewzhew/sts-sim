@@ -565,6 +565,7 @@ fn apply_branch_retention(
         .enumerate()
         .map(|(index, branch)| {
             let choice_profiles = branch_choice_profiles(branch);
+            let choice_effect_keys = branch_choice_effect_keys(branch);
             BranchRetentionCandidateInputV1 {
                 index,
                 frontier_key: branch_frontier(&branch.session).key,
@@ -576,6 +577,7 @@ fn apply_branch_retention(
                 strategy_formation: Some(strategy_formation_summary(&branch.session)),
                 trajectory: summarize_branch_trajectory_v1(&choice_profiles),
                 choice_profiles,
+                choice_effect_keys,
             }
         })
         .collect::<Vec<_>>();
@@ -685,6 +687,17 @@ fn pruned_branch_summary_for_selection(
 
 fn branch_choice_effect_key(choice: &BranchExperimentChoiceV1) -> &'static str {
     branch_experiment_choice_effect_key_v1(&choice.effect_kind)
+}
+
+fn branch_choice_effect_keys(branch: &BranchWork) -> Vec<String> {
+    branch
+        .choices
+        .iter()
+        .map(branch_choice_effect_key)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 pub fn branch_experiment_choice_effect_key_v1(effect_kind: &str) -> &'static str {

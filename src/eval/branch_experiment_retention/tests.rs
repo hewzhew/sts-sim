@@ -28,6 +28,7 @@ fn portfolio_retention_keeps_package_branch_over_second_frontload_branch() {
                 semantic_profile("Entrench", &[CardRewardSemanticRoleV1::BlockPayoff]),
                 semantic_profile("Body Slam", &[CardRewardSemanticRoleV1::BlockPayoff]),
             ],
+            choice_effect_keys: vec!["take_card".to_string()],
         },
         retention_candidate(2, 10_840, &["Wild Strike", "Cleave", "Pommel Strike"]),
     ];
@@ -124,6 +125,24 @@ fn portfolio_retention_does_not_fill_budget_with_redundant_first_pick_variants()
         selection.keep_indices.len() < 6,
         "max_total is an upper bound; redundant filler branches can be left unkept"
     );
+}
+
+#[test]
+fn portfolio_retention_keeps_distinct_reward_effect_kinds_when_budget_allows() {
+    let candidates = vec![
+        effect_retention_candidate(0, 10_900, "take_card"),
+        effect_retention_candidate(1, 10_890, "take_card"),
+        effect_retention_candidate(2, 10_880, "take_card"),
+        effect_retention_candidate(3, 10_100, "skip_reward"),
+    ];
+
+    let selection = select_branch_retention_portfolio_v1(&candidates, retention_config(3, Some(3)));
+
+    assert!(
+        selection.keep_indices.contains(&3),
+        "a skip/bowl-style effect branch should keep a representative when branch budget allows it"
+    );
+    assert_eq!(selection.keep_indices.len(), 3);
 }
 
 #[test]
@@ -279,6 +298,7 @@ fn portfolio_retention_preserves_distinct_trajectories_under_same_formation() {
             semantic_profile("Barricade", &[CardRewardSemanticRoleV1::BlockRetention]),
             semantic_profile("Body Slam", &[CardRewardSemanticRoleV1::BlockPayoff]),
         ],
+        choice_effect_keys: vec!["take_card".to_string()],
     };
     let mut other_first_pick = retention_candidate(3, 10_700, &["Shockwave", "Clash"]);
     other_first_pick.strategy_formation = Some(formation);
@@ -720,6 +740,7 @@ fn retention_slots_come_from_semantic_profiles_not_card_names() {
             "Unfamiliar Card Name",
             &[CardRewardSemanticRoleV1::BlockPayoff],
         )],
+        choice_effect_keys: vec!["take_card".to_string()],
     };
 
     let decision = decide_branch_retention_v1(&candidate);
@@ -754,6 +775,27 @@ fn retention_candidate(
         strategy_formation: None,
         trajectory,
         choice_profiles,
+        choice_effect_keys: vec!["take_card".to_string()],
+    }
+}
+
+fn effect_retention_candidate(
+    index: usize,
+    rank_key: i32,
+    effect_key: &str,
+) -> BranchRetentionCandidateInputV1 {
+    BranchRetentionCandidateInputV1 {
+        index,
+        frontier_key: "same-frontier".to_string(),
+        rank_key,
+        hp: 78,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 14,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: Vec::new(),
+        choice_effect_keys: vec![effect_key.to_string()],
     }
 }
 
@@ -790,6 +832,7 @@ fn semantic_retention_candidate(
         )),
         trajectory,
         choice_profiles: vec![semantic_profile("Semantic Candidate", roles)],
+        choice_effect_keys: vec!["take_card".to_string()],
     }
 }
 
