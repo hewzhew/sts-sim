@@ -29,6 +29,7 @@ fn portfolio_retention_keeps_package_branch_over_second_frontload_branch() {
                 semantic_profile("Body Slam", &[CardRewardSemanticRoleV1::BlockPayoff]),
             ],
             choice_effect_keys: vec!["take_card".to_string()],
+            lineage_flags: Vec::new(),
         },
         retention_candidate(2, 10_840, &["Wild Strike", "Cleave", "Pommel Strike"]),
     ];
@@ -175,6 +176,25 @@ fn portfolio_retention_treats_special_campfire_actions_as_distinct_effect_kinds(
     assert!(selection.keep_indices.contains(&3));
     assert!(selection.keep_indices.contains(&4));
     assert_eq!(selection.keep_indices.len(), 4);
+}
+
+#[test]
+fn portfolio_retention_keeps_distinct_lineage_breakers_when_budget_allows() {
+    let mut lineage_breaker = effect_retention_candidate(2, 10_100, "take_card");
+    lineage_breaker.lineage_flags = vec!["question_card_reward_count_plus_1".to_string()];
+    let candidates = vec![
+        effect_retention_candidate(0, 10_900, "take_card"),
+        effect_retention_candidate(1, 10_890, "take_card"),
+        lineage_breaker,
+    ];
+
+    let selection = select_branch_retention_portfolio_v1(&candidates, retention_config(2, Some(2)));
+
+    assert!(
+        selection.keep_indices.contains(&2),
+        "reward-sequence breaker branches should keep a representative when budget allows"
+    );
+    assert_eq!(selection.keep_indices.len(), 2);
 }
 
 #[test]
@@ -331,6 +351,7 @@ fn portfolio_retention_preserves_distinct_trajectories_under_same_formation() {
             semantic_profile("Body Slam", &[CardRewardSemanticRoleV1::BlockPayoff]),
         ],
         choice_effect_keys: vec!["take_card".to_string()],
+        lineage_flags: Vec::new(),
     };
     let mut other_first_pick = retention_candidate(3, 10_700, &["Shockwave", "Clash"]);
     other_first_pick.strategy_formation = Some(formation);
@@ -773,6 +794,7 @@ fn retention_slots_come_from_semantic_profiles_not_card_names() {
             &[CardRewardSemanticRoleV1::BlockPayoff],
         )],
         choice_effect_keys: vec!["take_card".to_string()],
+        lineage_flags: Vec::new(),
     };
 
     let decision = decide_branch_retention_v1(&candidate);
@@ -808,6 +830,7 @@ fn retention_candidate(
         trajectory,
         choice_profiles,
         choice_effect_keys: vec!["take_card".to_string()],
+        lineage_flags: Vec::new(),
     }
 }
 
@@ -828,6 +851,7 @@ fn effect_retention_candidate(
         trajectory: BranchTrajectorySignatureV1::default(),
         choice_profiles: Vec::new(),
         choice_effect_keys: vec![effect_key.to_string()],
+        lineage_flags: Vec::new(),
     }
 }
 
@@ -865,6 +889,7 @@ fn semantic_retention_candidate(
         trajectory,
         choice_profiles: vec![semantic_profile("Semantic Candidate", roles)],
         choice_effect_keys: vec!["take_card".to_string()],
+        lineage_flags: Vec::new(),
     }
 }
 

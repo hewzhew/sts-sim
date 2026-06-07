@@ -717,6 +717,7 @@ fn retention_candidate(
         trajectory,
         choice_profiles: Vec::new(),
         choice_effect_keys: Vec::new(),
+        lineage_flags: Vec::new(),
     }
 }
 

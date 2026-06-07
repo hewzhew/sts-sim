@@ -567,9 +567,10 @@ fn apply_branch_retention(
         .map(|(index, branch)| {
             let choice_profiles = branch_choice_profiles(branch);
             let choice_effect_keys = branch_choice_effect_keys(branch);
+            let frontier = branch_frontier(&branch.session);
             BranchRetentionCandidateInputV1 {
                 index,
-                frontier_key: branch_frontier(&branch.session).key,
+                frontier_key: frontier.key,
                 rank_key: branch_rank_key(branch),
                 hp: branch.session.run_state.current_hp,
                 max_hp: branch.session.run_state.max_hp,
@@ -579,6 +580,7 @@ fn apply_branch_retention(
                 trajectory: summarize_branch_trajectory_v1(&choice_profiles),
                 choice_profiles,
                 choice_effect_keys,
+                lineage_flags: frontier.lineage.sequence_breakers_present,
             }
         })
         .collect::<Vec<_>>();

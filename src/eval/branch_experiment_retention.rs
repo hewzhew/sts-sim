@@ -73,6 +73,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub trajectory: BranchTrajectorySignatureV1,
     pub choice_profiles: Vec<CardRewardSemanticProfileV1>,
     pub choice_effect_keys: Vec<String>,
+    pub lineage_flags: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -323,7 +324,9 @@ fn select_positions_for_slots(
     let selected = cap_redundant_choice_prefixes(candidates, positions, selected, limit);
     let selected = cap_redundant_first_pick_prefixes(candidates, positions, selected, limit);
     let selected = cap_pure_transition_saturation(candidates, positions, selected, limit);
-    effect_coverage::preserve_choice_effect_coverage(candidates, positions, selected, limit)
+    let selected =
+        effect_coverage::preserve_choice_effect_coverage(candidates, positions, selected, limit);
+    effect_coverage::preserve_lineage_flag_coverage(candidates, positions, selected, limit)
 }
 
 fn retention_lane_sequence(
