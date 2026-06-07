@@ -13,11 +13,12 @@ pub(crate) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) ->
     }
     for report in reports {
         lines.push(format!(
-            "  {} branch_points={} kept={} pruned={} lanes=[{}] deepest=A{}F{} hp={}{}",
+            "  {} branch_points={} kept={} pruned={}{} lanes=[{}] deepest=A{}F{} hp={}{}",
             report.retention_profile,
             report.explored_branch_points,
             report.branches.len(),
             report.pruned_branch_count,
+            render_profile_delta_suffix(report, reports.first()),
             render_report_lane_counts(report),
             deepest_act(report),
             deepest_floor(report),
@@ -67,6 +68,32 @@ fn render_branch_point_warning(reports: &[BranchExperimentReportV1]) -> Option<S
     Some(format!(
         "Warning: compared profiles reached different branch-point counts; retention differences may be confounded by search/automation budget. branch_points=[{branch_points}]"
     ))
+}
+
+fn render_profile_delta_suffix(
+    report: &BranchExperimentReportV1,
+    baseline: Option<&BranchExperimentReportV1>,
+) -> String {
+    let Some(baseline) = baseline else {
+        return String::new();
+    };
+    if report.retention_profile == baseline.retention_profile {
+        return String::new();
+    }
+
+    let baseline_keys = report_branch_keys(baseline)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let report_keys = report_branch_keys(report)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let shared = report_keys.intersection(&baseline_keys).count();
+    let unique = report_keys.difference(&baseline_keys).count();
+    let missing = baseline_keys.difference(&report_keys).count();
+    format!(
+        " vs_{}=shared:{shared} unique:{unique} missing:{missing}",
+        baseline.retention_profile
+    )
 }
 
 fn render_pruned_long_horizon_suffix(report: &BranchExperimentReportV1) -> String {

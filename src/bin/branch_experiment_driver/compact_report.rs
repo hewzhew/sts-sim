@@ -836,7 +836,7 @@ mod tests {
             "balanced branch_points=1 kept=2 pruned=3 lanes=[package=1 survival=1] deepest=A1F5 hp=70-74 pruned_long=[engine_setup=1]"
         ));
         assert!(rendered.contains(
-            "package branch_points=1 kept=2 pruned=1 lanes=[package=1 engine_setup=1] deepest=A1F6 hp=65-70"
+            "package branch_points=1 kept=2 pruned=1 vs_balanced=shared:1 unique:1 missing:1 lanes=[package=1 engine_setup=1] deepest=A1F6 hp=65-70"
         ));
         assert!(
             rendered.contains("Only in balanced (1 branch(es), lanes=[survival=1], packages=[-]):")
