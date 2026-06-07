@@ -177,6 +177,46 @@ fn current_boundary_can_include_singing_bowl_card_reward_option() {
 }
 
 #[test]
+fn current_boundary_can_include_singing_bowl_for_unopened_card_reward_item() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::SingingBowl));
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Card {
+        cards: vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::ShrugItOff, 0),
+        ],
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: None,
+            max_campfire_options_per_branch: None,
+            include_skip: true,
+        },
+        None,
+    )
+    .expect("visible card reward boundary");
+
+    assert!(boundary
+        .options
+        .iter()
+        .any(|option| option.kind == "card_reward_bowl" && option.command == "bowl"));
+    assert!(
+        !boundary
+            .options
+            .iter()
+            .any(|option| option.kind == "card_reward_skip"),
+        "plain skip is still not a direct unopened-card-reward branch"
+    );
+}
+
+#[test]
 fn current_boundary_wraps_campfire_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::Campfire;

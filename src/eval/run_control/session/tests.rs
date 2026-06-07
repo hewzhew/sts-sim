@@ -1938,6 +1938,39 @@ fn run_control_auto_run_does_not_open_card_reward_item_with_singing_bowl() {
 }
 
 #[test]
+fn visible_singing_bowl_candidate_consumes_unopened_card_reward_item() {
+    let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
+        cards: vec![
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Shockwave, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Clash, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::SeverSoul, 0),
+        ],
+    }]);
+    session
+        .run_state
+        .relics
+        .push(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::SingingBowl,
+        ));
+    let before_max_hp = session.run_state.max_hp;
+
+    session
+        .apply_command(RunControlCommand::Candidate("bowl".to_string()))
+        .expect("bowl should consume the visible card reward item");
+
+    assert_eq!(session.run_state.max_hp, before_max_hp + 2);
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .all(|card| card.id != crate::content::cards::CardId::Shockwave));
+    if let EngineState::RewardScreen(reward) = &session.engine_state {
+        assert!(reward.pending_card_choice.is_none());
+        assert!(reward.items.is_empty());
+    }
+}
+
+#[test]
 fn run_control_auto_step_route_planner_advances_map_then_stops_at_combat() {
     let mut session = test_session_with_first_monster_room();
 

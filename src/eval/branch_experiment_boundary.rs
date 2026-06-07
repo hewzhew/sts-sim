@@ -92,11 +92,13 @@ pub(crate) fn current_branch_boundary(
             .into_iter()
             .map(BranchBoundaryOptionV1::from_card_reward)
             .collect::<Vec<_>>();
-        if config.include_skip && card_reward_skip_available(session) {
-            if has_singing_bowl(session) {
+        if config.include_skip {
+            if has_singing_bowl(session) && card_reward_bowl_available(session) {
                 options.push(BranchBoundaryOptionV1::card_reward_bowl());
             }
-            options.push(BranchBoundaryOptionV1::card_reward_skip());
+            if card_reward_skip_available(session) {
+                options.push(BranchBoundaryOptionV1::card_reward_skip());
+            }
         }
         return Some(BranchBoundarySelectionV1 {
             id: BranchBoundaryIdV1::CardReward,
@@ -168,6 +170,18 @@ fn card_reward_skip_available(session: &RunControlSession) -> bool {
         EngineState::RewardScreen(reward) => reward.pending_card_choice.is_some(),
         EngineState::RewardOverlay { reward_state, .. } => {
             reward_state.pending_card_choice.is_some()
+        }
+        _ => false,
+    }
+}
+
+fn card_reward_bowl_available(session: &RunControlSession) -> bool {
+    match &session.engine_state {
+        EngineState::RewardScreen(reward) => {
+            reward.pending_card_choice.is_some() || reward.has_card_reward_item()
+        }
+        EngineState::RewardOverlay { reward_state, .. } => {
+            reward_state.pending_card_choice.is_some() || reward_state.has_card_reward_item()
         }
         _ => false,
     }

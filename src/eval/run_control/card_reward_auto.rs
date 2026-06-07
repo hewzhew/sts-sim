@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::content::relics::RelicId;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::rewards::{RewardCard, RewardItem};
 
@@ -113,6 +114,34 @@ pub(super) fn apply_recorded_card_reward_pick(
     Ok(session
         .apply_input_without_manual_card_reward_trace(ClientInput::SelectCard(index))?
         .with_trace_annotations(vec![trace_annotation]))
+}
+
+pub(super) fn apply_singing_bowl_to_visible_card_reward_item(
+    session: &mut RunControlSession,
+) -> Result<Option<RunControlCommandOutcome>, String> {
+    if !session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::SingingBowl)
+    {
+        return Ok(None);
+    }
+
+    let Some((reward_index, _cards)) = visible_card_reward_item(session) else {
+        return Ok(None);
+    };
+
+    session.apply_input(ClientInput::ClaimReward(reward_index))?;
+    let Some(opened_cards) = active_pending_reward_cards(session) else {
+        return Err(
+            "Singing Bowl opened a reward item but no pending card choice appeared".to_string(),
+        );
+    };
+    let bowl_index = opened_cards.len();
+    session
+        .apply_input_without_manual_card_reward_trace(ClientInput::SelectCard(bowl_index))
+        .map(Some)
 }
 
 pub(super) fn card_reward_policy_stop_annotation(

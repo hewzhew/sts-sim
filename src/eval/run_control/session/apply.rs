@@ -202,12 +202,22 @@ impl RunControlSession {
 
     fn apply_visible_candidate(&mut self, id: &str) -> Result<RunControlCommandOutcome, String> {
         let surface = super::super::decision_surface::build_decision_surface(self);
-        let candidate = super::super::decision_surface::resolve_surface_candidate(
+        let Some(candidate) = super::super::decision_surface::resolve_surface_candidate(
             &surface,
             &self.engine_state,
             id,
-        )
-        .ok_or_else(|| format!("no visible candidate '{id}'"))?;
+        ) else {
+            if id == "bowl" {
+                if let Some(outcome) =
+                    super::super::card_reward_auto::apply_singing_bowl_to_visible_card_reward_item(
+                        self,
+                    )?
+                {
+                    return Ok(outcome);
+                }
+            }
+            return Err(format!("no visible candidate '{id}'"));
+        };
         match candidate.action.executable_input() {
             Some(input) => self.apply_input(input),
             None => Err(format!(
