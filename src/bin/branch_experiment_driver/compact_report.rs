@@ -446,7 +446,7 @@ fn choice_display_label(choice: &BranchExperimentChoiceV1) -> String {
         choice.effect_label.clone()
     };
     if choice.representative_count > 1 {
-        format!("{base} x{}", choice.representative_count)
+        format!("{base} (covers {})", choice.representative_count)
     } else {
         base
     }
@@ -603,6 +603,30 @@ mod tests {
 
         assert_eq!(rendered.matches(" | choices: ").count(), 2);
         assert!(rendered.contains("... 1 more branch(es); use --branch-examples N"));
+    }
+
+    #[test]
+    fn compact_report_renders_representative_coverage_without_label_ambiguity() {
+        let mut branch = branch_report(
+            "b0",
+            "transform Strike x2",
+            1,
+            1,
+            80,
+            BranchRetentionSlotV1::Diversity,
+            "Combat",
+        );
+        branch.choices[0].representative_count = 10;
+        branch.choices[0].suppressed_count = 9;
+        let report = BranchExperimentReportV1 {
+            branches: vec![branch],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("choices: transform Strike x2 (covers 10)"));
+        assert!(!rendered.contains("transform Strike x2 x10"));
     }
 
     #[test]

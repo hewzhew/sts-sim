@@ -990,7 +990,7 @@ fn branch_choice_display_label(choice: &BranchExperimentChoiceV1) -> String {
     };
     let count = choice.representative_count;
     if count > 1 {
-        format!("{base} x{count}")
+        format!("{base} (covers {count})")
     } else {
         base
     }

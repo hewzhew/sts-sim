@@ -595,20 +595,10 @@ fn run_selection_branch_options(
         return Some(options);
     }
 
-    let combinations = bounded_index_combinations(
-        deck_options.len(),
+    compressed_multi_run_selection_options(
+        deck_options,
         choice.min_choices,
         MAX_RUN_SELECTION_OPTIONS_PER_BRANCH,
-    )?;
-    if combinations.is_empty() {
-        return None;
-    }
-
-    Some(
-        combinations
-            .into_iter()
-            .map(|combo| run_selection_branch_option_from_combo(&deck_options, &combo))
-            .collect(),
     )
 }
 
@@ -667,6 +657,129 @@ fn compressed_single_run_selection_options(
         .collect()
 }
 
+#[derive(Clone, Debug)]
+struct RunSelectionDeckCardGroup {
+    options: Vec<RunSelectionDeckCardOption>,
+}
+
+#[derive(Clone, Debug)]
+struct RunSelectionGroupCountCombination {
+    group_counts: Vec<usize>,
+    represented_exact_count: usize,
+}
+
+fn compressed_multi_run_selection_options(
+    deck_options: Vec<RunSelectionDeckCardOption>,
+    choose: usize,
+    limit: usize,
+) -> Option<Vec<RunSelectionBranchOption>> {
+    if choose == 0 || deck_options.len() < choose {
+        return None;
+    }
+
+    let groups = run_selection_effect_groups(deck_options);
+    let combinations = bounded_group_count_combinations(&groups, choose, limit)?;
+    if combinations.is_empty() {
+        return None;
+    }
+
+    Some(
+        combinations
+            .into_iter()
+            .map(|combo| run_selection_branch_option_from_group_counts(&groups, &combo))
+            .collect(),
+    )
+}
+
+fn run_selection_effect_groups(
+    deck_options: Vec<RunSelectionDeckCardOption>,
+) -> Vec<RunSelectionDeckCardGroup> {
+    let mut groups = Vec::<RunSelectionDeckCardGroup>::new();
+    for option in deck_options {
+        if let Some(group) = groups
+            .iter_mut()
+            .find(|group| group.options[0].effect_key == option.effect_key)
+        {
+            group.options.push(option);
+        } else {
+            groups.push(RunSelectionDeckCardGroup {
+                options: vec![option],
+            });
+        }
+    }
+    groups
+}
+
+fn bounded_group_count_combinations(
+    groups: &[RunSelectionDeckCardGroup],
+    choose: usize,
+    limit: usize,
+) -> Option<Vec<RunSelectionGroupCountCombination>> {
+    let mut combinations = Vec::new();
+    let mut group_counts = vec![0; groups.len()];
+    if collect_group_count_combinations(
+        groups,
+        choose,
+        limit,
+        0,
+        &mut group_counts,
+        &mut combinations,
+    ) {
+        Some(combinations)
+    } else {
+        None
+    }
+}
+
+fn collect_group_count_combinations(
+    groups: &[RunSelectionDeckCardGroup],
+    remaining: usize,
+    limit: usize,
+    group_index: usize,
+    group_counts: &mut [usize],
+    combinations: &mut Vec<RunSelectionGroupCountCombination>,
+) -> bool {
+    if group_index >= groups.len() {
+        if remaining == 0 {
+            let represented_exact_count = group_counts
+                .iter()
+                .enumerate()
+                .map(|(idx, count)| binomial(groups[idx].options.len(), *count))
+                .product();
+            combinations.push(RunSelectionGroupCountCombination {
+                group_counts: group_counts.to_vec(),
+                represented_exact_count,
+            });
+        }
+        return combinations.len() <= limit;
+    }
+
+    let max_count = groups[group_index].options.len().min(remaining);
+    for count in (0..=max_count).rev() {
+        group_counts[group_index] = count;
+        if !collect_group_count_combinations(
+            groups,
+            remaining - count,
+            limit,
+            group_index + 1,
+            group_counts,
+            combinations,
+        ) {
+            return false;
+        }
+    }
+    group_counts[group_index] = 0;
+    true
+}
+
+fn binomial(n: usize, k: usize) -> usize {
+    if k > n {
+        return 0;
+    }
+    let k = k.min(n - k);
+    (0..k).fold(1usize, |acc, i| acc * (n - i) / (i + 1))
+}
+
 fn run_selection_branch_option_from_single(
     option: RunSelectionDeckCardOption,
     representative_count: usize,
@@ -686,13 +799,15 @@ fn run_selection_branch_option_from_single(
     }
 }
 
-fn run_selection_branch_option_from_combo(
-    deck_options: &[RunSelectionDeckCardOption],
-    combo: &[usize],
+fn run_selection_branch_option_from_group_counts(
+    groups: &[RunSelectionDeckCardGroup],
+    combo: &RunSelectionGroupCountCombination,
 ) -> RunSelectionBranchOption {
     let selected_options = combo
+        .group_counts
         .iter()
-        .filter_map(|idx| deck_options.get(*idx))
+        .enumerate()
+        .flat_map(|(group_idx, count)| groups[group_idx].options.iter().take(*count))
         .collect::<Vec<_>>();
     let selected_cards = selected_options
         .iter()
@@ -721,8 +836,8 @@ fn run_selection_branch_option_from_combo(
         effect_key: run_selection_combo_effect_key(&selected_options),
         effect_label: run_selection_combo_effect_label(&selected_options),
         effect_kind,
-        representative_count: 1,
-        suppressed_count: 0,
+        representative_count: combo.represented_exact_count,
+        suppressed_count: combo.represented_exact_count.saturating_sub(1),
     }
 }
 
@@ -796,12 +911,37 @@ fn run_selection_combo_effect_label(options: &[&RunSelectionDeckCardOption]) -> 
     format!(
         "{} {}",
         verb,
-        options
-            .iter()
-            .map(|option| option.label.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
+        render_repeated_option_labels(
+            &options
+                .iter()
+                .map(|option| option.label.as_str())
+                .collect::<Vec<_>>()
+        )
     )
+}
+
+fn render_repeated_option_labels(labels: &[&str]) -> String {
+    let mut runs = Vec::<(&str, usize)>::new();
+    for label in labels {
+        if let Some((_, count)) = runs
+            .iter_mut()
+            .find(|(existing_label, _)| existing_label == label)
+        {
+            *count += 1;
+        } else {
+            runs.push((label, 1));
+        }
+    }
+    runs.into_iter()
+        .map(|(label, count)| {
+            if count > 1 {
+                format!("{label} x{count}")
+            } else {
+                label.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn format_select_command(indices: &[usize]) -> String {
@@ -813,50 +953,6 @@ fn format_select_command(indices: &[usize]) -> String {
             .collect::<Vec<_>>()
             .join(" ")
     )
-}
-
-fn bounded_index_combinations(
-    count: usize,
-    choose: usize,
-    limit: usize,
-) -> Option<Vec<Vec<usize>>> {
-    if choose == 0 || choose > count {
-        return None;
-    }
-    let mut combinations = Vec::new();
-    let mut current = Vec::new();
-    if collect_index_combinations(count, choose, limit, 0, &mut current, &mut combinations) {
-        Some(combinations)
-    } else {
-        None
-    }
-}
-
-fn collect_index_combinations(
-    count: usize,
-    choose: usize,
-    limit: usize,
-    start: usize,
-    current: &mut Vec<usize>,
-    combinations: &mut Vec<Vec<usize>>,
-) -> bool {
-    if current.len() == choose {
-        combinations.push(current.clone());
-        return combinations.len() <= limit;
-    }
-
-    let remaining_needed = choose - current.len();
-    let Some(last_start) = count.checked_sub(remaining_needed) else {
-        return true;
-    };
-    for idx in start..=last_start {
-        current.push(idx);
-        if !collect_index_combinations(count, choose, limit, idx + 1, current, combinations) {
-            return false;
-        }
-        current.pop();
-    }
-    true
 }
 
 fn event_branch_options(session: &RunControlSession) -> Option<Vec<EventBranchOption>> {
@@ -1043,6 +1139,7 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::relics::RelicId;
     use crate::eval::run_control::{RunControlConfig, RunControlSession};
+    use crate::runtime::combat::CombatCard;
     use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
     use crate::state::events::{EventId, EventState};
     use crate::state::rewards::{BossRelicChoiceState, RewardState};
@@ -1292,21 +1389,63 @@ mod tests {
                         option.command.as_str(),
                         option.card,
                         option.selected_cards.len(),
+                        option.representative_count,
+                        option.suppressed_count,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![("select 0 1", None, 2, 3, 2)]
+        );
+    }
+
+    #[test]
+    fn current_boundary_compresses_multi_card_run_selection_by_effect_key() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 2,
+            max_choices: 2,
+            reason: RunPendingChoiceReason::Transform,
+            return_state: Box::new(EngineState::EventRoom),
+        });
+
+        let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+            .expect("compressed multi-card run selection boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::RunSelection);
+        assert_eq!(
+            boundary
+                .options
+                .iter()
+                .map(|option| {
+                    (
+                        option.command.as_str(),
+                        option.effect_label.as_str(),
+                        option.representative_count,
+                        option.suppressed_count,
                     )
                 })
                 .collect::<Vec<_>>(),
             vec![
-                ("select 0 1", None, 2),
-                ("select 0 2", None, 2),
-                ("select 1 2", None, 2),
+                ("select 0 1", "transform Strike x2", 10, 9),
+                ("select 0 5", "transform Strike, Defend", 20, 19),
+                ("select 0 9", "transform Strike, Bash", 5, 4),
+                ("select 5 6", "transform Defend x2", 6, 5),
+                ("select 5 9", "transform Defend, Bash", 4, 3),
             ]
         );
     }
 
     #[test]
-    fn current_boundary_rejects_high_fanout_multi_card_run_selection_options() {
+    fn current_boundary_still_rejects_high_fanout_distinct_multi_card_run_selection_options() {
         let mut session = RunControlSession::new(RunControlConfig::default());
-        session.run_state.master_deck.truncate(6);
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::Defend, 11),
+            CombatCard::new(CardId::Bash, 12),
+            CombatCard::new(CardId::TwinStrike, 13),
+            CombatCard::new(CardId::PommelStrike, 14),
+            CombatCard::new(CardId::Shockwave, 15),
+        ];
         session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
             min_choices: 2,
             max_choices: 2,
@@ -1316,7 +1455,7 @@ mod tests {
 
         assert!(
             current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
-            "multi-card run selection should stop when exact combinations exceed the branch cap"
+            "multi-card run selection should still stop when semantic combinations exceed the branch cap"
         );
     }
 
