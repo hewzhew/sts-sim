@@ -13,8 +13,9 @@ pub(crate) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) ->
     }
     for report in reports {
         lines.push(format!(
-            "  {} kept={} pruned={} lanes=[{}] deepest=A{}F{} hp={}{}",
+            "  {} branch_points={} kept={} pruned={} lanes=[{}] deepest=A{}F{} hp={}{}",
             report.retention_profile,
+            report.explored_branch_points,
             report.branches.len(),
             report.pruned_branch_count,
             render_report_lane_counts(report),
