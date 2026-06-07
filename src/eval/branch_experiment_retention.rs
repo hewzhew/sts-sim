@@ -1030,6 +1030,7 @@ const CHOICE_EFFECT_COVERAGE_ORDER: &[&str] = &[
     "transform_card",
     "upgrade_card",
     "duplicate_card",
+    "bottle_card",
     "rest",
     "boss_relic",
     "event_choice",

@@ -646,6 +646,14 @@ fn pruned_branch_summary_counts_semantic_retention_loss() {
     assert_eq!(summary.choice_effect_counts["skip_reward"], 1);
 }
 
+#[test]
+fn branch_choice_effect_key_preserves_bottle_card_effect() {
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("bottle_card"),
+        "bottle_card"
+    );
+}
+
 fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
     BranchWork {
         id: branch_id.to_string(),

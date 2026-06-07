@@ -609,7 +609,7 @@ const RETENTION_SLOT_DISPLAY_ORDER: [BranchRetentionSlotV1; 8] = [
     BranchRetentionSlotV1::Diversity,
 ];
 
-const CHOICE_EFFECT_DISPLAY_ORDER: [&str; 10] = [
+const CHOICE_EFFECT_DISPLAY_ORDER: [&str; 11] = [
     "take_card",
     "skip_reward",
     "singing_bowl",
@@ -617,6 +617,7 @@ const CHOICE_EFFECT_DISPLAY_ORDER: [&str; 10] = [
     "transform_card",
     "upgrade_card",
     "duplicate_card",
+    "bottle_card",
     "rest",
     "boss_relic",
     "event_choice",
@@ -771,6 +772,37 @@ mod tests {
         let rendered = render_compact_report(&report);
 
         assert!(rendered.contains("Kept choice effects: take_card=1 skip_reward=1 singing_bowl=1"));
+    }
+
+    #[test]
+    fn compact_report_summarizes_bottle_card_effect_coverage() {
+        let take_card = branch_report(
+            "b0",
+            "Shockwave",
+            1,
+            3,
+            70,
+            BranchRetentionSlotV1::Package,
+            "Combat",
+        );
+        let mut bottle = branch_report(
+            "b1",
+            "Bottle Flame Strike",
+            1,
+            3,
+            72,
+            BranchRetentionSlotV1::Diversity,
+            "Combat",
+        );
+        bottle.choices[0].effect_kind = "bottle_card".to_string();
+        let report = BranchExperimentReportV1 {
+            branches: vec![take_card, bottle],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("Kept choice effects: take_card=1 bottle_card=1"));
     }
 
     #[test]
