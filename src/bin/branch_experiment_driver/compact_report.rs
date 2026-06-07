@@ -852,6 +852,42 @@ mod tests {
     }
 
     #[test]
+    fn profile_comparison_warns_when_branch_point_counts_differ() {
+        let mut balanced = empty_report();
+        balanced.retention_profile = BranchRetentionBudgetProfileV1::Balanced;
+        balanced.explored_branch_points = 4;
+        balanced.branches = vec![branch_report(
+            "b0",
+            "Shockwave",
+            1,
+            6,
+            70,
+            BranchRetentionSlotV1::Package,
+            "Campfire",
+        )];
+
+        let mut exploration = empty_report();
+        exploration.retention_profile = BranchRetentionBudgetProfileV1::Exploration;
+        exploration.explored_branch_points = 0;
+        exploration.branches = vec![branch_report(
+            "e0",
+            "-",
+            1,
+            1,
+            56,
+            BranchRetentionSlotV1::Diversity,
+            "Combat",
+        )];
+
+        let rendered = render_profile_comparison(&[balanced, exploration]);
+
+        assert!(rendered.contains(
+            "Warning: compared profiles reached different branch-point counts; retention differences may be confounded by search/automation budget"
+        ));
+        assert!(rendered.contains("branch_points=[balanced=4 exploration=0]"));
+    }
+
+    #[test]
     fn compact_report_renders_engine_setup_retention_slot() {
         let rendered = render_retention_slots(&[
             BranchRetentionSlotV1::EngineSetup,

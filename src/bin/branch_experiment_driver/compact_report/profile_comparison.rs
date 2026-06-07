@@ -8,6 +8,9 @@ use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
 pub(crate) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) -> String {
     let mut lines = Vec::new();
     lines.push("Profile comparison:".to_string());
+    if let Some(warning) = render_branch_point_comparison_warning(reports) {
+        lines.push(warning);
+    }
     for report in reports {
         lines.push(format!(
             "  {} kept={} pruned={} lanes=[{}] deepest=A{}F{} hp={}{}",
@@ -27,6 +30,29 @@ pub(crate) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) ->
         lines.extend(unique_sections);
     }
     lines.join("\n")
+}
+
+fn render_branch_point_comparison_warning(reports: &[BranchExperimentReportV1]) -> Option<String> {
+    let first = reports.first()?.explored_branch_points;
+    if reports
+        .iter()
+        .all(|report| report.explored_branch_points == first)
+    {
+        return None;
+    }
+    let branch_points = reports
+        .iter()
+        .map(|report| {
+            format!(
+                "{}={}",
+                report.retention_profile, report.explored_branch_points
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(format!(
+        "Warning: compared profiles reached different branch-point counts; retention differences may be confounded by search/automation budget. branch_points=[{branch_points}]"
+    ))
 }
 
 fn render_pruned_long_horizon_suffix(report: &BranchExperimentReportV1) -> String {
