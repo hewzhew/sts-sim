@@ -34,7 +34,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 13;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 14;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -107,6 +107,8 @@ pub struct BranchExperimentReportV1 {
     pub elapsed_wall_ms: u64,
     pub pruned_branch_count: usize,
     pub pruned_first_pick_counts: Vec<BranchExperimentPrunedFirstPickCountV1>,
+    #[serde(default)]
+    pub pruned_branch_summary: BranchExperimentPrunedBranchSummaryV1,
     pub reward_option_portfolios: Vec<BranchExperimentRewardOptionPortfolioV1>,
     pub frontier_groups: Vec<BranchExperimentFrontierGroupV1>,
     pub branches: Vec<BranchExperimentBranchReportV1>,
@@ -117,6 +119,14 @@ pub struct BranchExperimentReportV1 {
 pub struct BranchExperimentPrunedFirstPickCountV1 {
     pub first_pick: String,
     pub count: usize,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentPrunedBranchSummaryV1 {
+    pub primary_slot_counts: BTreeMap<BranchRetentionSlotV1, usize>,
+    pub eligible_slot_counts: BTreeMap<BranchRetentionSlotV1, usize>,
+    pub package_state_counts: BTreeMap<String, usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -358,6 +368,7 @@ fn run_branch_experiment_from_session_with_replay(
     let mut wall_limit_hit = false;
     let mut pruned_branch_count = 0usize;
     let mut pruned_first_pick_counts = BTreeMap::<String, usize>::new();
+    let mut pruned_branch_summary = BranchExperimentPrunedBranchSummaryV1::default();
     let mut reward_option_portfolios = Vec::new();
 
     for depth in 0..config.max_depth {
@@ -450,6 +461,7 @@ fn run_branch_experiment_from_session_with_replay(
             &mut pruned_first_pick_counts,
             retention.pruned_first_pick_counts,
         );
+        merge_pruned_branch_summary(&mut pruned_branch_summary, retention.pruned_branch_summary);
 
         branches = next;
         if !expanded_any {
@@ -512,6 +524,7 @@ fn run_branch_experiment_from_session_with_replay(
         elapsed_wall_ms: started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
         pruned_branch_count,
         pruned_first_pick_counts: pruned_first_pick_count_reports(pruned_first_pick_counts),
+        pruned_branch_summary,
         reward_option_portfolios,
         frontier_groups: frontier_groups(&branch_reports),
         branches: branch_reports,
@@ -647,6 +660,7 @@ struct BranchRetentionApplyResult {
     frontier_group_limit_hit: bool,
     pruned_count: usize,
     pruned_first_pick_counts: BTreeMap<String, usize>,
+    pruned_branch_summary: BranchExperimentPrunedBranchSummaryV1,
 }
 
 fn apply_branch_retention(
@@ -696,6 +710,11 @@ fn apply_branch_retention(
         .copied()
         .collect::<BTreeSet<_>>();
     let pruned_first_pick_counts = pruned_first_pick_counts_for_selection(&branches, &keep_indices);
+    let pruned_branch_summary = pruned_branch_summary_for_selection(
+        &candidates,
+        &selection.decisions_by_index,
+        &keep_indices,
+    );
 
     let mut branches = branches
         .into_iter()
@@ -717,6 +736,7 @@ fn apply_branch_retention(
         frontier_group_limit_hit: selection.frontier_limit_hit,
         pruned_count: before_len.saturating_sub(selection.keep_indices.len()),
         pruned_first_pick_counts,
+        pruned_branch_summary,
     }
 }
 
@@ -734,6 +754,57 @@ fn pruned_first_pick_counts_for_selection(
     counts
 }
 
+fn pruned_branch_summary_for_selection(
+    candidates: &[BranchRetentionCandidateInputV1],
+    decisions_by_index: &BTreeMap<usize, BranchRetentionDecisionV1>,
+    keep_indices: &BTreeSet<usize>,
+) -> BranchExperimentPrunedBranchSummaryV1 {
+    let mut summary = BranchExperimentPrunedBranchSummaryV1::default();
+    for candidate in candidates {
+        if keep_indices.contains(&candidate.index) {
+            continue;
+        }
+        let Some(decision) = decisions_by_index.get(&candidate.index) else {
+            continue;
+        };
+        *summary
+            .primary_slot_counts
+            .entry(decision.primary_slot)
+            .or_default() += 1;
+        for slot in &decision.slots {
+            *summary.eligible_slot_counts.entry(*slot).or_default() += 1;
+        }
+        for state in branch_trajectory_package_state_tags(&candidate.trajectory) {
+            *summary.package_state_counts.entry(state).or_default() += 1;
+        }
+    }
+    summary
+}
+
+fn branch_trajectory_package_state_tags(trajectory: &BranchTrajectorySignatureV1) -> Vec<String> {
+    let setup_keys = trajectory
+        .setup_keys
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let package_keys = trajectory
+        .package_keys
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut tags = Vec::new();
+    for key in setup_keys.intersection(&package_keys) {
+        tags.push(format!("closed:{key}"));
+    }
+    for key in setup_keys.difference(&package_keys) {
+        tags.push(format!("open:{key}"));
+    }
+    for key in package_keys.difference(&setup_keys) {
+        tags.push(format!("payoff_only:{key}"));
+    }
+    tags
+}
+
 fn branch_first_pick_label(branch: &BranchWork) -> String {
     branch
         .choices
@@ -748,6 +819,21 @@ fn merge_pruned_first_pick_counts(
 ) {
     for (label, count) in step_counts {
         *total.entry(label).or_default() += count;
+    }
+}
+
+fn merge_pruned_branch_summary(
+    total: &mut BranchExperimentPrunedBranchSummaryV1,
+    step: BranchExperimentPrunedBranchSummaryV1,
+) {
+    merge_count_map(&mut total.primary_slot_counts, step.primary_slot_counts);
+    merge_count_map(&mut total.eligible_slot_counts, step.eligible_slot_counts);
+    merge_count_map(&mut total.package_state_counts, step.package_state_counts);
+}
+
+fn merge_count_map<K: Ord>(total: &mut BTreeMap<K, usize>, step: BTreeMap<K, usize>) {
+    for (key, count) in step {
+        *total.entry(key).or_default() += count;
     }
 }
 
@@ -1494,6 +1580,106 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn pruned_branch_summary_counts_semantic_retention_loss() {
+        let candidates = vec![
+            retention_candidate(0, BranchTrajectorySignatureV1::default()),
+            retention_candidate(1, trajectory_with_packages(&["exhaust_engine"], &[])),
+            retention_candidate(
+                2,
+                trajectory_with_packages(&["block_engine"], &["block_engine"]),
+            ),
+        ];
+        let decisions = BTreeMap::from([
+            (
+                0,
+                retention_decision(
+                    BranchRetentionSlotV1::Frontload,
+                    &[BranchRetentionSlotV1::Frontload],
+                ),
+            ),
+            (
+                1,
+                retention_decision(
+                    BranchRetentionSlotV1::EngineSetup,
+                    &[
+                        BranchRetentionSlotV1::EngineSetup,
+                        BranchRetentionSlotV1::Diversity,
+                    ],
+                ),
+            ),
+            (
+                2,
+                retention_decision(
+                    BranchRetentionSlotV1::Package,
+                    &[
+                        BranchRetentionSlotV1::Package,
+                        BranchRetentionSlotV1::DefenseEngine,
+                    ],
+                ),
+            ),
+        ]);
+        let keep_indices = BTreeSet::from([0]);
+
+        let summary = pruned_branch_summary_for_selection(&candidates, &decisions, &keep_indices);
+
+        assert_eq!(
+            summary.primary_slot_counts[&BranchRetentionSlotV1::EngineSetup],
+            1
+        );
+        assert_eq!(
+            summary.primary_slot_counts[&BranchRetentionSlotV1::Package],
+            1
+        );
+        assert_eq!(
+            summary.eligible_slot_counts[&BranchRetentionSlotV1::Diversity],
+            1
+        );
+        assert_eq!(summary.package_state_counts["open:exhaust_engine"], 1);
+        assert_eq!(summary.package_state_counts["closed:block_engine"], 1);
+    }
+
+    fn retention_candidate(
+        index: usize,
+        trajectory: BranchTrajectorySignatureV1,
+    ) -> BranchRetentionCandidateInputV1 {
+        BranchRetentionCandidateInputV1 {
+            index,
+            frontier_key: "frontier".to_string(),
+            rank_key: 0,
+            hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_count: 10,
+            strategy_formation: None,
+            trajectory,
+            choice_profiles: Vec::new(),
+        }
+    }
+
+    fn trajectory_with_packages(
+        setup_keys: &[&str],
+        package_keys: &[&str],
+    ) -> BranchTrajectorySignatureV1 {
+        BranchTrajectorySignatureV1 {
+            setup_keys: setup_keys.iter().map(|key| key.to_string()).collect(),
+            package_keys: package_keys.iter().map(|key| key.to_string()).collect(),
+            ..BranchTrajectorySignatureV1::default()
+        }
+    }
+
+    fn retention_decision(
+        primary_slot: BranchRetentionSlotV1,
+        slots: &[BranchRetentionSlotV1],
+    ) -> BranchRetentionDecisionV1 {
+        BranchRetentionDecisionV1 {
+            primary_slot,
+            selected_by_slot: None,
+            slots: slots.to_vec(),
+            reasons: Vec::new(),
+        }
     }
 
     #[test]

@@ -101,6 +101,9 @@ pub(super) fn render_compact_report_with_options(
     if let Some(line) = render_pruned_first_pick_count_line(&report.pruned_first_pick_counts) {
         lines.push(line);
     }
+    if let Some(line) = render_pruned_branch_summary_line(report) {
+        lines.push(line);
+    }
     let first_pick_outcomes = first_pick_outcome_summary_lines(report);
     if !first_pick_outcomes.is_empty() {
         lines.push("".to_string());
@@ -752,6 +755,19 @@ fn render_pruned_first_pick_count_line(
     Some(format!("Pruned first picks: {rendered}{suffix}"))
 }
 
+fn render_pruned_branch_summary_line(report: &BranchExperimentReportV1) -> Option<String> {
+    if report.pruned_branch_count == 0 {
+        return None;
+    }
+    let summary = &report.pruned_branch_summary;
+    Some(format!(
+        "Pruned branch summary: primary=[{}] eligible=[{}] packages=[{}]",
+        render_retention_slot_counts(&summary.primary_slot_counts),
+        render_retention_slot_counts(&summary.eligible_slot_counts),
+        render_package_state_counts(&summary.package_state_counts)
+    ))
+}
+
 const RETENTION_SLOT_DISPLAY_ORDER: [BranchRetentionSlotV1; 8] = [
     BranchRetentionSlotV1::Package,
     BranchRetentionSlotV1::EngineSetup,
@@ -1124,6 +1140,7 @@ mod tests {
     #[test]
     fn compact_report_renders_pruned_first_pick_counts() {
         let report = BranchExperimentReportV1 {
+            pruned_branch_count: 3,
             pruned_first_pick_counts: vec![
                 BranchExperimentPrunedFirstPickCountV1 {
                     first_pick: "Armaments".to_string(),
@@ -1134,12 +1151,28 @@ mod tests {
                     count: 3,
                 },
             ],
+            pruned_branch_summary:
+                sts_simulator::eval::branch_experiment::BranchExperimentPrunedBranchSummaryV1 {
+                    primary_slot_counts: BTreeMap::from([
+                        (BranchRetentionSlotV1::EngineSetup, 1),
+                        (BranchRetentionSlotV1::Frontload, 2),
+                    ]),
+                    eligible_slot_counts: BTreeMap::from([
+                        (BranchRetentionSlotV1::EngineSetup, 1),
+                        (BranchRetentionSlotV1::Frontload, 2),
+                        (BranchRetentionSlotV1::Diversity, 3),
+                    ]),
+                    package_state_counts: BTreeMap::from([("open:exhaust_engine".to_string(), 1)]),
+                },
             ..empty_report()
         };
 
         let rendered = render_compact_report(&report);
 
         assert!(rendered.contains("Pruned first picks: Armaments=7 Shockwave=3"));
+        assert!(rendered.contains(
+            "Pruned branch summary: primary=[engine_setup=1 frontload=2] eligible=[engine_setup=1 frontload=2 diversity=3] packages=[open:exhaust_engine=1]"
+        ));
     }
 
     fn empty_report() -> BranchExperimentReportV1 {
@@ -1162,6 +1195,7 @@ mod tests {
             elapsed_wall_ms: 0,
             pruned_branch_count: 0,
             pruned_first_pick_counts: Vec::new(),
+            pruned_branch_summary: Default::default(),
             reward_option_portfolios: Vec::new(),
             frontier_groups: Vec::new(),
             branches: Vec::new(),
