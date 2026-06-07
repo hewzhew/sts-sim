@@ -620,9 +620,15 @@ fn pruned_branch_summary_counts_semantic_retention_loss() {
         ),
     ]);
     let keep_indices = BTreeSet::from([0]);
+    let mut branch_with_reward_breaker = branch_with_choice("b1", "add_card");
+    branch_with_reward_breaker
+        .session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::QuestionCard));
     let branches = vec![
         branch_with_choice("b0", "add_card"),
-        branch_with_choice("b1", "add_card"),
+        branch_with_reward_breaker,
         branch_with_choice("b2", "skip_card_reward"),
     ];
 
@@ -645,6 +651,10 @@ fn pruned_branch_summary_counts_semantic_retention_loss() {
     assert_eq!(summary.package_state_counts["closed:block_engine"], 1);
     assert_eq!(summary.choice_effect_counts["take_card"], 1);
     assert_eq!(summary.choice_effect_counts["skip_reward"], 1);
+    assert_eq!(
+        summary.lineage_flag_counts["question_card_reward_count_plus_1"],
+        1
+    );
 }
 
 #[test]

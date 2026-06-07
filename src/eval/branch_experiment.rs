@@ -681,6 +681,12 @@ fn pruned_branch_summary_for_selection(
                     .entry(branch_choice_effect_key(choice).to_string())
                     .or_default() += 1;
             }
+            for flag in branch_frontier(&branch.session)
+                .lineage
+                .sequence_breakers_present
+            {
+                *summary.lineage_flag_counts.entry(flag).or_default() += 1;
+            }
         }
     }
     summary
@@ -770,6 +776,7 @@ fn merge_pruned_branch_summary(
     merge_count_map(&mut total.eligible_slot_counts, step.eligible_slot_counts);
     merge_count_map(&mut total.package_state_counts, step.package_state_counts);
     merge_count_map(&mut total.choice_effect_counts, step.choice_effect_counts);
+    merge_count_map(&mut total.lineage_flag_counts, step.lineage_flag_counts);
 }
 
 fn merge_count_map<K: Ord>(total: &mut BTreeMap<K, usize>, step: BTreeMap<K, usize>) {

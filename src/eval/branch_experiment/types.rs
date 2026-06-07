@@ -109,6 +109,8 @@ pub struct BranchExperimentPrunedBranchSummaryV1 {
     pub package_state_counts: BTreeMap<String, usize>,
     #[serde(default)]
     pub choice_effect_counts: BTreeMap<String, usize>,
+    #[serde(default)]
+    pub lineage_flag_counts: BTreeMap<String, usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

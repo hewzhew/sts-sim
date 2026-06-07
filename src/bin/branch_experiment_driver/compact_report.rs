@@ -1331,6 +1331,10 @@ mod tests {
                         ("take_card".to_string(), 2),
                         ("skip_reward".to_string(), 1),
                     ]),
+                    lineage_flag_counts: BTreeMap::from([(
+                        "question_card_reward_count_plus_1".to_string(),
+                        2,
+                    )]),
                 },
             ..empty_report()
         };
@@ -1339,7 +1343,7 @@ mod tests {
 
         assert!(rendered.contains("Pruned first picks: Armaments=7 Shockwave=3"));
         assert!(rendered.contains(
-            "Pruned branch summary: primary=[engine_setup=1 frontload=2] eligible=[engine_setup=1 frontload=2 diversity=3] effects=[take_card=2 skip_reward=1] packages=[open:exhaust_engine=1]"
+            "Pruned branch summary: primary=[engine_setup=1 frontload=2] eligible=[engine_setup=1 frontload=2 diversity=3] effects=[take_card=2 skip_reward=1] packages=[open:exhaust_engine=1] lineage=[question_card_reward_count_plus_1=2]"
         ));
         assert!(rendered.contains(
             "Coverage note: pruned long-horizon branches primary=[engine_setup=1] packages=[open:exhaust_engine=1]; use --compare-profiles or raise --max-branches before treating missing packages as evidence"
