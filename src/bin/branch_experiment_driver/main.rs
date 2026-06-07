@@ -99,8 +99,17 @@ struct Args {
     #[arg(long, help = "Only replay the first N recorded trace steps")]
     replay_steps: Option<usize>,
 
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Include card reward skip/Singing Bowl alternatives; this is the default, kept for explicitness"
+    )]
     include_skip: bool,
+
+    #[arg(
+        long,
+        help = "Do not branch card reward skip/Singing Bowl alternatives"
+    )]
+    exclude_skip: bool,
 
     #[arg(long)]
     out: Option<PathBuf>,
@@ -186,6 +195,9 @@ fn branch_experiment_config(
     prefix_commands: Vec<String>,
     retention_budget_profile: BranchRetentionBudgetProfileV1,
 ) -> Result<BranchExperimentConfigV1, String> {
+    if args.include_skip && args.exclude_skip {
+        return Err("--include-skip and --exclude-skip cannot be combined".to_string());
+    }
     Ok(BranchExperimentConfigV1 {
         seed: args.seed,
         ascension_level: args.ascension,
@@ -202,7 +214,7 @@ fn branch_experiment_config(
         search_max_nodes: args.search_max_nodes,
         search_wall_ms: args.search_wall_ms.or(Some(100)),
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
-        include_skip: args.include_skip,
+        include_skip: args.include_skip || !args.exclude_skip,
         prefix_commands,
         replay_trace_path: args.replay_trace.clone(),
         replay_trace_max_steps: args.replay_steps,
@@ -342,5 +354,56 @@ mod tests {
         );
 
         assert_eq!(commands, vec!["0", "2", "go 5"]);
+    }
+
+    #[test]
+    fn cli_includes_reward_skip_branches_by_default() {
+        let args = Args::try_parse_from(["branch_experiment_driver"]).expect("args parse");
+
+        let config = branch_experiment_config(
+            &args,
+            "Ironclad",
+            Vec::new(),
+            BranchRetentionBudgetProfileV1::Balanced,
+        )
+        .expect("default config builds");
+
+        assert!(config.include_skip);
+    }
+
+    #[test]
+    fn cli_can_exclude_reward_skip_branches() {
+        let args = Args::try_parse_from(["branch_experiment_driver", "--exclude-skip"])
+            .expect("args parse");
+
+        let config = branch_experiment_config(
+            &args,
+            "Ironclad",
+            Vec::new(),
+            BranchRetentionBudgetProfileV1::Balanced,
+        )
+        .expect("exclude-skip config builds");
+
+        assert!(!config.include_skip);
+    }
+
+    #[test]
+    fn cli_rejects_conflicting_reward_skip_flags() {
+        let args = Args::try_parse_from([
+            "branch_experiment_driver",
+            "--include-skip",
+            "--exclude-skip",
+        ])
+        .expect("args parse");
+
+        let err = branch_experiment_config(
+            &args,
+            "Ironclad",
+            Vec::new(),
+            BranchRetentionBudgetProfileV1::Balanced,
+        )
+        .expect_err("conflicting skip flags should be rejected");
+
+        assert!(err.contains("--include-skip and --exclude-skip cannot be combined"));
     }
 }
