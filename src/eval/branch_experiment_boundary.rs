@@ -11,7 +11,7 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::branch_experiment_trajectory::summarize_branch_trajectory_v1;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
-use crate::state::core::{CampfireChoice, ClientInput, EngineState};
+use crate::state::core::{CampfireChoice, ClientInput, EngineState, RunPendingChoiceReason};
 use crate::state::rewards::{RewardCard, RewardItem};
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 3;
@@ -59,6 +59,11 @@ pub(crate) struct BranchBoundaryOptionV1 {
     pub(crate) card: Option<CardId>,
     pub(crate) upgrades: Option<u8>,
     pub(crate) selected_cards: Vec<BranchExperimentChoiceCardV1>,
+    pub(crate) effect_kind: String,
+    pub(crate) effect_key: String,
+    pub(crate) effect_label: String,
+    pub(crate) representative_count: usize,
+    pub(crate) suppressed_count: usize,
     pub(crate) success_reason: &'static str,
 }
 
@@ -110,6 +115,11 @@ struct RunSelectionBranchOption {
     card: Option<CardId>,
     upgrades: Option<u8>,
     selected_cards: Vec<BranchExperimentChoiceCardV1>,
+    effect_kind: String,
+    effect_key: String,
+    effect_label: String,
+    representative_count: usize,
+    suppressed_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -117,6 +127,9 @@ struct RunSelectionDeckCardOption {
     deck_idx: usize,
     label: String,
     selected_card: BranchExperimentChoiceCardV1,
+    effect_kind: String,
+    effect_key: String,
+    effect_label: String,
 }
 
 #[derive(Clone, Debug)]
@@ -209,35 +222,53 @@ impl BranchBoundaryOptionV1 {
     fn from_card_reward(option: CardRewardBranchOption) -> Self {
         Self {
             kind: "card_reward",
+            effect_label: option.label.clone(),
             label: option.label,
             command: option.command,
             card: Some(option.card),
             upgrades: Some(option.upgrades),
             selected_cards: selected_card_vec(Some(option.card), Some(option.upgrades)),
+            effect_kind: "add_card".to_string(),
+            effect_key: format!("card_reward:add_card:{:?}:{}", option.card, option.upgrades),
+            representative_count: 1,
+            suppressed_count: 0,
             success_reason: "card reward branch applied",
         }
     }
 
     fn from_campfire(option: CampfireBranchOption) -> Self {
+        let effect_kind = campfire_effect_kind(&option);
+        let effect_key = format!("campfire:{effect_kind}:{}", option.command);
         Self {
             kind: "campfire",
+            effect_label: option.label.clone(),
             label: option.label,
             command: option.command,
             card: option.card,
             upgrades: option.upgrades,
             selected_cards: selected_card_vec(option.card, option.upgrades),
+            effect_kind,
+            effect_key,
+            representative_count: 1,
+            suppressed_count: 0,
             success_reason: "campfire branch applied",
         }
     }
 
     fn from_boss_relic(option: BossRelicBranchOption) -> Self {
+        let effect_key = format!("boss_relic:choose:{}", option.command);
         Self {
             kind: "boss_relic",
+            effect_label: option.label.clone(),
             label: option.label,
             command: option.command,
             card: None,
             upgrades: None,
             selected_cards: Vec::new(),
+            effect_kind: "boss_relic".to_string(),
+            effect_key,
+            representative_count: 1,
+            suppressed_count: 0,
             success_reason: "boss relic branch applied",
         }
     }
@@ -250,20 +281,43 @@ impl BranchBoundaryOptionV1 {
             card: option.card,
             upgrades: option.upgrades,
             selected_cards: option.selected_cards,
+            effect_kind: option.effect_kind,
+            effect_key: option.effect_key,
+            effect_label: option.effect_label,
+            representative_count: option.representative_count,
+            suppressed_count: option.suppressed_count,
             success_reason: "run selection branch applied",
         }
     }
 
     fn from_event(option: EventBranchOption) -> Self {
+        let effect_key = format!("event:choose:{}", option.command);
         Self {
             kind: "event",
+            effect_label: option.label.clone(),
             label: option.label,
             command: option.command,
             card: None,
             upgrades: None,
             selected_cards: Vec::new(),
+            effect_kind: "event_choice".to_string(),
+            effect_key,
+            representative_count: 1,
+            suppressed_count: 0,
             success_reason: "event branch applied",
         }
+    }
+}
+
+fn campfire_effect_kind(option: &CampfireBranchOption) -> String {
+    if option.command.starts_with("smith ") || option.command.starts_with("smith-") {
+        "upgrade_card".to_string()
+    } else if option.command.starts_with("toke ") || option.command.starts_with("toke-") {
+        "remove_card".to_string()
+    } else if option.command == "rest" {
+        "campfire_rest".to_string()
+    } else {
+        "campfire_action".to_string()
     }
 }
 
@@ -533,6 +587,14 @@ fn run_selection_branch_options(
     }
 
     let deck_options = run_selection_deck_card_options(session, choice);
+    if choice.min_choices == 1 {
+        let options = compressed_single_run_selection_options(deck_options);
+        if options.is_empty() || options.len() > MAX_RUN_SELECTION_OPTIONS_PER_BRANCH {
+            return None;
+        }
+        return Some(options);
+    }
+
     let combinations = bounded_index_combinations(
         deck_options.len(),
         choice.min_choices,
@@ -575,8 +637,53 @@ fn run_selection_deck_card_options(
                 card: card.id,
                 upgrades: card.upgrades,
             },
+            effect_kind: run_selection_effect_kind(choice.reason).to_string(),
+            effect_key: run_selection_effect_key(choice.reason, card.id, card.upgrades),
+            effect_label: run_selection_effect_label(
+                choice.reason,
+                &format_reward_card_label(&RewardCard::new(card.id, card.upgrades)),
+            ),
         })
         .collect()
+}
+
+fn compressed_single_run_selection_options(
+    deck_options: Vec<RunSelectionDeckCardOption>,
+) -> Vec<RunSelectionBranchOption> {
+    let mut groups = Vec::<(RunSelectionDeckCardOption, usize)>::new();
+    for option in deck_options {
+        if let Some((_, count)) = groups
+            .iter_mut()
+            .find(|(representative, _)| representative.effect_key == option.effect_key)
+        {
+            *count += 1;
+        } else {
+            groups.push((option, 1));
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(option, count)| run_selection_branch_option_from_single(option, count))
+        .collect()
+}
+
+fn run_selection_branch_option_from_single(
+    option: RunSelectionDeckCardOption,
+    representative_count: usize,
+) -> RunSelectionBranchOption {
+    let selected_card = option.selected_card.clone();
+    RunSelectionBranchOption {
+        label: option.label,
+        command: format_select_command(&[option.deck_idx]),
+        card: Some(selected_card.card),
+        upgrades: Some(selected_card.upgrades),
+        selected_cards: vec![selected_card],
+        effect_kind: option.effect_kind,
+        effect_key: option.effect_key,
+        effect_label: option.effect_label,
+        representative_count,
+        suppressed_count: representative_count.saturating_sub(1),
+    }
 }
 
 fn run_selection_branch_option_from_combo(
@@ -595,6 +702,7 @@ fn run_selection_branch_option_from_combo(
         [selected] => (Some(selected.card), Some(selected.upgrades)),
         _ => (None, None),
     };
+    let effect_kind = run_selection_combo_effect_kind(&selected_options);
     RunSelectionBranchOption {
         label: selected_options
             .iter()
@@ -610,7 +718,90 @@ fn run_selection_branch_option_from_combo(
         card,
         upgrades,
         selected_cards,
+        effect_key: run_selection_combo_effect_key(&selected_options),
+        effect_label: run_selection_combo_effect_label(&selected_options),
+        effect_kind,
+        representative_count: 1,
+        suppressed_count: 0,
     }
+}
+
+fn run_selection_effect_kind(reason: RunPendingChoiceReason) -> &'static str {
+    match reason {
+        RunPendingChoiceReason::Purge | RunPendingChoiceReason::PurgeNonBottled => "remove_card",
+        RunPendingChoiceReason::Upgrade => "upgrade_card",
+        RunPendingChoiceReason::Transform
+        | RunPendingChoiceReason::TransformNonBottled
+        | RunPendingChoiceReason::TransformUpgraded => "transform_card",
+        RunPendingChoiceReason::Duplicate => "duplicate_card",
+        RunPendingChoiceReason::BottleFlame
+        | RunPendingChoiceReason::BottleLightning
+        | RunPendingChoiceReason::BottleTornado => "bottle_card",
+    }
+}
+
+fn run_selection_effect_verb(reason: RunPendingChoiceReason) -> &'static str {
+    match reason {
+        RunPendingChoiceReason::Purge | RunPendingChoiceReason::PurgeNonBottled => "remove",
+        RunPendingChoiceReason::Upgrade => "upgrade",
+        RunPendingChoiceReason::Transform
+        | RunPendingChoiceReason::TransformNonBottled
+        | RunPendingChoiceReason::TransformUpgraded => "transform",
+        RunPendingChoiceReason::Duplicate => "duplicate",
+        RunPendingChoiceReason::BottleFlame
+        | RunPendingChoiceReason::BottleLightning
+        | RunPendingChoiceReason::BottleTornado => "bottle",
+    }
+}
+
+fn run_selection_effect_key(reason: RunPendingChoiceReason, card: CardId, upgrades: u8) -> String {
+    format!(
+        "run_selection:{}:{card:?}:{upgrades}",
+        run_selection_effect_kind(reason)
+    )
+}
+
+fn run_selection_effect_label(reason: RunPendingChoiceReason, card_label: &str) -> String {
+    format!("{} {card_label}", run_selection_effect_verb(reason))
+}
+
+fn run_selection_combo_effect_kind(options: &[&RunSelectionDeckCardOption]) -> String {
+    let mut kinds = options
+        .iter()
+        .map(|option| option.effect_kind.as_str())
+        .collect::<BTreeSet<_>>();
+    if kinds.len() == 1 {
+        kinds.pop_first().unwrap_or("run_selection").to_string()
+    } else {
+        "run_selection".to_string()
+    }
+}
+
+fn run_selection_combo_effect_key(options: &[&RunSelectionDeckCardOption]) -> String {
+    format!(
+        "run_selection:combo:{}",
+        options
+            .iter()
+            .map(|option| option.effect_key.as_str())
+            .collect::<Vec<_>>()
+            .join("+")
+    )
+}
+
+fn run_selection_combo_effect_label(options: &[&RunSelectionDeckCardOption]) -> String {
+    let verb = options
+        .first()
+        .and_then(|first| first.effect_label.split_once(' ').map(|(verb, _)| verb))
+        .unwrap_or("select");
+    format!(
+        "{} {}",
+        verb,
+        options
+            .iter()
+            .map(|option| option.label.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 fn format_select_command(indices: &[usize]) -> String {
@@ -1016,11 +1207,10 @@ mod tests {
     #[test]
     fn current_boundary_wraps_single_card_run_selection_options() {
         let mut session = RunControlSession::new(RunControlConfig::default());
-        session.run_state.master_deck.truncate(2);
         session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
             min_choices: 1,
             max_choices: 1,
-            reason: RunPendingChoiceReason::Upgrade,
+            reason: RunPendingChoiceReason::Purge,
             return_state: Box::new(EngineState::EventRoom),
         });
 
@@ -1036,12 +1226,44 @@ mod tests {
                     option.kind,
                     option.command.as_str(),
                     option.card,
-                    option.upgrades
+                    option.upgrades,
+                    option.effect_key.as_str(),
+                    option.effect_label.as_str(),
+                    option.representative_count,
+                    option.suppressed_count,
                 ))
                 .collect::<Vec<_>>(),
             vec![
-                ("run_selection", "select 0", Some(CardId::Strike), Some(0)),
-                ("run_selection", "select 1", Some(CardId::Strike), Some(0)),
+                (
+                    "run_selection",
+                    "select 0",
+                    Some(CardId::Strike),
+                    Some(0),
+                    "run_selection:remove_card:Strike:0",
+                    "remove Strike",
+                    5,
+                    4,
+                ),
+                (
+                    "run_selection",
+                    "select 5",
+                    Some(CardId::Defend),
+                    Some(0),
+                    "run_selection:remove_card:Defend:0",
+                    "remove Defend",
+                    4,
+                    3,
+                ),
+                (
+                    "run_selection",
+                    "select 9",
+                    Some(CardId::Bash),
+                    Some(0),
+                    "run_selection:remove_card:Bash:0",
+                    "remove Bash",
+                    1,
+                    0,
+                ),
             ]
         );
     }

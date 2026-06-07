@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sts_simulator::eval::branch_experiment::{
-    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1,
+    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceV1,
     BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
 };
@@ -250,9 +250,9 @@ fn first_pick_outcome_summary_lines(report: &BranchExperimentReportV1) -> Vec<St
             continue;
         };
         let entry = summaries
-            .entry(first_choice.label.clone())
+            .entry(choice_display_label(first_choice))
             .or_insert_with(|| FirstPickOutcomeSummary {
-                label: first_choice.label.clone(),
+                label: choice_display_label(first_choice),
                 branch_count: 0,
                 deepest_act: branch.summary.act,
                 deepest_floor: branch.summary.floor,
@@ -402,8 +402,8 @@ fn branch_example_diversity_key(branch: &BranchExperimentBranchReportV1) -> Stri
     let first_pick = branch
         .choices
         .first()
-        .map(|choice| choice.label.as_str())
-        .unwrap_or("-");
+        .map(choice_display_label)
+        .unwrap_or_else(|| "-".to_string());
     format!("{}|{first_pick}", branch.frontier.key)
 }
 
@@ -496,7 +496,7 @@ fn render_choice_path(branch: &BranchExperimentBranchReportV1) -> String {
     branch
         .choices
         .iter()
-        .map(|choice| choice.label.as_str())
+        .map(choice_display_label)
         .collect::<Vec<_>>()
         .join(" -> ")
 }
@@ -510,8 +510,9 @@ fn render_group_first_picks(report: &BranchExperimentReportV1, group_key: &str) 
         let Some(choice) = branch.choices.first() else {
             continue;
         };
-        if !picks.contains(&choice.label) {
-            picks.push(choice.label.clone());
+        let label = choice_display_label(choice);
+        if !picks.contains(&label) {
+            picks.push(label);
         }
         if picks.len() >= 5 {
             break;
@@ -521,6 +522,19 @@ fn render_group_first_picks(report: &BranchExperimentReportV1, group_key: &str) 
         "-".to_string()
     } else {
         picks.join(", ")
+    }
+}
+
+fn choice_display_label(choice: &BranchExperimentChoiceV1) -> String {
+    let base = if choice.effect_label.is_empty() {
+        choice.label.clone()
+    } else {
+        choice.effect_label.clone()
+    };
+    if choice.representative_count > 1 {
+        format!("{base} x{}", choice.representative_count)
+    } else {
+        base
     }
 }
 
@@ -970,6 +984,11 @@ mod tests {
                 card: Some(CardId::Strike),
                 upgrades: Some(0),
                 selected_cards: Vec::new(),
+                effect_kind: "add_card".to_string(),
+                effect_key: "card_reward:add_card:Strike:0".to_string(),
+                effect_label: first_pick.to_string(),
+                representative_count: 1,
+                suppressed_count: 0,
                 label: first_pick.to_string(),
                 command: "rp 0".to_string(),
             }],

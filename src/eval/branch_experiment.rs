@@ -34,7 +34,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardScreenContext};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 10;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 11;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -169,6 +169,16 @@ pub struct BranchExperimentChoiceV1 {
     pub upgrades: Option<u8>,
     #[serde(default)]
     pub selected_cards: Vec<BranchExperimentChoiceCardV1>,
+    #[serde(default)]
+    pub effect_kind: String,
+    #[serde(default)]
+    pub effect_key: String,
+    #[serde(default)]
+    pub effect_label: String,
+    #[serde(default)]
+    pub representative_count: usize,
+    #[serde(default)]
+    pub suppressed_count: usize,
     pub label: String,
     pub command: String,
 }
@@ -409,6 +419,11 @@ fn run_branch_experiment_from_session_with_replay(
                             card: option.card,
                             upgrades: option.upgrades,
                             selected_cards: option.selected_cards,
+                            effect_kind: option.effect_kind,
+                            effect_key: option.effect_key,
+                            effect_label: option.effect_label,
+                            representative_count: option.representative_count,
+                            suppressed_count: option.suppressed_count,
                             success_reason: option.success_reason,
                         },
                         config,
@@ -578,6 +593,11 @@ struct BranchChoiceDraft {
     card: Option<CardId>,
     upgrades: Option<u8>,
     selected_cards: Vec<BranchExperimentChoiceCardV1>,
+    effect_kind: String,
+    effect_key: String,
+    effect_label: String,
+    representative_count: usize,
+    suppressed_count: usize,
     success_reason: &'static str,
 }
 
@@ -594,6 +614,11 @@ fn expand_branch_choice(
         card: draft.card,
         upgrades: draft.upgrades,
         selected_cards: draft.selected_cards,
+        effect_kind: draft.effect_kind,
+        effect_key: draft.effect_key,
+        effect_label: draft.effect_label,
+        representative_count: draft.representative_count,
+        suppressed_count: draft.suppressed_count,
         label: draft.label,
         command: draft.command.clone(),
     });
@@ -707,7 +732,7 @@ fn branch_first_pick_label(branch: &BranchWork) -> String {
     branch
         .choices
         .first()
-        .map(|choice| choice.label.clone())
+        .map(branch_choice_display_label)
         .unwrap_or_else(|| "no_card_reward_choice".to_string())
 }
 
@@ -828,20 +853,7 @@ fn choice_profiles_from_choices(
     choices
         .iter()
         .flat_map(|choice| {
-            let selected_cards = if choice.selected_cards.is_empty() {
-                choice
-                    .card
-                    .map(|card| {
-                        vec![BranchExperimentChoiceCardV1 {
-                            card,
-                            upgrades: choice.upgrades.unwrap_or_default(),
-                        }]
-                    })
-                    .unwrap_or_default()
-            } else {
-                choice.selected_cards.clone()
-            };
-            selected_cards
+            choice_profile_cards(choice)
                 .into_iter()
                 .map(|selected| {
                     card_reward_semantic_profile_v1(&RewardCard::new(
@@ -852,6 +864,40 @@ fn choice_profiles_from_choices(
                 .collect::<Vec<_>>()
         })
         .collect()
+}
+
+fn choice_profile_cards(choice: &BranchExperimentChoiceV1) -> Vec<BranchExperimentChoiceCardV1> {
+    if !choice.effect_kind.is_empty()
+        && !matches!(choice.effect_kind.as_str(), "add_card" | "duplicate_card")
+    {
+        return Vec::new();
+    }
+    if !choice.selected_cards.is_empty() {
+        return choice.selected_cards.clone();
+    }
+    choice
+        .card
+        .map(|card| {
+            vec![BranchExperimentChoiceCardV1 {
+                card,
+                upgrades: choice.upgrades.unwrap_or_default(),
+            }]
+        })
+        .unwrap_or_default()
+}
+
+fn branch_choice_display_label(choice: &BranchExperimentChoiceV1) -> String {
+    let base = if choice.effect_label.is_empty() {
+        choice.label.clone()
+    } else {
+        choice.effect_label.clone()
+    };
+    let count = choice.representative_count;
+    if count > 1 {
+        format!("{base} x{count}")
+    } else {
+        base
+    }
 }
 
 fn branch_frontier(session: &RunControlSession) -> BranchExperimentFrontierV1 {
@@ -1338,11 +1384,10 @@ mod tests {
     #[test]
     fn branch_experiment_expands_single_card_run_selection_choices() {
         let mut session = RunControlSession::new(RunControlConfig::default());
-        session.run_state.master_deck.truncate(2);
         session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
             min_choices: 1,
             max_choices: 1,
-            reason: RunPendingChoiceReason::Upgrade,
+            reason: RunPendingChoiceReason::Purge,
             return_state: Box::new(EngineState::EventRoom),
         });
 
@@ -1356,24 +1401,36 @@ mod tests {
             },
         );
 
+        assert_eq!(report.explored_branch_points, 1);
+        assert_eq!(report.branches.len(), 3);
+        assert!(report.branches.iter().all(|branch| {
+            branch.summary.trajectory.frontload_picks == 0
+                && branch.summary.trajectory.transition_frontload_picks == 0
+                && branch.summary.trajectory.defense_picks == 0
+        }));
+
         let choices = report
             .branches
             .iter()
             .flat_map(|branch| &branch.choices)
             .collect::<Vec<_>>();
-        assert_eq!(report.explored_branch_points, 1);
-        assert_eq!(choices.len(), 2);
-        assert!(choices.iter().all(|choice| {
-            choice.kind == "run_selection"
-                && choice.command.starts_with("select ")
-                && choice.card == Some(CardId::Strike)
-                && choice.upgrades == Some(0)
-                && choice.selected_cards
-                    == vec![BranchExperimentChoiceCardV1 {
-                        card: CardId::Strike,
-                        upgrades: 0,
-                    }]
-        }));
+        assert_eq!(
+            choices
+                .iter()
+                .map(|choice| {
+                    (
+                        choice.effect_label.as_str(),
+                        choice.representative_count,
+                        choice.suppressed_count,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                ("remove Strike", 5, 4),
+                ("remove Defend", 4, 3),
+                ("remove Bash", 1, 0),
+            ]
+        );
     }
 
     #[test]
