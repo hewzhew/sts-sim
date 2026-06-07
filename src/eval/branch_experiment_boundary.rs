@@ -12,6 +12,44 @@ use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 use crate::state::rewards::{RewardCard, RewardItem};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BranchBoundaryIdV1 {
+    CardReward,
+    Campfire,
+}
+
+impl BranchBoundaryIdV1 {
+    pub(crate) fn empty_portfolio_reason(self) -> &'static str {
+        match self {
+            BranchBoundaryIdV1::CardReward => "card reward option portfolio is empty",
+            BranchBoundaryIdV1::Campfire => "campfire option portfolio is empty",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct BranchBoundaryConfigV1 {
+    pub(crate) max_reward_options_per_branch: Option<usize>,
+    pub(crate) max_campfire_options_per_branch: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BranchBoundarySelectionV1 {
+    pub(crate) id: BranchBoundaryIdV1,
+    pub(crate) options: Vec<BranchBoundaryOptionV1>,
+    pub(crate) reward_option_portfolio: Option<BranchExperimentRewardOptionPortfolioV1>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BranchBoundaryOptionV1 {
+    pub(crate) kind: &'static str,
+    pub(crate) label: String,
+    pub(crate) command: String,
+    pub(crate) card: Option<CardId>,
+    pub(crate) upgrades: Option<u8>,
+    pub(crate) success_reason: &'static str,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct CardRewardBranchOption {
     pub(crate) label: String,
@@ -45,6 +83,73 @@ pub(crate) struct CampfireBranchOption {
 #[derive(Clone, Debug)]
 pub(crate) struct CampfireBranchOptionSelection {
     pub(crate) options: Vec<CampfireBranchOption>,
+}
+
+pub(crate) fn current_branch_boundary(
+    session: &RunControlSession,
+    config: BranchBoundaryConfigV1,
+    reward_portfolio_context: Option<CardRewardPortfolioContext>,
+) -> Option<BranchBoundarySelectionV1> {
+    if let Some(options) = card_reward_branch_options(session) {
+        let selected = select_card_reward_branch_options(
+            options,
+            config.max_reward_options_per_branch,
+            reward_portfolio_context,
+        );
+        return Some(BranchBoundarySelectionV1 {
+            id: BranchBoundaryIdV1::CardReward,
+            options: selected
+                .options
+                .into_iter()
+                .map(BranchBoundaryOptionV1::from_card_reward)
+                .collect(),
+            reward_option_portfolio: selected.portfolio,
+        });
+    }
+
+    if let Some(options) = campfire_branch_options(session) {
+        let selected =
+            select_campfire_branch_options(options, config.max_campfire_options_per_branch);
+        return Some(BranchBoundarySelectionV1 {
+            id: BranchBoundaryIdV1::Campfire,
+            options: selected
+                .options
+                .into_iter()
+                .map(BranchBoundaryOptionV1::from_campfire)
+                .collect(),
+            reward_option_portfolio: None,
+        });
+    }
+
+    None
+}
+
+pub(crate) fn branch_boundary_available(session: &RunControlSession) -> bool {
+    card_reward_branch_options(session).is_some() || campfire_branch_options(session).is_some()
+}
+
+impl BranchBoundaryOptionV1 {
+    fn from_card_reward(option: CardRewardBranchOption) -> Self {
+        Self {
+            kind: "card_reward",
+            label: option.label,
+            command: option.command,
+            card: Some(option.card),
+            upgrades: Some(option.upgrades),
+            success_reason: "card reward branch applied",
+        }
+    }
+
+    fn from_campfire(option: CampfireBranchOption) -> Self {
+        Self {
+            kind: "campfire",
+            label: option.label,
+            command: option.command,
+            card: option.card,
+            upgrades: option.upgrades,
+            success_reason: "campfire branch applied",
+        }
+    }
 }
 
 pub(crate) fn card_reward_branch_options(
@@ -455,6 +560,59 @@ mod tests {
             1,
             "pure transition options should be represented, not exhaustively expanded"
         );
+    }
+
+    #[test]
+    fn current_boundary_wraps_card_reward_options() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut reward = RewardState::new();
+        reward.pending_card_choice = Some(vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::ShrugItOff, 0),
+        ]);
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let boundary = current_branch_boundary(
+            &session,
+            BranchBoundaryConfigV1 {
+                max_reward_options_per_branch: Some(1),
+                max_campfire_options_per_branch: None,
+            },
+            Some(CardRewardPortfolioContext {
+                depth: 0,
+                frontier_key: "frontier".to_string(),
+                boundary_title: "Card Reward".to_string(),
+            }),
+        )
+        .expect("card reward boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::CardReward);
+        assert_eq!(boundary.options.len(), 1);
+        assert_eq!(boundary.options[0].kind, "card_reward");
+        assert!(boundary.reward_option_portfolio.is_some());
+    }
+
+    #[test]
+    fn current_boundary_wraps_campfire_options() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::Campfire;
+
+        let boundary = current_branch_boundary(
+            &session,
+            BranchBoundaryConfigV1 {
+                max_reward_options_per_branch: None,
+                max_campfire_options_per_branch: Some(2),
+            },
+            None,
+        )
+        .expect("campfire boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::Campfire);
+        assert_eq!(boundary.options.len(), 2);
+        assert!(boundary
+            .options
+            .iter()
+            .all(|option| option.kind == "campfire"));
     }
 
     #[test]

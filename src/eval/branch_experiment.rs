@@ -12,9 +12,8 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment_boundary::{
-    active_or_visible_reward_cards, campfire_branch_options, card_offer_labels,
-    card_reward_branch_options, select_campfire_branch_options, select_card_reward_branch_options,
-    CardRewardPortfolioContext,
+    active_or_visible_reward_cards, branch_boundary_available, card_offer_labels,
+    current_branch_boundary, BranchBoundaryConfigV1, CardRewardPortfolioContext,
 };
 use crate::eval::branch_experiment_retention::{
     default_branch_retention_decision_v1, select_branch_retention_portfolio_v1,
@@ -363,75 +362,44 @@ fn run_branch_experiment_from_session_with_replay(
                 continue;
             }
 
-            if let Some(options) = card_reward_branch_options(&branch.session) {
-                let portfolio_context = config.max_reward_options_per_branch.map(|_| {
-                    let frontier = branch_frontier(&branch.session);
-                    CardRewardPortfolioContext {
-                        depth,
-                        frontier_key: frontier.key,
-                        boundary_title: frontier.boundary_title,
-                    }
-                });
-                let option_selection = select_card_reward_branch_options(
-                    options,
-                    config.max_reward_options_per_branch,
-                    portfolio_context,
-                );
-                if let Some(portfolio) = option_selection.portfolio {
+            let boundary_config = BranchBoundaryConfigV1 {
+                max_reward_options_per_branch: config.max_reward_options_per_branch,
+                max_campfire_options_per_branch: config.max_campfire_options_per_branch,
+            };
+            let reward_portfolio_context = config.max_reward_options_per_branch.map(|_| {
+                let frontier = branch_frontier(&branch.session);
+                CardRewardPortfolioContext {
+                    depth,
+                    frontier_key: frontier.key,
+                    boundary_title: frontier.boundary_title,
+                }
+            });
+            if let Some(boundary) =
+                current_branch_boundary(&branch.session, boundary_config, reward_portfolio_context)
+            {
+                if let Some(portfolio) = boundary.reward_option_portfolio {
                     reward_option_portfolios.push(portfolio);
                 }
-                let options = option_selection.options;
-                if options.is_empty() {
+                if boundary.options.is_empty() {
                     branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
-                    branch.stop_reason = "card reward option portfolio is empty".to_string();
+                    branch.stop_reason = boundary.id.empty_portfolio_reason().to_string();
                     next.push(branch);
                     continue;
                 }
 
                 explored_branch_points = explored_branch_points.saturating_add(1);
                 expanded_any = true;
-                for option in options {
+                for option in boundary.options {
                     next.push(expand_branch_choice(
                         &branch,
                         BranchChoiceDraft {
                             depth,
-                            kind: "card_reward",
-                            label: option.label,
-                            command: option.command,
-                            card: Some(option.card),
-                            upgrades: Some(option.upgrades),
-                            success_reason: "card reward branch applied",
-                        },
-                        config,
-                    ));
-                }
-                continue;
-            }
-
-            if let Some(options) = campfire_branch_options(&branch.session) {
-                let options =
-                    select_campfire_branch_options(options, config.max_campfire_options_per_branch)
-                        .options;
-                if options.is_empty() {
-                    branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
-                    branch.stop_reason = "campfire option portfolio is empty".to_string();
-                    next.push(branch);
-                    continue;
-                }
-
-                explored_branch_points = explored_branch_points.saturating_add(1);
-                expanded_any = true;
-                for option in options {
-                    next.push(expand_branch_choice(
-                        &branch,
-                        BranchChoiceDraft {
-                            depth,
-                            kind: "campfire",
+                            kind: option.kind,
                             label: option.label,
                             command: option.command,
                             card: option.card,
                             upgrades: option.upgrades,
-                            success_reason: "campfire branch applied",
+                            success_reason: option.success_reason,
                         },
                         config,
                     ));
@@ -589,7 +557,7 @@ fn settle_branch_to_frontier(branch: &mut BranchWork, config: &BranchExperimentC
 }
 
 fn experiment_branch_options_available(session: &RunControlSession) -> bool {
-    card_reward_branch_options(session).is_some() || campfire_branch_options(session).is_some()
+    branch_boundary_available(session)
 }
 
 struct BranchChoiceDraft {
