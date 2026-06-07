@@ -15,12 +15,14 @@ use crate::state::events::EventOptionTransition;
 use crate::state::rewards::{RewardCard, RewardItem};
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 3;
+const MAX_RUN_SELECTION_OPTIONS_PER_BRANCH: usize = 6;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BranchBoundaryIdV1 {
     CardReward,
     Campfire,
     BossRelic,
+    RunSelection,
     Event,
 }
 
@@ -30,6 +32,7 @@ impl BranchBoundaryIdV1 {
             BranchBoundaryIdV1::CardReward => "card reward option portfolio is empty",
             BranchBoundaryIdV1::Campfire => "campfire option portfolio is empty",
             BranchBoundaryIdV1::BossRelic => "boss relic option portfolio is empty",
+            BranchBoundaryIdV1::RunSelection => "run selection option portfolio is empty",
             BranchBoundaryIdV1::Event => "event option portfolio is empty",
         }
     }
@@ -100,6 +103,14 @@ struct BossRelicBranchOption {
 }
 
 #[derive(Clone, Debug)]
+struct RunSelectionBranchOption {
+    label: String,
+    command: String,
+    card: Option<CardId>,
+    upgrades: Option<u8>,
+}
+
+#[derive(Clone, Debug)]
 struct EventBranchOption {
     label: String,
     command: String,
@@ -152,6 +163,17 @@ pub(crate) fn current_branch_boundary(
         });
     }
 
+    if let Some(options) = run_selection_branch_options(session) {
+        return Some(BranchBoundarySelectionV1 {
+            id: BranchBoundaryIdV1::RunSelection,
+            options: options
+                .into_iter()
+                .map(BranchBoundaryOptionV1::from_run_selection)
+                .collect(),
+            reward_option_portfolio: None,
+        });
+    }
+
     if let Some(options) = event_branch_options(session) {
         return Some(BranchBoundarySelectionV1 {
             id: BranchBoundaryIdV1::Event,
@@ -170,6 +192,7 @@ pub(crate) fn branch_boundary_available(session: &RunControlSession) -> bool {
     card_reward_branch_options(session).is_some()
         || campfire_branch_options(session).is_some()
         || boss_relic_branch_options(session).is_some()
+        || run_selection_branch_options(session).is_some()
         || event_branch_options(session).is_some()
 }
 
@@ -204,6 +227,17 @@ impl BranchBoundaryOptionV1 {
             card: None,
             upgrades: None,
             success_reason: "boss relic branch applied",
+        }
+    }
+
+    fn from_run_selection(option: RunSelectionBranchOption) -> Self {
+        Self {
+            kind: "run_selection",
+            label: option.label,
+            command: option.command,
+            card: option.card,
+            upgrades: option.upgrades,
+            success_reason: "run selection branch applied",
         }
     }
 
@@ -461,6 +495,43 @@ fn boss_relic_label(relic: RelicId) -> String {
     format!("{relic:?}")
 }
 
+fn run_selection_branch_options(
+    session: &RunControlSession,
+) -> Option<Vec<RunSelectionBranchOption>> {
+    let EngineState::RunPendingChoice(choice) = &session.engine_state else {
+        return None;
+    };
+    if choice.min_choices != 1 || choice.max_choices != 1 {
+        return None;
+    }
+
+    let surface = build_decision_surface(session);
+    let mut options = Vec::new();
+    for candidate in &surface.view.candidates {
+        let Some(input) = candidate.action.executable_input() else {
+            continue;
+        };
+        let ClientInput::SubmitDeckSelect(indices) = input else {
+            return None;
+        };
+        let [idx] = indices.as_slice() else {
+            return None;
+        };
+        let card = session.run_state.master_deck.get(*idx)?;
+        options.push(RunSelectionBranchOption {
+            label: candidate.label.clone(),
+            command: candidate.action.command_hint(),
+            card: Some(card.id),
+            upgrades: Some(card.upgrades),
+        });
+    }
+
+    if options.is_empty() || options.len() > MAX_RUN_SELECTION_OPTIONS_PER_BRANCH {
+        return None;
+    }
+    Some(options)
+}
+
 fn event_branch_options(session: &RunControlSession) -> Option<Vec<EventBranchOption>> {
     if !matches!(session.engine_state, EngineState::EventRoom) {
         return None;
@@ -650,6 +721,7 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::relics::RelicId;
     use crate::eval::run_control::{RunControlConfig, RunControlSession};
+    use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
     use crate::state::events::{EventId, EventState};
     use crate::state::rewards::{BossRelicChoiceState, RewardState};
 
@@ -799,6 +871,56 @@ mod tests {
         assert!(
             current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
             "events that open deck/card selection should wait for a dedicated selection portfolio boundary"
+        );
+    }
+
+    #[test]
+    fn current_boundary_wraps_single_card_run_selection_options() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.master_deck.truncate(2);
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: RunPendingChoiceReason::Upgrade,
+            return_state: Box::new(EngineState::EventRoom),
+        });
+
+        let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+            .expect("run selection boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::RunSelection);
+        assert_eq!(
+            boundary
+                .options
+                .iter()
+                .map(|option| (
+                    option.kind,
+                    option.command.as_str(),
+                    option.card,
+                    option.upgrades
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("run_selection", "select 0", Some(CardId::Strike), Some(0)),
+                ("run_selection", "select 1", Some(CardId::Strike), Some(0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn current_boundary_rejects_multi_card_run_selection_options() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.master_deck.truncate(3);
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 2,
+            max_choices: 2,
+            reason: RunPendingChoiceReason::Transform,
+            return_state: Box::new(EngineState::EventRoom),
+        });
+
+        assert!(
+            current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
+            "multi-card run selections need a separate portfolio boundary before branch expansion"
         );
     }
 

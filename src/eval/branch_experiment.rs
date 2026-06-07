@@ -1028,6 +1028,7 @@ mod tests {
     };
     use crate::content::cards::CardId;
     use crate::content::relics::RelicState;
+    use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
     use crate::state::events::{EventId, EventState};
     use crate::state::rewards::{BossRelicChoiceState, RewardState};
     use std::fs;
@@ -1302,6 +1303,42 @@ mod tests {
         assert_eq!(choices.len(), 3);
         assert!(choices.iter().all(|choice| {
             choice.kind == "event" && choice.card.is_none() && choice.upgrades.is_none()
+        }));
+    }
+
+    #[test]
+    fn branch_experiment_expands_single_card_run_selection_choices() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.master_deck.truncate(2);
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: RunPendingChoiceReason::Upgrade,
+            return_state: Box::new(EngineState::EventRoom),
+        });
+
+        let report = run_branch_experiment_from_session(
+            session,
+            &BranchExperimentConfigV1 {
+                max_depth: 1,
+                max_branches: 4,
+                auto_max_operations: 0,
+                ..BranchExperimentConfigV1::default()
+            },
+        );
+
+        let choices = report
+            .branches
+            .iter()
+            .flat_map(|branch| &branch.choices)
+            .collect::<Vec<_>>();
+        assert_eq!(report.explored_branch_points, 1);
+        assert_eq!(choices.len(), 2);
+        assert!(choices.iter().all(|choice| {
+            choice.kind == "run_selection"
+                && choice.command.starts_with("select ")
+                && choice.card == Some(CardId::Strike)
+                && choice.upgrades == Some(0)
         }));
     }
 
