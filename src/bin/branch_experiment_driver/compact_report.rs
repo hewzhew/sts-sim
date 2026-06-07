@@ -125,7 +125,7 @@ pub(super) fn render_compact_report_with_options(
             .map(|group| group.boundary_title.as_str())
             .unwrap_or("unknown boundary");
         lines.push(format!(
-            "no card reward branch point reached before {boundary}; provide --prefix commands or start from a trace/goto point that reaches a card reward"
+            "no branch point reached before {boundary}; provide --prefix commands or start from a trace/goto point that reaches the decision you want to explore"
         ));
     }
     if !report.reward_option_portfolios.is_empty() {
@@ -907,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn compact_report_explains_when_no_card_reward_branch_point_was_reached() {
+    fn compact_report_explains_when_no_branch_point_was_reached() {
         let mut report = empty_report();
         report.explored_branch_points = 0;
         report.frontier_groups = vec![
@@ -923,7 +923,8 @@ mod tests {
 
         let rendered = render_compact_report(&report);
 
-        assert!(rendered.contains("no card reward branch point reached"));
+        assert!(rendered.contains("no branch point reached"));
+        assert!(!rendered.contains("no card reward branch point reached"));
         assert!(rendered.contains("--prefix"));
     }
 
