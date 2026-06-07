@@ -86,6 +86,9 @@ pub(super) fn render_compact_report_with_options(
     if let Some(line) = render_retention_lane_count_line(&retention_lanes) {
         lines.push(line);
     }
+    if let Some(line) = render_choice_effect_count_line(report) {
+        lines.push(line);
+    }
     if let Some(line) = render_kept_long_horizon_coverage_line(report) {
         lines.push(line);
     }
@@ -280,6 +283,53 @@ fn render_retention_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>)
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn render_choice_effect_count_line(report: &BranchExperimentReportV1) -> Option<String> {
+    let mut counts = BTreeMap::<&'static str, usize>::new();
+    for branch in &report.branches {
+        for choice in &branch.choices {
+            *counts
+                .entry(choice_effect_display_name(choice))
+                .or_default() += 1;
+        }
+    }
+    if counts.is_empty() {
+        return None;
+    }
+    let rendered = CHOICE_EFFECT_DISPLAY_ORDER
+        .iter()
+        .filter_map(|effect| {
+            counts
+                .get(effect)
+                .filter(|count| **count > 0)
+                .map(|count| format!("{effect}={count}"))
+        })
+        .chain(
+            counts
+                .iter()
+                .filter(|(effect, _)| !CHOICE_EFFECT_DISPLAY_ORDER.contains(effect))
+                .map(|(effect, count)| format!("{effect}={count}")),
+        )
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(format!("Kept choice effects: {rendered}"))
+}
+
+fn choice_effect_display_name(choice: &BranchExperimentChoiceV1) -> &'static str {
+    match choice.effect_kind.as_str() {
+        "" | "add_card" => "take_card",
+        "skip_card_reward" => "skip_reward",
+        "singing_bowl" => "singing_bowl",
+        "upgrade_card" => "upgrade_card",
+        "rest" => "rest",
+        "boss_relic" => "boss_relic",
+        "event_choice" => "event_choice",
+        "remove_card" => "remove_card",
+        "transform_card" => "transform_card",
+        "duplicate_card" => "duplicate_card",
+        _ => "other",
+    }
 }
 
 fn render_string_count_map(counts: &BTreeMap<String, usize>) -> String {
@@ -562,6 +612,19 @@ const RETENTION_SLOT_DISPLAY_ORDER: [BranchRetentionSlotV1; 8] = [
     BranchRetentionSlotV1::Diversity,
 ];
 
+const CHOICE_EFFECT_DISPLAY_ORDER: [&str; 10] = [
+    "take_card",
+    "skip_reward",
+    "singing_bowl",
+    "remove_card",
+    "transform_card",
+    "upgrade_card",
+    "duplicate_card",
+    "rest",
+    "boss_relic",
+    "event_choice",
+];
+
 fn retention_slot_name(slot: BranchRetentionSlotV1) -> &'static str {
     match slot {
         BranchRetentionSlotV1::Package => "package",
@@ -667,6 +730,50 @@ mod tests {
 
         assert!(rendered.contains("choices: transform Strike x2 (covers 10)"));
         assert!(!rendered.contains("transform Strike x2 x10"));
+    }
+
+    #[test]
+    fn compact_report_summarizes_choice_effect_coverage() {
+        let take_card = branch_report(
+            "b0",
+            "Shockwave",
+            1,
+            3,
+            70,
+            BranchRetentionSlotV1::Package,
+            "Combat",
+        );
+        let mut skip = branch_report(
+            "b1",
+            "Skip card reward",
+            1,
+            3,
+            72,
+            BranchRetentionSlotV1::CleanDeck,
+            "Combat",
+        );
+        skip.choices[0].effect_kind = "skip_card_reward".to_string();
+        let mut bowl = branch_report(
+            "b2",
+            "Singing Bowl | gain 2 max HP",
+            1,
+            3,
+            74,
+            BranchRetentionSlotV1::Survival,
+            "Combat",
+        );
+        bowl.choices[0].effect_kind = "singing_bowl".to_string();
+        bowl.choices[0].card = None;
+        bowl.choices[0].upgrades = None;
+        bowl.choices[0].selected_cards.clear();
+        let report = BranchExperimentReportV1 {
+            branches: vec![take_card, skip, bowl],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("Kept choice effects: take_card=1 skip_reward=1 singing_bowl=1"));
     }
 
     #[test]
