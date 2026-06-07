@@ -69,7 +69,7 @@ fn render_branch_point_warning(reports: &[BranchExperimentReportV1]) -> Option<S
         .collect::<Vec<_>>()
         .join(" ");
     Some(format!(
-        "Warning: compared profiles reached different branch-point counts; retention differences may be confounded by search/automation budget. branch_points=[{branch_points}]"
+        "Warning: compared profiles reached different branch-point counts after the shared start; later frontier depth differs, so compare unique branches as exploratory evidence. branch_points=[{branch_points}]"
     ))
 }
 

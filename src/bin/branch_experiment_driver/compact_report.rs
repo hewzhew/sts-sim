@@ -915,7 +915,7 @@ mod tests {
         let rendered = render_profile_comparison(&[balanced, exploration]);
 
         assert!(rendered.contains(
-            "Warning: compared profiles reached different branch-point counts; retention differences may be confounded by search/automation budget"
+            "Warning: compared profiles reached different branch-point counts after the shared start; later frontier depth differs, so compare unique branches as exploratory evidence"
         ));
         assert!(rendered.contains("branch_points=[balanced=4 exploration=0]"));
     }
