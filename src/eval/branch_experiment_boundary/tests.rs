@@ -9,7 +9,7 @@ use crate::eval::run_control::{RunControlConfig, RunControlSession};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{EventId, EventState};
-use crate::state::rewards::{BossRelicChoiceState, RewardCard, RewardState};
+use crate::state::rewards::{BossRelicChoiceState, RewardCard, RewardItem, RewardState};
 
 #[test]
 fn card_reward_option_portfolio_keeps_semantic_variety() {
@@ -59,6 +59,7 @@ fn current_boundary_wraps_card_reward_options() {
         BranchBoundaryConfigV1 {
             max_reward_options_per_branch: Some(1),
             max_campfire_options_per_branch: None,
+            include_skip: false,
         },
         Some(CardRewardPortfolioContext {
             depth: 0,
@@ -75,6 +76,70 @@ fn current_boundary_wraps_card_reward_options() {
 }
 
 #[test]
+fn current_boundary_can_include_card_reward_skip_option() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.pending_card_choice = Some(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::ShrugItOff, 0),
+    ]);
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: None,
+            max_campfire_options_per_branch: None,
+            include_skip: true,
+        },
+        None,
+    )
+    .expect("card reward boundary");
+
+    let skip = boundary
+        .options
+        .iter()
+        .find(|option| option.kind == "card_reward_skip")
+        .expect("skip branch should be present");
+
+    assert_eq!(skip.command, "skip");
+    assert_eq!(skip.effect_kind, "skip_card_reward");
+    assert!(skip.selected_cards.is_empty());
+}
+
+#[test]
+fn current_boundary_does_not_skip_unopened_card_reward_item() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Card {
+        cards: vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::ShrugItOff, 0),
+        ],
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: None,
+            max_campfire_options_per_branch: None,
+            include_skip: true,
+        },
+        None,
+    )
+    .expect("visible card reward boundary");
+
+    assert!(
+        !boundary
+            .options
+            .iter()
+            .any(|option| option.kind == "card_reward_skip"),
+        "skip is only a card-reward branch after the card reward is opened"
+    );
+}
+
+#[test]
 fn current_boundary_wraps_campfire_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::Campfire;
@@ -84,6 +149,7 @@ fn current_boundary_wraps_campfire_options() {
         BranchBoundaryConfigV1 {
             max_reward_options_per_branch: None,
             max_campfire_options_per_branch: Some(2),
+            include_skip: false,
         },
         None,
     )

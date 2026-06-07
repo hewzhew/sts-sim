@@ -290,6 +290,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
             let boundary_config = BranchBoundaryConfigV1 {
                 max_reward_options_per_branch: config.max_reward_options_per_branch,
                 max_campfire_options_per_branch: config.max_campfire_options_per_branch,
+                include_skip: config.include_skip,
             };
             let reward_portfolio_context = config.max_reward_options_per_branch.map(|_| {
                 let frontier = branch_frontier(&branch.session);

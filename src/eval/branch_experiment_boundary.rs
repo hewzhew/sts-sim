@@ -4,6 +4,7 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
+use crate::state::core::EngineState;
 
 mod boss_relic;
 mod campfire;
@@ -48,6 +49,7 @@ impl BranchBoundaryIdV1 {
 pub(crate) struct BranchBoundaryConfigV1 {
     pub(crate) max_reward_options_per_branch: Option<usize>,
     pub(crate) max_campfire_options_per_branch: Option<usize>,
+    pub(crate) include_skip: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -84,13 +86,17 @@ pub(crate) fn current_branch_boundary(
             config.max_reward_options_per_branch,
             reward_portfolio_context,
         );
+        let mut options = selected
+            .options
+            .into_iter()
+            .map(BranchBoundaryOptionV1::from_card_reward)
+            .collect::<Vec<_>>();
+        if config.include_skip && card_reward_skip_available(session) {
+            options.push(BranchBoundaryOptionV1::card_reward_skip());
+        }
         return Some(BranchBoundarySelectionV1 {
             id: BranchBoundaryIdV1::CardReward,
-            options: selected
-                .options
-                .into_iter()
-                .map(BranchBoundaryOptionV1::from_card_reward)
-                .collect(),
+            options,
             reward_option_portfolio: selected.portfolio,
         });
     }
@@ -153,7 +159,34 @@ pub(crate) fn branch_boundary_available(session: &RunControlSession) -> bool {
         || event_branch_options(session).is_some()
 }
 
+fn card_reward_skip_available(session: &RunControlSession) -> bool {
+    match &session.engine_state {
+        EngineState::RewardScreen(reward) => reward.pending_card_choice.is_some(),
+        EngineState::RewardOverlay { reward_state, .. } => {
+            reward_state.pending_card_choice.is_some()
+        }
+        _ => false,
+    }
+}
+
 impl BranchBoundaryOptionV1 {
+    fn card_reward_skip() -> Self {
+        Self {
+            kind: "card_reward_skip",
+            effect_label: "Skip card reward".to_string(),
+            label: "Skip card reward".to_string(),
+            command: "skip".to_string(),
+            card: None,
+            upgrades: None,
+            selected_cards: Vec::new(),
+            effect_kind: "skip_card_reward".to_string(),
+            effect_key: "card_reward:skip".to_string(),
+            representative_count: 1,
+            suppressed_count: 0,
+            success_reason: "card reward skip branch applied",
+        }
+    }
+
     fn from_card_reward(option: CardRewardBranchOption) -> Self {
         Self {
             kind: "card_reward",

@@ -232,6 +232,38 @@ fn branch_experiment_can_limit_reward_options_by_semantic_portfolio() {
 }
 
 #[test]
+fn branch_experiment_include_skip_expands_card_reward_skip_branch() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.pending_card_choice = Some(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+        RewardCard::new(CardId::ShrugItOff, 0),
+    ]);
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 8,
+            auto_max_operations: 0,
+            include_skip: true,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    let labels = report
+        .branches
+        .iter()
+        .map(|branch| branch.choices[0].label.as_str())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(report.branches.len(), 4);
+    assert!(labels.contains("Skip card reward"));
+}
+
+#[test]
 fn branch_experiment_reports_reward_option_portfolio_pruning() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();
