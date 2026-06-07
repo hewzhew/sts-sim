@@ -433,12 +433,36 @@ fn render_profile_unique_branch_sections(reports: &[BranchExperimentReportV1]) -
         if unique_branches.is_empty() {
             continue;
         }
-        lines.push(format!("Only in {}:", report.retention_profile));
+        lines.push(render_unique_branch_section_header(
+            report.retention_profile.to_string(),
+            &unique_branches,
+        ));
         for branch in unique_branches {
             lines.push(format!("  - {}", render_comparison_branch_line(branch)));
         }
     }
     lines
+}
+
+fn render_unique_branch_section_header(
+    profile_name: String,
+    unique_branches: &[&BranchExperimentBranchReportV1],
+) -> String {
+    let mut lane_counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
+    let mut package_counts = BTreeMap::<String, usize>::new();
+    for branch in unique_branches {
+        *lane_counts.entry(retention_lane(branch)).or_default() += 1;
+        for package_state in branch_package_state_tags(branch) {
+            *package_counts.entry(package_state).or_default() += 1;
+        }
+    }
+    format!(
+        "Only in {} ({} branch(es), lanes=[{}], packages=[{}]):",
+        profile_name,
+        unique_branches.len(),
+        render_retention_slot_counts(&lane_counts),
+        render_package_state_counts(&package_counts)
+    )
 }
 
 fn report_branch_keys(report: &BranchExperimentReportV1) -> Vec<String> {
@@ -951,6 +975,20 @@ mod tests {
         let mut package = empty_report();
         package.retention_profile = BranchRetentionBudgetProfileV1::Package;
         package.pruned_branch_count = 1;
+        let mut sever_soul = branch_report(
+            "p1",
+            "Sever Soul",
+            1,
+            6,
+            65,
+            BranchRetentionSlotV1::EngineSetup,
+            "Campfire",
+        );
+        sever_soul
+            .summary
+            .trajectory
+            .setup_keys
+            .push("exhaust_engine".to_string());
         package.branches = vec![
             branch_report(
                 "p0",
@@ -961,15 +999,7 @@ mod tests {
                 BranchRetentionSlotV1::Package,
                 "Combat",
             ),
-            branch_report(
-                "p1",
-                "Sever Soul",
-                1,
-                6,
-                65,
-                BranchRetentionSlotV1::EngineSetup,
-                "Campfire",
-            ),
+            sever_soul,
         ];
 
         let rendered = render_profile_comparison(&[balanced, package]);
@@ -981,11 +1011,15 @@ mod tests {
         assert!(rendered.contains(
             "package kept=2 pruned=1 lanes=[package=1 engine_setup=1] deepest=A1F6 hp=65-70"
         ));
-        assert!(rendered.contains("Only in balanced:"));
+        assert!(
+            rendered.contains("Only in balanced (1 branch(es), lanes=[survival=1], packages=[-]):")
+        );
         assert!(rendered.contains("Armaments"));
         assert!(rendered.contains("lane=survival"));
         assert!(rendered.contains("traj=setup:- pkg:-"));
-        assert!(rendered.contains("Only in package:"));
+        assert!(rendered.contains(
+            "Only in package (1 branch(es), lanes=[engine_setup=1], packages=[open:exhaust_engine=1]):"
+        ));
         assert!(rendered.contains("Sever Soul"));
         assert!(rendered.contains("lane=engine_setup"));
     }
