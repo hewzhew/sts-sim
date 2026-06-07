@@ -250,6 +250,7 @@ fn select_positions_for_slots(
         selected_set.insert(position);
     }
     let selected = cap_redundant_choice_prefixes(candidates, positions, selected, limit);
+    let selected = cap_redundant_first_pick_prefixes(candidates, positions, selected, limit);
     cap_pure_transition_saturation(candidates, positions, selected, limit)
 }
 
@@ -421,6 +422,75 @@ fn cap_redundant_choice_prefixes(
         kept.push(position);
     }
     kept
+}
+
+fn cap_redundant_first_pick_prefixes(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    selected_positions: Vec<usize>,
+    limit: usize,
+) -> Vec<usize> {
+    let distinct_prefixes = available_positions
+        .iter()
+        .map(|position| choice_prefix_key(&candidates[*position]))
+        .collect::<BTreeSet<_>>();
+    if distinct_prefixes.len() <= 1 {
+        return selected_positions;
+    }
+
+    let max_per_prefix = first_pick_prefix_cap(limit, distinct_prefixes.len());
+    let mut counts = BTreeMap::<String, usize>::new();
+    let mut kept = Vec::new();
+    let mut capped = false;
+    for position in selected_positions {
+        let prefix = choice_prefix_key(&candidates[position]);
+        let count = counts.entry(prefix).or_default();
+        if *count >= max_per_prefix {
+            capped = true;
+            continue;
+        }
+        *count += 1;
+        kept.push(position);
+    }
+
+    if !capped {
+        return kept;
+    }
+
+    let mut selected = kept.iter().copied().collect::<BTreeSet<_>>();
+    while kept.len() < limit {
+        let Some(position) =
+            best_fill_position_allowed(candidates, available_positions, &selected, |position| {
+                counts
+                    .get(&choice_prefix_key(&candidates[position]))
+                    .copied()
+                    .unwrap_or_default()
+                    < max_per_prefix
+            })
+        else {
+            break;
+        };
+
+        *counts
+            .entry(choice_prefix_key(&candidates[position]))
+            .or_default() += 1;
+        selected.insert(position);
+        kept.push(position);
+    }
+
+    kept
+}
+
+fn first_pick_prefix_cap(limit: usize, distinct_prefixes: usize) -> usize {
+    if limit == 0 || distinct_prefixes == 0 {
+        return 0;
+    }
+    let base = limit.div_ceil(distinct_prefixes).max(1);
+    if base >= 2 {
+        base + 1
+    } else {
+        base
+    }
 }
 
 fn cap_pure_transition_saturation(
@@ -815,6 +885,84 @@ mod tests {
             selection.keep_indices.len() < 6,
             "max_total is an upper bound; redundant filler branches can be left unkept"
         );
+    }
+
+    #[test]
+    fn portfolio_retention_caps_dominant_first_pick_across_distinct_families() {
+        fn sever_soul_candidate(
+            index: usize,
+            rank_key: i32,
+            setup_keys: &[&str],
+            package_keys: &[&str],
+            engine_generator_picks: u8,
+            engine_payoff_picks: u8,
+            defense_picks: u8,
+        ) -> BranchRetentionCandidateInputV1 {
+            named_semantic_retention_candidate(
+                index,
+                rank_key,
+                "Sever Soul",
+                trajectory_with(
+                    setup_keys,
+                    package_keys,
+                    0,
+                    engine_generator_picks,
+                    engine_payoff_picks,
+                    defense_picks,
+                ),
+                &[CardRewardSemanticRoleV1::ExhaustGenerator],
+            )
+        }
+
+        let candidates = vec![
+            sever_soul_candidate(0, 10_900, &["exhaust_engine"], &[], 1, 0, 0),
+            sever_soul_candidate(1, 10_890, &["status_package"], &[], 1, 0, 0),
+            sever_soul_candidate(2, 10_880, &["exhaust_engine"], &["exhaust_engine"], 1, 1, 0),
+            sever_soul_candidate(3, 10_870, &[], &["block_engine"], 0, 1, 1),
+            sever_soul_candidate(4, 10_860, &[], &["upgrade_sink"], 0, 1, 0),
+            sever_soul_candidate(5, 10_850, &["exhaust_engine"], &["upgrade_sink"], 1, 1, 0),
+            named_semantic_retention_candidate(
+                6,
+                10_300,
+                "Shockwave",
+                trajectory_with(&[], &[], 0, 0, 0, 1),
+                &[
+                    CardRewardSemanticRoleV1::Weak,
+                    CardRewardSemanticRoleV1::EnemyStrengthDown,
+                ],
+            ),
+            named_semantic_retention_candidate(
+                7,
+                10_200,
+                "Armaments",
+                trajectory_with(&[], &["upgrade_sink"], 0, 0, 1, 1),
+                &[
+                    CardRewardSemanticRoleV1::Block,
+                    CardRewardSemanticRoleV1::UpgradePayoff,
+                ],
+            ),
+        ];
+
+        let selection = select_branch_retention_portfolio_v1(
+            &candidates,
+            BranchRetentionConfigV1 {
+                max_total: 6,
+                max_per_frontier: Some(6),
+            },
+        );
+
+        let sever_soul_kept = selection
+            .keep_indices
+            .iter()
+            .filter(|index| candidates[**index].choice_profiles[0].name == "Sever Soul")
+            .count();
+
+        assert!(
+            sever_soul_kept <= 3,
+            "one first-pick prefix should not dominate the exploration budget just because its later trajectory families differ"
+        );
+        assert!(selection.keep_indices.contains(&6));
+        assert!(selection.keep_indices.contains(&7));
     }
 
     #[test]
@@ -1237,6 +1385,19 @@ mod tests {
             trajectory,
             choice_profiles: vec![semantic_profile("Semantic Candidate", roles)],
         }
+    }
+
+    fn named_semantic_retention_candidate(
+        index: usize,
+        rank_key: i32,
+        first_pick: &str,
+        trajectory: BranchTrajectorySignatureV1,
+        roles: &[CardRewardSemanticRoleV1],
+    ) -> BranchRetentionCandidateInputV1 {
+        let mut candidate =
+            semantic_retention_candidate(index, rank_key, 78, 80, trajectory, roles);
+        candidate.choice_profiles[0].name = first_pick.to_string();
+        candidate
     }
 
     fn trajectory_with(
