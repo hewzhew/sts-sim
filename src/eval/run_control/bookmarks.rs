@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use sts_simulator::eval::run_control::{build_decision_surface, RunControlSession};
+
+use super::{build_decision_surface, RunControlSession};
 
 pub const BOOKMARK_REGISTRY_SCHEMA_NAME: &str = "RunPlayBookmarkRegistryV1";
 pub const BOOKMARK_REGISTRY_SCHEMA_VERSION: u32 = 1;

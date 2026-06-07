@@ -14,17 +14,16 @@ use sts_simulator::eval::card_reward_value_loop::{
     CARD_REWARD_STRATEGY_PACKAGE_CALIBRATION_SCHEMA_VERSION,
 };
 use sts_simulator::eval::run_control::{
-    canonical_player_class, load_session_trace_v1, render_run_control_state,
-    render_session_trace_replay_report, replay_session_trace_with_recorder,
-    AutoCombatCaptureConfig, RewardAutomationConfig, RunControlConfig, RunControlSession,
+    canonical_player_class, default_bookmark_registry_path, load_session_trace_v1,
+    render_run_control_state, render_session_trace_replay_report,
+    replay_session_trace_with_recorder, resolve_goto_bookmark, AutoCombatCaptureConfig,
+    GotoBookmarkPlan, RewardAutomationConfig, RunControlConfig, RunControlSession,
     SessionTraceLineageRoleV1, SessionTraceLineageV1, SessionTraceRecorder,
     SessionTraceReplayOptions, SessionTraceV1,
 };
 
-mod bookmarks;
 mod terminal;
 mod trace_cli;
-use bookmarks::{default_bookmark_registry_path, resolve_goto_bookmark};
 use terminal::{run_repl, run_script};
 use trace_cli::{
     default_record_trace_path, file_hash, reject_same_trace_path, trace_output_path,
@@ -355,18 +354,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn effective_replay_trace(
-    args: &Args,
-    goto_plan: Option<&bookmarks::GotoBookmarkPlan>,
-) -> Option<PathBuf> {
+fn effective_replay_trace(args: &Args, goto_plan: Option<&GotoBookmarkPlan>) -> Option<PathBuf> {
     let _ = goto_plan;
     args.replay_trace.clone()
 }
 
-fn effective_continue_trace(
-    args: &Args,
-    goto_plan: Option<&bookmarks::GotoBookmarkPlan>,
-) -> Option<PathBuf> {
+fn effective_continue_trace(args: &Args, goto_plan: Option<&GotoBookmarkPlan>) -> Option<PathBuf> {
     goto_plan
         .map(|plan| plan.source_trace_path.clone())
         .or_else(|| args.continue_trace.clone())
@@ -1251,10 +1244,10 @@ mod tests {
     fn goto_plan_supplies_continue_trace_branch_and_replay_steps() {
         let mut args = empty_args();
         args.goto = Some("before_reward".to_string());
-        let plan = bookmarks::GotoBookmarkPlan {
+        let plan = GotoBookmarkPlan {
             source_trace_path: PathBuf::from("tools/artifacts/traces/seed.trace.json"),
             replay_steps: 12,
-            bookmark: bookmarks::RunPlayBookmarkV1 {
+            bookmark: sts_simulator::eval::run_control::RunPlayBookmarkV1 {
                 name: "before_reward".to_string(),
                 trace_path: "tools/artifacts/traces/seed.trace.json".to_string(),
                 replay_steps: 12,

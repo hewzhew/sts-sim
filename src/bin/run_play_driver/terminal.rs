@@ -2,11 +2,9 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
-use crate::bookmarks::{
-    mark_current_boundary, render_bookmarks, validate_bookmark_name, RunPlayBookmarkV1,
-};
 use sts_simulator::eval::run_control::{
-    parse_run_control_command, render_run_control_state, RunControlCommand, RunControlSession,
+    mark_current_boundary, parse_run_control_command, render_bookmarks, render_run_control_state,
+    validate_bookmark_name, RunControlCommand, RunControlSession, RunPlayBookmarkV1,
     SessionTraceRecorder,
 };
 

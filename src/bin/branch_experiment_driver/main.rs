@@ -11,14 +11,25 @@ use sts_simulator::eval::branch_experiment::{
     BranchExperimentConfigV1, BranchExperimentReportV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
-use sts_simulator::eval::run_control::RunControlHpLossLimit;
+use sts_simulator::eval::run_control::{
+    default_bookmark_registry_path, resolve_goto_bookmark, GotoBookmarkPlan, RunControlHpLossLimit,
+};
 
 mod compact_report;
 
 #[derive(Debug, Parser)]
 #[command(
     name = "branch_experiment_driver",
-    about = "Run a small in-memory branch experiment over card reward choices"
+    about = "Run a small in-memory branch experiment over card reward choices",
+    after_long_help = "Examples:
+  Start from a bookmark created in run_play_driver with `mark before_reward`:
+    branch_experiment_driver --goto before_reward --max-depth 3 --max-branches 24
+
+  Start from an explicit trace prefix:
+    branch_experiment_driver --replay-trace tools/artifacts/traces/seed521.trace.json --replay-steps 12
+
+  Compare retention profiles from the same start state:
+    branch_experiment_driver --goto before_reward --compare-profiles"
 )]
 struct Args {
     #[arg(long, default_value_t = 1)]
@@ -101,6 +112,18 @@ struct Args {
 
     #[arg(
         long,
+        help = "Start from a named bookmark created in run_play_driver with `mark <name>`"
+    )]
+    goto: Option<String>,
+
+    #[arg(
+        long,
+        help = "Bookmark registry path; defaults to tools/artifacts/traces/bookmarks.json"
+    )]
+    bookmark_file: Option<PathBuf>,
+
+    #[arg(
+        long,
         help = "Include card reward skip/Singing Bowl alternatives; this is the default, kept for explicitness"
     )]
     include_skip: bool,
@@ -135,6 +158,16 @@ fn main() {
 
 fn run(args: Args) -> Result<(), String> {
     let player_class = canonical_player_class(&args.player_class)?;
+    validate_goto_args(&args)?;
+    let bookmark_registry_path = args
+        .bookmark_file
+        .clone()
+        .unwrap_or_else(default_bookmark_registry_path);
+    let goto_plan = args
+        .goto
+        .as_ref()
+        .map(|name| resolve_goto_bookmark(&bookmark_registry_path, name))
+        .transpose()?;
     let script_prefix_commands = load_prefix_scripts(&args.prefix_scripts)?;
     let prefix_commands =
         merge_prefix_commands(script_prefix_commands, args.prefix_commands.clone());
@@ -146,7 +179,13 @@ fn run(args: Args) -> Result<(), String> {
         let configs = profiles
             .into_iter()
             .map(|profile| {
-                branch_experiment_config(&args, player_class, prefix_commands.clone(), profile)
+                branch_experiment_config(
+                    &args,
+                    player_class,
+                    prefix_commands.clone(),
+                    profile,
+                    goto_plan.as_ref(),
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
         let reports = run_branch_experiment_profiles_from_shared_start_v1(&configs)?;
@@ -162,6 +201,7 @@ fn run(args: Args) -> Result<(), String> {
         player_class,
         prefix_commands,
         profile,
+        goto_plan.as_ref(),
     )?)?;
     let compact_options = CompactReportOptions {
         kept_branch_examples: args.branch_examples,
@@ -194,6 +234,7 @@ fn branch_experiment_config(
     player_class: &'static str,
     prefix_commands: Vec<String>,
     retention_budget_profile: BranchRetentionBudgetProfileV1,
+    goto_plan: Option<&GotoBookmarkPlan>,
 ) -> Result<BranchExperimentConfigV1, String> {
     if args.include_skip && args.exclude_skip {
         return Err("--include-skip and --exclude-skip cannot be combined".to_string());
@@ -216,9 +257,34 @@ fn branch_experiment_config(
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
         include_skip: args.include_skip || !args.exclude_skip,
         prefix_commands,
-        replay_trace_path: args.replay_trace.clone(),
-        replay_trace_max_steps: args.replay_steps,
+        replay_trace_path: effective_replay_trace(args, goto_plan),
+        replay_trace_max_steps: effective_replay_steps(args, goto_plan),
     })
+}
+
+fn effective_replay_trace(args: &Args, goto_plan: Option<&GotoBookmarkPlan>) -> Option<PathBuf> {
+    goto_plan
+        .map(|plan| plan.source_trace_path.clone())
+        .or_else(|| args.replay_trace.clone())
+}
+
+fn effective_replay_steps(args: &Args, goto_plan: Option<&GotoBookmarkPlan>) -> Option<usize> {
+    goto_plan
+        .map(|plan| plan.replay_steps)
+        .or(args.replay_steps)
+}
+
+fn validate_goto_args(args: &Args) -> Result<(), String> {
+    if args.goto.is_none() {
+        return Ok(());
+    }
+    if args.replay_trace.is_some() || args.replay_steps.is_some() {
+        return Err(
+            "--goto owns trace replay; do not combine it with --replay-trace or --replay-steps"
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn parse_retention_profiles(
@@ -313,6 +379,7 @@ fn canonical_player_class(value: &str) -> Result<&'static str, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::eval::run_control::{GotoBookmarkPlan, RunPlayBookmarkV1};
 
     #[test]
     fn parses_unlimited_hp_loss_limit() {
@@ -365,6 +432,7 @@ mod tests {
             "Ironclad",
             Vec::new(),
             BranchRetentionBudgetProfileV1::Balanced,
+            None,
         )
         .expect("default config builds");
 
@@ -381,6 +449,7 @@ mod tests {
             "Ironclad",
             Vec::new(),
             BranchRetentionBudgetProfileV1::Balanced,
+            None,
         )
         .expect("exclude-skip config builds");
 
@@ -401,9 +470,72 @@ mod tests {
             "Ironclad",
             Vec::new(),
             BranchRetentionBudgetProfileV1::Balanced,
+            None,
         )
         .expect_err("conflicting skip flags should be rejected");
 
         assert!(err.contains("--include-skip and --exclude-skip cannot be combined"));
+    }
+
+    #[test]
+    fn goto_plan_supplies_replay_trace_and_steps() {
+        let args = Args::try_parse_from(["branch_experiment_driver", "--goto", "before_reward"])
+            .expect("args parse");
+        let plan = goto_plan("before_reward", "tools/artifacts/traces/seed.trace.json", 7);
+
+        let config = branch_experiment_config(
+            &args,
+            "Ironclad",
+            Vec::new(),
+            BranchRetentionBudgetProfileV1::Balanced,
+            Some(&plan),
+        )
+        .expect("goto config builds");
+
+        assert_eq!(
+            config.replay_trace_path,
+            Some(PathBuf::from("tools/artifacts/traces/seed.trace.json"))
+        );
+        assert_eq!(config.replay_trace_max_steps, Some(7));
+    }
+
+    #[test]
+    fn goto_rejects_explicit_trace_replay_flags() {
+        let mut args = Args::try_parse_from([
+            "branch_experiment_driver",
+            "--goto",
+            "before_reward",
+            "--replay-trace",
+            "trace.json",
+        ])
+        .expect("args parse");
+
+        let err = validate_goto_args(&args).expect_err("goto should own replay trace");
+        assert!(err.contains("--goto owns trace replay"));
+
+        args.replay_trace = None;
+        args.replay_steps = Some(3);
+        let err = validate_goto_args(&args).expect_err("goto should own replay steps");
+        assert!(err.contains("--goto owns trace replay"));
+    }
+
+    fn goto_plan(name: &str, trace_path: &str, replay_steps: usize) -> GotoBookmarkPlan {
+        GotoBookmarkPlan {
+            source_trace_path: PathBuf::from(trace_path),
+            replay_steps,
+            bookmark: RunPlayBookmarkV1 {
+                name: name.to_string(),
+                trace_path: trace_path.to_string(),
+                replay_steps,
+                decision_step: 7,
+                screen_title: "Card Reward".to_string(),
+                act: 1,
+                floor: 3,
+                hp: 70,
+                max_hp: 80,
+                gold: 120,
+                created_at_unix_ms: 1,
+            },
+        }
     }
 }

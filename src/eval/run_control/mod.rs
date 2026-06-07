@@ -2,6 +2,7 @@ mod artifact_commands;
 mod auto_capture;
 mod auto_run;
 mod auto_step;
+mod bookmarks;
 mod boss_relic_policy;
 mod campfire_policy;
 mod card_reward_auto;
@@ -41,6 +42,12 @@ mod transition_report;
 mod view_model;
 
 pub use auto_capture::AutoCombatCaptureConfig;
+pub use bookmarks::{
+    default_bookmark_registry_path, load_bookmark_registry, mark_current_boundary,
+    render_bookmarks, resolve_goto_bookmark, validate_bookmark_name, GotoBookmarkPlan,
+    RunPlayBookmarkRegistryV1, RunPlayBookmarkV1, BOOKMARK_REGISTRY_SCHEMA_NAME,
+    BOOKMARK_REGISTRY_SCHEMA_VERSION,
+};
 pub use commands::{
     parse_run_control_command, run_control_help, run_control_short_hint, RunControlAutoStepOptions,
     RunControlCommand, RunControlHpLossLimit, RunControlRouteAutomationMode,
