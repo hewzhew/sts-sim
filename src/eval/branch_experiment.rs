@@ -1028,7 +1028,7 @@ mod tests {
     };
     use crate::content::cards::CardId;
     use crate::content::relics::RelicState;
-    use crate::state::rewards::RewardState;
+    use crate::state::rewards::{BossRelicChoiceState, RewardState};
     use std::fs;
     use std::path::PathBuf;
 
@@ -1243,6 +1243,37 @@ mod tests {
                     && choice.command.starts_with("smith ")
                     && choice.card.is_some()
             })));
+    }
+
+    #[test]
+    fn branch_experiment_expands_boss_relic_choices() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::BossRelicSelect(BossRelicChoiceState::new(vec![
+            RelicId::BlackStar,
+            RelicId::EmptyCage,
+            RelicId::TinyHouse,
+        ]));
+
+        let report = run_branch_experiment_from_session(
+            session,
+            &BranchExperimentConfigV1 {
+                max_depth: 1,
+                max_branches: 4,
+                auto_max_operations: 0,
+                ..BranchExperimentConfigV1::default()
+            },
+        );
+
+        let choices = report
+            .branches
+            .iter()
+            .flat_map(|branch| &branch.choices)
+            .collect::<Vec<_>>();
+        assert_eq!(report.explored_branch_points, 1);
+        assert_eq!(choices.len(), 3);
+        assert!(choices.iter().all(|choice| {
+            choice.kind == "boss_relic" && choice.card.is_none() && choice.upgrades.is_none()
+        }));
     }
 
     #[test]

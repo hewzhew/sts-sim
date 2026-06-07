@@ -4,6 +4,7 @@ use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
 use crate::content::cards::CardId;
+use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
 };
@@ -16,6 +17,7 @@ use crate::state::rewards::{RewardCard, RewardItem};
 pub(crate) enum BranchBoundaryIdV1 {
     CardReward,
     Campfire,
+    BossRelic,
 }
 
 impl BranchBoundaryIdV1 {
@@ -23,6 +25,7 @@ impl BranchBoundaryIdV1 {
         match self {
             BranchBoundaryIdV1::CardReward => "card reward option portfolio is empty",
             BranchBoundaryIdV1::Campfire => "campfire option portfolio is empty",
+            BranchBoundaryIdV1::BossRelic => "boss relic option portfolio is empty",
         }
     }
 }
@@ -85,6 +88,12 @@ pub(crate) struct CampfireBranchOptionSelection {
     pub(crate) options: Vec<CampfireBranchOption>,
 }
 
+#[derive(Clone, Debug)]
+struct BossRelicBranchOption {
+    label: String,
+    command: String,
+}
+
 pub(crate) fn current_branch_boundary(
     session: &RunControlSession,
     config: BranchBoundaryConfigV1,
@@ -121,11 +130,24 @@ pub(crate) fn current_branch_boundary(
         });
     }
 
+    if let Some(options) = boss_relic_branch_options(session) {
+        return Some(BranchBoundarySelectionV1 {
+            id: BranchBoundaryIdV1::BossRelic,
+            options: options
+                .into_iter()
+                .map(BranchBoundaryOptionV1::from_boss_relic)
+                .collect(),
+            reward_option_portfolio: None,
+        });
+    }
+
     None
 }
 
 pub(crate) fn branch_boundary_available(session: &RunControlSession) -> bool {
-    card_reward_branch_options(session).is_some() || campfire_branch_options(session).is_some()
+    card_reward_branch_options(session).is_some()
+        || campfire_branch_options(session).is_some()
+        || boss_relic_branch_options(session).is_some()
 }
 
 impl BranchBoundaryOptionV1 {
@@ -148,6 +170,17 @@ impl BranchBoundaryOptionV1 {
             card: option.card,
             upgrades: option.upgrades,
             success_reason: "campfire branch applied",
+        }
+    }
+
+    fn from_boss_relic(option: BossRelicBranchOption) -> Self {
+        Self {
+            kind: "boss_relic",
+            label: option.label,
+            command: option.command,
+            card: None,
+            upgrades: None,
+            success_reason: "boss relic branch applied",
         }
     }
 }
@@ -374,6 +407,26 @@ fn select_campfire_branch_options_with_limit(
     CampfireBranchOptionSelection { options }
 }
 
+fn boss_relic_branch_options(session: &RunControlSession) -> Option<Vec<BossRelicBranchOption>> {
+    let EngineState::BossRelicSelect(choice) = &session.engine_state else {
+        return None;
+    };
+    let options = choice
+        .relics
+        .iter()
+        .enumerate()
+        .map(|(idx, relic)| BossRelicBranchOption {
+            label: boss_relic_label(*relic),
+            command: format!("relic {idx}"),
+        })
+        .collect::<Vec<_>>();
+    (!options.is_empty()).then_some(options)
+}
+
+fn boss_relic_label(relic: RelicId) -> String {
+    format!("{relic:?}")
+}
+
 fn campfire_option_priority(option: &CampfireBranchOption) -> usize {
     match option.semantic_class.as_str() {
         "rest" => 0,
@@ -526,8 +579,9 @@ mod tests {
 
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::relics::RelicId;
     use crate::eval::run_control::{RunControlConfig, RunControlSession};
-    use crate::state::rewards::RewardState;
+    use crate::state::rewards::{BossRelicChoiceState, RewardState};
 
     #[test]
     fn card_reward_option_portfolio_keeps_semantic_variety() {
@@ -613,6 +667,33 @@ mod tests {
             .options
             .iter()
             .all(|option| option.kind == "campfire"));
+    }
+
+    #[test]
+    fn current_boundary_wraps_boss_relic_options() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::BossRelicSelect(BossRelicChoiceState::new(vec![
+            RelicId::BlackStar,
+            RelicId::EmptyCage,
+            RelicId::TinyHouse,
+        ]));
+
+        let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+            .expect("boss relic boundary");
+
+        assert_eq!(boundary.id, BranchBoundaryIdV1::BossRelic);
+        assert_eq!(
+            boundary
+                .options
+                .iter()
+                .map(|option| (option.kind, option.command.as_str(), option.card))
+                .collect::<Vec<_>>(),
+            vec![
+                ("boss_relic", "relic 0", None),
+                ("boss_relic", "relic 1", None),
+                ("boss_relic", "relic 2", None),
+            ]
+        );
     }
 
     #[test]
