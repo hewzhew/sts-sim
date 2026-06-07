@@ -86,6 +86,9 @@ pub(super) fn render_compact_report_with_options(
     if let Some(line) = render_retention_lane_count_line(&retention_lanes) {
         lines.push(line);
     }
+    if let Some(line) = render_kept_long_horizon_coverage_line(report) {
+        lines.push(line);
+    }
     if let Some(line) = render_pruned_first_pick_count_line(&report.pruned_first_pick_counts) {
         lines.push(line);
     }
@@ -489,6 +492,43 @@ fn render_retention_lane_count_line(slots: &[Option<BranchRetentionSlotV1>]) -> 
     render_retention_lane_count_payload(slots).map(|payload| format!("Retention lanes: {payload}"))
 }
 
+fn render_kept_long_horizon_coverage_line(report: &BranchExperimentReportV1) -> Option<String> {
+    let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
+    let mut first_picks = BTreeSet::<String>::new();
+    for branch in &report.branches {
+        let slot = retention_lane(branch);
+        if !is_long_horizon_slot(slot) {
+            continue;
+        }
+        *counts.entry(slot).or_default() += 1;
+        if let Some(choice) = branch.choices.first() {
+            first_picks.insert(choice_display_label(choice));
+        }
+    }
+    if counts.is_empty() {
+        return None;
+    }
+    let first_picks = if first_picks.is_empty() {
+        "-".to_string()
+    } else {
+        first_picks.into_iter().collect::<Vec<_>>().join(", ")
+    };
+    Some(format!(
+        "Long-horizon coverage: kept primary=[{}] first_picks=[{}]",
+        render_retention_slot_counts(&counts),
+        first_picks
+    ))
+}
+
+fn is_long_horizon_slot(slot: BranchRetentionSlotV1) -> bool {
+    matches!(
+        slot,
+        BranchRetentionSlotV1::Package
+            | BranchRetentionSlotV1::EngineSetup
+            | BranchRetentionSlotV1::Scaling
+    )
+}
+
 fn render_retention_lane_count_payload(slots: &[Option<BranchRetentionSlotV1>]) -> Option<String> {
     let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
     for slot in slots {
@@ -836,6 +876,48 @@ mod tests {
             rendered,
             "Retention lanes: package=1 survival=2 frontload=1 diversity=1"
         );
+    }
+
+    #[test]
+    fn compact_report_summarizes_kept_long_horizon_coverage() {
+        let report = BranchExperimentReportV1 {
+            branches: vec![
+                branch_report(
+                    "b0",
+                    "Sever Soul",
+                    1,
+                    6,
+                    65,
+                    BranchRetentionSlotV1::Package,
+                    "Campfire",
+                ),
+                branch_report(
+                    "b1",
+                    "Shockwave",
+                    1,
+                    5,
+                    69,
+                    BranchRetentionSlotV1::EngineSetup,
+                    "Combat",
+                ),
+                branch_report(
+                    "b2",
+                    "Armaments",
+                    1,
+                    4,
+                    74,
+                    BranchRetentionSlotV1::Survival,
+                    "Combat",
+                ),
+            ],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains(
+            "Long-horizon coverage: kept primary=[package=1 engine_setup=1] first_picks=[Sever Soul, Shockwave]"
+        ));
     }
 
     #[test]
