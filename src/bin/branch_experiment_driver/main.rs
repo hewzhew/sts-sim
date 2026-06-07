@@ -185,6 +185,20 @@ fn render_compact_report(report: &BranchExperimentReportV1) -> String {
     if let Some(line) = render_primary_retention_slot_count_line(&primary_retention_slots) {
         lines.push(line);
     }
+    let first_pick_outcomes = first_pick_outcome_summary_lines(report);
+    if !first_pick_outcomes.is_empty() {
+        lines.push("".to_string());
+        lines.push("First-pick outcomes:".to_string());
+        for line in first_pick_outcomes.iter().take(8) {
+            lines.push(line.clone());
+        }
+        if first_pick_outcomes.len() > 8 {
+            lines.push(format!(
+                "  ... {} more first-pick outcome group(s); use --json or --out for full detail",
+                first_pick_outcomes.len() - 8
+            ));
+        }
+    }
     if report.explored_branch_points == 0 {
         let boundary = report
             .frontier_groups
@@ -317,6 +331,110 @@ fn render_reward_option_entries(
         .map(|entry| format!("{}:{}", entry.label, entry.semantic_class))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[derive(Clone, Debug)]
+struct FirstPickOutcomeSummary {
+    label: String,
+    branch_count: usize,
+    deepest_act: u8,
+    deepest_floor: i32,
+    min_hp: i32,
+    max_hp: i32,
+    primary_slots: BTreeMap<BranchRetentionSlotV1, usize>,
+    frontiers: BTreeMap<String, usize>,
+}
+
+fn first_pick_outcome_summary_lines(report: &BranchExperimentReportV1) -> Vec<String> {
+    let mut summaries = BTreeMap::<String, FirstPickOutcomeSummary>::new();
+    for branch in &report.branches {
+        let Some(first_choice) = branch.choices.first() else {
+            continue;
+        };
+        let entry = summaries
+            .entry(first_choice.label.clone())
+            .or_insert_with(|| FirstPickOutcomeSummary {
+                label: first_choice.label.clone(),
+                branch_count: 0,
+                deepest_act: branch.summary.act,
+                deepest_floor: branch.summary.floor,
+                min_hp: branch.summary.hp,
+                max_hp: branch.summary.hp,
+                primary_slots: BTreeMap::new(),
+                frontiers: BTreeMap::new(),
+            });
+        entry.branch_count += 1;
+        if (branch.summary.act, branch.summary.floor) > (entry.deepest_act, entry.deepest_floor) {
+            entry.deepest_act = branch.summary.act;
+            entry.deepest_floor = branch.summary.floor;
+        }
+        entry.min_hp = entry.min_hp.min(branch.summary.hp);
+        entry.max_hp = entry.max_hp.max(branch.summary.hp);
+        *entry
+            .primary_slots
+            .entry(branch.retention.primary_slot)
+            .or_default() += 1;
+        *entry
+            .frontiers
+            .entry(branch.summary.boundary_title.clone())
+            .or_default() += 1;
+    }
+
+    let mut summaries = summaries.into_values().collect::<Vec<_>>();
+    summaries.sort_by(|left, right| {
+        right
+            .branch_count
+            .cmp(&left.branch_count)
+            .then_with(|| {
+                (right.deepest_act, right.deepest_floor)
+                    .cmp(&(left.deepest_act, left.deepest_floor))
+            })
+            .then_with(|| right.max_hp.cmp(&left.max_hp))
+            .then_with(|| left.label.cmp(&right.label))
+    });
+    summaries.iter().map(render_first_pick_outcome).collect()
+}
+
+fn render_first_pick_outcome(summary: &FirstPickOutcomeSummary) -> String {
+    format!(
+        "  {} | branches={} deepest=A{}F{} hp={} | primary=[{}] | frontiers=[{}]",
+        summary.label,
+        summary.branch_count,
+        summary.deepest_act,
+        summary.deepest_floor,
+        render_hp_range(summary.min_hp, summary.max_hp),
+        render_primary_slot_counts(&summary.primary_slots),
+        render_string_count_map(&summary.frontiers)
+    )
+}
+
+fn render_hp_range(min_hp: i32, max_hp: i32) -> String {
+    if min_hp == max_hp {
+        min_hp.to_string()
+    } else {
+        format!("{min_hp}-{max_hp}")
+    }
+}
+
+fn render_primary_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>) -> String {
+    RETENTION_SLOT_DISPLAY_ORDER
+        .iter()
+        .filter_map(|slot| {
+            counts
+                .get(slot)
+                .filter(|count| **count > 0)
+                .map(|count| format!("{}={count}", retention_slot_name(*slot)))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn render_string_count_map(counts: &BTreeMap<String, usize>) -> String {
+    counts
+        .iter()
+        .map(|(label, count)| format!("{label}={count}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn ordered_branch_examples(
@@ -595,10 +713,15 @@ fn canonical_player_class(value: &str) -> Result<&'static str, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::ai::noncombat_strategy_v1::StrategyDeckFormationStageV1;
+    use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::branch_experiment::{
-        BranchExperimentReportV1, BranchExperimentRewardOptionPortfolioEntryV1,
-        BranchExperimentRewardOptionPortfolioV1,
+        BranchExperimentBranchReportV1, BranchExperimentChoiceV1, BranchExperimentFrontierV1,
+        BranchExperimentLineageV1, BranchExperimentReportV1,
+        BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+        BranchExperimentRunSummaryV1,
     };
+    use sts_simulator::eval::branch_experiment_retention::BranchRetentionDecisionV1;
 
     #[test]
     fn parses_unlimited_hp_loss_limit() {
@@ -745,6 +868,53 @@ mod tests {
     }
 
     #[test]
+    fn first_pick_outcome_summary_groups_kept_branch_results() {
+        let report = BranchExperimentReportV1 {
+            branches: vec![
+                branch_report(
+                    "b0",
+                    "Shockwave",
+                    1,
+                    4,
+                    70,
+                    BranchRetentionSlotV1::Package,
+                    "Combat",
+                ),
+                branch_report(
+                    "b1",
+                    "Shockwave",
+                    1,
+                    6,
+                    60,
+                    BranchRetentionSlotV1::EngineSetup,
+                    "Campfire",
+                ),
+                branch_report(
+                    "b2",
+                    "Armaments",
+                    1,
+                    5,
+                    76,
+                    BranchRetentionSlotV1::DefenseEngine,
+                    "Combat",
+                ),
+            ],
+            ..empty_report()
+        };
+
+        let lines = first_pick_outcome_summary_lines(&report);
+
+        assert_eq!(
+            lines[0],
+            "  Shockwave | branches=2 deepest=A1F6 hp=60-70 | primary=[package=1 engine_setup=1] | frontiers=[Campfire=1 Combat=1]"
+        );
+        assert_eq!(
+            lines[1],
+            "  Armaments | branches=1 deepest=A1F5 hp=76 | primary=[defense=1] | frontiers=[Combat=1]"
+        );
+    }
+
+    #[test]
     fn prefix_script_ignores_blank_lines_and_comments() {
         let commands = parse_prefix_script(
             r#"
@@ -821,6 +991,72 @@ mod tests {
             command: command.to_string(),
             label: label.to_string(),
             semantic_class: semantic_class.to_string(),
+        }
+    }
+
+    fn branch_report(
+        branch_id: &str,
+        first_pick: &str,
+        act: u8,
+        floor: i32,
+        hp: i32,
+        primary_slot: BranchRetentionSlotV1,
+        boundary_title: &str,
+    ) -> BranchExperimentBranchReportV1 {
+        BranchExperimentBranchReportV1 {
+            branch_id: branch_id.to_string(),
+            status: BranchExperimentBranchStatusV1::Active,
+            rank_key: 0,
+            retention: BranchRetentionDecisionV1 {
+                primary_slot,
+                slots: vec![primary_slot],
+                reasons: Vec::new(),
+            },
+            choices: vec![BranchExperimentChoiceV1 {
+                depth: 0,
+                kind: "card_reward".to_string(),
+                card: CardId::Strike,
+                upgrades: 0,
+                label: first_pick.to_string(),
+                command: "rp 0".to_string(),
+            }],
+            stop_reason: boundary_title.to_string(),
+            summary: BranchExperimentRunSummaryV1 {
+                act,
+                floor,
+                hp,
+                max_hp: 80,
+                gold: 120,
+                deck_count: 12,
+                relic_count: 1,
+                potion_count: 0,
+                formation_stage: StrategyDeckFormationStageV1::PlanSeeded,
+                formation_needs: Vec::new(),
+                formation_strengths: Vec::new(),
+                trajectory: Default::default(),
+                boundary_title: boundary_title.to_string(),
+            },
+            frontier: BranchExperimentFrontierV1 {
+                key: format!("A{act}F{floor}:{boundary_title}"),
+                act,
+                floor,
+                boundary_title: boundary_title.to_string(),
+                card_rng_counter: 0,
+                card_blizz_randomizer: 0,
+                next_card_reward_offer: None,
+                lineage: BranchExperimentLineageV1 {
+                    visibility: "test".to_string(),
+                    public_policy_input: false,
+                    direct_pick_consumes_card_rng: false,
+                    same_reward_offer_lineage_key: "test".to_string(),
+                    reward_screen_context: "test".to_string(),
+                    reward_count_modifiers: Vec::new(),
+                    card_pool_modifiers: Vec::new(),
+                    rarity_modifiers: Vec::new(),
+                    preview_modifiers: Vec::new(),
+                    sequence_breakers_present: Vec::new(),
+                },
+            },
         }
     }
 }
