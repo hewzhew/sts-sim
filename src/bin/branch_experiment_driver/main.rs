@@ -7,7 +7,8 @@ use compact_report::{
     CompactReportOptions,
 };
 use sts_simulator::eval::branch_experiment::{
-    run_branch_experiment_v1, BranchExperimentConfigV1, BranchExperimentReportV1,
+    run_branch_experiment_profiles_from_shared_start_v1, run_branch_experiment_v1,
+    BranchExperimentConfigV1, BranchExperimentReportV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::run_control::RunControlHpLossLimit;
@@ -133,17 +134,13 @@ fn run(args: Args) -> Result<(), String> {
         if args.json || args.out.is_some() {
             return Err("--compare-profiles cannot be combined with --json or --out".to_string());
         }
-        let reports = profiles
+        let configs = profiles
             .into_iter()
             .map(|profile| {
-                run_branch_experiment_v1(&branch_experiment_config(
-                    &args,
-                    player_class,
-                    prefix_commands.clone(),
-                    profile,
-                )?)
+                branch_experiment_config(&args, player_class, prefix_commands.clone(), profile)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let reports = run_branch_experiment_profiles_from_shared_start_v1(&configs)?;
         println!("{}", render_profile_comparison(&reports));
         return Ok(());
     }

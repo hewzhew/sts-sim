@@ -48,9 +48,49 @@ struct BranchWork {
     retention: BranchRetentionDecisionV1,
 }
 
+#[derive(Clone, Debug)]
+struct BranchExperimentPreparedStart {
+    branch: BranchWork,
+    replay_trace_applied_steps: usize,
+    replay_trace_stop: Option<String>,
+}
+
 pub fn run_branch_experiment_v1(
     config: &BranchExperimentConfigV1,
 ) -> Result<BranchExperimentReportV1, String> {
+    let prepared = prepare_branch_experiment_start(config, false)?;
+    Ok(run_branch_experiment_from_start_branch_with_replay(
+        prepared.branch,
+        config,
+        prepared.replay_trace_applied_steps,
+        prepared.replay_trace_stop,
+    ))
+}
+
+pub fn run_branch_experiment_profiles_from_shared_start_v1(
+    configs: &[BranchExperimentConfigV1],
+) -> Result<Vec<BranchExperimentReportV1>, String> {
+    let Some(first_config) = configs.first() else {
+        return Ok(Vec::new());
+    };
+    let prepared = prepare_branch_experiment_start(first_config, true)?;
+    configs
+        .iter()
+        .map(|config| {
+            Ok(run_branch_experiment_from_start_branch_with_replay(
+                prepared.branch.clone(),
+                config,
+                prepared.replay_trace_applied_steps,
+                prepared.replay_trace_stop.clone(),
+            ))
+        })
+        .collect()
+}
+
+fn prepare_branch_experiment_start(
+    config: &BranchExperimentConfigV1,
+    settle_to_first_boundary: bool,
+) -> Result<BranchExperimentPreparedStart, String> {
     let replay_trace = config
         .replay_trace_path
         .as_ref()
@@ -107,12 +147,23 @@ pub fn run_branch_experiment_v1(
         session.apply_command(command)?;
     }
 
-    Ok(run_branch_experiment_from_session_with_replay(
+    let mut branch = BranchWork {
+        id: "root".to_string(),
         session,
-        config,
-        replay_applied_steps,
-        replay_stop,
-    ))
+        choices: Vec::new(),
+        status: BranchExperimentBranchStatusV1::Active,
+        stop_reason: "initial".to_string(),
+        retention: default_branch_retention_decision_v1(),
+    };
+    if settle_to_first_boundary {
+        settle_branch_to_frontier(&mut branch, config);
+    }
+
+    Ok(BranchExperimentPreparedStart {
+        branch,
+        replay_trace_applied_steps: replay_applied_steps,
+        replay_trace_stop: replay_stop,
+    })
 }
 
 #[cfg(test)]
@@ -123,21 +174,36 @@ fn run_branch_experiment_from_session(
     run_branch_experiment_from_session_with_replay(session, config, 0, None)
 }
 
+#[cfg(test)]
 fn run_branch_experiment_from_session_with_replay(
     session: RunControlSession,
     config: &BranchExperimentConfigV1,
     replay_trace_applied_steps: usize,
     replay_trace_stop: Option<String>,
 ) -> BranchExperimentReportV1 {
+    run_branch_experiment_from_start_branch_with_replay(
+        BranchWork {
+            id: "root".to_string(),
+            session,
+            choices: Vec::new(),
+            status: BranchExperimentBranchStatusV1::Active,
+            stop_reason: "initial".to_string(),
+            retention: default_branch_retention_decision_v1(),
+        },
+        config,
+        replay_trace_applied_steps,
+        replay_trace_stop,
+    )
+}
+
+fn run_branch_experiment_from_start_branch_with_replay(
+    start_branch: BranchWork,
+    config: &BranchExperimentConfigV1,
+    replay_trace_applied_steps: usize,
+    replay_trace_stop: Option<String>,
+) -> BranchExperimentReportV1 {
     let started_at = Instant::now();
-    let mut branches = vec![BranchWork {
-        id: "root".to_string(),
-        session,
-        choices: Vec::new(),
-        status: BranchExperimentBranchStatusV1::Active,
-        stop_reason: "initial".to_string(),
-        retention: default_branch_retention_decision_v1(),
-    }];
+    let mut branches = vec![start_branch];
     let report_seed = branches[0].session.run_state.seed;
     let mut explored_branch_points = 0usize;
     let mut branch_limit_hit = false;

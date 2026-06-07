@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1};
 use crate::content::cards::CardId;
 use crate::content::relics::RelicState;
+use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
@@ -104,6 +105,64 @@ fn branch_experiment_report_counts_replayed_trace_steps() {
 
     assert_eq!(report.replay_trace_applied_steps, 1);
     assert_eq!(report.replay_trace_stop, Some("TraceEnd".to_string()));
+
+    let _ = fs::remove_dir_all(trace_path.parent().unwrap());
+}
+
+#[test]
+fn shared_start_profile_runner_reuses_replay_prefix_for_all_profiles() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let trace_path = unique_temp_path("branch_experiment_shared_start").join("trace.json");
+    let mut recorder =
+        crate::eval::run_control::SessionTraceRecorder::new(trace_path.clone(), &session);
+    let command = RunControlCommand::DefaultCandidate;
+    let pending =
+        crate::eval::run_control::SessionTraceRecorder::prepare_step(&session, "", &command);
+    let outcome = session
+        .apply_command(command)
+        .expect("default candidate applies");
+    recorder
+        .record_action_step(
+            pending,
+            &session,
+            outcome
+                .action_result
+                .as_ref()
+                .expect("command should change state"),
+            &outcome.trace_annotations,
+        )
+        .expect("trace records");
+    let trace_path = write_trace_fixture("branch_experiment_shared_start", recorder.trace());
+    let configs = vec![
+        BranchExperimentConfigV1 {
+            replay_trace_path: Some(trace_path.clone()),
+            replay_trace_max_steps: Some(1),
+            retention_budget_profile: BranchRetentionBudgetProfileV1::Balanced,
+            max_depth: 0,
+            ..BranchExperimentConfigV1::default()
+        },
+        BranchExperimentConfigV1 {
+            replay_trace_path: Some(trace_path.clone()),
+            replay_trace_max_steps: Some(1),
+            retention_budget_profile: BranchRetentionBudgetProfileV1::Package,
+            max_depth: 0,
+            ..BranchExperimentConfigV1::default()
+        },
+    ];
+
+    let reports =
+        run_branch_experiment_profiles_from_shared_start_v1(&configs).expect("shared profile run");
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].replay_trace_applied_steps, 1);
+    assert_eq!(reports[1].replay_trace_applied_steps, 1);
+    assert_eq!(reports[0].replay_trace_stop, Some("TraceEnd".to_string()));
+    assert_eq!(reports[1].replay_trace_stop, Some("TraceEnd".to_string()));
+    assert_eq!(
+        reports[0].replay_trace_path,
+        Some(trace_path.display().to_string())
+    );
+    assert_eq!(reports[0].seed, reports[1].seed);
 
     let _ = fs::remove_dir_all(trace_path.parent().unwrap());
 }
