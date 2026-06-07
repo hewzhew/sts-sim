@@ -218,6 +218,20 @@ fn reward_candidates(
             candidate
         })
         .collect::<Vec<_>>();
+    if reward.has_card_reward_item()
+        && session
+            .run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::SingingBowl)
+    {
+        candidates.push(candidate(
+            "bowl",
+            "Singing Bowl | gain 2 max HP",
+            "bowl",
+            Some("consume the first visible card reward instead of taking a card"),
+        ));
+    }
     if reward.skippable {
         let (id, label, note, input) = if let Some(return_state) = overlay_return_state {
             (
@@ -903,6 +917,33 @@ mod tests {
             bowl.action.executable_input(),
             Some(ClientInput::SelectCard(1))
         );
+        assert!(bowl.label.contains("gain 2 max HP"));
+    }
+
+    #[test]
+    fn singing_bowl_unopened_card_reward_candidate_is_visible_as_command() {
+        let mut session = RunControlSession::new(Default::default());
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::SingingBowl));
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Card {
+            cards: vec![crate::state::rewards::RewardCard::new(
+                CardId::PommelStrike,
+                0,
+            )],
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let candidates = decision_candidates(&session);
+
+        let bowl = candidates
+            .iter()
+            .find(|candidate| candidate.id == "bowl")
+            .expect("Singing Bowl should be visible next to unopened card reward item");
+        assert!(bowl.action.executable_input().is_none());
+        assert_eq!(bowl.action.command_hint(), "bowl");
         assert!(bowl.label.contains("gain 2 max HP"));
     }
 
