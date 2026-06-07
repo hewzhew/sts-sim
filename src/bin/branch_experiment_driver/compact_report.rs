@@ -24,6 +24,29 @@ pub(super) fn render_compact_report(report: &BranchExperimentReportV1) -> String
     render_compact_report_with_options(report, CompactReportOptions::default())
 }
 
+pub(super) fn render_profile_comparison(reports: &[BranchExperimentReportV1]) -> String {
+    let mut lines = Vec::new();
+    lines.push("Profile comparison:".to_string());
+    for report in reports {
+        lines.push(format!(
+            "  {} kept={} pruned={} lanes=[{}] deepest=A{}F{} hp={}",
+            report.retention_profile,
+            report.branches.len(),
+            report.pruned_branch_count,
+            render_report_lane_counts(report),
+            deepest_act(report),
+            deepest_floor(report),
+            render_report_hp_range(report)
+        ));
+    }
+    let unique_sections = render_profile_unique_branch_sections(reports);
+    if !unique_sections.is_empty() {
+        lines.push("".to_string());
+        lines.extend(unique_sections);
+    }
+    lines.join("\n")
+}
+
 pub(super) fn render_compact_report_with_options(
     report: &BranchExperimentReportV1,
     options: CompactReportOptions,
@@ -355,6 +378,72 @@ fn render_package_state_counts(counts: &BTreeMap<String, usize>) -> String {
     render_string_count_map(counts)
 }
 
+fn render_report_lane_counts(report: &BranchExperimentReportV1) -> String {
+    let lanes = report
+        .branches
+        .iter()
+        .map(|branch| branch.retention.selected_by_slot)
+        .collect::<Vec<_>>();
+    render_retention_lane_count_payload(&lanes).unwrap_or_else(|| "-".to_string())
+}
+
+fn deepest_act(report: &BranchExperimentReportV1) -> u8 {
+    report
+        .branches
+        .iter()
+        .map(|branch| branch.summary.act)
+        .max()
+        .unwrap_or_default()
+}
+
+fn deepest_floor(report: &BranchExperimentReportV1) -> i32 {
+    report
+        .branches
+        .iter()
+        .map(|branch| branch.summary.floor)
+        .max()
+        .unwrap_or_default()
+}
+
+fn render_report_hp_range(report: &BranchExperimentReportV1) -> String {
+    let Some(first) = report.branches.first() else {
+        return "-".to_string();
+    };
+    let (min_hp, max_hp) = report.branches.iter().fold(
+        (first.summary.hp, first.summary.hp),
+        |(min_hp, max_hp), branch| (min_hp.min(branch.summary.hp), max_hp.max(branch.summary.hp)),
+    );
+    render_hp_range(min_hp, max_hp)
+}
+
+fn render_profile_unique_branch_sections(reports: &[BranchExperimentReportV1]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for report in reports {
+        let other_paths = reports
+            .iter()
+            .filter(|other| other.retention_profile != report.retention_profile)
+            .flat_map(report_branch_paths)
+            .collect::<BTreeSet<_>>();
+        let unique_paths = report_branch_paths(report)
+            .into_iter()
+            .filter(|path| !other_paths.contains(path))
+            .take(4)
+            .collect::<Vec<_>>();
+        if unique_paths.is_empty() {
+            continue;
+        }
+        lines.push(format!("Only in {}:", report.retention_profile));
+        for path in unique_paths {
+            lines.push(format!("  - {path}"));
+        }
+    }
+    lines
+}
+
+fn report_branch_paths(report: &BranchExperimentReportV1) -> Vec<String> {
+    report.branches.iter().map(render_choice_path).collect()
+}
+
 fn render_retention_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>) -> String {
     RETENTION_SLOT_DISPLAY_ORDER
         .iter()
@@ -575,6 +664,10 @@ fn retention_lane(branch: &BranchExperimentBranchReportV1) -> BranchRetentionSlo
 }
 
 fn render_retention_lane_count_line(slots: &[Option<BranchRetentionSlotV1>]) -> Option<String> {
+    render_retention_lane_count_payload(slots).map(|payload| format!("Retention lanes: {payload}"))
+}
+
+fn render_retention_lane_count_payload(slots: &[Option<BranchRetentionSlotV1>]) -> Option<String> {
     let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
     for slot in slots {
         *counts
@@ -593,7 +686,7 @@ fn render_retention_lane_count_line(slots: &[Option<BranchRetentionSlotV1>]) -> 
                 .map(|count| format!("{}={count}", retention_slot_name(*slot)))
         })
         .collect::<Vec<_>>();
-    Some(format!("Retention lanes: {}", rendered.join(" ")))
+    Some(rendered.join(" "))
 }
 
 fn render_pruned_first_pick_count_line(
@@ -809,6 +902,70 @@ mod tests {
         let rendered = render_compact_report(&report);
 
         assert!(rendered.contains("retention_profile=exploration"));
+    }
+
+    #[test]
+    fn profile_comparison_renders_summary_and_unique_branch_examples() {
+        let mut balanced = empty_report();
+        balanced.retention_profile = BranchRetentionBudgetProfileV1::Balanced;
+        balanced.pruned_branch_count = 3;
+        balanced.branches = vec![
+            branch_report(
+                "b0",
+                "Shockwave",
+                1,
+                4,
+                70,
+                BranchRetentionSlotV1::Package,
+                "Combat",
+            ),
+            branch_report(
+                "b1",
+                "Armaments",
+                1,
+                5,
+                74,
+                BranchRetentionSlotV1::Survival,
+                "Campfire",
+            ),
+        ];
+        let mut package = empty_report();
+        package.retention_profile = BranchRetentionBudgetProfileV1::Package;
+        package.pruned_branch_count = 1;
+        package.branches = vec![
+            branch_report(
+                "p0",
+                "Shockwave",
+                1,
+                4,
+                70,
+                BranchRetentionSlotV1::Package,
+                "Combat",
+            ),
+            branch_report(
+                "p1",
+                "Sever Soul",
+                1,
+                6,
+                65,
+                BranchRetentionSlotV1::EngineSetup,
+                "Campfire",
+            ),
+        ];
+
+        let rendered = render_profile_comparison(&[balanced, package]);
+
+        assert!(rendered.contains("Profile comparison:"));
+        assert!(rendered.contains(
+            "balanced kept=2 pruned=3 lanes=[package=1 survival=1] deepest=A1F5 hp=70-74"
+        ));
+        assert!(rendered.contains(
+            "package kept=2 pruned=1 lanes=[package=1 engine_setup=1] deepest=A1F6 hp=65-70"
+        ));
+        assert!(rendered.contains("Only in balanced:"));
+        assert!(rendered.contains("Armaments"));
+        assert!(rendered.contains("Only in package:"));
+        assert!(rendered.contains("Sever Soul"));
     }
 
     #[test]

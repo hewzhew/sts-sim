@@ -3,7 +3,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use compact_report::{
-    render_compact_report, render_compact_report_with_options, CompactReportOptions,
+    render_compact_report, render_compact_report_with_options, render_profile_comparison,
+    CompactReportOptions,
 };
 use sts_simulator::eval::branch_experiment::{
     run_branch_experiment_v1, BranchExperimentConfigV1, BranchExperimentReportV1,
@@ -40,9 +41,15 @@ struct Args {
     #[arg(
         long,
         default_value = "balanced",
-        help = "Branch retention budget profile: balanced, exploration, survival, or package"
+        help = "Branch retention budget profile: balanced, exploration, survival, package, or a comma-separated list with --compare-profiles"
     )]
     retention_profile: String,
+
+    #[arg(
+        long,
+        help = "Run multiple retention profiles and render a compact side-by-side comparison"
+    )]
+    compare_profiles: bool,
 
     #[arg(long)]
     max_reward_options: Option<usize>,
@@ -119,28 +126,37 @@ fn main() {
 fn run(args: Args) -> Result<(), String> {
     let player_class = canonical_player_class(&args.player_class)?;
     let script_prefix_commands = load_prefix_scripts(&args.prefix_scripts)?;
-    let prefix_commands = merge_prefix_commands(script_prefix_commands, args.prefix_commands);
-    let report = run_branch_experiment_v1(&BranchExperimentConfigV1 {
-        seed: args.seed,
-        ascension_level: args.ascension,
+    let prefix_commands =
+        merge_prefix_commands(script_prefix_commands, args.prefix_commands.clone());
+    let profiles = parse_retention_profiles(&args.retention_profile, args.compare_profiles)?;
+    if args.compare_profiles {
+        if args.json || args.out.is_some() {
+            return Err("--compare-profiles cannot be combined with --json or --out".to_string());
+        }
+        let reports = profiles
+            .into_iter()
+            .map(|profile| {
+                run_branch_experiment_v1(&branch_experiment_config(
+                    &args,
+                    player_class,
+                    prefix_commands.clone(),
+                    profile,
+                )?)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        println!("{}", render_profile_comparison(&reports));
+        return Ok(());
+    }
+    let profile = profiles
+        .first()
+        .copied()
+        .unwrap_or(BranchRetentionBudgetProfileV1::Balanced);
+    let report = run_branch_experiment_v1(&branch_experiment_config(
+        &args,
         player_class,
-        final_act: args.final_act,
-        max_branches: args.max_branches,
-        max_branches_per_frontier_group: args.max_per_frontier_group,
-        retention_budget_profile: parse_retention_profile(&args.retention_profile)?,
-        max_reward_options_per_branch: args.max_reward_options,
-        max_campfire_options_per_branch: Some(args.max_campfire_options),
-        max_depth: args.max_depth,
-        auto_max_operations: args.auto_max_ops,
-        experiment_wall_ms: args.experiment_wall_ms,
-        search_max_nodes: args.search_max_nodes,
-        search_wall_ms: args.search_wall_ms.or(Some(100)),
-        search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
-        include_skip: args.include_skip,
         prefix_commands,
-        replay_trace_path: args.replay_trace,
-        replay_trace_max_steps: args.replay_steps,
-    })?;
+        profile,
+    )?)?;
     let compact_options = CompactReportOptions {
         kept_branch_examples: args.branch_examples,
     };
@@ -167,8 +183,60 @@ fn run(args: Args) -> Result<(), String> {
     Ok(())
 }
 
-fn parse_retention_profile(value: &str) -> Result<BranchRetentionBudgetProfileV1, String> {
-    value.parse()
+fn branch_experiment_config(
+    args: &Args,
+    player_class: &'static str,
+    prefix_commands: Vec<String>,
+    retention_budget_profile: BranchRetentionBudgetProfileV1,
+) -> Result<BranchExperimentConfigV1, String> {
+    Ok(BranchExperimentConfigV1 {
+        seed: args.seed,
+        ascension_level: args.ascension,
+        player_class,
+        final_act: args.final_act,
+        max_branches: args.max_branches,
+        max_branches_per_frontier_group: args.max_per_frontier_group,
+        retention_budget_profile,
+        max_reward_options_per_branch: args.max_reward_options,
+        max_campfire_options_per_branch: Some(args.max_campfire_options),
+        max_depth: args.max_depth,
+        auto_max_operations: args.auto_max_ops,
+        experiment_wall_ms: args.experiment_wall_ms,
+        search_max_nodes: args.search_max_nodes,
+        search_wall_ms: args.search_wall_ms.or(Some(100)),
+        search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
+        include_skip: args.include_skip,
+        prefix_commands,
+        replay_trace_path: args.replay_trace.clone(),
+        replay_trace_max_steps: args.replay_steps,
+    })
+}
+
+fn parse_retention_profiles(
+    value: &str,
+    compare_profiles: bool,
+) -> Result<Vec<BranchRetentionBudgetProfileV1>, String> {
+    if compare_profiles && value.trim().eq_ignore_ascii_case("balanced") {
+        return Ok(vec![
+            BranchRetentionBudgetProfileV1::Balanced,
+            BranchRetentionBudgetProfileV1::Exploration,
+            BranchRetentionBudgetProfileV1::Survival,
+            BranchRetentionBudgetProfileV1::Package,
+        ]);
+    }
+    let profiles = value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::parse)
+        .collect::<Result<Vec<_>, _>>()?;
+    if profiles.is_empty() {
+        return Err("--retention-profile must name at least one profile".to_string());
+    }
+    if !compare_profiles && profiles.len() > 1 {
+        return Err("multiple --retention-profile values require --compare-profiles".to_string());
+    }
+    Ok(profiles)
 }
 
 fn render_report(report: &BranchExperimentReportV1, options: CompactReportOptions) -> String {
