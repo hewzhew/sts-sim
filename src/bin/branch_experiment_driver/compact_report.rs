@@ -852,6 +852,39 @@ mod tests {
     }
 
     #[test]
+    fn profile_comparison_distinguishes_same_choices_with_different_outcomes() {
+        let mut balanced = empty_report();
+        balanced.retention_profile = BranchRetentionBudgetProfileV1::Balanced;
+        balanced.branches = vec![branch_report(
+            "b0",
+            "Shockwave",
+            1,
+            4,
+            70,
+            BranchRetentionSlotV1::Package,
+            "Combat",
+        )];
+
+        let mut package = empty_report();
+        package.retention_profile = BranchRetentionBudgetProfileV1::Package;
+        package.branches = vec![branch_report(
+            "p0",
+            "Shockwave",
+            1,
+            4,
+            50,
+            BranchRetentionSlotV1::Package,
+            "Combat",
+        )];
+
+        let rendered = render_profile_comparison(&[balanced, package]);
+
+        assert!(rendered.contains("vs_balanced=shared:0 unique:1 missing:1"));
+        assert!(rendered.contains("Only in package"));
+        assert!(rendered.contains("HP 50/80"));
+    }
+
+    #[test]
     fn profile_comparison_warns_when_branch_point_counts_differ() {
         let mut balanced = empty_report();
         balanced.retention_profile = BranchRetentionBudgetProfileV1::Balanced;

@@ -228,7 +228,15 @@ fn report_branch_keys(report: &BranchExperimentReportV1) -> Vec<String> {
 }
 
 fn branch_comparison_key(branch: &BranchExperimentBranchReportV1) -> String {
-    super::render_choice_path(branch)
+    format!(
+        "{}|A{}F{}|hp={}/{}|boundary={}",
+        super::render_choice_path(branch),
+        branch.summary.act,
+        branch.summary.floor,
+        branch.summary.hp,
+        branch.summary.max_hp,
+        branch.summary.boundary_title,
+    )
 }
 
 fn render_comparison_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
