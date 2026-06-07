@@ -422,26 +422,45 @@ fn render_profile_unique_branch_sections(reports: &[BranchExperimentReportV1]) -
         let other_paths = reports
             .iter()
             .filter(|other| other.retention_profile != report.retention_profile)
-            .flat_map(report_branch_paths)
+            .flat_map(report_branch_keys)
             .collect::<BTreeSet<_>>();
-        let unique_paths = report_branch_paths(report)
-            .into_iter()
-            .filter(|path| !other_paths.contains(path))
+        let unique_branches = report
+            .branches
+            .iter()
+            .filter(|branch| !other_paths.contains(&branch_comparison_key(branch)))
             .take(4)
             .collect::<Vec<_>>();
-        if unique_paths.is_empty() {
+        if unique_branches.is_empty() {
             continue;
         }
         lines.push(format!("Only in {}:", report.retention_profile));
-        for path in unique_paths {
-            lines.push(format!("  - {path}"));
+        for branch in unique_branches {
+            lines.push(format!("  - {}", render_comparison_branch_line(branch)));
         }
     }
     lines
 }
 
-fn report_branch_paths(report: &BranchExperimentReportV1) -> Vec<String> {
-    report.branches.iter().map(render_choice_path).collect()
+fn report_branch_keys(report: &BranchExperimentReportV1) -> Vec<String> {
+    report.branches.iter().map(branch_comparison_key).collect()
+}
+
+fn branch_comparison_key(branch: &BranchExperimentBranchReportV1) -> String {
+    render_choice_path(branch)
+}
+
+fn render_comparison_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
+    format!(
+        "{} | A{}F{} HP {}/{} | {} | lane={} | {}",
+        render_choice_path(branch),
+        branch.summary.act,
+        branch.summary.floor,
+        branch.summary.hp,
+        branch.summary.max_hp,
+        branch.summary.boundary_title,
+        retention_slot_name(retention_lane(branch)),
+        render_trajectory_summary(branch)
+    )
 }
 
 fn render_retention_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>) -> String {
@@ -964,8 +983,11 @@ mod tests {
         ));
         assert!(rendered.contains("Only in balanced:"));
         assert!(rendered.contains("Armaments"));
+        assert!(rendered.contains("lane=survival"));
+        assert!(rendered.contains("traj=setup:- pkg:-"));
         assert!(rendered.contains("Only in package:"));
         assert!(rendered.contains("Sever Soul"));
+        assert!(rendered.contains("lane=engine_setup"));
     }
 
     #[test]
