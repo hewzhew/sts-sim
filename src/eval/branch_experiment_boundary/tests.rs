@@ -458,6 +458,22 @@ fn current_boundary_wraps_low_fanout_event_options() {
 }
 
 #[test]
+fn current_boundary_wraps_neow_bonus_four_options() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .apply_command(crate::eval::run_control::RunControlCommand::Candidate(
+            "0".to_string(),
+        ))
+        .expect("advance to Neow bonus");
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Neow bonus should be a low-fanout event boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    assert_eq!(boundary.options.len(), 4);
+}
+
+#[test]
 fn current_boundary_allows_event_options_that_open_single_card_selection() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(EventState::new(EventId::UpgradeShrine));

@@ -1,7 +1,7 @@
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState};
 
-const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 3;
+const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
 
 #[derive(Clone, Debug)]
 pub(crate) struct EventBranchOption {
