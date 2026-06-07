@@ -1,13 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
 use std::time::Instant;
-
-use serde::{Deserialize, Serialize};
 
 use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
 use crate::ai::noncombat_strategy_v1::{
-    build_run_strategy_snapshot_from_run_state_v2, StrategyDeckFormationNeedV1,
-    StrategyDeckFormationStageV1, StrategyFormationSummaryV2, StrategyPackageIdV2,
+    build_run_strategy_snapshot_from_run_state_v2, StrategyFormationSummaryV2,
 };
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
@@ -17,8 +13,8 @@ use crate::eval::branch_experiment_boundary::{
 };
 use crate::eval::branch_experiment_retention::{
     default_branch_retention_decision_v1, select_branch_retention_portfolio_v1,
-    BranchRetentionBudgetProfileV1, BranchRetentionCandidateInputV1, BranchRetentionConfigV1,
-    BranchRetentionDecisionV1, BranchRetentionSlotV1,
+    BranchRetentionCandidateInputV1, BranchRetentionConfigV1, BranchRetentionDecisionV1,
+    BranchRetentionSlotV1,
 };
 use crate::eval::branch_experiment_trajectory::{
     summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
@@ -26,241 +22,22 @@ use crate::eval::branch_experiment_trajectory::{
 use crate::eval::run_control::{
     build_decision_surface, canonical_player_class, load_session_trace_v1,
     parse_run_control_command, replay_session_trace, RunControlAutoStepOptions, RunControlCommand,
-    RunControlConfig, RunControlHpLossLimit, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions, RunControlSession, SessionTraceReplayOptions,
-    SessionTraceReplayStop,
+    RunControlConfig, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+    RunControlSession, SessionTraceReplayOptions, SessionTraceReplayStop,
 };
 use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::{RewardCard, RewardScreenContext};
 
-pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 14;
+mod types;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct BranchExperimentConfigV1 {
-    pub seed: u64,
-    pub ascension_level: u8,
-    pub player_class: &'static str,
-    pub final_act: bool,
-    pub max_branches: usize,
-    pub max_branches_per_frontier_group: Option<usize>,
-    pub retention_budget_profile: BranchRetentionBudgetProfileV1,
-    pub max_reward_options_per_branch: Option<usize>,
-    pub max_campfire_options_per_branch: Option<usize>,
-    pub max_depth: usize,
-    pub auto_max_operations: usize,
-    pub experiment_wall_ms: Option<u64>,
-    pub search_max_nodes: Option<usize>,
-    pub search_wall_ms: Option<u64>,
-    pub search_max_hp_loss: Option<RunControlHpLossLimit>,
-    pub include_skip: bool,
-    pub prefix_commands: Vec<String>,
-    pub replay_trace_path: Option<PathBuf>,
-    pub replay_trace_max_steps: Option<usize>,
-}
-
-impl Default for BranchExperimentConfigV1 {
-    fn default() -> Self {
-        Self {
-            seed: 1,
-            ascension_level: 0,
-            player_class: "Ironclad",
-            final_act: false,
-            max_branches: 12,
-            max_branches_per_frontier_group: None,
-            retention_budget_profile: BranchRetentionBudgetProfileV1::Balanced,
-            max_reward_options_per_branch: None,
-            max_campfire_options_per_branch: Some(3),
-            max_depth: 4,
-            auto_max_operations: 128,
-            experiment_wall_ms: None,
-            search_max_nodes: None,
-            search_wall_ms: Some(100),
-            search_max_hp_loss: None,
-            include_skip: false,
-            prefix_commands: Vec::new(),
-            replay_trace_path: None,
-            replay_trace_max_steps: None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentReportV1 {
-    pub schema_name: String,
-    pub schema_version: u32,
-    pub label_role: String,
-    pub policy_quality_claim: bool,
-    pub seed: u64,
-    pub replay_trace_path: Option<String>,
-    pub replay_trace_applied_steps: usize,
-    pub replay_trace_stop: Option<String>,
-    pub max_branches: usize,
-    pub max_depth: usize,
-    #[serde(default)]
-    pub retention_profile: BranchRetentionBudgetProfileV1,
-    pub explored_branch_points: usize,
-    pub branch_limit_hit: bool,
-    pub frontier_group_limit_hit: bool,
-    pub wall_limit_hit: bool,
-    pub elapsed_wall_ms: u64,
-    pub pruned_branch_count: usize,
-    pub pruned_first_pick_counts: Vec<BranchExperimentPrunedFirstPickCountV1>,
-    #[serde(default)]
-    pub pruned_branch_summary: BranchExperimentPrunedBranchSummaryV1,
-    pub reward_option_portfolios: Vec<BranchExperimentRewardOptionPortfolioV1>,
-    pub frontier_groups: Vec<BranchExperimentFrontierGroupV1>,
-    pub branches: Vec<BranchExperimentBranchReportV1>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentPrunedFirstPickCountV1 {
-    pub first_pick: String,
-    pub count: usize,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentPrunedBranchSummaryV1 {
-    pub primary_slot_counts: BTreeMap<BranchRetentionSlotV1, usize>,
-    pub eligible_slot_counts: BTreeMap<BranchRetentionSlotV1, usize>,
-    pub package_state_counts: BTreeMap<String, usize>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentRewardOptionPortfolioV1 {
-    pub depth: usize,
-    pub frontier_key: String,
-    pub boundary_title: String,
-    pub max_reward_options_per_branch: usize,
-    pub original_count: usize,
-    pub selected_count: usize,
-    pub selected_options: Vec<BranchExperimentRewardOptionPortfolioEntryV1>,
-    pub pruned_options: Vec<BranchExperimentRewardOptionPortfolioEntryV1>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentRewardOptionPortfolioEntryV1 {
-    pub command: String,
-    pub label: String,
-    pub semantic_class: String,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentBranchReportV1 {
-    pub branch_id: String,
-    pub status: BranchExperimentBranchStatusV1,
-    pub rank_key: i32,
-    pub retention: BranchRetentionDecisionV1,
-    pub choices: Vec<BranchExperimentChoiceV1>,
-    pub stop_reason: String,
-    pub summary: BranchExperimentRunSummaryV1,
-    pub frontier: BranchExperimentFrontierV1,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BranchExperimentBranchStatusV1 {
-    Active,
-    TerminalVictory,
-    TerminalDefeat,
-    NeedsHumanBoundary,
-    Failed,
-    Pruned,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentChoiceV1 {
-    pub depth: usize,
-    pub kind: String,
-    pub card: Option<CardId>,
-    pub upgrades: Option<u8>,
-    #[serde(default)]
-    pub selected_cards: Vec<BranchExperimentChoiceCardV1>,
-    #[serde(default)]
-    pub effect_kind: String,
-    #[serde(default)]
-    pub effect_key: String,
-    #[serde(default)]
-    pub effect_label: String,
-    #[serde(default)]
-    pub representative_count: usize,
-    #[serde(default)]
-    pub suppressed_count: usize,
-    pub label: String,
-    pub command: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentChoiceCardV1 {
-    pub card: CardId,
-    pub upgrades: u8,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentRunSummaryV1 {
-    pub act: u8,
-    pub floor: i32,
-    pub hp: i32,
-    pub max_hp: i32,
-    pub gold: i32,
-    pub deck_count: usize,
-    pub relic_count: usize,
-    pub potion_count: usize,
-    pub formation_stage: StrategyDeckFormationStageV1,
-    pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
-    pub formation_strengths: Vec<StrategyPackageIdV2>,
-    pub trajectory: BranchTrajectorySignatureV1,
-    pub boundary_title: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentFrontierV1 {
-    pub key: String,
-    pub act: u8,
-    pub floor: i32,
-    pub boundary_title: String,
-    pub card_rng_counter: u32,
-    pub card_blizz_randomizer: i32,
-    pub next_card_reward_offer: Option<Vec<String>>,
-    pub lineage: BranchExperimentLineageV1,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentLineageV1 {
-    pub visibility: String,
-    pub public_policy_input: bool,
-    pub direct_pick_consumes_card_rng: bool,
-    pub same_reward_offer_lineage_key: String,
-    pub reward_screen_context: String,
-    pub reward_count_modifiers: Vec<String>,
-    pub card_pool_modifiers: Vec<String>,
-    pub rarity_modifiers: Vec<String>,
-    pub preview_modifiers: Vec<String>,
-    pub sequence_breakers_present: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentFrontierGroupV1 {
-    pub key: String,
-    pub branch_count: usize,
-    pub representative_branch_id: String,
-    pub boundary_title: String,
-    pub next_card_reward_offer: Option<Vec<String>>,
-    pub lineage_flags: Vec<String>,
-}
-
+pub use types::{
+    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
+    BranchExperimentChoiceV1, BranchExperimentConfigV1, BranchExperimentFrontierGroupV1,
+    BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
+    BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
+    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentRunSummaryV1, BRANCH_EXPERIMENT_SCHEMA_NAME, BRANCH_EXPERIMENT_SCHEMA_VERSION,
+};
 #[derive(Clone, Debug)]
 struct BranchWork {
     id: String,
