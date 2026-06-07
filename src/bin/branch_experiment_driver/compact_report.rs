@@ -104,6 +104,9 @@ pub(super) fn render_compact_report_with_options(
     if let Some(line) = render_pruned_branch_summary_line(report) {
         lines.push(line);
     }
+    if let Some(line) = render_pruned_long_horizon_coverage_note(report) {
+        lines.push(line);
+    }
     let first_pick_outcomes = first_pick_outcome_summary_lines(report);
     if !first_pick_outcomes.is_empty() {
         lines.push("".to_string());
@@ -768,6 +771,35 @@ fn render_pruned_branch_summary_line(report: &BranchExperimentReportV1) -> Optio
     ))
 }
 
+fn render_pruned_long_horizon_coverage_note(report: &BranchExperimentReportV1) -> Option<String> {
+    if report.pruned_branch_count == 0 {
+        return None;
+    }
+    let primary = long_horizon_slot_counts(&report.pruned_branch_summary.primary_slot_counts);
+    if primary.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "Coverage note: pruned long-horizon branches primary=[{}] packages=[{}]; use --compare-profiles or raise --max-branches before treating missing packages as evidence",
+        render_retention_slot_counts(&primary),
+        render_package_state_counts(&report.pruned_branch_summary.package_state_counts)
+    ))
+}
+
+fn long_horizon_slot_counts(
+    counts: &BTreeMap<BranchRetentionSlotV1, usize>,
+) -> BTreeMap<BranchRetentionSlotV1, usize> {
+    [
+        BranchRetentionSlotV1::Package,
+        BranchRetentionSlotV1::EngineSetup,
+        BranchRetentionSlotV1::Scaling,
+    ]
+    .into_iter()
+    .filter_map(|slot| counts.get(&slot).copied().map(|count| (slot, count)))
+    .filter(|(_, count)| *count > 0)
+    .collect()
+}
+
 const RETENTION_SLOT_DISPLAY_ORDER: [BranchRetentionSlotV1; 8] = [
     BranchRetentionSlotV1::Package,
     BranchRetentionSlotV1::EngineSetup,
@@ -1172,6 +1204,9 @@ mod tests {
         assert!(rendered.contains("Pruned first picks: Armaments=7 Shockwave=3"));
         assert!(rendered.contains(
             "Pruned branch summary: primary=[engine_setup=1 frontload=2] eligible=[engine_setup=1 frontload=2 diversity=3] packages=[open:exhaust_engine=1]"
+        ));
+        assert!(rendered.contains(
+            "Coverage note: pruned long-horizon branches primary=[engine_setup=1] packages=[open:exhaust_engine=1]; use --compare-profiles or raise --max-branches before treating missing packages as evidence"
         ));
     }
 
