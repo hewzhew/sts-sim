@@ -313,10 +313,13 @@ fn render_retention_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>)
 fn render_choice_effect_count_line(report: &BranchExperimentReportV1) -> Option<String> {
     let mut counts = BTreeMap::<&'static str, usize>::new();
     for branch in &report.branches {
-        for choice in &branch.choices {
-            *counts
-                .entry(branch_experiment_choice_effect_key_v1(&choice.effect_kind))
-                .or_default() += 1;
+        let branch_effects = branch
+            .choices
+            .iter()
+            .map(|choice| branch_experiment_choice_effect_key_v1(&choice.effect_kind))
+            .collect::<BTreeSet<_>>();
+        for effect in branch_effects {
+            *counts.entry(effect).or_default() += 1;
         }
     }
     if counts.is_empty() {
@@ -796,6 +799,32 @@ mod tests {
         let rendered = render_compact_report(&report);
 
         assert!(rendered.contains("Kept choice effects: take_card=1 skip_reward=1 singing_bowl=1"));
+    }
+
+    #[test]
+    fn compact_report_counts_choice_effect_coverage_once_per_branch() {
+        let mut branch = branch_report(
+            "b0",
+            "Shockwave",
+            1,
+            3,
+            70,
+            BranchRetentionSlotV1::Package,
+            "Combat",
+        );
+        let mut later_choice = branch.choices[0].clone();
+        later_choice.depth = 1;
+        later_choice.label = "Armaments".to_string();
+        branch.choices.push(later_choice);
+        let report = BranchExperimentReportV1 {
+            branches: vec![branch],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("Kept choice effects: take_card=1"));
+        assert!(!rendered.contains("take_card=2"));
     }
 
     #[test]
