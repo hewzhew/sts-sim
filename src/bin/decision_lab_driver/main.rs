@@ -98,6 +98,7 @@ struct Args {
 #[serde(rename_all = "snake_case")]
 enum DecisionLabCaseKindV1 {
     EngineeringIssue,
+    NeedsCombatBudget,
     NeedsMoreBudget,
     NeedsHumanJudgment,
     NotEnoughEvidence,
@@ -108,6 +109,7 @@ impl DecisionLabCaseKindV1 {
     fn as_str(self) -> &'static str {
         match self {
             DecisionLabCaseKindV1::EngineeringIssue => "engineering_issue",
+            DecisionLabCaseKindV1::NeedsCombatBudget => "needs_combat_budget",
             DecisionLabCaseKindV1::NeedsMoreBudget => "needs_more_budget",
             DecisionLabCaseKindV1::NeedsHumanJudgment => "needs_human_judgment",
             DecisionLabCaseKindV1::NotEnoughEvidence => "not_enough_evidence",
@@ -423,13 +425,13 @@ fn classify_lab_case(signals: &DecisionLabSignalsV1) -> DecisionLabCaseKindV1 {
     if signals.error.is_some() {
         return DecisionLabCaseKindV1::EngineeringIssue;
     }
-    if signals.branch_limit_hit || signals.wall_limit_hit || signals.frontier_group_limit_hit {
-        return DecisionLabCaseKindV1::NeedsMoreBudget;
-    }
     if signals.human_strategy_request_count > 0 {
         return DecisionLabCaseKindV1::NeedsHumanJudgment;
     }
     if signals.strategy_request_count > 0 {
+        return DecisionLabCaseKindV1::NeedsCombatBudget;
+    }
+    if signals.branch_limit_hit || signals.wall_limit_hit || signals.frontier_group_limit_hit {
         return DecisionLabCaseKindV1::NeedsMoreBudget;
     }
     if signals.depth_limit_reached {
@@ -813,9 +815,10 @@ fn case_priority(kind: DecisionLabCaseKindV1) -> u8 {
     match kind {
         DecisionLabCaseKindV1::EngineeringIssue => 0,
         DecisionLabCaseKindV1::NeedsHumanJudgment => 1,
-        DecisionLabCaseKindV1::NeedsMoreBudget => 2,
-        DecisionLabCaseKindV1::NotEnoughEvidence => 3,
-        DecisionLabCaseKindV1::Routine => 4,
+        DecisionLabCaseKindV1::NeedsCombatBudget => 2,
+        DecisionLabCaseKindV1::NeedsMoreBudget => 3,
+        DecisionLabCaseKindV1::NotEnoughEvidence => 4,
+        DecisionLabCaseKindV1::Routine => 5,
     }
 }
 
@@ -896,7 +899,9 @@ fn aggregate_context_signals(cases: &[DecisionLabCaseV1]) -> Vec<String> {
     for case in cases {
         if !matches!(
             case.kind,
-            DecisionLabCaseKindV1::NeedsHumanJudgment | DecisionLabCaseKindV1::NeedsMoreBudget
+            DecisionLabCaseKindV1::NeedsHumanJudgment
+                | DecisionLabCaseKindV1::NeedsCombatBudget
+                | DecisionLabCaseKindV1::NeedsMoreBudget
         ) {
             continue;
         }
@@ -1028,7 +1033,7 @@ mod tests {
     }
 
     #[test]
-    fn classifies_combat_budget_request_as_more_budget() {
+    fn classifies_combat_budget_request_separately() {
         let kind = classify_lab_case(&DecisionLabSignalsV1 {
             error: None,
             explored_branch_points: 0,
@@ -1044,7 +1049,47 @@ mod tests {
             human_strategy_request_count: 0,
         });
 
-        assert_eq!(kind, DecisionLabCaseKindV1::NeedsMoreBudget);
+        assert_eq!(kind, DecisionLabCaseKindV1::NeedsCombatBudget);
+    }
+
+    #[test]
+    fn classifies_human_strategy_request_before_generic_budget_limits() {
+        let kind = classify_lab_case(&DecisionLabSignalsV1 {
+            error: None,
+            explored_branch_points: 2,
+            depth_limit_reached: false,
+            branch_limit_hit: true,
+            wall_limit_hit: true,
+            wall_limit_phase: Some(BranchExperimentWallLimitPhaseV1::Expansion),
+            frontier_group_limit_hit: false,
+            pruned_branch_count: 10,
+            kept_branch_count: 16,
+            frontier_group_count: 2,
+            strategy_request_count: 1,
+            human_strategy_request_count: 1,
+        });
+
+        assert_eq!(kind, DecisionLabCaseKindV1::NeedsHumanJudgment);
+    }
+
+    #[test]
+    fn classifies_combat_budget_request_before_generic_budget_limits() {
+        let kind = classify_lab_case(&DecisionLabSignalsV1 {
+            error: None,
+            explored_branch_points: 2,
+            depth_limit_reached: false,
+            branch_limit_hit: true,
+            wall_limit_hit: true,
+            wall_limit_phase: Some(BranchExperimentWallLimitPhaseV1::Expansion),
+            frontier_group_limit_hit: false,
+            pruned_branch_count: 10,
+            kept_branch_count: 16,
+            frontier_group_count: 2,
+            strategy_request_count: 1,
+            human_strategy_request_count: 0,
+        });
+
+        assert_eq!(kind, DecisionLabCaseKindV1::NeedsCombatBudget);
     }
 
     #[test]
@@ -1155,8 +1200,8 @@ mod tests {
             pruned_branch_count: 10,
             kept_branch_count: 24,
             frontier_group_count: 2,
-            strategy_request_count: 1,
-            human_strategy_request_count: 1,
+            strategy_request_count: 0,
+            human_strategy_request_count: 0,
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NeedsMoreBudget);
