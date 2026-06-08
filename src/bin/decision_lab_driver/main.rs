@@ -52,6 +52,12 @@ struct Args {
     depth_retries: usize,
 
     #[arg(long, default_value_t = 1)]
+    wall_retries: usize,
+
+    #[arg(long, default_value_t = 3)]
+    wall_retry_multiplier: u64,
+
+    #[arg(long, default_value_t = 1)]
     combat_retries: usize,
 
     #[arg(long, default_value_t = 4)]
@@ -191,10 +197,16 @@ fn run_seed_case(args: &Args, seed: u64) -> DecisionLabCaseV1 {
 fn run_seed_report(args: &Args, seed: u64) -> Result<DecisionLabSeedRunV1, String> {
     let mut config = branch_config_for_seed(args, seed)?;
     let mut retries_used = 0usize;
+    let mut wall_retries_used = 0usize;
     let mut combat_retries_used = 0usize;
     loop {
         let report = run_branch_experiment_v1(&config)?;
         if !should_retry_depth(&report, retries_used, args.depth_retries) {
+            if should_retry_wall_budget(&report, wall_retries_used, args.wall_retries) {
+                wall_retries_used = wall_retries_used.saturating_add(1);
+                escalate_wall_retry_budget(&mut config, args.wall_retry_multiplier);
+                continue;
+            }
             if !should_retry_combat_budget(&report, combat_retries_used, args.combat_retries) {
                 return Ok(DecisionLabSeedRunV1 {
                     report,
@@ -467,6 +479,22 @@ fn should_retry_combat_budget(
         && !signals.frontier_group_limit_hit
 }
 
+fn should_retry_wall_budget(
+    report: &BranchExperimentReportV1,
+    retries_used: usize,
+    wall_retries: usize,
+) -> bool {
+    if retries_used >= wall_retries {
+        return false;
+    }
+    let signals = signals_from_report(report);
+    signals.wall_limit_hit
+        && !signals.depth_limit_reached
+        && !signals.branch_limit_hit
+        && !signals.frontier_group_limit_hit
+        && signals.strategy_request_count == 0
+}
+
 fn escalate_combat_retry_budget(config: &mut BranchExperimentConfigV1, multiplier: u64) {
     let multiplier = multiplier.max(1);
     let current_wall_ms = config.search_wall_ms.unwrap_or(100);
@@ -476,6 +504,12 @@ fn escalate_combat_retry_budget(config: &mut BranchExperimentConfigV1, multiplie
     let scaled_nodes =
         current_max_nodes.saturating_mul(usize::try_from(multiplier).unwrap_or(usize::MAX));
     config.search_max_nodes = Some(scaled_nodes);
+}
+
+fn escalate_wall_retry_budget(config: &mut BranchExperimentConfigV1, multiplier: u64) {
+    let multiplier = multiplier.max(1);
+    let current_wall_ms = config.experiment_wall_ms.unwrap_or(10_000);
+    config.experiment_wall_ms = Some(current_wall_ms.saturating_mul(multiplier));
 }
 
 fn report_depth_limit_reached(report: &BranchExperimentReportV1) -> bool {
@@ -655,7 +689,10 @@ fn rerun_command_for_config(
         "--auto-max-ops".to_string(),
         args.auto_max_ops.to_string(),
         "--experiment-wall-ms".to_string(),
-        args.experiment_wall_ms.to_string(),
+        effective_config
+            .experiment_wall_ms
+            .unwrap_or(args.experiment_wall_ms)
+            .to_string(),
         "--search-wall-ms".to_string(),
         effective_config
             .search_wall_ms
@@ -1053,6 +1090,36 @@ mod tests {
     }
 
     #[test]
+    fn retries_pure_wall_limited_reports() {
+        let mut report = test_report();
+        report.wall_limit_hit = true;
+
+        assert!(should_retry_wall_budget(&report, 0, 1));
+        assert!(!should_retry_wall_budget(&report, 1, 1));
+    }
+
+    #[test]
+    fn does_not_retry_wall_when_branch_limit_is_also_hit() {
+        let mut report = test_report();
+        report.wall_limit_hit = true;
+        report.branch_limit_hit = true;
+
+        assert!(!should_retry_wall_budget(&report, 0, 1));
+    }
+
+    #[test]
+    fn wall_retry_scales_experiment_budget() {
+        let mut config = BranchExperimentConfigV1 {
+            experiment_wall_ms: Some(5_000),
+            ..BranchExperimentConfigV1::default()
+        };
+
+        escalate_wall_retry_budget(&mut config, 3);
+
+        assert_eq!(config.experiment_wall_ms, Some(15_000));
+    }
+
+    #[test]
     fn classifies_budget_limited_experiment_separately() {
         let kind = classify_lab_case(&DecisionLabSignalsV1 {
             error: None,
@@ -1156,6 +1223,7 @@ mod tests {
         .expect("args parse");
         let effective_config = BranchExperimentConfigV1 {
             max_depth: 4,
+            experiment_wall_ms: Some(15_000),
             search_wall_ms: Some(200),
             search_max_nodes: Some(20_000),
             ..BranchExperimentConfigV1::default()
@@ -1164,6 +1232,7 @@ mod tests {
         let command = rerun_command_for_config(&args, 521, &effective_config);
 
         assert!(command.contains("--max-depth 4"));
+        assert!(command.contains("--experiment-wall-ms 15000"));
         assert!(command.contains("--search-wall-ms 200"));
         assert!(command.contains("--search-max-nodes 20000"));
     }
