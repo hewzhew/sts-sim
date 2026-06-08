@@ -116,6 +116,7 @@ struct DecisionLabSignalsV1 {
     kept_branch_count: usize,
     frontier_group_count: usize,
     strategy_request_count: usize,
+    human_strategy_request_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -369,6 +370,11 @@ fn signals_from_report(report: &BranchExperimentReportV1) -> DecisionLabSignalsV
         kept_branch_count: report.branches.len(),
         frontier_group_count: report.frontier_groups.len(),
         strategy_request_count: report.strategy_requests.len(),
+        human_strategy_request_count: report
+            .strategy_requests
+            .iter()
+            .filter(|request| strategy_request_needs_human_judgment(&request.kind))
+            .count(),
     }
 }
 
@@ -379,8 +385,11 @@ fn classify_lab_case(signals: &DecisionLabSignalsV1) -> DecisionLabCaseKindV1 {
     if signals.branch_limit_hit || signals.wall_limit_hit || signals.frontier_group_limit_hit {
         return DecisionLabCaseKindV1::NeedsMoreBudget;
     }
-    if signals.strategy_request_count > 0 {
+    if signals.human_strategy_request_count > 0 {
         return DecisionLabCaseKindV1::NeedsHumanJudgment;
+    }
+    if signals.strategy_request_count > 0 {
+        return DecisionLabCaseKindV1::NeedsMoreBudget;
     }
     if signals.depth_limit_reached {
         return DecisionLabCaseKindV1::NeedsMoreBudget;
@@ -395,6 +404,10 @@ fn classify_lab_case(signals: &DecisionLabSignalsV1) -> DecisionLabCaseKindV1 {
         return DecisionLabCaseKindV1::NeedsHumanJudgment;
     }
     DecisionLabCaseKindV1::Routine
+}
+
+fn strategy_request_needs_human_judgment(kind: &str) -> bool {
+    kind != "combat_manual_or_budget"
 }
 
 fn should_retry_depth(
@@ -737,6 +750,13 @@ fn case_limit_flags(case: &DecisionLabCaseV1) -> String {
     if case.wall_limit_hit {
         flags.push("wall");
     }
+    if case
+        .strategy_requests
+        .iter()
+        .any(|request| request.starts_with("combat_manual_or_budget="))
+    {
+        flags.push("combat");
+    }
     if flags.is_empty() {
         "-".to_string()
     } else {
@@ -836,6 +856,7 @@ mod tests {
             kept_branch_count: 1,
             frontier_group_count: 1,
             strategy_request_count: 0,
+            human_strategy_request_count: 0,
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NotEnoughEvidence);
@@ -854,9 +875,29 @@ mod tests {
             kept_branch_count: 1,
             frontier_group_count: 1,
             strategy_request_count: 1,
+            human_strategy_request_count: 1,
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NeedsHumanJudgment);
+    }
+
+    #[test]
+    fn classifies_combat_budget_request_as_more_budget() {
+        let kind = classify_lab_case(&DecisionLabSignalsV1 {
+            error: None,
+            explored_branch_points: 0,
+            depth_limit_reached: false,
+            branch_limit_hit: false,
+            wall_limit_hit: false,
+            frontier_group_limit_hit: false,
+            pruned_branch_count: 0,
+            kept_branch_count: 1,
+            frontier_group_count: 1,
+            strategy_request_count: 1,
+            human_strategy_request_count: 0,
+        });
+
+        assert_eq!(kind, DecisionLabCaseKindV1::NeedsMoreBudget);
     }
 
     #[test]
@@ -872,6 +913,7 @@ mod tests {
             kept_branch_count: 24,
             frontier_group_count: 2,
             strategy_request_count: 1,
+            human_strategy_request_count: 1,
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NeedsMoreBudget);
@@ -890,6 +932,7 @@ mod tests {
             kept_branch_count: 9,
             frontier_group_count: 1,
             strategy_request_count: 0,
+            human_strategy_request_count: 0,
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NeedsMoreBudget);
@@ -908,6 +951,7 @@ mod tests {
             kept_branch_count: 3,
             frontier_group_count: 1,
             strategy_request_count: 0,
+            human_strategy_request_count: 0,
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NeedsHumanJudgment);
