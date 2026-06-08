@@ -391,7 +391,9 @@ fn select_positions_for_slots(
     let selected = cap_pure_transition_saturation(candidates, positions, selected, limit);
     let selected =
         effect_coverage::preserve_choice_effect_coverage(candidates, positions, selected, limit);
-    effect_coverage::preserve_lineage_flag_coverage(candidates, positions, selected, limit)
+    let selected =
+        effect_coverage::preserve_lineage_flag_coverage(candidates, positions, selected, limit);
+    drop_excess_first_pick_prefixes_after_coverage(candidates, positions, selected, limit)
 }
 
 fn retention_lane_sequence(
@@ -710,11 +712,97 @@ fn first_pick_prefix_cap(limit: usize, distinct_prefixes: usize) -> usize {
         return 0;
     }
     let base = limit.div_ceil(distinct_prefixes).max(1);
-    if base >= 2 {
-        base + 1
+    let cap = if base >= 2 {
+        base.saturating_add(1)
     } else {
         base
+    };
+    cap.min(4)
+}
+
+fn drop_excess_first_pick_prefixes_after_coverage(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    selected_picks: Vec<BranchRetentionLanePick>,
+    limit: usize,
+) -> Vec<BranchRetentionLanePick> {
+    let distinct_prefixes = available_positions
+        .iter()
+        .map(|position| choice_prefix_key(&candidates[*position]))
+        .collect::<BTreeSet<_>>();
+    if distinct_prefixes.len() <= 1 {
+        return selected_picks;
     }
+
+    let max_per_prefix = first_pick_prefix_cap(limit, distinct_prefixes.len());
+    let protected_counts = protected_coverage_counts(candidates, &selected_picks);
+    let mut prefix_counts = BTreeMap::<String, usize>::new();
+    let mut kept = Vec::new();
+
+    for pick in selected_picks {
+        let candidate = &candidates[pick.position];
+        let prefix = choice_prefix_key(candidate);
+        let count = prefix_counts.entry(prefix).or_default();
+        if *count >= max_per_prefix
+            && !candidate_has_unique_protected_coverage(candidate, &protected_counts)
+        {
+            continue;
+        }
+        *count += 1;
+        kept.push(pick);
+    }
+    kept
+}
+
+fn protected_coverage_counts(
+    candidates: &[BranchRetentionCandidateInputV1],
+    selected_picks: &[BranchRetentionLanePick],
+) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for pick in selected_picks {
+        for key in protected_coverage_keys(&candidates[pick.position]) {
+            *counts.entry(key).or_default() += 1;
+        }
+    }
+    counts
+}
+
+fn candidate_has_unique_protected_coverage(
+    candidate: &BranchRetentionCandidateInputV1,
+    protected_counts: &BTreeMap<String, usize>,
+) -> bool {
+    protected_coverage_keys(candidate)
+        .iter()
+        .any(|key| protected_counts.get(key).copied().unwrap_or_default() == 1)
+}
+
+fn protected_coverage_keys(candidate: &BranchRetentionCandidateInputV1) -> Vec<String> {
+    let mut keys = candidate
+        .choice_effect_keys
+        .iter()
+        .map(|key| format!("effect:{key}"))
+        .collect::<Vec<_>>();
+    keys.extend(
+        candidate
+            .lineage_flags
+            .iter()
+            .map(|flag| format!("lineage:{flag}")),
+    );
+    keys.extend(
+        candidate
+            .trajectory
+            .setup_keys
+            .iter()
+            .map(|key| format!("setup:{key}")),
+    );
+    keys.extend(
+        candidate
+            .trajectory
+            .package_keys
+            .iter()
+            .map(|key| format!("package:{key}")),
+    );
+    keys
 }
 
 fn cap_pure_transition_saturation(

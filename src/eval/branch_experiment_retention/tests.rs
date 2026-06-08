@@ -129,6 +129,56 @@ fn portfolio_retention_does_not_fill_budget_with_redundant_first_pick_variants()
 }
 
 #[test]
+fn first_pick_prefix_cap_stays_tight_for_large_branch_budgets() {
+    assert_eq!(first_pick_prefix_cap(16, 3), 4);
+    assert_eq!(first_pick_prefix_cap(24, 4), 4);
+}
+
+#[test]
+fn portfolio_retention_reapplies_first_pick_cap_after_effect_coverage() {
+    let mut candidates = vec![
+        retention_candidate(0, 10_900, &["Perfected Strike", "Heavy Blade"]),
+        retention_candidate(1, 10_890, &["Perfected Strike", "Thunderclap"]),
+        retention_candidate(2, 10_880, &["Perfected Strike", "Fear Potion"]),
+        retention_candidate(3, 10_870, &["Perfected Strike", "Leave Shop"]),
+        retention_candidate(4, 10_860, &["Perfected Strike", "Spot Weakness"]),
+        retention_candidate(5, 10_300, &["Anger", "Heavy Blade"]),
+        retention_candidate(6, 10_200, &["Rampage", "Leave Shop"]),
+    ];
+    for (candidate, effect_key) in candidates.iter_mut().zip([
+        "take_card",
+        "shop_buy_card",
+        "shop_buy_potion",
+        "shop_leave",
+        "take_card",
+        "take_card",
+        "shop_leave",
+    ]) {
+        candidate.choice_effect_keys = vec![effect_key.to_string()];
+    }
+
+    let selection = select_branch_retention_portfolio_v1(&candidates, retention_config(6, Some(6)));
+    let perfected_strike_kept = selection
+        .keep_indices
+        .iter()
+        .filter(|index| candidates[**index].choice_profiles[0].name == "Perfected Strike")
+        .count();
+
+    assert!(
+        perfected_strike_kept <= first_pick_prefix_cap(6, 3),
+        "effect coverage should not let one first-pick prefix dominate the retained portfolio"
+    );
+    assert!(selection
+        .keep_indices
+        .iter()
+        .any(|index| candidates[*index].choice_profiles[0].name == "Anger"));
+    assert!(selection
+        .keep_indices
+        .iter()
+        .any(|index| candidates[*index].choice_profiles[0].name == "Rampage"));
+}
+
+#[test]
 fn portfolio_retention_keeps_distinct_reward_effect_kinds_when_budget_allows() {
     let candidates = vec![
         effect_retention_candidate(0, 10_900, "take_card"),
