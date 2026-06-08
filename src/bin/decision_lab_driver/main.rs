@@ -23,7 +23,10 @@ const DEEP_PRESET_AUTO_MAX_OPS: usize = 192;
 const DEEP_PRESET_EXPERIMENT_WALL_MS: u64 = 30_000;
 const DEEP_PRESET_SEARCH_WALL_MS: u64 = 1_000;
 const DEEP_PRESET_SEARCH_MAX_NODES: usize = 200_000;
-const DEEP_PRESET_BRANCH_RETRIES: usize = 1;
+const DEEP_PRESET_DEPTH_RETRIES: usize = 0;
+const DEEP_PRESET_WALL_RETRIES: usize = 0;
+const DEEP_PRESET_BRANCH_RETRIES: usize = 0;
+const DEEP_PRESET_MAX_REWARD_OPTIONS: usize = 2;
 const DEEP_PRESET_RETENTION_PROFILE: &str = "package";
 
 #[derive(Debug, Parser)]
@@ -92,6 +95,19 @@ struct Args {
 
     #[arg(long, default_value_t = 100)]
     search_wall_ms: u64,
+
+    #[arg(
+        long,
+        help = "Max card reward options expanded per branch; omitted means branch every visible reward option"
+    )]
+    max_reward_options: Option<usize>,
+
+    #[arg(
+        long,
+        default_value_t = 3,
+        help = "Max campfire branch options per branch"
+    )]
+    max_campfire_options: usize,
 
     #[arg(long)]
     max_hp_loss: Option<String>,
@@ -253,6 +269,15 @@ where
     if !was_explicit("branch_retries") {
         args.branch_retries = DEEP_PRESET_BRANCH_RETRIES;
     }
+    if !was_explicit("depth_retries") {
+        args.depth_retries = DEEP_PRESET_DEPTH_RETRIES;
+    }
+    if !was_explicit("wall_retries") {
+        args.wall_retries = DEEP_PRESET_WALL_RETRIES;
+    }
+    if !was_explicit("max_reward_options") {
+        args.max_reward_options = Some(DEEP_PRESET_MAX_REWARD_OPTIONS);
+    }
     if !was_explicit("retention_profile") {
         args.retention_profile = DEEP_PRESET_RETENTION_PROFILE.to_string();
     }
@@ -338,6 +363,8 @@ fn branch_config_for_seed(args: &Args, seed: u64) -> Result<BranchExperimentConf
         search_wall_ms: Some(args.search_wall_ms),
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
         search_options: parse_branch_experiment_search_options_v1(&args.combat_search_options)?,
+        max_reward_options_per_branch: args.max_reward_options,
+        max_campfire_options_per_branch: Some(args.max_campfire_options),
         include_skip: true,
         include_event_reward_skip: args.include_event_reward_skip,
         prefix_commands,
@@ -745,6 +772,8 @@ fn rerun_command_with_depth(args: &Args, seed: u64, max_depth: usize) -> String 
         max_branches: args.max_branches,
         search_wall_ms: Some(args.search_wall_ms),
         search_max_nodes: args.search_max_nodes,
+        max_reward_options_per_branch: args.max_reward_options,
+        max_campfire_options_per_branch: Some(args.max_campfire_options),
         ..BranchExperimentConfigV1::default()
     };
     rerun_command_for_config(args, seed, &config)
@@ -793,6 +822,20 @@ fn rerun_command_for_config(
         tokens.push("--search-max-nodes".to_string());
         tokens.push(max_nodes.to_string());
     }
+    if let Some(max_reward_options) = effective_config
+        .max_reward_options_per_branch
+        .or(args.max_reward_options)
+    {
+        tokens.push("--max-reward-options".to_string());
+        tokens.push(max_reward_options.to_string());
+    }
+    tokens.push("--max-campfire-options".to_string());
+    tokens.push(
+        effective_config
+            .max_campfire_options_per_branch
+            .unwrap_or(args.max_campfire_options)
+            .to_string(),
+    );
     if let Some(max_hp_loss) = args.max_hp_loss.as_deref() {
         tokens.push("--max-hp-loss".to_string());
         tokens.push(command_arg(max_hp_loss));
@@ -1099,8 +1142,11 @@ mod tests {
         assert_eq!(args.experiment_wall_ms, 30_000);
         assert_eq!(args.search_wall_ms, 1_000);
         assert_eq!(args.search_max_nodes, Some(200_000));
-        assert_eq!(args.branch_retries, 1);
+        assert_eq!(args.depth_retries, 0);
+        assert_eq!(args.wall_retries, 0);
+        assert_eq!(args.branch_retries, 0);
         assert_eq!(args.retention_profile, "package");
+        assert_eq!(args.max_reward_options, Some(2));
     }
 
     #[test]
@@ -1123,8 +1169,14 @@ mod tests {
             "5000",
             "--branch-retries",
             "0",
+            "--depth-retries",
+            "2",
+            "--wall-retries",
+            "2",
             "--retention-profile",
             "balanced",
+            "--max-reward-options",
+            "3",
         ])
         .expect("args parse");
 
@@ -1135,7 +1187,10 @@ mod tests {
         assert_eq!(args.search_wall_ms, 50);
         assert_eq!(args.search_max_nodes, Some(5_000));
         assert_eq!(args.branch_retries, 0);
+        assert_eq!(args.depth_retries, 2);
+        assert_eq!(args.wall_retries, 2);
         assert_eq!(args.retention_profile, "balanced");
+        assert_eq!(args.max_reward_options, Some(3));
     }
 
     #[test]
@@ -1515,6 +1570,10 @@ mod tests {
             "1000",
             "--search-max-nodes",
             "50000",
+            "--max-reward-options",
+            "2",
+            "--max-campfire-options",
+            "4",
             "--retention-profile",
             "survival",
             "--include-event-reward-skip",
@@ -1531,6 +1590,8 @@ mod tests {
         assert!(command.contains("--experiment-wall-ms 8000"));
         assert!(command.contains("--search-wall-ms 1000"));
         assert!(command.contains("--search-max-nodes 50000"));
+        assert!(command.contains("--max-reward-options 2"));
+        assert!(command.contains("--max-campfire-options 4"));
         assert!(command.contains("--retention-profile survival"));
         assert!(command.contains("--include-event-reward-skip"));
         assert!(command.contains("--combat-search-option rollout=turn_beam"));
@@ -1551,6 +1612,22 @@ mod tests {
             config.search_options.frontier_policy,
             Some(sts_simulator::ai::combat_search_v2::CombatSearchV2FrontierPolicy::SingleQueue)
         );
+    }
+
+    #[test]
+    fn branch_config_passes_branch_option_caps() {
+        let args = parse_args_from([
+            "decision_lab_driver",
+            "--max-reward-options",
+            "2",
+            "--max-campfire-options",
+            "4",
+        ])
+        .expect("args parse");
+        let config = branch_config_for_seed(&args, 521).expect("config builds");
+
+        assert_eq!(config.max_reward_options_per_branch, Some(2));
+        assert_eq!(config.max_campfire_options_per_branch, Some(4));
     }
 
     #[test]
