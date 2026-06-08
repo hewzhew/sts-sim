@@ -91,6 +91,29 @@ fn compact_campaign_report_renders_strategy_prompt() {
     assert!(rendered.contains("Top active:"));
 }
 
+#[test]
+fn compact_campaign_report_renders_budget_stop_hint() {
+    let report = BranchCampaignReportV1 {
+        schema_name: "BranchCampaignV1".to_string(),
+        schema_version: 1,
+        seed: 521,
+        rounds_completed: 2,
+        stop_reason: "max_rounds".to_string(),
+        active: vec![test_campaign_branch("a", 7, 80)],
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        stuck: Vec::new(),
+        discarded_count: 0,
+        strategy_requests: Vec::new(),
+        rounds: Vec::new(),
+    };
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("Next: budget ended; use .\\tools\\campaign.ps1 -More"));
+}
+
 fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1 {
     BranchCampaignBranchV1 {
         branch_id: id.to_string(),

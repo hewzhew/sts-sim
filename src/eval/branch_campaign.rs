@@ -295,6 +295,14 @@ pub fn render_branch_campaign_compact_v1(
             }
         ));
     }
+    if report.stop_reason == "max_rounds"
+        && (!report.active.is_empty() || !report.frozen.is_empty())
+    {
+        lines.push(
+            "Next: budget ended; use .\\tools\\campaign.ps1 -More or raise -MaxRounds to keep exploring this seed"
+                .to_string(),
+        );
+    }
     if !report.strategy_requests.is_empty() {
         lines.push(String::new());
         lines.push("Needs intervention:".to_string());
