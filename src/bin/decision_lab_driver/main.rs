@@ -54,7 +54,7 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     combat_retries: usize,
 
-    #[arg(long, default_value_t = 4)]
+    #[arg(long, default_value_t = 10)]
     combat_retry_multiplier: u64,
 
     #[arg(long, default_value_t = 128)]
@@ -942,6 +942,13 @@ mod tests {
         let seeds = expand_lab_seeds(&[42, 99], Some(1000), 3).expect("seeds expand");
 
         assert_eq!(seeds, vec![42, 99, 1000, 1001, 1002]);
+    }
+
+    #[test]
+    fn default_combat_retry_multiplier_is_large_enough_to_change_budget_class() {
+        let args = Args::try_parse_from(["decision_lab_driver"]).expect("args parse");
+
+        assert_eq!(args.combat_retry_multiplier, 10);
     }
 
     #[test]
