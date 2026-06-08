@@ -51,6 +51,12 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     depth_retries: usize,
 
+    #[arg(long, default_value_t = 1)]
+    combat_retries: usize,
+
+    #[arg(long, default_value_t = 4)]
+    combat_retry_multiplier: u64,
+
     #[arg(long, default_value_t = 128)]
     auto_max_ops: usize,
 
@@ -142,6 +148,11 @@ struct DecisionLabCaseV1 {
     error: Option<String>,
 }
 
+struct DecisionLabSeedRunV1 {
+    report: BranchExperimentReportV1,
+    effective_config: BranchExperimentConfigV1,
+}
+
 fn main() {
     let args = Args::parse();
     if let Err(err) = run(args) {
@@ -172,18 +183,27 @@ fn run(args: Args) -> Result<(), String> {
 
 fn run_seed_case(args: &Args, seed: u64) -> DecisionLabCaseV1 {
     match run_seed_report(args, seed) {
-        Ok(report) => case_from_report(args, &report),
+        Ok(run) => case_from_report(args, &run.report, &run.effective_config),
         Err(err) => case_from_error(args, seed, err),
     }
 }
 
-fn run_seed_report(args: &Args, seed: u64) -> Result<BranchExperimentReportV1, String> {
+fn run_seed_report(args: &Args, seed: u64) -> Result<DecisionLabSeedRunV1, String> {
     let mut config = branch_config_for_seed(args, seed)?;
     let mut retries_used = 0usize;
+    let mut combat_retries_used = 0usize;
     loop {
         let report = run_branch_experiment_v1(&config)?;
         if !should_retry_depth(&report, retries_used, args.depth_retries) {
-            return Ok(report);
+            if !should_retry_combat_budget(&report, combat_retries_used, args.combat_retries) {
+                return Ok(DecisionLabSeedRunV1 {
+                    report,
+                    effective_config: config,
+                });
+            }
+            combat_retries_used = combat_retries_used.saturating_add(1);
+            escalate_combat_retry_budget(&mut config, args.combat_retry_multiplier);
+            continue;
         }
         retries_used = retries_used.saturating_add(1);
         config.max_depth = config.max_depth.saturating_add(1);
@@ -299,7 +319,11 @@ fn expand_lab_seeds(
     Ok(seeds)
 }
 
-fn case_from_report(args: &Args, report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
+fn case_from_report(
+    args: &Args,
+    report: &BranchExperimentReportV1,
+    effective_config: &BranchExperimentConfigV1,
+) -> DecisionLabCaseV1 {
     let signals = signals_from_report(report);
     let kind = classify_lab_case(&signals);
     let branch_context_available = report.explored_branch_points > 0;
@@ -329,7 +353,7 @@ fn case_from_report(args: &Args, report: &BranchExperimentReportV1) -> DecisionL
             .then(|| context_signal_counts(report))
             .unwrap_or_default(),
         strategy_requests: strategy_request_counts(report),
-        next_command: rerun_command_with_depth(args, report.seed, report.max_depth),
+        next_command: rerun_command_for_config(args, report.seed, effective_config),
         error: None,
     }
 }
@@ -424,6 +448,34 @@ fn should_retry_depth(
         && !signals.wall_limit_hit
         && !signals.frontier_group_limit_hit
         && signals.strategy_request_count == 0
+}
+
+fn should_retry_combat_budget(
+    report: &BranchExperimentReportV1,
+    retries_used: usize,
+    combat_retries: usize,
+) -> bool {
+    if retries_used >= combat_retries {
+        return false;
+    }
+    let signals = signals_from_report(report);
+    signals.strategy_request_count > 0
+        && signals.human_strategy_request_count == 0
+        && !signals.depth_limit_reached
+        && !signals.branch_limit_hit
+        && !signals.wall_limit_hit
+        && !signals.frontier_group_limit_hit
+}
+
+fn escalate_combat_retry_budget(config: &mut BranchExperimentConfigV1, multiplier: u64) {
+    let multiplier = multiplier.max(1);
+    let current_wall_ms = config.search_wall_ms.unwrap_or(100);
+    config.search_wall_ms = Some(current_wall_ms.saturating_mul(multiplier));
+
+    let current_max_nodes = config.search_max_nodes.unwrap_or(20_000);
+    let scaled_nodes =
+        current_max_nodes.saturating_mul(usize::try_from(multiplier).unwrap_or(usize::MAX));
+    config.search_max_nodes = Some(scaled_nodes);
 }
 
 fn report_depth_limit_reached(report: &BranchExperimentReportV1) -> bool {
@@ -569,6 +621,20 @@ fn rerun_command(args: &Args, seed: u64) -> String {
 }
 
 fn rerun_command_with_depth(args: &Args, seed: u64, max_depth: usize) -> String {
+    let config = BranchExperimentConfigV1 {
+        max_depth,
+        search_wall_ms: Some(args.search_wall_ms),
+        search_max_nodes: args.search_max_nodes,
+        ..BranchExperimentConfigV1::default()
+    };
+    rerun_command_for_config(args, seed, &config)
+}
+
+fn rerun_command_for_config(
+    args: &Args,
+    seed: u64,
+    effective_config: &BranchExperimentConfigV1,
+) -> String {
     let mut tokens = vec![
         "cargo".to_string(),
         "run".to_string(),
@@ -583,7 +649,7 @@ fn rerun_command_with_depth(args: &Args, seed: u64, max_depth: usize) -> String 
         "--class".to_string(),
         command_arg(&args.player_class),
         "--max-depth".to_string(),
-        max_depth.to_string(),
+        effective_config.max_depth.to_string(),
         "--max-branches".to_string(),
         args.max_branches.to_string(),
         "--auto-max-ops".to_string(),
@@ -591,13 +657,16 @@ fn rerun_command_with_depth(args: &Args, seed: u64, max_depth: usize) -> String 
         "--experiment-wall-ms".to_string(),
         args.experiment_wall_ms.to_string(),
         "--search-wall-ms".to_string(),
-        args.search_wall_ms.to_string(),
+        effective_config
+            .search_wall_ms
+            .unwrap_or(args.search_wall_ms)
+            .to_string(),
         "--retention-profile".to_string(),
         command_arg(&args.retention_profile),
         "--branch-examples".to_string(),
         "8".to_string(),
     ];
-    if let Some(max_nodes) = args.search_max_nodes {
+    if let Some(max_nodes) = effective_config.search_max_nodes.or(args.search_max_nodes) {
         tokens.push("--search-max-nodes".to_string());
         tokens.push(max_nodes.to_string());
     }
@@ -835,6 +904,7 @@ fn split_count_token(token: &str) -> Option<(&str, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::eval::branch_experiment::BranchExperimentStrategyRequestV1;
 
     #[test]
     fn expands_explicit_seeds_before_generated_range() {
@@ -898,6 +968,61 @@ mod tests {
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NeedsMoreBudget);
+    }
+
+    #[test]
+    fn retries_pure_combat_budget_reports() {
+        let mut report = test_report();
+        report.strategy_requests = vec![BranchExperimentStrategyRequestV1 {
+            kind: "combat_manual_or_budget".to_string(),
+            boundary_title: "Combat".to_string(),
+            branch_count: 1,
+            representative_branch_id: "root".to_string(),
+            act: 1,
+            floor: 1,
+            stop_reasons: vec!["combat search did not find an executable complete win".to_string()],
+            examples: vec!["-".to_string()],
+            next_card_reward_offer: None,
+            boundary_details: Vec::new(),
+            suggested_action: "raise combat search budget".to_string(),
+        }];
+
+        assert!(should_retry_combat_budget(&report, 0, 1));
+        assert!(!should_retry_combat_budget(&report, 1, 1));
+    }
+
+    #[test]
+    fn does_not_retry_combat_when_human_strategy_request_is_present() {
+        let mut report = test_report();
+        report.strategy_requests = vec![BranchExperimentStrategyRequestV1 {
+            kind: "card_reward_policy_gap".to_string(),
+            boundary_title: "Card Reward".to_string(),
+            branch_count: 1,
+            representative_branch_id: "root".to_string(),
+            act: 1,
+            floor: 1,
+            stop_reasons: vec!["Card Reward".to_string()],
+            examples: vec!["Shockwave".to_string()],
+            next_card_reward_offer: Some(vec!["Shockwave".to_string()]),
+            boundary_details: Vec::new(),
+            suggested_action: "provide card reward policy".to_string(),
+        }];
+
+        assert!(!should_retry_combat_budget(&report, 0, 1));
+    }
+
+    #[test]
+    fn combat_retry_scales_search_budget() {
+        let mut config = BranchExperimentConfigV1 {
+            search_wall_ms: Some(50),
+            search_max_nodes: Some(5_000),
+            ..BranchExperimentConfigV1::default()
+        };
+
+        escalate_combat_retry_budget(&mut config, 4);
+
+        assert_eq!(config.search_wall_ms, Some(200));
+        assert_eq!(config.search_max_nodes, Some(20_000));
     }
 
     #[test]
@@ -990,6 +1115,30 @@ mod tests {
         assert!(command.contains("--retention-profile survival"));
         assert!(command.contains("--include-event-reward-skip"));
         assert!(command.contains("--prefix 0"));
+    }
+
+    #[test]
+    fn rerun_command_uses_effective_search_budget_after_retries() {
+        let args = Args::try_parse_from([
+            "decision_lab_driver",
+            "--search-wall-ms",
+            "50",
+            "--search-max-nodes",
+            "5000",
+        ])
+        .expect("args parse");
+        let effective_config = BranchExperimentConfigV1 {
+            max_depth: 4,
+            search_wall_ms: Some(200),
+            search_max_nodes: Some(20_000),
+            ..BranchExperimentConfigV1::default()
+        };
+
+        let command = rerun_command_for_config(&args, 521, &effective_config);
+
+        assert!(command.contains("--max-depth 4"));
+        assert!(command.contains("--search-wall-ms 200"));
+        assert!(command.contains("--search-max-nodes 20000"));
     }
 
     #[test]
