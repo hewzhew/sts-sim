@@ -168,6 +168,68 @@ fn compact_campaign_report_renders_strategy_prompt() {
 }
 
 #[test]
+fn compact_campaign_report_renders_actionable_intervention_details() {
+    let report = BranchCampaignReportV1 {
+        schema_name: "BranchCampaignV1".to_string(),
+        schema_version: 1,
+        seed: 521,
+        rounds_completed: 6,
+        stop_reason: "needs_intervention".to_string(),
+        active: Vec::new(),
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: vec![test_campaign_branch("a", 16, 70)],
+        stuck: Vec::new(),
+        discarded_count: 0,
+        strategy_requests: vec![BranchCampaignStrategyRequestV1 {
+            kind: "combat_manual_or_budget".to_string(),
+            boundary_title: "Combat".to_string(),
+            branch_count: 2,
+            examples: vec!["Clash -> Disarm".to_string()],
+            suggested_action: "raise combat search budget".to_string(),
+        }],
+        rounds: vec![BranchCampaignRoundSummaryV1 {
+            round: 5,
+            started_active: 2,
+            produced_branches: 2,
+            active_after: 0,
+            frozen_added: 0,
+            dead_added: 0,
+            abandoned_added: 2,
+            victories_added: 0,
+            stuck_added: 0,
+            discarded_added: 0,
+            explored_branch_points: 0,
+            wall_limit_hit: false,
+            branch_limit_hit: false,
+            combat_budget_retries: 2,
+        }],
+    };
+
+    let rendered = render_branch_campaign_compact_v1(&report, 2);
+
+    assert!(rendered.contains("Needs intervention:"));
+    assert!(rendered.contains("kind: combat_unresolved_after_retry"));
+    assert!(rendered.contains("tried: campaign search budget; combat budget retry x2"));
+    assert!(rendered.contains("options: raise combat retry budget | provide a manual combat line | abandon this macro route family"));
+}
+
+#[test]
+fn campaign_builds_intervention_when_abandoned_branches_exhaust_routes() {
+    let request = abandoned_branches_intervention_request_v1(&[
+        test_campaign_branch("a", 16, 70),
+        test_campaign_branch("b", 16, 62),
+    ])
+    .expect("request");
+
+    assert_eq!(request.kind, "combat_manual_or_budget");
+    assert_eq!(request.boundary_title, "Combat");
+    assert_eq!(request.branch_count, 2);
+    assert_eq!(request.examples.len(), 2);
+}
+
+#[test]
 fn compact_campaign_report_renders_budget_stop_hint() {
     let report = BranchCampaignReportV1 {
         schema_name: "BranchCampaignV1".to_string(),

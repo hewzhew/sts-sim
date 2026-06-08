@@ -384,6 +384,17 @@ where
             stop_reason = "stuck".to_string();
             break;
         }
+        if active.is_empty()
+            && frozen.is_empty()
+            && !abandoned.is_empty()
+            && strategy_requests.is_empty()
+        {
+            if let Some(request) = abandoned_branches_intervention_request_v1(&abandoned) {
+                strategy_requests = vec![request];
+                stop_reason = "needs_intervention".to_string();
+                break;
+            }
+        }
         if produced_branches == 0 {
             stop_reason = "no_progress".to_string();
             break;
@@ -563,6 +574,7 @@ pub fn render_branch_campaign_compact_v1(
             if let Some(next_step) = campaign_strategy_next_step_v1(&request.kind) {
                 lines.push(format!("    next: {next_step}"));
             }
+            lines.extend(render_campaign_intervention_details_v2(report, request));
         }
     }
     if !report.active.is_empty() {
@@ -766,6 +778,143 @@ fn merge_campaign_strategy_requests_v1(
             });
     }
     merged.into_values().collect()
+}
+
+fn abandoned_branches_intervention_request_v1(
+    abandoned: &[BranchCampaignBranchV1],
+) -> Option<BranchCampaignStrategyRequestV1> {
+    if abandoned.is_empty() {
+        return None;
+    }
+    let examples = abandoned
+        .iter()
+        .map(|branch| {
+            let choices = render_choice_path(&branch.choice_labels);
+            if choices == "-" {
+                render_campaign_branch_state(branch)
+            } else {
+                choices
+            }
+        })
+        .take(4)
+        .collect::<Vec<_>>();
+    Some(BranchCampaignStrategyRequestV1 {
+        kind: "combat_manual_or_budget".to_string(),
+        boundary_title: "Combat".to_string(),
+        branch_count: abandoned.len(),
+        examples,
+        suggested_action:
+            "raise combat retry budget, provide a manual combat line, or abandon this route family"
+                .to_string(),
+    })
+}
+
+fn render_campaign_intervention_details_v2(
+    report: &BranchCampaignReportV1,
+    request: &BranchCampaignStrategyRequestV1,
+) -> Vec<String> {
+    vec![
+        format!(
+            "    kind: {}",
+            campaign_intervention_kind_v2(report, request)
+        ),
+        format!(
+            "    tried: {}",
+            campaign_intervention_tried_v2(report, request)
+        ),
+        format!("    options: {}", campaign_intervention_options_v2(request)),
+    ]
+}
+
+fn campaign_intervention_kind_v2(
+    report: &BranchCampaignReportV1,
+    request: &BranchCampaignStrategyRequestV1,
+) -> &'static str {
+    match request.kind.as_str() {
+        "combat_hp_loss_policy" | "combat_manual_or_budget" => {
+            if report
+                .rounds
+                .last()
+                .map(|round| round.combat_budget_retries > 0)
+                .unwrap_or(false)
+            {
+                "combat_unresolved_after_retry"
+            } else {
+                "combat_unresolved"
+            }
+        }
+        "card_reward_policy_gap" => "card_reward_strategy_gap",
+        "event_strategy" => "event_strategy_needed",
+        "campfire_strategy" => "campfire_strategy_needed",
+        "boss_relic_strategy" => "boss_relic_strategy_needed",
+        "shop_strategy" => "shop_strategy_needed",
+        "reward_claim_policy" => "reward_claim_strategy_needed",
+        "route_policy_gap" => "route_strategy_gap",
+        "engineering_issue" => "engineering_issue",
+        _ => "strategy_needed",
+    }
+}
+
+fn campaign_intervention_tried_v2(
+    report: &BranchCampaignReportV1,
+    request: &BranchCampaignStrategyRequestV1,
+) -> String {
+    match request.kind.as_str() {
+        "combat_hp_loss_policy" | "combat_manual_or_budget" => {
+            let retries = report
+                .rounds
+                .last()
+                .map(|round| round.combat_budget_retries)
+                .unwrap_or(0);
+            if retries > 0 {
+                format!("campaign search budget; combat budget retry x{retries}")
+            } else {
+                "campaign search budget".to_string()
+            }
+        }
+        "card_reward_policy_gap" => {
+            "branch reward candidates; current autopick gate declined".to_string()
+        }
+        "event_strategy" => "event boundary detected; no narrow event policy accepted".to_string(),
+        "campfire_strategy" => {
+            "campfire options detected; no campfire priority accepted".to_string()
+        }
+        "shop_strategy" => "shop options detected; purchase portfolio did not resolve".to_string(),
+        _ => "current campaign policy".to_string(),
+    }
+}
+
+fn campaign_intervention_options_v2(request: &BranchCampaignStrategyRequestV1) -> &'static str {
+    match request.kind.as_str() {
+        "combat_hp_loss_policy" | "combat_manual_or_budget" => {
+            "raise combat retry budget | provide a manual combat line | abandon this macro route family"
+        }
+        "card_reward_policy_gap" => {
+            "add a reward package rule | keep branching this reward family | force human judgment"
+        }
+        "event_strategy" => {
+            "add a narrow event rule | choose one event branch manually | blacklist this event branch"
+        }
+        "campfire_strategy" => {
+            "add smith/rest priority | branch fewer smith targets | ask human at this campfire"
+        }
+        "shop_strategy" => {
+            "add buy/remove priority | cap purchase portfolio | ask human at this shop"
+        }
+        "boss_relic_strategy" => {
+            "add boss relic package priority | preserve multiple relic branches | ask human"
+        }
+        "reward_claim_policy" => {
+            "mark reward as safe claim | keep reward pending | ask human"
+        }
+        "route_policy_gap" => {
+            "adjust route policy | provide one map choice | freeze this route family"
+        }
+        "engineering_issue" => {
+            "fix simulator or command bug | rerun same seed | quarantine affected trace"
+        }
+        _ => "add a narrow strategy rule | keep branching | ask human",
+    }
 }
 
 pub fn select_campaign_branches_v1(
