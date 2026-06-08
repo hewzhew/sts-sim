@@ -11,14 +11,14 @@ use sts_simulator::eval::neow_guided_prefix::{
 };
 use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
 
-const QUICK_PRESET_MAX_ROUNDS: usize = 3;
+const QUICK_PRESET_MAX_ROUNDS: usize = 2;
 const QUICK_PRESET_ROUND_DEPTH: usize = 2;
 const QUICK_PRESET_MAX_ACTIVE: usize = 2;
 const QUICK_PRESET_MAX_FROZEN: usize = 16;
 const QUICK_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
-const QUICK_PRESET_EXPERIMENT_WALL_MS: u64 = 3_000;
-const QUICK_PRESET_SEARCH_WALL_MS: u64 = 50;
-const QUICK_PRESET_SEARCH_MAX_NODES: usize = 5_000;
+const QUICK_PRESET_EXPERIMENT_WALL_MS: u64 = 5_000;
+const QUICK_PRESET_SEARCH_WALL_MS: u64 = 300;
+const QUICK_PRESET_SEARCH_MAX_NODES: usize = 50_000;
 const QUICK_PRESET_BRANCH_EXAMPLES: usize = 3;
 
 const FOCUSED_PRESET_MAX_ROUNDS: usize = 6;
@@ -407,14 +407,14 @@ mod tests {
             parse_args_from(["branch_campaign_driver", "--preset", "quick"]).expect("args parse");
         let config = campaign_config_from_args(&args).expect("config builds");
 
-        assert_eq!(config.max_rounds, 3);
+        assert_eq!(config.max_rounds, 2);
         assert_eq!(config.round_depth, 2);
         assert_eq!(config.max_active, 2);
         assert_eq!(config.max_frozen, 16);
         assert_eq!(config.max_branches_per_active, 8);
-        assert_eq!(config.experiment_wall_ms, Some(3_000));
-        assert_eq!(config.search_wall_ms, Some(50));
-        assert_eq!(config.search_max_nodes, Some(5_000));
+        assert_eq!(config.experiment_wall_ms, Some(5_000));
+        assert_eq!(config.search_wall_ms, Some(300));
+        assert_eq!(config.search_max_nodes, Some(50_000));
         assert_eq!(args.branch_examples, 3);
     }
 
