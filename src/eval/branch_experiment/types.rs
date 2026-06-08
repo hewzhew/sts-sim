@@ -14,7 +14,7 @@ use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::RunControlHpLossLimit;
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 16;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 17;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -92,6 +92,8 @@ pub struct BranchExperimentReportV1 {
     #[serde(default)]
     pub pruned_branch_summary: BranchExperimentPrunedBranchSummaryV1,
     pub reward_option_portfolios: Vec<BranchExperimentRewardOptionPortfolioV1>,
+    #[serde(default)]
+    pub strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
     pub frontier_groups: Vec<BranchExperimentFrontierGroupV1>,
     pub branches: Vec<BranchExperimentBranchReportV1>,
 }
@@ -134,6 +136,21 @@ pub struct BranchExperimentRewardOptionPortfolioEntryV1 {
     pub command: String,
     pub label: String,
     pub semantic_class: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentStrategyRequestV1 {
+    pub kind: String,
+    pub boundary_title: String,
+    pub branch_count: usize,
+    pub representative_branch_id: String,
+    pub act: u8,
+    pub floor: i32,
+    pub stop_reasons: Vec<String>,
+    pub examples: Vec<String>,
+    pub next_card_reward_offer: Option<Vec<String>>,
+    pub suggested_action: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

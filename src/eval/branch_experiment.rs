@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use self::lineage::{branch_frontier, frontier_groups};
+use self::strategy_request::branch_strategy_requests;
 use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyFormationSummaryV2,
@@ -29,6 +30,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::RewardCard;
 
 mod lineage;
+mod strategy_request;
 mod types;
 
 pub use types::{
@@ -37,7 +39,8 @@ pub use types::{
     BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
     BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
-    BranchExperimentRunSummaryV1, BRANCH_EXPERIMENT_SCHEMA_NAME, BRANCH_EXPERIMENT_SCHEMA_VERSION,
+    BranchExperimentRunSummaryV1, BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_SCHEMA_NAME,
+    BRANCH_EXPERIMENT_SCHEMA_VERSION,
 };
 #[derive(Clone, Debug)]
 struct BranchWork {
@@ -421,6 +424,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
         pruned_first_pick_counts: pruned_first_pick_count_reports(pruned_first_pick_counts),
         pruned_branch_summary,
         reward_option_portfolios,
+        strategy_requests: branch_strategy_requests(&branch_reports),
         frontier_groups: frontier_groups(&branch_reports),
         branches: branch_reports,
     }

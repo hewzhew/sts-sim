@@ -4,6 +4,7 @@ use sts_simulator::eval::branch_experiment::{
     branch_experiment_choice_effect_key_v1, BranchExperimentBranchReportV1,
     BranchExperimentBranchStatusV1, BranchExperimentChoiceV1, BranchExperimentReportV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentStrategyRequestV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
 
@@ -125,6 +126,19 @@ pub(super) fn render_compact_report_with_options(
     }
     if let Some(line) = choice_focus.notice_line() {
         lines.push(line);
+    }
+    if !report.strategy_requests.is_empty() {
+        lines.push("".to_string());
+        lines.push("Strategy requests:".to_string());
+        for request in report.strategy_requests.iter().take(6) {
+            lines.push(render_strategy_request_line(request));
+        }
+        if report.strategy_requests.len() > 6 {
+            lines.push(format!(
+                "  ... {} more strategy request(s); use --json or --out for full detail",
+                report.strategy_requests.len() - 6
+            ));
+        }
     }
     let first_pick_outcomes = first_pick_outcome_summary_lines_with_focus(report, &choice_focus);
     if !first_pick_outcomes.is_empty() {
@@ -259,6 +273,36 @@ pub(super) fn render_compact_report_with_options(
         }
     }
     lines.join("\n")
+}
+
+fn render_strategy_request_line(request: &BranchExperimentStrategyRequestV1) -> String {
+    let offer = request
+        .next_card_reward_offer
+        .as_ref()
+        .map(|cards| cards.join(", "))
+        .unwrap_or_else(|| "-".to_string());
+    let examples = if request.examples.is_empty() {
+        "-".to_string()
+    } else {
+        request.examples.join(" | ")
+    };
+    let reasons = if request.stop_reasons.is_empty() {
+        "-".to_string()
+    } else {
+        request.stop_reasons.join(" | ")
+    };
+    format!(
+        "  {} | {} branch(es) | A{}F{} {} | next=[{}] | ask: {} | examples=[{}] | reason=[{}]",
+        request.kind,
+        request.branch_count,
+        request.act,
+        request.floor,
+        request.boundary_title,
+        offer,
+        request.suggested_action,
+        examples,
+        reasons
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -1719,6 +1763,32 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn compact_report_renders_strategy_requests() {
+        let report = BranchExperimentReportV1 {
+            strategy_requests: vec![BranchExperimentStrategyRequestV1 {
+                kind: "event_strategy".to_string(),
+                boundary_title: "Falling".to_string(),
+                branch_count: 3,
+                representative_branch_id: "root.rp 0".to_string(),
+                act: 3,
+                floor: 36,
+                stop_reasons: vec!["event requires human choice".to_string()],
+                examples: vec!["remove Skill".to_string(), "remove Attack".to_string()],
+                next_card_reward_offer: None,
+                suggested_action: "provide an event policy for Falling".to_string(),
+            }],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("Strategy requests:"));
+        assert!(rendered.contains("event_strategy | 3 branch(es) | A3F36 Falling | next=[-]"));
+        assert!(rendered.contains("ask: provide an event policy for Falling"));
+        assert!(rendered.contains("examples=[remove Skill | remove Attack]"));
+    }
+
     fn empty_report() -> BranchExperimentReportV1 {
         BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
@@ -1741,6 +1811,7 @@ mod tests {
             pruned_first_pick_counts: Vec::new(),
             pruned_branch_summary: Default::default(),
             reward_option_portfolios: Vec::new(),
+            strategy_requests: Vec::new(),
             frontier_groups: Vec::new(),
             branches: Vec::new(),
         }

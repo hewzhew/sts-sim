@@ -110,6 +110,7 @@ struct DecisionLabSignalsV1 {
     pruned_branch_count: usize,
     kept_branch_count: usize,
     frontier_group_count: usize,
+    strategy_request_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -129,6 +130,7 @@ struct DecisionLabCaseV1 {
     first_picks: Vec<String>,
     retention_lanes: Vec<String>,
     context_signals: Vec<String>,
+    strategy_requests: Vec<String>,
     next_command: String,
     error: Option<String>,
 }
@@ -287,7 +289,7 @@ fn case_from_report(report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
     let branch_context_available = report.explored_branch_points > 0;
     DecisionLabCaseV1 {
         schema_name: "DecisionLabCaseV1",
-        schema_version: 2,
+        schema_version: 3,
         seed: report.seed,
         kind,
         decision: first_decision_kind(report),
@@ -309,6 +311,7 @@ fn case_from_report(report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
         context_signals: branch_context_available
             .then(|| context_signal_counts(report))
             .unwrap_or_default(),
+        strategy_requests: strategy_request_counts(report),
         next_command: rerun_command(report.seed),
         error: None,
     }
@@ -317,7 +320,7 @@ fn case_from_report(report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
 fn case_from_error(seed: u64, error: String) -> DecisionLabCaseV1 {
     DecisionLabCaseV1 {
         schema_name: "DecisionLabCaseV1",
-        schema_version: 2,
+        schema_version: 3,
         seed,
         kind: DecisionLabCaseKindV1::EngineeringIssue,
         decision: "error".to_string(),
@@ -331,6 +334,7 @@ fn case_from_error(seed: u64, error: String) -> DecisionLabCaseV1 {
         first_picks: Vec::new(),
         retention_lanes: Vec::new(),
         context_signals: Vec::new(),
+        strategy_requests: Vec::new(),
         next_command: rerun_command(seed),
         error: Some(error),
     }
@@ -346,6 +350,7 @@ fn signals_from_report(report: &BranchExperimentReportV1) -> DecisionLabSignalsV
         pruned_branch_count: report.pruned_branch_count,
         kept_branch_count: report.branches.len(),
         frontier_group_count: report.frontier_groups.len(),
+        strategy_request_count: report.strategy_requests.len(),
     }
 }
 
@@ -353,11 +358,14 @@ fn classify_lab_case(signals: &DecisionLabSignalsV1) -> DecisionLabCaseKindV1 {
     if signals.error.is_some() {
         return DecisionLabCaseKindV1::EngineeringIssue;
     }
-    if signals.explored_branch_points == 0 {
-        return DecisionLabCaseKindV1::NotEnoughEvidence;
-    }
     if signals.branch_limit_hit || signals.wall_limit_hit || signals.frontier_group_limit_hit {
         return DecisionLabCaseKindV1::NeedsMoreBudget;
+    }
+    if signals.strategy_request_count > 0 {
+        return DecisionLabCaseKindV1::NeedsHumanJudgment;
+    }
+    if signals.explored_branch_points == 0 {
+        return DecisionLabCaseKindV1::NotEnoughEvidence;
     }
     if signals.pruned_branch_count > 0
         || signals.kept_branch_count > 1
@@ -366,6 +374,20 @@ fn classify_lab_case(signals: &DecisionLabSignalsV1) -> DecisionLabCaseKindV1 {
         return DecisionLabCaseKindV1::NeedsHumanJudgment;
     }
     DecisionLabCaseKindV1::Routine
+}
+
+fn strategy_request_counts(report: &BranchExperimentReportV1) -> Vec<String> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for request in &report.strategy_requests {
+        *counts.entry(request.kind.clone()).or_default() += request.branch_count;
+    }
+    let mut ranked = counts.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    ranked
+        .into_iter()
+        .take(4)
+        .map(|(kind, count)| format!("{kind}={count}"))
+        .collect()
 }
 
 fn first_pick_labels(report: &BranchExperimentReportV1, max_labels: usize) -> Vec<String> {
@@ -521,6 +543,9 @@ fn print_compact_lab_report(cases: &[DecisionLabCaseV1], max_cases: usize) {
     if let Some(line) = render_hot_context_signals_line(cases) {
         println!("{line}");
     }
+    if let Some(line) = render_hot_strategy_requests_line(cases) {
+        println!("{line}");
+    }
     println!();
     println!("Cases:");
     for case in prioritized_cases(cases).into_iter().take(max_cases) {
@@ -563,7 +588,7 @@ fn case_priority(kind: DecisionLabCaseKindV1) -> u8 {
 
 fn render_case_line(case: &DecisionLabCaseV1) -> String {
     format!(
-        "  seed={} kind={} decision={} frontier={} branch_points={} kept={} pruned={} groups={} first_picks=[{}] lanes=[{}] ctx=[{}]",
+        "  seed={} kind={} decision={} frontier={} branch_points={} kept={} pruned={} groups={} first_picks=[{}] lanes=[{}] ctx=[{}] requests=[{}]",
         case.seed,
         case.kind.as_str(),
         case.decision,
@@ -586,6 +611,11 @@ fn render_case_line(case: &DecisionLabCaseV1) -> String {
             "-".to_string()
         } else {
             case.context_signals.join(" ")
+        },
+        if case.strategy_requests.is_empty() {
+            "-".to_string()
+        } else {
+            case.strategy_requests.join(" ")
         }
     )
 }
@@ -623,6 +653,32 @@ fn aggregate_context_signals(cases: &[DecisionLabCaseV1]) -> Vec<String> {
         .collect()
 }
 
+fn render_hot_strategy_requests_line(cases: &[DecisionLabCaseV1]) -> Option<String> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for case in cases {
+        for token in &case.strategy_requests {
+            let Some((key, count)) = split_count_token(token) else {
+                continue;
+            };
+            *counts.entry(key.to_string()).or_default() += count;
+        }
+    }
+    if counts.is_empty() {
+        return None;
+    }
+    let mut ranked = counts.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    Some(format!(
+        "Hot strategy requests: {}",
+        ranked
+            .into_iter()
+            .take(5)
+            .map(|(kind, count)| format!("{kind}={count}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    ))
+}
+
 fn split_count_token(token: &str) -> Option<(&str, usize)> {
     let (key, count) = token.rsplit_once('=')?;
     if key.is_empty() {
@@ -654,9 +710,27 @@ mod tests {
             pruned_branch_count: 0,
             kept_branch_count: 1,
             frontier_group_count: 1,
+            strategy_request_count: 0,
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NotEnoughEvidence);
+    }
+
+    #[test]
+    fn classifies_strategy_request_without_branch_point_as_human_judgment() {
+        let kind = classify_lab_case(&DecisionLabSignalsV1 {
+            error: None,
+            explored_branch_points: 0,
+            branch_limit_hit: false,
+            wall_limit_hit: false,
+            frontier_group_limit_hit: false,
+            pruned_branch_count: 0,
+            kept_branch_count: 1,
+            frontier_group_count: 1,
+            strategy_request_count: 1,
+        });
+
+        assert_eq!(kind, DecisionLabCaseKindV1::NeedsHumanJudgment);
     }
 
     #[test]
@@ -670,6 +744,7 @@ mod tests {
             pruned_branch_count: 10,
             kept_branch_count: 24,
             frontier_group_count: 2,
+            strategy_request_count: 1,
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NeedsMoreBudget);
@@ -686,6 +761,7 @@ mod tests {
             pruned_branch_count: 0,
             kept_branch_count: 3,
             frontier_group_count: 1,
+            strategy_request_count: 0,
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NeedsHumanJudgment);
@@ -730,7 +806,7 @@ mod tests {
     fn render_case_line_includes_lane_and_context_summaries() {
         let case = DecisionLabCaseV1 {
             schema_name: "DecisionLabCaseV1",
-            schema_version: 2,
+            schema_version: 3,
             seed: 42,
             kind: DecisionLabCaseKindV1::NeedsHumanJudgment,
             decision: "card_reward".to_string(),
@@ -747,6 +823,7 @@ mod tests {
                 "matches_current_frontload_need=2".to_string(),
                 "opens_setup_path=1".to_string(),
             ],
+            strategy_requests: vec!["card_reward_policy_gap=3".to_string()],
             next_command: "rerun".to_string(),
             error: None,
         };
@@ -755,6 +832,7 @@ mod tests {
 
         assert!(rendered.contains("lanes=[frontload=2 package=1]"));
         assert!(rendered.contains("ctx=[matches_current_frontload_need=2 opens_setup_path=1]"));
+        assert!(rendered.contains("requests=[card_reward_policy_gap=3]"));
     }
 
     #[test]
@@ -809,6 +887,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn hot_strategy_request_line_aggregates_actionable_requests() {
+        let mut card_case = test_case(
+            DecisionLabCaseKindV1::NeedsHumanJudgment,
+            &["matches_current_frontload_need=1"],
+        );
+        card_case.strategy_requests = vec!["card_reward_policy_gap=4".to_string()];
+        let mut event_case = test_case(DecisionLabCaseKindV1::NeedsHumanJudgment, &[]);
+        event_case.strategy_requests = vec![
+            "event_strategy=2".to_string(),
+            "card_reward_policy_gap=1".to_string(),
+        ];
+
+        let line = render_hot_strategy_requests_line(&[card_case, event_case])
+            .expect("hot strategy request line");
+
+        assert_eq!(
+            line,
+            "Hot strategy requests: card_reward_policy_gap=5 event_strategy=2"
+        );
+    }
+
     fn test_report() -> BranchExperimentReportV1 {
         BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
@@ -832,6 +932,7 @@ mod tests {
             pruned_first_pick_counts: Vec::new(),
             pruned_branch_summary: Default::default(),
             reward_option_portfolios: Vec::new(),
+            strategy_requests: Vec::new(),
             frontier_groups: Vec::new(),
             branches: Vec::new(),
         }
@@ -840,7 +941,7 @@ mod tests {
     fn test_case(kind: DecisionLabCaseKindV1, context_signals: &[&str]) -> DecisionLabCaseV1 {
         DecisionLabCaseV1 {
             schema_name: "DecisionLabCaseV1",
-            schema_version: 2,
+            schema_version: 3,
             seed: 1,
             kind,
             decision: "card_reward".to_string(),
@@ -857,6 +958,7 @@ mod tests {
                 .iter()
                 .map(|signal| (*signal).to_string())
                 .collect(),
+            strategy_requests: Vec::new(),
             next_command: "rerun".to_string(),
             error: None,
         }
