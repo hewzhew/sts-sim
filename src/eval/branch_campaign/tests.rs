@@ -85,6 +85,9 @@ fn compact_campaign_report_renders_strategy_prompt() {
     assert!(rendered.contains("Active 1 | Frozen 1 | Dead 0 | Victories 0 | Stuck 0 | Discarded 3"));
     assert!(rendered.contains("Needs intervention:"));
     assert!(rendered.contains("event_strategy | Falling | branches=2"));
+    assert!(rendered.contains(
+        "next: write a narrow event rule or choose one branch manually, then rerun the campaign"
+    ));
     assert!(rendered.contains("Top active:"));
 }
 

@@ -307,6 +307,9 @@ pub fn render_branch_campaign_compact_v1(
                 lines.push(format!("    example: {example}"));
             }
             lines.push(format!("    suggested: {}", request.suggested_action));
+            if let Some(next_step) = campaign_strategy_next_step_v1(&request.kind) {
+                lines.push(format!("    next: {next_step}"));
+            }
         }
     }
     if !report.active.is_empty() {
@@ -496,6 +499,39 @@ fn render_choice_path(labels: &[String]) -> String {
         "-".to_string()
     } else {
         labels.join(" -> ")
+    }
+}
+
+fn campaign_strategy_next_step_v1(kind: &str) -> Option<&'static str> {
+    match kind {
+        "combat_hp_loss_policy" | "combat_manual_or_budget" => Some(
+            "try a deeper same-seed run, e.g. .\\tools\\campaign.ps1 -Last -Mode deep; if it still stops, inspect or hand-play that combat",
+        ),
+        "card_reward_policy_gap" => {
+            Some("decide whether this reward family should be branched, auto-picked, skipped, or kept for human judgment")
+        }
+        "event_strategy" => {
+            Some("write a narrow event rule or choose one branch manually, then rerun the campaign")
+        }
+        "campfire_strategy" => {
+            Some("choose rest/smith/recall priority for this deck state, then encode only the stable part")
+        }
+        "boss_relic_strategy" => {
+            Some("choose the boss relic package direction, then keep the other branches frozen if still plausible")
+        }
+        "shop_strategy" => {
+            Some("choose buy/remove/leave priorities; avoid expanding every affordable purchase blindly")
+        }
+        "reward_claim_policy" => {
+            Some("decide which remaining rewards are safe automatic claims before continuing")
+        }
+        "route_policy_gap" => {
+            Some("adjust route policy or provide a one-step map choice before continuing")
+        }
+        "engineering_issue" => {
+            Some("fix the command/state bug before trusting this campaign branch")
+        }
+        _ => None,
     }
 }
 
