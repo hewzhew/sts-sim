@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1};
 use crate::content::cards::CardId;
@@ -547,6 +547,14 @@ fn branch_experiment_expands_low_fanout_event_choices() {
     assert!(choices.iter().all(|choice| {
         choice.kind == "event" && choice.card.is_none() && choice.upgrades.is_none()
     }));
+    let event_effects = choices
+        .iter()
+        .map(|choice| (choice.effect_kind.as_str(), choice.effect_label.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(event_effects["event_heal"], "[Banana] Heal 26 HP.");
+    assert_eq!(event_effects["event_gain_max_hp"], "[Donut] Gain 5 Max HP.");
+    assert!(event_effects["event_gain_relic"].contains("Obtain a random Relic"));
+    assert!(event_effects["event_gain_relic"].contains("Regret"));
 }
 
 #[test]
@@ -751,6 +759,22 @@ fn branch_choice_effect_key_preserves_reward_skip_effects() {
     assert_eq!(
         branch_experiment_choice_effect_key_v1("reward_skip_full_potion"),
         "reward_skip_full_potion"
+    );
+}
+
+#[test]
+fn branch_choice_effect_key_preserves_structured_event_effects() {
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("event_heal"),
+        "event_heal"
+    );
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("event_gain_relic"),
+        "event_gain_relic"
+    );
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("event_upgrade_card"),
+        "event_upgrade_card"
     );
 }
 

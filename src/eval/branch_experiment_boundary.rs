@@ -396,17 +396,16 @@ impl BranchBoundaryOptionV1 {
     }
 
     fn from_event(option: EventBranchOption) -> Self {
-        let effect_key = format!("event:choose:{}", option.command);
         Self {
             kind: "event",
-            effect_label: option.label.clone(),
             label: option.label,
             command: option.command,
             card: None,
             upgrades: None,
             selected_cards: Vec::new(),
-            effect_kind: "event_choice".to_string(),
-            effect_key,
+            effect_kind: option.effect_kind,
+            effect_key: option.effect_key,
+            effect_label: option.effect_label,
             representative_count: 1,
             suppressed_count: 0,
             success_reason: "event branch applied",

@@ -1,5 +1,9 @@
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::events::{
+    EventActionKind, EventEffect, EventOption, EventOptionSemantics, EventOptionTransition,
+    EventSelectionKind,
+};
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
 
@@ -7,6 +11,16 @@ const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
 pub(crate) struct EventBranchOption {
     pub(crate) label: String,
     pub(crate) command: String,
+    pub(crate) effect_kind: String,
+    pub(crate) effect_key: String,
+    pub(crate) effect_label: String,
+}
+
+#[derive(Clone, Debug)]
+struct EventOptionBranchSemantics {
+    effect_kind: String,
+    effect_key: String,
+    effect_label: String,
 }
 
 pub(crate) fn event_branch_options(session: &RunControlSession) -> Option<Vec<EventBranchOption>> {
@@ -27,9 +41,13 @@ pub(crate) fn event_branch_options(session: &RunControlSession) -> Option<Vec<Ev
         if event_option.ui.disabled {
             return None;
         }
+        let semantics = branch_semantics_for_event_option(event_option);
         branch_options.push(EventBranchOption {
             label: candidate.label.clone(),
             command: candidate.action.command_hint(),
+            effect_kind: semantics.effect_kind,
+            effect_key: semantics.effect_key,
+            effect_label: semantics.effect_label,
         });
     }
 
@@ -37,4 +55,169 @@ pub(crate) fn event_branch_options(session: &RunControlSession) -> Option<Vec<Ev
         return None;
     }
     Some(branch_options)
+}
+
+fn branch_semantics_for_event_option(option: &EventOption) -> EventOptionBranchSemantics {
+    let effect_kind = event_option_effect_kind(&option.semantics).to_string();
+
+    EventOptionBranchSemantics {
+        effect_key: format!("event:{effect_kind}:{}", stable_event_option_key(option)),
+        effect_kind,
+        effect_label: option.ui.text.clone(),
+    }
+}
+
+fn event_option_effect_kind(semantics: &EventOptionSemantics) -> &'static str {
+    if matches!(semantics.action, EventActionKind::Leave)
+        || (semantics.terminal
+            && semantics.effects.is_empty()
+            && matches!(semantics.transition, EventOptionTransition::Complete))
+    {
+        return "event_leave";
+    }
+    if matches!(semantics.transition, EventOptionTransition::StartCombat)
+        || semantics
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, EventEffect::StartCombat))
+        || matches!(semantics.action, EventActionKind::Fight)
+    {
+        return "event_start_combat";
+    }
+    match semantics.transition {
+        EventOptionTransition::OpenSelection(EventSelectionKind::RemoveCard) => {
+            return "event_remove_card";
+        }
+        EventOptionTransition::OpenSelection(EventSelectionKind::UpgradeCard) => {
+            return "event_upgrade_card";
+        }
+        EventOptionTransition::OpenSelection(EventSelectionKind::TransformCard) => {
+            return "event_transform_card";
+        }
+        EventOptionTransition::OpenSelection(EventSelectionKind::DuplicateCard) => {
+            return "event_duplicate_card";
+        }
+        EventOptionTransition::OpenSelection(EventSelectionKind::OfferCard) => {
+            return "event_card_reward";
+        }
+        _ => {}
+    }
+
+    if semantics
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, EventEffect::RemoveCard { .. }))
+    {
+        return "event_remove_card";
+    }
+    if semantics.effects.iter().any(|effect| {
+        matches!(
+            effect,
+            EventEffect::UpgradeCard { .. } | EventEffect::UpgradeAllCards
+        )
+    }) {
+        return "event_upgrade_card";
+    }
+    if semantics
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, EventEffect::TransformCard { .. }))
+    {
+        return "event_transform_card";
+    }
+    if semantics
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, EventEffect::DuplicateCard { .. }))
+    {
+        return "event_duplicate_card";
+    }
+    if semantics.effects.iter().any(|effect| {
+        matches!(
+            effect,
+            EventEffect::OfferCards { .. }
+                | EventEffect::ObtainCard { .. }
+                | EventEffect::ObtainColorlessCard { .. }
+        )
+    }) {
+        return "event_card_reward";
+    }
+    if semantics
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, EventEffect::ObtainRelic { .. }))
+    {
+        return "event_gain_relic";
+    }
+    if semantics
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, EventEffect::ObtainPotion { .. }))
+    {
+        return "event_gain_potion";
+    }
+    if semantics
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, EventEffect::GainMaxHp(_)))
+    {
+        return "event_gain_max_hp";
+    }
+    if semantics
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, EventEffect::Heal(_)))
+    {
+        return "event_heal";
+    }
+    if semantics.effects.iter().any(|effect| {
+        matches!(
+            effect,
+            EventEffect::GainGold(_) | EventEffect::GainGoldRange { .. }
+        )
+    }) {
+        return "event_gain_gold";
+    }
+    if semantics.effects.iter().any(|effect| {
+        matches!(
+            effect,
+            EventEffect::LoseHp(_) | EventEffect::LoseGold(_) | EventEffect::LoseMaxHp(_)
+        )
+    }) {
+        return "event_pay_resource";
+    }
+    if semantics
+        .effects
+        .iter()
+        .any(|effect| matches!(effect, EventEffect::ObtainCurse { .. }))
+    {
+        return "event_gain_curse";
+    }
+
+    match semantics.action {
+        EventActionKind::Continue => "event_continue",
+        EventActionKind::Accept => "event_accept",
+        EventActionKind::Decline => "event_decline",
+        EventActionKind::DeckOperation => "event_deck_operation",
+        EventActionKind::Gain => "event_gain",
+        EventActionKind::Trade => "event_trade",
+        EventActionKind::Special => "event_special",
+        EventActionKind::Unknown | EventActionKind::Leave | EventActionKind::Fight => {
+            "event_choice"
+        }
+    }
+}
+
+fn stable_event_option_key(option: &EventOption) -> String {
+    option
+        .semantics
+        .effects
+        .iter()
+        .map(|effect| format!("{effect:?}"))
+        .chain(std::iter::once(format!(
+            "transition:{:?}",
+            option.semantics.transition
+        )))
+        .collect::<Vec<_>>()
+        .join("|")
 }
