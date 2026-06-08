@@ -1,8 +1,10 @@
 use clap::parser::ValueSource;
 use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
+use std::time::Instant;
 
 use sts_simulator::eval::branch_campaign::{
-    render_branch_campaign_compact_v1, run_branch_campaign_v1, BranchCampaignConfigV1,
+    render_branch_campaign_compact_v1, render_branch_campaign_progress_event_v1,
+    run_branch_campaign_v1, run_branch_campaign_with_progress_v1, BranchCampaignConfigV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
@@ -122,6 +124,9 @@ struct Args {
 
     #[arg(long)]
     json: bool,
+
+    #[arg(long, help = "Print coarse campaign progress to stderr while running")]
+    progress: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -282,7 +287,18 @@ fn apply_campaign_preset_defaults<F>(
 
 fn run(args: Args) -> Result<(), String> {
     let config = campaign_config_from_args(&args)?;
-    let report = run_branch_campaign_v1(&config)?;
+    let report = if args.progress && !args.json {
+        let started_at = Instant::now();
+        run_branch_campaign_with_progress_v1(&config, |event| {
+            println!(
+                "[{:>4}s] {}",
+                started_at.elapsed().as_secs(),
+                render_branch_campaign_progress_event_v1(&event)
+            );
+        })?
+    } else {
+        run_branch_campaign_v1(&config)?
+    };
     if args.json {
         println!(
             "{}",

@@ -114,6 +114,36 @@ fn compact_campaign_report_renders_budget_stop_hint() {
     assert!(rendered.contains("Next: budget ended; use .\\tools\\campaign.ps1 -More"));
 }
 
+#[test]
+fn campaign_progress_events_render_concrete_stage_information() {
+    let branch_line =
+        render_branch_campaign_progress_event_v1(&BranchCampaignProgressEventV1::BranchFinished {
+            round: 2,
+            branch_index: 1,
+            branch_count: 2,
+            produced_branches: 8,
+            explored_branch_points: 6,
+            wall_limit_hit: false,
+            branch_limit_hit: true,
+        });
+    let round_line =
+        render_branch_campaign_progress_event_v1(&BranchCampaignProgressEventV1::RoundStarted {
+            round: 2,
+            max_rounds: 4,
+            active_branches: 2,
+            frozen_branches: 6,
+        });
+
+    assert_eq!(
+        branch_line,
+        "round 2: branch 1/2 done | produced=8 branch_points=6 limits=[branch]"
+    );
+    assert_eq!(
+        round_line,
+        "round 2/4: advancing 2 active branch(es), frozen=6"
+    );
+}
+
 fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1 {
     BranchCampaignBranchV1 {
         branch_id: id.to_string(),

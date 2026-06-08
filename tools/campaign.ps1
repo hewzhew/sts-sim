@@ -31,8 +31,8 @@ Runs a larger random-seed campaign when you want to leave it working longer.
 Prints the cargo command without updating the last seed or running it.
 
 .EXAMPLE
-.\tools\campaign.ps1 -HeartbeatSeconds 0
-Runs without periodic waiting messages.
+.\tools\campaign.ps1 -NoProgress
+Runs without coarse campaign progress messages.
 #>
 param(
     [Parameter(Position = 0)]
@@ -41,6 +41,7 @@ param(
     [switch] $Last,
     [switch] $More,
     [switch] $DryRun,
+    [switch] $NoProgress,
 
     [ValidateSet("quick", "focused", "deep")]
     [string] $Mode = "focused",
@@ -50,8 +51,6 @@ param(
     [int] $SearchWallMs = 300,
     [int] $SearchMaxNodes = 50000,
     [int] $BranchExamples = 4,
-    [ValidateRange(0, 3600)]
-    [int] $HeartbeatSeconds = 5,
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs
@@ -114,6 +113,10 @@ Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
 Add-DriverArgIfBound "SearchMaxNodes" "--search-max-nodes" $SearchMaxNodes
 Add-DriverArgIfBound "BranchExamples" "--branch-examples" $BranchExamples
 
+if (-not $NoProgress) {
+    $DriverArgs += "--progress"
+}
+
 if ($ExtraArgs) {
     $DriverArgs += $ExtraArgs
 }
@@ -136,58 +139,10 @@ if ($DryRun) {
 Set-Content -LiteralPath $LatestSeedPath -Value $Seed
 Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
 
-function Quote-ProcessArgument {
-    param([string] $Value)
-
-    if ($Value -match '^[^\s"]+$') {
-        return $Value
-    }
-    $Escaped = $Value -replace '"', '\"'
-    '"' + $Escaped + '"'
-}
-
 Push-Location $RepoRoot
 try {
-    $StdOutPath = [System.IO.Path]::GetTempFileName()
-    $StdErrPath = [System.IO.Path]::GetTempFileName()
-    $ArgumentLine = ($DriverArgs | ForEach-Object { Quote-ProcessArgument $_ }) -join " "
-    $Process = Start-Process `
-        -FilePath "cargo" `
-        -ArgumentList $ArgumentLine `
-        -WorkingDirectory $RepoRoot `
-        -NoNewWindow `
-        -RedirectStandardOutput $StdOutPath `
-        -RedirectStandardError $StdErrPath `
-        -PassThru
-
-    $StartedAt = Get-Date
-    if ($HeartbeatSeconds -gt 0) {
-        Write-Host "running campaign; waiting messages every ${HeartbeatSeconds}s"
-    }
-    $NextHeartbeatAt = $StartedAt.AddSeconds([Math]::Max(1, $HeartbeatSeconds))
-
-    while (-not $Process.WaitForExit(200)) {
-        if ($HeartbeatSeconds -gt 0 -and (Get-Date) -ge $NextHeartbeatAt) {
-            $ElapsedSeconds = [int] ((Get-Date) - $StartedAt).TotalSeconds
-            Write-Host "still running campaign... elapsed=${ElapsedSeconds}s"
-            $NextHeartbeatAt = (Get-Date).AddSeconds($HeartbeatSeconds)
-        }
-    }
-
-    $Process.WaitForExit()
-    if (Test-Path $StdOutPath) {
-        Get-Content -LiteralPath $StdOutPath | ForEach-Object { Write-Host $_ }
-    }
-    if (Test-Path $StdErrPath) {
-        Get-Content -LiteralPath $StdErrPath | ForEach-Object { [Console]::Error.WriteLine($_) }
-    }
-    exit $Process.ExitCode
+    & cargo @DriverArgs
+    exit $LASTEXITCODE
 } finally {
-    if ($StdOutPath -and (Test-Path $StdOutPath)) {
-        Remove-Item -LiteralPath $StdOutPath -Force
-    }
-    if ($StdErrPath -and (Test-Path $StdErrPath)) {
-        Remove-Item -LiteralPath $StdErrPath -Force
-    }
     Pop-Location
 }
