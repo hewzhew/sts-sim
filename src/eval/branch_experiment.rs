@@ -119,6 +119,7 @@ fn validate_shared_start_configs(configs: &[BranchExperimentConfigV1]) -> Result
         require_same!(search_max_hp_loss);
         require_same!(include_skip);
         require_same!(include_event_reward_skip);
+        require_same!(auto_leave_after_shop_purchase_branch);
         require_same!(prefix_commands);
         require_same!(replay_trace_path);
         require_same!(replay_trace_max_steps);
@@ -547,6 +548,13 @@ fn expand_branch_choice(
 ) -> BranchWork {
     let mut child = branch.clone();
     child.id = format!("{}.{}", child.id, draft.command);
+    let auto_leave_after_purchase =
+        config.auto_leave_after_shop_purchase_branch && is_shop_purchase_effect(&draft.effect_kind);
+    let effect_label = if auto_leave_after_purchase {
+        format!("{} | auto leave shop", draft.effect_label)
+    } else {
+        draft.effect_label
+    };
     child.choices.push(BranchExperimentChoiceV1 {
         depth: draft.depth,
         kind: draft.kind.to_string(),
@@ -555,13 +563,18 @@ fn expand_branch_choice(
         selected_cards: draft.selected_cards,
         effect_kind: draft.effect_kind,
         effect_key: draft.effect_key,
-        effect_label: draft.effect_label,
+        effect_label,
         representative_count: draft.representative_count,
         suppressed_count: draft.suppressed_count,
         label: draft.label,
         command: draft.command.clone(),
     });
-    match apply_branch_choice(&mut child.session, &draft.command) {
+    match apply_branch_choice(&mut child.session, &draft.command).and_then(|_| {
+        if auto_leave_after_purchase {
+            apply_branch_choice(&mut child.session, "leave")?;
+        }
+        Ok(())
+    }) {
         Ok(()) => {
             child.stop_reason = draft.success_reason.to_string();
             settle_branch_to_frontier(&mut child, config);
@@ -572,6 +585,13 @@ fn expand_branch_choice(
         }
     }
     child
+}
+
+fn is_shop_purchase_effect(effect_kind: &str) -> bool {
+    matches!(
+        effect_kind,
+        "shop_buy_card" | "shop_buy_relic" | "shop_buy_potion"
+    )
 }
 
 #[derive(Clone, Debug)]

@@ -9,6 +9,7 @@ use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
+use crate::state::shop::{ShopCard, ShopState};
 use std::fs;
 use std::path::PathBuf;
 
@@ -44,6 +45,55 @@ fn branch_experiment_expands_pending_card_reward_choices() {
     assert!(report.branches.iter().any(|branch| {
         branch.choices[0].command == "rp 1" && branch.choices[0].label == "Cleave"
     }));
+}
+
+#[test]
+fn branch_experiment_auto_leaves_after_shop_purchase_branch_by_default() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 100;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::PommelStrike,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 4,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    let buy_branch = report
+        .branches
+        .iter()
+        .find(|branch| {
+            branch
+                .choices
+                .iter()
+                .any(|choice| choice.effect_kind == "shop_buy_card")
+        })
+        .expect("buy-card branch");
+    let buy_choice = buy_branch
+        .choices
+        .iter()
+        .find(|choice| choice.effect_kind == "shop_buy_card")
+        .expect("buy-card choice");
+
+    assert!(
+        buy_choice.effect_label.contains("auto leave shop"),
+        "the compact report should make the shop-close behavior visible"
+    );
+    assert_ne!(
+        buy_branch.summary.boundary_title, "Shop",
+        "a single purchase branch should close the shop to avoid repeated buy-combination expansion"
+    );
 }
 
 #[test]

@@ -140,6 +140,12 @@ struct Args {
     )]
     include_event_reward_skip: bool,
 
+    #[arg(
+        long,
+        help = "Allow repeated shop purchase branching within the same shop visit; default closes the shop after one purchase branch to avoid buy-combination explosion"
+    )]
+    allow_shop_multi_buy_branches: bool,
+
     #[arg(long)]
     out: Option<PathBuf>,
 
@@ -273,6 +279,7 @@ fn branch_experiment_config(
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
         include_skip: args.include_skip || !args.exclude_skip,
         include_event_reward_skip: args.include_event_reward_skip,
+        auto_leave_after_shop_purchase_branch: !args.allow_shop_multi_buy_branches,
         prefix_commands,
         replay_trace_path: effective_replay_trace(args, goto_plan),
         replay_trace_max_steps: effective_replay_steps(args, goto_plan),
