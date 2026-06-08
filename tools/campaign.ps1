@@ -15,6 +15,10 @@ Runs the same focused campaign on seed 521.
 Reuses the last non-dry-run campaign seed.
 
 .EXAMPLE
+.\tools\campaign.ps1 -More
+Reuses the last seed with deeper defaults.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -31,6 +35,7 @@ param(
     [long] $Seed = 0,
 
     [switch] $Last,
+    [switch] $More,
     [switch] $DryRun,
 
     [ValidateSet("quick", "focused", "deep")]
@@ -54,6 +59,13 @@ $LatestSeedPath = Join-Path $CampaignDir "latest.seed.txt"
 $LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
 
 New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
+
+if ($More) {
+    $Last = $true
+    if (-not $PSBoundParameters.ContainsKey("Mode")) {
+        $Mode = "deep"
+    }
+}
 
 switch ($Mode) {
     "quick" {
@@ -107,6 +119,7 @@ $RenderedCommand = "cargo " + ($RenderedArgs -join " ")
 
 Write-Host "mode=$Mode branch campaign"
 Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
+Write-Host "run-more=.\tools\campaign.ps1 -More"
 
 if ($DryRun) {
     Write-Host $RenderedCommand

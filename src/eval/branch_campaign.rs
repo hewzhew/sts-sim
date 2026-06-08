@@ -505,7 +505,7 @@ fn render_choice_path(labels: &[String]) -> String {
 fn campaign_strategy_next_step_v1(kind: &str) -> Option<&'static str> {
     match kind {
         "combat_hp_loss_policy" | "combat_manual_or_budget" => Some(
-            "try a deeper same-seed run, e.g. .\\tools\\campaign.ps1 -Last -Mode deep; if it still stops, inspect or hand-play that combat",
+            "try a deeper same-seed run, e.g. .\\tools\\campaign.ps1 -More; if it still stops, inspect or hand-play that combat",
         ),
         "card_reward_policy_gap" => {
             Some("decide whether this reward family should be branched, auto-picked, skipped, or kept for human judgment")
