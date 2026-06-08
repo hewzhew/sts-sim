@@ -1,5 +1,6 @@
 pub mod artifact;
 pub mod artifact_doctor;
+pub mod branch_campaign;
 pub mod branch_experiment;
 pub(crate) mod branch_experiment_boundary;
 pub mod branch_experiment_retention;
