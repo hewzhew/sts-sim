@@ -11,6 +11,9 @@ use sts_simulator::eval::branch_experiment::{
     BranchExperimentConfigV1, BranchExperimentReportV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
+use sts_simulator::eval::neow_guided_prefix::{
+    neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
+};
 use sts_simulator::eval::run_control::{
     default_bookmark_registry_path, resolve_goto_bookmark, GotoBookmarkPlan, RunControlHpLossLimit,
 };
@@ -93,6 +96,12 @@ struct Args {
 
     #[arg(long = "prefix", value_name = "COMMAND")]
     prefix_commands: Vec<String>,
+
+    #[arg(
+        long,
+        help = "Prepend the shared Neow guidance prefix before script/inline prefix commands"
+    )]
+    auto_neow_guidance: bool,
 
     #[arg(
         long = "script",
@@ -186,9 +195,7 @@ fn run(args: Args) -> Result<(), String> {
         .as_ref()
         .map(|name| resolve_goto_bookmark(&bookmark_registry_path, name))
         .transpose()?;
-    let script_prefix_commands = load_prefix_scripts(&args.prefix_scripts)?;
-    let prefix_commands =
-        merge_prefix_commands(script_prefix_commands, args.prefix_commands.clone());
+    let prefix_commands = effective_prefix_commands(&args, player_class)?;
     let profiles = parse_retention_profiles(&args.retention_profile, args.compare_profiles)?;
     if args.compare_profiles {
         if args.focus_boundary.is_some() {
@@ -299,6 +306,11 @@ fn effective_replay_steps(args: &Args, goto_plan: Option<&GotoBookmarkPlan>) -> 
 }
 
 fn validate_goto_args(args: &Args) -> Result<(), String> {
+    if args.auto_neow_guidance && (args.replay_trace.is_some() || args.replay_steps.is_some()) {
+        return Err(
+            "--auto-neow-guidance cannot be combined with trace replay options".to_string(),
+        );
+    }
     if args.goto.is_none() {
         return Ok(());
     }
@@ -308,7 +320,33 @@ fn validate_goto_args(args: &Args) -> Result<(), String> {
                 .to_string(),
         );
     }
+    if args.auto_neow_guidance {
+        return Err("--auto-neow-guidance cannot be combined with --goto".to_string());
+    }
     Ok(())
+}
+
+fn effective_prefix_commands(
+    args: &Args,
+    player_class: &'static str,
+) -> Result<Vec<String>, String> {
+    let auto_prefix = if args.auto_neow_guidance {
+        neow_guided_prefix_commands_v1(&NeowGuidedPrefixConfigV1 {
+            seed: args.seed,
+            ascension_level: args.ascension,
+            final_act: args.final_act,
+            player_class,
+            search_max_nodes: args.search_max_nodes,
+            search_wall_ms: args.search_wall_ms.or(Some(100)),
+        })?
+    } else {
+        Vec::new()
+    };
+    let script_prefix_commands = load_prefix_scripts(&args.prefix_scripts)?;
+    Ok(merge_prefix_commands(
+        merge_prefix_commands(auto_prefix, script_prefix_commands),
+        args.prefix_commands.clone(),
+    ))
 }
 
 fn parse_retention_profiles(
@@ -445,6 +483,40 @@ mod tests {
         );
 
         assert_eq!(commands, vec!["0", "2", "go 5"]);
+    }
+
+    #[test]
+    fn auto_neow_guidance_prefix_precedes_inline_prefix_commands() {
+        let args = Args::try_parse_from([
+            "branch_experiment_driver",
+            "--seed",
+            "521",
+            "--auto-neow-guidance",
+            "--prefix",
+            "go 5",
+        ])
+        .expect("args parse");
+
+        let commands = effective_prefix_commands(&args, "Ironclad").expect("prefix builds");
+
+        assert_eq!(commands.first().map(String::as_str), Some("0"));
+        assert!(commands.len() >= 3);
+        assert_eq!(commands.last().map(String::as_str), Some("go 5"));
+    }
+
+    #[test]
+    fn auto_neow_guidance_rejects_trace_replay_start() {
+        let args = Args::try_parse_from([
+            "branch_experiment_driver",
+            "--auto-neow-guidance",
+            "--replay-trace",
+            "trace.json",
+        ])
+        .expect("args parse");
+
+        let err = validate_goto_args(&args).expect_err("auto neow conflicts with replay");
+
+        assert!(err.contains("--auto-neow-guidance cannot be combined"));
     }
 
     #[test]

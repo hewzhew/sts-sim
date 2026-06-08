@@ -8,6 +8,7 @@ pub mod card_reward_value_loop;
 pub mod combat_capture;
 pub mod combat_search_v2;
 pub mod fingerprint;
+pub mod neow_guided_prefix;
 pub mod observation_boundary;
 pub mod run_control;
 pub mod run_play;

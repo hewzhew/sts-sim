@@ -3,11 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use clap::Parser;
 use serde::Serialize;
 
-use sts_simulator::ai::neow_policy_v1::{
-    choices_from_event_options_v1, neow_followup_selection_v1, neow_map_features_from_run_state_v1,
-    rank_neow_choices_v1, NeowDecisionInputV1, NeowGuidanceConfigV1,
-};
-use sts_simulator::content::events::neow;
 use sts_simulator::eval::branch_experiment::{
     run_branch_experiment_v1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
     BranchExperimentReportV1, BranchExperimentWallLimitPhaseV1,
@@ -15,11 +10,10 @@ use sts_simulator::eval::branch_experiment::{
 use sts_simulator::eval::branch_experiment_retention::{
     BranchRetentionBudgetProfileV1, BranchRetentionSlotV1,
 };
-use sts_simulator::eval::run_control::{
-    canonical_player_class, parse_run_control_command, RunControlConfig, RunControlHpLossLimit,
-    RunControlSession,
+use sts_simulator::eval::neow_guided_prefix::{
+    neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
-use sts_simulator::state::events::EventId;
+use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -256,62 +250,16 @@ fn neow_guided_prefix_commands(
     seed: u64,
     player_class: &'static str,
 ) -> Result<Vec<String>, String> {
-    let mut prefix = vec!["0".to_string()];
     if args.no_neow_guidance {
-        return Ok(prefix);
+        return Ok(vec!["0".to_string()]);
     }
-
-    let mut session = RunControlSession::new(RunControlConfig {
+    neow_guided_prefix_commands_v1(&NeowGuidedPrefixConfigV1 {
         seed,
         ascension_level: args.ascension,
         final_act: false,
         player_class,
         search_max_nodes: args.search_max_nodes,
         search_wall_ms: Some(args.search_wall_ms),
-        ..RunControlConfig::default()
-    });
-    session.apply_command(parse_run_control_command("0")?)?;
-    let Some(event_state) = session.run_state.event_state.as_ref() else {
-        return Ok(prefix);
-    };
-    if event_state.id != EventId::Neow || event_state.current_screen != 1 {
-        return Ok(prefix);
-    }
-
-    let options = neow::get_options(&session.run_state, event_state);
-    let trace = rank_neow_choices_v1(NeowDecisionInputV1 {
-        player_class: player_class.to_string(),
-        map: neow_map_features_from_run_state_v1(&session.run_state),
-        choices: choices_from_event_options_v1(&options),
-        config: NeowGuidanceConfigV1::default(),
-    });
-    if let Some(selected) = trace.selected() {
-        let neow_choice_command = selected.index.to_string();
-        prefix.push(neow_choice_command.clone());
-        session.apply_command(parse_run_control_command(&neow_choice_command)?)?;
-        if is_neow_followup_selection(&session) {
-            if let sts_simulator::state::core::EngineState::RunPendingChoice(choice) =
-                &session.engine_state
-            {
-                if let Some(decision) =
-                    neow_followup_selection_v1(&session.run_state, choice, player_class)
-                {
-                    prefix.push(decision.command);
-                }
-            }
-        }
-    }
-    Ok(prefix)
-}
-
-fn is_neow_followup_selection(session: &RunControlSession) -> bool {
-    session.run_state.event_state.as_ref().is_some_and(|event| {
-        event.id == EventId::Neow
-            && event.completed
-            && matches!(
-                session.engine_state,
-                sts_simulator::state::core::EngineState::RunPendingChoice(_)
-            )
     })
 }
 
