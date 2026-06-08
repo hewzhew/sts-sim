@@ -161,7 +161,14 @@ fn campfire_option_metadata(
     choice: CampfireChoice,
 ) -> CampfireOptionMetadata {
     match choice {
-        CampfireChoice::Rest => campfire_metadata_without_card("rest", "rest"),
+        CampfireChoice::Rest => {
+            let semantic_class = if session.run_state.current_hp < session.run_state.max_hp {
+                "rest:wounded"
+            } else {
+                "rest:full_hp"
+            };
+            campfire_metadata_without_card(semantic_class, "rest")
+        }
         CampfireChoice::Smith(idx) => {
             let Some(card) = session.run_state.master_deck.get(idx) else {
                 return campfire_metadata_without_card("smith:unknown", "upgrade_card");
@@ -212,8 +219,9 @@ fn campfire_metadata_without_card(
 
 fn campfire_option_priority(option: &CampfireBranchOption) -> usize {
     match option.semantic_class.as_str() {
-        "rest" => 0,
+        "rest:wounded" => 0,
         class if class.starts_with("smith:") => 1,
+        "rest:full_hp" => 2,
         "dig" | "lift" | "toke" => 2,
         "recall" => 3,
         _ => 4,

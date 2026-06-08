@@ -938,8 +938,9 @@ fn current_boundary_still_rejects_high_fanout_distinct_multi_card_run_selection_
 }
 
 #[test]
-fn campfire_branch_option_portfolio_keeps_rest_and_smith_classes() {
+fn campfire_branch_option_portfolio_keeps_rest_when_wounded() {
     let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.current_hp = session.run_state.max_hp - 20;
     session.engine_state = EngineState::Campfire;
 
     let options = campfire_branch_options(&session).expect("campfire options");
@@ -954,6 +955,26 @@ fn campfire_branch_option_portfolio_keeps_rest_and_smith_classes() {
             .iter()
             .any(|option| option.command.starts_with("smith ")),
         "at least one smith option should remain represented when campfire branching is capped"
+    );
+}
+
+#[test]
+fn campfire_branch_option_portfolio_does_not_spend_cap_on_full_hp_rest() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state = EngineState::Campfire;
+
+    let options = campfire_branch_options(&session).expect("campfire options");
+    let selected = select_campfire_branch_options(options, Some(2)).options;
+
+    assert!(
+        selected.iter().all(|option| option.command != "rest"),
+        "full-hp rest should not consume capped campaign/campfire branch slots"
+    );
+    assert!(
+        selected
+            .iter()
+            .any(|option| option.command.starts_with("smith ")),
+        "smith options should be preferred over no-op full-hp rest"
     );
 }
 

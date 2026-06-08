@@ -1,4 +1,5 @@
-use clap::Parser;
+use clap::parser::ValueSource;
+use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
 
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_v1, run_branch_campaign_v1, BranchCampaignConfigV1,
@@ -10,12 +11,20 @@ use sts_simulator::eval::neow_guided_prefix::{
 };
 use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
 
+const FOCUSED_PRESET_ROUND_DEPTH: usize = 2;
+const FOCUSED_PRESET_MAX_ACTIVE: usize = 2;
+const FOCUSED_PRESET_MAX_FROZEN: usize = 16;
+const FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
+
 #[derive(Debug, Parser)]
 #[command(
     name = "branch_campaign_driver",
     about = "Advance a small campaign of noncombat branches until victory, budget, or strategy boundary"
 )]
 struct Args {
+    #[arg(long, value_enum)]
+    preset: Option<BranchCampaignPresetV1>,
+
     #[arg(long, default_value_t = 1)]
     seed: u64,
 
@@ -90,11 +99,61 @@ struct Args {
     json: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum BranchCampaignPresetV1 {
+    Focused,
+}
+
 fn main() {
-    let args = Args::parse();
+    let args = parse_args();
     if let Err(err) = run(args) {
         eprintln!("error: {err}");
         std::process::exit(1);
+    }
+}
+
+fn parse_args() -> Args {
+    parse_args_from(std::env::args_os()).unwrap_or_else(|err| err.exit())
+}
+
+fn parse_args_from<I, T>(itr: I) -> Result<Args, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let matches = Args::command().try_get_matches_from(itr)?;
+    let mut args = Args::from_arg_matches(&matches)?;
+    apply_preset_defaults(&mut args, |name| {
+        matches.value_source(name) == Some(ValueSource::CommandLine)
+    });
+    Ok(args)
+}
+
+fn apply_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    match args.preset {
+        Some(BranchCampaignPresetV1::Focused) => apply_focused_preset_defaults(args, was_explicit),
+        None => {}
+    }
+}
+
+fn apply_focused_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    if !was_explicit("round_depth") {
+        args.round_depth = FOCUSED_PRESET_ROUND_DEPTH;
+    }
+    if !was_explicit("max_active") {
+        args.max_active = FOCUSED_PRESET_MAX_ACTIVE;
+    }
+    if !was_explicit("max_frozen") {
+        args.max_frozen = FOCUSED_PRESET_MAX_FROZEN;
+    }
+    if !was_explicit("max_branches_per_active") {
+        args.max_branches_per_active = FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE;
     }
 }
 
@@ -200,5 +259,41 @@ mod tests {
         let config = campaign_config_from_args(&args).expect("config builds");
 
         assert_eq!(config.max_reward_options_per_branch, None);
+    }
+
+    #[test]
+    fn focused_preset_uses_deeper_fewer_active_branches() {
+        let args =
+            parse_args_from(["branch_campaign_driver", "--preset", "focused"]).expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(config.round_depth, 2);
+        assert_eq!(config.max_active, 2);
+        assert_eq!(config.max_frozen, 16);
+        assert_eq!(config.max_branches_per_active, 8);
+    }
+
+    #[test]
+    fn focused_preset_keeps_explicit_branch_overrides() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--preset",
+            "focused",
+            "--round-depth",
+            "1",
+            "--max-active",
+            "4",
+            "--max-frozen",
+            "8",
+            "--max-branches-per-active",
+            "12",
+        ])
+        .expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(config.round_depth, 1);
+        assert_eq!(config.max_active, 4);
+        assert_eq!(config.max_frozen, 8);
+        assert_eq!(config.max_branches_per_active, 12);
     }
 }
