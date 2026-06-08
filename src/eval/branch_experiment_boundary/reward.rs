@@ -95,12 +95,10 @@ fn full_slot_potion_skip_branch_option(
         .join(", ");
     Some(RewardBranchOption {
         kind: "reward_skip",
-        label: format!("Skip full-slot potion reward: {labels}"),
+        label: format!("Skip potion reward: {labels}"),
         command: "skip".to_string(),
         effect_kind: "reward_skip_full_potion".to_string(),
         effect_key: "reward:skip_full_slot_potion".to_string(),
-        effect_label: format!(
-            "Skip full-slot potion reward: {labels} | replacement policy not modeled"
-        ),
+        effect_label: format!("Skip potion reward: {labels} | full potion slots"),
     })
 }

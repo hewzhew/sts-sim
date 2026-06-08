@@ -485,6 +485,12 @@ fn current_boundary_can_skip_full_slot_potion_reward_after_low_agency_claims() {
     assert_eq!(boundary.options[0].command, "skip");
     assert_eq!(boundary.options[0].effect_kind, "reward_skip_full_potion");
     assert!(boundary.options[0].effect_label.contains("Heart"));
+    assert!(boundary.options[0]
+        .effect_label
+        .contains("full potion slots"));
+    assert!(!boundary.options[0]
+        .effect_label
+        .contains("replacement policy not modeled"));
 }
 
 #[test]

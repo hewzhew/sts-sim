@@ -172,12 +172,20 @@ fn reward_item_label(item: &RewardItem) -> String {
         RewardItem::Gold { amount } => format!("{amount} gold"),
         RewardItem::StolenGold { amount } => format!("{amount} stolen gold"),
         RewardItem::Potion { potion_id } => {
-            format!("{} potion", get_potion_definition(*potion_id).name)
+            normalized_potion_reward_label(get_potion_definition(*potion_id).name)
         }
         RewardItem::Relic { relic_id } => format!("Relic {relic_id:?}"),
         RewardItem::Card { .. } => "Card reward".to_string(),
         RewardItem::EmeraldKey => "Emerald key".to_string(),
         RewardItem::SapphireKey => "Sapphire key".to_string(),
+    }
+}
+
+fn normalized_potion_reward_label(name: &str) -> String {
+    if name.to_ascii_lowercase().ends_with("potion") {
+        name.to_string()
+    } else {
+        format!("{name} potion")
     }
 }
 

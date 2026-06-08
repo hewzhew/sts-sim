@@ -65,6 +65,18 @@ fn reward_policy_claims_potion_only_when_empty_slot_is_available() {
 }
 
 #[test]
+fn reward_policy_does_not_duplicate_potion_suffix_in_labels() {
+    let run = test_run();
+    let reward = reward_state(vec![RewardItem::Potion {
+        potion_id: PotionId::ColorlessPotion,
+    }]);
+
+    let context = build_reward_decision_context_v1(&run, &reward);
+
+    assert_eq!(context.candidates[0].label, "Colorless Potion");
+}
+
+#[test]
 fn reward_policy_blocks_potion_when_sozu_is_owned() {
     let mut run = test_run();
     run.potions[0] = None;
