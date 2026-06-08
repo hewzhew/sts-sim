@@ -1224,7 +1224,7 @@ fn run_control_auto_run_uses_route_planner_by_default() {
 }
 
 #[test]
-fn run_control_auto_run_stops_on_card_reward_without_pick_certificate() {
+fn run_control_auto_run_behavior_gate_picks_clear_control_card_reward() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::Shockwave,
         crate::content::cards::CardId::Clash,
@@ -1238,12 +1238,10 @@ fn run_control_auto_run_stops_on_card_reward_without_pick_certificate() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should stop without a card reward pick certificate");
+        .expect("auto-run should pick a clear behavior-policy card reward");
 
-    assert!(outcome
-        .message
-        .contains("Reason: card reward requires human choice"));
-    assert!(outcome.message.contains("card reward policy stopped:"));
+    assert!(outcome.message.contains("card reward policy: Shockwave"));
+    assert!(outcome.message.contains("behavior autopick accepted"));
     let record = outcome
         .trace_annotations
         .iter()
@@ -1267,20 +1265,21 @@ fn run_control_auto_run_stops_on_card_reward_without_pick_certificate() {
     );
     assert_eq!(
         record.selection.status,
-        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
     );
+    assert_eq!(record.selection.selection_mode, "behavior_autopick_gate");
     assert_eq!(record.values.len(), record.candidates.len());
     assert_record_values_not_autopilot_gate_usable(record);
-    assert!(!session
+    assert!(session
         .run_state
         .master_deck
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Shockwave));
-    assert!(outcome.action_result.is_none());
+    assert!(outcome.action_result.is_some());
 }
 
 #[test]
-fn run_control_auto_run_opens_card_reward_item_without_pick_certificate() {
+fn run_control_auto_run_behavior_gate_opens_and_picks_card_reward_item() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![
             crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Shockwave, 0),
@@ -1296,25 +1295,16 @@ fn run_control_auto_run_opens_card_reward_item_without_pick_certificate() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should open a card reward item without picking a card");
+        .expect("auto-run should open and pick a clear behavior-policy card reward item");
 
-    assert!(outcome
-        .message
-        .contains("Reason: card reward requires human choice"));
-    assert!(outcome.message.contains("card reward policy stopped:"));
-    assert!(!session
+    assert!(outcome.message.contains("card reward policy: Shockwave"));
+    assert!(outcome.message.contains("behavior autopick accepted"));
+    assert!(session
         .run_state
         .master_deck
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Shockwave));
     assert!(outcome.action_result.is_some());
-    assert!(outcome
-        .message
-        .contains("card reward: opened card reward item"));
-    let EngineState::RewardScreen(reward) = &session.engine_state else {
-        panic!("card reward should remain on reward screen");
-    };
-    assert!(reward.pending_card_choice.is_some());
 }
 
 #[test]
@@ -1449,7 +1439,7 @@ fn run_control_auto_run_stops_on_uncalibrated_transition_attack_after_first_comb
 }
 
 #[test]
-fn run_control_auto_run_stops_on_uncalibrated_combat_control_after_first_combat() {
+fn run_control_auto_run_behavior_gate_picks_clear_control_after_first_combat() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::Shockwave,
         crate::content::cards::CardId::Clash,
@@ -1464,12 +1454,10 @@ fn run_control_auto_run_stops_on_uncalibrated_combat_control_after_first_combat(
                 ..Default::default()
             },
         ))
-        .expect("auto-run should stop without calibrated combat-control value");
+        .expect("auto-run should pick clear combat-control value through behavior gate");
 
-    assert!(outcome
-        .message
-        .contains("card reward requires human choice"));
-    assert!(!session
+    assert!(outcome.message.contains("card reward policy: Shockwave"));
+    assert!(session
         .run_state
         .master_deck
         .iter()

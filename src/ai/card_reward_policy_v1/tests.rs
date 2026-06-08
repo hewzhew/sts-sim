@@ -721,6 +721,7 @@ fn score_threshold_overrides_cannot_force_a_pick_without_value_gate() {
         &context,
         &CardRewardPolicyConfigV1 {
             allow_autopilot_value_gate: true,
+            ..Default::default()
         },
     );
 
@@ -836,6 +837,73 @@ fn route_risk_blocks_even_when_old_rule_would_have_matched_without_promotion() {
 }
 
 #[test]
+fn behavior_autopick_gate_can_pick_clear_control_without_promoting_strict_gate() {
+    let mut run_state = RunState::new(1552366907, 0, false, "Ironclad");
+    run_state.floor_num = 1;
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Shockwave, 0),
+            RewardCard::new(CardId::Clash, 0),
+            RewardCard::new(CardId::SeverSoul, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let strict_decision =
+        plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let behavior_decision =
+        plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::behavior_autopick());
+
+    assert!(matches!(
+        strict_decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(matches!(
+        behavior_decision.action,
+        CardRewardPolicyActionV1::Pick {
+            card: CardId::Shockwave,
+            ..
+        }
+    ));
+    assert!(!behavior_decision.autopilot_gate.value_source_eligible);
+    assert_eq!(
+        behavior_decision
+            .pick_certificate
+            .as_ref()
+            .map(|certificate| certificate.selection_mode),
+        Some("behavior_autopick_gate")
+    );
+}
+
+#[test]
+fn behavior_autopick_gate_stops_when_offer_contains_unresolved_plan_dependency() {
+    let context = context_for_cards_with_route(
+        vec![
+            RewardCard::new(CardId::SearingBlow, 0),
+            RewardCard::new(CardId::HeavyBlade, 0),
+            RewardCard::new(CardId::Clothesline, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+
+    let decision =
+        plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::behavior_autopick());
+
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.pick_certificate.is_none());
+    assert!(decision
+        .evidence_gaps
+        .contains(&CardRewardEvidenceGapV1::UnsatisfiedRouteUpgradeEvidence));
+    assert!(decision
+        .evidence_gaps
+        .contains(&CardRewardEvidenceGapV1::UnsatisfiedStrengthScalingEvidence));
+}
+
+#[test]
 fn outcome_calibration_estimates_are_not_autopilot_eligible_without_arbitration_gate() {
     let mut context = context_for_cards(vec![
         RewardCard::new(CardId::TwinStrike, 0),
@@ -865,6 +933,7 @@ fn outcome_calibration_estimates_are_not_autopilot_eligible_without_arbitration_
 
     let (action, gate_report, gaps, certificate) = super::gate::pick_gate(
         &context,
+        &value_estimates,
         &value_estimates,
         &CardRewardPolicyConfigV1::default(),
     );
@@ -910,6 +979,7 @@ fn outcome_calibration_gate_eligibility_is_estimate_level_not_source_level() {
 
     let (action, gate_report, gaps, certificate) = super::gate::pick_gate(
         &context,
+        &value_estimates,
         &value_estimates,
         &CardRewardPolicyConfigV1::default(),
     );

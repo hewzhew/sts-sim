@@ -242,7 +242,7 @@ fn card_reward_decision(
     let inputs = card_reward_estimator_inputs(session, &context);
     crate::ai::card_reward_policy_v1::plan_card_reward_decision_with_estimator_inputs_v1(
         &context,
-        &crate::ai::card_reward_policy_v1::CardRewardPolicyConfigV1::default(),
+        &crate::ai::card_reward_policy_v1::CardRewardPolicyConfigV1::behavior_autopick(),
         &inputs,
     )
 }

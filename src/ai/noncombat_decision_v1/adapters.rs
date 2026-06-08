@@ -140,7 +140,7 @@ impl CardRewardDecisionV1 {
                     "visible reward cards are public observations after the card reward is opened"
                         .to_string(),
                     "card reward policy records mechanical facts and evidence gaps, not an optimal action label".to_string(),
-                      "automatic selection requires the generic autopilot value gate to accept an eligible calibrated estimate; no score fallback is allowed".to_string(),
+                    "automatic selection may use either the strict calibrated value gate or the behavior autopick gate; both remain behavior_policy_not_teacher".to_string(),
                 ],
                 warnings: self
                     .evidence_gaps
@@ -363,7 +363,12 @@ fn card_reward_selection(decision: &CardRewardDecisionV1) -> PolicySelectionV1 {
             selected_candidate_id: Some(format!("card_reward:{index}:{card:?}")),
             reason: reason.clone(),
             confidence: *confidence,
-            selection_mode: "autopilot_value_gate".to_string(),
+            selection_mode: decision
+                .pick_certificate
+                .as_ref()
+                .map(|certificate| certificate.selection_mode)
+                .unwrap_or("card_reward_policy_pick")
+                .to_string(),
         },
         CardRewardPolicyActionV1::Stop { reason, .. } => PolicySelectionV1 {
             status: if decision.candidates.is_empty() {

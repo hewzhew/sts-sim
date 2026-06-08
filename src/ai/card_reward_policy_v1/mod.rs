@@ -1,4 +1,5 @@
 mod arbitration;
+mod behavior_gate;
 mod combat_probe;
 mod context;
 mod facts;

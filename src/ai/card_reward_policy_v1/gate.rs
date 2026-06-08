@@ -1,4 +1,5 @@
 use super::arbitration::{estimate_source_gate_eligible_v1, value_status_autopilot_eligible_v1};
+use super::behavior_gate::behavior_pick_certificate;
 use super::types::{
     CardRewardAutopilotGateReportV1, CardRewardDecisionContextV1, CardRewardEvidenceGapV1,
     CardRewardPickCertificateV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
@@ -7,7 +8,8 @@ use super::types::{
 
 pub(crate) fn pick_gate(
     context: &CardRewardDecisionContextV1,
-    value_estimates: &[CardRewardValueEstimateV1],
+    gate_value_estimates: &[CardRewardValueEstimateV1],
+    all_value_estimates: &[CardRewardValueEstimateV1],
     config: &CardRewardPolicyConfigV1,
 ) -> (
     CardRewardPolicyActionV1,
@@ -50,7 +52,7 @@ pub(crate) fn pick_gate(
         push_gap(&mut gaps, CardRewardEvidenceGapV1::MissingRouteEvidence);
     }
 
-    if value_estimates.len() != context.candidates.len() {
+    if gate_value_estimates.len() != context.candidates.len() {
         push_gap(&mut gaps, CardRewardEvidenceGapV1::MissingValueEstimate);
     }
     for candidate in &context.candidates {
@@ -59,23 +61,19 @@ pub(crate) fn pick_gate(
         }
     }
 
-    let gate_report = evaluate_autopilot_gate(context, value_estimates, &gaps, config);
+    let gate_report = evaluate_autopilot_gate(context, gate_value_estimates, &gaps);
 
-    if let Some(certificate) = generic_certificate(context, value_estimates, &gate_report, config) {
-        return (
-            CardRewardPolicyActionV1::Pick {
-                index: certificate.index,
-                card: certificate.card,
-                confidence: certificate.confidence,
-                reason: certificate.reasons.join("; "),
-            },
-            gate_report,
-            gaps,
-            Some(certificate),
-        );
+    if let Some(certificate) =
+        generic_certificate(context, gate_value_estimates, &gate_report, config)
+    {
+        return pick_from_certificate(certificate, gate_report, gaps);
     }
 
-    for estimate in value_estimates {
+    if let Some(certificate) = behavior_pick_certificate(context, all_value_estimates, config) {
+        return pick_from_certificate(certificate, gate_report, gaps);
+    }
+
+    for estimate in gate_value_estimates {
         if estimate.status == CardRewardValueStatusV1::UncalibratedPrior {
             push_gap(
                 &mut gaps,
@@ -96,6 +94,33 @@ pub(crate) fn pick_gate(
         gate_report,
         gaps,
         None,
+    )
+}
+
+fn pick_from_certificate(
+    certificate: CardRewardPickCertificateV1,
+    gate_report: CardRewardAutopilotGateReportV1,
+    gaps: Vec<CardRewardEvidenceGapV1>,
+) -> (
+    CardRewardPolicyActionV1,
+    CardRewardAutopilotGateReportV1,
+    Vec<CardRewardEvidenceGapV1>,
+    Option<CardRewardPickCertificateV1>,
+) {
+    let index = certificate.index;
+    let card = certificate.card;
+    let confidence = certificate.confidence;
+    let reason = certificate.reasons.join("; ");
+    (
+        CardRewardPolicyActionV1::Pick {
+            index,
+            card,
+            confidence,
+            reason,
+        },
+        gate_report,
+        gaps,
+        Some(certificate),
     )
 }
 
@@ -122,7 +147,6 @@ fn evaluate_autopilot_gate(
     context: &CardRewardDecisionContextV1,
     value_estimates: &[CardRewardValueEstimateV1],
     inherited_gaps: &[CardRewardEvidenceGapV1],
-    _config: &CardRewardPolicyConfigV1,
 ) -> CardRewardAutopilotGateReportV1 {
     let candidate_coverage_complete = value_estimates.len() == context.candidates.len()
         && context.candidates.iter().all(|candidate| {
@@ -253,6 +277,7 @@ fn generic_certificate(
         index,
         card: candidate.card,
         confidence: (1.0 - estimate.uncertainty).clamp(0.0, 1.0),
+        selection_mode: "autopilot_value_gate",
         reasons: vec![
             "generic autopilot gate accepted calibrated value estimate".to_string(),
             format!(

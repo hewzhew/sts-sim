@@ -35,8 +35,12 @@ pub fn plan_card_reward_decision_with_estimator_inputs_v1(
             .cloned(),
     );
     let value_arbitration = arbitrate_card_reward_value_estimates_v1(context, &value_estimates);
-    let (action, autopilot_gate, evidence_gaps, pick_certificate) =
-        pick_gate(context, &value_arbitration.gate_value_estimates, config);
+    let (action, autopilot_gate, evidence_gaps, pick_certificate) = pick_gate(
+        context,
+        &value_arbitration.gate_value_estimates,
+        &value_estimates,
+        config,
+    );
 
     CardRewardDecisionV1 {
         action,

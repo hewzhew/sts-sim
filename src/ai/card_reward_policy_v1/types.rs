@@ -6,12 +6,31 @@ pub struct CardRewardPolicyConfigV1 {
     /// Enables automatic picks only when the generic value gate accepts a
     /// calibrated estimate. This does not enable score fallback.
     pub allow_autopilot_value_gate: bool,
+    /// Enables behavior-policy picks from unpromoted but structured public
+    /// estimates. These picks are diagnostic autoplay, not teacher labels.
+    pub allow_behavior_autopick_gate: bool,
+    pub behavior_min_total_delta: f32,
+    pub behavior_min_margin: f32,
+    pub behavior_max_uncertainty: f32,
 }
 
 impl Default for CardRewardPolicyConfigV1 {
     fn default() -> Self {
         Self {
             allow_autopilot_value_gate: true,
+            allow_behavior_autopick_gate: false,
+            behavior_min_total_delta: 0.45,
+            behavior_min_margin: 0.35,
+            behavior_max_uncertainty: 0.82,
+        }
+    }
+}
+
+impl CardRewardPolicyConfigV1 {
+    pub fn behavior_autopick() -> Self {
+        Self {
+            allow_behavior_autopick_gate: true,
+            ..Default::default()
         }
     }
 }
@@ -385,6 +404,7 @@ pub struct CardRewardPickCertificateV1 {
     pub index: usize,
     pub card: CardId,
     pub confidence: f32,
+    pub selection_mode: &'static str,
     pub reasons: Vec<String>,
 }
 
