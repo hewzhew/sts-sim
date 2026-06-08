@@ -155,6 +155,12 @@ struct Args {
     )]
     allow_shop_multi_buy_branches: bool,
 
+    #[arg(
+        long,
+        help = "Settle every child branch immediately after a choice; default defers settle until after retention so pruned branches do not spend combat budget"
+    )]
+    eager_branch_settle: bool,
+
     #[arg(long)]
     out: Option<PathBuf>,
 
@@ -287,6 +293,7 @@ fn branch_experiment_config(
         include_skip: args.include_skip || !args.exclude_skip,
         include_event_reward_skip: args.include_event_reward_skip,
         auto_leave_after_shop_purchase_branch: !args.allow_shop_multi_buy_branches,
+        defer_branch_settle: !args.eager_branch_settle,
         prefix_commands,
         replay_trace_path: effective_replay_trace(args, goto_plan),
         replay_trace_max_steps: effective_replay_steps(args, goto_plan),
@@ -579,6 +586,37 @@ mod tests {
 
         assert!(!default_config.include_event_reward_skip);
         assert!(opted_in_config.include_event_reward_skip);
+    }
+
+    #[test]
+    fn cli_defers_branch_settle_by_default() {
+        let args = Args::try_parse_from(["branch_experiment_driver"]).expect("args parse");
+        let config = branch_experiment_config(
+            &args,
+            "Ironclad",
+            Vec::new(),
+            BranchRetentionBudgetProfileV1::Balanced,
+            None,
+        )
+        .expect("default config builds");
+
+        assert!(config.defer_branch_settle);
+    }
+
+    #[test]
+    fn cli_can_request_eager_branch_settle_for_old_budget_order() {
+        let args = Args::try_parse_from(["branch_experiment_driver", "--eager-branch-settle"])
+            .expect("args parse");
+        let config = branch_experiment_config(
+            &args,
+            "Ironclad",
+            Vec::new(),
+            BranchRetentionBudgetProfileV1::Balanced,
+            None,
+        )
+        .expect("config builds");
+
+        assert!(!config.defer_branch_settle);
     }
 
     #[test]

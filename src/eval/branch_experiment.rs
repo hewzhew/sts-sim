@@ -121,6 +121,7 @@ fn validate_shared_start_configs(configs: &[BranchExperimentConfigV1]) -> Result
         require_same!(include_skip);
         require_same!(include_event_reward_skip);
         require_same!(auto_leave_after_shop_purchase_branch);
+        require_same!(defer_branch_settle);
         require_same!(prefix_commands);
         require_same!(replay_trace_path);
         require_same!(replay_trace_max_steps);
@@ -583,7 +584,10 @@ fn expand_branch_choice(
     }) {
         Ok(()) => {
             child.stop_reason = draft.success_reason.to_string();
-            settle_branch_to_frontier(&mut child, config);
+            update_terminal_status(&mut child);
+            if !config.defer_branch_settle {
+                settle_branch_to_frontier(&mut child, config);
+            }
         }
         Err(err) => {
             child.status = BranchExperimentBranchStatusV1::Failed;
