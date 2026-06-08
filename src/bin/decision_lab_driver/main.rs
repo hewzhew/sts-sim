@@ -1015,6 +1015,7 @@ mod tests {
                     sequence_breakers_present: Vec::new(),
                 },
             },
+            boundary_details: Vec::new(),
         }
     }
 }

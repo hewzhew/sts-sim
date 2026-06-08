@@ -14,7 +14,7 @@ use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::RunControlHpLossLimit;
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 17;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 18;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -150,6 +150,8 @@ pub struct BranchExperimentStrategyRequestV1 {
     pub stop_reasons: Vec<String>,
     pub examples: Vec<String>,
     pub next_card_reward_offer: Option<Vec<String>>,
+    #[serde(default)]
+    pub boundary_details: Vec<String>,
     pub suggested_action: String,
 }
 
@@ -164,6 +166,8 @@ pub struct BranchExperimentBranchReportV1 {
     pub stop_reason: String,
     pub summary: BranchExperimentRunSummaryV1,
     pub frontier: BranchExperimentFrontierV1,
+    #[serde(default)]
+    pub boundary_details: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

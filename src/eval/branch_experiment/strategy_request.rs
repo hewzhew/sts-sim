@@ -15,6 +15,7 @@ struct StrategyRequestDraft {
     stop_reasons: BTreeSet<String>,
     examples: BTreeSet<String>,
     next_card_reward_offer: Option<Vec<String>>,
+    boundary_details: Vec<String>,
     suggested_action: String,
     branch_count: usize,
 }
@@ -37,6 +38,7 @@ pub(super) fn branch_strategy_requests(
                 draft.branch_count += 1;
                 draft.stop_reasons.insert(branch.stop_reason.clone());
                 draft.examples.insert(choice_path(branch));
+                push_unique_details(&mut draft.boundary_details, &branch.boundary_details);
                 if (branch.summary.act, branch.summary.floor) > (draft.act, draft.floor) {
                     draft.act = branch.summary.act;
                     draft.floor = branch.summary.floor;
@@ -51,6 +53,7 @@ pub(super) fn branch_strategy_requests(
                 stop_reasons: BTreeSet::from([branch.stop_reason.clone()]),
                 examples: BTreeSet::from([choice_path(branch)]),
                 next_card_reward_offer: next_offer,
+                boundary_details: branch.boundary_details.clone(),
                 suggested_action,
                 branch_count: 1,
             });
@@ -68,6 +71,7 @@ pub(super) fn branch_strategy_requests(
             stop_reasons: draft.stop_reasons.into_iter().take(3).collect(),
             examples: draft.examples.into_iter().take(4).collect(),
             next_card_reward_offer: draft.next_card_reward_offer,
+            boundary_details: draft.boundary_details.into_iter().take(8).collect(),
             suggested_action: draft.suggested_action,
         })
         .collect::<Vec<_>>();
@@ -79,6 +83,14 @@ pub(super) fn branch_strategy_requests(
             .then_with(|| left.boundary_title.cmp(&right.boundary_title))
     });
     requests
+}
+
+fn push_unique_details(target: &mut Vec<String>, source: &[String]) {
+    for detail in source {
+        if !target.contains(detail) {
+            target.push(detail.clone());
+        }
+    }
 }
 
 fn request_worthy_status(status: BranchExperimentBranchStatusV1) -> bool {

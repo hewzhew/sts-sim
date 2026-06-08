@@ -388,6 +388,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
                 stop_reason: branch.stop_reason,
                 summary,
                 frontier,
+                boundary_details: branch_boundary_details(&branch.session),
             }
         })
         .collect::<Vec<_>>();
@@ -428,6 +429,27 @@ fn run_branch_experiment_from_start_branch_with_replay(
         frontier_groups: frontier_groups(&branch_reports),
         branches: branch_reports,
     }
+}
+
+fn branch_boundary_details(session: &RunControlSession) -> Vec<String> {
+    let surface = build_decision_surface(session);
+    let mut details = surface.view.context.into_iter().take(3).collect::<Vec<_>>();
+    details.extend(
+        surface
+            .view
+            .candidates
+            .into_iter()
+            .take(8)
+            .map(|candidate| {
+                format!(
+                    "{} | {} | {}",
+                    candidate.id,
+                    candidate.label,
+                    candidate.action.command_hint()
+                )
+            }),
+    );
+    details
 }
 
 fn experiment_wall_limit_hit(started_at: Instant, config: &BranchExperimentConfigV1) -> bool {

@@ -291,8 +291,19 @@ fn render_strategy_request_line(request: &BranchExperimentStrategyRequestV1) -> 
     } else {
         request.stop_reasons.join(" | ")
     };
+    let details = if request.boundary_details.is_empty() {
+        "-".to_string()
+    } else {
+        request
+            .boundary_details
+            .iter()
+            .take(4)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
     format!(
-        "  {} | {} branch(es) | A{}F{} {} | next=[{}] | ask: {} | examples=[{}] | reason=[{}]",
+        "  {} | {} branch(es) | A{}F{} {} | next=[{}] | ask: {} | examples=[{}] | details=[{}] | reason=[{}]",
         request.kind,
         request.branch_count,
         request.act,
@@ -301,6 +312,7 @@ fn render_strategy_request_line(request: &BranchExperimentStrategyRequestV1) -> 
         offer,
         request.suggested_action,
         examples,
+        details,
         reasons
     )
 }
@@ -1767,16 +1779,22 @@ mod tests {
     fn compact_report_renders_strategy_requests() {
         let report = BranchExperimentReportV1 {
             strategy_requests: vec![BranchExperimentStrategyRequestV1 {
-                kind: "event_strategy".to_string(),
-                boundary_title: "Falling".to_string(),
+                kind: "shop_strategy".to_string(),
+                boundary_title: "Shop".to_string(),
                 branch_count: 3,
                 representative_branch_id: "root.rp 0".to_string(),
-                act: 3,
-                floor: 36,
-                stop_reasons: vec!["event requires human choice".to_string()],
-                examples: vec!["remove Skill".to_string(), "remove Attack".to_string()],
+                act: 1,
+                floor: 7,
+                stop_reasons: vec!["shop action requires human choice".to_string()],
+                examples: vec!["Anger".to_string(), "Rampage".to_string()],
                 next_card_reward_offer: None,
-                suggested_action: "provide an event policy for Falling".to_string(),
+                boundary_details: vec![
+                    "Shop: cards=1 relics=0 potions=0 purge_cost=75 purge_available=true"
+                        .to_string(),
+                    "card-0 | Pommel Strike | 50 gold | buy card 0".to_string(),
+                ],
+                suggested_action: "provide buy/remove/leave priorities for this shop state"
+                    .to_string(),
             }],
             ..empty_report()
         };
@@ -1784,9 +1802,12 @@ mod tests {
         let rendered = render_compact_report(&report);
 
         assert!(rendered.contains("Strategy requests:"));
-        assert!(rendered.contains("event_strategy | 3 branch(es) | A3F36 Falling | next=[-]"));
-        assert!(rendered.contains("ask: provide an event policy for Falling"));
-        assert!(rendered.contains("examples=[remove Skill | remove Attack]"));
+        assert!(rendered.contains("shop_strategy | 3 branch(es) | A1F7 Shop | next=[-]"));
+        assert!(rendered.contains("ask: provide buy/remove/leave priorities for this shop state"));
+        assert!(rendered.contains("examples=[Anger | Rampage]"));
+        assert!(rendered.contains(
+            "details=[Shop: cards=1 relics=0 potions=0 purge_cost=75 purge_available=true | card-0 | Pommel Strike | 50 gold | buy card 0]"
+        ));
     }
 
     fn empty_report() -> BranchExperimentReportV1 {
@@ -1917,6 +1938,7 @@ mod tests {
                     sequence_breakers_present: Vec::new(),
                 },
             },
+            boundary_details: Vec::new(),
         }
     }
 
