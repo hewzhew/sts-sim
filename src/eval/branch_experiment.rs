@@ -39,7 +39,8 @@ pub use types::{
     BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
     BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
-    BranchExperimentRunSummaryV1, BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_SCHEMA_NAME,
+    BranchExperimentRunSummaryV1, BranchExperimentStrategyRequestV1,
+    BranchExperimentWallLimitPhaseV1, BRANCH_EXPERIMENT_SCHEMA_NAME,
     BRANCH_EXPERIMENT_SCHEMA_VERSION,
 };
 #[derive(Clone, Debug)]
@@ -263,6 +264,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
     let mut branch_limit_hit = false;
     let mut frontier_group_limit_hit = false;
     let mut wall_limit_hit = false;
+    let mut wall_limit_phase = None;
     let mut pruned_branch_count = 0usize;
     let mut pruned_first_pick_counts = BTreeMap::<String, usize>::new();
     let mut pruned_branch_summary = BranchExperimentPrunedBranchSummaryV1::default();
@@ -271,6 +273,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
     for depth in 0..config.max_depth {
         if experiment_wall_limit_hit(started_at, config) {
             wall_limit_hit = true;
+            wall_limit_phase.get_or_insert(BranchExperimentWallLimitPhaseV1::Expansion);
             break;
         }
         let mut next = Vec::new();
@@ -279,6 +282,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
         for mut branch in branches {
             if experiment_wall_limit_hit(started_at, config) {
                 wall_limit_hit = true;
+                wall_limit_phase.get_or_insert(BranchExperimentWallLimitPhaseV1::Expansion);
                 next.push(branch);
                 continue;
             }
@@ -370,6 +374,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
     for branch in &mut branches {
         if experiment_wall_limit_hit(started_at, config) {
             wall_limit_hit = true;
+            wall_limit_phase.get_or_insert(BranchExperimentWallLimitPhaseV1::FinalSettle);
             break;
         }
         settle_branch_to_frontier(branch, config);
@@ -421,6 +426,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
         branch_limit_hit,
         frontier_group_limit_hit,
         wall_limit_hit,
+        wall_limit_phase,
         elapsed_wall_ms: started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
         pruned_branch_count,
         pruned_first_pick_counts: pruned_first_pick_count_reports(pruned_first_pick_counts),

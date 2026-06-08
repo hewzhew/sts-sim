@@ -4,7 +4,7 @@ use sts_simulator::eval::branch_experiment::{
     branch_experiment_choice_effect_key_v1, BranchExperimentBranchReportV1,
     BranchExperimentBranchStatusV1, BranchExperimentChoiceV1, BranchExperimentReportV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
-    BranchExperimentStrategyRequestV1,
+    BranchExperimentStrategyRequestV1, BranchExperimentWallLimitPhaseV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
 
@@ -77,10 +77,7 @@ pub(super) fn render_compact_report_with_options(
         );
     }
     if report.wall_limit_hit {
-        lines.push(
-            "experiment wall-clock limit hit: increase --experiment-wall-ms for more exploration"
-                .to_string(),
-        );
+        lines.push(render_wall_limit_line(report));
     }
     if let Some(path) = report.replay_trace_path.as_ref() {
         lines.push(format!(
@@ -273,6 +270,21 @@ pub(super) fn render_compact_report_with_options(
         }
     }
     lines.join("\n")
+}
+
+fn render_wall_limit_line(report: &BranchExperimentReportV1) -> String {
+    match report.wall_limit_phase {
+        Some(BranchExperimentWallLimitPhaseV1::Expansion) => {
+            "experiment wall-clock limit hit during expansion: increase --experiment-wall-ms for more exploration".to_string()
+        }
+        Some(BranchExperimentWallLimitPhaseV1::FinalSettle) => {
+            "experiment wall-clock limit hit during final settle: retained branches may not all be advanced to their next frontier".to_string()
+        }
+        None => {
+            "experiment wall-clock limit hit: increase --experiment-wall-ms for more exploration"
+                .to_string()
+        }
+    }
 }
 
 fn render_strategy_request_line(request: &BranchExperimentStrategyRequestV1) -> String {
@@ -1810,6 +1822,20 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn compact_report_distinguishes_final_settle_wall_limit() {
+        let report = BranchExperimentReportV1 {
+            wall_limit_hit: true,
+            wall_limit_phase: Some(BranchExperimentWallLimitPhaseV1::FinalSettle),
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("experiment wall-clock limit hit during final settle"));
+        assert!(!rendered.contains("for more exploration"));
+    }
+
     fn empty_report() -> BranchExperimentReportV1 {
         BranchExperimentReportV1 {
             schema_name: "BranchExperimentV1".to_string(),
@@ -1827,6 +1853,7 @@ mod tests {
             branch_limit_hit: false,
             frontier_group_limit_hit: false,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             elapsed_wall_ms: 0,
             pruned_branch_count: 0,
             pruned_first_pick_counts: Vec::new(),

@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 #[test]
 fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
-    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 18);
+    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 19);
 }
 
 #[test]
@@ -45,6 +45,25 @@ fn branch_experiment_expands_pending_card_reward_choices() {
     assert!(report.branches.iter().any(|branch| {
         branch.choices[0].command == "rp 1" && branch.choices[0].label == "Cleave"
     }));
+}
+
+#[test]
+fn branch_experiment_marks_final_settle_wall_limit_phase() {
+    let session = RunControlSession::new(RunControlConfig::default());
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 0,
+            experiment_wall_ms: Some(0),
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    assert_eq!(
+        report.wall_limit_phase,
+        Some(BranchExperimentWallLimitPhaseV1::FinalSettle)
+    );
 }
 
 #[test]

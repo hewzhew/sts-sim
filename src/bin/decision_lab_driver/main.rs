@@ -10,7 +10,7 @@ use sts_simulator::ai::neow_policy_v1::{
 use sts_simulator::content::events::neow;
 use sts_simulator::eval::branch_experiment::{
     run_branch_experiment_v1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
-    BranchExperimentReportV1,
+    BranchExperimentReportV1, BranchExperimentWallLimitPhaseV1,
 };
 use sts_simulator::eval::branch_experiment_retention::{
     BranchRetentionBudgetProfileV1, BranchRetentionSlotV1,
@@ -123,6 +123,7 @@ struct DecisionLabSignalsV1 {
     depth_limit_reached: bool,
     branch_limit_hit: bool,
     wall_limit_hit: bool,
+    wall_limit_phase: Option<BranchExperimentWallLimitPhaseV1>,
     frontier_group_limit_hit: bool,
     pruned_branch_count: usize,
     kept_branch_count: usize,
@@ -146,6 +147,7 @@ struct DecisionLabCaseV1 {
     branch_limit_hit: bool,
     depth_limit_reached: bool,
     wall_limit_hit: bool,
+    wall_limit_phase: Option<BranchExperimentWallLimitPhaseV1>,
     first_picks: Vec<String>,
     retention_lanes: Vec<String>,
     context_signals: Vec<String>,
@@ -357,6 +359,7 @@ fn case_from_report(
         branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
         depth_limit_reached: signals.depth_limit_reached,
         wall_limit_hit: report.wall_limit_hit,
+        wall_limit_phase: report.wall_limit_phase,
         first_picks: first_pick_labels(report, 6),
         retention_lanes: branch_context_available
             .then(|| retention_lane_counts(report))
@@ -385,6 +388,7 @@ fn case_from_error(args: &Args, seed: u64, error: String) -> DecisionLabCaseV1 {
         branch_limit_hit: false,
         depth_limit_reached: false,
         wall_limit_hit: false,
+        wall_limit_phase: None,
         first_picks: Vec::new(),
         retention_lanes: Vec::new(),
         context_signals: Vec::new(),
@@ -401,6 +405,7 @@ fn signals_from_report(report: &BranchExperimentReportV1) -> DecisionLabSignalsV
         depth_limit_reached: report_depth_limit_reached(report),
         branch_limit_hit: report.branch_limit_hit,
         wall_limit_hit: report.wall_limit_hit,
+        wall_limit_phase: report.wall_limit_phase,
         frontier_group_limit_hit: report.frontier_group_limit_hit,
         pruned_branch_count: report.pruned_branch_count,
         kept_branch_count: report.branches.len(),
@@ -489,6 +494,7 @@ fn should_retry_wall_budget(
     }
     let signals = signals_from_report(report);
     signals.wall_limit_hit
+        && signals.wall_limit_phase != Some(BranchExperimentWallLimitPhaseV1::FinalSettle)
         && !signals.depth_limit_reached
         && !signals.branch_limit_hit
         && !signals.frontier_group_limit_hit
@@ -857,7 +863,11 @@ fn case_limit_flags(case: &DecisionLabCaseV1) -> String {
         flags.push("branch");
     }
     if case.wall_limit_hit {
-        flags.push("wall");
+        match case.wall_limit_phase {
+            Some(BranchExperimentWallLimitPhaseV1::Expansion) => flags.push("wall:expansion"),
+            Some(BranchExperimentWallLimitPhaseV1::FinalSettle) => flags.push("wall:settle"),
+            None => flags.push("wall"),
+        }
     }
     if case
         .strategy_requests
@@ -985,6 +995,7 @@ mod tests {
             depth_limit_reached: false,
             branch_limit_hit: false,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             frontier_group_limit_hit: false,
             pruned_branch_count: 0,
             kept_branch_count: 1,
@@ -1004,6 +1015,7 @@ mod tests {
             depth_limit_reached: false,
             branch_limit_hit: false,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             frontier_group_limit_hit: false,
             pruned_branch_count: 0,
             kept_branch_count: 1,
@@ -1023,6 +1035,7 @@ mod tests {
             depth_limit_reached: false,
             branch_limit_hit: false,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             frontier_group_limit_hit: false,
             pruned_branch_count: 0,
             kept_branch_count: 1,
@@ -1093,9 +1106,19 @@ mod tests {
     fn retries_pure_wall_limited_reports() {
         let mut report = test_report();
         report.wall_limit_hit = true;
+        report.wall_limit_phase = Some(BranchExperimentWallLimitPhaseV1::Expansion);
 
         assert!(should_retry_wall_budget(&report, 0, 1));
         assert!(!should_retry_wall_budget(&report, 1, 1));
+    }
+
+    #[test]
+    fn does_not_retry_final_settle_wall_limited_reports() {
+        let mut report = test_report();
+        report.wall_limit_hit = true;
+        report.wall_limit_phase = Some(BranchExperimentWallLimitPhaseV1::FinalSettle);
+
+        assert!(!should_retry_wall_budget(&report, 0, 1));
     }
 
     #[test]
@@ -1127,6 +1150,7 @@ mod tests {
             depth_limit_reached: false,
             branch_limit_hit: true,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             frontier_group_limit_hit: false,
             pruned_branch_count: 10,
             kept_branch_count: 24,
@@ -1146,6 +1170,7 @@ mod tests {
             depth_limit_reached: true,
             branch_limit_hit: false,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             frontier_group_limit_hit: false,
             pruned_branch_count: 0,
             kept_branch_count: 9,
@@ -1165,6 +1190,7 @@ mod tests {
             depth_limit_reached: false,
             branch_limit_hit: false,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             frontier_group_limit_hit: false,
             pruned_branch_count: 0,
             kept_branch_count: 3,
@@ -1288,6 +1314,7 @@ mod tests {
             branch_limit_hit: false,
             depth_limit_reached: false,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             first_picks: vec!["Pommel Strike".to_string()],
             retention_lanes: vec!["frontload=2".to_string(), "package=1".to_string()],
             context_signals: vec![
@@ -1304,6 +1331,17 @@ mod tests {
         assert!(rendered.contains("lanes=[frontload=2 package=1]"));
         assert!(rendered.contains("ctx=[matches_current_frontload_need=2 opens_setup_path=1]"));
         assert!(rendered.contains("requests=[card_reward_policy_gap=3]"));
+    }
+
+    #[test]
+    fn render_case_line_distinguishes_final_settle_wall_limit() {
+        let mut case = test_case(DecisionLabCaseKindV1::NeedsMoreBudget, &[]);
+        case.wall_limit_hit = true;
+        case.wall_limit_phase = Some(BranchExperimentWallLimitPhaseV1::FinalSettle);
+
+        let rendered = render_case_line(&case);
+
+        assert!(rendered.contains("limits=[wall:settle]"));
     }
 
     #[test]
@@ -1416,6 +1454,7 @@ mod tests {
             branch_limit_hit: false,
             frontier_group_limit_hit: false,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             elapsed_wall_ms: 0,
             pruned_branch_count: 0,
             pruned_first_pick_counts: Vec::new(),
@@ -1442,6 +1481,7 @@ mod tests {
             branch_limit_hit: false,
             depth_limit_reached: false,
             wall_limit_hit: false,
+            wall_limit_phase: None,
             first_picks: Vec::new(),
             retention_lanes: Vec::new(),
             context_signals: context_signals

@@ -14,7 +14,7 @@ use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::RunControlHpLossLimit;
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 18;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 19;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -88,6 +88,8 @@ pub struct BranchExperimentReportV1 {
     pub branch_limit_hit: bool,
     pub frontier_group_limit_hit: bool,
     pub wall_limit_hit: bool,
+    #[serde(default)]
+    pub wall_limit_phase: Option<BranchExperimentWallLimitPhaseV1>,
     pub elapsed_wall_ms: u64,
     pub pruned_branch_count: usize,
     pub pruned_first_pick_counts: Vec<BranchExperimentPrunedFirstPickCountV1>,
@@ -98,6 +100,13 @@ pub struct BranchExperimentReportV1 {
     pub strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
     pub frontier_groups: Vec<BranchExperimentFrontierGroupV1>,
     pub branches: Vec<BranchExperimentBranchReportV1>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BranchExperimentWallLimitPhaseV1 {
+    Expansion,
+    FinalSettle,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
