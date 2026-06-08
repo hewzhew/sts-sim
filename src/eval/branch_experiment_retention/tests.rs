@@ -806,6 +806,82 @@ fn retention_slots_come_from_semantic_profiles_not_card_names() {
     assert!(!decision.slots.contains(&BranchRetentionSlotV1::Frontload));
 }
 
+#[test]
+fn context_packet_matches_current_formation_needs_without_card_names() {
+    let mut candidate = semantic_retention_candidate(
+        0,
+        10_000,
+        64,
+        80,
+        trajectory_with(&[], &[], 0, 0, 0, 1),
+        &[
+            CardRewardSemanticRoleV1::Block,
+            CardRewardSemanticRoleV1::CardDraw,
+        ],
+    );
+    candidate.choice_profiles[0].name = "Unfamiliar Utility".to_string();
+    candidate.strategy_formation = Some(formation(
+        StrategyDeckFormationStageV1::Transitional,
+        &[
+            StrategyDeckFormationNeedV1::Block,
+            StrategyDeckFormationNeedV1::DrawEnergy,
+        ],
+        &[],
+    ));
+
+    let packet = branch_retention_context_packet_v2(&candidate);
+
+    assert!(packet
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationBlockNeed));
+    assert!(packet
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationDrawEnergyNeed));
+    assert!(
+        !packet
+            .keys
+            .contains(&BranchRetentionContextKeyV2::MatchesFormationFrontloadNeed),
+        "context packet should be driven by current needs and semantic roles, not by a card name fallback"
+    );
+}
+
+#[test]
+fn frontload_slot_prefers_candidate_that_matches_current_frontload_need() {
+    let mut generic_output = semantic_retention_candidate(
+        0,
+        10_900,
+        70,
+        80,
+        trajectory_with(&[], &[], 1, 0, 0, 0),
+        &[CardRewardSemanticRoleV1::FrontloadDamage],
+    );
+    generic_output.strategy_formation = Some(formation(
+        StrategyDeckFormationStageV1::PlanSeeded,
+        &[StrategyDeckFormationNeedV1::Scaling],
+        &[],
+    ));
+
+    let mut contextual_output = semantic_retention_candidate(
+        1,
+        10_100,
+        70,
+        80,
+        trajectory_with(&[], &[], 1, 0, 0, 0),
+        &[CardRewardSemanticRoleV1::FrontloadDamage],
+    );
+    contextual_output.strategy_formation = Some(formation(
+        StrategyDeckFormationStageV1::StarterShell,
+        &[StrategyDeckFormationNeedV1::Frontload],
+        &[],
+    ));
+
+    assert!(
+        slot_score(&contextual_output, BranchRetentionSlotV1::Frontload)
+            > slot_score(&generic_output, BranchRetentionSlotV1::Frontload),
+        "frontload lane should prefer output that patches a current frontload gap over a higher-ranked generic output"
+    );
+}
+
 fn retention_candidate(
     index: usize,
     rank_key: i32,

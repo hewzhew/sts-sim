@@ -9,7 +9,12 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
+mod context_packet;
 mod effect_coverage;
+
+use context_packet::{
+    branch_retention_context_packet_v2, context_score, BranchRetentionContextKeyV2,
+};
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BranchRetentionSlotV1 {
@@ -217,6 +222,7 @@ pub fn decide_branch_retention_v1(
 ) -> BranchRetentionDecisionV1 {
     let mut slots = Vec::new();
     let mut reasons = Vec::new();
+    let context = branch_retention_context_packet_v2(candidate);
 
     if has_package_candidate(&candidate.choice_profiles) {
         slots.push(BranchRetentionSlotV1::Package);
@@ -229,6 +235,23 @@ pub fn decide_branch_retention_v1(
     if has_engine_setup(&candidate.trajectory) {
         slots.push(BranchRetentionSlotV1::EngineSetup);
         reasons.push("contains a long-horizon engine or package setup seed".to_string());
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::ClosesPackage)
+        || context
+            .keys
+            .contains(&BranchRetentionContextKeyV2::SupportsCommittedPackage)
+    {
+        slots.push(BranchRetentionSlotV1::Package);
+        reasons.push("context: closes or supports an active package".to_string());
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::OpensPackageSetup)
+    {
+        slots.push(BranchRetentionSlotV1::EngineSetup);
+        reasons.push("context: opens a setup path worth carrying forward".to_string());
     }
     if candidate
         .choice_profiles
@@ -250,6 +273,13 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Survival);
         reasons.push("preserves high current HP".to_string());
     }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::ImmediateSafetyPatch)
+    {
+        slots.push(BranchRetentionSlotV1::Survival);
+        reasons.push("context: patches low-hp or route pressure".to_string());
+    }
     if candidate.choice_profiles.iter().any(|profile| {
         profile
             .roles
@@ -258,9 +288,44 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Frontload);
         reasons.push("contains immediate combat output".to_string());
     }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationFrontloadNeed)
+    {
+        slots.push(BranchRetentionSlotV1::Frontload);
+        reasons.push("context: matches current frontload need".to_string());
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationBlockNeed)
+    {
+        slots.push(BranchRetentionSlotV1::DefenseEngine);
+        reasons.push("context: matches current block or mitigation need".to_string());
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationScalingNeed)
+    {
+        slots.push(BranchRetentionSlotV1::Scaling);
+        reasons.push("context: matches current scaling need".to_string());
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationDrawEnergyNeed)
+    {
+        slots.push(BranchRetentionSlotV1::EngineSetup);
+        reasons.push("context: matches current draw/energy need".to_string());
+    }
     if transition_attack_count(&candidate.choice_profiles) <= 1 {
         slots.push(BranchRetentionSlotV1::CleanDeck);
         reasons.push("keeps transition-card bloat lower".to_string());
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationConsistencyNeed)
+    {
+        slots.push(BranchRetentionSlotV1::CleanDeck);
+        reasons.push("context: matches current consistency need".to_string());
     }
     slots.push(BranchRetentionSlotV1::Diversity);
     reasons.push("kept as a diversity representative".to_string());
@@ -746,37 +811,78 @@ fn is_pure_transition_branch(candidate: &BranchRetentionCandidateInputV1) -> boo
 }
 
 fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetentionSlotV1) -> i32 {
+    let context = branch_retention_context_packet_v2(candidate);
     match slot {
         BranchRetentionSlotV1::Package => {
             package_score(&candidate.choice_profiles) * 10_000
                 + complete_package_count(&candidate.trajectory) * 25_000
+                + context_score(
+                    &context,
+                    &[
+                        BranchRetentionContextKeyV2::ClosesPackage,
+                        BranchRetentionContextKeyV2::SupportsCommittedPackage,
+                    ],
+                ) * 20_000
                 + candidate.hp * 10
         }
         BranchRetentionSlotV1::EngineSetup => {
             candidate.trajectory.setup_keys.len() as i32 * 10_000
                 + candidate.trajectory.engine_generator_picks as i32 * 5_000
                 + candidate.trajectory.draw_energy_picks as i32 * 2_500
+                + context_score(
+                    &context,
+                    &[
+                        BranchRetentionContextKeyV2::OpensPackageSetup,
+                        BranchRetentionContextKeyV2::MatchesFormationDrawEnergyNeed,
+                    ],
+                ) * 20_000
                 + candidate.hp * 10
         }
         BranchRetentionSlotV1::Scaling => {
             count_profiles_with_any_role(&candidate.choice_profiles, SCALING_ROLES) * 10_000
+                + context_score(
+                    &context,
+                    &[BranchRetentionContextKeyV2::MatchesFormationScalingNeed],
+                ) * 20_000
                 + candidate.hp * 10
         }
         BranchRetentionSlotV1::DefenseEngine => {
             count_profiles_with_any_role(&candidate.choice_profiles, DEFENSE_ENGINE_ROLES) * 10_000
+                + context_score(
+                    &context,
+                    &[
+                        BranchRetentionContextKeyV2::MatchesFormationBlockNeed,
+                        BranchRetentionContextKeyV2::ImmediateSafetyPatch,
+                    ],
+                ) * 20_000
                 + candidate.hp * 10
         }
-        BranchRetentionSlotV1::Survival => candidate.hp * 100 + candidate.gold,
+        BranchRetentionSlotV1::Survival => {
+            candidate.hp * 100
+                + candidate.gold
+                + context_score(
+                    &context,
+                    &[BranchRetentionContextKeyV2::ImmediateSafetyPatch],
+                ) * 1_000
+        }
         BranchRetentionSlotV1::Frontload => {
             count_profiles_with_role(
                 &candidate.choice_profiles,
                 CardRewardSemanticRoleV1::FrontloadDamage,
             ) * 10_000
+                + context_score(
+                    &context,
+                    &[BranchRetentionContextKeyV2::MatchesFormationFrontloadNeed],
+                ) * 20_000
                 + candidate.hp * 10
         }
         BranchRetentionSlotV1::CleanDeck => {
             -transition_attack_count(&candidate.choice_profiles) * 10_000
                 - candidate.deck_count as i32 * 100
+                + context_score(
+                    &context,
+                    &[BranchRetentionContextKeyV2::MatchesFormationConsistencyNeed],
+                ) * 20_000
                 + candidate.hp * 10
         }
         BranchRetentionSlotV1::Diversity => -(candidate.index as i32),

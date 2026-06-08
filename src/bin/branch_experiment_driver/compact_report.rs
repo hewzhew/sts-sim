@@ -406,8 +406,9 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
     let retention = render_retention_slots(&branch.retention.slots);
     let formation = render_formation_summary(branch);
     let trajectory = render_trajectory_summary(branch);
+    let context = render_retention_context_suffix(branch);
     format!(
-        "  A{}F{} HP {}/{} gold {} | {}{} | {} | {} | lane={} keep=[{}] | choices: {} | next_reward=[{}]",
+        "  A{}F{} HP {}/{} gold {} | {}{} | {} | {}{} | lane={} keep=[{}] | choices: {} | next_reward=[{}]",
         branch.summary.act,
         branch.summary.floor,
         branch.summary.hp,
@@ -417,11 +418,27 @@ fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
         status,
         formation,
         trajectory,
+        context,
         lane,
         retention,
         choices,
         next_reward
     )
+}
+
+fn render_retention_context_suffix(branch: &BranchExperimentBranchReportV1) -> String {
+    let reasons = branch
+        .retention
+        .reasons
+        .iter()
+        .filter_map(|reason| reason.strip_prefix("context: "))
+        .take(3)
+        .collect::<Vec<_>>();
+    if reasons.is_empty() {
+        String::new()
+    } else {
+        format!(" | ctx=[{}]", reasons.join("; "))
+    }
 }
 
 fn render_formation_summary(branch: &BranchExperimentBranchReportV1) -> String {
@@ -1305,6 +1322,35 @@ mod tests {
         assert!(rendered.contains(
             "Long-horizon coverage: kept primary=[package=1 engine_setup=1] first_picks=[Sever Soul, Shockwave]"
         ));
+    }
+
+    #[test]
+    fn compact_report_renders_context_retention_reasons_without_all_internal_reasons() {
+        let mut branch = branch_report(
+            "b0",
+            "Pommel Strike",
+            1,
+            3,
+            70,
+            BranchRetentionSlotV1::Frontload,
+            "Combat",
+        );
+        branch.retention.reasons = vec![
+            "contains immediate combat output".to_string(),
+            "context: matches current frontload need".to_string(),
+        ];
+        let report = BranchExperimentReportV1 {
+            branches: vec![branch],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("ctx=[matches current frontload need]"));
+        assert!(
+            !rendered.contains("contains immediate combat output"),
+            "compact output should not dump every internal retention reason"
+        );
     }
 
     #[test]
