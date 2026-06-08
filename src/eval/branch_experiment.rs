@@ -118,6 +118,7 @@ fn validate_shared_start_configs(configs: &[BranchExperimentConfigV1]) -> Result
         require_same!(search_max_nodes);
         require_same!(search_wall_ms);
         require_same!(search_max_hp_loss);
+        require_same!(search_options);
         require_same!(include_skip);
         require_same!(include_event_reward_skip);
         require_same!(auto_leave_after_shop_purchase_branch);
@@ -477,12 +478,7 @@ fn advance_to_experiment_boundary(branch: &mut BranchWork, config: &BranchExperi
         branch
             .session
             .apply_command(RunControlCommand::AutoRun(RunControlAutoStepOptions {
-                search: RunControlSearchCombatOptions {
-                    max_nodes: config.search_max_nodes,
-                    wall_ms: config.search_wall_ms,
-                    max_hp_loss: config.search_max_hp_loss,
-                    ..RunControlSearchCombatOptions::default()
-                },
+                search: branch_experiment_search_options(config),
                 max_operations: Some(config.auto_max_operations),
                 route: RunControlRouteAutomationMode::Planner,
             }));
@@ -498,6 +494,22 @@ fn advance_to_experiment_boundary(branch: &mut BranchWork, config: &BranchExperi
             branch.stop_reason = err;
         }
     }
+}
+
+fn branch_experiment_search_options(
+    config: &BranchExperimentConfigV1,
+) -> RunControlSearchCombatOptions {
+    let mut options = config.search_options.clone();
+    if config.search_max_nodes.is_some() {
+        options.max_nodes = config.search_max_nodes;
+    }
+    if config.search_wall_ms.is_some() {
+        options.wall_ms = config.search_wall_ms;
+    }
+    if config.search_max_hp_loss.is_some() {
+        options.max_hp_loss = config.search_max_hp_loss;
+    }
+    options
 }
 
 fn update_terminal_status(branch: &mut BranchWork) {

@@ -11,6 +11,7 @@ use sts_simulator::eval::branch_experiment::{
     BranchExperimentConfigV1, BranchExperimentReportV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
+use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
 use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
@@ -93,6 +94,13 @@ struct Args {
 
     #[arg(long)]
     max_hp_loss: Option<String>,
+
+    #[arg(
+        long = "combat-search-option",
+        value_name = "KEY=VALUE",
+        help = "Additional run_control search-combat option, e.g. rollout=turn_beam, beam=4, turn_plan=root_frontier_seed, frontier=single_queue"
+    )]
+    combat_search_options: Vec<String>,
 
     #[arg(long = "prefix", value_name = "COMMAND")]
     prefix_commands: Vec<String>,
@@ -290,6 +298,7 @@ fn branch_experiment_config(
         search_max_nodes: args.search_max_nodes,
         search_wall_ms: args.search_wall_ms.or(Some(100)),
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
+        search_options: parse_branch_experiment_search_options_v1(&args.combat_search_options)?,
         include_skip: args.include_skip || !args.exclude_skip,
         include_event_reward_skip: args.include_event_reward_skip,
         auto_leave_after_shop_purchase_branch: !args.allow_shop_multi_buy_branches,
@@ -617,6 +626,34 @@ mod tests {
         .expect("config builds");
 
         assert!(!config.defer_branch_settle);
+    }
+
+    #[test]
+    fn cli_passes_combat_search_option_overrides_to_branch_config() {
+        let args = Args::try_parse_from([
+            "branch_experiment_driver",
+            "--combat-search-option",
+            "rollout=turn_beam",
+            "--combat-search-option",
+            "beam=4",
+        ])
+        .expect("args parse");
+        let config = branch_experiment_config(
+            &args,
+            "Ironclad",
+            Vec::new(),
+            BranchRetentionBudgetProfileV1::Balanced,
+            None,
+        )
+        .expect("config builds");
+
+        assert_eq!(
+            config.search_options.rollout_policy,
+            Some(
+                sts_simulator::ai::combat_search_v2::CombatSearchV2RolloutPolicy::TurnBeamNoPotion
+            )
+        );
+        assert_eq!(config.search_options.rollout_beam_width, Some(4));
     }
 
     #[test]

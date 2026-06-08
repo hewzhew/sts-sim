@@ -10,6 +10,7 @@ use sts_simulator::eval::branch_experiment::{
 use sts_simulator::eval::branch_experiment_retention::{
     BranchRetentionBudgetProfileV1, BranchRetentionSlotV1,
 };
+use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
 use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
@@ -71,6 +72,13 @@ struct Args {
 
     #[arg(long)]
     max_hp_loss: Option<String>,
+
+    #[arg(
+        long = "combat-search-option",
+        value_name = "KEY=VALUE",
+        help = "Additional run_control search-combat option forwarded to branch experiments"
+    )]
+    combat_search_options: Vec<String>,
 
     #[arg(long, default_value = "balanced")]
     retention_profile: String,
@@ -238,6 +246,7 @@ fn branch_config_for_seed(args: &Args, seed: u64) -> Result<BranchExperimentConf
         search_max_nodes: args.search_max_nodes,
         search_wall_ms: Some(args.search_wall_ms),
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
+        search_options: parse_branch_experiment_search_options_v1(&args.combat_search_options)?,
         include_skip: true,
         include_event_reward_skip: args.include_event_reward_skip,
         prefix_commands,
@@ -671,6 +680,10 @@ fn rerun_command_for_config(
         tokens.push("--max-hp-loss".to_string());
         tokens.push(command_arg(max_hp_loss));
     }
+    for option in &args.combat_search_options {
+        tokens.push("--combat-search-option".to_string());
+        tokens.push(command_arg(option));
+    }
     if args.include_event_reward_skip {
         tokens.push("--include-event-reward-skip".to_string());
     }
@@ -686,10 +699,9 @@ fn rerun_command_for_config(
 }
 
 fn command_arg(value: &str) -> String {
-    if value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | '\\' | ':'))
-    {
+    if value.chars().all(|ch| {
+        ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | '\\' | ':' | '=')
+    }) {
         value.to_string()
     } else {
         format!("'{}'", value.replace('\'', "''"))
@@ -1227,6 +1239,8 @@ mod tests {
             "--retention-profile",
             "survival",
             "--include-event-reward-skip",
+            "--combat-search-option",
+            "rollout=turn_beam",
         ])
         .expect("args parse");
 
@@ -1240,7 +1254,24 @@ mod tests {
         assert!(command.contains("--search-max-nodes 50000"));
         assert!(command.contains("--retention-profile survival"));
         assert!(command.contains("--include-event-reward-skip"));
+        assert!(command.contains("--combat-search-option rollout=turn_beam"));
         assert!(command.contains("--prefix 0"));
+    }
+
+    #[test]
+    fn branch_config_passes_combat_search_option_overrides() {
+        let args = Args::try_parse_from([
+            "decision_lab_driver",
+            "--combat-search-option",
+            "frontier=single_queue",
+        ])
+        .expect("args parse");
+        let config = branch_config_for_seed(&args, 521).expect("config builds");
+
+        assert_eq!(
+            config.search_options.frontier_policy,
+            Some(sts_simulator::ai::combat_search_v2::CombatSearchV2FrontierPolicy::SingleQueue)
+        );
     }
 
     #[test]

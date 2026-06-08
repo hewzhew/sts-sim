@@ -3,6 +3,7 @@ pub mod artifact_doctor;
 pub mod branch_experiment;
 pub(crate) mod branch_experiment_boundary;
 pub mod branch_experiment_retention;
+pub mod branch_experiment_search_options;
 pub mod branch_experiment_trajectory;
 pub mod card_reward_value_loop;
 pub mod combat_capture;
