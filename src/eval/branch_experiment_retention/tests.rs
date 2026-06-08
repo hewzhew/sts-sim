@@ -603,6 +603,74 @@ fn package_slot_prefers_setup_and_payoff_closure_over_payoff_only() {
 }
 
 #[test]
+fn portfolio_retention_caps_payoff_only_package_saturation() {
+    let candidates = vec![
+        semantic_retention_candidate(
+            0,
+            10_900,
+            78,
+            80,
+            trajectory_with(&[], &["strike_density"], 0, 0, 1, 0),
+            &[CardRewardSemanticRoleV1::StrikePayoff],
+        ),
+        semantic_retention_candidate(
+            1,
+            10_890,
+            78,
+            80,
+            trajectory_with(&[], &["strike_density"], 0, 0, 1, 0),
+            &[CardRewardSemanticRoleV1::StrikePayoff],
+        ),
+        semantic_retention_candidate(
+            2,
+            10_880,
+            78,
+            80,
+            trajectory_with(&[], &["strike_density"], 0, 0, 1, 0),
+            &[CardRewardSemanticRoleV1::StrikePayoff],
+        ),
+        semantic_retention_candidate(
+            3,
+            10_870,
+            78,
+            80,
+            trajectory_with(&[], &["strike_density"], 0, 0, 1, 0),
+            &[CardRewardSemanticRoleV1::StrikePayoff],
+        ),
+        semantic_retention_candidate(
+            4,
+            10_500,
+            72,
+            80,
+            trajectory_with(&["exhaust_engine"], &[], 0, 1, 0, 0),
+            &[CardRewardSemanticRoleV1::ExhaustGenerator],
+        ),
+        semantic_retention_candidate(
+            5,
+            10_450,
+            72,
+            80,
+            trajectory_with(&["status_package"], &[], 0, 1, 0, 0),
+            &[CardRewardSemanticRoleV1::StatusGenerator],
+        ),
+    ];
+
+    let selection = select_branch_retention_portfolio_v1(&candidates, retention_config(5, Some(5)));
+    let payoff_only_kept = selection
+        .keep_indices
+        .iter()
+        .filter(|index| is_payoff_only_package_branch(&candidates[**index]))
+        .count();
+
+    assert!(
+        payoff_only_kept <= payoff_only_package_branch_cap(&candidates, &[0, 1, 2, 3, 4, 5], 5),
+        "payoff-only package branches should keep representatives without saturating the portfolio"
+    );
+    assert!(selection.keep_indices.contains(&4));
+    assert!(selection.keep_indices.contains(&5));
+}
+
+#[test]
 fn portfolio_records_the_lane_that_selected_each_kept_branch() {
     let package_closure = semantic_retention_candidate(
         0,

@@ -389,11 +389,14 @@ fn select_positions_for_slots(
     let selected = cap_redundant_choice_prefixes(candidates, positions, selected, limit);
     let selected = cap_redundant_first_pick_prefixes(candidates, positions, selected, limit);
     let selected = cap_pure_transition_saturation(candidates, positions, selected, limit);
+    let selected = cap_payoff_only_package_saturation(candidates, positions, selected, limit);
     let selected =
         effect_coverage::preserve_choice_effect_coverage(candidates, positions, selected, limit);
     let selected =
         effect_coverage::preserve_lineage_flag_coverage(candidates, positions, selected, limit);
-    drop_excess_first_pick_prefixes_after_coverage(candidates, positions, selected, limit)
+    let selected =
+        drop_excess_first_pick_prefixes_after_coverage(candidates, positions, selected, limit);
+    drop_excess_payoff_only_package_after_coverage(candidates, positions, selected, limit)
 }
 
 fn retention_lane_sequence(
@@ -895,6 +898,128 @@ fn is_pure_transition_branch(candidate: &BranchRetentionCandidateInputV1) -> boo
         && candidate.trajectory.defense_picks == 0
         && candidate.trajectory.engine_generator_picks == 0
         && candidate.trajectory.engine_payoff_picks == 0
+        && candidate.trajectory.draw_energy_picks == 0
+}
+
+fn cap_payoff_only_package_saturation(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    selected_picks: Vec<BranchRetentionLanePick>,
+    limit: usize,
+) -> Vec<BranchRetentionLanePick> {
+    if !available_positions
+        .iter()
+        .any(|position| !is_payoff_only_package_branch(&candidates[*position]))
+    {
+        return selected_picks;
+    }
+
+    let max_payoff_only = payoff_only_package_branch_cap(candidates, available_positions, limit);
+    let mut payoff_only_count = 0usize;
+    let mut capped = false;
+    let mut kept = Vec::new();
+
+    for pick in selected_picks {
+        if is_payoff_only_package_branch(&candidates[pick.position]) {
+            if payoff_only_count >= max_payoff_only {
+                capped = true;
+                continue;
+            }
+            payoff_only_count += 1;
+        }
+        kept.push(pick);
+    }
+
+    if !capped {
+        return kept;
+    }
+
+    let mut selected = kept
+        .iter()
+        .map(|pick| pick.position)
+        .collect::<BTreeSet<_>>();
+    while kept.len() < limit {
+        let allow_more_payoff_only = payoff_only_count < max_payoff_only;
+        let Some(position) =
+            best_fill_position_allowed(candidates, available_positions, &selected, |position| {
+                allow_more_payoff_only || !is_payoff_only_package_branch(&candidates[position])
+            })
+        else {
+            break;
+        };
+
+        if is_payoff_only_package_branch(&candidates[position]) {
+            payoff_only_count += 1;
+        }
+        selected.insert(position);
+        kept.push(BranchRetentionLanePick {
+            position,
+            selected_by_slot: BranchRetentionSlotV1::Diversity,
+        });
+    }
+
+    kept
+}
+
+fn payoff_only_package_branch_cap(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    limit: usize,
+) -> usize {
+    let distinct_payoff_packages = available_positions
+        .iter()
+        .filter(|position| is_payoff_only_package_branch(&candidates[**position]))
+        .map(|position| candidates[*position].trajectory.package_keys.join("+"))
+        .collect::<BTreeSet<_>>()
+        .len();
+    let non_payoff_families = available_positions
+        .iter()
+        .filter(|position| !is_payoff_only_package_branch(&candidates[**position]))
+        .map(|position| branch_family_key(&candidates[*position]))
+        .collect::<BTreeSet<_>>();
+    limit
+        .saturating_sub(non_payoff_families.len())
+        .max(distinct_payoff_packages)
+        .max(1)
+        .min(3)
+}
+
+fn drop_excess_payoff_only_package_after_coverage(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    selected_picks: Vec<BranchRetentionLanePick>,
+    limit: usize,
+) -> Vec<BranchRetentionLanePick> {
+    if !available_positions
+        .iter()
+        .any(|position| !is_payoff_only_package_branch(&candidates[*position]))
+    {
+        return selected_picks;
+    }
+
+    let max_payoff_only = payoff_only_package_branch_cap(candidates, available_positions, limit);
+    let protected_counts = protected_coverage_counts(candidates, &selected_picks);
+    let mut payoff_only_count = 0usize;
+    let mut kept = Vec::new();
+    for pick in selected_picks {
+        let candidate = &candidates[pick.position];
+        if is_payoff_only_package_branch(candidate) {
+            if payoff_only_count >= max_payoff_only
+                && !candidate_has_unique_protected_coverage(candidate, &protected_counts)
+            {
+                continue;
+            }
+            payoff_only_count += 1;
+        }
+        kept.push(pick);
+    }
+    kept
+}
+
+fn is_payoff_only_package_branch(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    !candidate.trajectory.package_keys.is_empty()
+        && candidate.trajectory.setup_keys.is_empty()
+        && candidate.trajectory.engine_generator_picks == 0
         && candidate.trajectory.draw_energy_picks == 0
 }
 
