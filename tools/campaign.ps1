@@ -15,6 +15,14 @@ Runs the same focused campaign on seed 521.
 Reuses the last non-dry-run campaign seed.
 
 .EXAMPLE
+.\tools\campaign.ps1 -Mode quick
+Runs a shorter random-seed campaign for fast smoke testing.
+
+.EXAMPLE
+.\tools\campaign.ps1 -Mode deep
+Runs a larger random-seed campaign when you want to leave it working longer.
+
+.EXAMPLE
 .\tools\campaign.ps1 -DryRun
 Prints the cargo command without updating the last seed or running it.
 #>
@@ -24,6 +32,9 @@ param(
 
     [switch] $Last,
     [switch] $DryRun,
+
+    [ValidateSet("quick", "focused", "deep")]
+    [string] $Mode = "focused",
 
     [int] $MaxRounds = 6,
     [int] $ExperimentWallMs = 10000,
@@ -40,8 +51,26 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $CampaignDir = Join-Path $RepoRoot "tools\artifacts\campaigns"
 $LatestSeedPath = Join-Path $CampaignDir "latest.seed.txt"
+$LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
 
 New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
+
+switch ($Mode) {
+    "quick" {
+        if (-not $PSBoundParameters.ContainsKey("MaxRounds")) { $MaxRounds = 3 }
+        if (-not $PSBoundParameters.ContainsKey("ExperimentWallMs")) { $ExperimentWallMs = 3000 }
+        if (-not $PSBoundParameters.ContainsKey("SearchWallMs")) { $SearchWallMs = 50 }
+        if (-not $PSBoundParameters.ContainsKey("SearchMaxNodes")) { $SearchMaxNodes = 5000 }
+        if (-not $PSBoundParameters.ContainsKey("BranchExamples")) { $BranchExamples = 3 }
+    }
+    "deep" {
+        if (-not $PSBoundParameters.ContainsKey("MaxRounds")) { $MaxRounds = 10 }
+        if (-not $PSBoundParameters.ContainsKey("ExperimentWallMs")) { $ExperimentWallMs = 30000 }
+        if (-not $PSBoundParameters.ContainsKey("SearchWallMs")) { $SearchWallMs = 1000 }
+        if (-not $PSBoundParameters.ContainsKey("SearchMaxNodes")) { $SearchMaxNodes = 200000 }
+        if (-not $PSBoundParameters.ContainsKey("BranchExamples")) { $BranchExamples = 6 }
+    }
+}
 
 if ($Last) {
     if (-not (Test-Path $LatestSeedPath)) {
@@ -71,17 +100,21 @@ if ($ExtraArgs) {
 }
 
 Write-Host "seed=$Seed"
-Write-Host "mode=focused branch campaign"
+$RenderedArgs = $DriverArgs | ForEach-Object {
+    if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
+}
+$RenderedCommand = "cargo " + ($RenderedArgs -join " ")
+
+Write-Host "mode=$Mode branch campaign"
+Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
 
 if ($DryRun) {
-    $RenderedArgs = $DriverArgs | ForEach-Object {
-        if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
-    }
-    Write-Host ("cargo " + ($RenderedArgs -join " "))
+    Write-Host $RenderedCommand
     exit 0
 }
 
 Set-Content -LiteralPath $LatestSeedPath -Value $Seed
+Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
 
 Push-Location $RepoRoot
 try {
