@@ -437,8 +437,6 @@ fn should_retry_combat_budget(
     let signals = signals_from_report(report);
     signals.strategy_request_count > 0
         && signals.human_strategy_request_count == 0
-        && !signals.depth_limit_reached
-        && !signals.branch_limit_hit
         && !signals.wall_limit_hit
         && !signals.frontier_group_limit_hit
 }
@@ -1082,6 +1080,66 @@ mod tests {
 
         assert!(should_retry_combat_budget(&report, 0, 1));
         assert!(!should_retry_combat_budget(&report, 1, 1));
+    }
+
+    #[test]
+    fn retries_combat_budget_even_when_branch_or_depth_limited() {
+        let mut report = test_report();
+        report.branch_limit_hit = true;
+        let mut branch = test_branch_with_reasons(&[]);
+        branch.choices.push(
+            sts_simulator::eval::branch_experiment::BranchExperimentChoiceV1 {
+                depth: 0,
+                kind: "card_reward".to_string(),
+                card: None,
+                upgrades: None,
+                selected_cards: Vec::new(),
+                effect_kind: "add_card".to_string(),
+                effect_key: "test".to_string(),
+                effect_label: "test".to_string(),
+                representative_count: 1,
+                suppressed_count: 0,
+                label: "test".to_string(),
+                command: "rp 0".to_string(),
+            },
+        );
+        report.branches = vec![branch];
+        report.strategy_requests = vec![BranchExperimentStrategyRequestV1 {
+            kind: "combat_manual_or_budget".to_string(),
+            boundary_title: "Combat".to_string(),
+            branch_count: 1,
+            representative_branch_id: "root".to_string(),
+            act: 1,
+            floor: 3,
+            stop_reasons: vec!["combat search did not find an executable complete win".to_string()],
+            examples: vec!["Strike".to_string()],
+            next_card_reward_offer: None,
+            boundary_details: Vec::new(),
+            suggested_action: "raise combat search budget".to_string(),
+        }];
+
+        assert!(should_retry_combat_budget(&report, 0, 1));
+    }
+
+    #[test]
+    fn does_not_retry_combat_budget_when_wall_limited() {
+        let mut report = test_report();
+        report.wall_limit_hit = true;
+        report.strategy_requests = vec![BranchExperimentStrategyRequestV1 {
+            kind: "combat_manual_or_budget".to_string(),
+            boundary_title: "Combat".to_string(),
+            branch_count: 1,
+            representative_branch_id: "root".to_string(),
+            act: 1,
+            floor: 3,
+            stop_reasons: vec!["combat search did not find an executable complete win".to_string()],
+            examples: vec!["Strike".to_string()],
+            next_card_reward_offer: None,
+            boundary_details: Vec::new(),
+            suggested_action: "raise combat search budget".to_string(),
+        }];
+
+        assert!(!should_retry_combat_budget(&report, 0, 1));
     }
 
     #[test]
