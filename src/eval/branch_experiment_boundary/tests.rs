@@ -4,6 +4,7 @@ use super::card_reward::select_card_reward_branch_options_with_limit;
 use super::*;
 use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
 use crate::content::cards::CardId;
+use crate::content::potions::{Potion, PotionId};
 use crate::content::relics::{RelicId, RelicState};
 use crate::eval::run_control::{RunControlConfig, RunControlSession};
 use crate::runtime::combat::CombatCard;
@@ -321,6 +322,107 @@ fn current_boundary_stops_at_shop_when_purchase_needs_strategy() {
     assert!(
         boundary.is_none(),
         "affordable shop purchases remain a human strategy boundary"
+    );
+}
+
+#[test]
+fn current_boundary_expands_sapphire_relic_reward_choice() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Relic {
+        relic_id: RelicId::Anchor,
+    });
+    reward.items.push(RewardItem::SapphireKey);
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("reward key/relic boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Reward);
+    assert_eq!(boundary.options.len(), 2);
+    assert_eq!(boundary.options[0].kind, "reward_claim");
+    assert_eq!(boundary.options[0].command, "claim 0");
+    assert_eq!(boundary.options[0].effect_kind, "reward_claim");
+    assert!(boundary.options[0].effect_label.contains("Relic Anchor"));
+    assert_eq!(boundary.options[1].command, "claim 1");
+    assert!(boundary.options[1].effect_label.contains("Sapphire key"));
+}
+
+#[test]
+fn current_boundary_does_not_branch_safe_relic_reward() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Relic {
+        relic_id: RelicId::Anchor,
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    assert!(
+        current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
+        "safe relic rewards should stay with low-agency reward automation, not branch experiment"
+    );
+}
+
+#[test]
+fn current_boundary_expands_emerald_key_reward() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::EmeraldKey);
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("emerald key reward boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Reward);
+    assert_eq!(boundary.options.len(), 1);
+    assert_eq!(boundary.options[0].kind, "reward_claim");
+    assert_eq!(boundary.options[0].command, "claim 0");
+    assert!(boundary.options[0].effect_label.contains("Emerald key"));
+}
+
+#[test]
+fn current_boundary_can_skip_full_slot_potion_reward_after_low_agency_claims() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.potions = vec![
+        Some(Potion::new(PotionId::FirePotion, 1)),
+        Some(Potion::new(PotionId::DexterityPotion, 2)),
+        Some(Potion::new(PotionId::StrengthPotion, 3)),
+    ];
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Potion {
+        potion_id: PotionId::HeartOfIron,
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("full potion reward should expose a skip branch");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Reward);
+    assert_eq!(boundary.options.len(), 1);
+    assert_eq!(boundary.options[0].kind, "reward_skip");
+    assert_eq!(boundary.options[0].command, "skip");
+    assert_eq!(boundary.options[0].effect_kind, "reward_skip_full_potion");
+    assert!(boundary.options[0].effect_label.contains("Heart"));
+}
+
+#[test]
+fn current_boundary_waits_for_low_agency_reward_before_full_potion_skip() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.potions = vec![
+        Some(Potion::new(PotionId::FirePotion, 1)),
+        Some(Potion::new(PotionId::DexterityPotion, 2)),
+        Some(Potion::new(PotionId::StrengthPotion, 3)),
+    ];
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Gold { amount: 25 });
+    reward.items.push(RewardItem::Potion {
+        potion_id: PotionId::HeartOfIron,
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    assert!(
+        current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
+        "branch experiment should let reward automation claim deterministic gold before considering full-potion skip"
     );
 }
 

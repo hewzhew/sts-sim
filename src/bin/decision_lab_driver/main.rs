@@ -165,8 +165,8 @@ fn run(args: Args) -> Result<(), String> {
 
 fn run_seed_case(args: &Args, seed: u64) -> DecisionLabCaseV1 {
     match run_seed_report(args, seed) {
-        Ok(report) => case_from_report(&report),
-        Err(err) => case_from_error(seed, err),
+        Ok(report) => case_from_report(args, &report),
+        Err(err) => case_from_error(args, seed, err),
     }
 }
 
@@ -283,7 +283,7 @@ fn expand_lab_seeds(
     Ok(seeds)
 }
 
-fn case_from_report(report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
+fn case_from_report(args: &Args, report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
     let signals = signals_from_report(report);
     let kind = classify_lab_case(&signals);
     let branch_context_available = report.explored_branch_points > 0;
@@ -312,12 +312,12 @@ fn case_from_report(report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
             .then(|| context_signal_counts(report))
             .unwrap_or_default(),
         strategy_requests: strategy_request_counts(report),
-        next_command: rerun_command(report.seed),
+        next_command: rerun_command(args, report.seed),
         error: None,
     }
 }
 
-fn case_from_error(seed: u64, error: String) -> DecisionLabCaseV1 {
+fn case_from_error(args: &Args, seed: u64, error: String) -> DecisionLabCaseV1 {
     DecisionLabCaseV1 {
         schema_name: "DecisionLabCaseV1",
         schema_version: 3,
@@ -335,7 +335,7 @@ fn case_from_error(seed: u64, error: String) -> DecisionLabCaseV1 {
         retention_lanes: Vec::new(),
         context_signals: Vec::new(),
         strategy_requests: Vec::new(),
-        next_command: rerun_command(seed),
+        next_command: rerun_command(args, seed),
         error: Some(error),
     }
 }
@@ -506,10 +506,66 @@ const RETENTION_LANE_DISPLAY_ORDER: &[BranchRetentionSlotV1] = &[
     BranchRetentionSlotV1::Diversity,
 ];
 
-fn rerun_command(seed: u64) -> String {
-    format!(
-        "cargo run --quiet --bin branch_experiment_driver -- --seed {seed} --max-depth 3 --max-branches 24 --experiment-wall-ms 10000 --search-wall-ms 100 --search-max-nodes 20000 --branch-examples 8"
-    )
+fn rerun_command(args: &Args, seed: u64) -> String {
+    let mut tokens = vec![
+        "cargo".to_string(),
+        "run".to_string(),
+        "--quiet".to_string(),
+        "--bin".to_string(),
+        "branch_experiment_driver".to_string(),
+        "--".to_string(),
+        "--seed".to_string(),
+        seed.to_string(),
+        "--ascension".to_string(),
+        args.ascension.to_string(),
+        "--class".to_string(),
+        command_arg(&args.player_class),
+        "--max-depth".to_string(),
+        args.max_depth.to_string(),
+        "--max-branches".to_string(),
+        args.max_branches.to_string(),
+        "--auto-max-ops".to_string(),
+        args.auto_max_ops.to_string(),
+        "--experiment-wall-ms".to_string(),
+        args.experiment_wall_ms.to_string(),
+        "--search-wall-ms".to_string(),
+        args.search_wall_ms.to_string(),
+        "--retention-profile".to_string(),
+        command_arg(&args.retention_profile),
+        "--branch-examples".to_string(),
+        "8".to_string(),
+    ];
+    if let Some(max_nodes) = args.search_max_nodes {
+        tokens.push("--search-max-nodes".to_string());
+        tokens.push(max_nodes.to_string());
+    }
+    if let Some(max_hp_loss) = args.max_hp_loss.as_deref() {
+        tokens.push("--max-hp-loss".to_string());
+        tokens.push(command_arg(max_hp_loss));
+    }
+    if args.include_event_reward_skip {
+        tokens.push("--include-event-reward-skip".to_string());
+    }
+    if let Ok(player_class) = canonical_player_class(&args.player_class) {
+        if let Ok(prefix_commands) = neow_guided_prefix_commands(args, seed, player_class) {
+            for command in prefix_commands {
+                tokens.push("--prefix".to_string());
+                tokens.push(command_arg(&command));
+            }
+        }
+    }
+    tokens.join(" ")
+}
+
+fn command_arg(value: &str) -> String {
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | '\\' | ':'))
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "''"))
+    }
 }
 
 fn parse_hp_loss_limit(value: Option<&str>) -> Result<Option<RunControlHpLossLimit>, String> {
@@ -765,6 +821,41 @@ mod tests {
         });
 
         assert_eq!(kind, DecisionLabCaseKindV1::NeedsHumanJudgment);
+    }
+
+    #[test]
+    fn rerun_command_preserves_lab_budget_and_prefix() {
+        let args = Args::try_parse_from([
+            "decision_lab_driver",
+            "--max-depth",
+            "2",
+            "--max-branches",
+            "16",
+            "--auto-max-ops",
+            "64",
+            "--experiment-wall-ms",
+            "8000",
+            "--search-wall-ms",
+            "1000",
+            "--search-max-nodes",
+            "50000",
+            "--retention-profile",
+            "survival",
+            "--include-event-reward-skip",
+        ])
+        .expect("args parse");
+
+        let command = rerun_command(&args, 521);
+
+        assert!(command.contains("--max-depth 2"));
+        assert!(command.contains("--max-branches 16"));
+        assert!(command.contains("--auto-max-ops 64"));
+        assert!(command.contains("--experiment-wall-ms 8000"));
+        assert!(command.contains("--search-wall-ms 1000"));
+        assert!(command.contains("--search-max-nodes 50000"));
+        assert!(command.contains("--retention-profile survival"));
+        assert!(command.contains("--include-event-reward-skip"));
+        assert!(command.contains("--prefix 0"));
     }
 
     #[test]

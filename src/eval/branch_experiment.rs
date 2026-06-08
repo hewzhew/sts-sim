@@ -741,6 +741,7 @@ pub fn branch_experiment_choice_effect_key_v1(effect_kind: &str) -> &'static str
     match effect_kind {
         "" | "add_card" => "take_card",
         "skip_card_reward" => "skip_reward",
+        "reward_skip_full_potion" => "reward_skip_full_potion",
         "singing_bowl" => "singing_bowl",
         "upgrade_card" => "upgrade_card",
         "rest" => "rest",

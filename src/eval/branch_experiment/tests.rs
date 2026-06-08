@@ -677,6 +677,14 @@ fn branch_choice_effect_key_preserves_special_campfire_effects() {
     assert_eq!(branch_experiment_choice_effect_key_v1("recall"), "recall");
 }
 
+#[test]
+fn branch_choice_effect_key_preserves_reward_skip_effects() {
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("reward_skip_full_potion"),
+        "reward_skip_full_potion"
+    );
+}
+
 fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
     BranchWork {
         id: branch_id.to_string(),

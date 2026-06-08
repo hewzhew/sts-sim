@@ -11,6 +11,7 @@ mod boss_relic;
 mod campfire;
 mod card_reward;
 mod event;
+mod reward;
 mod run_selection;
 mod shop;
 
@@ -24,6 +25,7 @@ use card_reward::{
     select_card_reward_branch_options, CardRewardBranchOption,
 };
 use event::{event_branch_options, EventBranchOption};
+use reward::{reward_branch_options, RewardBranchOption};
 use run_selection::{run_selection_branch_options, RunSelectionBranchOption};
 use shop::{shop_branch_options, ShopBranchOption};
 
@@ -33,6 +35,7 @@ pub(crate) enum BranchBoundaryIdV1 {
     Campfire,
     BossRelic,
     RunSelection,
+    Reward,
     Shop,
     Event,
 }
@@ -44,6 +47,7 @@ impl BranchBoundaryIdV1 {
             BranchBoundaryIdV1::Campfire => "campfire option portfolio is empty",
             BranchBoundaryIdV1::BossRelic => "boss relic option portfolio is empty",
             BranchBoundaryIdV1::RunSelection => "run selection option portfolio is empty",
+            BranchBoundaryIdV1::Reward => "reward claim option portfolio is empty",
             BranchBoundaryIdV1::Shop => "shop option portfolio is empty",
             BranchBoundaryIdV1::Event => "event option portfolio is empty",
         }
@@ -150,6 +154,17 @@ pub(crate) fn current_branch_boundary(
         });
     }
 
+    if let Some(options) = reward_branch_options(session) {
+        return Some(BranchBoundarySelectionV1 {
+            id: BranchBoundaryIdV1::Reward,
+            options: options
+                .into_iter()
+                .map(BranchBoundaryOptionV1::from_reward)
+                .collect(),
+            reward_option_portfolio: None,
+        });
+    }
+
     if let Some(options) = shop_branch_options(session) {
         return Some(BranchBoundarySelectionV1 {
             id: BranchBoundaryIdV1::Shop,
@@ -180,6 +195,7 @@ pub(crate) fn branch_boundary_available(session: &RunControlSession) -> bool {
         || campfire_branch_options(session).is_some()
         || boss_relic_branch_options(session).is_some()
         || run_selection_branch_options(session).is_some()
+        || reward_branch_options(session).is_some()
         || shop_branch_options(session).is_some()
         || event_branch_options(session).is_some()
 }
@@ -352,6 +368,27 @@ impl BranchBoundaryOptionV1 {
             representative_count: 1,
             suppressed_count: 0,
             success_reason: "shop branch applied",
+        }
+    }
+
+    fn from_reward(option: RewardBranchOption) -> Self {
+        let success_reason = match option.kind {
+            "reward_skip" => "reward skip branch applied",
+            _ => "reward claim branch applied",
+        };
+        Self {
+            kind: option.kind,
+            effect_label: option.effect_label,
+            label: option.label,
+            command: option.command,
+            card: None,
+            upgrades: None,
+            selected_cards: Vec::new(),
+            effect_kind: option.effect_kind,
+            effect_key: option.effect_key,
+            representative_count: 1,
+            suppressed_count: 0,
+            success_reason,
         }
     }
 
