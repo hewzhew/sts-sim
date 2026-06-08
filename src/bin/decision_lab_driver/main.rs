@@ -11,7 +11,9 @@ use sts_simulator::content::events::neow;
 use sts_simulator::eval::branch_experiment::{
     run_branch_experiment_v1, BranchExperimentConfigV1, BranchExperimentReportV1,
 };
-use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
+use sts_simulator::eval::branch_experiment_retention::{
+    BranchRetentionBudgetProfileV1, BranchRetentionSlotV1,
+};
 use sts_simulator::eval::run_control::{
     canonical_player_class, parse_run_control_command, RunControlConfig, RunControlHpLossLimit,
     RunControlSession,
@@ -125,6 +127,8 @@ struct DecisionLabCaseV1 {
     branch_limit_hit: bool,
     wall_limit_hit: bool,
     first_picks: Vec<String>,
+    retention_lanes: Vec<String>,
+    context_signals: Vec<String>,
     next_command: String,
     error: Option<String>,
 }
@@ -280,9 +284,10 @@ fn expand_lab_seeds(
 fn case_from_report(report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
     let signals = signals_from_report(report);
     let kind = classify_lab_case(&signals);
+    let branch_context_available = report.explored_branch_points > 0;
     DecisionLabCaseV1 {
         schema_name: "DecisionLabCaseV1",
-        schema_version: 1,
+        schema_version: 2,
         seed: report.seed,
         kind,
         decision: first_decision_kind(report),
@@ -298,6 +303,12 @@ fn case_from_report(report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
         branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
         wall_limit_hit: report.wall_limit_hit,
         first_picks: first_pick_labels(report, 6),
+        retention_lanes: branch_context_available
+            .then(|| retention_lane_counts(report))
+            .unwrap_or_default(),
+        context_signals: branch_context_available
+            .then(|| context_signal_counts(report))
+            .unwrap_or_default(),
         next_command: rerun_command(report.seed),
         error: None,
     }
@@ -306,7 +317,7 @@ fn case_from_report(report: &BranchExperimentReportV1) -> DecisionLabCaseV1 {
 fn case_from_error(seed: u64, error: String) -> DecisionLabCaseV1 {
     DecisionLabCaseV1 {
         schema_name: "DecisionLabCaseV1",
-        schema_version: 1,
+        schema_version: 2,
         seed,
         kind: DecisionLabCaseKindV1::EngineeringIssue,
         decision: "error".to_string(),
@@ -318,6 +329,8 @@ fn case_from_error(seed: u64, error: String) -> DecisionLabCaseV1 {
         branch_limit_hit: false,
         wall_limit_hit: false,
         first_picks: Vec::new(),
+        retention_lanes: Vec::new(),
+        context_signals: Vec::new(),
         next_command: rerun_command(seed),
         error: Some(error),
     }
@@ -373,6 +386,104 @@ fn first_decision_kind(report: &BranchExperimentReportV1) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+fn retention_lane_counts(report: &BranchExperimentReportV1) -> Vec<String> {
+    let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
+    for branch in &report.branches {
+        let lane = branch
+            .retention
+            .selected_by_slot
+            .unwrap_or(BranchRetentionSlotV1::Diversity);
+        *counts.entry(lane).or_default() += 1;
+    }
+    ordered_lane_counts(&counts)
+}
+
+fn context_signal_counts(report: &BranchExperimentReportV1) -> Vec<String> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for branch in &report.branches {
+        let branch_signals = branch
+            .retention
+            .reasons
+            .iter()
+            .filter_map(|reason| reason.strip_prefix("context: "))
+            .map(context_signal_key)
+            .collect::<BTreeSet<_>>();
+        for signal in branch_signals {
+            *counts.entry(signal).or_default() += 1;
+        }
+    }
+    let mut ranked = counts.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    ranked
+        .into_iter()
+        .take(4)
+        .map(|(signal, count)| format!("{signal}={count}"))
+        .collect()
+}
+
+fn ordered_lane_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>) -> Vec<String> {
+    RETENTION_LANE_DISPLAY_ORDER
+        .iter()
+        .filter_map(|lane| {
+            counts
+                .get(lane)
+                .filter(|count| **count > 0)
+                .map(|count| format!("{}={count}", retention_lane_name(*lane)))
+        })
+        .collect()
+}
+
+fn retention_lane_name(lane: BranchRetentionSlotV1) -> &'static str {
+    match lane {
+        BranchRetentionSlotV1::Package => "package",
+        BranchRetentionSlotV1::EngineSetup => "engine_setup",
+        BranchRetentionSlotV1::Scaling => "scaling",
+        BranchRetentionSlotV1::DefenseEngine => "defense",
+        BranchRetentionSlotV1::Survival => "survival",
+        BranchRetentionSlotV1::Frontload => "frontload",
+        BranchRetentionSlotV1::CleanDeck => "clean",
+        BranchRetentionSlotV1::Diversity => "diversity",
+    }
+}
+
+fn context_signal_key(reason: &str) -> String {
+    match reason {
+        "matches current frontload need" => "matches_current_frontload_need".to_string(),
+        "matches current block or mitigation need" => "matches_current_block_need".to_string(),
+        "matches current scaling need" => "matches_current_scaling_need".to_string(),
+        "matches current draw/energy need" => "matches_current_draw_energy_need".to_string(),
+        "matches current consistency need" => "matches_current_consistency_need".to_string(),
+        "opens a setup path worth carrying forward" => "opens_setup_path".to_string(),
+        "closes or supports an active package" => "supports_active_package".to_string(),
+        "patches low-hp or route pressure" => "immediate_safety_patch".to_string(),
+        other => other
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() {
+                    ch.to_ascii_lowercase()
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>()
+            .split('_')
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("_"),
+    }
+}
+
+const RETENTION_LANE_DISPLAY_ORDER: &[BranchRetentionSlotV1] = &[
+    BranchRetentionSlotV1::Package,
+    BranchRetentionSlotV1::EngineSetup,
+    BranchRetentionSlotV1::Scaling,
+    BranchRetentionSlotV1::DefenseEngine,
+    BranchRetentionSlotV1::Survival,
+    BranchRetentionSlotV1::Frontload,
+    BranchRetentionSlotV1::CleanDeck,
+    BranchRetentionSlotV1::Diversity,
+];
+
 fn rerun_command(seed: u64) -> String {
     format!(
         "cargo run --quiet --bin branch_experiment_driver -- --seed {seed} --max-depth 3 --max-branches 24 --experiment-wall-ms 10000 --search-wall-ms 100 --search-max-nodes 20000 --branch-examples 8"
@@ -407,6 +518,9 @@ fn print_compact_lab_report(cases: &[DecisionLabCaseV1], max_cases: usize) {
             .collect::<Vec<_>>()
             .join(" ")
     );
+    if let Some(line) = render_hot_context_signals_line(cases) {
+        println!("{line}");
+    }
     println!();
     println!("Cases:");
     for case in prioritized_cases(cases).into_iter().take(max_cases) {
@@ -449,7 +563,7 @@ fn case_priority(kind: DecisionLabCaseKindV1) -> u8 {
 
 fn render_case_line(case: &DecisionLabCaseV1) -> String {
     format!(
-        "  seed={} kind={} decision={} frontier={} branch_points={} kept={} pruned={} groups={} first_picks=[{}]",
+        "  seed={} kind={} decision={} frontier={} branch_points={} kept={} pruned={} groups={} first_picks=[{}] lanes=[{}] ctx=[{}]",
         case.seed,
         case.kind.as_str(),
         case.decision,
@@ -462,8 +576,60 @@ fn render_case_line(case: &DecisionLabCaseV1) -> String {
             "-".to_string()
         } else {
             case.first_picks.join(", ")
+        },
+        if case.retention_lanes.is_empty() {
+            "-".to_string()
+        } else {
+            case.retention_lanes.join(" ")
+        },
+        if case.context_signals.is_empty() {
+            "-".to_string()
+        } else {
+            case.context_signals.join(" ")
         }
     )
+}
+
+fn render_hot_context_signals_line(cases: &[DecisionLabCaseV1]) -> Option<String> {
+    let counts = aggregate_context_signals(cases);
+    if counts.is_empty() {
+        return None;
+    }
+    Some(format!("Hot context signals: {}", counts.join(" ")))
+}
+
+fn aggregate_context_signals(cases: &[DecisionLabCaseV1]) -> Vec<String> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for case in cases {
+        if !matches!(
+            case.kind,
+            DecisionLabCaseKindV1::NeedsHumanJudgment | DecisionLabCaseKindV1::NeedsMoreBudget
+        ) {
+            continue;
+        }
+        for signal in &case.context_signals {
+            let Some((key, count)) = split_count_token(signal) else {
+                continue;
+            };
+            *counts.entry(key.to_string()).or_default() += count;
+        }
+    }
+    let mut ranked = counts.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    ranked
+        .into_iter()
+        .take(5)
+        .map(|(signal, count)| format!("{signal}={count}"))
+        .collect()
+}
+
+fn split_count_token(token: &str) -> Option<(&str, usize)> {
+    let (key, count) = token.rsplit_once('=')?;
+    if key.is_empty() {
+        return None;
+    }
+    let count = count.parse().ok()?;
+    Some((key, count))
 }
 
 #[cfg(test)]
@@ -558,5 +724,195 @@ mod tests {
                 .any(|command| command.starts_with("select ")),
             "seed 527 previously stopped at Neow follow-up run_selection"
         );
+    }
+
+    #[test]
+    fn render_case_line_includes_lane_and_context_summaries() {
+        let case = DecisionLabCaseV1 {
+            schema_name: "DecisionLabCaseV1",
+            schema_version: 2,
+            seed: 42,
+            kind: DecisionLabCaseKindV1::NeedsHumanJudgment,
+            decision: "card_reward".to_string(),
+            boundary: "Combat".to_string(),
+            explored_branch_points: 2,
+            kept_branches: 4,
+            pruned_branches: 1,
+            frontier_groups: 1,
+            branch_limit_hit: false,
+            wall_limit_hit: false,
+            first_picks: vec!["Pommel Strike".to_string()],
+            retention_lanes: vec!["frontload=2".to_string(), "package=1".to_string()],
+            context_signals: vec![
+                "matches_current_frontload_need=2".to_string(),
+                "opens_setup_path=1".to_string(),
+            ],
+            next_command: "rerun".to_string(),
+            error: None,
+        };
+
+        let rendered = render_case_line(&case);
+
+        assert!(rendered.contains("lanes=[frontload=2 package=1]"));
+        assert!(rendered.contains("ctx=[matches_current_frontload_need=2 opens_setup_path=1]"));
+    }
+
+    #[test]
+    fn context_signal_counts_only_uses_context_prefixed_retention_reasons() {
+        let report = BranchExperimentReportV1 {
+            branches: vec![
+                test_branch_with_reasons(&[
+                    "contains immediate combat output",
+                    "context: matches current frontload need",
+                ]),
+                test_branch_with_reasons(&[
+                    "context: matches current frontload need",
+                    "context: opens a setup path worth carrying forward",
+                ]),
+            ],
+            ..test_report()
+        };
+
+        let signals = context_signal_counts(&report);
+
+        assert_eq!(
+            signals,
+            vec![
+                "matches_current_frontload_need=2".to_string(),
+                "opens_setup_path=1".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn hot_context_signal_line_aggregates_actionable_case_kinds() {
+        let cases = vec![
+            test_case(
+                DecisionLabCaseKindV1::NeedsHumanJudgment,
+                &["matches_current_frontload_need=3", "opens_setup_path=1"],
+            ),
+            test_case(
+                DecisionLabCaseKindV1::NeedsMoreBudget,
+                &["matches_current_frontload_need=2"],
+            ),
+            test_case(
+                DecisionLabCaseKindV1::NotEnoughEvidence,
+                &["matches_current_frontload_need=99"],
+            ),
+        ];
+
+        let line = render_hot_context_signals_line(&cases).expect("hot context line");
+
+        assert_eq!(
+            line,
+            "Hot context signals: matches_current_frontload_need=5 opens_setup_path=1"
+        );
+    }
+
+    fn test_report() -> BranchExperimentReportV1 {
+        BranchExperimentReportV1 {
+            schema_name: "BranchExperimentV1".to_string(),
+            schema_version:
+                sts_simulator::eval::branch_experiment::BRANCH_EXPERIMENT_SCHEMA_VERSION,
+            label_role: "diagnostic_not_teacher_label".to_string(),
+            policy_quality_claim: false,
+            seed: 1,
+            replay_trace_path: None,
+            replay_trace_applied_steps: 0,
+            replay_trace_stop: None,
+            max_branches: 4,
+            max_depth: 1,
+            retention_profile: BranchRetentionBudgetProfileV1::Balanced,
+            explored_branch_points: 1,
+            branch_limit_hit: false,
+            frontier_group_limit_hit: false,
+            wall_limit_hit: false,
+            elapsed_wall_ms: 0,
+            pruned_branch_count: 0,
+            pruned_first_pick_counts: Vec::new(),
+            pruned_branch_summary: Default::default(),
+            reward_option_portfolios: Vec::new(),
+            frontier_groups: Vec::new(),
+            branches: Vec::new(),
+        }
+    }
+
+    fn test_case(kind: DecisionLabCaseKindV1, context_signals: &[&str]) -> DecisionLabCaseV1 {
+        DecisionLabCaseV1 {
+            schema_name: "DecisionLabCaseV1",
+            schema_version: 2,
+            seed: 1,
+            kind,
+            decision: "card_reward".to_string(),
+            boundary: "Combat".to_string(),
+            explored_branch_points: 1,
+            kept_branches: 1,
+            pruned_branches: 0,
+            frontier_groups: 1,
+            branch_limit_hit: false,
+            wall_limit_hit: false,
+            first_picks: Vec::new(),
+            retention_lanes: Vec::new(),
+            context_signals: context_signals
+                .iter()
+                .map(|signal| (*signal).to_string())
+                .collect(),
+            next_command: "rerun".to_string(),
+            error: None,
+        }
+    }
+
+    fn test_branch_with_reasons(
+        reasons: &[&str],
+    ) -> sts_simulator::eval::branch_experiment::BranchExperimentBranchReportV1 {
+        sts_simulator::eval::branch_experiment::BranchExperimentBranchReportV1 {
+            branch_id: "b".to_string(),
+            status: sts_simulator::eval::branch_experiment::BranchExperimentBranchStatusV1::Active,
+            rank_key: 0,
+            retention: sts_simulator::eval::branch_experiment_retention::BranchRetentionDecisionV1 {
+                primary_slot: sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1::Frontload,
+                selected_by_slot: Some(sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1::Frontload),
+                slots: vec![sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1::Frontload],
+                reasons: reasons.iter().map(|reason| (*reason).to_string()).collect(),
+            },
+            choices: Vec::new(),
+            stop_reason: "test".to_string(),
+            summary: sts_simulator::eval::branch_experiment::BranchExperimentRunSummaryV1 {
+                act: 1,
+                floor: 1,
+                hp: 80,
+                max_hp: 80,
+                gold: 99,
+                deck_count: 10,
+                relic_count: 1,
+                potion_count: 0,
+                formation_stage: sts_simulator::ai::noncombat_strategy_v1::StrategyDeckFormationStageV1::StarterShell,
+                formation_needs: Vec::new(),
+                formation_strengths: Vec::new(),
+                trajectory: Default::default(),
+                boundary_title: "Combat".to_string(),
+            },
+            frontier: sts_simulator::eval::branch_experiment::BranchExperimentFrontierV1 {
+                key: "frontier".to_string(),
+                act: 1,
+                floor: 1,
+                boundary_title: "Combat".to_string(),
+                card_rng_counter: 0,
+                card_blizz_randomizer: 0,
+                next_card_reward_offer: None,
+                lineage: sts_simulator::eval::branch_experiment::BranchExperimentLineageV1 {
+                    visibility: "test".to_string(),
+                    public_policy_input: false,
+                    direct_pick_consumes_card_rng: false,
+                    same_reward_offer_lineage_key: "test".to_string(),
+                    reward_screen_context: "test".to_string(),
+                    reward_count_modifiers: Vec::new(),
+                    card_pool_modifiers: Vec::new(),
+                    rarity_modifiers: Vec::new(),
+                    preview_modifiers: Vec::new(),
+                    sequence_breakers_present: Vec::new(),
+                },
+            },
+        }
     }
 }
