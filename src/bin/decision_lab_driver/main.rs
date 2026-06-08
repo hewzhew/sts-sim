@@ -460,6 +460,10 @@ fn escalate_combat_retry_budget(config: &mut BranchExperimentConfigV1, multiplie
     let scaled_nodes =
         current_max_nodes.saturating_mul(usize::try_from(multiplier).unwrap_or(usize::MAX));
     config.search_max_nodes = Some(scaled_nodes);
+
+    if let Some(experiment_wall_ms) = config.experiment_wall_ms {
+        config.experiment_wall_ms = Some(experiment_wall_ms.saturating_mul(multiplier));
+    }
 }
 
 fn escalate_wall_retry_budget(config: &mut BranchExperimentConfigV1, multiplier: u64) {
@@ -1086,6 +1090,7 @@ mod tests {
         let mut config = BranchExperimentConfigV1 {
             search_wall_ms: Some(50),
             search_max_nodes: Some(5_000),
+            experiment_wall_ms: Some(8_000),
             ..BranchExperimentConfigV1::default()
         };
 
@@ -1093,6 +1098,7 @@ mod tests {
 
         assert_eq!(config.search_wall_ms, Some(200));
         assert_eq!(config.search_max_nodes, Some(20_000));
+        assert_eq!(config.experiment_wall_ms, Some(32_000));
     }
 
     #[test]
