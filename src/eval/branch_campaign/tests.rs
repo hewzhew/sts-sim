@@ -34,7 +34,7 @@ fn campaign_promotes_frozen_when_active_pool_is_empty() {
             branch
         },
         {
-            let mut branch = test_campaign_branch("f2", 5, 75);
+            let mut branch = test_campaign_branch("f2", 7, 75);
             branch.status = BranchCampaignBranchStatusV1::Frozen;
             branch
         },
@@ -44,10 +44,57 @@ fn campaign_promotes_frozen_when_active_pool_is_empty() {
 
     assert_eq!(promoted, 1);
     assert_eq!(active.len(), 1);
-    assert_eq!(active[0].branch_id, "f1");
+    assert_eq!(active[0].branch_id, "f2");
     assert_eq!(active[0].status, BranchCampaignBranchStatusV1::Active);
     assert_eq!(frozen.len(), 1);
-    assert_eq!(frozen[0].branch_id, "f2");
+    assert_eq!(frozen[0].branch_id, "f1");
+}
+
+#[test]
+fn campaign_retry_budget_raises_combat_search_without_restoring_hp_gate() {
+    let config = BranchCampaignConfigV1 {
+        search_max_nodes: Some(50_000),
+        search_wall_ms: Some(300),
+        search_max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+        ..BranchCampaignConfigV1::default()
+    };
+
+    let retry = combat_retry_campaign_config_v1(&config).expect("retry config");
+
+    assert_eq!(retry.search_max_nodes, Some(200_000));
+    assert_eq!(retry.search_wall_ms, Some(1_200));
+    assert_eq!(
+        retry.search_max_hp_loss,
+        Some(RunControlHpLossLimit::Unlimited)
+    );
+}
+
+#[test]
+fn campaign_retries_only_when_all_results_are_abandoned_combat() {
+    let abandoned_combat = test_report_branch_at(
+        "a",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Pruned,
+        "Combat",
+        16,
+        70,
+    );
+    let active_card_reward = test_report_branch_at(
+        "b",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Active,
+        "Card Reward",
+        4,
+        80,
+    );
+
+    assert!(branch_report_needs_combat_budget_retry_v1(&[
+        abandoned_combat.clone()
+    ]));
+    assert!(!branch_report_needs_combat_budget_retry_v1(&[
+        abandoned_combat,
+        active_card_reward,
+    ]));
 }
 
 #[test]
@@ -153,6 +200,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
             branch_count: 2,
             produced_branches: 8,
             explored_branch_points: 6,
+            combat_budget_retry_used: true,
             wall_limit_hit: false,
             branch_limit_hit: true,
         });
@@ -172,7 +220,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
 
     assert_eq!(
         branch_line,
-        "round 2: branch 1/2 done | produced=8 branch_points=6 limits=[branch]"
+        "round 2: branch 1/2 done | produced=8 branch_points=6 retry=combat_budget limits=[branch]"
     );
     assert_eq!(
         round_line,
@@ -223,6 +271,17 @@ fn test_report_branch(
     choices: Vec<(&str, &str)>,
     status: BranchExperimentBranchStatusV1,
 ) -> BranchExperimentBranchReportV1 {
+    test_report_branch_at(id, choices, status, "Card Reward", 2, 70)
+}
+
+fn test_report_branch_at(
+    id: &str,
+    choices: Vec<(&str, &str)>,
+    status: BranchExperimentBranchStatusV1,
+    boundary_title: &str,
+    floor: i32,
+    hp: i32,
+) -> BranchExperimentBranchReportV1 {
     BranchExperimentBranchReportV1 {
         branch_id: id.to_string(),
         status,
@@ -253,8 +312,8 @@ fn test_report_branch(
         stop_reason: "test".to_string(),
         summary: BranchExperimentRunSummaryV1 {
             act: 1,
-            floor: 2,
-            hp: 70,
+            floor,
+            hp,
             max_hp: 80,
             gold: 120,
             deck_count: 11,
@@ -264,13 +323,13 @@ fn test_report_branch(
             formation_needs: vec![StrategyDeckFormationNeedV1::Frontload],
             formation_strengths: Vec::new(),
             trajectory: BranchTrajectorySignatureV1::default(),
-            boundary_title: "Card Reward".to_string(),
+            boundary_title: boundary_title.to_string(),
         },
         frontier: BranchExperimentFrontierV1 {
-            key: "card_reward".to_string(),
+            key: boundary_title.to_ascii_lowercase(),
             act: 1,
-            floor: 2,
-            boundary_title: "Card Reward".to_string(),
+            floor,
+            boundary_title: boundary_title.to_string(),
             card_rng_counter: 0,
             card_blizz_randomizer: 0,
             next_card_reward_offer: None,

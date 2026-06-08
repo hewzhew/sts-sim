@@ -9,6 +9,12 @@ use std::collections::BTreeMap;
 
 pub const BRANCH_CAMPAIGN_SCHEMA_NAME: &str = "BranchCampaignV1";
 pub const BRANCH_CAMPAIGN_SCHEMA_VERSION: u32 = 1;
+const COMBAT_RETRY_NODE_MULTIPLIER: usize = 4;
+const COMBAT_RETRY_WALL_MULTIPLIER: u64 = 4;
+const COMBAT_RETRY_MIN_NODES: usize = 200_000;
+const COMBAT_RETRY_MAX_NODES: usize = 500_000;
+const COMBAT_RETRY_MIN_WALL_MS: u64 = 1_200;
+const COMBAT_RETRY_MAX_WALL_MS: u64 = 5_000;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchCampaignConfigV1 {
@@ -136,6 +142,7 @@ pub struct BranchCampaignRoundSummaryV1 {
     pub explored_branch_points: usize,
     pub wall_limit_hit: bool,
     pub branch_limit_hit: bool,
+    pub combat_budget_retries: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -184,6 +191,7 @@ pub enum BranchCampaignProgressEventV1 {
         branch_count: usize,
         produced_branches: usize,
         explored_branch_points: usize,
+        combat_budget_retry_used: bool,
         wall_limit_hit: bool,
         branch_limit_hit: bool,
     },
@@ -207,6 +215,11 @@ pub enum BranchCampaignProgressEventV1 {
         victories: usize,
         stuck: usize,
     },
+}
+
+struct BranchCampaignParentRoundResultV1 {
+    report: BranchExperimentReportV1,
+    combat_budget_retry_used: bool,
 }
 
 pub fn run_branch_campaign_v1(
@@ -260,6 +273,7 @@ where
         let mut explored_branch_points = 0usize;
         let mut wall_limit_hit = false;
         let mut branch_limit_hit = false;
+        let mut combat_budget_retries = 0usize;
 
         for (parent_index, parent) in parents.into_iter().enumerate() {
             progress(BranchCampaignProgressEventV1::BranchStarted {
@@ -268,7 +282,11 @@ where
                 branch_count: parent_count,
                 choices: render_choice_path(&parent.choice_labels),
             });
-            let report = run_campaign_parent_round_v1(config, &parent)?;
+            let parent_result = run_campaign_parent_round_v1(config, &parent)?;
+            let report = parent_result.report;
+            if parent_result.combat_budget_retry_used {
+                combat_budget_retries = combat_budget_retries.saturating_add(1);
+            }
             explored_branch_points =
                 explored_branch_points.saturating_add(report.explored_branch_points);
             wall_limit_hit |= report.wall_limit_hit;
@@ -279,6 +297,7 @@ where
                 branch_count: parent_count,
                 produced_branches: report.branches.len(),
                 explored_branch_points: report.explored_branch_points,
+                combat_budget_retry_used: parent_result.combat_budget_retry_used,
                 wall_limit_hit: report.wall_limit_hit,
                 branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
             });
@@ -334,6 +353,7 @@ where
             explored_branch_points,
             wall_limit_hit,
             branch_limit_hit,
+            combat_budget_retries,
         };
         progress(BranchCampaignProgressEventV1::RoundFinished {
             round: round + 1,
@@ -429,6 +449,7 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             branch_count,
             produced_branches,
             explored_branch_points,
+            combat_budget_retry_used,
             wall_limit_hit,
             branch_limit_hit,
         } => {
@@ -444,8 +465,13 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             } else {
                 limits.join(",")
             };
+            let retry = if *combat_budget_retry_used {
+                " retry=combat_budget"
+            } else {
+                ""
+            };
             format!(
-                "round {round}: branch {branch_index}/{branch_count} done | produced={produced_branches} branch_points={explored_branch_points} limits=[{limits}]"
+                "round {round}: branch {branch_index}/{branch_count} done | produced={produced_branches} branch_points={explored_branch_points}{retry} limits=[{limits}]"
             )
         }
         BranchCampaignProgressEventV1::RoundFinished {
@@ -498,13 +524,14 @@ pub fn render_branch_campaign_compact_v1(
     ));
     if let Some(round) = report.rounds.last() {
         lines.push(format!(
-            "Last round: started={} produced={} branch_points={} active_after={} frozen_added={} discarded_added={} limits=[{}{}]",
+            "Last round: started={} produced={} branch_points={} active_after={} frozen_added={} discarded_added={} combat_retries={} limits=[{}{}]",
             round.started_active,
             round.produced_branches,
             round.explored_branch_points,
             round.active_after,
             round.frozen_added,
             round.discarded_added,
+            round.combat_budget_retries,
             if round.branch_limit_hit { "branch" } else { "" },
             if round.wall_limit_hit {
                 if round.branch_limit_hit { ",wall" } else { "wall" }
@@ -582,6 +609,31 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
 fn run_campaign_parent_round_v1(
     config: &BranchCampaignConfigV1,
     parent: &BranchCampaignBranchV1,
+) -> Result<BranchCampaignParentRoundResultV1, String> {
+    let report = run_campaign_parent_round_once_v1(config, parent)?;
+    if !branch_report_needs_combat_budget_retry_v1(&report.branches) {
+        return Ok(BranchCampaignParentRoundResultV1 {
+            report,
+            combat_budget_retry_used: false,
+        });
+    }
+
+    let Some(retry_config) = combat_retry_campaign_config_v1(config) else {
+        return Ok(BranchCampaignParentRoundResultV1 {
+            report,
+            combat_budget_retry_used: false,
+        });
+    };
+    let retry_report = run_campaign_parent_round_once_v1(&retry_config, parent)?;
+    Ok(BranchCampaignParentRoundResultV1 {
+        report: retry_report,
+        combat_budget_retry_used: true,
+    })
+}
+
+fn run_campaign_parent_round_once_v1(
+    config: &BranchCampaignConfigV1,
+    parent: &BranchCampaignBranchV1,
 ) -> Result<BranchExperimentReportV1, String> {
     let mut prefix_commands = config.prefix_commands.clone();
     prefix_commands.extend(campaign_replay_commands_for_path_v1(&parent.commands));
@@ -606,6 +658,60 @@ fn run_campaign_parent_round_v1(
         prefix_commands,
         ..BranchExperimentConfigV1::default()
     })
+}
+
+fn combat_retry_campaign_config_v1(
+    config: &BranchCampaignConfigV1,
+) -> Option<BranchCampaignConfigV1> {
+    let retry_nodes = retry_node_budget_v1(config.search_max_nodes);
+    let retry_wall_ms = retry_wall_budget_v1(config.search_wall_ms);
+    if retry_nodes == config.search_max_nodes && retry_wall_ms == config.search_wall_ms {
+        return None;
+    }
+
+    let mut retry_config = config.clone();
+    retry_config.search_max_nodes = retry_nodes;
+    retry_config.search_wall_ms = retry_wall_ms;
+    retry_config.search_max_hp_loss = config
+        .search_max_hp_loss
+        .or(Some(RunControlHpLossLimit::Unlimited));
+    Some(retry_config)
+}
+
+fn retry_node_budget_v1(current: Option<usize>) -> Option<usize> {
+    let base = current.unwrap_or(COMBAT_RETRY_MIN_NODES);
+    Some(
+        base.saturating_mul(COMBAT_RETRY_NODE_MULTIPLIER)
+            .max(COMBAT_RETRY_MIN_NODES)
+            .min(COMBAT_RETRY_MAX_NODES),
+    )
+}
+
+fn retry_wall_budget_v1(current: Option<u64>) -> Option<u64> {
+    let base = current.unwrap_or(COMBAT_RETRY_MIN_WALL_MS);
+    Some(
+        base.saturating_mul(COMBAT_RETRY_WALL_MULTIPLIER)
+            .max(COMBAT_RETRY_MIN_WALL_MS)
+            .min(COMBAT_RETRY_MAX_WALL_MS),
+    )
+}
+
+fn branch_report_needs_combat_budget_retry_v1(branches: &[BranchExperimentBranchReportV1]) -> bool {
+    !branches.is_empty()
+        && branches
+            .iter()
+            .all(|branch| branch.status == BranchExperimentBranchStatusV1::Pruned)
+        && branches.iter().all(|branch| {
+            normalized_campaign_boundary_title(&branch.summary.boundary_title) == "combat"
+        })
+}
+
+fn normalized_campaign_boundary_title(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect()
 }
 
 pub fn campaign_replay_commands_for_path_v1(commands: &[String]) -> Vec<String> {
@@ -708,6 +814,12 @@ fn promote_frozen_to_active_v1(
     frozen: &mut Vec<BranchCampaignBranchV1>,
     max_active: usize,
 ) -> usize {
+    frozen.sort_by(|left, right| {
+        branch_progress_key(right)
+            .cmp(&branch_progress_key(left))
+            .then_with(|| right.rank_key.cmp(&left.rank_key))
+            .then_with(|| left.branch_id.cmp(&right.branch_id))
+    });
     let mut promoted = 0usize;
     while active.len() < max_active && !frozen.is_empty() {
         let mut branch = frozen.remove(0);
