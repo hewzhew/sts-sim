@@ -9,7 +9,8 @@ use sts_simulator::ai::neow_policy_v1::{
 };
 use sts_simulator::content::events::neow;
 use sts_simulator::eval::branch_experiment::{
-    run_branch_experiment_v1, BranchExperimentConfigV1, BranchExperimentReportV1,
+    run_branch_experiment_v1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
+    BranchExperimentReportV1,
 };
 use sts_simulator::eval::branch_experiment_retention::{
     BranchRetentionBudgetProfileV1, BranchRetentionSlotV1,
@@ -46,6 +47,9 @@ struct Args {
 
     #[arg(long, default_value_t = 3)]
     max_depth: usize,
+
+    #[arg(long, default_value_t = 1)]
+    depth_retries: usize,
 
     #[arg(long, default_value_t = 128)]
     auto_max_ops: usize,
@@ -104,6 +108,7 @@ impl DecisionLabCaseKindV1 {
 struct DecisionLabSignalsV1 {
     error: Option<String>,
     explored_branch_points: usize,
+    depth_limit_reached: bool,
     branch_limit_hit: bool,
     wall_limit_hit: bool,
     frontier_group_limit_hit: bool,
@@ -126,6 +131,7 @@ struct DecisionLabCaseV1 {
     pruned_branches: usize,
     frontier_groups: usize,
     branch_limit_hit: bool,
+    depth_limit_reached: bool,
     wall_limit_hit: bool,
     first_picks: Vec<String>,
     retention_lanes: Vec<String>,
@@ -171,7 +177,16 @@ fn run_seed_case(args: &Args, seed: u64) -> DecisionLabCaseV1 {
 }
 
 fn run_seed_report(args: &Args, seed: u64) -> Result<BranchExperimentReportV1, String> {
-    run_branch_experiment_v1(&branch_config_for_seed(args, seed)?)
+    let mut config = branch_config_for_seed(args, seed)?;
+    let mut retries_used = 0usize;
+    loop {
+        let report = run_branch_experiment_v1(&config)?;
+        if !should_retry_depth(&report, retries_used, args.depth_retries) {
+            return Ok(report);
+        }
+        retries_used = retries_used.saturating_add(1);
+        config.max_depth = config.max_depth.saturating_add(1);
+    }
 }
 
 fn branch_config_for_seed(args: &Args, seed: u64) -> Result<BranchExperimentConfigV1, String> {
@@ -289,7 +304,7 @@ fn case_from_report(args: &Args, report: &BranchExperimentReportV1) -> DecisionL
     let branch_context_available = report.explored_branch_points > 0;
     DecisionLabCaseV1 {
         schema_name: "DecisionLabCaseV1",
-        schema_version: 3,
+        schema_version: 4,
         seed: report.seed,
         kind,
         decision: first_decision_kind(report),
@@ -303,6 +318,7 @@ fn case_from_report(args: &Args, report: &BranchExperimentReportV1) -> DecisionL
         pruned_branches: report.pruned_branch_count,
         frontier_groups: report.frontier_groups.len(),
         branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
+        depth_limit_reached: signals.depth_limit_reached,
         wall_limit_hit: report.wall_limit_hit,
         first_picks: first_pick_labels(report, 6),
         retention_lanes: branch_context_available
@@ -312,7 +328,7 @@ fn case_from_report(args: &Args, report: &BranchExperimentReportV1) -> DecisionL
             .then(|| context_signal_counts(report))
             .unwrap_or_default(),
         strategy_requests: strategy_request_counts(report),
-        next_command: rerun_command(args, report.seed),
+        next_command: rerun_command_with_depth(args, report.seed, report.max_depth),
         error: None,
     }
 }
@@ -320,7 +336,7 @@ fn case_from_report(args: &Args, report: &BranchExperimentReportV1) -> DecisionL
 fn case_from_error(args: &Args, seed: u64, error: String) -> DecisionLabCaseV1 {
     DecisionLabCaseV1 {
         schema_name: "DecisionLabCaseV1",
-        schema_version: 3,
+        schema_version: 4,
         seed,
         kind: DecisionLabCaseKindV1::EngineeringIssue,
         decision: "error".to_string(),
@@ -330,6 +346,7 @@ fn case_from_error(args: &Args, seed: u64, error: String) -> DecisionLabCaseV1 {
         pruned_branches: 0,
         frontier_groups: 0,
         branch_limit_hit: false,
+        depth_limit_reached: false,
         wall_limit_hit: false,
         first_picks: Vec::new(),
         retention_lanes: Vec::new(),
@@ -344,6 +361,7 @@ fn signals_from_report(report: &BranchExperimentReportV1) -> DecisionLabSignalsV
     DecisionLabSignalsV1 {
         error: None,
         explored_branch_points: report.explored_branch_points,
+        depth_limit_reached: report_depth_limit_reached(report),
         branch_limit_hit: report.branch_limit_hit,
         wall_limit_hit: report.wall_limit_hit,
         frontier_group_limit_hit: report.frontier_group_limit_hit,
@@ -364,6 +382,9 @@ fn classify_lab_case(signals: &DecisionLabSignalsV1) -> DecisionLabCaseKindV1 {
     if signals.strategy_request_count > 0 {
         return DecisionLabCaseKindV1::NeedsHumanJudgment;
     }
+    if signals.depth_limit_reached {
+        return DecisionLabCaseKindV1::NeedsMoreBudget;
+    }
     if signals.explored_branch_points == 0 {
         return DecisionLabCaseKindV1::NotEnoughEvidence;
     }
@@ -374,6 +395,30 @@ fn classify_lab_case(signals: &DecisionLabSignalsV1) -> DecisionLabCaseKindV1 {
         return DecisionLabCaseKindV1::NeedsHumanJudgment;
     }
     DecisionLabCaseKindV1::Routine
+}
+
+fn should_retry_depth(
+    report: &BranchExperimentReportV1,
+    retries_used: usize,
+    depth_retries: usize,
+) -> bool {
+    if retries_used >= depth_retries {
+        return false;
+    }
+    let signals = signals_from_report(report);
+    signals.depth_limit_reached
+        && !signals.branch_limit_hit
+        && !signals.wall_limit_hit
+        && !signals.frontier_group_limit_hit
+        && signals.strategy_request_count == 0
+}
+
+fn report_depth_limit_reached(report: &BranchExperimentReportV1) -> bool {
+    report.max_depth > 0
+        && report.branches.iter().any(|branch| {
+            branch.status == BranchExperimentBranchStatusV1::Active
+                && branch.choices.len() >= report.max_depth
+        })
 }
 
 fn strategy_request_counts(report: &BranchExperimentReportV1) -> Vec<String> {
@@ -507,6 +552,10 @@ const RETENTION_LANE_DISPLAY_ORDER: &[BranchRetentionSlotV1] = &[
 ];
 
 fn rerun_command(args: &Args, seed: u64) -> String {
+    rerun_command_with_depth(args, seed, args.max_depth)
+}
+
+fn rerun_command_with_depth(args: &Args, seed: u64, max_depth: usize) -> String {
     let mut tokens = vec![
         "cargo".to_string(),
         "run".to_string(),
@@ -521,7 +570,7 @@ fn rerun_command(args: &Args, seed: u64) -> String {
         "--class".to_string(),
         command_arg(&args.player_class),
         "--max-depth".to_string(),
-        args.max_depth.to_string(),
+        max_depth.to_string(),
         "--max-branches".to_string(),
         args.max_branches.to_string(),
         "--auto-max-ops".to_string(),
@@ -644,11 +693,12 @@ fn case_priority(kind: DecisionLabCaseKindV1) -> u8 {
 
 fn render_case_line(case: &DecisionLabCaseV1) -> String {
     format!(
-        "  seed={} kind={} decision={} frontier={} branch_points={} kept={} pruned={} groups={} first_picks=[{}] lanes=[{}] ctx=[{}] requests=[{}]",
+        "  seed={} kind={} decision={} frontier={} limits=[{}] branch_points={} kept={} pruned={} groups={} first_picks=[{}] lanes=[{}] ctx=[{}] requests=[{}]",
         case.seed,
         case.kind.as_str(),
         case.decision,
         case.boundary,
+        case_limit_flags(case),
         case.explored_branch_points,
         case.kept_branches,
         case.pruned_branches,
@@ -674,6 +724,24 @@ fn render_case_line(case: &DecisionLabCaseV1) -> String {
             case.strategy_requests.join(" ")
         }
     )
+}
+
+fn case_limit_flags(case: &DecisionLabCaseV1) -> String {
+    let mut flags = Vec::new();
+    if case.depth_limit_reached {
+        flags.push("depth");
+    }
+    if case.branch_limit_hit {
+        flags.push("branch");
+    }
+    if case.wall_limit_hit {
+        flags.push("wall");
+    }
+    if flags.is_empty() {
+        "-".to_string()
+    } else {
+        flags.join(",")
+    }
 }
 
 fn render_hot_context_signals_line(cases: &[DecisionLabCaseV1]) -> Option<String> {
@@ -760,6 +828,7 @@ mod tests {
         let kind = classify_lab_case(&DecisionLabSignalsV1 {
             error: None,
             explored_branch_points: 0,
+            depth_limit_reached: false,
             branch_limit_hit: false,
             wall_limit_hit: false,
             frontier_group_limit_hit: false,
@@ -777,6 +846,7 @@ mod tests {
         let kind = classify_lab_case(&DecisionLabSignalsV1 {
             error: None,
             explored_branch_points: 0,
+            depth_limit_reached: false,
             branch_limit_hit: false,
             wall_limit_hit: false,
             frontier_group_limit_hit: false,
@@ -794,6 +864,7 @@ mod tests {
         let kind = classify_lab_case(&DecisionLabSignalsV1 {
             error: None,
             explored_branch_points: 2,
+            depth_limit_reached: false,
             branch_limit_hit: true,
             wall_limit_hit: false,
             frontier_group_limit_hit: false,
@@ -807,10 +878,29 @@ mod tests {
     }
 
     #[test]
+    fn classifies_depth_exhausted_active_frontier_as_more_budget() {
+        let kind = classify_lab_case(&DecisionLabSignalsV1 {
+            error: None,
+            explored_branch_points: 3,
+            depth_limit_reached: true,
+            branch_limit_hit: false,
+            wall_limit_hit: false,
+            frontier_group_limit_hit: false,
+            pruned_branch_count: 0,
+            kept_branch_count: 9,
+            frontier_group_count: 1,
+            strategy_request_count: 0,
+        });
+
+        assert_eq!(kind, DecisionLabCaseKindV1::NeedsMoreBudget);
+    }
+
+    #[test]
     fn classifies_multi_branch_decision_as_human_judgment_candidate() {
         let kind = classify_lab_case(&DecisionLabSignalsV1 {
             error: None,
             explored_branch_points: 1,
+            depth_limit_reached: false,
             branch_limit_hit: false,
             wall_limit_hit: false,
             frontier_group_limit_hit: false,
@@ -897,7 +987,7 @@ mod tests {
     fn render_case_line_includes_lane_and_context_summaries() {
         let case = DecisionLabCaseV1 {
             schema_name: "DecisionLabCaseV1",
-            schema_version: 3,
+            schema_version: 4,
             seed: 42,
             kind: DecisionLabCaseKindV1::NeedsHumanJudgment,
             decision: "card_reward".to_string(),
@@ -907,6 +997,7 @@ mod tests {
             pruned_branches: 1,
             frontier_groups: 1,
             branch_limit_hit: false,
+            depth_limit_reached: false,
             wall_limit_hit: false,
             first_picks: vec!["Pommel Strike".to_string()],
             retention_lanes: vec!["frontload=2".to_string(), "package=1".to_string()],
@@ -1032,7 +1123,7 @@ mod tests {
     fn test_case(kind: DecisionLabCaseKindV1, context_signals: &[&str]) -> DecisionLabCaseV1 {
         DecisionLabCaseV1 {
             schema_name: "DecisionLabCaseV1",
-            schema_version: 3,
+            schema_version: 4,
             seed: 1,
             kind,
             decision: "card_reward".to_string(),
@@ -1042,6 +1133,7 @@ mod tests {
             pruned_branches: 0,
             frontier_groups: 1,
             branch_limit_hit: false,
+            depth_limit_reached: false,
             wall_limit_hit: false,
             first_picks: Vec::new(),
             retention_lanes: Vec::new(),
