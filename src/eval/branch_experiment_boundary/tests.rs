@@ -10,6 +10,7 @@ use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{BossRelicChoiceState, RewardCard, RewardItem, RewardState};
+use crate::state::shop::{ShopCard, ShopState};
 
 #[test]
 fn card_reward_option_portfolio_keeps_semantic_variety() {
@@ -259,6 +260,68 @@ fn current_boundary_can_include_singing_bowl_card_reward_option() {
     assert_eq!(bowl.effect_kind, "singing_bowl");
     assert_eq!(bowl.effect_label, "Singing Bowl | gain 2 max HP");
     assert!(bowl.selected_cards.is_empty());
+}
+
+#[test]
+fn current_boundary_expands_certified_shop_purge() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 100;
+    session
+        .run_state
+        .add_card_to_deck_without_interception_from(
+            CardId::Doubt,
+            0,
+            crate::state::selection::DomainEventSource::DeckMutation,
+        );
+    session.engine_state = EngineState::Shop(ShopState::new());
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("shop purge boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
+    assert_eq!(boundary.options.len(), 1);
+    assert_eq!(boundary.options[0].kind, "shop_policy_purge");
+    assert_eq!(boundary.options[0].command, "purge 10");
+    assert_eq!(boundary.options[0].effect_kind, "shop_purge");
+    assert_eq!(boundary.options[0].card, Some(CardId::Doubt));
+}
+
+#[test]
+fn current_boundary_expands_shop_leave_when_no_purchase_competes() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 10;
+    session.engine_state = EngineState::Shop(ShopState::new());
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("empty shop should be a branchable leave boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
+    assert_eq!(boundary.options.len(), 1);
+    assert_eq!(boundary.options[0].kind, "shop_leave");
+    assert_eq!(boundary.options[0].command, "leave");
+    assert_eq!(boundary.options[0].effect_kind, "shop_leave");
+}
+
+#[test]
+fn current_boundary_stops_at_shop_when_purchase_needs_strategy() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 100;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::PommelStrike,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None);
+
+    assert!(
+        boundary.is_none(),
+        "affordable shop purchases remain a human strategy boundary"
+    );
 }
 
 #[test]
