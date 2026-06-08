@@ -535,9 +535,31 @@ fn settle_branch_to_frontier(branch: &mut BranchWork, config: &BranchExperimentC
         return;
     }
     if !experiment_branch_options_available(&branch.session) {
-        branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
-        branch.stop_reason = current_boundary_title(&branch.session);
+        let boundary_title = current_boundary_title(&branch.session);
+        if is_budget_unresolved_combat_boundary(&boundary_title, &branch.stop_reason) {
+            branch.status = BranchExperimentBranchStatusV1::Pruned;
+        } else {
+            branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
+            if branch.stop_reason == "initial" || branch.stop_reason.is_empty() {
+                branch.stop_reason = boundary_title;
+            }
+        }
     }
+}
+
+fn is_budget_unresolved_combat_boundary(boundary_title: &str, stop_reason: &str) -> bool {
+    normalized_boundary_title(boundary_title) == "combat"
+        && stop_reason
+            .to_ascii_lowercase()
+            .contains("combat search did not find an executable complete win")
+}
+
+fn normalized_boundary_title(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect()
 }
 
 fn experiment_branch_options_available(session: &RunControlSession) -> bool {

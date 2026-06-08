@@ -68,6 +68,7 @@ pub enum BranchCampaignBranchStatusV1 {
     Frozen,
     TerminalVictory,
     TerminalDefeat,
+    Abandoned,
     Stuck,
 }
 
@@ -104,6 +105,7 @@ pub struct BranchCampaignSelectionV1 {
     pub frozen: Vec<BranchCampaignBranchV1>,
     pub victories: Vec<BranchCampaignBranchV1>,
     pub dead: Vec<BranchCampaignBranchV1>,
+    pub abandoned: Vec<BranchCampaignBranchV1>,
     pub stuck: Vec<BranchCampaignBranchV1>,
     pub discarded_count: usize,
 }
@@ -127,6 +129,7 @@ pub struct BranchCampaignRoundSummaryV1 {
     pub active_after: usize,
     pub frozen_added: usize,
     pub dead_added: usize,
+    pub abandoned_added: usize,
     pub victories_added: usize,
     pub stuck_added: usize,
     pub discarded_added: usize,
@@ -147,6 +150,7 @@ pub struct BranchCampaignReportV1 {
     pub frozen: Vec<BranchCampaignBranchV1>,
     pub victories: Vec<BranchCampaignBranchV1>,
     pub dead: Vec<BranchCampaignBranchV1>,
+    pub abandoned: Vec<BranchCampaignBranchV1>,
     pub stuck: Vec<BranchCampaignBranchV1>,
     pub discarded_count: usize,
     pub strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
@@ -191,6 +195,11 @@ pub enum BranchCampaignProgressEventV1 {
         frozen_added: usize,
         strategy_requests: usize,
     },
+    FrozenPromoted {
+        promoted: usize,
+        active_after: usize,
+        frozen_remaining: usize,
+    },
     CampaignFinished {
         stop_reason: String,
         active: usize,
@@ -225,6 +234,7 @@ where
     let mut frozen = Vec::new();
     let mut victories = Vec::new();
     let mut dead = Vec::new();
+    let mut abandoned = Vec::new();
     let mut stuck = Vec::new();
     let mut discarded_count = 0usize;
     let mut strategy_requests = Vec::new();
@@ -292,15 +302,34 @@ where
             &mut discarded_count,
         );
         discarded_count = discarded_count.saturating_add(selected.discarded_count);
+        let dead_added = selected.dead.len();
+        let abandoned_added = selected.abandoned.len();
+        let victories_added = selected.victories.len();
+        let stuck_added = selected.stuck.len();
+        active = selected.active;
+        victories.extend(selected.victories);
+        dead.extend(selected.dead);
+        abandoned.extend(selected.abandoned);
+        stuck.extend(selected.stuck);
+        let promoted_from_frozen = if active.is_empty()
+            && strategy_requests.is_empty()
+            && victories.is_empty()
+            && stuck.is_empty()
+        {
+            promote_frozen_to_active_v1(&mut active, &mut frozen, config.max_active)
+        } else {
+            0
+        };
         let round_summary = BranchCampaignRoundSummaryV1 {
             round,
             started_active,
             produced_branches,
-            active_after: selected.active.len(),
+            active_after: active.len(),
             frozen_added,
-            dead_added: selected.dead.len(),
-            victories_added: selected.victories.len(),
-            stuck_added: selected.stuck.len(),
+            dead_added,
+            abandoned_added,
+            victories_added,
+            stuck_added,
             discarded_added: selected.discarded_count,
             explored_branch_points,
             wall_limit_hit,
@@ -310,14 +339,17 @@ where
             round: round + 1,
             started_active,
             produced_branches,
-            active_after: selected.active.len(),
+            active_after: active.len(),
             frozen_added,
             strategy_requests: strategy_requests.len(),
         });
-        active = selected.active;
-        victories.extend(selected.victories);
-        dead.extend(selected.dead);
-        stuck.extend(selected.stuck);
+        if promoted_from_frozen > 0 {
+            progress(BranchCampaignProgressEventV1::FrozenPromoted {
+                promoted: promoted_from_frozen,
+                active_after: active.len(),
+                frozen_remaining: frozen.len(),
+            });
+        }
         rounds.push(round_summary);
 
         if !strategy_requests.is_empty() {
@@ -356,6 +388,7 @@ where
         frozen,
         victories,
         dead,
+        abandoned,
         stuck,
         discarded_count,
         strategy_requests,
@@ -425,6 +458,13 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
         } => format!(
             "round {round} done: started={started_active} produced={produced_branches} active_after={active_after} frozen_added={frozen_added} strategy_requests={strategy_requests}"
         ),
+        BranchCampaignProgressEventV1::FrozenPromoted {
+            promoted,
+            active_after,
+            frozen_remaining,
+        } => format!(
+            "promoted {promoted} frozen branch(es) after active branches ran out; active_after={active_after} frozen={frozen_remaining}"
+        ),
         BranchCampaignProgressEventV1::CampaignFinished {
             stop_reason,
             active,
@@ -447,10 +487,11 @@ pub fn render_branch_campaign_compact_v1(
         report.schema_name, report.seed, report.rounds_completed, report.stop_reason
     ));
     lines.push(format!(
-        "Active {} | Frozen {} | Dead {} | Victories {} | Stuck {} | Discarded {}",
+        "Active {} | Frozen {} | Dead {} | Abandoned {} | Victories {} | Stuck {} | Discarded {}",
         report.active.len(),
         report.frozen.len(),
         report.dead.len(),
+        report.abandoned.len(),
         report.victories.len(),
         report.stuck.len(),
         report.discarded_count
@@ -632,6 +673,7 @@ pub fn select_campaign_branches_v1(
         match branch.status {
             BranchCampaignBranchStatusV1::TerminalVictory => selection.victories.push(branch),
             BranchCampaignBranchStatusV1::TerminalDefeat => selection.dead.push(branch),
+            BranchCampaignBranchStatusV1::Abandoned => selection.abandoned.push(branch),
             BranchCampaignBranchStatusV1::Stuck => selection.stuck.push(branch),
             BranchCampaignBranchStatusV1::Frozen | BranchCampaignBranchStatusV1::Active => {
                 active_candidates.push(branch)
@@ -659,6 +701,21 @@ pub fn select_campaign_branches_v1(
         }
     }
     selection
+}
+
+fn promote_frozen_to_active_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    max_active: usize,
+) -> usize {
+    let mut promoted = 0usize;
+    while active.len() < max_active && !frozen.is_empty() {
+        let mut branch = frozen.remove(0);
+        branch.status = BranchCampaignBranchStatusV1::Active;
+        active.push(branch);
+        promoted = promoted.saturating_add(1);
+    }
+    promoted
 }
 
 fn render_campaign_branch_state(branch: &BranchCampaignBranchV1) -> String {
@@ -791,9 +848,10 @@ fn campaign_status_from_report_status(
         BranchExperimentBranchStatusV1::TerminalVictory => {
             BranchCampaignBranchStatusV1::TerminalVictory
         }
-        BranchExperimentBranchStatusV1::TerminalDefeat | BranchExperimentBranchStatusV1::Pruned => {
+        BranchExperimentBranchStatusV1::TerminalDefeat => {
             BranchCampaignBranchStatusV1::TerminalDefeat
         }
+        BranchExperimentBranchStatusV1::Pruned => BranchCampaignBranchStatusV1::Abandoned,
         BranchExperimentBranchStatusV1::NeedsHumanBoundary
         | BranchExperimentBranchStatusV1::Failed => BranchCampaignBranchStatusV1::Stuck,
     }

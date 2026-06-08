@@ -461,6 +461,7 @@ fn branch_experiment_reports_reward_option_portfolio_pruning() {
 #[test]
 fn branch_experiment_expands_campfire_choices() {
     let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.current_hp = 40;
     session.engine_state = EngineState::Campfire;
 
     let report = run_branch_experiment_from_session(
@@ -1019,6 +1020,26 @@ fn branch_experiment_settles_after_last_depth_choice() {
             .all(|branch| branch.stop_reason != "card reward branch applied"),
         "depth-exhausted branch results should be settled to a readable frontier, not left at an internal transition"
     );
+}
+
+#[test]
+fn unresolved_combat_autorun_stop_is_prunable_not_human_strategy() {
+    assert!(is_budget_unresolved_combat_boundary(
+        "Combat",
+        "combat search did not find an executable complete win"
+    ));
+    assert!(is_budget_unresolved_combat_boundary(
+        "Combat",
+        "Reason: combat search did not find an executable complete win"
+    ));
+    assert!(!is_budget_unresolved_combat_boundary(
+        "Combat",
+        "complete_winning_candidate_exceeds_hp_loss_limit"
+    ));
+    assert!(!is_budget_unresolved_combat_boundary(
+        "Card Reward",
+        "combat search did not find an executable complete win"
+    ));
 }
 
 #[test]

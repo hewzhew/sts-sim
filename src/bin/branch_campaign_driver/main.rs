@@ -330,6 +330,9 @@ fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, Stri
     }
     prefix_commands.extend(args.prefix_commands.iter().cloned());
 
+    let search_max_hp_loss = parse_hp_loss_limit(args.max_hp_loss.as_deref())?
+        .or(Some(RunControlHpLossLimit::Unlimited));
+
     Ok(BranchCampaignConfigV1 {
         seed: args.seed,
         ascension_level: args.ascension,
@@ -353,7 +356,7 @@ fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, Stri
         experiment_wall_ms: Some(args.experiment_wall_ms),
         search_max_nodes: args.search_max_nodes,
         search_wall_ms: Some(args.search_wall_ms),
-        search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
+        search_max_hp_loss,
         search_options: parse_branch_experiment_search_options_v1(&args.combat_search_options)?,
         include_event_reward_skip: false,
         prefix_commands,
@@ -431,6 +434,10 @@ mod tests {
         assert_eq!(config.experiment_wall_ms, Some(5_000));
         assert_eq!(config.search_wall_ms, Some(300));
         assert_eq!(config.search_max_nodes, Some(50_000));
+        assert_eq!(
+            config.search_max_hp_loss,
+            Some(RunControlHpLossLimit::Unlimited)
+        );
         assert_eq!(args.branch_examples, 3);
     }
 
@@ -448,7 +455,29 @@ mod tests {
         assert_eq!(config.experiment_wall_ms, Some(30_000));
         assert_eq!(config.search_wall_ms, Some(1_000));
         assert_eq!(config.search_max_nodes, Some(200_000));
+        assert_eq!(
+            config.search_max_hp_loss,
+            Some(RunControlHpLossLimit::Unlimited)
+        );
         assert_eq!(args.branch_examples, 6);
+    }
+
+    #[test]
+    fn campaign_cli_keeps_explicit_hp_loss_limit() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--preset",
+            "quick",
+            "--max-hp-loss",
+            "12",
+        ])
+        .expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(
+            config.search_max_hp_loss,
+            Some(RunControlHpLossLimit::Limit(12))
+        );
     }
 
     #[test]

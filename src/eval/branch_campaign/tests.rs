@@ -25,6 +25,32 @@ fn campaign_selection_freezes_active_overflow() {
 }
 
 #[test]
+fn campaign_promotes_frozen_when_active_pool_is_empty() {
+    let mut active = Vec::new();
+    let mut frozen = vec![
+        {
+            let mut branch = test_campaign_branch("f1", 4, 80);
+            branch.status = BranchCampaignBranchStatusV1::Frozen;
+            branch
+        },
+        {
+            let mut branch = test_campaign_branch("f2", 5, 75);
+            branch.status = BranchCampaignBranchStatusV1::Frozen;
+            branch
+        },
+    ];
+
+    let promoted = promote_frozen_to_active_v1(&mut active, &mut frozen, 1);
+
+    assert_eq!(promoted, 1);
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].branch_id, "f1");
+    assert_eq!(active[0].status, BranchCampaignBranchStatusV1::Active);
+    assert_eq!(frozen.len(), 1);
+    assert_eq!(frozen[0].branch_id, "f2");
+}
+
+#[test]
 fn campaign_branch_from_report_appends_new_choice_path() {
     let parent = BranchCampaignBranchV1 {
         branch_id: "root".to_string(),
@@ -67,6 +93,7 @@ fn compact_campaign_report_renders_strategy_prompt() {
         frozen: vec![test_campaign_branch("f", 4, 65)],
         victories: Vec::new(),
         dead: Vec::new(),
+        abandoned: Vec::new(),
         stuck: Vec::new(),
         discarded_count: 3,
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
@@ -82,7 +109,9 @@ fn compact_campaign_report_renders_strategy_prompt() {
     let rendered = render_branch_campaign_compact_v1(&report, 2);
 
     assert!(rendered.contains("BranchCampaignV1 seed=521 rounds=2 stop=needs_intervention"));
-    assert!(rendered.contains("Active 1 | Frozen 1 | Dead 0 | Victories 0 | Stuck 0 | Discarded 3"));
+    assert!(rendered.contains(
+        "Active 1 | Frozen 1 | Dead 0 | Abandoned 0 | Victories 0 | Stuck 0 | Discarded 3"
+    ));
     assert!(rendered.contains("Needs intervention:"));
     assert!(rendered.contains("event_strategy | Falling | branches=2"));
     assert!(rendered.contains(
@@ -103,6 +132,7 @@ fn compact_campaign_report_renders_budget_stop_hint() {
         frozen: Vec::new(),
         victories: Vec::new(),
         dead: Vec::new(),
+        abandoned: Vec::new(),
         stuck: Vec::new(),
         discarded_count: 0,
         strategy_requests: Vec::new(),
@@ -133,6 +163,12 @@ fn campaign_progress_events_render_concrete_stage_information() {
             active_branches: 2,
             frozen_branches: 6,
         });
+    let promoted_line =
+        render_branch_campaign_progress_event_v1(&BranchCampaignProgressEventV1::FrozenPromoted {
+            promoted: 2,
+            active_after: 2,
+            frozen_remaining: 4,
+        });
 
     assert_eq!(
         branch_line,
@@ -141,6 +177,22 @@ fn campaign_progress_events_render_concrete_stage_information() {
     assert_eq!(
         round_line,
         "round 2/4: advancing 2 active branch(es), frozen=6"
+    );
+    assert_eq!(
+        promoted_line,
+        "promoted 2 frozen branch(es) after active branches ran out; active_after=2 frozen=4"
+    );
+}
+
+#[test]
+fn campaign_status_distinguishes_pruned_from_terminal_defeat() {
+    assert_eq!(
+        campaign_status_from_report_status(BranchExperimentBranchStatusV1::Pruned),
+        BranchCampaignBranchStatusV1::Abandoned
+    );
+    assert_eq!(
+        campaign_status_from_report_status(BranchExperimentBranchStatusV1::TerminalDefeat),
+        BranchCampaignBranchStatusV1::TerminalDefeat
     );
 }
 
