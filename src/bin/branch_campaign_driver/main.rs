@@ -11,10 +11,35 @@ use sts_simulator::eval::neow_guided_prefix::{
 };
 use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
 
+const QUICK_PRESET_MAX_ROUNDS: usize = 3;
+const QUICK_PRESET_ROUND_DEPTH: usize = 2;
+const QUICK_PRESET_MAX_ACTIVE: usize = 2;
+const QUICK_PRESET_MAX_FROZEN: usize = 16;
+const QUICK_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
+const QUICK_PRESET_EXPERIMENT_WALL_MS: u64 = 3_000;
+const QUICK_PRESET_SEARCH_WALL_MS: u64 = 50;
+const QUICK_PRESET_SEARCH_MAX_NODES: usize = 5_000;
+const QUICK_PRESET_BRANCH_EXAMPLES: usize = 3;
+
+const FOCUSED_PRESET_MAX_ROUNDS: usize = 6;
 const FOCUSED_PRESET_ROUND_DEPTH: usize = 2;
 const FOCUSED_PRESET_MAX_ACTIVE: usize = 2;
 const FOCUSED_PRESET_MAX_FROZEN: usize = 16;
 const FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
+const FOCUSED_PRESET_EXPERIMENT_WALL_MS: u64 = 10_000;
+const FOCUSED_PRESET_SEARCH_WALL_MS: u64 = 300;
+const FOCUSED_PRESET_SEARCH_MAX_NODES: usize = 50_000;
+const FOCUSED_PRESET_BRANCH_EXAMPLES: usize = 4;
+
+const DEEP_PRESET_MAX_ROUNDS: usize = 10;
+const DEEP_PRESET_ROUND_DEPTH: usize = 2;
+const DEEP_PRESET_MAX_ACTIVE: usize = 2;
+const DEEP_PRESET_MAX_FROZEN: usize = 16;
+const DEEP_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
+const DEEP_PRESET_EXPERIMENT_WALL_MS: u64 = 30_000;
+const DEEP_PRESET_SEARCH_WALL_MS: u64 = 1_000;
+const DEEP_PRESET_SEARCH_MAX_NODES: usize = 200_000;
+const DEEP_PRESET_BRANCH_EXAMPLES: usize = 6;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -101,7 +126,9 @@ struct Args {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum BranchCampaignPresetV1 {
+    Quick,
     Focused,
+    Deep,
 }
 
 fn main() {
@@ -134,26 +161,122 @@ where
     F: Fn(&'static str) -> bool,
 {
     match args.preset {
+        Some(BranchCampaignPresetV1::Quick) => apply_quick_preset_defaults(args, was_explicit),
         Some(BranchCampaignPresetV1::Focused) => apply_focused_preset_defaults(args, was_explicit),
+        Some(BranchCampaignPresetV1::Deep) => apply_deep_preset_defaults(args, was_explicit),
         None => {}
     }
+}
+
+fn apply_quick_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    apply_campaign_preset_defaults(
+        args,
+        was_explicit,
+        CampaignPresetDefaults {
+            max_rounds: QUICK_PRESET_MAX_ROUNDS,
+            round_depth: QUICK_PRESET_ROUND_DEPTH,
+            max_active: QUICK_PRESET_MAX_ACTIVE,
+            max_frozen: QUICK_PRESET_MAX_FROZEN,
+            max_branches_per_active: QUICK_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            experiment_wall_ms: QUICK_PRESET_EXPERIMENT_WALL_MS,
+            search_wall_ms: QUICK_PRESET_SEARCH_WALL_MS,
+            search_max_nodes: QUICK_PRESET_SEARCH_MAX_NODES,
+            branch_examples: QUICK_PRESET_BRANCH_EXAMPLES,
+        },
+    );
 }
 
 fn apply_focused_preset_defaults<F>(args: &mut Args, was_explicit: F)
 where
     F: Fn(&'static str) -> bool,
 {
+    apply_campaign_preset_defaults(
+        args,
+        was_explicit,
+        CampaignPresetDefaults {
+            max_rounds: FOCUSED_PRESET_MAX_ROUNDS,
+            round_depth: FOCUSED_PRESET_ROUND_DEPTH,
+            max_active: FOCUSED_PRESET_MAX_ACTIVE,
+            max_frozen: FOCUSED_PRESET_MAX_FROZEN,
+            max_branches_per_active: FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            experiment_wall_ms: FOCUSED_PRESET_EXPERIMENT_WALL_MS,
+            search_wall_ms: FOCUSED_PRESET_SEARCH_WALL_MS,
+            search_max_nodes: FOCUSED_PRESET_SEARCH_MAX_NODES,
+            branch_examples: FOCUSED_PRESET_BRANCH_EXAMPLES,
+        },
+    );
+}
+
+fn apply_deep_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    apply_campaign_preset_defaults(
+        args,
+        was_explicit,
+        CampaignPresetDefaults {
+            max_rounds: DEEP_PRESET_MAX_ROUNDS,
+            round_depth: DEEP_PRESET_ROUND_DEPTH,
+            max_active: DEEP_PRESET_MAX_ACTIVE,
+            max_frozen: DEEP_PRESET_MAX_FROZEN,
+            max_branches_per_active: DEEP_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            experiment_wall_ms: DEEP_PRESET_EXPERIMENT_WALL_MS,
+            search_wall_ms: DEEP_PRESET_SEARCH_WALL_MS,
+            search_max_nodes: DEEP_PRESET_SEARCH_MAX_NODES,
+            branch_examples: DEEP_PRESET_BRANCH_EXAMPLES,
+        },
+    );
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CampaignPresetDefaults {
+    max_rounds: usize,
+    round_depth: usize,
+    max_active: usize,
+    max_frozen: usize,
+    max_branches_per_active: usize,
+    experiment_wall_ms: u64,
+    search_wall_ms: u64,
+    search_max_nodes: usize,
+    branch_examples: usize,
+}
+
+fn apply_campaign_preset_defaults<F>(
+    args: &mut Args,
+    was_explicit: F,
+    defaults: CampaignPresetDefaults,
+) where
+    F: Fn(&'static str) -> bool,
+{
+    if !was_explicit("max_rounds") {
+        args.max_rounds = defaults.max_rounds;
+    }
     if !was_explicit("round_depth") {
-        args.round_depth = FOCUSED_PRESET_ROUND_DEPTH;
+        args.round_depth = defaults.round_depth;
     }
     if !was_explicit("max_active") {
-        args.max_active = FOCUSED_PRESET_MAX_ACTIVE;
+        args.max_active = defaults.max_active;
     }
     if !was_explicit("max_frozen") {
-        args.max_frozen = FOCUSED_PRESET_MAX_FROZEN;
+        args.max_frozen = defaults.max_frozen;
     }
     if !was_explicit("max_branches_per_active") {
-        args.max_branches_per_active = FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE;
+        args.max_branches_per_active = defaults.max_branches_per_active;
+    }
+    if !was_explicit("experiment_wall_ms") {
+        args.experiment_wall_ms = defaults.experiment_wall_ms;
+    }
+    if !was_explicit("search_wall_ms") {
+        args.search_wall_ms = defaults.search_wall_ms;
+    }
+    if !was_explicit("search_max_nodes") {
+        args.search_max_nodes = Some(defaults.search_max_nodes);
+    }
+    if !was_explicit("branch_examples") {
+        args.branch_examples = defaults.branch_examples;
     }
 }
 
@@ -267,10 +390,49 @@ mod tests {
             parse_args_from(["branch_campaign_driver", "--preset", "focused"]).expect("args parse");
         let config = campaign_config_from_args(&args).expect("config builds");
 
+        assert_eq!(config.max_rounds, 6);
         assert_eq!(config.round_depth, 2);
         assert_eq!(config.max_active, 2);
         assert_eq!(config.max_frozen, 16);
         assert_eq!(config.max_branches_per_active, 8);
+        assert_eq!(config.experiment_wall_ms, Some(10_000));
+        assert_eq!(config.search_wall_ms, Some(300));
+        assert_eq!(config.search_max_nodes, Some(50_000));
+        assert_eq!(args.branch_examples, 4);
+    }
+
+    #[test]
+    fn quick_preset_uses_short_smoke_budgets() {
+        let args =
+            parse_args_from(["branch_campaign_driver", "--preset", "quick"]).expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(config.max_rounds, 3);
+        assert_eq!(config.round_depth, 2);
+        assert_eq!(config.max_active, 2);
+        assert_eq!(config.max_frozen, 16);
+        assert_eq!(config.max_branches_per_active, 8);
+        assert_eq!(config.experiment_wall_ms, Some(3_000));
+        assert_eq!(config.search_wall_ms, Some(50));
+        assert_eq!(config.search_max_nodes, Some(5_000));
+        assert_eq!(args.branch_examples, 3);
+    }
+
+    #[test]
+    fn deep_preset_uses_larger_budgets() {
+        let args =
+            parse_args_from(["branch_campaign_driver", "--preset", "deep"]).expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(config.max_rounds, 10);
+        assert_eq!(config.round_depth, 2);
+        assert_eq!(config.max_active, 2);
+        assert_eq!(config.max_frozen, 16);
+        assert_eq!(config.max_branches_per_active, 8);
+        assert_eq!(config.experiment_wall_ms, Some(30_000));
+        assert_eq!(config.search_wall_ms, Some(1_000));
+        assert_eq!(config.search_max_nodes, Some(200_000));
+        assert_eq!(args.branch_examples, 6);
     }
 
     #[test]

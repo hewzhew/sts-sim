@@ -67,23 +67,6 @@ if ($More) {
     }
 }
 
-switch ($Mode) {
-    "quick" {
-        if (-not $PSBoundParameters.ContainsKey("MaxRounds")) { $MaxRounds = 3 }
-        if (-not $PSBoundParameters.ContainsKey("ExperimentWallMs")) { $ExperimentWallMs = 3000 }
-        if (-not $PSBoundParameters.ContainsKey("SearchWallMs")) { $SearchWallMs = 50 }
-        if (-not $PSBoundParameters.ContainsKey("SearchMaxNodes")) { $SearchMaxNodes = 5000 }
-        if (-not $PSBoundParameters.ContainsKey("BranchExamples")) { $BranchExamples = 3 }
-    }
-    "deep" {
-        if (-not $PSBoundParameters.ContainsKey("MaxRounds")) { $MaxRounds = 10 }
-        if (-not $PSBoundParameters.ContainsKey("ExperimentWallMs")) { $ExperimentWallMs = 30000 }
-        if (-not $PSBoundParameters.ContainsKey("SearchWallMs")) { $SearchWallMs = 1000 }
-        if (-not $PSBoundParameters.ContainsKey("SearchMaxNodes")) { $SearchMaxNodes = 200000 }
-        if (-not $PSBoundParameters.ContainsKey("BranchExamples")) { $BranchExamples = 6 }
-    }
-}
-
 if ($Last) {
     if (-not (Test-Path $LatestSeedPath)) {
         throw "No previous campaign seed found at $LatestSeedPath. Run .\tools\campaign.ps1 first."
@@ -98,14 +81,32 @@ if ($Last) {
 
 $DriverArgs = @(
     "run", "--quiet", "--bin", "branch_campaign_driver", "--",
-    "--preset", "focused",
-    "--seed", "$Seed",
-    "--max-rounds", "$MaxRounds",
-    "--experiment-wall-ms", "$ExperimentWallMs",
-    "--search-wall-ms", "$SearchWallMs",
-    "--search-max-nodes", "$SearchMaxNodes",
-    "--branch-examples", "$BranchExamples"
+    "--preset", "$Mode",
+    "--seed", "$Seed"
 )
+
+$CampaignBoundParameters = @{}
+foreach ($ParameterName in $PSBoundParameters.Keys) {
+    $CampaignBoundParameters[$ParameterName] = $true
+}
+
+function Add-DriverArgIfBound {
+    param(
+        [string] $ParameterName,
+        [string] $Flag,
+        [object] $Value
+    )
+
+    if ($CampaignBoundParameters.ContainsKey($ParameterName)) {
+        $script:DriverArgs += @($Flag, "$Value")
+    }
+}
+
+Add-DriverArgIfBound "MaxRounds" "--max-rounds" $MaxRounds
+Add-DriverArgIfBound "ExperimentWallMs" "--experiment-wall-ms" $ExperimentWallMs
+Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
+Add-DriverArgIfBound "SearchMaxNodes" "--search-max-nodes" $SearchMaxNodes
+Add-DriverArgIfBound "BranchExamples" "--branch-examples" $BranchExamples
 
 if ($ExtraArgs) {
     $DriverArgs += $ExtraArgs
