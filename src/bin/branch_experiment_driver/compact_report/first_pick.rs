@@ -18,10 +18,18 @@ struct FirstPickOutcomeSummary {
     frontiers: BTreeMap<String, usize>,
 }
 
+#[cfg(test)]
 pub(crate) fn first_pick_outcome_summary_lines(report: &BranchExperimentReportV1) -> Vec<String> {
+    first_pick_outcome_summary_lines_with_focus(report, &super::ChoiceFocus::default())
+}
+
+pub(crate) fn first_pick_outcome_summary_lines_with_focus(
+    report: &BranchExperimentReportV1,
+    choice_focus: &super::ChoiceFocus,
+) -> Vec<String> {
     let mut summaries = BTreeMap::<String, FirstPickOutcomeSummary>::new();
     for branch in &report.branches {
-        let Some(first_choice) = branch.choices.first() else {
+        let Some(first_choice) = choice_focus.focused_choice(branch) else {
             continue;
         };
         let entry = summaries

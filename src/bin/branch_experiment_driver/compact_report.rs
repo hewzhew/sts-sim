@@ -8,10 +8,16 @@ use sts_simulator::eval::branch_experiment::{
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
 
 mod first_pick;
+mod focus;
 mod profile_comparison;
 mod pruned;
 
-pub(super) use first_pick::{branch_package_state_tags, first_pick_outcome_summary_lines};
+#[cfg(test)]
+use first_pick::first_pick_outcome_summary_lines;
+pub(super) use first_pick::{
+    branch_package_state_tags, first_pick_outcome_summary_lines_with_focus,
+};
+use focus::ChoiceFocus;
 pub(super) use profile_comparison::render_profile_comparison;
 use pruned::{
     render_pruned_branch_summary_line, render_pruned_first_pick_count_line,
@@ -51,6 +57,7 @@ pub(super) fn render_compact_report_with_options(
         report.frontier_groups.len(),
         report.elapsed_wall_ms
     ));
+    let choice_focus = ChoiceFocus::for_report(report);
     if report.branch_limit_hit {
         lines.push("branch limit hit: increase --max-branches or reduce --max-depth".to_string());
     }
@@ -92,7 +99,7 @@ pub(super) fn render_compact_report_with_options(
     if let Some(line) = render_kept_lineage_flag_count_line(report) {
         lines.push(line);
     }
-    if let Some(line) = render_kept_long_horizon_coverage_line(report) {
+    if let Some(line) = render_kept_long_horizon_coverage_line(report, &choice_focus) {
         lines.push(line);
     }
     if let Some(line) = render_pruned_first_pick_count_line(&report.pruned_first_pick_counts) {
@@ -107,10 +114,17 @@ pub(super) fn render_compact_report_with_options(
     if let Some(line) = render_pruned_next_experiment_line(report) {
         lines.push(line);
     }
-    let first_pick_outcomes = first_pick_outcome_summary_lines(report);
+    if let Some(line) = choice_focus.notice_line() {
+        lines.push(line);
+    }
+    let first_pick_outcomes = first_pick_outcome_summary_lines_with_focus(report, &choice_focus);
     if !first_pick_outcomes.is_empty() {
         lines.push("".to_string());
-        lines.push("First-pick outcomes:".to_string());
+        if choice_focus.has_skipped_prefix() {
+            lines.push("Focused-pick outcomes:".to_string());
+        } else {
+            lines.push("First-pick outcomes:".to_string());
+        }
         for line in first_pick_outcomes.iter().take(8) {
             lines.push(line.clone());
         }
@@ -170,9 +184,9 @@ pub(super) fn render_compact_report_with_options(
             .branches
             .iter()
             .find(|branch| branch.branch_id == group.representative_branch_id)
-            .map(render_choice_path)
+            .map(|branch| render_choice_path_with_focus(branch, &choice_focus))
             .unwrap_or_else(|| "-".to_string());
-        let first_picks = render_group_first_picks(report, &group.key);
+        let first_picks = render_group_first_picks(report, &group.key, &choice_focus);
         let lineage = render_lineage_flags(&group.lineage_flags);
         lines.push(format!(
             "  {:>2} branch(es) | {} | first_picks=[{}] | example: {} | next_reward=[{}]{}",
@@ -188,11 +202,11 @@ pub(super) fn render_compact_report_with_options(
     if options.kept_branch_examples > 0 {
         lines.push("".to_string());
         lines.push("Kept branch examples:".to_string());
-        for branch in ordered_branch_examples(report)
+        for branch in ordered_branch_examples(report, &choice_focus)
             .into_iter()
             .take(options.kept_branch_examples)
         {
-            lines.push(render_branch_line(branch));
+            lines.push(render_branch_line(branch, &choice_focus));
         }
         if report.branches.len() > options.kept_branch_examples {
             lines.push(format!(
@@ -361,15 +375,16 @@ fn render_string_count_map(counts: &BTreeMap<String, usize>) -> String {
         .join(" ")
 }
 
-fn ordered_branch_examples(
-    report: &BranchExperimentReportV1,
-) -> Vec<&BranchExperimentBranchReportV1> {
+fn ordered_branch_examples<'a>(
+    report: &'a BranchExperimentReportV1,
+    choice_focus: &ChoiceFocus,
+) -> Vec<&'a BranchExperimentBranchReportV1> {
     let mut ordered = Vec::new();
     let mut used_indices = BTreeSet::new();
     let mut covered_frontier_and_first_pick = BTreeSet::new();
 
     for (index, branch) in report.branches.iter().enumerate() {
-        let key = branch_example_diversity_key(branch);
+        let key = branch_example_diversity_key(branch, choice_focus);
         if covered_frontier_and_first_pick.insert(key) {
             ordered.push(branch);
             used_indices.insert(index);
@@ -384,17 +399,22 @@ fn ordered_branch_examples(
     ordered
 }
 
-fn branch_example_diversity_key(branch: &BranchExperimentBranchReportV1) -> String {
-    let first_pick = branch
-        .choices
-        .first()
+fn branch_example_diversity_key(
+    branch: &BranchExperimentBranchReportV1,
+    choice_focus: &ChoiceFocus,
+) -> String {
+    let first_pick = choice_focus
+        .focused_choice(branch)
         .map(choice_display_label)
         .unwrap_or_else(|| "-".to_string());
     format!("{}|{first_pick}", branch.frontier.key)
 }
 
-fn render_branch_line(branch: &BranchExperimentBranchReportV1) -> String {
-    let choices = render_choice_path(branch);
+fn render_branch_line(
+    branch: &BranchExperimentBranchReportV1,
+    choice_focus: &ChoiceFocus,
+) -> String {
+    let choices = render_choice_path_with_focus(branch, choice_focus);
     let next_reward = branch
         .frontier
         .next_card_reward_offer
@@ -495,24 +515,30 @@ fn render_trajectory_summary(branch: &BranchExperimentBranchReportV1) -> String 
 }
 
 fn render_choice_path(branch: &BranchExperimentBranchReportV1) -> String {
+    render_choice_path_with_focus(branch, &ChoiceFocus::default())
+}
+
+fn render_choice_path_with_focus(
+    branch: &BranchExperimentBranchReportV1,
+    choice_focus: &ChoiceFocus,
+) -> String {
     if branch.choices.is_empty() {
         return "-".to_string();
     }
-    branch
-        .choices
-        .iter()
-        .map(choice_display_label)
-        .collect::<Vec<_>>()
-        .join(" -> ")
+    choice_focus.render_choice_path(branch)
 }
 
-fn render_group_first_picks(report: &BranchExperimentReportV1, group_key: &str) -> String {
+fn render_group_first_picks(
+    report: &BranchExperimentReportV1,
+    group_key: &str,
+    choice_focus: &ChoiceFocus,
+) -> String {
     let mut picks = Vec::<String>::new();
     for branch in &report.branches {
         if branch.frontier.key != group_key {
             continue;
         }
-        let Some(choice) = branch.choices.first() else {
+        let Some(choice) = choice_focus.focused_choice(branch) else {
             continue;
         };
         let label = choice_display_label(choice);
@@ -580,7 +606,10 @@ fn render_retention_lane_count_line(slots: &[Option<BranchRetentionSlotV1>]) -> 
     render_retention_lane_count_payload(slots).map(|payload| format!("Retention lanes: {payload}"))
 }
 
-fn render_kept_long_horizon_coverage_line(report: &BranchExperimentReportV1) -> Option<String> {
+fn render_kept_long_horizon_coverage_line(
+    report: &BranchExperimentReportV1,
+    choice_focus: &ChoiceFocus,
+) -> Option<String> {
     let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
     let mut first_picks = BTreeSet::<String>::new();
     for branch in &report.branches {
@@ -589,7 +618,7 @@ fn render_kept_long_horizon_coverage_line(report: &BranchExperimentReportV1) -> 
             continue;
         }
         *counts.entry(slot).or_default() += 1;
-        if let Some(choice) = branch.choices.first() {
+        if let Some(choice) = choice_focus.focused_choice(branch) {
             first_picks.insert(choice_display_label(choice));
         }
     }
@@ -686,9 +715,10 @@ mod tests {
     use sts_simulator::ai::noncombat_strategy_v1::StrategyDeckFormationStageV1;
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::branch_experiment::{
-        BranchExperimentChoiceV1, BranchExperimentFrontierV1, BranchExperimentLineageV1,
-        BranchExperimentPrunedFirstPickCountV1, BranchExperimentRewardOptionPortfolioEntryV1,
-        BranchExperimentRunSummaryV1, BRANCH_EXPERIMENT_SCHEMA_VERSION,
+        BranchExperimentChoiceV1, BranchExperimentFrontierGroupV1, BranchExperimentFrontierV1,
+        BranchExperimentLineageV1, BranchExperimentPrunedFirstPickCountV1,
+        BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRunSummaryV1,
+        BRANCH_EXPERIMENT_SCHEMA_VERSION,
     };
     use sts_simulator::eval::branch_experiment_retention::{
         BranchRetentionBudgetProfileV1, BranchRetentionDecisionV1,
@@ -1401,6 +1431,57 @@ mod tests {
     }
 
     #[test]
+    fn compact_report_focuses_choices_after_shared_prefix() {
+        let mut searing = branch_report(
+            "b0",
+            "Searing Blow",
+            1,
+            2,
+            80,
+            BranchRetentionSlotV1::Package,
+            "Card Reward",
+        );
+        prepend_choice(&mut searing, "Proceed");
+        let mut shrug = branch_report(
+            "b1",
+            "Shrug It Off",
+            1,
+            2,
+            80,
+            BranchRetentionSlotV1::EngineSetup,
+            "Card Reward",
+        );
+        prepend_choice(&mut shrug, "Proceed");
+        let report = BranchExperimentReportV1 {
+            branches: vec![searing, shrug],
+            frontier_groups: vec![BranchExperimentFrontierGroupV1 {
+                key: "A1F2:Card Reward".to_string(),
+                boundary_title: "Card Reward".to_string(),
+                branch_count: 2,
+                representative_branch_id: "b0".to_string(),
+                next_card_reward_offer: None,
+                lineage_flags: Vec::new(),
+            }],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report_with_options(
+            &report,
+            CompactReportOptions {
+                kept_branch_examples: 2,
+            },
+        );
+
+        assert!(rendered.contains("Decision focus: skipped shared prefix [Proceed]"));
+        assert!(rendered.contains("Focused-pick outcomes:"));
+        assert!(rendered.contains("first_picks=[Searing Blow, Shrug It Off]"));
+        assert!(rendered.contains("choices: Searing Blow"));
+        assert!(rendered.contains("choices: Shrug It Off"));
+        assert!(!rendered.contains("First-pick outcomes:"));
+        assert!(!rendered.contains("choices: Proceed -> Searing Blow"));
+    }
+
+    #[test]
     fn first_pick_outcome_summary_includes_generic_package_state() {
         let report = BranchExperimentReportV1 {
             branches: vec![
@@ -1603,6 +1684,26 @@ mod tests {
                 },
             },
         }
+    }
+
+    fn prepend_choice(branch: &mut BranchExperimentBranchReportV1, label: &str) {
+        branch.choices.insert(
+            0,
+            BranchExperimentChoiceV1 {
+                depth: 0,
+                kind: "event".to_string(),
+                card: None,
+                upgrades: None,
+                selected_cards: Vec::new(),
+                effect_kind: "event_choice".to_string(),
+                effect_key: "event_choice".to_string(),
+                effect_label: label.to_string(),
+                representative_count: 1,
+                suppressed_count: 0,
+                label: label.to_string(),
+                command: "event 0".to_string(),
+            },
+        );
     }
 
     fn branch_report_with_packages(
