@@ -120,22 +120,49 @@ impl ChoiceFocus {
         &self,
         branch: &'a BranchExperimentBranchReportV1,
     ) -> Option<&'a BranchExperimentChoiceV1> {
+        self.focused_choice_index(branch)
+            .and_then(|index| branch.choices.get(index))
+    }
+
+    pub(crate) fn prefix_context_label(
+        &self,
+        branch: &BranchExperimentBranchReportV1,
+    ) -> Option<String> {
+        if !self.branch_in_scope(branch) {
+            return None;
+        }
+        let focus_index = self.focused_choice_index(branch)?;
+        let prefix = branch
+            .choices
+            .iter()
+            .skip(self.common_prefix_len)
+            .take(focus_index.saturating_sub(self.common_prefix_len))
+            .map(super::choice_display_label)
+            .collect::<Vec<_>>();
+        if prefix.is_empty() {
+            Some("-".to_string())
+        } else {
+            Some(prefix.join(" -> "))
+        }
+    }
+
+    fn focused_choice_index(&self, branch: &BranchExperimentBranchReportV1) -> Option<usize> {
         if !self.branch_in_scope(branch) {
             return None;
         }
         if let Some(target_key) = self.target_boundary_key.as_deref() {
-            if let Some(choice) = branch
+            if let Some(index) = branch
                 .choices
                 .iter()
-                .find(|choice| normalized_key(&choice.kind) == target_key)
+                .position(|choice| normalized_key(&choice.kind) == target_key)
             {
-                return Some(choice);
+                return Some(index);
             }
         }
         if self.has_skipped_prefix() {
-            branch.choices.get(self.common_prefix_len)
+            (self.common_prefix_len < branch.choices.len()).then_some(self.common_prefix_len)
         } else {
-            branch.choices.first()
+            (!branch.choices.is_empty()).then_some(0)
         }
     }
 

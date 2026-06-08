@@ -7,11 +7,13 @@ use sts_simulator::eval::branch_experiment::{
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1;
 
+mod candidate_summary;
 mod first_pick;
 mod focus;
 mod profile_comparison;
 mod pruned;
 
+use candidate_summary::focused_candidate_summary_lines;
 #[cfg(test)]
 use first_pick::first_pick_outcome_summary_lines;
 pub(super) use first_pick::{
@@ -139,6 +141,20 @@ pub(super) fn render_compact_report_with_options(
             lines.push(format!(
                 "  ... {} more first-pick outcome group(s); use --json or --out for full detail",
                 first_pick_outcomes.len() - 8
+            ));
+        }
+    }
+    let candidate_summaries = focused_candidate_summary_lines(report, &choice_focus);
+    if !candidate_summaries.is_empty() {
+        lines.push("".to_string());
+        lines.push("Focused candidate summary:".to_string());
+        for line in candidate_summaries.iter().take(12) {
+            lines.push(line.clone());
+        }
+        if candidate_summaries.len() > 12 {
+            lines.push(format!(
+                "  ... {} more focused candidate summary line(s); use --json or --out for full detail",
+                candidate_summaries.len() - 12
             ));
         }
     }
@@ -1561,7 +1577,7 @@ mod tests {
             BranchRetentionSlotV1::EngineSetup,
             "Card Reward",
         );
-        prepend_choice(&mut shrug, "Obtain a random rare card.");
+        prepend_choice(&mut shrug, "Enemies in your next three combats have 1 HP.");
         prepend_choice(&mut shrug, "Proceed");
         let mut combat = branch_report(
             "b2",
@@ -1606,10 +1622,19 @@ mod tests {
         );
 
         assert!(rendered.contains(
-            "Decision focus: target boundary [Card Reward] matched 2/3 branch(es); skipped shared prefix [Proceed -> Obtain a random rare card.]"
+            "Decision focus: target boundary [Card Reward] matched 2/3 branch(es); skipped shared prefix [Proceed]"
         ));
         assert!(rendered.contains("Kept choice effects: take_card=2"));
         assert!(rendered.contains("Focused-pick outcomes:"));
+        assert!(rendered.contains("Focused candidate summary:"));
+        assert!(rendered.contains(
+            "  Searing Blow | branches=1 prefix_contexts=1 hp=80 | lanes=[package=1] | packages=[-]"
+        ));
+        assert!(rendered.contains("    contexts=[Obtain a random rare card.]"));
+        assert!(rendered.contains(
+            "  Shrug It Off | branches=1 prefix_contexts=1 hp=80 | lanes=[engine_setup=1] | packages=[-]"
+        ));
+        assert!(rendered.contains("    contexts=[Enemies in your next three combats have 1 HP.]"));
         assert!(rendered.contains("  Searing Blow | branches=1"));
         assert!(rendered.contains("  Shrug It Off | branches=1"));
         assert!(rendered.contains("  2 branch(es) | Card Reward"));
