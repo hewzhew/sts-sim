@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use clap::Parser;
+use clap::parser::ValueSource;
+use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
 use serde::Serialize;
 
 use sts_simulator::eval::branch_experiment::{
@@ -16,12 +17,28 @@ use sts_simulator::eval::neow_guided_prefix::{
 };
 use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
 
+const DEEP_PRESET_MAX_BRANCHES: usize = 48;
+const DEEP_PRESET_MAX_DEPTH: usize = 4;
+const DEEP_PRESET_AUTO_MAX_OPS: usize = 192;
+const DEEP_PRESET_EXPERIMENT_WALL_MS: u64 = 30_000;
+const DEEP_PRESET_SEARCH_WALL_MS: u64 = 1_000;
+const DEEP_PRESET_SEARCH_MAX_NODES: usize = 200_000;
+const DEEP_PRESET_BRANCH_RETRIES: usize = 1;
+const DEEP_PRESET_RETENTION_PROFILE: &str = "package";
+
 #[derive(Debug, Parser)]
 #[command(
     name = "decision_lab_driver",
     about = "Run autonomous noncombat decision experiments over a small seed batch"
 )]
 struct Args {
+    #[arg(
+        long,
+        value_enum,
+        help = "Use a named budget/profile preset; explicit CLI budget args override preset defaults"
+    )]
+    preset: Option<DecisionLabPresetV1>,
+
     #[arg(long = "seed", value_name = "SEED")]
     seeds: Vec<u64>,
 
@@ -102,6 +119,11 @@ struct Args {
     json_lines: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum DecisionLabPresetV1 {
+    Deep,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum DecisionLabCaseKindV1 {
@@ -172,10 +194,67 @@ struct DecisionLabSeedRunV1 {
 }
 
 fn main() {
-    let args = Args::parse();
+    let args = parse_args();
     if let Err(err) = run(args) {
         eprintln!("error: {err}");
         std::process::exit(1);
+    }
+}
+
+fn parse_args() -> Args {
+    parse_args_from(std::env::args_os()).unwrap_or_else(|err| err.exit())
+}
+
+fn parse_args_from<I, T>(itr: I) -> Result<Args, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let matches = Args::command().try_get_matches_from(itr)?;
+    let mut args = Args::from_arg_matches(&matches)?;
+    apply_decision_lab_preset_defaults(&mut args, |name| {
+        matches.value_source(name) == Some(ValueSource::CommandLine)
+    });
+    Ok(args)
+}
+
+fn apply_decision_lab_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    match args.preset {
+        Some(DecisionLabPresetV1::Deep) => apply_deep_preset_defaults(args, was_explicit),
+        None => {}
+    }
+}
+
+fn apply_deep_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    if !was_explicit("max_branches") {
+        args.max_branches = DEEP_PRESET_MAX_BRANCHES;
+    }
+    if !was_explicit("max_depth") {
+        args.max_depth = DEEP_PRESET_MAX_DEPTH;
+    }
+    if !was_explicit("auto_max_ops") {
+        args.auto_max_ops = DEEP_PRESET_AUTO_MAX_OPS;
+    }
+    if !was_explicit("experiment_wall_ms") {
+        args.experiment_wall_ms = DEEP_PRESET_EXPERIMENT_WALL_MS;
+    }
+    if !was_explicit("search_wall_ms") {
+        args.search_wall_ms = DEEP_PRESET_SEARCH_WALL_MS;
+    }
+    if !was_explicit("search_max_nodes") {
+        args.search_max_nodes = Some(DEEP_PRESET_SEARCH_MAX_NODES);
+    }
+    if !was_explicit("branch_retries") {
+        args.branch_retries = DEEP_PRESET_BRANCH_RETRIES;
+    }
+    if !was_explicit("retention_profile") {
+        args.retention_profile = DEEP_PRESET_RETENTION_PROFILE.to_string();
     }
 }
 
@@ -1007,6 +1086,56 @@ mod tests {
 
         assert_eq!(args.branch_retries, 0);
         assert_eq!(args.branch_retry_multiplier, 2);
+    }
+
+    #[test]
+    fn deep_preset_sets_macro_branch_defaults() {
+        let args =
+            parse_args_from(["decision_lab_driver", "--preset", "deep"]).expect("args parse");
+
+        assert_eq!(args.max_depth, 4);
+        assert_eq!(args.max_branches, 48);
+        assert_eq!(args.auto_max_ops, 192);
+        assert_eq!(args.experiment_wall_ms, 30_000);
+        assert_eq!(args.search_wall_ms, 1_000);
+        assert_eq!(args.search_max_nodes, Some(200_000));
+        assert_eq!(args.branch_retries, 1);
+        assert_eq!(args.retention_profile, "package");
+    }
+
+    #[test]
+    fn deep_preset_keeps_explicit_budget_overrides() {
+        let args = parse_args_from([
+            "decision_lab_driver",
+            "--preset",
+            "deep",
+            "--max-depth",
+            "2",
+            "--max-branches",
+            "16",
+            "--auto-max-ops",
+            "64",
+            "--experiment-wall-ms",
+            "5000",
+            "--search-wall-ms",
+            "50",
+            "--search-max-nodes",
+            "5000",
+            "--branch-retries",
+            "0",
+            "--retention-profile",
+            "balanced",
+        ])
+        .expect("args parse");
+
+        assert_eq!(args.max_depth, 2);
+        assert_eq!(args.max_branches, 16);
+        assert_eq!(args.auto_max_ops, 64);
+        assert_eq!(args.experiment_wall_ms, 5_000);
+        assert_eq!(args.search_wall_ms, 50);
+        assert_eq!(args.search_max_nodes, Some(5_000));
+        assert_eq!(args.branch_retries, 0);
+        assert_eq!(args.retention_profile, "balanced");
     }
 
     #[test]
