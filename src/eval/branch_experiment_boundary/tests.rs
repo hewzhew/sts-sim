@@ -11,7 +11,7 @@ use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{BossRelicChoiceState, RewardCard, RewardItem, RewardState};
-use crate::state::shop::{ShopCard, ShopState};
+use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
 #[test]
 fn card_reward_option_portfolio_keeps_semantic_variety() {
@@ -304,9 +304,9 @@ fn current_boundary_expands_shop_leave_when_no_purchase_competes() {
 }
 
 #[test]
-fn current_boundary_stops_at_shop_when_purchase_needs_strategy() {
+fn current_boundary_expands_low_fanout_shop_purchase_choices() {
     let mut session = RunControlSession::new(RunControlConfig::default());
-    session.run_state.gold = 100;
+    session.run_state.gold = 250;
     let mut shop = ShopState::new();
     shop.cards.push(ShopCard {
         card_id: CardId::PommelStrike,
@@ -315,13 +315,95 @@ fn current_boundary_stops_at_shop_when_purchase_needs_strategy() {
         can_buy: true,
         blocked_reason: None,
     });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 40,
+        can_buy: true,
+        blocked_reason: None,
+    });
     session.engine_state = EngineState::Shop(shop);
 
-    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None);
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("low-fanout shop purchase boundary");
 
+    let commands = boundary
+        .options
+        .iter()
+        .map(|option| option.command.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
+    assert_eq!(
+        commands,
+        vec!["buy card 0", "buy relic 0", "buy potion 0", "leave"]
+    );
+    assert!(boundary
+        .options
+        .iter()
+        .any(|option| option.effect_kind == "shop_buy_card"
+            && option.card == Some(CardId::PommelStrike)));
+}
+
+#[test]
+fn current_boundary_caps_high_fanout_shop_purchase_choices() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 500;
+    let mut shop = ShopState::new();
+    for card_id in [
+        CardId::PommelStrike,
+        CardId::TwinStrike,
+        CardId::ShrugItOff,
+        CardId::Cleave,
+        CardId::IronWave,
+    ] {
+        shop.cards.push(ShopCard {
+            card_id,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+    }
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 40,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("high-fanout shop should keep a capped purchase portfolio");
+    let effect_kinds = boundary
+        .options
+        .iter()
+        .map(|option| option.effect_kind.as_str())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
+    assert_eq!(boundary.options.len(), 5);
+    assert!(effect_kinds.contains("shop_buy_card"));
+    assert!(effect_kinds.contains("shop_buy_relic"));
+    assert!(effect_kinds.contains("shop_buy_potion"));
+    assert!(effect_kinds.contains("shop_leave"));
     assert!(
-        boundary.is_none(),
-        "affordable shop purchases remain a human strategy boundary"
+        boundary
+            .options
+            .iter()
+            .any(|option| option.suppressed_count > 0),
+        "capped shop portfolios should expose suppressed purchase count"
     );
 }
 

@@ -685,6 +685,26 @@ fn branch_choice_effect_key_preserves_reward_skip_effects() {
     );
 }
 
+#[test]
+fn branch_choice_effect_key_preserves_shop_effects() {
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("shop_buy_card"),
+        "shop_buy_card"
+    );
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("shop_buy_relic"),
+        "shop_buy_relic"
+    );
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("shop_buy_potion"),
+        "shop_buy_potion"
+    );
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("shop_leave"),
+        "shop_leave"
+    );
+}
+
 fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
     BranchWork {
         id: branch_id.to_string(),

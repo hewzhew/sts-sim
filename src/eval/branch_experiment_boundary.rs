@@ -355,6 +355,9 @@ impl BranchBoundaryOptionV1 {
             kind: match option.effect_kind.as_str() {
                 "shop_purge" => "shop_policy_purge",
                 "shop_leave" => "shop_leave",
+                "shop_buy_card" => "shop_buy_card",
+                "shop_buy_relic" => "shop_buy_relic",
+                "shop_buy_potion" => "shop_buy_potion",
                 _ => "shop",
             },
             effect_label: option.effect_label,
@@ -365,8 +368,8 @@ impl BranchBoundaryOptionV1 {
             selected_cards: selected_card_vec(option.card, Some(0)),
             effect_kind: option.effect_kind,
             effect_key,
-            representative_count: 1,
-            suppressed_count: 0,
+            representative_count: option.representative_count,
+            suppressed_count: option.suppressed_count,
             success_reason: "shop branch applied",
         }
     }
