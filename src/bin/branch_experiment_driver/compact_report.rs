@@ -24,15 +24,17 @@ use pruned::{
     render_pruned_long_horizon_coverage_note, render_pruned_next_experiment_line,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CompactReportOptions {
     pub kept_branch_examples: usize,
+    pub focus_boundary: Option<String>,
 }
 
 impl Default for CompactReportOptions {
     fn default() -> Self {
         Self {
             kept_branch_examples: 5,
+            focus_boundary: None,
         }
     }
 }
@@ -57,7 +59,11 @@ pub(super) fn render_compact_report_with_options(
         report.frontier_groups.len(),
         report.elapsed_wall_ms
     ));
-    let choice_focus = ChoiceFocus::for_report(report);
+    let choice_focus = options
+        .focus_boundary
+        .as_deref()
+        .map(|boundary| ChoiceFocus::for_target_boundary(report, boundary))
+        .unwrap_or_else(|| ChoiceFocus::for_report(report));
     if report.branch_limit_hit {
         lines.push("branch limit hit: increase --max-branches or reduce --max-depth".to_string());
     }
@@ -88,12 +94,13 @@ pub(super) fn render_compact_report_with_options(
     let retention_lanes = report
         .branches
         .iter()
+        .filter(|branch| choice_focus.branch_in_scope(branch))
         .map(|branch| branch.retention.selected_by_slot)
         .collect::<Vec<_>>();
     if let Some(line) = render_retention_lane_count_line(&retention_lanes) {
         lines.push(line);
     }
-    if let Some(line) = render_choice_effect_count_line(report) {
+    if let Some(line) = render_choice_effect_count_line(report, &choice_focus) {
         lines.push(line);
     }
     if let Some(line) = render_kept_lineage_flag_count_line(report) {
@@ -174,7 +181,22 @@ pub(super) fn render_compact_report_with_options(
     }
     lines.push("".to_string());
     lines.push("Frontier groups:".to_string());
-    for group in report.frontier_groups.iter().take(8) {
+    let mut rendered_group_count = 0usize;
+    for group in &report.frontier_groups {
+        let scoped_group_count = report
+            .branches
+            .iter()
+            .filter(|branch| {
+                branch.frontier.key == group.key && choice_focus.branch_in_scope(branch)
+            })
+            .count();
+        if scoped_group_count == 0 {
+            continue;
+        }
+        if rendered_group_count >= 8 {
+            break;
+        }
+        rendered_group_count += 1;
         let offer = group
             .next_card_reward_offer
             .as_ref()
@@ -183,14 +205,14 @@ pub(super) fn render_compact_report_with_options(
         let example = report
             .branches
             .iter()
-            .find(|branch| branch.branch_id == group.representative_branch_id)
+            .find(|branch| branch.frontier.key == group.key && choice_focus.branch_in_scope(branch))
             .map(|branch| render_choice_path_with_focus(branch, &choice_focus))
             .unwrap_or_else(|| "-".to_string());
         let first_picks = render_group_first_picks(report, &group.key, &choice_focus);
         let lineage = render_lineage_flags(&group.lineage_flags);
         lines.push(format!(
             "  {:>2} branch(es) | {} | first_picks=[{}] | example: {} | next_reward=[{}]{}",
-            group.branch_count, group.boundary_title, first_picks, example, offer, lineage
+            scoped_group_count, group.boundary_title, first_picks, example, offer, lineage
         ));
     }
     if report.frontier_groups.len() > 8 {
@@ -208,10 +230,15 @@ pub(super) fn render_compact_report_with_options(
         {
             lines.push(render_branch_line(branch, &choice_focus));
         }
-        if report.branches.len() > options.kept_branch_examples {
+        let scoped_branch_count = report
+            .branches
+            .iter()
+            .filter(|branch| choice_focus.branch_in_scope(branch))
+            .count();
+        if scoped_branch_count > options.kept_branch_examples {
             lines.push(format!(
                 "  ... {} more branch(es); use --branch-examples N, --json, or --out for full detail",
-                report.branches.len() - options.kept_branch_examples
+                scoped_branch_count - options.kept_branch_examples
             ));
         }
     }
@@ -324,14 +351,16 @@ fn render_retention_slot_counts(counts: &BTreeMap<BranchRetentionSlotV1, usize>)
         .join(" ")
 }
 
-fn render_choice_effect_count_line(report: &BranchExperimentReportV1) -> Option<String> {
+fn render_choice_effect_count_line(
+    report: &BranchExperimentReportV1,
+    choice_focus: &ChoiceFocus,
+) -> Option<String> {
     let mut counts = BTreeMap::<&'static str, usize>::new();
     for branch in &report.branches {
-        let branch_effects = branch
-            .choices
-            .iter()
-            .map(|choice| branch_experiment_choice_effect_key_v1(&choice.effect_kind))
-            .collect::<BTreeSet<_>>();
+        if !choice_focus.branch_in_scope(branch) {
+            continue;
+        }
+        let branch_effects = choice_effect_keys(branch, choice_focus);
         for effect in branch_effects {
             *counts.entry(effect).or_default() += 1;
         }
@@ -347,6 +376,24 @@ fn render_choice_effect_count_line(report: &BranchExperimentReportV1) -> Option<
         "Kept choice effects: {}",
         render_choice_effect_counts(&counts)
     ))
+}
+
+fn choice_effect_keys(
+    branch: &BranchExperimentBranchReportV1,
+    choice_focus: &ChoiceFocus,
+) -> BTreeSet<&'static str> {
+    if choice_focus.is_targeted() {
+        return choice_focus
+            .focused_choice(branch)
+            .map(|choice| branch_experiment_choice_effect_key_v1(&choice.effect_kind))
+            .into_iter()
+            .collect();
+    }
+    branch
+        .choices
+        .iter()
+        .map(|choice| branch_experiment_choice_effect_key_v1(&choice.effect_kind))
+        .collect()
 }
 
 fn render_kept_lineage_flag_count_line(report: &BranchExperimentReportV1) -> Option<String> {
@@ -384,6 +431,9 @@ fn ordered_branch_examples<'a>(
     let mut covered_frontier_and_first_pick = BTreeSet::new();
 
     for (index, branch) in report.branches.iter().enumerate() {
+        if !choice_focus.branch_in_scope(branch) {
+            continue;
+        }
         let key = branch_example_diversity_key(branch, choice_focus);
         if covered_frontier_and_first_pick.insert(key) {
             ordered.push(branch);
@@ -392,6 +442,9 @@ fn ordered_branch_examples<'a>(
     }
 
     for (index, branch) in report.branches.iter().enumerate() {
+        if !choice_focus.branch_in_scope(branch) {
+            continue;
+        }
         if used_indices.insert(index) {
             ordered.push(branch);
         }
@@ -613,6 +666,9 @@ fn render_kept_long_horizon_coverage_line(
     let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
     let mut first_picks = BTreeSet::<String>::new();
     for branch in &report.branches {
+        if !choice_focus.branch_in_scope(branch) {
+            continue;
+        }
         let slot = retention_lane(branch);
         if !is_long_horizon_slot(slot) {
             continue;
@@ -773,6 +829,7 @@ mod tests {
             &report,
             CompactReportOptions {
                 kept_branch_examples: 2,
+                focus_boundary: None,
             },
         );
 
@@ -1469,6 +1526,7 @@ mod tests {
             &report,
             CompactReportOptions {
                 kept_branch_examples: 2,
+                focus_boundary: None,
             },
         );
 
@@ -1479,6 +1537,86 @@ mod tests {
         assert!(rendered.contains("choices: Shrug It Off"));
         assert!(!rendered.contains("First-pick outcomes:"));
         assert!(!rendered.contains("choices: Proceed -> Searing Blow"));
+    }
+
+    #[test]
+    fn compact_report_can_focus_a_target_boundary() {
+        let mut searing = branch_report(
+            "b0",
+            "Searing Blow",
+            1,
+            2,
+            80,
+            BranchRetentionSlotV1::Package,
+            "Card Reward",
+        );
+        prepend_choice(&mut searing, "Obtain a random rare card.");
+        prepend_choice(&mut searing, "Proceed");
+        let mut shrug = branch_report(
+            "b1",
+            "Shrug It Off",
+            1,
+            2,
+            80,
+            BranchRetentionSlotV1::EngineSetup,
+            "Card Reward",
+        );
+        prepend_choice(&mut shrug, "Obtain a random rare card.");
+        prepend_choice(&mut shrug, "Proceed");
+        let mut combat = branch_report(
+            "b2",
+            "Obtain a random Boss Relic. Lose your starter Relic.",
+            1,
+            1,
+            80,
+            BranchRetentionSlotV1::Diversity,
+            "Combat",
+        );
+        combat.choices[0].kind = "event".to_string();
+        combat.choices[0].effect_kind = "event_choice".to_string();
+        let report = BranchExperimentReportV1 {
+            branches: vec![searing, shrug, combat],
+            frontier_groups: vec![
+                BranchExperimentFrontierGroupV1 {
+                    key: "A1F2:Card Reward".to_string(),
+                    boundary_title: "Card Reward".to_string(),
+                    branch_count: 2,
+                    representative_branch_id: "b0".to_string(),
+                    next_card_reward_offer: None,
+                    lineage_flags: Vec::new(),
+                },
+                BranchExperimentFrontierGroupV1 {
+                    key: "A1F1:Combat".to_string(),
+                    boundary_title: "Combat".to_string(),
+                    branch_count: 1,
+                    representative_branch_id: "b2".to_string(),
+                    next_card_reward_offer: None,
+                    lineage_flags: Vec::new(),
+                },
+            ],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report_with_options(
+            &report,
+            CompactReportOptions {
+                kept_branch_examples: 5,
+                focus_boundary: Some("Card Reward".to_string()),
+            },
+        );
+
+        assert!(rendered.contains(
+            "Decision focus: target boundary [Card Reward] matched 2/3 branch(es); skipped shared prefix [Proceed -> Obtain a random rare card.]"
+        ));
+        assert!(rendered.contains("Kept choice effects: take_card=2"));
+        assert!(rendered.contains("Focused-pick outcomes:"));
+        assert!(rendered.contains("  Searing Blow | branches=1"));
+        assert!(rendered.contains("  Shrug It Off | branches=1"));
+        assert!(rendered.contains("  2 branch(es) | Card Reward"));
+        assert!(!rendered.contains("  1 branch(es) | Combat"));
+        assert!(rendered.contains("choices: Searing Blow"));
+        assert!(rendered.contains("choices: Shrug It Off"));
+        assert!(!rendered.contains("choices: Proceed -> Obtain a random rare card."));
     }
 
     #[test]

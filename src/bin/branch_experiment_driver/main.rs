@@ -150,6 +150,12 @@ struct Args {
     )]
     branch_examples: usize,
 
+    #[arg(
+        long,
+        help = "Focus compact output on branches ending at this boundary title, e.g. \"Card Reward\""
+    )]
+    focus_boundary: Option<String>,
+
     #[arg(long)]
     json: bool,
 }
@@ -179,6 +185,9 @@ fn run(args: Args) -> Result<(), String> {
         merge_prefix_commands(script_prefix_commands, args.prefix_commands.clone());
     let profiles = parse_retention_profiles(&args.retention_profile, args.compare_profiles)?;
     if args.compare_profiles {
+        if args.focus_boundary.is_some() {
+            return Err("--focus-boundary cannot be combined with --compare-profiles".to_string());
+        }
         if args.json || args.out.is_some() {
             return Err("--compare-profiles cannot be combined with --json or --out".to_string());
         }
@@ -211,6 +220,7 @@ fn run(args: Args) -> Result<(), String> {
     )?)?;
     let compact_options = CompactReportOptions {
         kept_branch_examples: args.branch_examples,
+        focus_boundary: args.focus_boundary.clone(),
     };
     if let Some(path) = args.out {
         let payload = serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
