@@ -730,6 +730,9 @@ fn print_compact_lab_report(cases: &[DecisionLabCaseV1], max_cases: usize) {
     if let Some(line) = render_hot_context_signals_line(cases) {
         println!("{line}");
     }
+    if let Some(line) = render_hot_budget_requests_line(cases) {
+        println!("{line}");
+    }
     if let Some(line) = render_hot_strategy_requests_line(cases) {
         println!("{line}");
     }
@@ -867,12 +870,36 @@ fn aggregate_context_signals(cases: &[DecisionLabCaseV1]) -> Vec<String> {
 }
 
 fn render_hot_strategy_requests_line(cases: &[DecisionLabCaseV1]) -> Option<String> {
+    render_hot_request_line(
+        cases,
+        "Hot strategy requests",
+        strategy_request_needs_human_judgment,
+    )
+}
+
+fn render_hot_budget_requests_line(cases: &[DecisionLabCaseV1]) -> Option<String> {
+    render_hot_request_line(cases, "Hot budget requests", |kind| {
+        !strategy_request_needs_human_judgment(kind)
+    })
+}
+
+fn render_hot_request_line<F>(
+    cases: &[DecisionLabCaseV1],
+    title: &str,
+    include_kind: F,
+) -> Option<String>
+where
+    F: Fn(&str) -> bool,
+{
     let mut counts = BTreeMap::<String, usize>::new();
     for case in cases {
         for token in &case.strategy_requests {
             let Some((key, count)) = split_count_token(token) else {
                 continue;
             };
+            if !include_kind(key) {
+                continue;
+            }
             *counts.entry(key.to_string()).or_default() += count;
         }
     }
@@ -882,7 +909,7 @@ fn render_hot_strategy_requests_line(cases: &[DecisionLabCaseV1]) -> Option<Stri
     let mut ranked = counts.into_iter().collect::<Vec<_>>();
     ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
     Some(format!(
-        "Hot strategy requests: {}",
+        "{title}: {}",
         ranked
             .into_iter()
             .take(5)
@@ -1282,6 +1309,24 @@ mod tests {
             line,
             "Hot strategy requests: card_reward_policy_gap=5 event_strategy=2"
         );
+    }
+
+    #[test]
+    fn hot_strategy_request_line_excludes_budget_requests() {
+        let mut case = test_case(DecisionLabCaseKindV1::NeedsMoreBudget, &[]);
+        case.strategy_requests = vec!["combat_manual_or_budget=7".to_string()];
+
+        assert_eq!(render_hot_strategy_requests_line(&[case]), None);
+    }
+
+    #[test]
+    fn hot_budget_request_line_aggregates_combat_budget_requests() {
+        let mut case = test_case(DecisionLabCaseKindV1::NeedsMoreBudget, &[]);
+        case.strategy_requests = vec!["combat_manual_or_budget=7".to_string()];
+
+        let line = render_hot_budget_requests_line(&[case]).expect("hot budget line");
+
+        assert_eq!(line, "Hot budget requests: combat_manual_or_budget=7");
     }
 
     fn test_report() -> BranchExperimentReportV1 {
