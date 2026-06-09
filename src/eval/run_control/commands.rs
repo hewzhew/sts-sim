@@ -137,6 +137,7 @@ pub struct RunControlAutoStepOptions {
     pub search: RunControlSearchCombatOptions,
     pub max_operations: Option<usize>,
     pub route: RunControlRouteAutomationMode,
+    pub allow_route_reject_unless_forced: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

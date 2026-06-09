@@ -1225,6 +1225,37 @@ fn run_control_auto_step_records_route_policy_stop_when_safety_gate_rejects() {
 }
 
 #[test]
+fn run_control_auto_step_can_apply_rejected_route_when_campaign_fallback_is_enabled() {
+    let mut session = test_session_with_forced_unsafe_elite_route();
+    let before = (
+        session.run_state.map.current_x,
+        session.run_state.map.current_y,
+    );
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                max_operations: Some(1),
+                allow_route_reject_unless_forced: true,
+                ..Default::default()
+            },
+        ))
+        .expect("campaign fallback should apply the forced route candidate");
+
+    assert!(outcome.message.contains("route planner:"));
+    assert!(outcome.message.contains("reject_unless_forced"));
+    assert!(outcome.action_result.is_some());
+    assert_ne!(
+        before,
+        (
+            session.run_state.map.current_x,
+            session.run_state.map.current_y
+        )
+    );
+}
+
+#[test]
 fn run_control_auto_run_uses_route_planner_by_default() {
     let mut session = test_session_with_first_monster_room();
 

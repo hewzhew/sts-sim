@@ -8,7 +8,8 @@ mod trace;
 mod tests;
 
 pub(in crate::eval::run_control) use apply::{
-    apply_route_go, apply_route_go_with_summary, route_policy_stop_for_session,
+    apply_route_go, apply_route_go_with_summary,
+    apply_route_go_with_summary_allowing_reject_unless_forced, route_policy_stop_for_session,
 };
 pub(in crate::eval::run_control) use format::{format_range, recovery_label};
 pub(in crate::eval::run_control) use suggestion::{
