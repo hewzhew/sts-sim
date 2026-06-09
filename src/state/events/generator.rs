@@ -57,7 +57,7 @@ fn java_room_choice_from_sizes(
     possible_results[roll_idx]
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct EventGenerator {
     pub event_pool: Vec<EventId>,
     pub shrine_pool: Vec<EventId>,

@@ -11,7 +11,7 @@ use super::trace_annotation::RunControlTraceAnnotationV1;
 const MAX_AUTO_REWARD_CLAIMS: usize = 16;
 const MAX_STABLE_ADVANCE_TICKS: usize = 2_000;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct RewardAutomationConfig {
     pub claim_gold: bool,
     pub claim_potion_with_empty_slot: bool,

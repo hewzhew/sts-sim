@@ -55,6 +55,32 @@ fn search_defaults_command_updates_and_clears_session_defaults() {
 }
 
 #[test]
+fn run_control_session_checkpoint_round_trips_exact_state() {
+    let mut session = RunControlSession::new(RunControlConfig {
+        seed: 590093712,
+        search_max_nodes: Some(12_345),
+        search_wall_ms: Some(67),
+        ..RunControlConfig::default()
+    });
+    session
+        .apply_command(RunControlCommand::DefaultCandidate)
+        .expect("default Neow intro candidate should apply");
+
+    let checkpoint = RunControlSessionCheckpointV1::from_session(&session);
+    let text = serde_json::to_string(&checkpoint).expect("checkpoint should serialize");
+    let loaded: RunControlSessionCheckpointV1 =
+        serde_json::from_str(&text).expect("checkpoint should deserialize");
+    let restored = loaded.into_session().expect("checkpoint should restore");
+
+    assert_eq!(restored.engine_state, session.engine_state);
+    assert_eq!(restored.run_state, session.run_state);
+    assert_eq!(restored.active_combat, session.active_combat);
+    assert_eq!(restored.decision_step, session.decision_step);
+    assert_eq!(restored.search_max_nodes, session.search_max_nodes);
+    assert_eq!(restored.search_wall_ms, session.search_wall_ms);
+}
+
+#[test]
 fn run_control_capture_command_saves_active_combat_position() {
     let mut session = test_session_with_first_monster_room();
     session

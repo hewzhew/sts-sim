@@ -8,7 +8,7 @@ use super::artifact_commands::default_benchmark_root;
 use super::registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 use super::RunControlSession;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct AutoCombatCaptureConfig {
     pub enabled: bool,
     pub root: Option<PathBuf>,

@@ -75,6 +75,7 @@ pub use search_evidence::{
 };
 pub use session::{
     canonical_player_class, RunControlCommandOutcome, RunControlConfig, RunControlSession,
+    RunControlSessionCheckpointV1,
 };
 pub use session_trace::{
     SessionTraceArtifactKind, SessionTraceArtifactRefV1, SessionTraceBoundaryFingerprintV1,

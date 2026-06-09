@@ -33,13 +33,13 @@ impl CombatBaselineOutcomeV1 {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct CombatOutcomeTracker {
     active: Option<CombatOutcomeDraft>,
     last: Option<CombatBaselineOutcomeV1>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 struct CombatOutcomeDraft {
     start_hp: i32,
     potions_used: u32,

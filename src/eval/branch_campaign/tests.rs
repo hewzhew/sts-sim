@@ -7,7 +7,9 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::branch_experiment_retention::{BranchRetentionDecisionV1, BranchRetentionSlotV1};
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
-use crate::eval::run_control::{RunControlConfig, RunControlSession};
+use crate::eval::run_control::{
+    RunControlConfig, RunControlSession, RunControlSessionCheckpointV1,
+};
 use crate::state::core::EngineState;
 use crate::state::rewards::{RewardCard, RewardState};
 use std::collections::BTreeMap;
@@ -566,9 +568,78 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
     .expect("snapshot should avoid replaying invalid prefix and parent commands");
 
     let branch_labels = report
+        .report
         .active
         .iter()
-        .chain(report.frozen.iter())
+        .chain(report.report.frozen.iter())
+        .flat_map(|branch| branch.choice_labels.iter())
+        .collect::<Vec<_>>();
+    assert!(branch_labels
+        .iter()
+        .any(|label| label.contains("Twin Strike")));
+    assert!(branch_labels.iter().any(|label| label.contains("Cleave")));
+}
+
+#[test]
+fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_commands() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.pending_card_choice = Some(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let mut parent = test_campaign_branch("snap-parent", 1, 80);
+    parent.commands = vec!["__bad_internal_command".to_string()];
+    parent.choice_labels = vec!["already replayed".to_string()];
+
+    let previous = BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 0,
+        stop_reason: "max_rounds".to_string(),
+        active: vec![parent.clone()],
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: Vec::new(),
+        discarded_count: 0,
+        strategy_requests: Vec::new(),
+        rounds: Vec::new(),
+    };
+    let checkpoint = BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 0,
+        sessions: vec![BranchCampaignCheckpointSessionV1 {
+            commands: parent.commands.clone(),
+            session: RunControlSessionCheckpointV1::from_session(&session),
+        }],
+    };
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &BranchCampaignConfigV1 {
+            max_rounds: 1,
+            round_depth: 1,
+            max_active: 4,
+            max_frozen: 4,
+            prefix_commands: vec!["__bad_internal_prefix".to_string()],
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+        Some(&checkpoint),
+    )
+    .expect("checkpoint should avoid replaying invalid prefix and parent commands");
+
+    let branch_labels = result
+        .report
+        .active
+        .iter()
+        .chain(result.report.frozen.iter())
         .flat_map(|branch| branch.choice_labels.iter())
         .collect::<Vec<_>>();
     assert!(branch_labels

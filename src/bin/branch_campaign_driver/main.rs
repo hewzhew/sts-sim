@@ -6,9 +6,11 @@ use std::time::Instant;
 
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_v1, render_branch_campaign_progress_event_v1,
-    run_branch_campaign_from_report_v1, run_branch_campaign_from_report_with_progress_v1,
-    run_branch_campaign_v1, run_branch_campaign_with_progress_v1,
-    BranchCampaignCombatRetryPolicyV1, BranchCampaignConfigV1, BranchCampaignReportV1,
+    run_branch_campaign_from_report_with_checkpoint_and_progress_v1,
+    run_branch_campaign_from_report_with_checkpoint_v1,
+    run_branch_campaign_with_checkpoint_and_progress_v1, run_branch_campaign_with_checkpoint_v1,
+    BranchCampaignCheckpointV1, BranchCampaignCombatRetryPolicyV1, BranchCampaignConfigV1,
+    BranchCampaignReportV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
@@ -143,11 +145,25 @@ struct Args {
     resume: Option<PathBuf>,
 
     #[arg(
+        long = "resume-checkpoint",
+        value_name = "PATH",
+        help = "Resume exact branch sessions from a BranchCampaignCheckpointV1 sidecar"
+    )]
+    resume_checkpoint: Option<PathBuf>,
+
+    #[arg(
         long,
         value_name = "PATH",
         help = "Write the resulting BranchCampaignV1 JSON report"
     )]
     out: Option<PathBuf>,
+
+    #[arg(
+        long = "checkpoint-out",
+        value_name = "PATH",
+        help = "Write the resulting BranchCampaignCheckpointV1 exact session sidecar"
+    )]
+    checkpoint_out: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -315,12 +331,20 @@ fn apply_campaign_preset_defaults<F>(
 
 fn run(args: Args) -> Result<(), String> {
     let config = campaign_config_from_args(&args)?;
+    if args.resume_checkpoint.is_some() && args.resume.is_none() {
+        return Err("--resume-checkpoint requires --resume".to_string());
+    }
     let previous = args
         .resume
         .as_ref()
         .map(read_campaign_report_v1)
         .transpose()?;
-    let report = if args.progress && !args.json {
+    let checkpoint = args
+        .resume_checkpoint
+        .as_ref()
+        .map(read_campaign_checkpoint_v1)
+        .transpose()?;
+    let result = if args.progress && !args.json {
         let started_at = Instant::now();
         let progress = |event| {
             println!(
@@ -330,17 +354,26 @@ fn run(args: Args) -> Result<(), String> {
             );
         };
         if let Some(previous) = previous.as_ref() {
-            run_branch_campaign_from_report_with_progress_v1(&config, previous, progress)?
+            run_branch_campaign_from_report_with_checkpoint_and_progress_v1(
+                &config,
+                previous,
+                checkpoint.as_ref(),
+                progress,
+            )?
         } else {
-            run_branch_campaign_with_progress_v1(&config, progress)?
+            run_branch_campaign_with_checkpoint_and_progress_v1(&config, progress)?
         }
     } else if let Some(previous) = previous.as_ref() {
-        run_branch_campaign_from_report_v1(&config, previous)?
+        run_branch_campaign_from_report_with_checkpoint_v1(&config, previous, checkpoint.as_ref())?
     } else {
-        run_branch_campaign_v1(&config)?
+        run_branch_campaign_with_checkpoint_v1(&config)?
     };
+    let report = result.report;
     if let Some(path) = args.out.as_ref() {
         write_campaign_report_v1(path, &report)?;
+    }
+    if let Some(path) = args.checkpoint_out.as_ref() {
+        write_campaign_checkpoint_v1(path, &result.checkpoint)?;
     }
     if args.json {
         println!(
@@ -367,6 +400,21 @@ fn read_campaign_report_v1(path: &PathBuf) -> Result<BranchCampaignReportV1, Str
     })
 }
 
+fn read_campaign_checkpoint_v1(path: &PathBuf) -> Result<BranchCampaignCheckpointV1, String> {
+    let text = fs::read_to_string(path).map_err(|err| {
+        format!(
+            "failed to read --resume-checkpoint {}: {err}",
+            path.display()
+        )
+    })?;
+    serde_json::from_str(&text).map_err(|err| {
+        format!(
+            "failed to parse --resume-checkpoint {} as BranchCampaignCheckpointV1: {err}",
+            path.display()
+        )
+    })
+}
+
 fn write_campaign_report_v1(path: &PathBuf, report: &BranchCampaignReportV1) -> Result<(), String> {
     if let Some(parent) = path
         .parent()
@@ -382,6 +430,27 @@ fn write_campaign_report_v1(path: &PathBuf, report: &BranchCampaignReportV1) -> 
     let text = serde_json::to_string_pretty(report)
         .map_err(|err| format!("failed to serialize BranchCampaignV1 report: {err}"))?;
     fs::write(path, text).map_err(|err| format!("failed to write --out {}: {err}", path.display()))
+}
+
+fn write_campaign_checkpoint_v1(
+    path: &PathBuf,
+    checkpoint: &BranchCampaignCheckpointV1,
+) -> Result<(), String> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "failed to create --checkpoint-out directory {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+    let text = serde_json::to_string_pretty(checkpoint)
+        .map_err(|err| format!("failed to serialize BranchCampaignCheckpointV1: {err}"))?;
+    fs::write(path, text)
+        .map_err(|err| format!("failed to write --checkpoint-out {}: {err}", path.display()))
 }
 
 fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, String> {
@@ -478,13 +547,25 @@ mod tests {
             "branch_campaign_driver",
             "--resume",
             "old.campaign.json",
+            "--resume-checkpoint",
+            "old.checkpoint.json",
             "--out",
             "new.campaign.json",
+            "--checkpoint-out",
+            "new.checkpoint.json",
         ])
         .expect("args parse");
 
         assert_eq!(args.resume, Some(PathBuf::from("old.campaign.json")));
+        assert_eq!(
+            args.resume_checkpoint,
+            Some(PathBuf::from("old.checkpoint.json"))
+        );
         assert_eq!(args.out, Some(PathBuf::from("new.campaign.json")));
+        assert_eq!(
+            args.checkpoint_out,
+            Some(PathBuf::from("new.checkpoint.json"))
+        );
     }
 
     #[test]

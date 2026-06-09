@@ -73,6 +73,7 @@ $CampaignDir = Join-Path $RepoRoot "tools\artifacts\campaigns"
 $LatestSeedPath = Join-Path $CampaignDir "latest.seed.txt"
 $LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
 $LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
+$LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
 
 New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 
@@ -108,15 +109,20 @@ $DriverArgs = @(
 )
 
 $ResumeCampaignPath = $null
+$ResumeCheckpointPath = $null
 if ($More) {
     if (-not (Test-Path $LatestCampaignPath)) {
         throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first, or use -Last to rerun the previous seed from the start."
     }
     $ResumeCampaignPath = $LatestCampaignPath
     $DriverArgs += @("--resume", "$ResumeCampaignPath")
+    if (Test-Path $LatestCheckpointPath) {
+        $ResumeCheckpointPath = $LatestCheckpointPath
+        $DriverArgs += @("--resume-checkpoint", "$ResumeCheckpointPath")
+    }
 }
 
-$DriverArgs += @("--out", "$LatestCampaignPath")
+$DriverArgs += @("--out", "$LatestCampaignPath", "--checkpoint-out", "$LatestCheckpointPath")
 
 $CampaignBoundParameters = @{}
 foreach ($ParameterName in $PSBoundParameters.Keys) {
@@ -191,8 +197,14 @@ if ($NeedsBuild) {
 Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
 Write-Host "run-more=.\tools\campaign.ps1 -More"
 Write-Host "report=$LatestCampaignPath"
+Write-Host "checkpoint=$LatestCheckpointPath"
 if ($ResumeCampaignPath) {
     Write-Host "resume=$ResumeCampaignPath"
+    if ($ResumeCheckpointPath) {
+        Write-Host "resume-checkpoint=$ResumeCheckpointPath"
+    } else {
+        Write-Host "resume-checkpoint=missing; falling back to replay"
+    }
 }
 
 if ($DryRun) {

@@ -7,12 +7,15 @@ use crate::eval::branch_experiment::{
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::run_control::{
     RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+    RunControlSessionCheckpointV1,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const BRANCH_CAMPAIGN_SCHEMA_NAME: &str = "BranchCampaignV1";
 pub const BRANCH_CAMPAIGN_SCHEMA_VERSION: u32 = 1;
+pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME: &str = "BranchCampaignCheckpointV1";
+pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
 const COMBAT_RETRY_NODE_MULTIPLIER: usize = 4;
 const COMBAT_RETRY_WALL_MULTIPLIER: u64 = 4;
 const COMBAT_RETRY_MIN_NODES: usize = 200_000;
@@ -183,6 +186,29 @@ pub struct BranchCampaignReportV1 {
     pub rounds: Vec<BranchCampaignRoundSummaryV1>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointSessionV1 {
+    pub commands: Vec<String>,
+    pub session: RunControlSessionCheckpointV1,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub seed: u64,
+    pub rounds_completed: usize,
+    pub sessions: Vec<BranchCampaignCheckpointSessionV1>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BranchCampaignRunResultV1 {
+    pub report: BranchCampaignReportV1,
+    pub checkpoint: BranchCampaignCheckpointV1,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BranchCampaignProgressEventV1 {
     CampaignStarted {
@@ -260,13 +286,29 @@ struct BranchCampaignRunStateV1 {
 pub fn run_branch_campaign_v1(
     config: &BranchCampaignConfigV1,
 ) -> Result<BranchCampaignReportV1, String> {
-    run_branch_campaign_with_progress_v1(config, |_| {})
+    Ok(run_branch_campaign_with_checkpoint_v1(config)?.report)
 }
 
 pub fn run_branch_campaign_with_progress_v1<F>(
     config: &BranchCampaignConfigV1,
     progress: F,
 ) -> Result<BranchCampaignReportV1, String>
+where
+    F: FnMut(BranchCampaignProgressEventV1),
+{
+    Ok(run_branch_campaign_with_checkpoint_and_progress_v1(config, progress)?.report)
+}
+
+pub fn run_branch_campaign_with_checkpoint_v1(
+    config: &BranchCampaignConfigV1,
+) -> Result<BranchCampaignRunResultV1, String> {
+    run_branch_campaign_with_checkpoint_and_progress_v1(config, |_| {})
+}
+
+pub fn run_branch_campaign_with_checkpoint_and_progress_v1<F>(
+    config: &BranchCampaignConfigV1,
+    progress: F,
+) -> Result<BranchCampaignRunResultV1, String>
 where
     F: FnMut(BranchCampaignProgressEventV1),
 {
@@ -277,7 +319,7 @@ pub fn run_branch_campaign_from_report_v1(
     config: &BranchCampaignConfigV1,
     previous: &BranchCampaignReportV1,
 ) -> Result<BranchCampaignReportV1, String> {
-    run_branch_campaign_from_report_with_progress_v1(config, previous, |_| {})
+    Ok(run_branch_campaign_from_report_with_checkpoint_v1(config, previous, None)?.report)
 }
 
 pub fn run_branch_campaign_from_report_with_progress_v1<F>(
@@ -288,19 +330,49 @@ pub fn run_branch_campaign_from_report_with_progress_v1<F>(
 where
     F: FnMut(BranchCampaignProgressEventV1),
 {
-    validate_campaign_resume_report_v1(config, previous)?;
-    run_branch_campaign_from_state_with_progress_v1(
-        config,
-        campaign_state_from_report_v1(previous),
-        progress,
+    Ok(
+        run_branch_campaign_from_report_with_checkpoint_and_progress_v1(
+            config, previous, None, progress,
+        )?
+        .report,
     )
+}
+
+pub fn run_branch_campaign_from_report_with_checkpoint_v1(
+    config: &BranchCampaignConfigV1,
+    previous: &BranchCampaignReportV1,
+    checkpoint: Option<&BranchCampaignCheckpointV1>,
+) -> Result<BranchCampaignRunResultV1, String> {
+    run_branch_campaign_from_report_with_checkpoint_and_progress_v1(
+        config,
+        previous,
+        checkpoint,
+        |_| {},
+    )
+}
+
+pub fn run_branch_campaign_from_report_with_checkpoint_and_progress_v1<F>(
+    config: &BranchCampaignConfigV1,
+    previous: &BranchCampaignReportV1,
+    checkpoint: Option<&BranchCampaignCheckpointV1>,
+    progress: F,
+) -> Result<BranchCampaignRunResultV1, String>
+where
+    F: FnMut(BranchCampaignProgressEventV1),
+{
+    validate_campaign_resume_report_v1(config, previous)?;
+    let state = match checkpoint {
+        Some(checkpoint) => campaign_state_from_report_and_checkpoint_v1(previous, checkpoint)?,
+        None => campaign_state_from_report_v1(previous),
+    };
+    run_branch_campaign_from_state_with_progress_v1(config, state, progress)
 }
 
 fn run_branch_campaign_from_state_with_progress_v1<F>(
     config: &BranchCampaignConfigV1,
     mut state: BranchCampaignRunStateV1,
     mut progress: F,
-) -> Result<BranchCampaignReportV1, String>
+) -> Result<BranchCampaignRunResultV1, String>
 where
     F: FnMut(BranchCampaignProgressEventV1),
 {
@@ -501,7 +573,8 @@ where
         stuck: state.stuck.len(),
     });
 
-    Ok(BranchCampaignReportV1 {
+    let checkpoint = campaign_checkpoint_from_state_v1(config, &state);
+    let report = BranchCampaignReportV1 {
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: config.seed,
@@ -516,7 +589,8 @@ where
         discarded_count: state.discarded_count,
         strategy_requests: state.strategy_requests,
         rounds: state.rounds,
-    })
+    };
+    Ok(BranchCampaignRunResultV1 { report, checkpoint })
 }
 
 fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
@@ -551,6 +625,53 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
     }
 }
 
+fn campaign_state_from_report_and_checkpoint_v1(
+    report: &BranchCampaignReportV1,
+    checkpoint: &BranchCampaignCheckpointV1,
+) -> Result<BranchCampaignRunStateV1, String> {
+    validate_campaign_resume_checkpoint_v1(report, checkpoint)?;
+    let mut state = campaign_state_from_report_v1(report);
+    let keep = state
+        .active
+        .iter()
+        .chain(state.frozen.iter())
+        .map(|branch| branch.commands.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for entry in &checkpoint.sessions {
+        if keep.contains(&entry.commands) {
+            state.snapshot_cache.insert(
+                entry.commands.clone(),
+                entry.session.clone().into_session().map_err(|err| {
+                    format!("failed to restore campaign checkpoint session: {err}")
+                })?,
+            );
+        }
+    }
+    Ok(state)
+}
+
+fn campaign_checkpoint_from_state_v1(
+    config: &BranchCampaignConfigV1,
+    state: &BranchCampaignRunStateV1,
+) -> BranchCampaignCheckpointV1 {
+    let mut sessions = Vec::new();
+    for branch in state.active.iter().chain(state.frozen.iter()) {
+        if let Some(session) = state.snapshot_cache.get(&branch.commands) {
+            sessions.push(BranchCampaignCheckpointSessionV1 {
+                commands: branch.commands.clone(),
+                session: RunControlSessionCheckpointV1::from_session(session),
+            });
+        }
+    }
+    BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: config.seed,
+        rounds_completed: state.rounds_completed,
+        sessions,
+    }
+}
+
 fn retain_campaign_snapshot_cache_v1(
     snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
     active: &[BranchCampaignBranchV1],
@@ -562,6 +683,37 @@ fn retain_campaign_snapshot_cache_v1(
         .map(|branch| branch.commands.clone())
         .collect::<std::collections::BTreeSet<_>>();
     snapshot_cache.retain(|commands, _| keep.contains(commands));
+}
+
+fn validate_campaign_resume_checkpoint_v1(
+    report: &BranchCampaignReportV1,
+    checkpoint: &BranchCampaignCheckpointV1,
+) -> Result<(), String> {
+    if checkpoint.schema_name != BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME {
+        return Err(format!(
+            "campaign checkpoint schema mismatch: expected {}, found {}",
+            BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME, checkpoint.schema_name
+        ));
+    }
+    if checkpoint.schema_version != BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION {
+        return Err(format!(
+            "campaign checkpoint schema version mismatch: expected {}, found {}",
+            BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION, checkpoint.schema_version
+        ));
+    }
+    if checkpoint.seed != report.seed {
+        return Err(format!(
+            "campaign checkpoint seed mismatch: report seed {} does not match checkpoint seed {}",
+            report.seed, checkpoint.seed
+        ));
+    }
+    if checkpoint.rounds_completed != report.rounds_completed {
+        return Err(format!(
+            "campaign checkpoint rounds mismatch: report rounds {} does not match checkpoint rounds {}",
+            report.rounds_completed, checkpoint.rounds_completed
+        ));
+    }
+    Ok(())
 }
 
 fn validate_campaign_resume_report_v1(

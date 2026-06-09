@@ -108,6 +108,54 @@ pub struct RunState {
     pub emitted_events: Vec<DomainEvent>,
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunStateCheckpointV1 {
+    pub seed: u64,
+    pub ascension_level: u8,
+    pub is_daily_run: bool,
+    pub highest_unlocked_ascension_level: u8,
+    pub act_num: u8,
+    pub floor_num: i32,
+    pub playtime_seconds: f32,
+    pub player_class: String,
+    pub map: MapState,
+    pub rng_pool: RngPool,
+    pub neow_rng: StsRng,
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    pub shop_purge_count: i32,
+    pub relics: Vec<RelicState>,
+    pub potions: Vec<Option<crate::content::potions::Potion>>,
+    pub keys: [bool; 3],
+    pub is_final_act_available: bool,
+    pub master_deck: Vec<CombatCard>,
+    pub potion_drop_chance_mod: i32,
+    pub card_blizz_randomizer: i32,
+    pub card_upgraded_chance: f32,
+    pub reward_state: Option<crate::state::rewards::RewardState>,
+    pub shop_state: Option<crate::state::shop::ShopState>,
+    pub event_state: Option<crate::state::events::EventState>,
+    pub note_for_yourself_card: crate::content::cards::CardId,
+    pub note_for_yourself_upgrades: u8,
+    pub event_generator: crate::state::events::generator::EventGenerator,
+    pub room_mugged: bool,
+    pub room_smoked: bool,
+    pub common_relic_pool: Vec<crate::content::relics::RelicId>,
+    pub uncommon_relic_pool: Vec<crate::content::relics::RelicId>,
+    pub rare_relic_pool: Vec<crate::content::relics::RelicId>,
+    pub shop_relic_pool: Vec<crate::content::relics::RelicId>,
+    pub boss_relic_pool: Vec<crate::content::relics::RelicId>,
+    pub monster_list: Vec<crate::content::monsters::factory::EncounterId>,
+    pub elite_monster_list: Vec<crate::content::monsters::factory::EncounterId>,
+    pub boss_key: Option<crate::content::monsters::factory::EncounterId>,
+    pub boss_list: Vec<crate::content::monsters::factory::EncounterId>,
+    pub pending_boss_reward: bool,
+    pub pending_boss_act_transition: bool,
+    pub emitted_events: Vec<DomainEvent>,
+}
+
 mod act_transition;
 mod deck_mutation;
 mod encounters;
@@ -379,6 +427,114 @@ impl RunState {
 
         // Persist counter states inside relics (e.g., Pen Nib)
         self.relics = player.relics;
+    }
+}
+
+impl RunStateCheckpointV1 {
+    pub fn from_run_state(run_state: &RunState) -> Self {
+        Self {
+            seed: run_state.seed,
+            ascension_level: run_state.ascension_level,
+            is_daily_run: run_state.is_daily_run,
+            highest_unlocked_ascension_level: run_state.highest_unlocked_ascension_level,
+            act_num: run_state.act_num,
+            floor_num: run_state.floor_num,
+            playtime_seconds: run_state.playtime_seconds,
+            player_class: run_state.player_class.to_string(),
+            map: run_state.map.clone(),
+            rng_pool: run_state.rng_pool.clone(),
+            neow_rng: run_state.neow_rng.clone(),
+            current_hp: run_state.current_hp,
+            max_hp: run_state.max_hp,
+            gold: run_state.gold,
+            shop_purge_count: run_state.shop_purge_count,
+            relics: run_state.relics.clone(),
+            potions: run_state.potions.clone(),
+            keys: run_state.keys,
+            is_final_act_available: run_state.is_final_act_available,
+            master_deck: run_state.master_deck.clone(),
+            potion_drop_chance_mod: run_state.potion_drop_chance_mod,
+            card_blizz_randomizer: run_state.card_blizz_randomizer,
+            card_upgraded_chance: run_state.card_upgraded_chance,
+            reward_state: run_state.reward_state.clone(),
+            shop_state: run_state.shop_state.clone(),
+            event_state: run_state.event_state.clone(),
+            note_for_yourself_card: run_state.note_for_yourself_card,
+            note_for_yourself_upgrades: run_state.note_for_yourself_upgrades,
+            event_generator: run_state.event_generator.clone(),
+            room_mugged: run_state.room_mugged,
+            room_smoked: run_state.room_smoked,
+            common_relic_pool: run_state.common_relic_pool.clone(),
+            uncommon_relic_pool: run_state.uncommon_relic_pool.clone(),
+            rare_relic_pool: run_state.rare_relic_pool.clone(),
+            shop_relic_pool: run_state.shop_relic_pool.clone(),
+            boss_relic_pool: run_state.boss_relic_pool.clone(),
+            monster_list: run_state.monster_list.clone(),
+            elite_monster_list: run_state.elite_monster_list.clone(),
+            boss_key: run_state.boss_key,
+            boss_list: run_state.boss_list.clone(),
+            pending_boss_reward: run_state.pending_boss_reward,
+            pending_boss_act_transition: run_state.pending_boss_act_transition,
+            emitted_events: run_state.emitted_events.clone(),
+        }
+    }
+
+    pub fn into_run_state(self) -> Result<RunState, String> {
+        Ok(RunState {
+            seed: self.seed,
+            ascension_level: self.ascension_level,
+            is_daily_run: self.is_daily_run,
+            highest_unlocked_ascension_level: self.highest_unlocked_ascension_level,
+            act_num: self.act_num,
+            floor_num: self.floor_num,
+            playtime_seconds: self.playtime_seconds,
+            player_class: checkpoint_player_class(&self.player_class)?,
+            map: self.map,
+            rng_pool: self.rng_pool,
+            neow_rng: self.neow_rng,
+            current_hp: self.current_hp,
+            max_hp: self.max_hp,
+            gold: self.gold,
+            shop_purge_count: self.shop_purge_count,
+            relics: self.relics,
+            potions: self.potions,
+            keys: self.keys,
+            is_final_act_available: self.is_final_act_available,
+            master_deck: self.master_deck,
+            potion_drop_chance_mod: self.potion_drop_chance_mod,
+            card_blizz_randomizer: self.card_blizz_randomizer,
+            card_upgraded_chance: self.card_upgraded_chance,
+            reward_state: self.reward_state,
+            shop_state: self.shop_state,
+            event_state: self.event_state,
+            note_for_yourself_card: self.note_for_yourself_card,
+            note_for_yourself_upgrades: self.note_for_yourself_upgrades,
+            event_generator: self.event_generator,
+            room_mugged: self.room_mugged,
+            room_smoked: self.room_smoked,
+            common_relic_pool: self.common_relic_pool,
+            uncommon_relic_pool: self.uncommon_relic_pool,
+            rare_relic_pool: self.rare_relic_pool,
+            shop_relic_pool: self.shop_relic_pool,
+            boss_relic_pool: self.boss_relic_pool,
+            monster_list: self.monster_list,
+            elite_monster_list: self.elite_monster_list,
+            boss_key: self.boss_key,
+            boss_list: self.boss_list,
+            pending_boss_reward: self.pending_boss_reward,
+            pending_boss_act_transition: self.pending_boss_act_transition,
+            emitted_events: self.emitted_events,
+        })
+    }
+}
+
+fn checkpoint_player_class(raw: &str) -> Result<&'static str, String> {
+    match raw {
+        "Ironclad" => Ok("Ironclad"),
+        "Silent" => Ok("Silent"),
+        "Defect" => Ok("Defect"),
+        "Watcher" => Ok("Watcher"),
+        _ => Err(format!("unsupported checkpoint player class `{raw}`")),
     }
 }
 
