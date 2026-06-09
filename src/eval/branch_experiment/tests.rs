@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 #[test]
 fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
-    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 19);
+    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 20);
 }
 
 #[test]

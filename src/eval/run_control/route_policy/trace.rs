@@ -3,7 +3,10 @@ use crate::ai::route_planner_v1::{RouteCandidateTraceV1, RouteDecisionTraceV1};
 use super::super::noncombat_policy_annotation::{
     noncombat_policy_annotation, validate_noncombat_policy_record,
 };
-use super::super::trace_annotation::{RoutePlannerCandidateSummaryV1, RunControlTraceAnnotationV1};
+use super::super::trace_annotation::{
+    RoutePlannerCandidateSummaryV1, RoutePlannerFirstEliteEvidenceV1,
+    RoutePlannerSelectionEvidenceV1, RunControlTraceAnnotationV1,
+};
 use super::super::view_model::room_type_label;
 use super::format::{render_route_go_auto_step_summary, safety_label};
 
@@ -32,6 +35,7 @@ pub(super) fn route_go_trace_annotation(
             .to_string(),
         top_candidates: route_go_top_candidate_summaries(trace),
         label_role: "behavior_policy_not_teacher".to_string(),
+        route_evidence: Some(route_go_selection_evidence(candidate)),
         noncombat_record: Some(noncombat_record),
     })
 }
@@ -72,4 +76,32 @@ fn route_go_top_candidate_summaries(
                 .to_string(),
         })
         .collect()
+}
+
+fn route_go_selection_evidence(
+    candidate: &RouteCandidateTraceV1,
+) -> RoutePlannerSelectionEvidenceV1 {
+    let first_elite = &candidate.path_summary.first_elite;
+    RoutePlannerSelectionEvidenceV1 {
+        elite_prep_bp: score_to_basis_points(candidate.score_terms.elite_prep),
+        first_elite: RoutePlannerFirstEliteEvidenceV1 {
+            paths_with_first_elite: first_elite.paths_with_first_elite,
+            forced: first_elite.forced,
+            optional: first_elite.optional,
+            min_hallway_fights_before: first_elite.min_hallway_fights_before,
+            max_hallway_fights_before: first_elite.max_hallway_fights_before,
+            min_unknowns_before: first_elite.min_unknowns_before,
+            max_unknowns_before: first_elite.max_unknowns_before,
+            min_fires_before: first_elite.min_fires_before,
+            max_fires_before: first_elite.max_fires_before,
+            min_shops_before: first_elite.min_shops_before,
+            max_shops_before: first_elite.max_shops_before,
+            can_bail_to_rest_before: first_elite.can_bail_to_rest_before,
+            can_bail_to_shop_before: first_elite.can_bail_to_shop_before,
+        },
+    }
+}
+
+fn score_to_basis_points(score: f32) -> i32 {
+    (score * 100.0).round() as i32
 }

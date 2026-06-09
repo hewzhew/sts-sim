@@ -32,6 +32,31 @@ pub struct RoutePlannerCandidateSummaryV1 {
     pub command: String,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoutePlannerFirstEliteEvidenceV1 {
+    pub paths_with_first_elite: usize,
+    pub forced: bool,
+    pub optional: bool,
+    pub min_hallway_fights_before: usize,
+    pub max_hallway_fights_before: usize,
+    pub min_unknowns_before: usize,
+    pub max_unknowns_before: usize,
+    pub min_fires_before: usize,
+    pub max_fires_before: usize,
+    pub min_shops_before: usize,
+    pub max_shops_before: usize,
+    pub can_bail_to_rest_before: bool,
+    pub can_bail_to_shop_before: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoutePlannerSelectionEvidenceV1 {
+    pub elite_prep_bp: i32,
+    pub first_elite: RoutePlannerFirstEliteEvidenceV1,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RunControlTraceAnnotationV1 {
@@ -48,6 +73,8 @@ pub enum RunControlTraceAnnotationV1 {
         command: String,
         top_candidates: Vec<RoutePlannerCandidateSummaryV1>,
         label_role: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        route_evidence: Option<RoutePlannerSelectionEvidenceV1>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         noncombat_record: Option<NonCombatDecisionRecordV1>,
     },

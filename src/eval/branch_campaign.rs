@@ -1,8 +1,8 @@
 use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
-    BranchExperimentRunResultV1, BranchExperimentStrategyRequestV1,
-    BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
+    BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
+    BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
 };
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::run_control::{
@@ -175,6 +175,28 @@ pub struct BranchCampaignRoundSummaryV1 {
     pub combat_budget_retries: usize,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignRouteEvidenceSummaryV1 {
+    pub decisions: usize,
+    pub first_elite_forced: usize,
+    pub first_elite_optional: usize,
+    pub first_elite_none: usize,
+    pub rest_bailout: usize,
+    pub shop_bailout: usize,
+    pub underprepared_first_elite: usize,
+    pub avg_elite_prep_bp: i32,
+    pub examples: Vec<BranchCampaignRouteEvidenceExampleV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignRouteEvidenceExampleV1 {
+    pub target: String,
+    pub first_elite: String,
+    pub elite_prep_bp: i32,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignReportV1 {
@@ -191,6 +213,8 @@ pub struct BranchCampaignReportV1 {
     pub stuck: Vec<BranchCampaignBranchV1>,
     pub discarded_count: usize,
     pub strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
+    #[serde(default)]
+    pub route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     pub rounds: Vec<BranchCampaignRoundSummaryV1>,
 }
 
@@ -280,6 +304,7 @@ struct BranchCampaignParentRoundResultV1 {
 struct BranchCampaignParentBatchResultV1 {
     candidates: Vec<BranchCampaignBranchV1>,
     strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
+    route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     explored_branch_points: usize,
     wall_limit_hit: bool,
     branch_limit_hit: bool,
@@ -296,6 +321,7 @@ struct BranchCampaignRunStateV1 {
     stuck: Vec<BranchCampaignBranchV1>,
     discarded_count: usize,
     strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
+    route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     rounds: Vec<BranchCampaignRoundSummaryV1>,
     snapshot_cache: BTreeMap<Vec<String>, RunControlSession>,
 }
@@ -469,6 +495,7 @@ where
             state.strategy_requests,
             merge_campaign_strategy_requests_v1(batch.strategy_requests.clone()),
         );
+        merge_campaign_route_evidence_summary_v1(&mut state.route_evidence, batch.route_evidence);
         let frozen_added = append_limited_frozen_v1(
             &mut state.frozen,
             selected.frozen,
@@ -583,6 +610,7 @@ where
         stuck: state.stuck,
         discarded_count: state.discarded_count,
         strategy_requests: state.strategy_requests,
+        route_evidence: state.route_evidence,
         rounds: state.rounds,
     };
     Ok(BranchCampaignRunResultV1 { report, checkpoint })
@@ -599,6 +627,7 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         stuck: Vec::new(),
         discarded_count: 0,
         strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
         snapshot_cache: BTreeMap::new(),
     }
@@ -615,6 +644,7 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
         stuck: report.stuck.clone(),
         discarded_count: report.discarded_count,
         strategy_requests: report.strategy_requests.clone(),
+        route_evidence: report.route_evidence.clone(),
         rounds: report.rounds.clone(),
         snapshot_cache: BTreeMap::new(),
     }
@@ -867,6 +897,27 @@ pub fn render_branch_campaign_compact_v1(
             }
         ));
     }
+    if report.route_evidence.decisions > 0 {
+        lines.push(format!(
+            "Route evidence: decisions={} first_elite optional={} forced={} none={} avg_elite_prep={} underprepared={} bailouts=rest:{} shop:{}",
+            report.route_evidence.decisions,
+            report.route_evidence.first_elite_optional,
+            report.route_evidence.first_elite_forced,
+            report.route_evidence.first_elite_none,
+            format_bp(report.route_evidence.avg_elite_prep_bp),
+            report.route_evidence.underprepared_first_elite,
+            report.route_evidence.rest_bailout,
+            report.route_evidence.shop_bailout,
+        ));
+        if let Some(example) = report.route_evidence.examples.first() {
+            lines.push(format!(
+                "  example: {} | first_elite={} elite_prep={}",
+                example.target,
+                example.first_elite,
+                format_bp(example.elite_prep_bp)
+            ));
+        }
+    }
     if report.stop_reason == "max_rounds"
         && (!report.active.is_empty() || !report.frozen.is_empty())
     {
@@ -930,6 +981,10 @@ pub fn render_branch_campaign_compact_v1(
     lines.join("\n")
 }
 
+fn format_bp(value: i32) -> String {
+    format!("{:.2}", f64::from(value) / 100.0)
+}
+
 fn render_campaign_strategy_context_v1(request: &BranchCampaignStrategyRequestV1) -> Vec<String> {
     let mut lines = Vec::new();
     if request.act > 0 || request.floor > 0 {
@@ -952,6 +1007,138 @@ fn campaign_report_stop_needs_immediate_intervention_v1(report: &BranchCampaignR
         "needs_intervention" | "stuck" | "no_active_branch" | "no_progress"
     ) && report.active.is_empty()
         && report.frozen.is_empty()
+}
+
+fn merge_campaign_route_decisions_v1(
+    summary: &mut BranchCampaignRouteEvidenceSummaryV1,
+    decisions: &[BranchExperimentRouteDecisionV1],
+) {
+    for decision in decisions {
+        add_campaign_route_decision_v1(summary, decision);
+    }
+}
+
+fn merge_campaign_route_evidence_summary_v1(
+    target: &mut BranchCampaignRouteEvidenceSummaryV1,
+    incoming: BranchCampaignRouteEvidenceSummaryV1,
+) {
+    if incoming.decisions == 0 {
+        return;
+    }
+    target.avg_elite_prep_bp = weighted_average_bp(
+        target.avg_elite_prep_bp,
+        target.decisions,
+        incoming.avg_elite_prep_bp,
+        incoming.decisions,
+    );
+    target.decisions = target.decisions.saturating_add(incoming.decisions);
+    target.first_elite_forced = target
+        .first_elite_forced
+        .saturating_add(incoming.first_elite_forced);
+    target.first_elite_optional = target
+        .first_elite_optional
+        .saturating_add(incoming.first_elite_optional);
+    target.first_elite_none = target
+        .first_elite_none
+        .saturating_add(incoming.first_elite_none);
+    target.rest_bailout = target.rest_bailout.saturating_add(incoming.rest_bailout);
+    target.shop_bailout = target.shop_bailout.saturating_add(incoming.shop_bailout);
+    target.underprepared_first_elite = target
+        .underprepared_first_elite
+        .saturating_add(incoming.underprepared_first_elite);
+    for example in incoming.examples {
+        if target.examples.len() >= 4 {
+            break;
+        }
+        target.examples.push(example);
+    }
+}
+
+fn add_campaign_route_decision_v1(
+    summary: &mut BranchCampaignRouteEvidenceSummaryV1,
+    decision: &BranchExperimentRouteDecisionV1,
+) {
+    summary.avg_elite_prep_bp = weighted_average_bp(
+        summary.avg_elite_prep_bp,
+        summary.decisions,
+        decision.elite_prep_bp,
+        1,
+    );
+    summary.decisions = summary.decisions.saturating_add(1);
+    if decision.first_elite.paths_with_first_elite == 0 {
+        summary.first_elite_none = summary.first_elite_none.saturating_add(1);
+    } else if decision.first_elite.forced {
+        summary.first_elite_forced = summary.first_elite_forced.saturating_add(1);
+    } else if decision.first_elite.optional {
+        summary.first_elite_optional = summary.first_elite_optional.saturating_add(1);
+    }
+    if decision.first_elite.can_bail_to_rest_before {
+        summary.rest_bailout = summary.rest_bailout.saturating_add(1);
+    }
+    if decision.first_elite.can_bail_to_shop_before {
+        summary.shop_bailout = summary.shop_bailout.saturating_add(1);
+    }
+    if route_decision_has_underprepared_first_elite_v1(decision) {
+        summary.underprepared_first_elite = summary.underprepared_first_elite.saturating_add(1);
+    }
+    if summary.examples.len() < 4 {
+        summary.examples.push(BranchCampaignRouteEvidenceExampleV1 {
+            target: decision.target.clone(),
+            first_elite: render_branch_campaign_first_elite_evidence_v1(decision),
+            elite_prep_bp: decision.elite_prep_bp,
+        });
+    }
+}
+
+fn weighted_average_bp(
+    left_avg: i32,
+    left_count: usize,
+    right_avg: i32,
+    right_count: usize,
+) -> i32 {
+    let total_count = left_count.saturating_add(right_count);
+    if total_count == 0 {
+        return 0;
+    }
+    let total = i64::from(left_avg) * left_count as i64 + i64::from(right_avg) * right_count as i64;
+    (total / total_count as i64) as i32
+}
+
+fn route_decision_has_underprepared_first_elite_v1(
+    decision: &BranchExperimentRouteDecisionV1,
+) -> bool {
+    decision.first_elite.paths_with_first_elite > 0
+        && decision.first_elite.forced
+        && !decision.first_elite.can_bail_to_rest_before
+        && !decision.first_elite.can_bail_to_shop_before
+        && decision.first_elite.max_hallway_fights_before < 2
+}
+
+fn render_branch_campaign_first_elite_evidence_v1(
+    decision: &BranchExperimentRouteDecisionV1,
+) -> String {
+    let first_elite = &decision.first_elite;
+    if first_elite.paths_with_first_elite == 0 {
+        return "none".to_string();
+    }
+    let kind = if first_elite.forced {
+        "forced"
+    } else if first_elite.optional {
+        "optional"
+    } else {
+        "present"
+    };
+    format!(
+        "{kind} hallways={}-{} fires={}-{} shops={}-{} rest_bailout={} shop_bailout={}",
+        first_elite.min_hallway_fights_before,
+        first_elite.max_hallway_fights_before,
+        first_elite.min_fires_before,
+        first_elite.max_fires_before,
+        first_elite.min_shops_before,
+        first_elite.max_shops_before,
+        first_elite.can_bail_to_rest_before,
+        first_elite.can_bail_to_shop_before
+    )
 }
 
 fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
@@ -984,6 +1171,7 @@ where
     let mut wall_limit_hit = false;
     let mut branch_limit_hit = false;
     let mut combat_budget_retries = 0usize;
+    let mut route_evidence = BranchCampaignRouteEvidenceSummaryV1::default();
 
     for (parent_index, parent) in parents.iter().enumerate() {
         progress(BranchCampaignProgressEventV1::BranchStarted {
@@ -1004,6 +1192,7 @@ where
             explored_branch_points.saturating_add(report.explored_branch_points);
         wall_limit_hit |= report.wall_limit_hit;
         branch_limit_hit |= report.branch_limit_hit || report.frontier_group_limit_hit;
+        merge_campaign_route_decisions_v1(&mut route_evidence, &report.route_decisions);
         progress(BranchCampaignProgressEventV1::BranchFinished {
             round: round_number,
             branch_index: parent_index + 1,
@@ -1029,6 +1218,7 @@ where
     Ok(BranchCampaignParentBatchResultV1 {
         candidates,
         strategy_requests,
+        route_evidence,
         explored_branch_points,
         wall_limit_hit,
         branch_limit_hit,

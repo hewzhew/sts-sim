@@ -15,6 +15,37 @@ use crate::state::rewards::{RewardCard, RewardState};
 use std::collections::BTreeMap;
 
 #[test]
+fn campaign_compact_report_renders_route_evidence_summary() {
+    let mut report = test_campaign_report_with_active("a", 6, 80);
+    report.route_evidence = BranchCampaignRouteEvidenceSummaryV1 {
+        decisions: 3,
+        first_elite_forced: 1,
+        first_elite_optional: 2,
+        first_elite_none: 0,
+        rest_bailout: 2,
+        shop_bailout: 1,
+        underprepared_first_elite: 1,
+        avg_elite_prep_bp: 62,
+        examples: vec![BranchCampaignRouteEvidenceExampleV1 {
+            target: "x=5 Monster".to_string(),
+            first_elite:
+                "optional hallways=2-3 fires=1 shops=0 rest_bailout=true shop_bailout=false"
+                    .to_string(),
+            elite_prep_bp: 70,
+        }],
+    };
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Route evidence: decisions=3 first_elite optional=2 forced=1 none=0 avg_elite_prep=0.62 underprepared=1 bailouts=rest:2 shop:1"
+    ));
+    assert!(rendered.contains(
+        "example: x=5 Monster | first_elite=optional hallways=2-3 fires=1 shops=0 rest_bailout=true shop_bailout=false elite_prep=0.70"
+    ));
+}
+
+#[test]
 fn campaign_selection_freezes_active_overflow() {
     let branches = vec![
         test_campaign_branch("a", 1, 80),
@@ -278,6 +309,7 @@ fn compact_campaign_report_renders_strategy_prompt() {
             boundary_details: Vec::new(),
             suggested_action: "provide Falling policy".to_string(),
         }],
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
     };
 
@@ -322,6 +354,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
             boundary_details: Vec::new(),
             suggested_action: "raise combat search budget".to_string(),
         }],
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 5,
             started_active: 2,
@@ -376,6 +409,7 @@ fn compact_campaign_report_renders_deferred_strategy_notes_while_continuing() {
             boundary_details: Vec::new(),
             suggested_action: "raise combat search budget".to_string(),
         }],
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
     };
 
@@ -550,6 +584,7 @@ fn compact_campaign_report_renders_budget_stop_hint() {
         stuck: Vec::new(),
         discarded_count: 0,
         strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
     };
 
@@ -585,6 +620,7 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
             boundary_details: Vec::new(),
             suggested_action: "adjust route planner policy".to_string(),
         }],
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
     };
 
@@ -629,6 +665,7 @@ fn compact_campaign_report_renders_context_only_strategy_packet() {
             ],
             suggested_action: "provide event policy".to_string(),
         }],
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
     };
 
@@ -786,6 +823,7 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
             stuck: Vec::new(),
             discarded_count: 0,
             strategy_requests: Vec::new(),
+            route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
             rounds: Vec::new(),
             snapshot_cache: BTreeMap::from([(parent.commands.clone(), session)]),
         },
@@ -834,6 +872,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         stuck: Vec::new(),
         discarded_count: 0,
         strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
     };
     let checkpoint = BranchCampaignCheckpointV1 {
@@ -901,6 +940,7 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
         stuck: Vec::new(),
         discarded_count: 4,
         strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 1,
             started_active: 1,

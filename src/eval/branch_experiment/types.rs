@@ -14,7 +14,7 @@ use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::{RunControlHpLossLimit, RunControlSearchCombatOptions};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 19;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 20;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -102,6 +102,8 @@ pub struct BranchExperimentReportV1 {
     pub reward_option_portfolios: Vec<BranchExperimentRewardOptionPortfolioV1>,
     #[serde(default)]
     pub strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
+    #[serde(default)]
+    pub route_decisions: Vec<BranchExperimentRouteDecisionV1>,
     pub frontier_groups: Vec<BranchExperimentFrontierGroupV1>,
     pub branches: Vec<BranchExperimentBranchReportV1>,
 }
@@ -168,6 +170,36 @@ pub struct BranchExperimentStrategyRequestV1 {
     #[serde(default)]
     pub boundary_details: Vec<String>,
     pub suggested_action: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentRouteDecisionV1 {
+    pub branch_id: String,
+    pub target: String,
+    pub move_kind: String,
+    pub safety: String,
+    pub command: String,
+    pub elite_prep_bp: i32,
+    pub first_elite: BranchExperimentFirstEliteEvidenceV1,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentFirstEliteEvidenceV1 {
+    pub paths_with_first_elite: usize,
+    pub forced: bool,
+    pub optional: bool,
+    pub min_hallway_fights_before: usize,
+    pub max_hallway_fights_before: usize,
+    pub min_unknowns_before: usize,
+    pub max_unknowns_before: usize,
+    pub min_fires_before: usize,
+    pub max_fires_before: usize,
+    pub min_shops_before: usize,
+    pub max_shops_before: usize,
+    pub can_bail_to_rest_before: bool,
+    pub can_bail_to_shop_before: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

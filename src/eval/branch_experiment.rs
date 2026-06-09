@@ -26,7 +26,7 @@ use crate::eval::run_control::{
     build_decision_surface, canonical_player_class, load_session_trace_v1,
     parse_run_control_command, replay_session_trace, RunControlAutoStepOptions, RunControlConfig,
     RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
-    SessionTraceReplayOptions, SessionTraceReplayStop,
+    RunControlTraceAnnotationV1, SessionTraceReplayOptions, SessionTraceReplayStop,
 };
 use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::RewardCard;
@@ -37,10 +37,11 @@ mod types;
 
 pub use types::{
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
-    BranchExperimentChoiceV1, BranchExperimentConfigV1, BranchExperimentFrontierGroupV1,
-    BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
-    BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
-    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentChoiceV1, BranchExperimentConfigV1, BranchExperimentFirstEliteEvidenceV1,
+    BranchExperimentFrontierGroupV1, BranchExperimentFrontierV1, BranchExperimentLineageV1,
+    BranchExperimentPrunedBranchSummaryV1, BranchExperimentPrunedFirstPickCountV1,
+    BranchExperimentReportV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1, BranchExperimentRouteDecisionV1,
     BranchExperimentRunSummaryV1, BranchExperimentStrategyRequestV1,
     BranchExperimentWallLimitPhaseV1, BRANCH_EXPERIMENT_SCHEMA_NAME,
     BRANCH_EXPERIMENT_SCHEMA_VERSION,
@@ -248,7 +249,8 @@ fn prepare_branch_experiment_start(
         retention: default_branch_retention_decision_v1(),
     };
     if settle_to_first_boundary {
-        settle_branch_to_frontier(&mut branch, config);
+        let mut ignored_route_decisions = Vec::new();
+        settle_branch_to_frontier(&mut branch, config, &mut ignored_route_decisions);
     }
 
     Ok(BranchExperimentPreparedStart {
@@ -327,6 +329,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     let mut pruned_first_pick_counts = BTreeMap::<String, usize>::new();
     let mut pruned_branch_summary = BranchExperimentPrunedBranchSummaryV1::default();
     let mut reward_option_portfolios = Vec::new();
+    let mut route_decisions = Vec::new();
 
     for depth in 0..config.max_depth {
         if experiment_wall_limit_hit(started_at, config) {
@@ -349,7 +352,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                 continue;
             }
 
-            advance_to_experiment_boundary(&mut branch, config);
+            advance_to_experiment_boundary(&mut branch, config, &mut route_decisions);
             if branch.status != BranchExperimentBranchStatusV1::Active {
                 next.push(branch);
                 continue;
@@ -434,7 +437,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
             wall_limit_phase.get_or_insert(BranchExperimentWallLimitPhaseV1::FinalSettle);
             break;
         }
-        settle_branch_to_frontier(branch, config);
+        settle_branch_to_frontier(branch, config, &mut route_decisions);
     }
 
     let mut branch_sessions = branches
@@ -494,6 +497,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         pruned_branch_summary,
         reward_option_portfolios,
         strategy_requests: branch_strategy_requests(&branch_reports),
+        route_decisions,
         frontier_groups: frontier_groups(&branch_reports),
         branches: branch_reports,
     };
@@ -542,7 +546,11 @@ fn elapsed_ms_u64(started_at: Instant) -> u64 {
     started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
 }
 
-fn advance_to_experiment_boundary(branch: &mut BranchWork, config: &BranchExperimentConfigV1) {
+fn advance_to_experiment_boundary(
+    branch: &mut BranchWork,
+    config: &BranchExperimentConfigV1,
+    route_decisions: &mut Vec<BranchExperimentRouteDecisionV1>,
+) {
     if is_terminal(&branch.session) || experiment_branch_options_available(&branch.session) {
         update_terminal_status(branch);
         return;
@@ -560,6 +568,9 @@ fn advance_to_experiment_boundary(branch: &mut BranchWork, config: &BranchExperi
 
     match outcome {
         Ok(outcome) => {
+            route_decisions.extend(outcome.trace_annotations.iter().filter_map(|annotation| {
+                branch_route_decision_from_annotation(&branch.id, annotation)
+            }));
             branch.stop_reason = first_reason_line(&outcome.message)
                 .unwrap_or_else(|| current_boundary_title(&branch.session));
             update_terminal_status(branch);
@@ -587,6 +598,49 @@ fn branch_experiment_search_options(
     options
 }
 
+fn branch_route_decision_from_annotation(
+    branch_id: &str,
+    annotation: &RunControlTraceAnnotationV1,
+) -> Option<BranchExperimentRouteDecisionV1> {
+    let RunControlTraceAnnotationV1::RoutePlannerSelection {
+        target_x,
+        target_y,
+        room_type,
+        move_kind,
+        safety,
+        command,
+        route_evidence: Some(evidence),
+        ..
+    } = annotation
+    else {
+        return None;
+    };
+
+    Some(BranchExperimentRouteDecisionV1 {
+        branch_id: branch_id.to_string(),
+        target: format!("x={target_x} y={target_y} {room_type}"),
+        move_kind: move_kind.clone(),
+        safety: safety.clone(),
+        command: command.clone(),
+        elite_prep_bp: evidence.elite_prep_bp,
+        first_elite: BranchExperimentFirstEliteEvidenceV1 {
+            paths_with_first_elite: evidence.first_elite.paths_with_first_elite,
+            forced: evidence.first_elite.forced,
+            optional: evidence.first_elite.optional,
+            min_hallway_fights_before: evidence.first_elite.min_hallway_fights_before,
+            max_hallway_fights_before: evidence.first_elite.max_hallway_fights_before,
+            min_unknowns_before: evidence.first_elite.min_unknowns_before,
+            max_unknowns_before: evidence.first_elite.max_unknowns_before,
+            min_fires_before: evidence.first_elite.min_fires_before,
+            max_fires_before: evidence.first_elite.max_fires_before,
+            min_shops_before: evidence.first_elite.min_shops_before,
+            max_shops_before: evidence.first_elite.max_shops_before,
+            can_bail_to_rest_before: evidence.first_elite.can_bail_to_rest_before,
+            can_bail_to_shop_before: evidence.first_elite.can_bail_to_shop_before,
+        },
+    })
+}
+
 fn update_terminal_status(branch: &mut BranchWork) {
     match &branch.session.engine_state {
         EngineState::GameOver(RunResult::Victory) => {
@@ -601,11 +655,15 @@ fn update_terminal_status(branch: &mut BranchWork) {
     }
 }
 
-fn settle_branch_to_frontier(branch: &mut BranchWork, config: &BranchExperimentConfigV1) {
+fn settle_branch_to_frontier(
+    branch: &mut BranchWork,
+    config: &BranchExperimentConfigV1,
+    route_decisions: &mut Vec<BranchExperimentRouteDecisionV1>,
+) {
     if branch.status != BranchExperimentBranchStatusV1::Active {
         return;
     }
-    advance_to_experiment_boundary(branch, config);
+    advance_to_experiment_boundary(branch, config, route_decisions);
     if branch.status != BranchExperimentBranchStatusV1::Active || is_terminal(&branch.session) {
         return;
     }
@@ -699,7 +757,8 @@ fn expand_branch_choice(
             child.stop_reason = draft.success_reason.to_string();
             update_terminal_status(&mut child);
             if !config.defer_branch_settle {
-                settle_branch_to_frontier(&mut child, config);
+                let mut ignored_route_decisions = Vec::new();
+                settle_branch_to_frontier(&mut child, config, &mut ignored_route_decisions);
             }
         }
         Err(err) => {

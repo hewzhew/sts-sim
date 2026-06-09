@@ -1860,6 +1860,7 @@ mod tests {
             pruned_branch_summary: Default::default(),
             reward_option_portfolios: Vec::new(),
             strategy_requests: Vec::new(),
+            route_decisions: Vec::new(),
             frontier_groups: Vec::new(),
             branches: Vec::new(),
         }
