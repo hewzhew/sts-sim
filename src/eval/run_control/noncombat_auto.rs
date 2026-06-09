@@ -10,19 +10,6 @@ pub(super) struct NonCombatAutoApplication {
 pub(super) fn apply_planner_noncombat_policy(
     session: &mut RunControlSession,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
-    apply_planner_noncombat_policy_with_card_reward(session, true)
-}
-
-pub(super) fn apply_planner_noncombat_policy_without_card_reward(
-    session: &mut RunControlSession,
-) -> Result<Option<NonCombatAutoApplication>, String> {
-    apply_planner_noncombat_policy_with_card_reward(session, false)
-}
-
-fn apply_planner_noncombat_policy_with_card_reward(
-    session: &mut RunControlSession,
-    allow_card_reward_policy: bool,
-) -> Result<Option<NonCombatAutoApplication>, String> {
     if let Some((outcome, summary)) = super::campfire_policy::apply_campfire_policy_rest(session)? {
         return Ok(Some(NonCombatAutoApplication {
             outcome,
@@ -62,25 +49,22 @@ fn apply_planner_noncombat_policy_with_card_reward(
             stop_after_reason: None,
         }));
     }
-    if allow_card_reward_policy {
-        if let Some((outcome, summary)) =
-            super::card_reward_auto::apply_card_reward_policy_pick(session)?
-        {
-            return Ok(Some(NonCombatAutoApplication {
-                outcome,
-                summary,
-                stop_after_reason: None,
-            }));
-        }
-        if let Some((outcome, summary)) =
-            super::card_reward_auto::apply_card_reward_item_open(session)?
-        {
-            return Ok(Some(NonCombatAutoApplication {
-                outcome,
-                summary,
-                stop_after_reason: None,
-            }));
-        }
+    if let Some((outcome, summary)) =
+        super::card_reward_auto::apply_card_reward_policy_pick(session)?
+    {
+        return Ok(Some(NonCombatAutoApplication {
+            outcome,
+            summary,
+            stop_after_reason: None,
+        }));
+    }
+    if let Some((outcome, summary)) = super::card_reward_auto::apply_card_reward_item_open(session)?
+    {
+        return Ok(Some(NonCombatAutoApplication {
+            outcome,
+            summary,
+            stop_after_reason: None,
+        }));
     }
 
     Ok(None)

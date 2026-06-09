@@ -98,6 +98,19 @@ fn campaign_retries_only_when_all_results_are_abandoned_combat() {
 }
 
 #[test]
+fn campaign_parent_replay_retry_only_handles_boundary_drift_errors() {
+    assert!(campaign_parent_replay_error_is_retryable_v1(
+        "error: input `event 0` is not valid on the current screen: Combat"
+    ));
+    assert!(campaign_parent_replay_error_is_retryable_v1(
+        "rp <idx> is only valid on a card reward item or card reward screen"
+    ));
+    assert!(!campaign_parent_replay_error_is_retryable_v1(
+        "unknown command '__bad_internal_command'"
+    ));
+}
+
+#[test]
 fn campaign_branch_from_report_appends_new_choice_path() {
     let parent = BranchCampaignBranchV1 {
         branch_id: "root".to_string(),

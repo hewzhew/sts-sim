@@ -630,7 +630,27 @@ fn run_campaign_parent_round_v1(
     config: &BranchCampaignConfigV1,
     parent: &BranchCampaignBranchV1,
 ) -> Result<BranchCampaignParentRoundResultV1, String> {
-    let report = run_campaign_parent_round_once_v1(config, parent)?;
+    let report = match run_campaign_parent_round_once_v1(config, parent) {
+        Ok(report) => report,
+        Err(err)
+            if campaign_parent_replay_error_is_retryable_v1(&err)
+                && combat_retry_campaign_config_v1(config).is_some() =>
+        {
+            let retry_config = combat_retry_campaign_config_v1(config)
+                .expect("retry config was checked before retrying parent replay");
+            return run_campaign_parent_round_once_v1(&retry_config, parent)
+                .map(|report| BranchCampaignParentRoundResultV1 {
+                    report,
+                    combat_budget_retry_used: true,
+                })
+                .map_err(|retry_err| {
+                    format!(
+                        "campaign parent replay failed before retry: {err}\nretry also failed: {retry_err}"
+                    )
+                });
+        }
+        Err(err) => return Err(err),
+    };
     if !branch_report_needs_combat_budget_retry_v1(&report.branches) {
         return Ok(BranchCampaignParentRoundResultV1 {
             report,
@@ -678,6 +698,11 @@ fn run_campaign_parent_round_once_v1(
         prefix_commands,
         ..BranchExperimentConfigV1::default()
     })
+}
+
+fn campaign_parent_replay_error_is_retryable_v1(error: &str) -> bool {
+    error.contains("is not valid on the current screen")
+        || error.contains("is only valid on a card reward item or card reward screen")
 }
 
 fn combat_retry_campaign_config_v1(

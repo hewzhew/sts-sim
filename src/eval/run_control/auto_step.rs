@@ -243,6 +243,19 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
         let card_reward_policy_stop =
             super::noncombat_auto::planner_noncombat_policy_stop_annotation(session)?;
 
+        if noncombat_mode == NonCombatAutoMode::BranchExperimentBoundary
+            && branch_experiment_should_stop_before_visible_candidate(session)
+        {
+            return finish_auto_step(
+                session,
+                &before,
+                applied,
+                trace_annotations,
+                human_stop_reason(session),
+                None,
+            );
+        }
+
         let view = build_run_control_view_model(session);
         if let Some(auto_candidate) = auto_advance_candidate(session, &view) {
             let Some(input) = auto_candidate.candidate.action.executable_input() else {
@@ -296,6 +309,23 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
     )
 }
 
+fn branch_experiment_should_stop_before_visible_candidate(session: &RunControlSession) -> bool {
+    match &session.engine_state {
+        EngineState::RewardScreen(reward) => {
+            reward.pending_card_choice.is_some() || !reward.items.is_empty()
+        }
+        EngineState::RewardOverlay { reward_state, .. } => {
+            reward_state.pending_card_choice.is_some() || !reward_state.items.is_empty()
+        }
+        EngineState::EventRoom
+        | EngineState::Campfire
+        | EngineState::Shop(_)
+        | EngineState::RunPendingChoice(_)
+        | EngineState::BossRelicSelect(_) => true,
+        _ => false,
+    }
+}
+
 fn apply_noncombat_policy(
     session: &mut RunControlSession,
     mode: NonCombatAutoMode,
@@ -304,9 +334,7 @@ fn apply_noncombat_policy(
         NonCombatAutoMode::FullPlanner => {
             super::noncombat_auto::apply_planner_noncombat_policy(session)
         }
-        NonCombatAutoMode::BranchExperimentBoundary => {
-            super::noncombat_auto::apply_planner_noncombat_policy_without_card_reward(session)
-        }
+        NonCombatAutoMode::BranchExperimentBoundary => Ok(None),
     }
 }
 
