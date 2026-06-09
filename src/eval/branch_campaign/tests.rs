@@ -125,7 +125,15 @@ fn campaign_branch_from_report_appends_new_choice_path() {
 fn campaign_replay_prefix_advances_before_each_recorded_choice() {
     let replay = campaign_replay_commands_for_path_v1(&["rp 0".to_string(), "event 1".to_string()]);
 
-    assert_eq!(replay, vec!["ar", "rp 0", "ar", "event 1"]);
+    assert_eq!(
+        replay,
+        vec![
+            BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
+            "rp 0",
+            BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
+            "event 1"
+        ]
+    );
 }
 
 #[test]
@@ -147,6 +155,7 @@ fn compact_campaign_report_renders_strategy_prompt() {
             kind: "event_strategy".to_string(),
             boundary_title: "Falling".to_string(),
             branch_count: 2,
+            stop_reasons: vec!["event policy gap".to_string()],
             examples: vec!["Strike -> Defend".to_string()],
             suggested_action: "provide Falling policy".to_string(),
         }],
@@ -186,6 +195,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
             kind: "combat_manual_or_budget".to_string(),
             boundary_title: "Combat".to_string(),
             branch_count: 2,
+            stop_reasons: vec!["combat search did not find an executable complete win".to_string()],
             examples: vec!["Clash -> Disarm".to_string()],
             suggested_action: "raise combat search budget".to_string(),
         }],
@@ -211,8 +221,42 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
 
     assert!(rendered.contains("Needs intervention:"));
     assert!(rendered.contains("kind: combat_unresolved_after_retry"));
+    assert!(rendered.contains("stop: combat search did not find an executable complete win"));
     assert!(rendered.contains("tried: campaign search budget; combat budget retry x2"));
     assert!(rendered.contains("options: raise combat retry budget | provide a manual combat line | abandon this macro route family"));
+}
+
+#[test]
+fn compact_campaign_report_renders_queued_interventions_while_continuing() {
+    let report = BranchCampaignReportV1 {
+        schema_name: "BranchCampaignV1".to_string(),
+        schema_version: 1,
+        seed: 330404105,
+        rounds_completed: 2,
+        stop_reason: "max_rounds".to_string(),
+        active: vec![test_campaign_branch("a", 6, 80)],
+        frozen: vec![test_campaign_branch("f", 5, 75)],
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: vec![test_campaign_branch("s", 6, 70)],
+        discarded_count: 0,
+        strategy_requests: vec![BranchCampaignStrategyRequestV1 {
+            kind: "combat_manual_or_budget".to_string(),
+            boundary_title: "Combat".to_string(),
+            branch_count: 1,
+            stop_reasons: vec!["combat search did not find an executable complete win".to_string()],
+            examples: vec!["Flex".to_string()],
+            suggested_action: "raise combat search budget".to_string(),
+        }],
+        rounds: Vec::new(),
+    };
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("Queued interventions:"));
+    assert!(!rendered.contains("Needs intervention:"));
+    assert!(rendered.contains("stop: combat search did not find an executable complete win"));
 }
 
 #[test]
@@ -227,6 +271,64 @@ fn campaign_builds_intervention_when_abandoned_branches_exhaust_routes() {
     assert_eq!(request.boundary_title, "Combat");
     assert_eq!(request.branch_count, 2);
     assert_eq!(request.examples.len(), 2);
+}
+
+#[test]
+fn campaign_strategy_requests_are_fatal_only_without_continuable_branches() {
+    let active = vec![test_campaign_branch("a", 6, 80)];
+    let frozen = vec![test_campaign_branch("f", 5, 75)];
+    let request = vec![test_campaign_request("combat_manual_or_budget", "Combat")];
+
+    assert!(!campaign_strategy_requests_are_fatal_v1(
+        &active,
+        &[],
+        &request
+    ));
+    assert!(!campaign_strategy_requests_are_fatal_v1(
+        &[],
+        &frozen,
+        &request
+    ));
+    assert!(campaign_strategy_requests_are_fatal_v1(&[], &[], &request));
+}
+
+#[test]
+fn campaign_strategy_request_merge_keeps_stop_reasons() {
+    let merged = merge_campaign_strategy_requests_v1(vec![test_experiment_request(
+        "combat_manual_or_budget",
+        "Combat",
+        "combat search did not find an executable complete win",
+    )]);
+
+    assert_eq!(
+        merged[0].stop_reasons,
+        vec!["combat search did not find an executable complete win".to_string()]
+    );
+}
+
+#[test]
+fn campaign_strategy_request_merge_sanitizes_combat_suggestion() {
+    let mut request = test_experiment_request(
+        "combat_manual_or_budget",
+        "Combat",
+        "combat search did not find an executable complete win",
+    );
+    request.suggested_action =
+        "raise combat search budget, relax hp-loss gate, or provide a manual combat line"
+            .to_string();
+
+    let merged = merge_campaign_strategy_requests_v1(vec![request]);
+
+    assert!(!merged[0].suggested_action.contains("hp-loss"));
+    assert!(!merged[0].suggested_action.contains("relax"));
+}
+
+#[test]
+fn combat_campaign_next_step_no_longer_mentions_hp_loss_gate() {
+    let next = campaign_strategy_next_step_v1("combat_manual_or_budget").expect("next step");
+
+    assert!(!next.contains("hp-loss"));
+    assert!(!next.contains("relax"));
 }
 
 #[test]
@@ -251,6 +353,37 @@ fn compact_campaign_report_renders_budget_stop_hint() {
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
     assert!(rendered.contains("Next: budget ended; use .\\tools\\campaign.ps1 -More"));
+}
+
+fn test_campaign_request(kind: &str, boundary_title: &str) -> BranchCampaignStrategyRequestV1 {
+    BranchCampaignStrategyRequestV1 {
+        kind: kind.to_string(),
+        boundary_title: boundary_title.to_string(),
+        branch_count: 1,
+        stop_reasons: Vec::new(),
+        examples: Vec::new(),
+        suggested_action: "test".to_string(),
+    }
+}
+
+fn test_experiment_request(
+    kind: &str,
+    boundary_title: &str,
+    stop_reason: &str,
+) -> crate::eval::branch_experiment::BranchExperimentStrategyRequestV1 {
+    crate::eval::branch_experiment::BranchExperimentStrategyRequestV1 {
+        kind: kind.to_string(),
+        boundary_title: boundary_title.to_string(),
+        branch_count: 1,
+        representative_branch_id: "b".to_string(),
+        act: 1,
+        floor: 6,
+        stop_reasons: vec![stop_reason.to_string()],
+        examples: vec!["example".to_string()],
+        next_card_reward_offer: None,
+        boundary_details: Vec::new(),
+        suggested_action: "test".to_string(),
+    }
 }
 
 #[test]

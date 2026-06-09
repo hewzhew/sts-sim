@@ -14,6 +14,13 @@ use super::transition_report::{
 use super::view_model::{build_run_control_view_model, DecisionCandidate, RunControlViewModel};
 
 const DEFAULT_MAX_OPERATIONS: usize = 16;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::eval::run_control) enum NonCombatAutoMode {
+    FullPlanner,
+    BranchExperimentBoundary,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AutoAdvanceClass {
     Routine,
@@ -31,6 +38,14 @@ struct AutoAdvanceCandidate<'a> {
 pub(super) fn apply_guarded_auto_step(
     session: &mut RunControlSession,
     options: RunControlAutoStepOptions,
+) -> Result<RunControlCommandOutcome, String> {
+    apply_guarded_auto_step_with_mode(session, options, NonCombatAutoMode::FullPlanner)
+}
+
+pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
+    session: &mut RunControlSession,
+    options: RunControlAutoStepOptions,
+    noncombat_mode: NonCombatAutoMode,
 ) -> Result<RunControlCommandOutcome, String> {
     let before = RunVisibleSnapshot::capture(session);
     let mut applied = Vec::new();
@@ -206,9 +221,7 @@ pub(super) fn apply_guarded_auto_step(
         }
 
         if options.route == super::commands::RunControlRouteAutomationMode::Planner {
-            if let Some(application) =
-                super::noncombat_auto::apply_planner_noncombat_policy(session)?
-            {
+            if let Some(application) = apply_noncombat_policy(session, noncombat_mode)? {
                 let auto_capture_summaries =
                     auto_capture_summaries(&application.outcome.trace_annotations);
                 trace_annotations.extend(application.outcome.trace_annotations);
@@ -281,6 +294,20 @@ pub(super) fn apply_guarded_auto_step(
         format!("operation budget exhausted at {max_operations} automatic operations"),
         None,
     )
+}
+
+fn apply_noncombat_policy(
+    session: &mut RunControlSession,
+    mode: NonCombatAutoMode,
+) -> Result<Option<super::noncombat_auto::NonCombatAutoApplication>, String> {
+    match mode {
+        NonCombatAutoMode::FullPlanner => {
+            super::noncombat_auto::apply_planner_noncombat_policy(session)
+        }
+        NonCombatAutoMode::BranchExperimentBoundary => {
+            super::noncombat_auto::apply_planner_noncombat_policy_without_card_reward(session)
+        }
+    }
 }
 
 fn apply_pending_shop_reward_overlay(

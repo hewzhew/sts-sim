@@ -6,7 +6,30 @@ const DEFAULT_AUTO_RUN_MAX_OPERATIONS: usize = 128;
 
 pub(in crate::eval::run_control) fn apply_auto_run(
     session: &mut RunControlSession,
+    options: RunControlAutoStepOptions,
+) -> Result<RunControlCommandOutcome, String> {
+    apply_auto_run_with_noncombat_mode(
+        session,
+        options,
+        super::auto_step::NonCombatAutoMode::FullPlanner,
+    )
+}
+
+pub(crate) fn apply_branch_experiment_auto_run(
+    session: &mut RunControlSession,
+    options: RunControlAutoStepOptions,
+) -> Result<RunControlCommandOutcome, String> {
+    apply_auto_run_with_noncombat_mode(
+        session,
+        options,
+        super::auto_step::NonCombatAutoMode::BranchExperimentBoundary,
+    )
+}
+
+fn apply_auto_run_with_noncombat_mode(
+    session: &mut RunControlSession,
     mut options: RunControlAutoStepOptions,
+    noncombat_mode: super::auto_step::NonCombatAutoMode,
 ) -> Result<RunControlCommandOutcome, String> {
     options.route = RunControlRouteAutomationMode::Planner;
     let max_operations = options
@@ -14,7 +37,8 @@ pub(in crate::eval::run_control) fn apply_auto_run(
         .unwrap_or(DEFAULT_AUTO_RUN_MAX_OPERATIONS);
     options.max_operations = Some(max_operations);
 
-    let mut outcome = super::auto_step::apply_guarded_auto_step(session, options)?;
+    let mut outcome =
+        super::auto_step::apply_guarded_auto_step_with_mode(session, options, noncombat_mode)?;
     let title = build_run_control_view_model(session).header.title;
     let applied_operations = count_applied_operations(&outcome.message);
     outcome.message = format!(

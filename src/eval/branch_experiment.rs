@@ -20,11 +20,13 @@ use crate::eval::branch_experiment_retention::{
 use crate::eval::branch_experiment_trajectory::{
     summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
 };
+#[cfg(test)]
+use crate::eval::run_control::RunControlCommand;
 use crate::eval::run_control::{
     build_decision_surface, canonical_player_class, load_session_trace_v1,
-    parse_run_control_command, replay_session_trace, RunControlAutoStepOptions, RunControlCommand,
-    RunControlConfig, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-    RunControlSession, SessionTraceReplayOptions, SessionTraceReplayStop,
+    parse_run_control_command, replay_session_trace, RunControlAutoStepOptions, RunControlConfig,
+    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
+    SessionTraceReplayOptions, SessionTraceReplayStop,
 };
 use crate::state::core::{EngineState, RunResult};
 use crate::state::rewards::RewardCard;
@@ -43,6 +45,10 @@ pub use types::{
     BranchExperimentWallLimitPhaseV1, BRANCH_EXPERIMENT_SCHEMA_NAME,
     BRANCH_EXPERIMENT_SCHEMA_VERSION,
 };
+
+pub(crate) const BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND: &str =
+    "__branch_experiment_replay_advance";
+
 #[derive(Clone, Debug)]
 struct BranchWork {
     id: String,
@@ -200,8 +206,19 @@ fn prepare_branch_experiment_start(
     }
 
     for command_line in &config.prefix_commands {
-        let command = parse_run_control_command(command_line)?;
-        session.apply_command(command)?;
+        if command_line == BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND {
+            crate::eval::run_control::apply_branch_experiment_auto_run(
+                &mut session,
+                RunControlAutoStepOptions {
+                    search: branch_experiment_search_options(config),
+                    max_operations: Some(config.auto_max_operations),
+                    route: RunControlRouteAutomationMode::Planner,
+                },
+            )?;
+        } else {
+            let command = parse_run_control_command(command_line)?;
+            session.apply_command(command)?;
+        }
     }
 
     let mut branch = BranchWork {
@@ -352,8 +369,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
                 continue;
             }
 
-            branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
-            branch.stop_reason = current_boundary_title(&branch.session);
+            mark_unbranchable_boundary(&mut branch);
             next.push(branch);
         }
 
@@ -474,14 +490,14 @@ fn advance_to_experiment_boundary(branch: &mut BranchWork, config: &BranchExperi
         return;
     }
 
-    let outcome =
-        branch
-            .session
-            .apply_command(RunControlCommand::AutoRun(RunControlAutoStepOptions {
-                search: branch_experiment_search_options(config),
-                max_operations: Some(config.auto_max_operations),
-                route: RunControlRouteAutomationMode::Planner,
-            }));
+    let outcome = crate::eval::run_control::apply_branch_experiment_auto_run(
+        &mut branch.session,
+        RunControlAutoStepOptions {
+            search: branch_experiment_search_options(config),
+            max_operations: Some(config.auto_max_operations),
+            route: RunControlRouteAutomationMode::Planner,
+        },
+    );
 
     match outcome {
         Ok(outcome) => {
@@ -535,14 +551,18 @@ fn settle_branch_to_frontier(branch: &mut BranchWork, config: &BranchExperimentC
         return;
     }
     if !experiment_branch_options_available(&branch.session) {
-        let boundary_title = current_boundary_title(&branch.session);
-        if is_budget_unresolved_combat_boundary(&boundary_title, &branch.stop_reason) {
-            branch.status = BranchExperimentBranchStatusV1::Pruned;
-        } else {
-            branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
-            if branch.stop_reason == "initial" || branch.stop_reason.is_empty() {
-                branch.stop_reason = boundary_title;
-            }
+        mark_unbranchable_boundary(branch);
+    }
+}
+
+fn mark_unbranchable_boundary(branch: &mut BranchWork) {
+    let boundary_title = current_boundary_title(&branch.session);
+    if is_budget_unresolved_combat_boundary(&boundary_title, &branch.stop_reason) {
+        branch.status = BranchExperimentBranchStatusV1::Pruned;
+    } else {
+        branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
+        if branch.stop_reason == "initial" || branch.stop_reason.is_empty() {
+            branch.stop_reason = boundary_title;
         }
     }
 }

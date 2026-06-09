@@ -42,6 +42,7 @@ mod transition_report;
 mod view_model;
 
 pub use auto_capture::AutoCombatCaptureConfig;
+pub(crate) use auto_run::apply_branch_experiment_auto_run;
 pub use bookmarks::{
     default_bookmark_registry_path, load_bookmark_registry, mark_current_boundary,
     render_bookmarks, resolve_goto_bookmark, validate_bookmark_name, GotoBookmarkPlan,

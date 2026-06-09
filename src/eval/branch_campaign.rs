@@ -1,6 +1,7 @@
 use crate::eval::branch_experiment::{
     run_branch_experiment_v1, BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1,
     BranchExperimentConfigV1, BranchExperimentReportV1, BranchExperimentStrategyRequestV1,
+    BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
 };
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::run_control::{RunControlHpLossLimit, RunControlSearchCombatOptions};
@@ -122,6 +123,8 @@ pub struct BranchCampaignStrategyRequestV1 {
     pub kind: String,
     pub boundary_title: String,
     pub branch_count: usize,
+    #[serde(default)]
+    pub stop_reasons: Vec<String>,
     pub examples: Vec<String>,
     pub suggested_action: String,
 }
@@ -310,7 +313,9 @@ where
             );
         }
 
-        strategy_requests = merge_campaign_strategy_requests_v1(round_strategy_requests);
+        let round_strategy_requests = merge_campaign_strategy_requests_v1(round_strategy_requests);
+        strategy_requests =
+            merge_campaign_strategy_request_queue_v1(strategy_requests, round_strategy_requests);
         let produced_branches = candidates.len();
         let selected =
             select_campaign_branches_v1(candidates, config.max_active, config.max_frozen);
@@ -330,11 +335,7 @@ where
         dead.extend(selected.dead);
         abandoned.extend(selected.abandoned);
         stuck.extend(selected.stuck);
-        let promoted_from_frozen = if active.is_empty()
-            && strategy_requests.is_empty()
-            && victories.is_empty()
-            && stuck.is_empty()
-        {
+        let promoted_from_frozen = if active.is_empty() && victories.is_empty() {
             promote_frozen_to_active_v1(&mut active, &mut frozen, config.max_active)
         } else {
             0
@@ -372,16 +373,8 @@ where
         }
         rounds.push(round_summary);
 
-        if !strategy_requests.is_empty() {
-            stop_reason = "needs_intervention".to_string();
-            break;
-        }
         if !victories.is_empty() {
             stop_reason = "victory_found".to_string();
-            break;
-        }
-        if !stuck.is_empty() {
-            stop_reason = "stuck".to_string();
             break;
         }
         if active.is_empty()
@@ -394,6 +387,14 @@ where
                 stop_reason = "needs_intervention".to_string();
                 break;
             }
+        }
+        if campaign_strategy_requests_are_fatal_v1(&active, &frozen, &strategy_requests) {
+            stop_reason = "needs_intervention".to_string();
+            break;
+        }
+        if active.is_empty() && frozen.is_empty() && !stuck.is_empty() {
+            stop_reason = "stuck".to_string();
+            break;
         }
         if produced_branches == 0 {
             stop_reason = "no_progress".to_string();
@@ -561,12 +562,19 @@ pub fn render_branch_campaign_compact_v1(
     }
     if !report.strategy_requests.is_empty() {
         lines.push(String::new());
-        lines.push("Needs intervention:".to_string());
+        if report.stop_reason == "needs_intervention" {
+            lines.push("Needs intervention:".to_string());
+        } else {
+            lines.push("Queued interventions:".to_string());
+        }
         for request in report.strategy_requests.iter().take(4) {
             lines.push(format!(
                 "  {} | {} | branches={}",
                 request.kind, request.boundary_title, request.branch_count
             ));
+            if let Some(reason) = request.stop_reasons.first() {
+                lines.push(format!("    stop: {reason}"));
+            }
             if let Some(example) = request.examples.first() {
                 lines.push(format!("    example: {example}"));
             }
@@ -729,7 +737,7 @@ fn normalized_campaign_boundary_title(value: &str) -> String {
 pub fn campaign_replay_commands_for_path_v1(commands: &[String]) -> Vec<String> {
     let mut replay = Vec::with_capacity(commands.len().saturating_mul(2));
     for command in commands {
-        replay.push("ar".to_string());
+        replay.push(BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND.to_string());
         replay.push(command.clone());
     }
     replay
@@ -768,16 +776,69 @@ fn merge_campaign_strategy_requests_v1(
                         existing.examples.push(example.clone());
                     }
                 }
+                for reason in &request.stop_reasons {
+                    if existing.stop_reasons.len() < 4 && !existing.stop_reasons.contains(reason) {
+                        existing.stop_reasons.push(reason.clone());
+                    }
+                }
             })
             .or_insert_with(|| BranchCampaignStrategyRequestV1 {
-                kind: request.kind,
+                kind: request.kind.clone(),
                 boundary_title: request.boundary_title,
                 branch_count: request.branch_count,
+                stop_reasons: request.stop_reasons.into_iter().take(4).collect(),
                 examples: request.examples.into_iter().take(4).collect(),
-                suggested_action: request.suggested_action,
+                suggested_action: campaign_suggested_action_v1(
+                    &request.kind,
+                    &request.suggested_action,
+                ),
             });
     }
     merged.into_values().collect()
+}
+
+fn campaign_suggested_action_v1(kind: &str, suggested_action: &str) -> String {
+    match kind {
+        "combat_hp_loss_policy" | "combat_manual_or_budget" => {
+            "raise combat retry budget, inspect the combat, or provide a manual line".to_string()
+        }
+        _ => suggested_action.to_string(),
+    }
+}
+
+fn merge_campaign_strategy_request_queue_v1(
+    existing: Vec<BranchCampaignStrategyRequestV1>,
+    incoming: Vec<BranchCampaignStrategyRequestV1>,
+) -> Vec<BranchCampaignStrategyRequestV1> {
+    let mut merged = BTreeMap::<(String, String), BranchCampaignStrategyRequestV1>::new();
+    for request in existing.into_iter().chain(incoming) {
+        let key = (request.kind.clone(), request.boundary_title.clone());
+        merged
+            .entry(key)
+            .and_modify(|current| {
+                current.branch_count = current.branch_count.saturating_add(request.branch_count);
+                for reason in &request.stop_reasons {
+                    if current.stop_reasons.len() < 4 && !current.stop_reasons.contains(reason) {
+                        current.stop_reasons.push(reason.clone());
+                    }
+                }
+                for example in &request.examples {
+                    if current.examples.len() < 4 && !current.examples.contains(example) {
+                        current.examples.push(example.clone());
+                    }
+                }
+            })
+            .or_insert(request);
+    }
+    merged.into_values().collect()
+}
+
+fn campaign_strategy_requests_are_fatal_v1(
+    active: &[BranchCampaignBranchV1],
+    frozen: &[BranchCampaignBranchV1],
+    strategy_requests: &[BranchCampaignStrategyRequestV1],
+) -> bool {
+    !strategy_requests.is_empty() && active.is_empty() && frozen.is_empty()
 }
 
 fn abandoned_branches_intervention_request_v1(
@@ -802,6 +863,7 @@ fn abandoned_branches_intervention_request_v1(
         kind: "combat_manual_or_budget".to_string(),
         boundary_title: "Combat".to_string(),
         branch_count: abandoned.len(),
+        stop_reasons: vec!["all candidate route branches were abandoned".to_string()],
         examples,
         suggested_action:
             "raise combat retry budget, provide a manual combat line, or abandon this route family"
@@ -1008,7 +1070,7 @@ fn render_choice_path(labels: &[String]) -> String {
 fn campaign_strategy_next_step_v1(kind: &str) -> Option<&'static str> {
     match kind {
         "combat_hp_loss_policy" | "combat_manual_or_budget" => Some(
-            "try a deeper same-seed run, e.g. .\\tools\\campaign.ps1 -More; if it still stops, inspect or hand-play that combat",
+            "try a deeper same-seed run, e.g. .\\tools\\campaign.ps1 -More; if it still stops, inspect the combat or provide a manual line",
         ),
         "card_reward_policy_gap" => {
             Some("decide whether this reward family should be branched, auto-picked, skipped, or kept for human judgment")
