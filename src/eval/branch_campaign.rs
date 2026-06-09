@@ -225,6 +225,19 @@ struct BranchCampaignParentRoundResultV1 {
     combat_budget_retry_used: bool,
 }
 
+struct BranchCampaignRunStateV1 {
+    rounds_completed: usize,
+    active: Vec<BranchCampaignBranchV1>,
+    frozen: Vec<BranchCampaignBranchV1>,
+    victories: Vec<BranchCampaignBranchV1>,
+    dead: Vec<BranchCampaignBranchV1>,
+    abandoned: Vec<BranchCampaignBranchV1>,
+    stuck: Vec<BranchCampaignBranchV1>,
+    discarded_count: usize,
+    strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
+    rounds: Vec<BranchCampaignRoundSummaryV1>,
+}
+
 pub fn run_branch_campaign_v1(
     config: &BranchCampaignConfigV1,
 ) -> Result<BranchCampaignReportV1, String> {
@@ -233,42 +246,84 @@ pub fn run_branch_campaign_v1(
 
 pub fn run_branch_campaign_with_progress_v1<F>(
     config: &BranchCampaignConfigV1,
+    progress: F,
+) -> Result<BranchCampaignReportV1, String>
+where
+    F: FnMut(BranchCampaignProgressEventV1),
+{
+    run_branch_campaign_from_state_with_progress_v1(config, root_campaign_state_v1(), progress)
+}
+
+pub fn run_branch_campaign_from_report_v1(
+    config: &BranchCampaignConfigV1,
+    previous: &BranchCampaignReportV1,
+) -> Result<BranchCampaignReportV1, String> {
+    run_branch_campaign_from_report_with_progress_v1(config, previous, |_| {})
+}
+
+pub fn run_branch_campaign_from_report_with_progress_v1<F>(
+    config: &BranchCampaignConfigV1,
+    previous: &BranchCampaignReportV1,
+    progress: F,
+) -> Result<BranchCampaignReportV1, String>
+where
+    F: FnMut(BranchCampaignProgressEventV1),
+{
+    validate_campaign_resume_report_v1(config, previous)?;
+    run_branch_campaign_from_state_with_progress_v1(
+        config,
+        campaign_state_from_report_v1(previous),
+        progress,
+    )
+}
+
+fn run_branch_campaign_from_state_with_progress_v1<F>(
+    config: &BranchCampaignConfigV1,
+    mut state: BranchCampaignRunStateV1,
     mut progress: F,
 ) -> Result<BranchCampaignReportV1, String>
 where
     F: FnMut(BranchCampaignProgressEventV1),
 {
+    let round_offset = state.rounds_completed;
+    let displayed_max_rounds = round_offset.saturating_add(config.max_rounds);
     progress(BranchCampaignProgressEventV1::CampaignStarted {
         seed: config.seed,
-        max_rounds: config.max_rounds,
+        max_rounds: displayed_max_rounds,
         round_depth: config.round_depth,
         max_active: config.max_active,
         max_frozen: config.max_frozen,
     });
 
-    let mut active = vec![root_campaign_branch_v1()];
-    let mut frozen = Vec::new();
-    let mut victories = Vec::new();
-    let mut dead = Vec::new();
-    let mut abandoned = Vec::new();
-    let mut stuck = Vec::new();
-    let mut discarded_count = 0usize;
-    let mut strategy_requests = Vec::new();
-    let mut rounds = Vec::new();
     let mut stop_reason = "max_rounds".to_string();
 
-    for round in 0..config.max_rounds {
-        if active.is_empty() {
+    for local_round in 0..config.max_rounds {
+        if state.active.is_empty() && state.victories.is_empty() && !state.frozen.is_empty() {
+            let promoted = promote_frozen_to_active_v1(
+                &mut state.active,
+                &mut state.frozen,
+                config.max_active,
+            );
+            if promoted > 0 {
+                progress(BranchCampaignProgressEventV1::FrozenPromoted {
+                    promoted,
+                    active_after: state.active.len(),
+                    frozen_remaining: state.frozen.len(),
+                });
+            }
+        }
+        if state.active.is_empty() {
             stop_reason = "no_active_branch".to_string();
             break;
         }
+        let round_number = round_offset.saturating_add(local_round).saturating_add(1);
         progress(BranchCampaignProgressEventV1::RoundStarted {
-            round: round + 1,
-            max_rounds: config.max_rounds,
-            active_branches: active.len(),
-            frozen_branches: frozen.len(),
+            round: round_number,
+            max_rounds: displayed_max_rounds,
+            active_branches: state.active.len(),
+            frozen_branches: state.frozen.len(),
         });
-        let parents = std::mem::take(&mut active);
+        let parents = std::mem::take(&mut state.active);
         let parent_count = parents.len();
         let started_active = parents.len();
         let mut candidates = Vec::new();
@@ -280,7 +335,7 @@ where
 
         for (parent_index, parent) in parents.into_iter().enumerate() {
             progress(BranchCampaignProgressEventV1::BranchStarted {
-                round: round + 1,
+                round: round_number,
                 branch_index: parent_index + 1,
                 branch_count: parent_count,
                 choices: render_choice_path(&parent.choice_labels),
@@ -295,7 +350,7 @@ where
             wall_limit_hit |= report.wall_limit_hit;
             branch_limit_hit |= report.branch_limit_hit || report.frontier_group_limit_hit;
             progress(BranchCampaignProgressEventV1::BranchFinished {
-                round: round + 1,
+                round: round_number,
                 branch_index: parent_index + 1,
                 branch_count: parent_count,
                 produced_branches: report.branches.len(),
@@ -314,37 +369,41 @@ where
         }
 
         let round_strategy_requests = merge_campaign_strategy_requests_v1(round_strategy_requests);
-        strategy_requests =
-            merge_campaign_strategy_request_queue_v1(strategy_requests, round_strategy_requests);
+        state.strategy_requests = merge_campaign_strategy_request_queue_v1(
+            state.strategy_requests,
+            round_strategy_requests,
+        );
         let produced_branches = candidates.len();
         let selected =
             select_campaign_branches_v1(candidates, config.max_active, config.max_frozen);
         let frozen_added = append_limited_frozen_v1(
-            &mut frozen,
+            &mut state.frozen,
             selected.frozen,
             config.max_frozen,
-            &mut discarded_count,
+            &mut state.discarded_count,
         );
-        discarded_count = discarded_count.saturating_add(selected.discarded_count);
+        state.discarded_count = state
+            .discarded_count
+            .saturating_add(selected.discarded_count);
         let dead_added = selected.dead.len();
         let abandoned_added = selected.abandoned.len();
         let victories_added = selected.victories.len();
         let stuck_added = selected.stuck.len();
-        active = selected.active;
-        victories.extend(selected.victories);
-        dead.extend(selected.dead);
-        abandoned.extend(selected.abandoned);
-        stuck.extend(selected.stuck);
-        let promoted_from_frozen = if active.is_empty() && victories.is_empty() {
-            promote_frozen_to_active_v1(&mut active, &mut frozen, config.max_active)
+        state.active = selected.active;
+        state.victories.extend(selected.victories);
+        state.dead.extend(selected.dead);
+        state.abandoned.extend(selected.abandoned);
+        state.stuck.extend(selected.stuck);
+        let promoted_from_frozen = if state.active.is_empty() && state.victories.is_empty() {
+            promote_frozen_to_active_v1(&mut state.active, &mut state.frozen, config.max_active)
         } else {
             0
         };
         let round_summary = BranchCampaignRoundSummaryV1 {
-            round,
+            round: round_number,
             started_active,
             produced_branches,
-            active_after: active.len(),
+            active_after: state.active.len(),
             frozen_added,
             dead_added,
             abandoned_added,
@@ -357,42 +416,47 @@ where
             combat_budget_retries,
         };
         progress(BranchCampaignProgressEventV1::RoundFinished {
-            round: round + 1,
+            round: round_number,
             started_active,
             produced_branches,
-            active_after: active.len(),
+            active_after: state.active.len(),
             frozen_added,
-            strategy_requests: strategy_requests.len(),
+            strategy_requests: state.strategy_requests.len(),
         });
         if promoted_from_frozen > 0 {
             progress(BranchCampaignProgressEventV1::FrozenPromoted {
                 promoted: promoted_from_frozen,
-                active_after: active.len(),
-                frozen_remaining: frozen.len(),
+                active_after: state.active.len(),
+                frozen_remaining: state.frozen.len(),
             });
         }
-        rounds.push(round_summary);
+        state.rounds.push(round_summary);
+        state.rounds_completed = state.rounds_completed.saturating_add(1);
 
-        if !victories.is_empty() {
+        if !state.victories.is_empty() {
             stop_reason = "victory_found".to_string();
             break;
         }
-        if active.is_empty()
-            && frozen.is_empty()
-            && !abandoned.is_empty()
-            && strategy_requests.is_empty()
+        if state.active.is_empty()
+            && state.frozen.is_empty()
+            && !state.abandoned.is_empty()
+            && state.strategy_requests.is_empty()
         {
-            if let Some(request) = abandoned_branches_intervention_request_v1(&abandoned) {
-                strategy_requests = vec![request];
+            if let Some(request) = abandoned_branches_intervention_request_v1(&state.abandoned) {
+                state.strategy_requests = vec![request];
                 stop_reason = "needs_intervention".to_string();
                 break;
             }
         }
-        if campaign_strategy_requests_are_fatal_v1(&active, &frozen, &strategy_requests) {
+        if campaign_strategy_requests_are_fatal_v1(
+            &state.active,
+            &state.frozen,
+            &state.strategy_requests,
+        ) {
             stop_reason = "needs_intervention".to_string();
             break;
         }
-        if active.is_empty() && frozen.is_empty() && !stuck.is_empty() {
+        if state.active.is_empty() && state.frozen.is_empty() && !state.stuck.is_empty() {
             stop_reason = "stuck".to_string();
             break;
         }
@@ -404,28 +468,83 @@ where
 
     progress(BranchCampaignProgressEventV1::CampaignFinished {
         stop_reason: stop_reason.clone(),
-        active: active.len(),
-        frozen: frozen.len(),
-        victories: victories.len(),
-        stuck: stuck.len(),
+        active: state.active.len(),
+        frozen: state.frozen.len(),
+        victories: state.victories.len(),
+        stuck: state.stuck.len(),
     });
 
     Ok(BranchCampaignReportV1 {
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: config.seed,
-        rounds_completed: rounds.len(),
+        rounds_completed: state.rounds_completed,
         stop_reason,
-        active,
-        frozen,
-        victories,
-        dead,
-        abandoned,
-        stuck,
-        discarded_count,
-        strategy_requests,
-        rounds,
+        active: state.active,
+        frozen: state.frozen,
+        victories: state.victories,
+        dead: state.dead,
+        abandoned: state.abandoned,
+        stuck: state.stuck,
+        discarded_count: state.discarded_count,
+        strategy_requests: state.strategy_requests,
+        rounds: state.rounds,
     })
+}
+
+fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
+    BranchCampaignRunStateV1 {
+        rounds_completed: 0,
+        active: vec![root_campaign_branch_v1()],
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: Vec::new(),
+        discarded_count: 0,
+        strategy_requests: Vec::new(),
+        rounds: Vec::new(),
+    }
+}
+
+fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampaignRunStateV1 {
+    BranchCampaignRunStateV1 {
+        rounds_completed: report.rounds_completed,
+        active: report.active.clone(),
+        frozen: report.frozen.clone(),
+        victories: report.victories.clone(),
+        dead: report.dead.clone(),
+        abandoned: report.abandoned.clone(),
+        stuck: report.stuck.clone(),
+        discarded_count: report.discarded_count,
+        strategy_requests: report.strategy_requests.clone(),
+        rounds: report.rounds.clone(),
+    }
+}
+
+fn validate_campaign_resume_report_v1(
+    config: &BranchCampaignConfigV1,
+    report: &BranchCampaignReportV1,
+) -> Result<(), String> {
+    if report.schema_name != BRANCH_CAMPAIGN_SCHEMA_NAME {
+        return Err(format!(
+            "campaign resume schema mismatch: expected {}, found {}",
+            BRANCH_CAMPAIGN_SCHEMA_NAME, report.schema_name
+        ));
+    }
+    if report.schema_version != BRANCH_CAMPAIGN_SCHEMA_VERSION {
+        return Err(format!(
+            "campaign resume schema version mismatch: expected {}, found {}",
+            BRANCH_CAMPAIGN_SCHEMA_VERSION, report.schema_version
+        ));
+    }
+    if report.seed != config.seed {
+        return Err(format!(
+            "campaign resume seed mismatch: config seed {} does not match report seed {}",
+            config.seed, report.seed
+        ));
+    }
+    Ok(())
 }
 
 pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEventV1) -> String {

@@ -16,7 +16,7 @@ Reuses the last non-dry-run campaign seed.
 
 .EXAMPLE
 .\tools\campaign.ps1 -More
-Reuses the last seed with deeper defaults.
+Resumes the latest saved campaign report with deeper defaults.
 
 .EXAMPLE
 .\tools\campaign.ps1 -Mode quick
@@ -62,6 +62,7 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $CampaignDir = Join-Path $RepoRoot "tools\artifacts\campaigns"
 $LatestSeedPath = Join-Path $CampaignDir "latest.seed.txt"
 $LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
+$LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
 
 New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 
@@ -89,6 +90,17 @@ $DriverArgs = @(
     "--preset", "$Mode",
     "--seed", "$Seed"
 )
+
+$ResumeCampaignPath = $null
+if ($More) {
+    if (-not (Test-Path $LatestCampaignPath)) {
+        throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first, or use -Last to rerun the previous seed from the start."
+    }
+    $ResumeCampaignPath = $LatestCampaignPath
+    $DriverArgs += @("--resume", "$ResumeCampaignPath")
+}
+
+$DriverArgs += @("--out", "$LatestCampaignPath")
 
 $CampaignBoundParameters = @{}
 foreach ($ParameterName in $PSBoundParameters.Keys) {
@@ -130,6 +142,10 @@ $RenderedCommand = "cargo " + ($RenderedArgs -join " ")
 Write-Host "mode=$Mode branch campaign"
 Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
 Write-Host "run-more=.\tools\campaign.ps1 -More"
+Write-Host "report=$LatestCampaignPath"
+if ($ResumeCampaignPath) {
+    Write-Host "resume=$ResumeCampaignPath"
+}
 
 if ($DryRun) {
     Write-Host $RenderedCommand

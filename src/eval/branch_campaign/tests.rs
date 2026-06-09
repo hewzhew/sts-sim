@@ -441,6 +441,41 @@ fn campaign_progress_events_render_concrete_stage_information() {
 }
 
 #[test]
+fn campaign_resume_with_zero_rounds_preserves_previous_frontier() {
+    let previous = test_campaign_report_with_active("resume-a", 20, 80);
+    let resumed = run_branch_campaign_from_report_v1(
+        &BranchCampaignConfigV1 {
+            seed: previous.seed,
+            max_rounds: 0,
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+    )
+    .expect("resume should load previous frontier");
+
+    assert_eq!(resumed.rounds_completed, previous.rounds_completed);
+    assert_eq!(resumed.active, previous.active);
+    assert_eq!(resumed.frozen, previous.frozen);
+    assert_eq!(resumed.stop_reason, "max_rounds");
+}
+
+#[test]
+fn campaign_resume_rejects_seed_mismatch() {
+    let previous = test_campaign_report_with_active("resume-a", 20, 80);
+    let err = run_branch_campaign_from_report_v1(
+        &BranchCampaignConfigV1 {
+            seed: previous.seed + 1,
+            max_rounds: 0,
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+    )
+    .expect_err("wrong seed should not resume");
+
+    assert!(err.contains("seed mismatch"));
+}
+
+#[test]
 fn campaign_status_distinguishes_pruned_from_terminal_defeat() {
     assert_eq!(
         campaign_status_from_report_status(BranchExperimentBranchStatusV1::Pruned),
@@ -450,6 +485,40 @@ fn campaign_status_distinguishes_pruned_from_terminal_defeat() {
         campaign_status_from_report_status(BranchExperimentBranchStatusV1::TerminalDefeat),
         BranchCampaignBranchStatusV1::TerminalDefeat
     );
+}
+
+fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCampaignReportV1 {
+    BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 521,
+        rounds_completed: 3,
+        stop_reason: "max_rounds".to_string(),
+        active: vec![test_campaign_branch(id, floor, hp)],
+        frozen: vec![test_campaign_branch("frozen-a", floor - 1, hp - 5)],
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: Vec::new(),
+        discarded_count: 4,
+        strategy_requests: Vec::new(),
+        rounds: vec![BranchCampaignRoundSummaryV1 {
+            round: 1,
+            started_active: 1,
+            produced_branches: 2,
+            active_after: 1,
+            frozen_added: 1,
+            dead_added: 0,
+            abandoned_added: 0,
+            victories_added: 0,
+            stuck_added: 0,
+            discarded_added: 0,
+            explored_branch_points: 1,
+            wall_limit_hit: false,
+            branch_limit_hit: false,
+            combat_budget_retries: 0,
+        }],
+    }
 }
 
 fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1 {

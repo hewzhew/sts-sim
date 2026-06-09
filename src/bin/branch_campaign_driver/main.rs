@@ -1,10 +1,14 @@
 use clap::parser::ValueSource;
 use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
+use std::fs;
+use std::path::PathBuf;
 use std::time::Instant;
 
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_v1, render_branch_campaign_progress_event_v1,
+    run_branch_campaign_from_report_v1, run_branch_campaign_from_report_with_progress_v1,
     run_branch_campaign_v1, run_branch_campaign_with_progress_v1, BranchCampaignConfigV1,
+    BranchCampaignReportV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
@@ -127,6 +131,20 @@ struct Args {
 
     #[arg(long, help = "Print coarse campaign progress to stderr while running")]
     progress: bool,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Resume from a previous BranchCampaignV1 JSON report"
+    )]
+    resume: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Write the resulting BranchCampaignV1 JSON report"
+    )]
+    out: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -287,18 +305,33 @@ fn apply_campaign_preset_defaults<F>(
 
 fn run(args: Args) -> Result<(), String> {
     let config = campaign_config_from_args(&args)?;
+    let previous = args
+        .resume
+        .as_ref()
+        .map(read_campaign_report_v1)
+        .transpose()?;
     let report = if args.progress && !args.json {
         let started_at = Instant::now();
-        run_branch_campaign_with_progress_v1(&config, |event| {
+        let progress = |event| {
             println!(
                 "[{:>4}s] {}",
                 started_at.elapsed().as_secs(),
                 render_branch_campaign_progress_event_v1(&event)
             );
-        })?
+        };
+        if let Some(previous) = previous.as_ref() {
+            run_branch_campaign_from_report_with_progress_v1(&config, previous, progress)?
+        } else {
+            run_branch_campaign_with_progress_v1(&config, progress)?
+        }
+    } else if let Some(previous) = previous.as_ref() {
+        run_branch_campaign_from_report_v1(&config, previous)?
     } else {
         run_branch_campaign_v1(&config)?
     };
+    if let Some(path) = args.out.as_ref() {
+        write_campaign_report_v1(path, &report)?;
+    }
     if args.json {
         println!(
             "{}",
@@ -311,6 +344,34 @@ fn run(args: Args) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+fn read_campaign_report_v1(path: &PathBuf) -> Result<BranchCampaignReportV1, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read --resume {}: {err}", path.display()))?;
+    serde_json::from_str(&text).map_err(|err| {
+        format!(
+            "failed to parse --resume {} as BranchCampaignV1: {err}",
+            path.display()
+        )
+    })
+}
+
+fn write_campaign_report_v1(path: &PathBuf, report: &BranchCampaignReportV1) -> Result<(), String> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "failed to create --out directory {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+    let text = serde_json::to_string_pretty(report)
+        .map_err(|err| format!("failed to serialize BranchCampaignV1 report: {err}"))?;
+    fs::write(path, text).map_err(|err| format!("failed to write --out {}: {err}", path.display()))
 }
 
 fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, String> {
@@ -392,6 +453,21 @@ mod tests {
         assert_eq!(config.max_active, 8);
         assert_eq!(config.max_frozen, 32);
         assert_eq!(config.round_depth, 1);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_resume_and_out_paths() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--resume",
+            "old.campaign.json",
+            "--out",
+            "new.campaign.json",
+        ])
+        .expect("args parse");
+
+        assert_eq!(args.resume, Some(PathBuf::from("old.campaign.json")));
+        assert_eq!(args.out, Some(PathBuf::from("new.campaign.json")));
     }
 
     #[test]
