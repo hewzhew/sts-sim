@@ -127,6 +127,58 @@ fn campaign_default_retry_policy_does_not_retry_each_parent_immediately() {
 }
 
 #[test]
+fn campaign_on_stall_retries_when_round_exhausts_only_abandoned_combat() {
+    let config = BranchCampaignConfigV1::default();
+    let mut abandoned = test_campaign_branch("abandoned-combat", 1, 80);
+    abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.frontier_title = "Combat".to_string();
+
+    let selection = BranchCampaignSelectionV1 {
+        abandoned: vec![abandoned],
+        ..BranchCampaignSelectionV1::default()
+    };
+
+    assert!(campaign_round_should_retry_combat_budget_on_stall_v1(
+        &config, &selection
+    ));
+}
+
+#[test]
+fn campaign_on_stall_does_not_retry_when_other_branches_remain() {
+    let config = BranchCampaignConfigV1::default();
+    let mut abandoned = test_campaign_branch("abandoned-combat", 1, 80);
+    abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.frontier_title = "Combat".to_string();
+
+    let selection = BranchCampaignSelectionV1 {
+        active: vec![test_campaign_branch("active", 2, 80)],
+        abandoned: vec![abandoned],
+        ..BranchCampaignSelectionV1::default()
+    };
+
+    assert!(!campaign_round_should_retry_combat_budget_on_stall_v1(
+        &config, &selection
+    ));
+}
+
+#[test]
+fn campaign_on_stall_does_not_retry_non_combat_abandoned_branches() {
+    let config = BranchCampaignConfigV1::default();
+    let mut abandoned = test_campaign_branch("abandoned-map", 1, 80);
+    abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.frontier_title = "Map".to_string();
+
+    let selection = BranchCampaignSelectionV1 {
+        abandoned: vec![abandoned],
+        ..BranchCampaignSelectionV1::default()
+    };
+
+    assert!(!campaign_round_should_retry_combat_budget_on_stall_v1(
+        &config, &selection
+    ));
+}
+
+#[test]
 fn campaign_immediate_retry_policy_keeps_old_parent_retry_behavior() {
     let config = BranchCampaignConfigV1 {
         combat_retry_policy: BranchCampaignCombatRetryPolicyV1::Immediate,

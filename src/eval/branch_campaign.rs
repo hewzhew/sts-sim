@@ -277,6 +277,15 @@ struct BranchCampaignParentRoundResultV1 {
     combat_budget_retry_used: bool,
 }
 
+struct BranchCampaignParentBatchResultV1 {
+    candidates: Vec<BranchCampaignBranchV1>,
+    strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
+    explored_branch_points: usize,
+    wall_limit_hit: bool,
+    branch_limit_hit: bool,
+    combat_budget_retries: usize,
+}
+
 struct BranchCampaignRunStateV1 {
     rounds_completed: usize,
     active: Vec<BranchCampaignBranchV1>,
@@ -423,65 +432,43 @@ where
             frozen_branches: state.frozen.len(),
         });
         let parents = std::mem::take(&mut state.active);
-        let parent_count = parents.len();
         let started_active = parents.len();
-        let mut candidates = Vec::new();
-        let mut round_strategy_requests = Vec::new();
-        let mut explored_branch_points = 0usize;
-        let mut wall_limit_hit = false;
-        let mut branch_limit_hit = false;
-        let mut combat_budget_retries = 0usize;
-
-        for (parent_index, parent) in parents.into_iter().enumerate() {
-            progress(BranchCampaignProgressEventV1::BranchStarted {
-                round: round_number,
-                branch_index: parent_index + 1,
-                branch_count: parent_count,
-                choices: render_choice_path(&parent.choice_labels),
-            });
-            let parent_snapshot = state.snapshot_cache.get(&parent.commands).cloned();
-            let parent_result = run_campaign_parent_round_v1(config, &parent, parent_snapshot)?;
-            let result = parent_result.result;
-            let report = result.report;
-            if parent_result.combat_budget_retry_used {
-                combat_budget_retries = combat_budget_retries.saturating_add(1);
-            }
-            explored_branch_points =
-                explored_branch_points.saturating_add(report.explored_branch_points);
-            wall_limit_hit |= report.wall_limit_hit;
-            branch_limit_hit |= report.branch_limit_hit || report.frontier_group_limit_hit;
-            progress(BranchCampaignProgressEventV1::BranchFinished {
-                round: round_number,
-                branch_index: parent_index + 1,
-                branch_count: parent_count,
-                produced_branches: report.branches.len(),
-                explored_branch_points: report.explored_branch_points,
-                elapsed_wall_ms: report.elapsed_wall_ms,
-                start_elapsed_wall_ms: result.start_elapsed_wall_ms,
-                combat_budget_retry_used: parent_result.combat_budget_retry_used,
-                wall_limit_hit: report.wall_limit_hit,
-                branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
-            });
-            round_strategy_requests.extend(report.strategy_requests.iter().cloned());
-            for branch in &report.branches {
-                let child = campaign_branch_from_report_branch_v1(&parent, branch);
-                if let Some(snapshot) = result.branch_sessions.get(&branch.branch_id) {
-                    state
-                        .snapshot_cache
-                        .insert(child.commands.clone(), snapshot.clone());
-                }
-                candidates.push(child);
+        let mut batch = run_campaign_parent_batch_v1(
+            config,
+            &parents,
+            &mut state.snapshot_cache,
+            round_number,
+            false,
+            &mut progress,
+        )?;
+        let mut produced_branches = batch.candidates.len();
+        let mut selected = select_campaign_branches_v1(
+            batch.candidates.clone(),
+            config.max_active,
+            config.max_frozen,
+        );
+        if campaign_round_should_retry_combat_budget_on_stall_v1(config, &selected) {
+            if let Some(retry_config) = combat_retry_campaign_config_v1(config) {
+                batch = run_campaign_parent_batch_v1(
+                    &retry_config,
+                    &parents,
+                    &mut state.snapshot_cache,
+                    round_number,
+                    true,
+                    &mut progress,
+                )?;
+                produced_branches = batch.candidates.len();
+                selected = select_campaign_branches_v1(
+                    batch.candidates.clone(),
+                    config.max_active,
+                    config.max_frozen,
+                );
             }
         }
-
-        let round_strategy_requests = merge_campaign_strategy_requests_v1(round_strategy_requests);
         state.strategy_requests = merge_campaign_strategy_request_queue_v1(
             state.strategy_requests,
-            round_strategy_requests,
+            merge_campaign_strategy_requests_v1(batch.strategy_requests.clone()),
         );
-        let produced_branches = candidates.len();
-        let selected =
-            select_campaign_branches_v1(candidates, config.max_active, config.max_frozen);
         let frozen_added = append_limited_frozen_v1(
             &mut state.frozen,
             selected.frozen,
@@ -517,10 +504,10 @@ where
             victories_added,
             stuck_added,
             discarded_added: selected.discarded_count,
-            explored_branch_points,
-            wall_limit_hit,
-            branch_limit_hit,
-            combat_budget_retries,
+            explored_branch_points: batch.explored_branch_points,
+            wall_limit_hit: batch.wall_limit_hit,
+            branch_limit_hit: batch.branch_limit_hit,
+            combat_budget_retries: batch.combat_budget_retries,
         };
         progress(BranchCampaignProgressEventV1::RoundFinished {
             round: round_number,
@@ -979,6 +966,76 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
     }
 }
 
+fn run_campaign_parent_batch_v1<F>(
+    config: &BranchCampaignConfigV1,
+    parents: &[BranchCampaignBranchV1],
+    snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
+    round_number: usize,
+    round_retry: bool,
+    progress: &mut F,
+) -> Result<BranchCampaignParentBatchResultV1, String>
+where
+    F: FnMut(BranchCampaignProgressEventV1),
+{
+    let parent_count = parents.len();
+    let mut candidates = Vec::new();
+    let mut strategy_requests = Vec::new();
+    let mut explored_branch_points = 0usize;
+    let mut wall_limit_hit = false;
+    let mut branch_limit_hit = false;
+    let mut combat_budget_retries = 0usize;
+
+    for (parent_index, parent) in parents.iter().enumerate() {
+        progress(BranchCampaignProgressEventV1::BranchStarted {
+            round: round_number,
+            branch_index: parent_index + 1,
+            branch_count: parent_count,
+            choices: render_choice_path(&parent.choice_labels),
+        });
+        let parent_snapshot = snapshot_cache.get(&parent.commands).cloned();
+        let parent_result = run_campaign_parent_round_v1(config, parent, parent_snapshot)?;
+        let result = parent_result.result;
+        let report = result.report;
+        let combat_budget_retry_used = round_retry || parent_result.combat_budget_retry_used;
+        if combat_budget_retry_used {
+            combat_budget_retries = combat_budget_retries.saturating_add(1);
+        }
+        explored_branch_points =
+            explored_branch_points.saturating_add(report.explored_branch_points);
+        wall_limit_hit |= report.wall_limit_hit;
+        branch_limit_hit |= report.branch_limit_hit || report.frontier_group_limit_hit;
+        progress(BranchCampaignProgressEventV1::BranchFinished {
+            round: round_number,
+            branch_index: parent_index + 1,
+            branch_count: parent_count,
+            produced_branches: report.branches.len(),
+            explored_branch_points: report.explored_branch_points,
+            elapsed_wall_ms: report.elapsed_wall_ms,
+            start_elapsed_wall_ms: result.start_elapsed_wall_ms,
+            combat_budget_retry_used,
+            wall_limit_hit: report.wall_limit_hit,
+            branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
+        });
+        strategy_requests.extend(report.strategy_requests.iter().cloned());
+        for branch in &report.branches {
+            let child = campaign_branch_from_report_branch_v1(parent, branch);
+            if let Some(snapshot) = result.branch_sessions.get(&branch.branch_id) {
+                snapshot_cache.insert(child.commands.clone(), snapshot.clone());
+            }
+            candidates.push(child);
+        }
+    }
+
+    Ok(BranchCampaignParentBatchResultV1 {
+        candidates,
+        strategy_requests,
+        explored_branch_points,
+        wall_limit_hit,
+        branch_limit_hit,
+        combat_budget_retries,
+    })
+}
+
 fn run_campaign_parent_round_v1(
     config: &BranchCampaignConfigV1,
     parent: &BranchCampaignBranchV1,
@@ -1129,6 +1186,26 @@ fn campaign_parent_should_retry_combat_budget_now_v1(
         config.combat_retry_policy,
         BranchCampaignCombatRetryPolicyV1::Immediate
     ) && branch_report_needs_combat_budget_retry_v1(branches)
+}
+
+fn campaign_round_should_retry_combat_budget_on_stall_v1(
+    config: &BranchCampaignConfigV1,
+    selection: &BranchCampaignSelectionV1,
+) -> bool {
+    matches!(
+        config.combat_retry_policy,
+        BranchCampaignCombatRetryPolicyV1::OnStall
+    ) && combat_retry_campaign_config_v1(config).is_some()
+        && selection.active.is_empty()
+        && selection.frozen.is_empty()
+        && selection.victories.is_empty()
+        && selection.dead.is_empty()
+        && selection.stuck.is_empty()
+        && !selection.abandoned.is_empty()
+        && selection
+            .abandoned
+            .iter()
+            .all(|branch| normalized_campaign_boundary_title(&branch.frontier_title) == "combat")
 }
 
 fn normalized_campaign_boundary_title(value: &str) -> String {
