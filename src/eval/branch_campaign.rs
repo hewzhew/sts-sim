@@ -20,6 +20,17 @@ const COMBAT_RETRY_MAX_NODES: usize = 500_000;
 const COMBAT_RETRY_MIN_WALL_MS: u64 = 1_200;
 const COMBAT_RETRY_MAX_WALL_MS: u64 = 5_000;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BranchCampaignCombatRetryPolicyV1 {
+    /// Keep moving through available branches first. If all routes stall on combat,
+    /// the campaign will surface that as an intervention instead of retrying every parent.
+    OnStall,
+    /// Legacy behavior: immediately rerun a parent with a larger combat budget when all
+    /// produced children are pruned combat branches.
+    Immediate,
+    Disabled,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchCampaignConfigV1 {
     pub seed: u64,
@@ -40,6 +51,7 @@ pub struct BranchCampaignConfigV1 {
     pub search_wall_ms: Option<u64>,
     pub search_max_hp_loss: Option<RunControlHpLossLimit>,
     pub search_options: RunControlSearchCombatOptions,
+    pub combat_retry_policy: BranchCampaignCombatRetryPolicyV1,
     pub include_event_reward_skip: bool,
     pub prefix_commands: Vec<String>,
 }
@@ -65,6 +77,7 @@ impl Default for BranchCampaignConfigV1 {
             search_wall_ms: Some(200),
             search_max_hp_loss: None,
             search_options: RunControlSearchCombatOptions::default(),
+            combat_retry_policy: BranchCampaignCombatRetryPolicyV1::OnStall,
             include_event_reward_skip: false,
             prefix_commands: Vec::new(),
         }
@@ -198,6 +211,7 @@ pub enum BranchCampaignProgressEventV1 {
         produced_branches: usize,
         explored_branch_points: usize,
         elapsed_wall_ms: u64,
+        start_elapsed_wall_ms: u64,
         combat_budget_retry_used: bool,
         wall_limit_hit: bool,
         branch_limit_hit: bool,
@@ -363,6 +377,7 @@ where
                 produced_branches: report.branches.len(),
                 explored_branch_points: report.explored_branch_points,
                 elapsed_wall_ms: report.elapsed_wall_ms,
+                start_elapsed_wall_ms: result.start_elapsed_wall_ms,
                 combat_budget_retry_used: parent_result.combat_budget_retry_used,
                 wall_limit_hit: report.wall_limit_hit,
                 branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
@@ -608,6 +623,7 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             produced_branches,
             explored_branch_points,
             elapsed_wall_ms,
+            start_elapsed_wall_ms,
             combat_budget_retry_used,
             wall_limit_hit,
             branch_limit_hit,
@@ -629,8 +645,13 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             } else {
                 ""
             };
+            let start = if *start_elapsed_wall_ms > 0 {
+                format!(" start_ms={start_elapsed_wall_ms}")
+            } else {
+                String::new()
+            };
             format!(
-                "round {round}: branch {branch_index}/{branch_count} done | produced={produced_branches} branch_points={explored_branch_points} elapsed_ms={elapsed_wall_ms}{retry} limits=[{limits}]"
+                "round {round}: branch {branch_index}/{branch_count} done | produced={produced_branches} branch_points={explored_branch_points} elapsed_ms={elapsed_wall_ms}{start}{retry} limits=[{limits}]"
             )
         }
         BranchCampaignProgressEventV1::RoundFinished {
@@ -799,7 +820,7 @@ fn run_campaign_parent_round_v1(
         }
         Err(err) => return Err(err),
     };
-    if !branch_report_needs_combat_budget_retry_v1(&result.report.branches) {
+    if !campaign_parent_should_retry_combat_budget_now_v1(config, &result.report.branches) {
         return Ok(BranchCampaignParentRoundResultV1 {
             result,
             combat_budget_retry_used: false,
@@ -913,6 +934,16 @@ fn branch_report_needs_combat_budget_retry_v1(branches: &[BranchExperimentBranch
         && branches.iter().all(|branch| {
             normalized_campaign_boundary_title(&branch.summary.boundary_title) == "combat"
         })
+}
+
+fn campaign_parent_should_retry_combat_budget_now_v1(
+    config: &BranchCampaignConfigV1,
+    branches: &[BranchExperimentBranchReportV1],
+) -> bool {
+    matches!(
+        config.combat_retry_policy,
+        BranchCampaignCombatRetryPolicyV1::Immediate
+    ) && branch_report_needs_combat_budget_retry_v1(branches)
 }
 
 fn normalized_campaign_boundary_title(value: &str) -> String {

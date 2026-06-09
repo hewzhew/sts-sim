@@ -70,6 +70,7 @@ struct BranchExperimentPreparedStart {
 pub struct BranchExperimentRunResultV1 {
     pub report: BranchExperimentReportV1,
     pub branch_sessions: BTreeMap<String, RunControlSession>,
+    pub start_elapsed_wall_ms: u64,
 }
 
 pub fn run_branch_experiment_v1(
@@ -81,15 +82,17 @@ pub fn run_branch_experiment_v1(
 pub fn run_branch_experiment_with_snapshots_v1(
     config: &BranchExperimentConfigV1,
 ) -> Result<BranchExperimentRunResultV1, String> {
+    let started_at = Instant::now();
     let prepared = prepare_branch_experiment_start(config, false)?;
-    Ok(
-        run_branch_experiment_from_start_branch_with_replay_and_snapshots(
-            prepared.branch,
-            config,
-            prepared.replay_trace_applied_steps,
-            prepared.replay_trace_stop,
-        ),
-    )
+    let start_elapsed_wall_ms = elapsed_ms_u64(started_at);
+    let mut result = run_branch_experiment_from_start_branch_with_replay_and_snapshots(
+        prepared.branch,
+        config,
+        prepared.replay_trace_applied_steps,
+        prepared.replay_trace_stop,
+    );
+    result.start_elapsed_wall_ms = start_elapsed_wall_ms;
+    Ok(result)
 }
 
 pub fn run_branch_experiment_profiles_from_shared_start_v1(
@@ -502,6 +505,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     BranchExperimentRunResultV1 {
         report,
         branch_sessions,
+        start_elapsed_wall_ms: 0,
     }
 }
 
@@ -531,6 +535,10 @@ fn experiment_wall_limit_hit(started_at: Instant, config: &BranchExperimentConfi
         return false;
     };
     started_at.elapsed().as_millis() >= u128::from(limit_ms)
+}
+
+fn elapsed_ms_u64(started_at: Instant) -> u64 {
+    started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
 }
 
 fn advance_to_experiment_boundary(branch: &mut BranchWork, config: &BranchExperimentConfigV1) {

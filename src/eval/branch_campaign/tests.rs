@@ -103,6 +103,49 @@ fn campaign_retries_only_when_all_results_are_abandoned_combat() {
 }
 
 #[test]
+fn campaign_default_retry_policy_does_not_retry_each_parent_immediately() {
+    let config = BranchCampaignConfigV1::default();
+    let abandoned_combat = test_report_branch_at(
+        "a",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Pruned,
+        "Combat",
+        16,
+        70,
+    );
+
+    assert_eq!(
+        config.combat_retry_policy,
+        BranchCampaignCombatRetryPolicyV1::OnStall
+    );
+    assert!(!campaign_parent_should_retry_combat_budget_now_v1(
+        &config,
+        &[abandoned_combat]
+    ));
+}
+
+#[test]
+fn campaign_immediate_retry_policy_keeps_old_parent_retry_behavior() {
+    let config = BranchCampaignConfigV1 {
+        combat_retry_policy: BranchCampaignCombatRetryPolicyV1::Immediate,
+        ..BranchCampaignConfigV1::default()
+    };
+    let abandoned_combat = test_report_branch_at(
+        "a",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Pruned,
+        "Combat",
+        16,
+        70,
+    );
+
+    assert!(campaign_parent_should_retry_combat_budget_now_v1(
+        &config,
+        &[abandoned_combat]
+    ));
+}
+
+#[test]
 fn campaign_parent_replay_retry_only_handles_boundary_drift_errors() {
     assert!(campaign_parent_replay_error_is_retryable_v1(
         "error: input `event 0` is not valid on the current screen: Combat"
@@ -414,6 +457,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
             produced_branches: 8,
             explored_branch_points: 6,
             elapsed_wall_ms: 1234,
+            start_elapsed_wall_ms: 4321,
             combat_budget_retry_used: true,
             wall_limit_hit: false,
             branch_limit_hit: true,
@@ -434,7 +478,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
 
     assert_eq!(
         branch_line,
-        "round 2: branch 1/2 done | produced=8 branch_points=6 elapsed_ms=1234 retry=combat_budget limits=[branch]"
+        "round 2: branch 1/2 done | produced=8 branch_points=6 elapsed_ms=1234 start_ms=4321 retry=combat_budget limits=[branch]"
     );
     assert_eq!(
         round_line,

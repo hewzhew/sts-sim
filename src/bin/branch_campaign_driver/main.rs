@@ -7,8 +7,8 @@ use std::time::Instant;
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_v1, render_branch_campaign_progress_event_v1,
     run_branch_campaign_from_report_v1, run_branch_campaign_from_report_with_progress_v1,
-    run_branch_campaign_v1, run_branch_campaign_with_progress_v1, BranchCampaignConfigV1,
-    BranchCampaignReportV1,
+    run_branch_campaign_v1, run_branch_campaign_with_progress_v1,
+    BranchCampaignCombatRetryPolicyV1, BranchCampaignConfigV1, BranchCampaignReportV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
@@ -117,6 +117,9 @@ struct Args {
     )]
     combat_search_options: Vec<String>,
 
+    #[arg(long, value_enum, default_value_t = BranchCampaignCombatRetryArgV1::OnStall)]
+    combat_retry: BranchCampaignCombatRetryArgV1,
+
     #[arg(long = "prefix", value_name = "COMMAND")]
     prefix_commands: Vec<String>,
 
@@ -152,6 +155,13 @@ enum BranchCampaignPresetV1 {
     Quick,
     Focused,
     Deep,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum BranchCampaignCombatRetryArgV1 {
+    OnStall,
+    Immediate,
+    Disabled,
 }
 
 fn main() {
@@ -419,6 +429,13 @@ fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, Stri
         search_wall_ms: Some(args.search_wall_ms),
         search_max_hp_loss,
         search_options: parse_branch_experiment_search_options_v1(&args.combat_search_options)?,
+        combat_retry_policy: match args.combat_retry {
+            BranchCampaignCombatRetryArgV1::OnStall => BranchCampaignCombatRetryPolicyV1::OnStall,
+            BranchCampaignCombatRetryArgV1::Immediate => {
+                BranchCampaignCombatRetryPolicyV1::Immediate
+            }
+            BranchCampaignCombatRetryArgV1::Disabled => BranchCampaignCombatRetryPolicyV1::Disabled,
+        },
         include_event_reward_skip: false,
         prefix_commands,
     })
@@ -514,6 +531,10 @@ mod tests {
             config.search_max_hp_loss,
             Some(RunControlHpLossLimit::Unlimited)
         );
+        assert_eq!(
+            config.combat_retry_policy,
+            BranchCampaignCombatRetryPolicyV1::OnStall
+        );
         assert_eq!(args.branch_examples, 3);
     }
 
@@ -553,6 +574,24 @@ mod tests {
         assert_eq!(
             config.search_max_hp_loss,
             Some(RunControlHpLossLimit::Limit(12))
+        );
+    }
+
+    #[test]
+    fn campaign_cli_can_enable_immediate_combat_retry_for_comparison() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--preset",
+            "quick",
+            "--combat-retry",
+            "immediate",
+        ])
+        .expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(
+            config.combat_retry_policy,
+            BranchCampaignCombatRetryPolicyV1::Immediate
         );
     }
 

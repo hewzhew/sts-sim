@@ -37,6 +37,10 @@ Runs without coarse campaign progress messages.
 .EXAMPLE
 .\tools\campaign.ps1 -DebugBuild
 Runs the slower debug build when you are debugging compilation or assertions.
+
+.EXAMPLE
+.\tools\campaign.ps1 -Build
+Rebuilds the branch campaign driver before running it.
 #>
 param(
     [Parameter(Position = 0)]
@@ -47,6 +51,7 @@ param(
     [switch] $DryRun,
     [switch] $NoProgress,
     [switch] $DebugBuild,
+    [switch] $Build,
 
     [ValidateSet("quick", "focused", "deep")]
     [string] $Mode = "focused",
@@ -90,12 +95,14 @@ if ($Last) {
     $Seed = Get-Random -Minimum 1 -Maximum 2147483647
 }
 
-$DriverArgs = @("run")
+$BuildProfile = if ($DebugBuild) { "debug" } else { "release" }
+$DriverExe = Join-Path $RepoRoot "target\$BuildProfile\branch_campaign_driver.exe"
+$BuildArgs = @("build", "--quiet", "--bin", "branch_campaign_driver")
 if (-not $DebugBuild) {
-    $DriverArgs += "--release"
+    $BuildArgs += "--release"
 }
-$DriverArgs += @(
-    "--quiet", "--bin", "branch_campaign_driver", "--",
+
+$DriverArgs = @(
     "--preset", "$Mode",
     "--seed", "$Seed"
 )
@@ -142,17 +149,44 @@ if ($ExtraArgs) {
     $DriverArgs += $ExtraArgs
 }
 
+function Test-DriverNeedsBuild {
+    param(
+        [string] $ExePath
+    )
+
+    if (-not (Test-Path -LiteralPath $ExePath)) {
+        return $true
+    }
+
+    $ExeTime = (Get-Item -LiteralPath $ExePath).LastWriteTimeUtc
+    foreach ($Path in @("Cargo.toml", "Cargo.lock")) {
+        $FullPath = Join-Path $RepoRoot $Path
+        if ((Test-Path -LiteralPath $FullPath) -and (Get-Item -LiteralPath $FullPath).LastWriteTimeUtc -gt $ExeTime) {
+            return $true
+        }
+    }
+    foreach ($SourceFile in Get-ChildItem -LiteralPath (Join-Path $RepoRoot "src") -Recurse -File -Filter *.rs) {
+        if ($SourceFile.LastWriteTimeUtc -gt $ExeTime) {
+            return $true
+        }
+    }
+    return $false
+}
+
 Write-Host "seed=$Seed"
 $RenderedArgs = $DriverArgs | ForEach-Object {
     if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
 }
-$RenderedCommand = "cargo " + ($RenderedArgs -join " ")
+$RenderedExe = if ($DriverExe -match '^[A-Za-z0-9_./:=\\-]+$') { $DriverExe } else { "'$($DriverExe -replace "'", "''")'" }
+$RenderedCommand = $RenderedExe + " " + ($RenderedArgs -join " ")
 
 Write-Host "mode=$Mode branch campaign"
-if ($DebugBuild) {
-    Write-Host "build=debug"
+$NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
+Write-Host "build=$BuildProfile exe=$DriverExe"
+if ($NeedsBuild) {
+    Write-Host "build-needed=yes"
 } else {
-    Write-Host "build=release"
+    Write-Host "build-needed=no"
 }
 Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
 Write-Host "run-more=.\tools\campaign.ps1 -More"
@@ -162,6 +196,12 @@ if ($ResumeCampaignPath) {
 }
 
 if ($DryRun) {
+    if ($NeedsBuild) {
+        $RenderedBuildArgs = $BuildArgs | ForEach-Object {
+            if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
+        }
+        Write-Host ("cargo " + ($RenderedBuildArgs -join " "))
+    }
     Write-Host $RenderedCommand
     exit 0
 }
@@ -171,7 +211,13 @@ Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
 
 Push-Location $RepoRoot
 try {
-    & cargo @DriverArgs
+    if ($NeedsBuild) {
+        & cargo @BuildArgs
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+    & $DriverExe @DriverArgs
     exit $LASTEXITCODE
 } finally {
     Pop-Location
