@@ -408,6 +408,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
             branch_count: 2,
             produced_branches: 8,
             explored_branch_points: 6,
+            elapsed_wall_ms: 1234,
             combat_budget_retry_used: true,
             wall_limit_hit: false,
             branch_limit_hit: true,
@@ -428,7 +429,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
 
     assert_eq!(
         branch_line,
-        "round 2: branch 1/2 done | produced=8 branch_points=6 retry=combat_budget limits=[branch]"
+        "round 2: branch 1/2 done | produced=8 branch_points=6 elapsed_ms=1234 retry=combat_budget limits=[branch]"
     );
     assert_eq!(
         round_line,

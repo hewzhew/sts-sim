@@ -194,6 +194,7 @@ pub enum BranchCampaignProgressEventV1 {
         branch_count: usize,
         produced_branches: usize,
         explored_branch_points: usize,
+        elapsed_wall_ms: u64,
         combat_budget_retry_used: bool,
         wall_limit_hit: bool,
         branch_limit_hit: bool,
@@ -355,6 +356,7 @@ where
                 branch_count: parent_count,
                 produced_branches: report.branches.len(),
                 explored_branch_points: report.explored_branch_points,
+                elapsed_wall_ms: report.elapsed_wall_ms,
                 combat_budget_retry_used: parent_result.combat_budget_retry_used,
                 wall_limit_hit: report.wall_limit_hit,
                 branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
@@ -580,6 +582,7 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             branch_count,
             produced_branches,
             explored_branch_points,
+            elapsed_wall_ms,
             combat_budget_retry_used,
             wall_limit_hit,
             branch_limit_hit,
@@ -602,7 +605,7 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
                 ""
             };
             format!(
-                "round {round}: branch {branch_index}/{branch_count} done | produced={produced_branches} branch_points={explored_branch_points}{retry} limits=[{limits}]"
+                "round {round}: branch {branch_index}/{branch_count} done | produced={produced_branches} branch_points={explored_branch_points} elapsed_ms={elapsed_wall_ms}{retry} limits=[{limits}]"
             )
         }
         BranchCampaignProgressEventV1::RoundFinished {

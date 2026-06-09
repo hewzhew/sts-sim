@@ -33,6 +33,10 @@ Prints the cargo command without updating the last seed or running it.
 .EXAMPLE
 .\tools\campaign.ps1 -NoProgress
 Runs without coarse campaign progress messages.
+
+.EXAMPLE
+.\tools\campaign.ps1 -DebugBuild
+Runs the slower debug build when you are debugging compilation or assertions.
 #>
 param(
     [Parameter(Position = 0)]
@@ -42,6 +46,7 @@ param(
     [switch] $More,
     [switch] $DryRun,
     [switch] $NoProgress,
+    [switch] $DebugBuild,
 
     [ValidateSet("quick", "focused", "deep")]
     [string] $Mode = "focused",
@@ -85,8 +90,12 @@ if ($Last) {
     $Seed = Get-Random -Minimum 1 -Maximum 2147483647
 }
 
-$DriverArgs = @(
-    "run", "--quiet", "--bin", "branch_campaign_driver", "--",
+$DriverArgs = @("run")
+if (-not $DebugBuild) {
+    $DriverArgs += "--release"
+}
+$DriverArgs += @(
+    "--quiet", "--bin", "branch_campaign_driver", "--",
     "--preset", "$Mode",
     "--seed", "$Seed"
 )
@@ -140,6 +149,11 @@ $RenderedArgs = $DriverArgs | ForEach-Object {
 $RenderedCommand = "cargo " + ($RenderedArgs -join " ")
 
 Write-Host "mode=$Mode branch campaign"
+if ($DebugBuild) {
+    Write-Host "build=debug"
+} else {
+    Write-Host "build=release"
+}
 Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
 Write-Host "run-more=.\tools\campaign.ps1 -More"
 Write-Host "report=$LatestCampaignPath"
