@@ -143,8 +143,16 @@ pub struct BranchCampaignStrategyRequestV1 {
     pub boundary_title: String,
     pub branch_count: usize,
     #[serde(default)]
+    pub act: u8,
+    #[serde(default)]
+    pub floor: i32,
+    #[serde(default)]
     pub stop_reasons: Vec<String>,
     pub examples: Vec<String>,
+    #[serde(default)]
+    pub next_card_reward_offer: Option<Vec<String>>,
+    #[serde(default)]
+    pub boundary_details: Vec<String>,
     pub suggested_action: String,
 }
 
@@ -898,7 +906,8 @@ pub fn render_branch_campaign_compact_v1(
             if let Some(example) = request.examples.first() {
                 lines.push(format!("    example: {example}"));
             }
-            lines.push(format!("    suggested: {}", request.suggested_action));
+            lines.extend(render_campaign_strategy_context_v1(request));
+            lines.push(format!("    needed: {}", request.suggested_action));
             if let Some(next_step) = campaign_strategy_next_step_v1(&request.kind) {
                 lines.push(format!("    next: {next_step}"));
             }
@@ -932,6 +941,22 @@ pub fn render_branch_campaign_compact_v1(
         }
     }
     lines.join("\n")
+}
+
+fn render_campaign_strategy_context_v1(request: &BranchCampaignStrategyRequestV1) -> Vec<String> {
+    let mut lines = Vec::new();
+    if request.act > 0 || request.floor > 0 {
+        lines.push(format!("    context: A{}F{}", request.act, request.floor));
+    }
+    if let Some(offer) = &request.next_card_reward_offer {
+        if !offer.is_empty() {
+            lines.push(format!("    next reward offer: {}", offer.join(" | ")));
+        }
+    }
+    for detail in request.boundary_details.iter().take(3) {
+        lines.push(format!("    detail: {detail}"));
+    }
+    lines
 }
 
 fn campaign_report_stop_needs_immediate_intervention_v1(report: &BranchCampaignReportV1) -> bool {
@@ -1144,13 +1169,25 @@ fn append_limited_frozen_v1(
 fn merge_campaign_strategy_requests_v1(
     requests: Vec<BranchExperimentStrategyRequestV1>,
 ) -> Vec<BranchCampaignStrategyRequestV1> {
-    let mut merged = BTreeMap::<(String, String), BranchCampaignStrategyRequestV1>::new();
+    let mut merged = BTreeMap::<(String, String, u8, i32), BranchCampaignStrategyRequestV1>::new();
     for request in requests {
-        let key = (request.kind.clone(), request.boundary_title.clone());
+        let key = (
+            request.kind.clone(),
+            request.boundary_title.clone(),
+            request.act,
+            request.floor,
+        );
         merged
             .entry(key)
             .and_modify(|existing| {
                 existing.branch_count = existing.branch_count.saturating_add(request.branch_count);
+                if (request.act, request.floor) > (existing.act, existing.floor) {
+                    existing.act = request.act;
+                    existing.floor = request.floor;
+                }
+                if existing.next_card_reward_offer.is_none() {
+                    existing.next_card_reward_offer = request.next_card_reward_offer.clone();
+                }
                 for example in &request.examples {
                     if existing.examples.len() < 4 && !existing.examples.contains(example) {
                         existing.examples.push(example.clone());
@@ -1161,13 +1198,24 @@ fn merge_campaign_strategy_requests_v1(
                         existing.stop_reasons.push(reason.clone());
                     }
                 }
+                for detail in &request.boundary_details {
+                    if existing.boundary_details.len() < 8
+                        && !existing.boundary_details.contains(detail)
+                    {
+                        existing.boundary_details.push(detail.clone());
+                    }
+                }
             })
             .or_insert_with(|| BranchCampaignStrategyRequestV1 {
                 kind: request.kind.clone(),
                 boundary_title: request.boundary_title,
                 branch_count: request.branch_count,
+                act: request.act,
+                floor: request.floor,
                 stop_reasons: request.stop_reasons.into_iter().take(4).collect(),
                 examples: request.examples.into_iter().take(4).collect(),
+                next_card_reward_offer: request.next_card_reward_offer,
+                boundary_details: request.boundary_details.into_iter().take(8).collect(),
                 suggested_action: campaign_suggested_action_v1(
                     &request.kind,
                     &request.suggested_action,
@@ -1182,6 +1230,19 @@ fn campaign_suggested_action_v1(kind: &str, suggested_action: &str) -> String {
         "combat_hp_loss_policy" | "combat_manual_or_budget" => {
             "raise combat retry budget, inspect the combat, or provide a manual line".to_string()
         }
+        "card_reward_policy_gap" => {
+            "provide reward family policy for this public offer and run context".to_string()
+        }
+        "event_strategy" => "provide event strategy for this event context".to_string(),
+        "campfire_strategy" => {
+            "provide campfire strategy for this deck and route context".to_string()
+        }
+        "boss_relic_strategy" => {
+            "provide boss relic strategy for the current deck package".to_string()
+        }
+        "shop_strategy" => "provide shop strategy for this shop state".to_string(),
+        "reward_claim_policy" => "provide reward claim policy for this context".to_string(),
+        "route_policy_gap" => "provide route strategy for this map context".to_string(),
         _ => suggested_action.to_string(),
     }
 }
@@ -1190,13 +1251,27 @@ fn merge_campaign_strategy_request_queue_v1(
     existing: Vec<BranchCampaignStrategyRequestV1>,
     incoming: Vec<BranchCampaignStrategyRequestV1>,
 ) -> Vec<BranchCampaignStrategyRequestV1> {
-    let mut merged = BTreeMap::<(String, String), BranchCampaignStrategyRequestV1>::new();
-    for request in existing.into_iter().chain(incoming) {
-        let key = (request.kind.clone(), request.boundary_title.clone());
+    let mut merged = BTreeMap::<(String, String, u8, i32), BranchCampaignStrategyRequestV1>::new();
+    for mut request in existing.into_iter().chain(incoming) {
+        request.suggested_action =
+            campaign_suggested_action_v1(&request.kind, &request.suggested_action);
+        let key = (
+            request.kind.clone(),
+            request.boundary_title.clone(),
+            request.act,
+            request.floor,
+        );
         merged
             .entry(key)
             .and_modify(|current| {
                 current.branch_count = current.branch_count.saturating_add(request.branch_count);
+                if (request.act, request.floor) > (current.act, current.floor) {
+                    current.act = request.act;
+                    current.floor = request.floor;
+                }
+                if current.next_card_reward_offer.is_none() {
+                    current.next_card_reward_offer = request.next_card_reward_offer.clone();
+                }
                 for reason in &request.stop_reasons {
                     if current.stop_reasons.len() < 4 && !current.stop_reasons.contains(reason) {
                         current.stop_reasons.push(reason.clone());
@@ -1205,6 +1280,13 @@ fn merge_campaign_strategy_request_queue_v1(
                 for example in &request.examples {
                     if current.examples.len() < 4 && !current.examples.contains(example) {
                         current.examples.push(example.clone());
+                    }
+                }
+                for detail in &request.boundary_details {
+                    if current.boundary_details.len() < 8
+                        && !current.boundary_details.contains(detail)
+                    {
+                        current.boundary_details.push(detail.clone());
                     }
                 }
             })
@@ -1243,8 +1325,20 @@ fn abandoned_branches_intervention_request_v1(
         kind: "combat_manual_or_budget".to_string(),
         boundary_title: "Combat".to_string(),
         branch_count: abandoned.len(),
+        act: abandoned
+            .iter()
+            .filter_map(|branch| branch.summary.as_ref().map(|summary| summary.act))
+            .max()
+            .unwrap_or_default(),
+        floor: abandoned
+            .iter()
+            .filter_map(|branch| branch.summary.as_ref().map(|summary| summary.floor))
+            .max()
+            .unwrap_or_default(),
         stop_reasons: vec!["all candidate route branches were abandoned".to_string()],
         examples,
+        next_card_reward_offer: None,
+        boundary_details: Vec::new(),
         suggested_action:
             "raise combat retry budget, provide a manual combat line, or abandon this route family"
                 .to_string(),
@@ -1264,7 +1358,10 @@ fn render_campaign_intervention_details_v2(
             "    tried: {}",
             campaign_intervention_tried_v2(report, request)
         ),
-        format!("    options: {}", campaign_intervention_options_v2(request)),
+        format!(
+            "    possible inputs: {}",
+            campaign_intervention_options_v2(request)
+        ),
     ]
 }
 
@@ -1332,25 +1429,25 @@ fn campaign_intervention_options_v2(request: &BranchCampaignStrategyRequestV1) -
             "raise combat retry budget | provide a manual combat line | abandon this macro route family"
         }
         "card_reward_policy_gap" => {
-            "add a reward package rule | keep branching this reward family | force human judgment"
+            "reward package rule | keep branching this reward family | force human judgment"
         }
         "event_strategy" => {
-            "add a narrow event rule | choose one event branch manually | blacklist this event branch"
+            "event rule | choose one event branch manually | blacklist this event branch"
         }
         "campfire_strategy" => {
-            "add smith/rest priority | branch fewer smith targets | ask human at this campfire"
+            "smith/rest/recall rule | branch fewer smith targets | ask human at this campfire"
         }
         "shop_strategy" => {
-            "add buy/remove priority | cap purchase portfolio | ask human at this shop"
+            "buy/remove/leave rule | cap purchase portfolio | ask human at this shop"
         }
         "boss_relic_strategy" => {
-            "add boss relic package priority | preserve multiple relic branches | ask human"
+            "boss relic package rule | preserve multiple relic branches | ask human"
         }
         "reward_claim_policy" => {
             "mark reward as safe claim | keep reward pending | ask human"
         }
         "route_policy_gap" => {
-            "adjust route policy | provide one map choice | freeze this route family"
+            "route rule for this context | provide one map choice | freeze this route family"
         }
         "engineering_issue" => {
             "fix simulator or command bug | rerun same seed | quarantine affected trace"
@@ -1471,7 +1568,7 @@ fn campaign_strategy_next_step_v1(kind: &str) -> Option<&'static str> {
             Some("decide which remaining rewards are safe automatic claims before continuing")
         }
         "route_policy_gap" => {
-            Some("adjust route policy or provide a one-step map choice before continuing")
+            Some("provide a route rule for this context, or provide a one-step map choice before continuing")
         }
         "engineering_issue" => {
             Some("fix the command/state bug before trusting this campaign branch")

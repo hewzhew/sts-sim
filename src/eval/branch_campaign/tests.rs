@@ -218,8 +218,12 @@ fn compact_campaign_report_renders_strategy_prompt() {
             kind: "event_strategy".to_string(),
             boundary_title: "Falling".to_string(),
             branch_count: 2,
+            act: 0,
+            floor: 0,
             stop_reasons: vec!["event policy gap".to_string()],
             examples: vec!["Strike -> Defend".to_string()],
+            next_card_reward_offer: None,
+            boundary_details: Vec::new(),
             suggested_action: "provide Falling policy".to_string(),
         }],
         rounds: Vec::new(),
@@ -258,8 +262,12 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
             kind: "combat_manual_or_budget".to_string(),
             boundary_title: "Combat".to_string(),
             branch_count: 2,
+            act: 0,
+            floor: 0,
             stop_reasons: vec!["combat search did not find an executable complete win".to_string()],
             examples: vec!["Clash -> Disarm".to_string()],
+            next_card_reward_offer: None,
+            boundary_details: Vec::new(),
             suggested_action: "raise combat search budget".to_string(),
         }],
         rounds: vec![BranchCampaignRoundSummaryV1 {
@@ -286,7 +294,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
     assert!(rendered.contains("kind: combat_unresolved_after_retry"));
     assert!(rendered.contains("stop: combat search did not find an executable complete win"));
     assert!(rendered.contains("tried: campaign search budget; combat budget retry x2"));
-    assert!(rendered.contains("options: raise combat retry budget | provide a manual combat line | abandon this macro route family"));
+    assert!(rendered.contains("possible inputs: raise combat retry budget | provide a manual combat line | abandon this macro route family"));
 }
 
 #[test]
@@ -308,8 +316,12 @@ fn compact_campaign_report_renders_deferred_strategy_notes_while_continuing() {
             kind: "combat_manual_or_budget".to_string(),
             boundary_title: "Combat".to_string(),
             branch_count: 1,
+            act: 0,
+            floor: 0,
             stop_reasons: vec!["combat search did not find an executable complete win".to_string()],
             examples: vec!["Flex".to_string()],
+            next_card_reward_offer: None,
+            boundary_details: Vec::new(),
             suggested_action: "raise combat search budget".to_string(),
         }],
         rounds: Vec::new(),
@@ -367,6 +379,82 @@ fn campaign_strategy_request_merge_keeps_stop_reasons() {
         merged[0].stop_reasons,
         vec!["combat search did not find an executable complete win".to_string()]
     );
+}
+
+#[test]
+fn campaign_strategy_request_merge_preserves_context_for_human_research() {
+    let mut request = test_experiment_request("event_strategy", "GoldenIdol", "event policy gap");
+    request.act = 1;
+    request.floor = 5;
+    request.next_card_reward_offer = Some(vec![
+        "Pommel Strike".to_string(),
+        "Iron Wave".to_string(),
+        "Searing Blow".to_string(),
+    ]);
+    request.boundary_details = vec![
+        "option: [Take] Obtain Golden Idol.".to_string(),
+        "option: [Leave] Leave.".to_string(),
+    ];
+
+    let merged = merge_campaign_strategy_requests_v1(vec![request]);
+
+    assert_eq!(merged[0].act, 1);
+    assert_eq!(merged[0].floor, 5);
+    assert_eq!(
+        merged[0].next_card_reward_offer,
+        Some(vec![
+            "Pommel Strike".to_string(),
+            "Iron Wave".to_string(),
+            "Searing Blow".to_string(),
+        ])
+    );
+    assert_eq!(merged[0].boundary_details.len(), 2);
+}
+
+#[test]
+fn campaign_strategy_request_merge_keeps_different_floors_separate() {
+    let mut early = test_experiment_request(
+        "route_policy_gap",
+        "Map",
+        "route planner declined automatic map selection",
+    );
+    early.act = 1;
+    early.floor = 5;
+    early.boundary_details = vec!["Map: current=(5, 4)".to_string()];
+    let mut late = test_experiment_request(
+        "route_policy_gap",
+        "Map",
+        "route planner declined automatic map selection",
+    );
+    late.act = 1;
+    late.floor = 10;
+    late.boundary_details = vec!["Map: current=(3, 9)".to_string()];
+
+    let merged = merge_campaign_strategy_requests_v1(vec![early, late]);
+
+    assert_eq!(merged.len(), 2);
+    assert!(merged.iter().any(|request| {
+        request.floor == 5
+            && request
+                .boundary_details
+                .iter()
+                .any(|detail| detail.contains("(5, 4)"))
+            && !request
+                .boundary_details
+                .iter()
+                .any(|detail| detail.contains("(3, 9)"))
+    }));
+    assert!(merged.iter().any(|request| {
+        request.floor == 10
+            && request
+                .boundary_details
+                .iter()
+                .any(|detail| detail.contains("(3, 9)"))
+            && !request
+                .boundary_details
+                .iter()
+                .any(|detail| detail.contains("(5, 4)"))
+    }));
 }
 
 #[test]
@@ -437,8 +525,12 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
             kind: "route_policy_gap".to_string(),
             boundary_title: "Map".to_string(),
             branch_count: 2,
+            act: 0,
+            floor: 0,
             stop_reasons: vec!["route planner declined automatic map selection".to_string()],
             examples: vec!["Golden Idol -> Leave".to_string()],
+            next_card_reward_offer: None,
+            boundary_details: Vec::new(),
             suggested_action: "adjust route planner policy".to_string(),
         }],
         rounds: Vec::new(),
@@ -451,13 +543,62 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
     assert!(!rendered.contains("Queued interventions:"));
 }
 
+#[test]
+fn compact_campaign_report_renders_context_only_strategy_packet() {
+    let report = BranchCampaignReportV1 {
+        schema_name: "BranchCampaignV1".to_string(),
+        schema_version: 1,
+        seed: 521,
+        rounds_completed: 4,
+        stop_reason: "needs_intervention".to_string(),
+        active: Vec::new(),
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: Vec::new(),
+        discarded_count: 0,
+        strategy_requests: vec![BranchCampaignStrategyRequestV1 {
+            kind: "event_strategy".to_string(),
+            boundary_title: "GoldenIdol".to_string(),
+            branch_count: 2,
+            act: 1,
+            floor: 5,
+            stop_reasons: vec!["event policy gap".to_string()],
+            examples: vec!["Shockwave -> Clash".to_string()],
+            next_card_reward_offer: Some(vec![
+                "Pommel Strike".to_string(),
+                "Iron Wave".to_string(),
+                "Searing Blow".to_string(),
+            ]),
+            boundary_details: vec![
+                "option: [Take] Obtain Golden Idol.".to_string(),
+                "option: [Leave] Leave.".to_string(),
+            ],
+            suggested_action: "provide event policy".to_string(),
+        }],
+        rounds: Vec::new(),
+    };
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("context: A1F5"));
+    assert!(rendered.contains("next reward offer: Pommel Strike | Iron Wave | Searing Blow"));
+    assert!(rendered.contains("detail: option: [Take] Obtain Golden Idol."));
+    assert!(!rendered.contains("pick Golden Idol"));
+}
+
 fn test_campaign_request(kind: &str, boundary_title: &str) -> BranchCampaignStrategyRequestV1 {
     BranchCampaignStrategyRequestV1 {
         kind: kind.to_string(),
         boundary_title: boundary_title.to_string(),
         branch_count: 1,
+        act: 0,
+        floor: 0,
         stop_reasons: Vec::new(),
         examples: Vec::new(),
+        next_card_reward_offer: None,
+        boundary_details: Vec::new(),
         suggested_action: "test".to_string(),
     }
 }

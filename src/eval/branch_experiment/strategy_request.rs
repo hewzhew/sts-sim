@@ -136,8 +136,13 @@ fn strategy_group_key(
         .map(|offer| offer.join("|"))
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "{}|{}|{}|{}",
-        kind, branch.summary.boundary_title, branch.stop_reason, offer_key
+        "{}|{}|{}|{}|{}|{}",
+        kind,
+        branch.summary.boundary_title,
+        branch.summary.act,
+        branch.summary.floor,
+        branch.stop_reason,
+        offer_key
     )
 }
 
@@ -159,16 +164,14 @@ fn suggested_action(kind: &str, branch: &BranchExperimentBranchReportV1) -> Stri
                 .to_string()
         }
         "campfire_strategy" => {
-            "provide rest/smith/recall priority for this deck and route".to_string()
+            "provide campfire strategy for this deck and route context".to_string()
         }
         "boss_relic_strategy" => {
-            "provide boss relic priority for the current deck package".to_string()
+            "provide boss relic strategy for the current deck package".to_string()
         }
-        "shop_strategy" => "provide buy/remove/leave priorities for this shop state".to_string(),
-        "reward_claim_policy" => "decide which remaining reward claims are automatic".to_string(),
-        "route_policy_gap" => {
-            "adjust route planner policy or manually choose this map node".to_string()
-        }
+        "shop_strategy" => "provide shop strategy for this shop state".to_string(),
+        "reward_claim_policy" => "provide reward claim policy for this context".to_string(),
+        "route_policy_gap" => "provide route strategy for this map context".to_string(),
         "engineering_issue" => {
             "inspect the failed branch and fix the underlying command/state bug".to_string()
         }
