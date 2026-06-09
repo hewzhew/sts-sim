@@ -1,7 +1,7 @@
 use crate::state::map::node::{MapRoomNode, RoomType};
 use crate::state::RunState;
 
-use super::super::types::{RoutePathSummaryV1, RoutePlannerConfigV1};
+use super::super::types::{RouteFirstEliteSegmentV1, RoutePathSummaryV1, RoutePlannerConfigV1};
 
 #[derive(Clone, Copy, Debug, Default)]
 struct PathStats {
@@ -13,6 +13,11 @@ struct PathStats {
     treasures: usize,
     first_shop_floor: Option<i32>,
     first_fire_floor: Option<i32>,
+    first_elite_seen: bool,
+    hallway_fights_before_first_elite: usize,
+    unknowns_before_first_elite: usize,
+    fires_before_first_elite: usize,
+    shops_before_first_elite: usize,
 }
 
 pub fn summarize_route_from(
@@ -61,6 +66,7 @@ pub fn summarize_route_from(
             .iter()
             .filter_map(|stats| stats.first_fire_floor)
             .min(),
+        first_elite: first_elite_segment(&paths),
     }
 }
 
@@ -88,6 +94,40 @@ fn empty_summary() -> RoutePathSummaryV1 {
         max_treasures: 0,
         first_shop_floor: None,
         first_fire_floor: None,
+        first_elite: RouteFirstEliteSegmentV1::default(),
+    }
+}
+
+fn first_elite_segment(paths: &[PathStats]) -> RouteFirstEliteSegmentV1 {
+    let elite_paths = paths
+        .iter()
+        .filter(|stats| stats.first_elite_seen)
+        .collect::<Vec<_>>();
+    if elite_paths.is_empty() {
+        return RouteFirstEliteSegmentV1::default();
+    }
+    let min =
+        |f: fn(&PathStats) -> usize| elite_paths.iter().map(|stats| f(stats)).min().unwrap_or(0);
+    let max =
+        |f: fn(&PathStats) -> usize| elite_paths.iter().map(|stats| f(stats)).max().unwrap_or(0);
+    RouteFirstEliteSegmentV1 {
+        paths_with_first_elite: elite_paths.len(),
+        forced: elite_paths.len() == paths.len(),
+        optional: elite_paths.len() < paths.len(),
+        min_hallway_fights_before: min(|stats| stats.hallway_fights_before_first_elite),
+        max_hallway_fights_before: max(|stats| stats.hallway_fights_before_first_elite),
+        min_unknowns_before: min(|stats| stats.unknowns_before_first_elite),
+        max_unknowns_before: max(|stats| stats.unknowns_before_first_elite),
+        min_fires_before: min(|stats| stats.fires_before_first_elite),
+        max_fires_before: max(|stats| stats.fires_before_first_elite),
+        min_shops_before: min(|stats| stats.shops_before_first_elite),
+        max_shops_before: max(|stats| stats.shops_before_first_elite),
+        can_bail_to_rest_before: elite_paths
+            .iter()
+            .any(|stats| stats.fires_before_first_elite > 0),
+        can_bail_to_shop_before: elite_paths
+            .iter()
+            .any(|stats| stats.shops_before_first_elite > 0),
     }
 }
 
@@ -126,22 +166,39 @@ fn update_path_stats(mut stats: PathStats, node: &MapRoomNode) -> PathStats {
             if node.y <= 3 {
                 stats.early_pressure += 1;
             }
+            if !stats.first_elite_seen {
+                stats.hallway_fights_before_first_elite += 1;
+            }
         }
         Some(RoomType::MonsterRoomElite) => {
             stats.elites += 1;
             if node.y <= 3 {
                 stats.early_pressure += 1;
             }
+            if !stats.first_elite_seen {
+                stats.first_elite_seen = true;
+            }
         }
         Some(RoomType::ShopRoom) => {
             stats.shops += 1;
             stats.first_shop_floor.get_or_insert(node.y + 1);
+            if !stats.first_elite_seen {
+                stats.shops_before_first_elite += 1;
+            }
         }
         Some(RoomType::RestRoom) => {
             stats.fires += 1;
             stats.first_fire_floor.get_or_insert(node.y + 1);
+            if !stats.first_elite_seen {
+                stats.fires_before_first_elite += 1;
+            }
         }
-        Some(RoomType::EventRoom) => stats.unknowns += 1,
+        Some(RoomType::EventRoom) => {
+            stats.unknowns += 1;
+            if !stats.first_elite_seen {
+                stats.unknowns_before_first_elite += 1;
+            }
+        }
         Some(RoomType::TreasureRoom) => stats.treasures += 1,
         _ => {}
     }

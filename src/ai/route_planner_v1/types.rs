@@ -10,7 +10,8 @@ pub use context::{
     RouteRelicSummaryV1, UnknownRoomBeliefV1,
 };
 pub use features::{
-    MapRouteTargetV1, NodeFeaturesV1, RouteMoveKindV1, RoutePathSummaryV1, RouteSafetyFlagV1,
+    MapRouteTargetV1, NodeFeaturesV1, RouteFirstEliteSegmentV1, RouteMoveKindV1,
+    RoutePathSummaryV1, RouteSafetyFlagV1,
 };
 pub use score::{NeedVectorV1, RouteScoreTermsV1};
 pub use trace::{

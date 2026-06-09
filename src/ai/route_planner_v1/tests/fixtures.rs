@@ -62,6 +62,32 @@ pub(super) fn run_with_current_node_and_next_row(
     run
 }
 
+pub(super) fn run_with_start_paths(paths: &[&[RoomType]]) -> RunState {
+    let mut run = RunState::new(521, 0, false, "Ironclad");
+    run.event_state = None;
+    let max_len = paths.iter().map(|path| path.len()).max().unwrap_or(1);
+    let mut graph = Vec::new();
+    for y in 0..max_len {
+        let mut row = Vec::new();
+        for (x, path) in paths.iter().enumerate() {
+            let room = path
+                .get(y)
+                .copied()
+                .or_else(|| path.last().copied())
+                .unwrap_or(RoomType::MonsterRoom);
+            let mut node = map_node(x as i32, y as i32, Some(room));
+            if y + 1 < max_len {
+                node.edges
+                    .insert(MapEdge::new(x as i32, y as i32, x as i32, y as i32 + 1));
+            }
+            row.push(node);
+        }
+        graph.push(row);
+    }
+    run.map = MapState::new(graph);
+    run
+}
+
 fn start_node_graph(room_types: &[RoomType], next_room: Option<RoomType>) -> Vec<Vec<MapRoomNode>> {
     let mut row = room_types
         .iter()

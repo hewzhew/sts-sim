@@ -4,7 +4,9 @@ use crate::ai::route_planner_v1::{
 use crate::state::core::EngineState;
 use crate::state::map::node::RoomType;
 
-use super::fixtures::{candidate_by_room, run_with_start_nodes, selected_candidate};
+use super::fixtures::{
+    candidate_by_room, run_with_start_nodes, run_with_start_paths, selected_candidate,
+};
 
 #[test]
 fn route_planner_can_gate_obvious_forced_elite_risk() {
@@ -105,5 +107,66 @@ fn route_planner_question_room_uses_mixed_unknown_belief() {
             && question.features.expected_relics > 0.0
             && question.features.event_access > 0.0,
         "? rooms must be scored as mixed outcomes, not pure events"
+    );
+}
+
+#[test]
+fn route_path_summary_tracks_first_elite_preparation_window() {
+    let run = run_with_start_paths(&[&[
+        RoomType::MonsterRoom,
+        RoomType::EventRoom,
+        RoomType::RestRoom,
+        RoomType::MonsterRoomElite,
+    ]]);
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let candidate = selected_candidate(&trace);
+    let first_elite = &candidate.path_summary.first_elite;
+
+    assert!(first_elite.forced);
+    assert!(!first_elite.optional);
+    assert_eq!(first_elite.min_hallway_fights_before, 1);
+    assert_eq!(first_elite.max_hallway_fights_before, 1);
+    assert_eq!(first_elite.min_unknowns_before, 1);
+    assert_eq!(first_elite.max_unknowns_before, 1);
+    assert!(first_elite.can_bail_to_rest_before);
+    assert!(!first_elite.can_bail_to_shop_before);
+}
+
+#[test]
+fn route_score_exposes_first_elite_preparation_as_its_own_term() {
+    let run = run_with_start_paths(&[
+        &[RoomType::MonsterRoom, RoomType::MonsterRoomElite],
+        &[
+            RoomType::MonsterRoom,
+            RoomType::MonsterRoom,
+            RoomType::RestRoom,
+            RoomType::MonsterRoomElite,
+        ],
+    ]);
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let immediate_elite_path = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 0)
+        .expect("trace should include immediate elite path");
+    let prepared_elite_path = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 1)
+        .expect("trace should include prepared elite path");
+
+    assert!(
+        prepared_elite_path.score_terms.elite_prep > immediate_elite_path.score_terms.elite_prep,
+        "route scoring should expose first-elite preparation separately from the total score"
     );
 }

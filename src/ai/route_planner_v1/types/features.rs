@@ -34,6 +34,24 @@ pub struct RoutePathSummaryV1 {
     pub max_treasures: usize,
     pub first_shop_floor: Option<i32>,
     pub first_fire_floor: Option<i32>,
+    pub first_elite: RouteFirstEliteSegmentV1,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RouteFirstEliteSegmentV1 {
+    pub paths_with_first_elite: usize,
+    pub forced: bool,
+    pub optional: bool,
+    pub min_hallway_fights_before: usize,
+    pub max_hallway_fights_before: usize,
+    pub min_unknowns_before: usize,
+    pub max_unknowns_before: usize,
+    pub min_fires_before: usize,
+    pub max_fires_before: usize,
+    pub min_shops_before: usize,
+    pub max_shops_before: usize,
+    pub can_bail_to_rest_before: bool,
+    pub can_bail_to_shop_before: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

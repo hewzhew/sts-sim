@@ -28,6 +28,7 @@ pub struct RouteScoreTermsV1 {
     pub hp_loss: f32,
     pub death_risk: f32,
     pub flexibility: f32,
+    pub elite_prep: f32,
     pub wing_boots_cost: f32,
     pub forced_path_penalty: f32,
     pub burning_elite_key_value: f32,
@@ -46,6 +47,7 @@ impl RouteScoreTermsV1 {
             + self.hp_loss
             + self.death_risk
             + self.flexibility
+            + self.elite_prep
             + self.wing_boots_cost
             + self.forced_path_penalty
             + self.burning_elite_key_value

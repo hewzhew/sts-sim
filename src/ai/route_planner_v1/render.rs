@@ -60,7 +60,7 @@ pub fn render_route_decision_trace_v1(trace: &RouteDecisionTraceV1) -> String {
         push_line(
             &mut out,
             format!(
-                "    terms: card={:.2} relic={:.2} shop={:.2} heal={:.2} hp={:.2} risk={:.2} flex={:.2}",
+                "    terms: card={:.2} relic={:.2} shop={:.2} heal={:.2} hp={:.2} risk={:.2} flex={:.2} elite_prep={:.2}",
                 candidate.score_terms.card_reward,
                 candidate.score_terms.relic,
                 candidate.score_terms.shop,
@@ -68,6 +68,7 @@ pub fn render_route_decision_trace_v1(trace: &RouteDecisionTraceV1) -> String {
                 candidate.score_terms.hp_loss,
                 candidate.score_terms.death_risk,
                 candidate.score_terms.flexibility,
+                candidate.score_terms.elite_prep,
             ),
         );
         push_line(
@@ -98,7 +99,7 @@ pub fn render_route_decision_trace_v1(trace: &RouteDecisionTraceV1) -> String {
 
 fn path_line(path: &RoutePathSummaryV1) -> String {
     format!(
-        "paths={} elites={} fires={} shops={} unknowns={} treasures={} early_pressure={}",
+        "paths={} elites={} fires={} shops={} unknowns={} treasures={} early_pressure={} first_elite={}",
         path.path_count,
         format_range(path.min_elites, path.max_elites),
         format_range(path.min_fires, path.max_fires),
@@ -106,6 +107,43 @@ fn path_line(path: &RoutePathSummaryV1) -> String {
         format_range(path.min_unknowns, path.max_unknowns),
         format_range(path.min_treasures, path.max_treasures),
         format_range(path.min_early_pressure, path.max_early_pressure),
+        first_elite_line(path),
+    )
+}
+
+fn first_elite_line(path: &RoutePathSummaryV1) -> String {
+    let segment = &path.first_elite;
+    if segment.paths_with_first_elite == 0 {
+        return "none".to_string();
+    }
+    let mode = if segment.forced {
+        "forced"
+    } else if segment.optional {
+        "optional"
+    } else {
+        "seen"
+    };
+    let mut bailouts = Vec::new();
+    if segment.can_bail_to_rest_before {
+        bailouts.push("rest");
+    }
+    if segment.can_bail_to_shop_before {
+        bailouts.push("shop");
+    }
+    let bailout = if bailouts.is_empty() {
+        "-".to_string()
+    } else {
+        bailouts.join("+")
+    };
+    format!(
+        "{} prep_hallways={} prep_?={} bailout={}",
+        mode,
+        format_range(
+            segment.min_hallway_fights_before,
+            segment.max_hallway_fights_before
+        ),
+        format_range(segment.min_unknowns_before, segment.max_unknowns_before),
+        bailout
     )
 }
 

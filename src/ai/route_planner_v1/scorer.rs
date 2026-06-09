@@ -28,6 +28,7 @@ pub(super) fn score_route_candidate(
         hp_loss: -needs.avoid_damage * features.expected_hp_loss_p90 / 12.0,
         death_risk: -features.death_risk * (1.0 + needs.avoid_damage) * 5.0,
         flexibility: needs.value_flexibility * flexibility_value(path),
+        elite_prep: first_elite_preparation_value(path, needs),
         wing_boots_cost: if move_kind == RouteMoveKindV1::WingBootsJump {
             -config.wing_boots_charge_cost
         } else {
@@ -51,6 +52,9 @@ pub(super) fn safety_flag(
     let no_rest_bailout = path.max_fires == 0 && !features.is_rest;
     if forced_elite && no_rest_bailout && needs.can_take_elite < 0.45 {
         return RouteSafetyFlagV1::RejectUnlessNoAlternative;
+    }
+    if first_elite_is_underprepared(path) && needs.can_take_elite < 0.65 {
+        return RouteSafetyFlagV1::RiskyButAllowed;
     }
     if features.death_risk > 0.35 || needs.avoid_damage > 0.65 && expected_damage_room(features) {
         return RouteSafetyFlagV1::RiskyButAllowed;
@@ -82,6 +86,31 @@ pub(super) fn route_reasons(
         reasons.push("elite fights are optional on visible continuations".to_string());
     } else if path.min_elites > 0 {
         cautions.push("elite pressure is forced on visible continuations".to_string());
+    }
+    let first_elite = &path.first_elite;
+    if first_elite.paths_with_first_elite > 0 {
+        if first_elite.optional {
+            reasons.push("first elite can be skipped on some continuations".to_string());
+        }
+        if first_elite.max_hallway_fights_before > 0 {
+            reasons.push(format!(
+                "first elite prep: {} hallway fight(s) before it",
+                format_range(
+                    first_elite.min_hallway_fights_before,
+                    first_elite.max_hallway_fights_before
+                )
+            ));
+        }
+        if first_elite.can_bail_to_rest_before {
+            reasons.push("rest bailout exists before first elite".to_string());
+        }
+        if first_elite.can_bail_to_shop_before {
+            reasons.push("shop bailout exists before first elite".to_string());
+        }
+        if first_elite_is_underprepared(path) {
+            cautions
+                .push("first elite arrives before another hallway reward or bailout".to_string());
+        }
     }
     if path.min_fires > 0 {
         reasons.push("rest site is guaranteed somewhere on the route".to_string());
@@ -120,11 +149,56 @@ fn flexibility_value(path: &RoutePathSummaryV1) -> f32 {
     branches + room_variety as f32 * 0.12
 }
 
+fn first_elite_preparation_value(path: &RoutePathSummaryV1, needs: &NeedVectorV1) -> f32 {
+    let segment = &path.first_elite;
+    if segment.paths_with_first_elite == 0 {
+        return 0.0;
+    }
+    let hallway_prep = segment.max_hallway_fights_before.min(3) as f32 / 3.0;
+    let bailout_prep = if segment.can_bail_to_rest_before {
+        0.30
+    } else {
+        0.0
+    } + if segment.can_bail_to_shop_before {
+        0.18
+    } else {
+        0.0
+    };
+    let optionality = if segment.optional { 0.18 } else { 0.0 };
+    let immediate_forced_debt = if segment.forced
+        && segment.max_hallway_fights_before == 0
+        && !segment.can_bail_to_rest_before
+        && !segment.can_bail_to_shop_before
+    {
+        -0.25
+    } else {
+        0.0
+    };
+    let prep_signal = hallway_prep * 0.75 + bailout_prep + optionality + immediate_forced_debt;
+    needs.need_relics * (0.50 + needs.can_take_elite * 0.50) * prep_signal
+}
+
+fn first_elite_is_underprepared(path: &RoutePathSummaryV1) -> bool {
+    let segment = &path.first_elite;
+    segment.forced
+        && segment.max_hallway_fights_before == 0
+        && !segment.can_bail_to_rest_before
+        && !segment.can_bail_to_shop_before
+}
+
 fn forced_path_penalty(path: &RoutePathSummaryV1, needs: &NeedVectorV1) -> f32 {
     if path.min_elites > 0 && needs.can_take_elite < 0.5 {
         -1.5
     } else {
         0.0
+    }
+}
+
+fn format_range(min: usize, max: usize) -> String {
+    if min == max {
+        min.to_string()
+    } else {
+        format!("{min}-{max}")
     }
 }
 

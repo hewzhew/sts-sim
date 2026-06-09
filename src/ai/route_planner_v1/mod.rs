@@ -13,9 +13,10 @@ pub use render::render_route_decision_trace_v1;
 pub use types::{
     DeckRouteSummaryV1, MapRouteTargetV1, NeedVectorV1, NodeFeaturesV1, PotionRouteSummaryV1,
     RouteCandidateTraceV1, RouteCountersV1, RouteDecisionContextV1, RouteDecisionTraceV1,
-    RouteMoveKindV1, RouteObjectiveV1, RoutePathSummaryV1, RoutePlannerConfigV1,
-    RouteRelicSummaryV1, RouteSafetyFlagV1, RouteScoreTermsV1, RouteSelectionModeV1,
-    UnknownRoomBeliefV1, ROUTE_DECISION_TRACE_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_VERSION,
+    RouteFirstEliteSegmentV1, RouteMoveKindV1, RouteObjectiveV1, RoutePathSummaryV1,
+    RoutePlannerConfigV1, RouteRelicSummaryV1, RouteSafetyFlagV1, RouteScoreTermsV1,
+    RouteSelectionModeV1, UnknownRoomBeliefV1, ROUTE_DECISION_TRACE_SCHEMA_NAME,
+    ROUTE_DECISION_TRACE_SCHEMA_VERSION,
 };
 
 #[cfg(test)]
