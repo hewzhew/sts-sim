@@ -66,16 +66,30 @@ struct BranchExperimentPreparedStart {
     replay_trace_stop: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+pub struct BranchExperimentRunResultV1 {
+    pub report: BranchExperimentReportV1,
+    pub branch_sessions: BTreeMap<String, RunControlSession>,
+}
+
 pub fn run_branch_experiment_v1(
     config: &BranchExperimentConfigV1,
 ) -> Result<BranchExperimentReportV1, String> {
+    run_branch_experiment_with_snapshots_v1(config).map(|result| result.report)
+}
+
+pub fn run_branch_experiment_with_snapshots_v1(
+    config: &BranchExperimentConfigV1,
+) -> Result<BranchExperimentRunResultV1, String> {
     let prepared = prepare_branch_experiment_start(config, false)?;
-    Ok(run_branch_experiment_from_start_branch_with_replay(
-        prepared.branch,
-        config,
-        prepared.replay_trace_applied_steps,
-        prepared.replay_trace_stop,
-    ))
+    Ok(
+        run_branch_experiment_from_start_branch_with_replay_and_snapshots(
+            prepared.branch,
+            config,
+            prepared.replay_trace_applied_steps,
+            prepared.replay_trace_stop,
+        ),
+    )
 }
 
 pub fn run_branch_experiment_profiles_from_shared_start_v1(
@@ -245,17 +259,23 @@ fn run_branch_experiment_from_session(
     session: RunControlSession,
     config: &BranchExperimentConfigV1,
 ) -> BranchExperimentReportV1 {
-    run_branch_experiment_from_session_with_replay(session, config, 0, None)
+    run_branch_experiment_from_session_with_snapshots_v1(session, config).report
 }
 
-#[cfg(test)]
-fn run_branch_experiment_from_session_with_replay(
+pub(crate) fn run_branch_experiment_from_session_with_snapshots_v1(
+    session: RunControlSession,
+    config: &BranchExperimentConfigV1,
+) -> BranchExperimentRunResultV1 {
+    run_branch_experiment_from_session_with_replay_and_snapshots(session, config, 0, None)
+}
+
+fn run_branch_experiment_from_session_with_replay_and_snapshots(
     session: RunControlSession,
     config: &BranchExperimentConfigV1,
     replay_trace_applied_steps: usize,
     replay_trace_stop: Option<String>,
-) -> BranchExperimentReportV1 {
-    run_branch_experiment_from_start_branch_with_replay(
+) -> BranchExperimentRunResultV1 {
+    run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         BranchWork {
             id: "root".to_string(),
             session,
@@ -276,6 +296,21 @@ fn run_branch_experiment_from_start_branch_with_replay(
     replay_trace_applied_steps: usize,
     replay_trace_stop: Option<String>,
 ) -> BranchExperimentReportV1 {
+    run_branch_experiment_from_start_branch_with_replay_and_snapshots(
+        start_branch,
+        config,
+        replay_trace_applied_steps,
+        replay_trace_stop,
+    )
+    .report
+}
+
+fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
+    start_branch: BranchWork,
+    config: &BranchExperimentConfigV1,
+    replay_trace_applied_steps: usize,
+    replay_trace_stop: Option<String>,
+) -> BranchExperimentRunResultV1 {
     let started_at = Instant::now();
     let mut branches = vec![start_branch];
     let report_seed = branches[0].session.run_state.seed;
@@ -398,6 +433,10 @@ fn run_branch_experiment_from_start_branch_with_replay(
         settle_branch_to_frontier(branch, config);
     }
 
+    let mut branch_sessions = branches
+        .iter()
+        .map(|branch| (branch.id.clone(), branch.session.clone()))
+        .collect::<BTreeMap<_, _>>();
     let mut branch_reports = branches
         .into_iter()
         .map(|branch| {
@@ -425,7 +464,7 @@ fn run_branch_experiment_from_start_branch_with_replay(
             .then_with(|| left.branch_id.cmp(&right.branch_id))
     });
 
-    BranchExperimentReportV1 {
+    let report = BranchExperimentReportV1 {
         schema_name: BRANCH_EXPERIMENT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_EXPERIMENT_SCHEMA_VERSION,
         label_role: "diagnostic_not_teacher_label".to_string(),
@@ -453,6 +492,16 @@ fn run_branch_experiment_from_start_branch_with_replay(
         strategy_requests: branch_strategy_requests(&branch_reports),
         frontier_groups: frontier_groups(&branch_reports),
         branches: branch_reports,
+    };
+    branch_sessions.retain(|branch_id, _| {
+        report
+            .branches
+            .iter()
+            .any(|branch| branch.branch_id == *branch_id)
+    });
+    BranchExperimentRunResultV1 {
+        report,
+        branch_sessions,
     }
 }
 

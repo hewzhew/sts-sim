@@ -48,6 +48,47 @@ fn branch_experiment_expands_pending_card_reward_choices() {
 }
 
 #[test]
+fn branch_experiment_snapshot_result_tracks_final_branch_sessions() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.pending_card_choice = Some(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let result = run_branch_experiment_from_session_with_snapshots_v1(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 4,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    assert_eq!(result.branch_sessions.len(), result.report.branches.len());
+    let twin_branch = result
+        .report
+        .branches
+        .iter()
+        .find(|branch| branch.choices[0].label == "Twin Strike")
+        .expect("Twin Strike branch");
+    let twin_snapshot = result
+        .branch_sessions
+        .get(&twin_branch.branch_id)
+        .expect("snapshot for Twin Strike branch");
+
+    assert!(
+        twin_snapshot
+            .run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == CardId::TwinStrike),
+        "snapshot should contain the exact post-choice run state"
+    );
+}
+
+#[test]
 fn branch_experiment_marks_final_settle_wall_limit_phase() {
     let session = RunControlSession::new(RunControlConfig::default());
 

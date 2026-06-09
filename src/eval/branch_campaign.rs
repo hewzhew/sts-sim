@@ -1,10 +1,13 @@
 use crate::eval::branch_experiment::{
-    run_branch_experiment_v1, BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1,
-    BranchExperimentConfigV1, BranchExperimentReportV1, BranchExperimentStrategyRequestV1,
+    run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
+    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
+    BranchExperimentRunResultV1, BranchExperimentStrategyRequestV1,
     BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
 };
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
-use crate::eval::run_control::{RunControlHpLossLimit, RunControlSearchCombatOptions};
+use crate::eval::run_control::{
+    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -222,7 +225,7 @@ pub enum BranchCampaignProgressEventV1 {
 }
 
 struct BranchCampaignParentRoundResultV1 {
-    report: BranchExperimentReportV1,
+    result: BranchExperimentRunResultV1,
     combat_budget_retry_used: bool,
 }
 
@@ -237,6 +240,7 @@ struct BranchCampaignRunStateV1 {
     discarded_count: usize,
     strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
     rounds: Vec<BranchCampaignRoundSummaryV1>,
+    snapshot_cache: BTreeMap<Vec<String>, RunControlSession>,
 }
 
 pub fn run_branch_campaign_v1(
@@ -341,8 +345,10 @@ where
                 branch_count: parent_count,
                 choices: render_choice_path(&parent.choice_labels),
             });
-            let parent_result = run_campaign_parent_round_v1(config, &parent)?;
-            let report = parent_result.report;
+            let parent_snapshot = state.snapshot_cache.get(&parent.commands).cloned();
+            let parent_result = run_campaign_parent_round_v1(config, &parent, parent_snapshot)?;
+            let result = parent_result.result;
+            let report = result.report;
             if parent_result.combat_budget_retry_used {
                 combat_budget_retries = combat_budget_retries.saturating_add(1);
             }
@@ -362,12 +368,15 @@ where
                 branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
             });
             round_strategy_requests.extend(report.strategy_requests.iter().cloned());
-            candidates.extend(
-                report
-                    .branches
-                    .iter()
-                    .map(|branch| campaign_branch_from_report_branch_v1(&parent, branch)),
-            );
+            for branch in &report.branches {
+                let child = campaign_branch_from_report_branch_v1(&parent, branch);
+                if let Some(snapshot) = result.branch_sessions.get(&branch.branch_id) {
+                    state
+                        .snapshot_cache
+                        .insert(child.commands.clone(), snapshot.clone());
+                }
+                candidates.push(child);
+            }
         }
 
         let round_strategy_requests = merge_campaign_strategy_requests_v1(round_strategy_requests);
@@ -396,6 +405,7 @@ where
         state.dead.extend(selected.dead);
         state.abandoned.extend(selected.abandoned);
         state.stuck.extend(selected.stuck);
+        retain_campaign_snapshot_cache_v1(&mut state.snapshot_cache, &state.active, &state.frozen);
         let promoted_from_frozen = if state.active.is_empty() && state.victories.is_empty() {
             promote_frozen_to_active_v1(&mut state.active, &mut state.frozen, config.max_active)
         } else {
@@ -506,6 +516,7 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         discarded_count: 0,
         strategy_requests: Vec::new(),
         rounds: Vec::new(),
+        snapshot_cache: BTreeMap::new(),
     }
 }
 
@@ -521,7 +532,21 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
         discarded_count: report.discarded_count,
         strategy_requests: report.strategy_requests.clone(),
         rounds: report.rounds.clone(),
+        snapshot_cache: BTreeMap::new(),
     }
+}
+
+fn retain_campaign_snapshot_cache_v1(
+    snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
+    active: &[BranchCampaignBranchV1],
+    frozen: &[BranchCampaignBranchV1],
+) {
+    let keep = active
+        .iter()
+        .chain(frozen.iter())
+        .map(|branch| branch.commands.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    snapshot_cache.retain(|commands, _| keep.contains(commands));
 }
 
 fn validate_campaign_resume_report_v1(
@@ -751,18 +776,19 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
 fn run_campaign_parent_round_v1(
     config: &BranchCampaignConfigV1,
     parent: &BranchCampaignBranchV1,
+    parent_snapshot: Option<RunControlSession>,
 ) -> Result<BranchCampaignParentRoundResultV1, String> {
-    let report = match run_campaign_parent_round_once_v1(config, parent) {
-        Ok(report) => report,
+    let result = match run_campaign_parent_round_once_v1(config, parent, parent_snapshot.clone()) {
+        Ok(result) => result,
         Err(err)
             if campaign_parent_replay_error_is_retryable_v1(&err)
                 && combat_retry_campaign_config_v1(config).is_some() =>
         {
             let retry_config = combat_retry_campaign_config_v1(config)
                 .expect("retry config was checked before retrying parent replay");
-            return run_campaign_parent_round_once_v1(&retry_config, parent)
-                .map(|report| BranchCampaignParentRoundResultV1 {
-                    report,
+            return run_campaign_parent_round_once_v1(&retry_config, parent, parent_snapshot)
+                .map(|result| BranchCampaignParentRoundResultV1 {
+                    result,
                     combat_budget_retry_used: true,
                 })
                 .map_err(|retry_err| {
@@ -773,22 +799,22 @@ fn run_campaign_parent_round_v1(
         }
         Err(err) => return Err(err),
     };
-    if !branch_report_needs_combat_budget_retry_v1(&report.branches) {
+    if !branch_report_needs_combat_budget_retry_v1(&result.report.branches) {
         return Ok(BranchCampaignParentRoundResultV1 {
-            report,
+            result,
             combat_budget_retry_used: false,
         });
     }
 
     let Some(retry_config) = combat_retry_campaign_config_v1(config) else {
         return Ok(BranchCampaignParentRoundResultV1 {
-            report,
+            result,
             combat_budget_retry_used: false,
         });
     };
-    let retry_report = run_campaign_parent_round_once_v1(&retry_config, parent)?;
+    let retry_result = run_campaign_parent_round_once_v1(&retry_config, parent, parent_snapshot)?;
     Ok(BranchCampaignParentRoundResultV1 {
-        report: retry_report,
+        result: retry_result,
         combat_budget_retry_used: true,
     })
 }
@@ -796,10 +822,27 @@ fn run_campaign_parent_round_v1(
 fn run_campaign_parent_round_once_v1(
     config: &BranchCampaignConfigV1,
     parent: &BranchCampaignBranchV1,
-) -> Result<BranchExperimentReportV1, String> {
-    let mut prefix_commands = config.prefix_commands.clone();
-    prefix_commands.extend(campaign_replay_commands_for_path_v1(&parent.commands));
-    run_branch_experiment_v1(&BranchExperimentConfigV1 {
+    parent_snapshot: Option<RunControlSession>,
+) -> Result<BranchExperimentRunResultV1, String> {
+    let mut experiment_config = campaign_branch_experiment_config_v1(config);
+    if let Some(session) = parent_snapshot {
+        experiment_config.prefix_commands.clear();
+        return Ok(run_branch_experiment_from_session_with_snapshots_v1(
+            session,
+            &experiment_config,
+        ));
+    }
+    experiment_config.prefix_commands = config.prefix_commands.clone();
+    experiment_config
+        .prefix_commands
+        .extend(campaign_replay_commands_for_path_v1(&parent.commands));
+    run_branch_experiment_with_snapshots_v1(&experiment_config)
+}
+
+fn campaign_branch_experiment_config_v1(
+    config: &BranchCampaignConfigV1,
+) -> BranchExperimentConfigV1 {
+    BranchExperimentConfigV1 {
         seed: config.seed,
         ascension_level: config.ascension_level,
         player_class: config.player_class,
@@ -817,9 +860,8 @@ fn run_campaign_parent_round_once_v1(
         search_options: config.search_options.clone(),
         include_skip: true,
         include_event_reward_skip: config.include_event_reward_skip,
-        prefix_commands,
         ..BranchExperimentConfigV1::default()
-    })
+    }
 }
 
 fn campaign_parent_replay_error_is_retryable_v1(error: &str) -> bool {
