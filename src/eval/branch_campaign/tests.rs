@@ -207,8 +207,8 @@ fn compact_campaign_report_renders_strategy_prompt() {
         seed: 521,
         rounds_completed: 2,
         stop_reason: "needs_intervention".to_string(),
-        active: vec![test_campaign_branch("a", 5, 70)],
-        frozen: vec![test_campaign_branch("f", 4, 65)],
+        active: Vec::new(),
+        frozen: Vec::new(),
         victories: Vec::new(),
         dead: Vec::new(),
         abandoned: Vec::new(),
@@ -229,14 +229,14 @@ fn compact_campaign_report_renders_strategy_prompt() {
 
     assert!(rendered.contains("BranchCampaignV1 seed=521 rounds=2 stop=needs_intervention"));
     assert!(rendered.contains(
-        "Active 1 | Frozen 1 | Dead 0 | Abandoned 0 | Victories 0 | Stuck 0 | Discarded 3"
+        "Active 0 | Frozen 0 | Dead 0 | Abandoned 0 | Victories 0 | Stuck 0 | Discarded 3"
     ));
     assert!(rendered.contains("Needs intervention:"));
     assert!(rendered.contains("event_strategy | Falling | branches=2"));
     assert!(rendered.contains(
         "next: write a narrow event rule or choose one branch manually, then rerun the campaign"
     ));
-    assert!(rendered.contains("Top active:"));
+    assert!(!rendered.contains("Top active:"));
 }
 
 #[test]
@@ -290,7 +290,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
 }
 
 #[test]
-fn compact_campaign_report_renders_queued_interventions_while_continuing() {
+fn compact_campaign_report_renders_deferred_strategy_notes_while_continuing() {
     let report = BranchCampaignReportV1 {
         schema_name: "BranchCampaignV1".to_string(),
         schema_version: 1,
@@ -317,7 +317,7 @@ fn compact_campaign_report_renders_queued_interventions_while_continuing() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains("Queued interventions:"));
+    assert!(rendered.contains("Deferred strategy notes:"));
     assert!(!rendered.contains("Needs intervention:"));
     assert!(rendered.contains("stop: combat search did not find an executable complete win"));
 }
@@ -416,6 +416,39 @@ fn compact_campaign_report_renders_budget_stop_hint() {
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
     assert!(rendered.contains("Next: budget ended; use .\\tools\\campaign.ps1 -More"));
+}
+
+#[test]
+fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
+    let report = BranchCampaignReportV1 {
+        schema_name: "BranchCampaignV1".to_string(),
+        schema_version: 1,
+        seed: 521,
+        rounds_completed: 2,
+        stop_reason: "max_rounds".to_string(),
+        active: vec![test_campaign_branch("a", 7, 80)],
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: Vec::new(),
+        discarded_count: 0,
+        strategy_requests: vec![BranchCampaignStrategyRequestV1 {
+            kind: "route_policy_gap".to_string(),
+            boundary_title: "Map".to_string(),
+            branch_count: 2,
+            stop_reasons: vec!["route planner declined automatic map selection".to_string()],
+            examples: vec!["Golden Idol -> Leave".to_string()],
+            suggested_action: "adjust route planner policy".to_string(),
+        }],
+        rounds: Vec::new(),
+    };
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("Deferred strategy notes:"));
+    assert!(!rendered.contains("Needs intervention:"));
+    assert!(!rendered.contains("Queued interventions:"));
 }
 
 fn test_campaign_request(kind: &str, boundary_title: &str) -> BranchCampaignStrategyRequestV1 {

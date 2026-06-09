@@ -106,6 +106,10 @@ fn request_kind(branch: &BranchExperimentBranchReportV1) -> String {
     if matches!(branch.status, BranchExperimentBranchStatusV1::Failed) {
         return "engineering_issue".to_string();
     }
+    request_kind_for_boundary(title, &stop)
+}
+
+fn request_kind_for_boundary(title: &str, stop: &str) -> String {
     if normalized_title(title) == "combat" {
         if stop.contains("hp-loss") || stop.contains("max_hp_loss") {
             return "combat_hp_loss_policy".to_string();
@@ -118,7 +122,7 @@ fn request_kind(branch: &BranchExperimentBranchReportV1) -> String {
         "bossrelic" => "boss_relic_strategy".to_string(),
         "shop" => "shop_strategy".to_string(),
         "rewardscreen" | "rewardoverlay" => "reward_claim_policy".to_string(),
-        "map" => "route_policy_gap".to_string(),
+        "map" | "mappreview" => "route_policy_gap".to_string(),
         _ => "event_strategy".to_string(),
     }
 }
@@ -213,5 +217,21 @@ fn request_kind_priority(kind: &str) -> u8 {
         "reward_claim_policy" => 8,
         "route_policy_gap" => 9,
         _ => 10,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::request_kind_for_boundary;
+
+    #[test]
+    fn map_preview_is_a_route_gap_not_an_event_strategy_gap() {
+        assert_eq!(
+            request_kind_for_boundary(
+                "Map Preview",
+                "route planner declined automatic map selection"
+            ),
+            "route_policy_gap"
+        );
     }
 }

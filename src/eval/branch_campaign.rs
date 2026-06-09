@@ -882,10 +882,10 @@ pub fn render_branch_campaign_compact_v1(
     }
     if !report.strategy_requests.is_empty() {
         lines.push(String::new());
-        if report.stop_reason == "needs_intervention" {
+        if campaign_report_stop_needs_immediate_intervention_v1(report) {
             lines.push("Needs intervention:".to_string());
         } else {
-            lines.push("Queued interventions:".to_string());
+            lines.push("Deferred strategy notes:".to_string());
         }
         for request in report.strategy_requests.iter().take(4) {
             lines.push(format!(
@@ -932,6 +932,14 @@ pub fn render_branch_campaign_compact_v1(
         }
     }
     lines.join("\n")
+}
+
+fn campaign_report_stop_needs_immediate_intervention_v1(report: &BranchCampaignReportV1) -> bool {
+    matches!(
+        report.stop_reason.as_str(),
+        "needs_intervention" | "stuck" | "no_active_branch" | "no_progress"
+    ) && report.active.is_empty()
+        && report.frozen.is_empty()
 }
 
 fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
