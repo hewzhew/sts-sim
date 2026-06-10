@@ -121,6 +121,8 @@ pub struct BranchCampaignBranchV1 {
     pub summary: Option<BranchCampaignBranchSummaryV1>,
     pub frontier_title: String,
     pub status: BranchCampaignBranchStatusV1,
+    #[serde(default)]
+    pub stop_reason: String,
     pub rank_key: i32,
 }
 
@@ -918,8 +920,9 @@ pub fn render_branch_campaign_compact_v1(
     }
     if !report.abandoned.is_empty() {
         lines.push(format!(
-            "Abandoned examples: count={} examples=[{}]",
+            "Abandoned examples: count={} reasons=[{}] examples=[{}]",
             report.abandoned.len(),
+            render_campaign_branch_stop_reasons_v1(&report.abandoned, 3),
             render_campaign_branch_examples_v1(&report.abandoned, 3)
         ));
     }
@@ -1047,6 +1050,21 @@ fn render_campaign_branch_examples_v1(
             .iter()
             .map(render_campaign_discard_example_v1)
             .map(|example| truncate_branch_pressure_example_v1(&example)),
+        max_examples,
+    )
+    .join(" | ")
+}
+
+fn render_campaign_branch_stop_reasons_v1(
+    branches: &[BranchCampaignBranchV1],
+    max_examples: usize,
+) -> String {
+    unique_limited_strings(
+        branches
+            .iter()
+            .map(|branch| branch.stop_reason.trim())
+            .filter(|reason| !reason.is_empty())
+            .map(truncate_branch_pressure_example_v1),
         max_examples,
     )
     .join(" | ")
@@ -1272,6 +1290,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         summary: None,
         frontier_title: "start".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
+        stop_reason: "initial".to_string(),
         rank_key: 0,
     }
 }
@@ -1715,6 +1734,14 @@ fn abandoned_branches_intervention_request_v1(
         })
         .take(4)
         .collect::<Vec<_>>();
+    let stop_reasons = unique_limited_strings(
+        abandoned
+            .iter()
+            .map(|branch| branch.stop_reason.trim())
+            .filter(|reason| !reason.is_empty())
+            .map(ToOwned::to_owned),
+        4,
+    );
     Some(BranchCampaignStrategyRequestV1 {
         kind: "combat_manual_or_budget".to_string(),
         boundary_title: "Combat".to_string(),
@@ -1729,7 +1756,11 @@ fn abandoned_branches_intervention_request_v1(
             .filter_map(|branch| branch.summary.as_ref().map(|summary| summary.floor))
             .max()
             .unwrap_or_default(),
-        stop_reasons: vec!["all candidate route branches were abandoned".to_string()],
+        stop_reasons: if stop_reasons.is_empty() {
+            vec!["all candidate route branches were abandoned".to_string()]
+        } else {
+            stop_reasons
+        },
         examples,
         next_card_reward_offer: None,
         boundary_details: Vec::new(),
@@ -2011,6 +2042,7 @@ pub fn campaign_branch_from_report_branch_v1(
         summary: Some(campaign_summary_from_report_branch_v1(branch)),
         frontier_title: branch.summary.boundary_title.clone(),
         status: campaign_status_from_report_status(branch.status),
+        stop_reason: branch.stop_reason.clone(),
         rank_key: branch.rank_key,
     }
 }

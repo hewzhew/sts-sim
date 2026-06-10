@@ -94,6 +94,7 @@ fn compact_campaign_report_renders_abandoned_examples_while_continuing() {
     let mut report = test_campaign_report_with_active("a", 7, 80);
     let mut abandoned = test_campaign_branch("abandoned", 6, 55);
     abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.stop_reason = "combat search did not find an executable complete win".to_string();
     abandoned.choice_labels = vec![
         "Havoc".to_string(),
         "Hemokinesis".to_string(),
@@ -105,8 +106,30 @@ fn compact_campaign_report_renders_abandoned_examples_while_continuing() {
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
     assert!(rendered.contains(
-        "Abandoned examples: count=1 examples=[Havoc -> Hemokinesis -> Spot Weakness -> Searing Blow]"
+        "Abandoned examples: count=1 reasons=[combat search did not find an executable complete win] examples=[Havoc -> Hemokinesis -> Spot Weakness -> Searing Blow]"
     ));
+}
+
+#[test]
+fn campaign_report_branch_preserves_stop_reason() {
+    let parent = test_campaign_branch("parent", 3, 80);
+    let mut child = test_report_branch(
+        "child",
+        vec![("rp 1", "Pommel Strike")],
+        BranchExperimentBranchStatusV1::Pruned,
+    );
+    child.stop_reason = "combat search did not find an executable complete win".to_string();
+
+    let campaign_branch = campaign_branch_from_report_branch_v1(&parent, &child);
+
+    assert_eq!(
+        campaign_branch.status,
+        BranchCampaignBranchStatusV1::Abandoned
+    );
+    assert_eq!(
+        campaign_branch.stop_reason,
+        "combat search did not find an executable complete win"
+    );
 }
 
 #[test]
@@ -337,6 +360,7 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         summary: None,
         frontier_title: "Card Reward".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
+        stop_reason: "test".to_string(),
         rank_key: 0,
     };
     let report_branch = test_report_branch(
@@ -510,16 +534,23 @@ fn compact_campaign_report_renders_deferred_strategy_notes_while_continuing() {
 
 #[test]
 fn campaign_builds_intervention_when_abandoned_branches_exhaust_routes() {
-    let request = abandoned_branches_intervention_request_v1(&[
-        test_campaign_branch("a", 16, 70),
-        test_campaign_branch("b", 16, 62),
-    ])
-    .expect("request");
+    let mut a = test_campaign_branch("a", 16, 70);
+    a.stop_reason = "combat search did not find an executable complete win".to_string();
+    let mut b = test_campaign_branch("b", 16, 62);
+    b.stop_reason = "wall-clock deadline hit".to_string();
+    let request = abandoned_branches_intervention_request_v1(&[a, b]).expect("request");
 
     assert_eq!(request.kind, "combat_manual_or_budget");
     assert_eq!(request.boundary_title, "Combat");
     assert_eq!(request.branch_count, 2);
     assert_eq!(request.examples.len(), 2);
+    assert_eq!(
+        request.stop_reasons,
+        vec![
+            "combat search did not find an executable complete win".to_string(),
+            "wall-clock deadline hit".to_string()
+        ]
+    );
 }
 
 #[test]
@@ -1076,6 +1107,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         }),
         frontier_title: "Card Reward".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
+        stop_reason: "test".to_string(),
         rank_key: hp,
     }
 }
