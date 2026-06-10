@@ -917,6 +917,15 @@ pub fn render_branch_campaign_compact_v1(
                 format_bp(example.elite_prep_bp)
             ));
         }
+        if report.route_evidence.underprepared_first_elite > 0 {
+            lines.push(format!(
+                "Route concern: forced_first_elite_underprepared={}/{} rest_bailout={} shop_bailout={}",
+                report.route_evidence.underprepared_first_elite,
+                report.route_evidence.decisions,
+                report.route_evidence.rest_bailout,
+                report.route_evidence.shop_bailout,
+            ));
+        }
     }
     if report.stop_reason == "max_rounds"
         && (!report.active.is_empty() || !report.frozen.is_empty())

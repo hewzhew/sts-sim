@@ -43,6 +43,9 @@ fn campaign_compact_report_renders_route_evidence_summary() {
     assert!(rendered.contains(
         "example: x=5 Monster | first_elite=optional hallways=2-3 fires=1 shops=0 rest_bailout=true shop_bailout=false elite_prep=0.70"
     ));
+    assert!(rendered.contains(
+        "Route concern: forced_first_elite_underprepared=1/3 rest_bailout=2 shop_bailout=1"
+    ));
 }
 
 #[test]
