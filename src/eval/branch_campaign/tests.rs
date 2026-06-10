@@ -59,6 +59,58 @@ fn campaign_compact_report_renders_route_evidence_summary() {
 }
 
 #[test]
+fn compact_campaign_report_renders_branch_pressure_examples() {
+    let mut report = test_campaign_report_with_active("a", 7, 80);
+    report.discarded_count = 12;
+    report.discarded_examples = vec![
+        "Anger -> Clash -> Skip card reward".to_string(),
+        "Body Slam -> Searing Blow".to_string(),
+    ];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Branch pressure: discarded=12 examples=[Anger -> Clash -> Skip card reward | Body Slam -> Searing Blow]"
+    ));
+}
+
+#[test]
+fn compact_campaign_report_truncates_long_branch_pressure_examples() {
+    let mut report = test_campaign_report_with_active("a", 7, 80);
+    report.discarded_count = 1;
+    report.discarded_examples = vec![
+        "Wild Strike -> Headbutt -> Heavy Blade -> Heavy Blade -> [Proceed] -> [Take Card] Obtain Iron Wave. Remove a card.".to_string(),
+    ];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Branch pressure: discarded=1 examples=[Wild Strike -> Headbutt -> ... -> [Take Card] Obtain Iron Wave. Remove a card.]"
+    ));
+}
+
+#[test]
+fn campaign_frozen_overflow_records_discard_examples() {
+    let mut frozen = vec![test_campaign_branch("existing", 3, 80)];
+    let mut discarded_count = 0usize;
+    let mut discarded_examples = Vec::new();
+    let mut overflow = test_campaign_branch("overflow", 4, 75);
+    overflow.choice_labels = vec!["Wild Strike".to_string(), "Skip card reward".to_string()];
+
+    let added = append_limited_frozen_v1(
+        &mut frozen,
+        vec![overflow],
+        1,
+        &mut discarded_count,
+        &mut discarded_examples,
+    );
+
+    assert_eq!(added, 0);
+    assert_eq!(discarded_count, 1);
+    assert_eq!(discarded_examples, vec!["Wild Strike -> Skip card reward"]);
+}
+
+#[test]
 fn campaign_selection_freezes_active_overflow() {
     let branches = vec![
         test_campaign_branch("a", 1, 80),
@@ -310,6 +362,7 @@ fn compact_campaign_report_renders_strategy_prompt() {
         abandoned: Vec::new(),
         stuck: Vec::new(),
         discarded_count: 3,
+        discarded_examples: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "event_strategy".to_string(),
             boundary_title: "Falling".to_string(),
@@ -355,6 +408,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
         abandoned: vec![test_campaign_branch("a", 16, 70)],
         stuck: Vec::new(),
         discarded_count: 0,
+        discarded_examples: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "combat_manual_or_budget".to_string(),
             boundary_title: "Combat".to_string(),
@@ -410,6 +464,7 @@ fn compact_campaign_report_renders_deferred_strategy_notes_while_continuing() {
         abandoned: Vec::new(),
         stuck: vec![test_campaign_branch("s", 6, 70)],
         discarded_count: 0,
+        discarded_examples: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "combat_manual_or_budget".to_string(),
             boundary_title: "Combat".to_string(),
@@ -596,6 +651,7 @@ fn compact_campaign_report_renders_budget_stop_hint() {
         abandoned: Vec::new(),
         stuck: Vec::new(),
         discarded_count: 0,
+        discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
@@ -621,6 +677,7 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
         abandoned: Vec::new(),
         stuck: Vec::new(),
         discarded_count: 0,
+        discarded_examples: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "route_policy_gap".to_string(),
             boundary_title: "Map".to_string(),
@@ -659,6 +716,7 @@ fn compact_campaign_report_renders_context_only_strategy_packet() {
         abandoned: Vec::new(),
         stuck: Vec::new(),
         discarded_count: 0,
+        discarded_examples: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "event_strategy".to_string(),
             boundary_title: "GoldenIdol".to_string(),
@@ -835,6 +893,7 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
             abandoned: Vec::new(),
             stuck: Vec::new(),
             discarded_count: 0,
+            discarded_examples: Vec::new(),
             strategy_requests: Vec::new(),
             route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
             rounds: Vec::new(),
@@ -884,6 +943,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         abandoned: Vec::new(),
         stuck: Vec::new(),
         discarded_count: 0,
+        discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
@@ -952,6 +1012,7 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
         abandoned: Vec::new(),
         stuck: Vec::new(),
         discarded_count: 4,
+        discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {

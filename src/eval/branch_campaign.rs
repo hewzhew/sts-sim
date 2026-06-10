@@ -134,6 +134,8 @@ pub struct BranchCampaignSelectionV1 {
     pub abandoned: Vec<BranchCampaignBranchV1>,
     pub stuck: Vec<BranchCampaignBranchV1>,
     pub discarded_count: usize,
+    #[serde(default)]
+    pub discarded_examples: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -214,6 +216,8 @@ pub struct BranchCampaignReportV1 {
     pub abandoned: Vec<BranchCampaignBranchV1>,
     pub stuck: Vec<BranchCampaignBranchV1>,
     pub discarded_count: usize,
+    #[serde(default)]
+    pub discarded_examples: Vec<String>,
     pub strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
     #[serde(default)]
     pub route_evidence: BranchCampaignRouteEvidenceSummaryV1,
@@ -322,6 +326,7 @@ struct BranchCampaignRunStateV1 {
     abandoned: Vec<BranchCampaignBranchV1>,
     stuck: Vec<BranchCampaignBranchV1>,
     discarded_count: usize,
+    discarded_examples: Vec<String>,
     strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
     route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     rounds: Vec<BranchCampaignRoundSummaryV1>,
@@ -503,10 +508,12 @@ where
             selected.frozen,
             config.max_frozen,
             &mut state.discarded_count,
+            &mut state.discarded_examples,
         );
         state.discarded_count = state
             .discarded_count
             .saturating_add(selected.discarded_count);
+        append_discarded_examples_v1(&mut state.discarded_examples, selected.discarded_examples);
         let dead_added = selected.dead.len();
         let abandoned_added = selected.abandoned.len();
         let victories_added = selected.victories.len();
@@ -611,6 +618,7 @@ where
         abandoned: state.abandoned,
         stuck: state.stuck,
         discarded_count: state.discarded_count,
+        discarded_examples: state.discarded_examples,
         strategy_requests: state.strategy_requests,
         route_evidence: state.route_evidence,
         rounds: state.rounds,
@@ -628,6 +636,7 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         abandoned: Vec::new(),
         stuck: Vec::new(),
         discarded_count: 0,
+        discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
@@ -645,6 +654,7 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
         abandoned: report.abandoned.clone(),
         stuck: report.stuck.clone(),
         discarded_count: report.discarded_count,
+        discarded_examples: report.discarded_examples.clone(),
         strategy_requests: report.strategy_requests.clone(),
         route_evidence: report.route_evidence.clone(),
         rounds: report.rounds.clone(),
@@ -899,6 +909,13 @@ pub fn render_branch_campaign_compact_v1(
             }
         ));
     }
+    if report.discarded_count > 0 && !report.discarded_examples.is_empty() {
+        lines.push(format!(
+            "Branch pressure: discarded={} examples=[{}]",
+            report.discarded_count,
+            render_branch_pressure_examples_v1(&report.discarded_examples)
+        ));
+    }
     if report.route_evidence.decisions > 0 {
         lines.push(format!(
             "Route evidence: decisions={} first_elite optional={} forced={} none={} avg_elite_prep={} underprepared={} bailouts=rest:{} shop:{}",
@@ -1002,6 +1019,38 @@ pub fn render_branch_campaign_compact_v1(
 
 fn format_bp(value: i32) -> String {
     format!("{:.2}", f64::from(value) / 100.0)
+}
+
+fn render_branch_pressure_examples_v1(examples: &[String]) -> String {
+    examples
+        .iter()
+        .take(3)
+        .map(|example| truncate_branch_pressure_example_v1(example))
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+fn truncate_branch_pressure_example_v1(value: &str) -> String {
+    const MAX_CHARS: usize = 96;
+    let parts = value.split(" -> ").collect::<Vec<_>>();
+    let compressed = if parts.len() > 4 {
+        format!(
+            "{} -> {} -> ... -> {}",
+            parts[0],
+            parts[1],
+            parts.last().copied().unwrap_or_default()
+        )
+    } else {
+        value.to_string()
+    };
+    if compressed.chars().count() <= MAX_CHARS {
+        return compressed;
+    }
+    let prefix = compressed
+        .chars()
+        .take(MAX_CHARS.saturating_sub(3))
+        .collect::<String>();
+    format!("{prefix}...")
 }
 
 fn render_campaign_strategy_context_v1(request: &BranchCampaignStrategyRequestV1) -> Vec<String> {
@@ -1456,6 +1505,7 @@ fn append_limited_frozen_v1(
     new_frozen: Vec<BranchCampaignBranchV1>,
     max_frozen: usize,
     discarded_count: &mut usize,
+    discarded_examples: &mut Vec<String>,
 ) -> usize {
     let mut added = 0usize;
     for branch in new_frozen {
@@ -1464,6 +1514,9 @@ fn append_limited_frozen_v1(
             added = added.saturating_add(1);
         } else {
             *discarded_count = discarded_count.saturating_add(1);
+            if discarded_examples.len() < 6 {
+                discarded_examples.push(render_campaign_discard_example_v1(&branch));
+            }
         }
     }
     added
@@ -1795,9 +1848,34 @@ pub fn select_campaign_branches_v1(
             selection.frozen.push(branch);
         } else {
             selection.discarded_count = selection.discarded_count.saturating_add(1);
+            if selection.discarded_examples.len() < 6 {
+                selection
+                    .discarded_examples
+                    .push(render_campaign_discard_example_v1(&branch));
+            }
         }
     }
     selection
+}
+
+fn append_discarded_examples_v1(target: &mut Vec<String>, incoming: Vec<String>) {
+    for example in incoming {
+        if target.len() >= 6 {
+            break;
+        }
+        if !target.contains(&example) {
+            target.push(example);
+        }
+    }
+}
+
+fn render_campaign_discard_example_v1(branch: &BranchCampaignBranchV1) -> String {
+    let choices = render_choice_path(&branch.choice_labels);
+    if choices == "-" {
+        render_campaign_branch_state(branch)
+    } else {
+        choices
+    }
 }
 
 fn promote_frozen_to_active_v1(
