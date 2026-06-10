@@ -554,6 +554,20 @@ fn compact_campaign_report_renders_deferred_strategy_notes_while_continuing() {
 }
 
 #[test]
+fn compact_campaign_report_renders_needs_intervention_even_with_frozen_branches() {
+    let mut report = test_campaign_report_with_active("a", 16, 70);
+    report.stop_reason = "needs_intervention".to_string();
+    report.active.clear();
+    report.frozen = vec![test_campaign_branch("old-frozen", 4, 80)];
+    report.strategy_requests = vec![test_campaign_request("combat_manual_or_budget", "Combat")];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("Needs intervention:"));
+    assert!(!rendered.contains("Deferred strategy notes:"));
+}
+
+#[test]
 fn campaign_builds_intervention_when_abandoned_branches_exhaust_routes() {
     let mut a = test_campaign_branch("a", 16, 70);
     a.stop_reason = "combat search did not find an executable complete win".to_string();

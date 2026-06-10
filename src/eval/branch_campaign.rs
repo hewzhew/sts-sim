@@ -1140,11 +1140,12 @@ fn render_campaign_strategy_context_v1(request: &BranchCampaignStrategyRequestV1
 }
 
 fn campaign_report_stop_needs_immediate_intervention_v1(report: &BranchCampaignReportV1) -> bool {
-    matches!(
-        report.stop_reason.as_str(),
-        "needs_intervention" | "stuck" | "no_active_branch" | "no_progress"
-    ) && report.active.is_empty()
-        && report.frozen.is_empty()
+    report.stop_reason == "needs_intervention"
+        || (matches!(
+            report.stop_reason.as_str(),
+            "stuck" | "no_active_branch" | "no_progress"
+        ) && report.active.is_empty()
+            && report.frozen.is_empty())
 }
 
 fn merge_campaign_route_decisions_v1(
