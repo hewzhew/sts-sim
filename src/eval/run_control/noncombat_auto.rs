@@ -25,7 +25,7 @@ pub(super) fn apply_planner_noncombat_policy(
         }));
     }
     if let Some((outcome, summary)) =
-        super::run_choice_policy::apply_run_choice_policy_purge_curse(session)?
+        super::run_choice_policy::apply_run_choice_policy_deck_selection(session)?
     {
         return Ok(Some(NonCombatAutoApplication {
             outcome,

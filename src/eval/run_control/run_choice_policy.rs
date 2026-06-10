@@ -2,7 +2,7 @@ use crate::state::core::{ClientInput, EngineState};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
 
-pub(super) fn apply_run_choice_policy_purge_curse(
+pub(super) fn apply_run_choice_policy_deck_selection(
     session: &mut RunControlSession,
 ) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
     let EngineState::RunPendingChoice(choice) = &session.engine_state else {
@@ -38,7 +38,7 @@ pub(super) fn apply_run_choice_policy_purge_curse(
     Ok(Some((
         outcome,
         format!(
-            "run choice policy: purge {} confidence={confidence:.2} reason={reason} label_role={}",
+            "run choice policy: select {} confidence={confidence:.2} reason={reason} label_role={}",
             labels.join(", "),
             decision.label_role
         ),

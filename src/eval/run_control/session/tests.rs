@@ -81,6 +81,48 @@ fn run_control_session_checkpoint_round_trips_exact_state() {
 }
 
 #[test]
+fn run_control_session_checkpoint_preserves_map_traversal_edges() {
+    let mut session = RunControlSession::new(RunControlConfig {
+        seed: 1_800_564_075,
+        ..RunControlConfig::default()
+    });
+    let (current_x, current_y, target_x, target_y) = session
+        .run_state
+        .map
+        .graph
+        .iter()
+        .enumerate()
+        .flat_map(|(y, row)| {
+            row.iter().filter_map(move |node| {
+                node.edges
+                    .iter()
+                    .next()
+                    .map(|edge| (node.x, y as i32, edge.dst_x, edge.dst_y))
+            })
+        })
+        .next()
+        .expect("generated map should have at least one traversable edge");
+    session.run_state.map.current_x = current_x;
+    session.run_state.map.current_y = current_y;
+    session.run_state.event_state = None;
+    session.engine_state = EngineState::MapNavigation;
+
+    let checkpoint = RunControlSessionCheckpointV1::from_session(&session);
+    let text = serde_json::to_string(&checkpoint).expect("checkpoint should serialize");
+    let loaded: RunControlSessionCheckpointV1 =
+        serde_json::from_str(&text).expect("checkpoint should deserialize");
+    let restored = loaded.into_session().expect("checkpoint should restore");
+
+    assert!(
+        restored
+            .run_state
+            .map
+            .can_travel_to(target_x, target_y, false),
+        "checkpoint restore must preserve map edges needed for resumed route planning"
+    );
+}
+
+#[test]
 fn run_control_capture_command_saves_active_combat_position() {
     let mut session = test_session_with_first_monster_room();
     session
@@ -897,7 +939,7 @@ fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
         ))
         .expect("auto-run should purge a curse at a run pending purge choice");
 
-    assert!(outcome.message.contains("run choice policy: purge Doubt"));
+    assert!(outcome.message.contains("run choice policy: select Doubt"));
     let record = outcome
         .trace_annotations
         .iter()
@@ -928,7 +970,7 @@ fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
 }
 
 #[test]
-fn run_control_auto_run_does_not_purge_starter_at_run_pending_purge_choice() {
+fn run_control_auto_run_selects_starter_at_run_pending_purge_choice() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state =
         EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
@@ -945,16 +987,20 @@ fn run_control_auto_run_does_not_purge_starter_at_run_pending_purge_choice() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should stop at a purge choice without a curse");
+        .expect("auto-run should select a low-value starter at a purge choice without a curse");
 
-    assert!(outcome
-        .message
-        .contains("Reason: card selection requires human choice"));
-    assert_eq!(session.run_state.master_deck.len(), 10);
-    assert!(matches!(
-        session.engine_state,
-        EngineState::RunPendingChoice(_)
-    ));
+    assert!(outcome.message.contains("run choice policy: select Strike"));
+    assert_eq!(session.run_state.master_deck.len(), 9);
+    assert_eq!(
+        session
+            .run_state
+            .master_deck
+            .iter()
+            .filter(|card| card.id == crate::content::cards::CardId::Strike)
+            .count(),
+        4
+    );
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
 }
 
 #[test]

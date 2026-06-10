@@ -14,7 +14,7 @@ pub enum RoomType {
     TrueVictoryRoom,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct Point {
     pub x: usize,
     pub y: usize,
@@ -75,12 +75,12 @@ pub struct MapRoomNode {
     pub x: i32,
     pub y: i32,
     pub class: Option<RoomType>,
-    #[serde(skip)]
+    #[serde(default)]
     pub has_emerald_key: bool,
 
-    #[serde(skip)]
+    #[serde(default)]
     pub edges: BTreeSet<MapEdge>,
-    #[serde(skip)]
+    #[serde(default)]
     pub parents: Vec<Point>,
 }
 

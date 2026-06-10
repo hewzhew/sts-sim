@@ -920,7 +920,7 @@ fn current_boundary_compresses_multi_card_run_selection_by_effect_key() {
 }
 
 #[test]
-fn current_boundary_still_rejects_high_fanout_distinct_multi_card_run_selection_options() {
+fn current_boundary_uses_policy_representative_for_high_fanout_run_selection_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.master_deck = vec![
         CombatCard::new(CardId::Strike, 10),
@@ -937,10 +937,15 @@ fn current_boundary_still_rejects_high_fanout_distinct_multi_card_run_selection_
         return_state: Box::new(EngineState::EventRoom),
     });
 
-    assert!(
-        current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
-        "multi-card run selection should still stop when semantic combinations exceed the branch cap"
-    );
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("policy representative should keep high-fanout run selection moving");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::RunSelection);
+    assert_eq!(boundary.options.len(), 1);
+    assert_eq!(boundary.options[0].command, "select 0 1");
+    assert!(boundary.options[0]
+        .effect_label
+        .contains("transform Strike, Defend"));
 }
 
 #[test]

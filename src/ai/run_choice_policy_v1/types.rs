@@ -30,19 +30,26 @@ pub struct RunChoiceCandidateEvidenceV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunChoicePolicyClassV1 {
     CursePurge,
-    NonCursePurge,
+    StarterStrikeMutation,
+    StarterDefendMutation,
+    BasicCardMutation,
+    OtherDeckMutation,
     UnsupportedChoice,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunChoicePolicyConfigV1 {
     pub allow_curse_purge: bool,
+    pub allow_low_value_purge: bool,
+    pub allow_low_value_transform: bool,
 }
 
 impl Default for RunChoicePolicyConfigV1 {
     fn default() -> Self {
         Self {
             allow_curse_purge: true,
+            allow_low_value_purge: true,
+            allow_low_value_transform: true,
         }
     }
 }
@@ -99,7 +106,7 @@ impl RunChoiceDecisionV1 {
             evidence: EvidenceBundleV1 {
                 items: evidence_items(&self.context),
                 assumptions: vec![
-                    "run choice automation only handles explicit purge choices with visible curses"
+                    "run choice automation only handles explicit deck mutation targets with visible low-value cards"
                         .to_string(),
                     "run choice automation is a behavior policy, not a teacher label".to_string(),
                 ],

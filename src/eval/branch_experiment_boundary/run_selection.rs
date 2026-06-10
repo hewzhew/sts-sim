@@ -58,7 +58,7 @@ pub(super) fn run_selection_branch_options(
     if choice.min_choices == 1 {
         let options = compressed_single_run_selection_options(deck_options);
         if options.is_empty() || options.len() > MAX_RUN_SELECTION_OPTIONS_PER_BRANCH {
-            return None;
+            return policy_run_selection_branch_option(session, choice).map(|option| vec![option]);
         }
         return Some(options);
     }
@@ -68,6 +68,7 @@ pub(super) fn run_selection_branch_options(
         choice.min_choices,
         MAX_RUN_SELECTION_OPTIONS_PER_BRANCH,
     )
+    .or_else(|| policy_run_selection_branch_option(session, choice).map(|option| vec![option]))
 }
 
 fn run_selection_deck_card_options(
@@ -296,6 +297,73 @@ fn run_selection_branch_option_from_group_counts(
         representative_count: combo.represented_exact_count,
         suppressed_count: combo.represented_exact_count.saturating_sub(1),
     }
+}
+
+fn policy_run_selection_branch_option(
+    session: &RunControlSession,
+    choice: &RunPendingChoiceState,
+) -> Option<RunSelectionBranchOption> {
+    let context = crate::ai::run_choice_policy_v1::build_run_choice_decision_context_v1(
+        &session.run_state,
+        choice,
+    );
+    let decision = crate::ai::run_choice_policy_v1::plan_run_choice_decision_v1(
+        &context,
+        &crate::ai::run_choice_policy_v1::RunChoicePolicyConfigV1::default(),
+    );
+    let crate::ai::run_choice_policy_v1::RunChoicePolicyActionV1::SelectDeckIndices {
+        indices,
+        labels,
+        confidence,
+        reason,
+    } = decision.action
+    else {
+        return None;
+    };
+    if indices.is_empty()
+        || indices.len() < choice.min_choices
+        || indices.len() > choice.max_choices
+    {
+        return None;
+    }
+    let selected_cards = indices
+        .iter()
+        .filter_map(|idx| session.run_state.master_deck.get(*idx))
+        .map(|card| BranchExperimentChoiceCardV1 {
+            card: card.id,
+            upgrades: card.upgrades,
+        })
+        .collect::<Vec<_>>();
+    if selected_cards.len() != indices.len() {
+        return None;
+    }
+
+    let effect_kind = run_selection_effect_kind(choice.reason).to_string();
+    let effect_label = format!(
+        "{} {} | confidence={confidence:.2} | {reason}",
+        run_selection_effect_verb(choice.reason),
+        render_repeated_option_labels(&labels.iter().map(String::as_str).collect::<Vec<_>>())
+    );
+    Some(RunSelectionBranchOption {
+        label: effect_label.clone(),
+        command: format_select_command(&indices),
+        card: selected_cards.first().map(|card| card.card),
+        upgrades: selected_cards.first().map(|card| card.upgrades),
+        selected_cards,
+        effect_kind,
+        effect_key: format!(
+            "run_selection:policy:{}:{}",
+            run_selection_effect_kind(choice.reason),
+            indices
+                .iter()
+                .map(|idx| idx.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        effect_label,
+        representative_count: 1,
+        suppressed_count: 0,
+    })
 }
 
 fn run_selection_effect_kind(reason: RunPendingChoiceReason) -> &'static str {
