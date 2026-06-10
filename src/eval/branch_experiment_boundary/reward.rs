@@ -36,7 +36,7 @@ pub(crate) fn reward_branch_options(
         .iter()
         .filter_map(reward_claim_branch_option)
         .collect::<Vec<_>>();
-    if let Some(option) = full_slot_potion_skip_branch_option(&session.engine_state, &context) {
+    if let Some(option) = blocked_potion_skip_branch_option(&session.engine_state, &context) {
         options.push(option);
     }
     if options.is_empty() {
@@ -71,7 +71,7 @@ fn reward_claim_branch_option(candidate: &RewardCandidateEvidenceV1) -> Option<R
     })
 }
 
-fn full_slot_potion_skip_branch_option(
+fn blocked_potion_skip_branch_option(
     engine: &EngineState,
     context: &RewardDecisionContextV1,
 ) -> Option<RewardBranchOption> {
@@ -79,26 +79,45 @@ fn full_slot_potion_skip_branch_option(
         return None;
     }
     if context.candidates.is_empty()
-        || !context
-            .candidates
-            .iter()
-            .all(|candidate| candidate.class == RewardPolicyClassV1::PotionNoEmptySlot)
+        || !context.candidates.iter().all(|candidate| {
+            matches!(
+                candidate.class,
+                RewardPolicyClassV1::PotionNoEmptySlot | RewardPolicyClassV1::PotionBlockedBySozu
+            )
+        })
     {
         return None;
     }
 
+    let has_sozu_blocked = context
+        .candidates
+        .iter()
+        .any(|candidate| candidate.class == RewardPolicyClassV1::PotionBlockedBySozu);
     let labels = context
         .candidates
         .iter()
         .map(|candidate| candidate.label.as_str())
         .collect::<Vec<_>>()
         .join(", ");
+    let (effect_kind, effect_key, note) = if has_sozu_blocked {
+        (
+            "reward_skip_blocked_potion",
+            "reward:skip_sozu_blocked_potion",
+            "Sozu blocks potion rewards",
+        )
+    } else {
+        (
+            "reward_skip_full_potion",
+            "reward:skip_full_slot_potion",
+            "full potion slots",
+        )
+    };
     Some(RewardBranchOption {
         kind: "reward_skip",
         label: format!("Skip potion reward: {labels}"),
         command: "skip".to_string(),
-        effect_kind: "reward_skip_full_potion".to_string(),
-        effect_key: "reward:skip_full_slot_potion".to_string(),
-        effect_label: format!("Skip potion reward: {labels} | full potion slots"),
+        effect_kind: effect_kind.to_string(),
+        effect_key: effect_key.to_string(),
+        effect_label: format!("Skip potion reward: {labels} | {note}"),
     })
 }

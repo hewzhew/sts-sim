@@ -729,13 +729,8 @@ fn expand_branch_choice(
 ) -> BranchWork {
     let mut child = branch.clone();
     child.id = format!("{}.{}", child.id, draft.command);
-    let auto_leave_after_purchase =
+    let maybe_auto_leave_after_purchase =
         config.auto_leave_after_shop_purchase_branch && is_shop_purchase_effect(&draft.effect_kind);
-    let effect_label = if auto_leave_after_purchase {
-        format!("{} | auto leave shop", draft.effect_label)
-    } else {
-        draft.effect_label
-    };
     child.choices.push(BranchExperimentChoiceV1 {
         depth: draft.depth,
         kind: draft.kind.to_string(),
@@ -744,15 +739,18 @@ fn expand_branch_choice(
         selected_cards: draft.selected_cards,
         effect_kind: draft.effect_kind,
         effect_key: draft.effect_key,
-        effect_label,
+        effect_label: draft.effect_label,
         representative_count: draft.representative_count,
         suppressed_count: draft.suppressed_count,
         label: draft.label,
         command: draft.command.clone(),
     });
     match apply_branch_choice(&mut child.session, &draft.command).and_then(|_| {
-        if auto_leave_after_purchase {
+        if maybe_auto_leave_after_purchase && shop_can_be_auto_left_after_purchase(&child.session) {
             apply_branch_choice(&mut child.session, "leave")?;
+            if let Some(choice) = child.choices.last_mut() {
+                choice.effect_label = format!("{} | auto leave shop", choice.effect_label);
+            }
         }
         Ok(())
     }) {
@@ -776,6 +774,13 @@ fn is_shop_purchase_effect(effect_kind: &str) -> bool {
     matches!(
         effect_kind,
         "shop_buy_card" | "shop_buy_relic" | "shop_buy_potion"
+    )
+}
+
+fn shop_can_be_auto_left_after_purchase(session: &RunControlSession) -> bool {
+    matches!(
+        &session.engine_state,
+        EngineState::Shop(shop) if shop.pending_reward_overlay.is_none()
     )
 }
 

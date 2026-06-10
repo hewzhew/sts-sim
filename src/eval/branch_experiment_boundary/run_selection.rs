@@ -8,6 +8,7 @@ use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceSt
 use crate::state::rewards::RewardCard;
 
 pub(super) const MAX_RUN_SELECTION_OPTIONS_PER_BRANCH: usize = 12;
+const MAX_DUPLICATE_OPTIONS_PER_BRANCH: usize = 4;
 
 #[derive(Clone, Debug)]
 pub(super) struct RunSelectionBranchOption {
@@ -58,6 +59,12 @@ pub(super) fn run_selection_branch_options(
     if choice.min_choices == 1 {
         let options = compressed_single_run_selection_options(deck_options);
         if options.is_empty() || options.len() > MAX_RUN_SELECTION_OPTIONS_PER_BRANCH {
+            if choice.reason == RunPendingChoiceReason::Duplicate {
+                let duplicate_options = select_duplicate_branch_options(session, options);
+                if !duplicate_options.is_empty() {
+                    return Some(duplicate_options);
+                }
+            }
             return policy_run_selection_branch_option(session, choice).map(|option| vec![option]);
         }
         return Some(options);
@@ -297,6 +304,56 @@ fn run_selection_branch_option_from_group_counts(
         representative_count: combo.represented_exact_count,
         suppressed_count: combo.represented_exact_count.saturating_sub(1),
     }
+}
+
+fn select_duplicate_branch_options(
+    session: &RunControlSession,
+    mut options: Vec<RunSelectionBranchOption>,
+) -> Vec<RunSelectionBranchOption> {
+    options.sort_by(|left, right| {
+        duplicate_option_priority(right, session)
+            .cmp(&duplicate_option_priority(left, session))
+            .then_with(|| left.command.cmp(&right.command))
+    });
+    let suppressed_count = options
+        .len()
+        .saturating_sub(MAX_DUPLICATE_OPTIONS_PER_BRANCH);
+    options
+        .into_iter()
+        .take(MAX_DUPLICATE_OPTIONS_PER_BRANCH)
+        .enumerate()
+        .map(|(index, mut option)| {
+            if index == 0 && suppressed_count > 0 {
+                option.suppressed_count += suppressed_count;
+                option.effect_label = format!(
+                    "{} | duplicate portfolio cap suppressed {suppressed_count} candidate(s)",
+                    option.effect_label
+                );
+            }
+            option
+        })
+        .collect()
+}
+
+fn duplicate_option_priority(
+    option: &RunSelectionBranchOption,
+    session: &RunControlSession,
+) -> i32 {
+    let Some(card_id) = option.card else {
+        return -10_000;
+    };
+    session
+        .run_state
+        .master_deck
+        .iter()
+        .find(|card| card.id == card_id && Some(card.upgrades) == option.upgrades)
+        .map(|card| {
+            crate::ai::run_choice_policy_v1::run_choice_duplicate_priority_v1(
+                card,
+                &session.run_state,
+            )
+        })
+        .unwrap_or(-10_000)
 }
 
 fn policy_run_selection_branch_option(

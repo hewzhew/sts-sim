@@ -145,6 +145,45 @@ fn current_boundary_can_include_skip_for_unopened_card_reward_item() {
 }
 
 #[test]
+fn current_boundary_does_not_offer_unexecutable_card_skip_in_reward_overlay() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.skippable = true;
+    reward.items.push(RewardItem::Card {
+        cards: vec![
+            RewardCard::new(CardId::BattleTrance, 0),
+            RewardCard::new(CardId::Armaments, 1),
+            RewardCard::new(CardId::GhostlyArmor, 0),
+        ],
+    });
+    session.engine_state = EngineState::RewardOverlay {
+        reward_state: reward,
+        return_state: Box::new(EngineState::Shop(ShopState::new())),
+    };
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: None,
+            max_campfire_options_per_branch: None,
+            include_skip: true,
+            include_event_reward_skip: false,
+        },
+        None,
+    )
+    .expect("overlay card reward boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::CardReward);
+    assert!(
+        !boundary
+            .options
+            .iter()
+            .any(|option| option.kind == "card_reward_skip"),
+        "RewardOverlay has no single visible command that consumes one unopened card reward as a skip"
+    );
+}
+
+#[test]
 fn current_boundary_suppresses_completed_event_reward_skip_by_default() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(EventState {
@@ -528,6 +567,43 @@ fn current_boundary_can_skip_full_slot_potion_reward_after_low_agency_claims() {
     assert!(!boundary.options[0]
         .effect_label
         .contains("replacement policy not modeled"));
+}
+
+#[test]
+fn current_boundary_can_skip_sozu_blocked_potion_reward() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::Sozu));
+    session.run_state.potions = vec![
+        Some(Potion::new(PotionId::FirePotion, 1)),
+        None,
+        Some(Potion::new(PotionId::StrengthPotion, 3)),
+    ];
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Potion {
+        potion_id: PotionId::SpeedPotion,
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Sozu-blocked potion reward should expose a skip branch");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Reward);
+    assert_eq!(boundary.options.len(), 1);
+    assert_eq!(boundary.options[0].kind, "reward_skip");
+    assert_eq!(boundary.options[0].command, "skip");
+    assert_eq!(
+        boundary.options[0].effect_kind,
+        "reward_skip_blocked_potion"
+    );
+    assert_eq!(
+        boundary.options[0].effect_key,
+        "reward:skip_sozu_blocked_potion"
+    );
+    assert!(boundary.options[0].effect_label.contains("Speed"));
+    assert!(boundary.options[0].effect_label.contains("Sozu blocks"));
 }
 
 #[test]
@@ -983,6 +1059,50 @@ fn current_boundary_uses_policy_representative_for_high_fanout_run_selection_opt
     assert!(boundary.options[0]
         .effect_label
         .contains("transform Strike, Defend"));
+}
+
+#[test]
+fn current_boundary_keeps_high_value_duplicate_targets_when_fanout_is_high() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.master_deck = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::Defend, 11),
+        CombatCard::new(CardId::Bash, 12),
+        CombatCard::new(CardId::TwinStrike, 13),
+        CombatCard::new(CardId::PommelStrike, 14),
+        CombatCard::new(CardId::Shockwave, 15),
+        CombatCard::new(CardId::Offering, 16),
+        CombatCard::new(CardId::Corruption, 17),
+        CombatCard::new(CardId::ShrugItOff, 18),
+        CombatCard::new(CardId::TrueGrit, 19),
+        CombatCard::new(CardId::Uppercut, 20),
+        CombatCard::new(CardId::Disarm, 21),
+        CombatCard::new(CardId::FlameBarrier, 22),
+        CombatCard::new(CardId::Cleave, 23),
+        CombatCard::new(CardId::Armaments, 24),
+    ];
+    session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+        min_choices: 1,
+        max_choices: 1,
+        reason: RunPendingChoiceReason::Duplicate,
+        return_state: Box::new(EngineState::Shop(ShopState::new())),
+    });
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("duplicate portfolio should keep high-fanout duplicate choice moving");
+    let cards = boundary
+        .options
+        .iter()
+        .map(|option| option.card)
+        .collect::<Vec<_>>();
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::RunSelection);
+    assert_eq!(boundary.options.len(), 4);
+    assert!(cards.contains(&Some(CardId::Offering)));
+    assert!(cards.contains(&Some(CardId::Corruption)));
+    assert!(cards.contains(&Some(CardId::Shockwave)));
+    assert!(!cards.contains(&Some(CardId::Strike)));
+    assert!(!cards.contains(&Some(CardId::Defend)));
 }
 
 #[test]

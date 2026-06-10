@@ -9,7 +9,7 @@ use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
-use crate::state::shop::{ShopCard, ShopState};
+use crate::state::shop::{ShopCard, ShopRelic, ShopState};
 use std::fs;
 use std::path::PathBuf;
 
@@ -154,6 +154,96 @@ fn branch_experiment_auto_leaves_after_shop_purchase_branch_by_default() {
         buy_branch.summary.boundary_title, "Shop",
         "a single purchase branch should close the shop to avoid repeated buy-combination expansion"
     );
+}
+
+#[test]
+fn branch_experiment_does_not_auto_leave_shop_purchase_that_opens_reward_overlay() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 200;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Orrery,
+        price: 145,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 4,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    let buy_branch = report
+        .branches
+        .iter()
+        .find(|branch| {
+            branch
+                .choices
+                .iter()
+                .any(|choice| choice.effect_kind == "shop_buy_relic")
+        })
+        .expect("buy-relic branch");
+    let buy_choice = buy_branch
+        .choices
+        .iter()
+        .find(|choice| choice.effect_kind == "shop_buy_relic")
+        .expect("buy-relic choice");
+
+    assert!(
+        !buy_choice.effect_label.contains("auto leave shop"),
+        "shop purchases that open reward overlays must leave the branch at the overlay boundary"
+    );
+    assert_eq!(buy_branch.summary.boundary_title, "Reward Overlay");
+}
+
+#[test]
+fn branch_experiment_does_not_auto_leave_shop_purchase_that_opens_duplicate_choice() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 200;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::DollysMirror,
+        price: 155,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 4,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    let buy_branch = report
+        .branches
+        .iter()
+        .find(|branch| {
+            branch
+                .choices
+                .iter()
+                .any(|choice| choice.effect_kind == "shop_buy_relic")
+        })
+        .expect("buy-relic branch");
+    let buy_choice = buy_branch
+        .choices
+        .iter()
+        .find(|choice| choice.effect_kind == "shop_buy_relic")
+        .expect("buy-relic choice");
+
+    assert!(
+        !buy_choice.effect_label.contains("auto leave shop"),
+        "shop purchases that open deck selection must leave the branch at the selection boundary"
+    );
+    assert_eq!(buy_branch.summary.boundary_title, "Run Choice Duplicate");
 }
 
 #[test]
