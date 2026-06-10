@@ -80,13 +80,7 @@ pub fn on_equip(
         RelicId::EmptyCage => empty_cage::on_equip(run_state, return_state),
         // Pandora's Box: Transform all Strikes and Defends
         RelicId::PandorasBox => {
-            let results = pandoras_box::on_equip(run_state);
-            if !results.is_empty() {
-                eprintln!("  [Pandora's Box] Transformed {} cards:", results.len());
-                for (old, new) in &results {
-                    eprintln!("    {} → {}", old, new);
-                }
-            }
+            pandoras_box::on_equip(run_state);
             None
         }
         // CallingBell: Curse of the Bell + 3 Relics
