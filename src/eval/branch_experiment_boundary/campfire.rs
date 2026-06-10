@@ -13,6 +13,7 @@ pub(super) struct CampfireBranchOption {
     pub(super) upgrades: Option<u8>,
     pub(super) effect_kind: String,
     pub(super) equivalence_key: String,
+    priority: i32,
     pub(super) representative_count: usize,
     pub(super) suppressed_count: usize,
     semantic_class: String,
@@ -48,6 +49,7 @@ pub(super) fn campfire_branch_options(
                 effect_kind: metadata.effect_kind,
                 semantic_class: metadata.semantic_class,
                 equivalence_key: metadata.equivalence_key,
+                priority: metadata.priority,
                 representative_count: 1,
                 suppressed_count: 0,
             })
@@ -154,6 +156,7 @@ struct CampfireOptionMetadata {
     effect_kind: String,
     semantic_class: String,
     equivalence_key: String,
+    priority: i32,
 }
 
 fn campfire_option_metadata(
@@ -178,12 +181,17 @@ fn campfire_option_metadata(
                 &RewardCard::new(card.id, upgraded),
             );
             let (_, class_key) = super::reward_option_semantic_class(&profile);
+            let priority = crate::ai::campfire_policy_v1::campfire_smith_upgrade_priority_v1(
+                card,
+                &session.run_state,
+            );
             CampfireOptionMetadata {
                 card: Some(card.id),
                 upgrades: Some(card.upgrades),
                 effect_kind: "upgrade_card".to_string(),
                 semantic_class: format!("smith:{class_key}"),
                 equivalence_key: format!("smith:{}", super::card_stat_identity_key(card)),
+                priority,
             }
         }
         CampfireChoice::Dig => campfire_metadata_without_card("dig", "dig"),
@@ -198,6 +206,7 @@ fn campfire_option_metadata(
                 equivalence_key: card
                     .map(|card| format!("toke:{}", super::card_stat_identity_key(card)))
                     .unwrap_or_else(|| "toke:unknown".to_string()),
+                priority: 200,
             }
         }
         CampfireChoice::Recall => campfire_metadata_without_card("recall", "recall"),
@@ -214,16 +223,17 @@ fn campfire_metadata_without_card(
         effect_kind: effect_kind.to_string(),
         semantic_class: semantic_class.to_string(),
         equivalence_key: semantic_class.to_string(),
+        priority: 0,
     }
 }
 
-fn campfire_option_priority(option: &CampfireBranchOption) -> usize {
+fn campfire_option_priority(option: &CampfireBranchOption) -> i32 {
     match option.semantic_class.as_str() {
-        "rest:wounded" => 0,
-        class if class.starts_with("smith:") => 1,
-        "rest:full_hp" => 2,
-        "dig" | "lift" | "toke" => 2,
-        "recall" => 3,
-        _ => 4,
+        "rest:wounded" => -10_000,
+        class if class.starts_with("smith:") => 1_000 - option.priority,
+        "dig" | "lift" | "toke" => 2_000 - option.priority,
+        "rest:full_hp" => 3_000,
+        "recall" => 4_000,
+        _ => 5_000,
     }
 }

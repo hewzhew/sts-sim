@@ -1,5 +1,7 @@
 use crate::ai::shop_policy_v1::{
-    build_shop_decision_context_v1, plan_shop_decision_v1, ShopPolicyActionV1, ShopPolicyConfigV1,
+    build_shop_decision_context_v1, plan_shop_decision_v1, shop_card_conversion_priority_v1,
+    shop_conversion_pressure_v1, shop_potion_conversion_priority_v1,
+    shop_relic_conversion_priority_v1, ShopPolicyActionV1, ShopPolicyConfigV1,
 };
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::get_potion_definition;
@@ -71,41 +73,50 @@ fn low_fanout_purchase_branch_options(
     for (idx, card) in shop.cards.iter().enumerate() {
         if card.can_buy && card.price <= session.run_state.gold {
             let card_name = get_card_definition(card.card_id).name;
-            options.push(ShopBranchOption {
-                label: format!("Buy {card_name}"),
-                command: format!("buy card {idx}"),
-                card: Some(card.card_id),
-                effect_kind: "shop_buy_card".to_string(),
-                effect_label: format!("Buy {card_name} | {} gold", card.price),
-                representative_count: 1,
-                suppressed_count: 0,
+            options.push(ScoredShopBranchOption {
+                score: shop_card_conversion_priority_v1(card.card_id, &session.run_state),
+                option: ShopBranchOption {
+                    label: format!("Buy {card_name}"),
+                    command: format!("buy card {idx}"),
+                    card: Some(card.card_id),
+                    effect_kind: "shop_buy_card".to_string(),
+                    effect_label: format!("Buy {card_name} | {} gold", card.price),
+                    representative_count: 1,
+                    suppressed_count: 0,
+                },
             });
         }
     }
     for (idx, relic) in shop.relics.iter().enumerate() {
         if relic.can_buy && relic.price <= session.run_state.gold {
-            options.push(ShopBranchOption {
-                label: format!("Buy {:?}", relic.relic_id),
-                command: format!("buy relic {idx}"),
-                card: None,
-                effect_kind: "shop_buy_relic".to_string(),
-                effect_label: format!("Buy {:?} | {} gold", relic.relic_id, relic.price),
-                representative_count: 1,
-                suppressed_count: 0,
+            options.push(ScoredShopBranchOption {
+                score: shop_relic_conversion_priority_v1(relic.relic_id),
+                option: ShopBranchOption {
+                    label: format!("Buy {:?}", relic.relic_id),
+                    command: format!("buy relic {idx}"),
+                    card: None,
+                    effect_kind: "shop_buy_relic".to_string(),
+                    effect_label: format!("Buy {:?} | {} gold", relic.relic_id, relic.price),
+                    representative_count: 1,
+                    suppressed_count: 0,
+                },
             });
         }
     }
     for (idx, potion) in shop.potions.iter().enumerate() {
         if potion.can_buy && potion.price <= session.run_state.gold {
             let potion_name = get_potion_definition(potion.potion_id).name;
-            options.push(ShopBranchOption {
-                label: format!("Buy {potion_name}"),
-                command: format!("buy potion {idx}"),
-                card: None,
-                effect_kind: "shop_buy_potion".to_string(),
-                effect_label: format!("Buy {potion_name} potion | {} gold", potion.price),
-                representative_count: 1,
-                suppressed_count: 0,
+            options.push(ScoredShopBranchOption {
+                score: shop_potion_conversion_priority_v1(&session.run_state),
+                option: ShopBranchOption {
+                    label: format!("Buy {potion_name}"),
+                    command: format!("buy potion {idx}"),
+                    card: None,
+                    effect_kind: "shop_buy_potion".to_string(),
+                    effect_label: format!("Buy {potion_name} potion | {} gold", potion.price),
+                    representative_count: 1,
+                    suppressed_count: 0,
+                },
             });
         }
     }
@@ -114,28 +125,50 @@ fn low_fanout_purchase_branch_options(
         return None;
     }
     let mut options = select_shop_purchase_portfolio(options);
-    options.push(ShopBranchOption {
-        label: "Leave shop".to_string(),
-        command: "leave".to_string(),
-        card: None,
-        effect_kind: "shop_leave".to_string(),
-        effect_label: "Leave shop | decline selected shop purchase portfolio".to_string(),
-        representative_count: 1,
-        suppressed_count: 0,
-    });
+    if !shop_conversion_pressure_v1(&session.run_state, shop) {
+        options.push(ShopBranchOption {
+            label: "Leave shop".to_string(),
+            command: "leave".to_string(),
+            card: None,
+            effect_kind: "shop_leave".to_string(),
+            effect_label: "Leave shop | decline selected shop purchase portfolio".to_string(),
+            representative_count: 1,
+            suppressed_count: 0,
+        });
+    }
     Some(options)
 }
 
-fn select_shop_purchase_portfolio(options: Vec<ShopBranchOption>) -> Vec<ShopBranchOption> {
+#[derive(Clone, Debug)]
+struct ScoredShopBranchOption {
+    score: i32,
+    option: ShopBranchOption,
+}
+
+fn select_shop_purchase_portfolio(
+    mut options: Vec<ScoredShopBranchOption>,
+) -> Vec<ShopBranchOption> {
     if options.len() <= MAX_SHOP_PURCHASE_OPTIONS_PER_BRANCH {
-        return options;
+        options.sort_by(|left, right| {
+            right
+                .score
+                .cmp(&left.score)
+                .then_with(|| left.option.command.cmp(&right.option.command))
+        });
+        return options.into_iter().map(|entry| entry.option).collect();
     }
 
     let mut selected_indices = Vec::<usize>::new();
-    for effect_kind in ["shop_buy_card", "shop_buy_relic", "shop_buy_potion"] {
+    options.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.option.command.cmp(&right.option.command))
+    });
+    for effect_kind in ["shop_buy_relic", "shop_buy_card", "shop_buy_potion"] {
         if let Some(index) = options
             .iter()
-            .position(|option| option.effect_kind == effect_kind)
+            .position(|entry| entry.option.effect_kind == effect_kind)
         {
             selected_indices.push(index);
         }
@@ -155,7 +188,7 @@ fn select_shop_purchase_portfolio(options: Vec<ShopBranchOption>) -> Vec<ShopBra
         .into_iter()
         .enumerate()
         .map(|(selected_position, index)| {
-            let mut option = options[index].clone();
+            let mut option = options[index].option.clone();
             if selected_position == 0 && suppressed_count > 0 {
                 option.suppressed_count = suppressed_count;
                 option.effect_label = format!(

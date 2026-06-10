@@ -339,10 +339,7 @@ fn current_boundary_expands_low_fanout_shop_purchase_choices() {
         .collect::<Vec<_>>();
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
-    assert_eq!(
-        commands,
-        vec!["buy card 0", "buy relic 0", "buy potion 0", "leave"]
-    );
+    assert_eq!(commands, vec!["buy relic 0", "buy card 0", "buy potion 0"]);
     assert!(boundary
         .options
         .iter()
@@ -393,11 +390,11 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
         .collect::<BTreeSet<_>>();
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
-    assert_eq!(boundary.options.len(), 5);
+    assert_eq!(boundary.options.len(), 4);
     assert!(effect_kinds.contains("shop_buy_card"));
     assert!(effect_kinds.contains("shop_buy_relic"));
     assert!(effect_kinds.contains("shop_buy_potion"));
-    assert!(effect_kinds.contains("shop_leave"));
+    assert!(!effect_kinds.contains("shop_leave"));
     assert!(
         boundary
             .options
@@ -405,6 +402,46 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
             .any(|option| option.suppressed_count > 0),
         "capped shop portfolios should expose suppressed purchase count"
     );
+}
+
+#[test]
+fn current_boundary_suppresses_nloth_energy_relic_trade() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::PhilosopherStone));
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::OldCoin));
+    session.run_state.event_state = Some(EventState {
+        id: EventId::Nloth,
+        current_screen: 0,
+        internal_state: 1 | (2 << 8),
+        completed: false,
+        combat_pending: false,
+        extra_data: Vec::new(),
+    });
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("N'loth should still expose safe event branches");
+    let labels = boundary
+        .options
+        .iter()
+        .map(|option| option.label.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    assert!(
+        !labels
+            .iter()
+            .any(|label| label.contains("PhilosopherStone")),
+        "N'loth must not branch through a protected energy relic trade"
+    );
+    assert!(labels.iter().any(|label| label.contains("OldCoin")));
+    assert!(labels.iter().any(|label| label.contains("Leave")));
 }
 
 #[test]
@@ -987,6 +1024,24 @@ fn campfire_branch_option_portfolio_does_not_spend_cap_on_full_hp_rest() {
             .any(|option| option.command.starts_with("smith ")),
         "smith options should be preferred over no-op full-hp rest"
     );
+}
+
+#[test]
+fn campfire_branch_option_portfolio_prefers_bash_over_starter_filler_when_tightly_capped() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state = EngineState::Campfire;
+
+    let options = campfire_branch_options(&session).expect("campfire options");
+    let selected = select_campfire_branch_options(options, Some(1)).options;
+
+    assert_eq!(
+        selected
+            .iter()
+            .map(|option| option.command.as_str())
+            .collect::<Vec<_>>(),
+        vec!["smith 9"]
+    );
+    assert_eq!(selected[0].card, Some(CardId::Bash));
 }
 
 #[test]

@@ -2,7 +2,7 @@ use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::events::{
     EventActionKind, EventEffect, EventOption, EventOptionSemantics, EventOptionTransition,
-    EventSelectionKind,
+    EventRelicKind, EventSelectionKind,
 };
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
@@ -41,6 +41,9 @@ pub(crate) fn event_branch_options(session: &RunControlSession) -> Option<Vec<Ev
         if event_option.ui.disabled {
             return None;
         }
+        if nloth_trade_is_protected(session, event_option) {
+            continue;
+        }
         let semantics = branch_semantics_for_event_option(event_option);
         branch_options.push(EventBranchOption {
             label: candidate.label.clone(),
@@ -55,6 +58,45 @@ pub(crate) fn event_branch_options(session: &RunControlSession) -> Option<Vec<Ev
         return None;
     }
     Some(branch_options)
+}
+
+fn nloth_trade_is_protected(session: &RunControlSession, option: &EventOption) -> bool {
+    let trades_for_gift = option.semantics.effects.iter().any(|effect| {
+        matches!(
+            effect,
+            EventEffect::ObtainRelic {
+                kind: EventRelicKind::Specific(crate::content::relics::RelicId::NlothsGift),
+                ..
+            }
+        )
+    });
+    if !trades_for_gift {
+        return false;
+    }
+    let Some(lost_relic_id) = option
+        .semantics
+        .effects
+        .iter()
+        .find_map(|effect| match effect {
+            EventEffect::LoseRelic {
+                specific: Some(relic),
+                ..
+            } => Some(*relic),
+            _ => None,
+        })
+    else {
+        return false;
+    };
+    let Some(relic) = session
+        .run_state
+        .relics
+        .iter()
+        .find(|relic| relic.id == lost_relic_id)
+    else {
+        return true;
+    };
+
+    crate::ai::relic_trade_policy_v1::nloth_trade_judgment_v1(relic, &session.run_state).protects()
 }
 
 fn branch_semantics_for_event_option(option: &EventOption) -> EventOptionBranchSemantics {
