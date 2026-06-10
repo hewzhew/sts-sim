@@ -916,6 +916,13 @@ pub fn render_branch_campaign_compact_v1(
             render_branch_pressure_examples_v1(&report.discarded_examples)
         ));
     }
+    if !report.abandoned.is_empty() {
+        lines.push(format!(
+            "Abandoned examples: count={} examples=[{}]",
+            report.abandoned.len(),
+            render_campaign_branch_examples_v1(&report.abandoned, 3)
+        ));
+    }
     if report.route_evidence.decisions > 0 {
         lines.push(format!(
             "Route evidence: decisions={} first_elite optional={} forced={} none={} avg_elite_prep={} underprepared={} bailouts=rest:{} shop:{}",
@@ -1022,12 +1029,43 @@ fn format_bp(value: i32) -> String {
 }
 
 fn render_branch_pressure_examples_v1(examples: &[String]) -> String {
-    examples
-        .iter()
-        .take(3)
-        .map(|example| truncate_branch_pressure_example_v1(example))
-        .collect::<Vec<_>>()
-        .join(" | ")
+    unique_limited_strings(
+        examples
+            .iter()
+            .map(|example| truncate_branch_pressure_example_v1(example)),
+        3,
+    )
+    .join(" | ")
+}
+
+fn render_campaign_branch_examples_v1(
+    branches: &[BranchCampaignBranchV1],
+    max_examples: usize,
+) -> String {
+    unique_limited_strings(
+        branches
+            .iter()
+            .map(render_campaign_discard_example_v1)
+            .map(|example| truncate_branch_pressure_example_v1(&example)),
+        max_examples,
+    )
+    .join(" | ")
+}
+
+fn unique_limited_strings<I>(items: I, limit: usize) -> Vec<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut result = Vec::new();
+    for item in items {
+        if result.len() >= limit {
+            break;
+        }
+        if !result.contains(&item) {
+            result.push(item);
+        }
+    }
+    result
 }
 
 fn truncate_branch_pressure_example_v1(value: &str) -> String {

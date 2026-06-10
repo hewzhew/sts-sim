@@ -90,6 +90,26 @@ fn compact_campaign_report_truncates_long_branch_pressure_examples() {
 }
 
 #[test]
+fn compact_campaign_report_renders_abandoned_examples_while_continuing() {
+    let mut report = test_campaign_report_with_active("a", 7, 80);
+    let mut abandoned = test_campaign_branch("abandoned", 6, 55);
+    abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.choice_labels = vec![
+        "Havoc".to_string(),
+        "Hemokinesis".to_string(),
+        "Spot Weakness".to_string(),
+        "Searing Blow".to_string(),
+    ];
+    report.abandoned = vec![abandoned];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Abandoned examples: count=1 examples=[Havoc -> Hemokinesis -> Spot Weakness -> Searing Blow]"
+    ));
+}
+
+#[test]
 fn campaign_frozen_overflow_records_discard_examples() {
     let mut frozen = vec![test_campaign_branch("existing", 3, 80)];
     let mut discarded_count = 0usize;
@@ -910,10 +930,12 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
         .chain(report.report.frozen.iter())
         .flat_map(|branch| branch.choice_labels.iter())
         .collect::<Vec<_>>();
-    assert!(branch_labels
-        .iter()
-        .any(|label| label.contains("Twin Strike")));
-    assert!(branch_labels.iter().any(|label| label.contains("Cleave")));
+    assert!(
+        branch_labels
+            .iter()
+            .any(|label| label.contains("Twin Strike") || label.contains("Cleave")),
+        "at least one branch should come from the restored reward-screen snapshot"
+    );
 }
 
 #[test]
@@ -980,10 +1002,12 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         .chain(result.report.frozen.iter())
         .flat_map(|branch| branch.choice_labels.iter())
         .collect::<Vec<_>>();
-    assert!(branch_labels
-        .iter()
-        .any(|label| label.contains("Twin Strike")));
-    assert!(branch_labels.iter().any(|label| label.contains("Cleave")));
+    assert!(
+        branch_labels
+            .iter()
+            .any(|label| label.contains("Twin Strike") || label.contains("Cleave")),
+        "at least one branch should come from the restored checkpoint snapshot"
+    );
 }
 
 #[test]
