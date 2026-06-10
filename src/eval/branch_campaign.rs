@@ -187,6 +187,8 @@ pub struct BranchCampaignRouteEvidenceSummaryV1 {
     pub underprepared_first_elite: usize,
     pub avg_elite_prep_bp: i32,
     pub examples: Vec<BranchCampaignRouteEvidenceExampleV1>,
+    #[serde(default)]
+    pub underprepared_examples: Vec<BranchCampaignRouteEvidenceExampleV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -925,6 +927,14 @@ pub fn render_branch_campaign_compact_v1(
                 report.route_evidence.rest_bailout,
                 report.route_evidence.shop_bailout,
             ));
+            if let Some(example) = report.route_evidence.underprepared_examples.first() {
+                lines.push(format!(
+                    "  concern example: {} | first_elite={} elite_prep={}",
+                    example.target,
+                    example.first_elite,
+                    format_bp(example.elite_prep_bp)
+                ));
+            }
         }
     }
     if report.stop_reason == "max_rounds"
@@ -1061,6 +1071,12 @@ fn merge_campaign_route_evidence_summary_v1(
         }
         target.examples.push(example);
     }
+    for example in incoming.underprepared_examples {
+        if target.underprepared_examples.len() >= 4 {
+            break;
+        }
+        target.underprepared_examples.push(example);
+    }
 }
 
 fn add_campaign_route_decision_v1(
@@ -1096,6 +1112,17 @@ fn add_campaign_route_decision_v1(
             first_elite: render_branch_campaign_first_elite_evidence_v1(decision),
             elite_prep_bp: decision.elite_prep_bp,
         });
+    }
+    if route_decision_has_underprepared_first_elite_v1(decision)
+        && summary.underprepared_examples.len() < 4
+    {
+        summary
+            .underprepared_examples
+            .push(BranchCampaignRouteEvidenceExampleV1 {
+                target: decision.target.clone(),
+                first_elite: render_branch_campaign_first_elite_evidence_v1(decision),
+                elite_prep_bp: decision.elite_prep_bp,
+            });
     }
 }
 

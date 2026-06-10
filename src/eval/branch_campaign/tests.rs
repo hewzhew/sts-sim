@@ -33,6 +33,13 @@ fn campaign_compact_report_renders_route_evidence_summary() {
                     .to_string(),
             elite_prep_bp: 70,
         }],
+        underprepared_examples: vec![BranchCampaignRouteEvidenceExampleV1 {
+            target: "x=1 Elite".to_string(),
+            first_elite:
+                "forced hallways=0-0 fires=0 shops=0 rest_bailout=false shop_bailout=false"
+                    .to_string(),
+            elite_prep_bp: -25,
+        }],
     };
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
@@ -45,6 +52,9 @@ fn campaign_compact_report_renders_route_evidence_summary() {
     ));
     assert!(rendered.contains(
         "Route concern: forced_first_elite_underprepared=1/3 rest_bailout=2 shop_bailout=1"
+    ));
+    assert!(rendered.contains(
+        "concern example: x=1 Elite | first_elite=forced hallways=0-0 fires=0 shops=0 rest_bailout=false shop_bailout=false elite_prep=-0.25"
     ));
 }
 
