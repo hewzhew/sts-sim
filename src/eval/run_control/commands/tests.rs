@@ -120,6 +120,14 @@ fn run_control_parser_accepts_search_combat_options() {
             ..Default::default()
         })
     );
+    assert_eq!(
+        parse_run_control_command("sc segment=non_boss_turn")
+            .expect("non-boss segment option should parse"),
+        RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
+            segment_mode: Some(RunControlCombatSegmentMode::NonBossTurnBoundary),
+            ..Default::default()
+        })
+    );
 }
 
 #[test]

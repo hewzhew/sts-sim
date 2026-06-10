@@ -335,8 +335,14 @@ fn parse_segment_mode(value: &str) -> Result<Option<RunControlCombatSegmentMode>
         "turn" | "turn_boundary" | "turn-boundary" | "current_turn" | "current-turn" => {
             Ok(Some(RunControlCombatSegmentMode::TurnBoundary))
         }
+        "non_boss"
+        | "non-boss"
+        | "non_boss_turn"
+        | "non-boss-turn"
+        | "non_boss_turn_boundary"
+        | "non-boss-turn-boundary" => Ok(Some(RunControlCombatSegmentMode::NonBossTurnBoundary)),
         _ => Err(format!(
-            "invalid segment mode '{value}', expected off|turn_boundary"
+            "invalid segment mode '{value}', expected off|turn_boundary|non_boss_turn_boundary"
         )),
     }
 }

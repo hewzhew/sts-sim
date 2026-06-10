@@ -152,7 +152,7 @@ fn try_apply_turn_segment_after_rejection(
     saved_evidence: Option<&std::path::Path>,
     rejection_result: &'static str,
 ) -> Result<Option<RunControlCommandOutcome>, String> {
-    if options.segment_mode != Some(RunControlCombatSegmentMode::TurnBoundary) {
+    if !segment_mode_allows_turn_segment(options.segment_mode, start) {
         return Ok(None);
     }
 
@@ -205,6 +205,17 @@ fn try_apply_turn_segment_after_rejection(
         ]);
     outcome.search_evidence_path = saved_evidence.map(|path| path.to_path_buf());
     Ok(Some(outcome))
+}
+
+fn segment_mode_allows_turn_segment(
+    mode: Option<RunControlCombatSegmentMode>,
+    start: &CombatPosition,
+) -> bool {
+    match mode {
+        Some(RunControlCombatSegmentMode::TurnBoundary) => true,
+        Some(RunControlCombatSegmentMode::NonBossTurnBoundary) => !start.combat.meta.is_boss_fight,
+        None => false,
+    }
 }
 
 fn combat_automation_trace_annotation(
@@ -692,7 +703,7 @@ mod tests {
 
     use super::{
         combat_automation_trace_annotation, effective_hp_loss_limit, high_stakes_search_options,
-        next_available_evidence_path, search_config,
+        next_available_evidence_path, search_config, segment_mode_allows_turn_segment,
     };
     use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
     use crate::eval::run_control::trace_annotation::{
@@ -938,6 +949,31 @@ mod tests {
             Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
             Some(1),
         );
+    }
+
+    #[test]
+    fn non_boss_segment_mode_allows_hallway_partial_turns_but_blocks_boss_partial_turns() {
+        let hallway = session_with_combat_flags(false, false);
+        let hallway_start = hallway
+            .current_active_combat_position()
+            .expect("hallway combat position");
+        assert!(segment_mode_allows_turn_segment(
+            Some(crate::eval::run_control::RunControlCombatSegmentMode::NonBossTurnBoundary),
+            &hallway_start
+        ));
+
+        let boss = session_with_combat_flags(true, false);
+        let boss_start = boss
+            .current_active_combat_position()
+            .expect("boss combat position");
+        assert!(!segment_mode_allows_turn_segment(
+            Some(crate::eval::run_control::RunControlCombatSegmentMode::NonBossTurnBoundary),
+            &boss_start
+        ));
+        assert!(segment_mode_allows_turn_segment(
+            Some(crate::eval::run_control::RunControlCombatSegmentMode::TurnBoundary),
+            &boss_start
+        ));
     }
 
     #[test]

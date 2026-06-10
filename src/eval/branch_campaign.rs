@@ -80,7 +80,7 @@ impl Default for BranchCampaignConfigV1 {
             search_wall_ms: Some(200),
             search_max_hp_loss: None,
             search_options: RunControlSearchCombatOptions {
-                segment_mode: Some(RunControlCombatSegmentMode::TurnBoundary),
+                segment_mode: Some(RunControlCombatSegmentMode::NonBossTurnBoundary),
                 ..RunControlSearchCombatOptions::default()
             },
             combat_retry_policy: BranchCampaignCombatRetryPolicyV1::OnStall,

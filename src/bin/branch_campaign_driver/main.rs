@@ -676,7 +676,7 @@ fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, Stri
 fn campaign_search_options_from_args(args: &Args) -> Result<RunControlSearchCombatOptions, String> {
     let mut options = parse_branch_experiment_search_options_v1(&args.combat_search_options)?;
     if !combat_search_options_include_segment_mode(&args.combat_search_options) {
-        options.segment_mode = Some(RunControlCombatSegmentMode::TurnBoundary);
+        options.segment_mode = Some(RunControlCombatSegmentMode::NonBossTurnBoundary);
     }
     Ok(options)
 }
@@ -720,7 +720,7 @@ mod tests {
         assert_eq!(config.max_reward_options_per_branch, Some(2));
         assert_eq!(
             config.search_options.segment_mode,
-            Some(RunControlCombatSegmentMode::TurnBoundary)
+            Some(RunControlCombatSegmentMode::NonBossTurnBoundary)
         );
         assert_eq!(config.max_active, 8);
         assert_eq!(config.max_frozen, 32);

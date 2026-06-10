@@ -124,6 +124,7 @@ pub struct RunControlSearchCombatOptions {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunControlCombatSegmentMode {
     TurnBoundary,
+    NonBossTurnBoundary,
 }
 
 #[derive(Clone, Debug, PartialEq)]
