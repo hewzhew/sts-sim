@@ -90,6 +90,27 @@ fn compact_campaign_report_truncates_long_branch_pressure_examples() {
 }
 
 #[test]
+fn compact_campaign_report_truncates_long_active_choice_paths() {
+    let mut report = test_campaign_report_with_active("a", 7, 80);
+    report.active[0].choice_labels = vec![
+        "Warcry".to_string(),
+        "Body Slam".to_string(),
+        "Shrug It Off".to_string(),
+        "Sword Boomerang".to_string(),
+        "PandorasBox".to_string(),
+        "Whirlwind".to_string(),
+    ];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("choices: Warcry -> Body Slam -> ... -> Whirlwind"));
+    assert!(!rendered.contains(
+        "choices: Warcry -> Body Slam -> Shrug It Off -> Sword Boomerang -> PandorasBox -> Whirlwind"
+    ));
+    assert_eq!(report.active[0].choice_labels.len(), 6);
+}
+
+#[test]
 fn compact_campaign_report_renders_abandoned_examples_while_continuing() {
     let mut report = test_campaign_report_with_active("a", 7, 80);
     let mut abandoned = test_campaign_branch("abandoned", 6, 55);

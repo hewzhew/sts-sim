@@ -1007,7 +1007,7 @@ pub fn render_branch_campaign_compact_v1(
                 index + 1,
                 render_campaign_branch_state(branch),
                 branch.frontier_title,
-                render_choice_path(&branch.choice_labels)
+                render_compact_choice_path(&branch.choice_labels)
             ));
         }
     }
@@ -1020,7 +1020,7 @@ pub fn render_branch_campaign_compact_v1(
                 index + 1,
                 render_campaign_branch_state(branch),
                 branch.frontier_title,
-                render_choice_path(&branch.choice_labels)
+                render_compact_choice_path(&branch.choice_labels)
             ));
         }
     }
@@ -1320,7 +1320,7 @@ where
             round: round_number,
             branch_index: parent_index + 1,
             branch_count: parent_count,
-            choices: render_choice_path(&parent.choice_labels),
+            choices: render_compact_choice_path(&parent.choice_labels),
         });
         let parent_snapshot = snapshot_cache.get(&parent.commands).cloned();
         let parent_result = run_campaign_parent_round_v1(config, parent, parent_snapshot)?;
@@ -1992,6 +1992,10 @@ fn render_choice_path(labels: &[String]) -> String {
     } else {
         labels.join(" -> ")
     }
+}
+
+fn render_compact_choice_path(labels: &[String]) -> String {
+    truncate_branch_pressure_example_v1(&render_choice_path(labels))
 }
 
 fn campaign_strategy_next_step_v1(kind: &str) -> Option<&'static str> {
