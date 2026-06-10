@@ -575,6 +575,39 @@ fn campaign_builds_intervention_when_abandoned_branches_exhaust_routes() {
 }
 
 #[test]
+fn campaign_requests_intervention_for_leading_abandoned_combat_before_promoting_old_frozen() {
+    let mut abandoned = test_campaign_branch("abandoned-combat", 48, 78);
+    abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.frontier_title = "Combat".to_string();
+    abandoned.stop_reason = "combat search did not find an executable complete win".to_string();
+    abandoned.summary.as_mut().expect("summary").act = 3;
+    let frozen = vec![test_campaign_branch("old-frozen", 11, 80)];
+
+    let request = leading_abandoned_combat_intervention_request_v1(&frozen, &[abandoned])
+        .expect("leading abandoned combat should request intervention");
+
+    assert_eq!(request.kind, "combat_manual_or_budget");
+    assert_eq!(request.boundary_title, "Combat");
+    assert_eq!(request.act, 3);
+    assert_eq!(request.floor, 48);
+    assert_eq!(
+        request.stop_reasons,
+        vec!["combat search did not find an executable complete win".to_string()]
+    );
+}
+
+#[test]
+fn campaign_does_not_request_leading_abandoned_intervention_when_frozen_is_not_behind() {
+    let mut abandoned = test_campaign_branch("abandoned-combat", 12, 78);
+    abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.frontier_title = "Combat".to_string();
+    abandoned.stop_reason = "combat search did not find an executable complete win".to_string();
+    let frozen = vec![test_campaign_branch("same-progress-frozen", 12, 80)];
+
+    assert!(leading_abandoned_combat_intervention_request_v1(&frozen, &[abandoned]).is_none());
+}
+
+#[test]
 fn campaign_strategy_requests_are_fatal_only_without_continuable_branches() {
     let active = vec![test_campaign_branch("a", 6, 80)];
     let frozen = vec![test_campaign_branch("f", 5, 75)];

@@ -526,7 +526,15 @@ where
         state.abandoned.extend(selected.abandoned);
         state.stuck.extend(selected.stuck);
         retain_campaign_snapshot_cache_v1(&mut state.snapshot_cache, &state.active, &state.frozen);
-        let promoted_from_frozen = if state.active.is_empty() && state.victories.is_empty() {
+        let leading_abandoned_request = if state.active.is_empty() && state.victories.is_empty() {
+            leading_abandoned_combat_intervention_request_v1(&state.frozen, &state.abandoned)
+        } else {
+            None
+        };
+        let promoted_from_frozen = if leading_abandoned_request.is_none()
+            && state.active.is_empty()
+            && state.victories.is_empty()
+        {
             promote_frozen_to_active_v1(&mut state.active, &mut state.frozen, config.max_active)
         } else {
             0
@@ -565,6 +573,12 @@ where
         state.rounds.push(round_summary);
         state.rounds_completed = state.rounds_completed.saturating_add(1);
 
+        if let Some(request) = leading_abandoned_request {
+            state.strategy_requests =
+                merge_campaign_strategy_request_queue_v1(state.strategy_requests, vec![request]);
+            stop_reason = "needs_intervention".to_string();
+            break;
+        }
         if !state.victories.is_empty() {
             stop_reason = "victory_found".to_string();
             break;
@@ -1768,6 +1782,36 @@ fn abandoned_branches_intervention_request_v1(
             "raise combat retry budget, provide a manual combat line, or abandon this route family"
                 .to_string(),
     })
+}
+
+fn leading_abandoned_combat_intervention_request_v1(
+    frozen: &[BranchCampaignBranchV1],
+    abandoned: &[BranchCampaignBranchV1],
+) -> Option<BranchCampaignStrategyRequestV1> {
+    let best_frozen_progress = frozen.iter().map(branch_progress_key).max();
+    let best_abandoned_progress = abandoned
+        .iter()
+        .filter(|branch| is_combat_abandoned_branch_v1(branch))
+        .map(branch_progress_key)
+        .max()?;
+    if best_frozen_progress.is_some_and(|progress| progress >= best_abandoned_progress) {
+        return None;
+    }
+
+    let leading = abandoned
+        .iter()
+        .filter(|branch| {
+            is_combat_abandoned_branch_v1(branch)
+                && branch_progress_key(branch) == best_abandoned_progress
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    abandoned_branches_intervention_request_v1(&leading)
+}
+
+fn is_combat_abandoned_branch_v1(branch: &BranchCampaignBranchV1) -> bool {
+    branch.status == BranchCampaignBranchStatusV1::Abandoned
+        && normalized_campaign_boundary_title(&branch.frontier_title) == "combat"
 }
 
 fn render_campaign_intervention_details_v2(
