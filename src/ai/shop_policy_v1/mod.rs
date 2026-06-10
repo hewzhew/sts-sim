@@ -8,7 +8,8 @@ mod tests;
 
 pub use conversion::{
     shop_card_conversion_priority_v1, shop_conversion_pressure_v1,
-    shop_potion_conversion_priority_v1, shop_relic_conversion_priority_v1,
+    shop_potion_conversion_priority_for_v1, shop_potion_conversion_priority_v1,
+    shop_relic_conversion_priority_v1,
 };
 pub use policy::{build_shop_decision_context_v1, plan_shop_decision_v1};
 pub use types::{

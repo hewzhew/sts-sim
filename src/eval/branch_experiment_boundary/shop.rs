@@ -1,6 +1,6 @@
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, plan_shop_decision_v1, shop_card_conversion_priority_v1,
-    shop_conversion_pressure_v1, shop_potion_conversion_priority_v1,
+    shop_conversion_pressure_v1, shop_potion_conversion_priority_for_v1,
     shop_relic_conversion_priority_v1, ShopPolicyActionV1, ShopPolicyConfigV1,
 };
 use crate::content::cards::{get_card_definition, CardId};
@@ -107,7 +107,7 @@ fn low_fanout_purchase_branch_options(
         if potion.can_buy && potion.price <= session.run_state.gold {
             let potion_name = get_potion_definition(potion.potion_id).name;
             options.push(ScoredShopBranchOption {
-                score: shop_potion_conversion_priority_v1(&session.run_state),
+                score: shop_potion_conversion_priority_for_v1(potion.potion_id, &session.run_state),
                 option: ShopBranchOption {
                     label: format!("Buy {potion_name}"),
                     command: format!("buy potion {idx}"),

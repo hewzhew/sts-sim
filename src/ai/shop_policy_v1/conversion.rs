@@ -1,4 +1,5 @@
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
+use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
@@ -7,6 +8,9 @@ use crate::state::shop::ShopState;
 pub fn shop_conversion_pressure_v1(run_state: &RunState, shop: &ShopState) -> bool {
     let gold = run_state.gold;
     if gold >= 300 {
+        return true;
+    }
+    if affordable_high_impact_shop_purchase(run_state, shop) {
         return true;
     }
     if shop.purge_available && gold >= shop.purge_cost {
@@ -53,6 +57,43 @@ pub fn shop_potion_conversion_priority_v1(run_state: &RunState) -> i32 {
     }
 }
 
+pub fn shop_potion_conversion_priority_for_v1(potion: PotionId, run_state: &RunState) -> i32 {
+    let mut priority = shop_potion_conversion_priority_v1(run_state);
+    let near_serious_fight = run_state.act_num >= 2 || run_state.floor_num >= 6;
+    if near_serious_fight && boss_or_elite_shop_potion(potion) {
+        priority += 260;
+        if run_state.act_num >= 3 {
+            priority += 120;
+        }
+    }
+    if potion == PotionId::FairyPotion && run_state.current_hp * 3 <= run_state.max_hp {
+        priority += 220;
+    }
+    if potion == PotionId::SmokeBomb {
+        priority -= 520;
+    }
+    priority
+}
+
+fn affordable_high_impact_shop_purchase(run_state: &RunState, shop: &ShopState) -> bool {
+    let gold = run_state.gold;
+    shop.relics
+        .iter()
+        .any(|relic| relic.can_buy && relic.price <= gold && high_impact_shop_relic(relic.relic_id))
+        || shop.cards.iter().any(|card| {
+            card.can_buy
+                && card.price <= gold
+                && high_impact_shop_card(card.card_id)
+                && (run_state.act_num >= 2 || boss_or_elite_patch_card(card.card_id))
+        })
+        || shop.potions.iter().any(|potion| {
+            potion.can_buy
+                && potion.price <= gold
+                && boss_or_elite_shop_potion(potion.potion_id)
+                && (run_state.act_num >= 2 || run_state.floor_num >= 6)
+        })
+}
+
 fn high_impact_shop_card(card: CardId) -> bool {
     matches!(
         card,
@@ -88,6 +129,29 @@ fn boss_or_elite_patch_card(card: CardId) -> bool {
             | CardId::DemonForm
             | CardId::FiendFire
             | CardId::PowerThrough
+    )
+}
+
+fn boss_or_elite_shop_potion(potion: PotionId) -> bool {
+    matches!(
+        potion,
+        PotionId::DuplicationPotion
+            | PotionId::FearPotion
+            | PotionId::FirePotion
+            | PotionId::WeakenPotion
+            | PotionId::EssenceOfSteel
+            | PotionId::BlockPotion
+            | PotionId::EnergyPotion
+            | PotionId::StrengthPotion
+            | PotionId::SteroidPotion
+            | PotionId::SpeedPotion
+            | PotionId::AncientPotion
+            | PotionId::GamblersBrew
+            | PotionId::LiquidMemories
+            | PotionId::FairyPotion
+            | PotionId::PowerPotion
+            | PotionId::SkillPotion
+            | PotionId::AttackPotion
     )
 }
 

@@ -444,6 +444,92 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
 }
 
 #[test]
+fn current_boundary_suppresses_shop_leave_for_high_impact_affordable_relic() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 200;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Orrery,
+        price: 180,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("high-impact shop relic should create purchase pressure");
+    let commands = boundary
+        .options
+        .iter()
+        .map(|option| option.command.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(commands, vec!["buy relic 0"]);
+}
+
+#[test]
+fn current_boundary_prefers_boss_potion_over_smoke_bomb_in_capped_shop_portfolio() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 3;
+    session.run_state.gold = 500;
+    let mut shop = ShopState::new();
+    for card_id in [
+        CardId::TwinStrike,
+        CardId::Cleave,
+        CardId::IronWave,
+        CardId::WildStrike,
+        CardId::Clothesline,
+    ] {
+        shop.cards.push(ShopCard {
+            card_id,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+    }
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::SmokeBomb,
+        price: 40,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::DuplicationPotion,
+        price: 60,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("high-fanout shop should keep a capped purchase portfolio");
+
+    assert!(
+        boundary
+            .options
+            .iter()
+            .any(|option| option.effect_kind == "shop_buy_potion"
+                && option.command == "buy potion 1"),
+        "capped shop potion representative should be the combat-relevant boss potion"
+    );
+    assert!(
+        !boundary
+            .options
+            .iter()
+            .any(|option| option.effect_kind == "shop_buy_potion"
+                && option.command == "buy potion 0"),
+        "Smoke Bomb should not crowd out a boss-fight potion representative"
+    );
+}
+
+#[test]
 fn current_boundary_suppresses_nloth_energy_relic_trade() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
