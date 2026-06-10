@@ -69,6 +69,8 @@ fn count_applied_operations(message: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::core::EngineState;
+    use crate::state::events::{EventId, EventState};
 
     #[test]
     fn count_applied_operations_ignores_none() {
@@ -86,5 +88,37 @@ mod tests {
             ),
             2
         );
+    }
+
+    #[test]
+    fn branch_experiment_auto_run_consumes_terminal_single_event_leave() {
+        let mut session =
+            RunControlSession::new(crate::eval::run_control::RunControlConfig::default());
+        session.run_state.event_state = Some(EventState {
+            id: EventId::Beggar,
+            current_screen: 2,
+            internal_state: 0,
+            completed: false,
+            combat_pending: false,
+            extra_data: Vec::new(),
+        });
+        session.engine_state = EngineState::EventRoom;
+
+        let outcome = apply_branch_experiment_auto_run(
+            &mut session,
+            RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        )
+        .expect("branch experiment auto-run should consume the terminal event leave");
+
+        assert!(
+            matches!(session.engine_state, EngineState::MapNavigation),
+            "state={:?}\nmessage={}",
+            session.engine_state,
+            outcome.message
+        );
+        assert!(outcome.message.contains("routine: Leave"));
     }
 }

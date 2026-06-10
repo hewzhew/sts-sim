@@ -28,6 +28,9 @@ pub(crate) fn event_branch_options(session: &RunControlSession) -> Option<Vec<Ev
         return None;
     }
     let event_options = crate::engine::event_handler::get_event_options(&session.run_state);
+    if event_options.len() == 1 && terminal_no_effect_leave(&event_options[0]) {
+        return None;
+    }
     let surface = build_decision_surface(session);
     let mut branch_options = Vec::new();
 
@@ -58,6 +61,14 @@ pub(crate) fn event_branch_options(session: &RunControlSession) -> Option<Vec<Ev
         return None;
     }
     Some(branch_options)
+}
+
+fn terminal_no_effect_leave(option: &EventOption) -> bool {
+    matches!(option.semantics.action, EventActionKind::Leave)
+        && option.semantics.effects.is_empty()
+        && option.semantics.constraints.is_empty()
+        && option.semantics.terminal
+        && matches!(option.semantics.transition, EventOptionTransition::Complete)
 }
 
 fn nloth_trade_is_protected(session: &RunControlSession, option: &EventOption) -> bool {

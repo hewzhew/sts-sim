@@ -910,6 +910,25 @@ fn current_boundary_wraps_low_fanout_event_options() {
 }
 
 #[test]
+fn current_boundary_does_not_branch_terminal_single_event_leave_screen() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(EventState {
+        id: EventId::Beggar,
+        current_screen: 2,
+        internal_state: 0,
+        completed: false,
+        combat_pending: false,
+        extra_data: Vec::new(),
+    });
+    session.engine_state = EngineState::EventRoom;
+
+    assert!(
+        current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
+        "single terminal no-effect event leave screens should remain auto-advanceable, not become branch points"
+    );
+}
+
+#[test]
 fn current_boundary_wraps_neow_bonus_four_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session

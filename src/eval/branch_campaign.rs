@@ -6,8 +6,9 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::run_control::{
-    RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlSearchCombatOptions,
-    RunControlSession, RunControlSessionCheckpointV1,
+    apply_branch_experiment_auto_run, build_decision_surface, RunControlAutoStepOptions,
+    RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlRouteAutomationMode,
+    RunControlSearchCombatOptions, RunControlSession, RunControlSessionCheckpointV1,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -444,6 +445,23 @@ where
     let mut stop_reason = "max_rounds".to_string();
 
     for local_round in 0..config.max_rounds {
+        let recovered = recover_auto_advanceable_stuck_branches_v1(
+            &mut state.active,
+            &mut state.frozen,
+            &mut state.stuck,
+            &mut state.snapshot_cache,
+            config.max_active,
+            config.max_frozen,
+        );
+        if recovered > 0 {
+            state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
+                state.strategy_requests,
+                &state.active,
+                &state.frozen,
+                &state.stuck,
+                &state.abandoned,
+            );
+        }
         if state.active.is_empty() && state.victories.is_empty() && !state.frozen.is_empty() {
             let promoted = promote_frozen_to_active_v1(
                 &mut state.active,
@@ -528,6 +546,21 @@ where
         state.dead.extend(selected.dead);
         state.abandoned.extend(selected.abandoned);
         state.stuck.extend(selected.stuck);
+        recover_auto_advanceable_stuck_branches_v1(
+            &mut state.active,
+            &mut state.frozen,
+            &mut state.stuck,
+            &mut state.snapshot_cache,
+            config.max_active,
+            config.max_frozen,
+        );
+        state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
+            state.strategy_requests,
+            &state.active,
+            &state.frozen,
+            &state.stuck,
+            &state.abandoned,
+        );
         retain_campaign_snapshot_cache_v1(
             &mut state.snapshot_cache,
             &state.active,
@@ -692,6 +725,8 @@ fn campaign_state_from_report_and_checkpoint_v1(
         .active
         .iter()
         .chain(state.frozen.iter())
+        .chain(state.abandoned.iter())
+        .chain(state.stuck.iter())
         .map(|branch| branch.commands.clone())
         .collect::<std::collections::BTreeSet<_>>();
     for entry in &checkpoint.sessions {
@@ -704,6 +739,16 @@ fn campaign_state_from_report_and_checkpoint_v1(
             );
         }
     }
+    state
+        .stuck
+        .retain(|branch| state.snapshot_cache.contains_key(&branch.commands));
+    state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
+        state.strategy_requests,
+        &state.active,
+        &state.frozen,
+        &state.stuck,
+        &state.abandoned,
+    );
     Ok(state)
 }
 
@@ -2025,6 +2070,154 @@ fn promote_frozen_to_active_v1(
         promoted = promoted.saturating_add(1);
     }
     promoted
+}
+
+fn recover_auto_advanceable_stuck_branches_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    stuck: &mut Vec<BranchCampaignBranchV1>,
+    snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
+    max_active: usize,
+    max_frozen: usize,
+) -> usize {
+    if stuck.is_empty() {
+        return 0;
+    }
+
+    let mut remaining = Vec::with_capacity(stuck.len());
+    let mut recovered = 0usize;
+    for branch in stuck.drain(..) {
+        if let Some(recovered_branch) =
+            try_recover_auto_advanceable_stuck_branch_v1(&branch, snapshot_cache)
+        {
+            if place_recovered_campaign_branch_v1(
+                active,
+                frozen,
+                recovered_branch,
+                max_active,
+                max_frozen,
+            ) {
+                recovered = recovered.saturating_add(1);
+            } else {
+                remaining.push(branch);
+            }
+        } else {
+            remaining.push(branch);
+        }
+    }
+    *stuck = remaining;
+    recovered
+}
+
+fn try_recover_auto_advanceable_stuck_branch_v1(
+    branch: &BranchCampaignBranchV1,
+    snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
+) -> Option<BranchCampaignBranchV1> {
+    let original_frontier = branch.frontier_title.clone();
+    let mut session = snapshot_cache.get(&branch.commands)?.clone();
+    let outcome = apply_branch_experiment_auto_run(
+        &mut session,
+        RunControlAutoStepOptions {
+            max_operations: Some(1),
+            route: RunControlRouteAutomationMode::Planner,
+            allow_route_reject_unless_forced: true,
+            ..Default::default()
+        },
+    )
+    .ok()?;
+    if outcome.action_result.is_none() {
+        return None;
+    }
+    let new_frontier = build_decision_surface(&session).view.header.title;
+    if new_frontier == original_frontier {
+        return None;
+    }
+
+    snapshot_cache.insert(branch.commands.clone(), session);
+    let mut recovered = branch.clone();
+    recovered.frontier_title = new_frontier;
+    recovered.status = BranchCampaignBranchStatusV1::Active;
+    recovered.stop_reason = "recovered by one-step auto-advance".to_string();
+    Some(recovered)
+}
+
+fn place_recovered_campaign_branch_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    mut recovered: BranchCampaignBranchV1,
+    max_active: usize,
+    max_frozen: usize,
+) -> bool {
+    if active.len() < max_active {
+        recovered.status = BranchCampaignBranchStatusV1::Active;
+        active.push(recovered);
+        return true;
+    }
+    recovered.status = BranchCampaignBranchStatusV1::Frozen;
+    if frozen.len() < max_frozen {
+        frozen.push(recovered);
+        return true;
+    }
+    let Some((worst_index, worst_branch)) =
+        frozen.iter().enumerate().min_by(|(_, left), (_, right)| {
+            campaign_branch_retention_key_v1(left).cmp(&campaign_branch_retention_key_v1(right))
+        })
+    else {
+        return false;
+    };
+    if campaign_branch_retention_key_v1(&recovered)
+        <= campaign_branch_retention_key_v1(worst_branch)
+    {
+        return false;
+    }
+    frozen[worst_index] = recovered;
+    true
+}
+
+fn campaign_branch_retention_key_v1(branch: &BranchCampaignBranchV1) -> (u8, i32, i32, i32) {
+    let (act, floor, hp) = branch_progress_key(branch);
+    (act, floor, hp, branch.rank_key)
+}
+
+fn prune_resolved_campaign_strategy_requests_v1(
+    requests: Vec<BranchCampaignStrategyRequestV1>,
+    _active: &[BranchCampaignBranchV1],
+    _frozen: &[BranchCampaignBranchV1],
+    stuck: &[BranchCampaignBranchV1],
+    abandoned: &[BranchCampaignBranchV1],
+) -> Vec<BranchCampaignStrategyRequestV1> {
+    requests
+        .into_iter()
+        .filter(|request| {
+            stuck
+                .iter()
+                .chain(abandoned.iter())
+                .any(|branch| campaign_strategy_request_matches_branch_v1(request, branch))
+        })
+        .collect()
+}
+
+fn campaign_strategy_request_matches_branch_v1(
+    request: &BranchCampaignStrategyRequestV1,
+    branch: &BranchCampaignBranchV1,
+) -> bool {
+    normalized_campaign_boundary_title(&request.boundary_title)
+        == normalized_campaign_boundary_title(&branch.frontier_title)
+        && (request.act == 0
+            || branch
+                .summary
+                .as_ref()
+                .is_some_and(|summary| summary.act == request.act))
+        && (request.floor == 0
+            || branch
+                .summary
+                .as_ref()
+                .is_some_and(|summary| summary.floor == request.floor))
+        && (request.stop_reasons.is_empty()
+            || request
+                .stop_reasons
+                .iter()
+                .any(|reason| branch.stop_reason.contains(reason)))
 }
 
 fn render_campaign_branch_state(branch: &BranchCampaignBranchV1) -> String {

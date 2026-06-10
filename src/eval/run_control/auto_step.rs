@@ -324,13 +324,18 @@ fn branch_experiment_should_stop_before_visible_candidate(session: &RunControlSe
         EngineState::RewardOverlay { reward_state, .. } => {
             reward_state.pending_card_choice.is_some() || !reward_state.items.is_empty()
         }
-        EngineState::EventRoom
-        | EngineState::Campfire
+        EngineState::EventRoom => !event_room_has_safe_auto_advance(session),
+        EngineState::Campfire
         | EngineState::Shop(_)
         | EngineState::RunPendingChoice(_)
         | EngineState::BossRelicSelect(_) => true,
         _ => false,
     }
+}
+
+fn event_room_has_safe_auto_advance(session: &RunControlSession) -> bool {
+    let view = build_run_control_view_model(session);
+    auto_advance_candidate(session, &view).is_some()
 }
 
 fn apply_noncombat_policy(

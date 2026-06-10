@@ -11,6 +11,7 @@ use crate::eval::run_control::{
     RunControlConfig, RunControlSession, RunControlSessionCheckpointV1,
 };
 use crate::state::core::EngineState;
+use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{RewardCard, RewardState};
 use std::collections::BTreeMap;
 
@@ -641,6 +642,87 @@ fn campaign_strategy_requests_are_fatal_only_without_continuable_branches() {
 }
 
 #[test]
+fn campaign_strategy_request_prune_drops_requests_without_matching_blocked_branch() {
+    let active = vec![test_campaign_branch("a", 10, 80)];
+    let stuck = vec![test_campaign_branch_with_boundary(
+        "s",
+        "Map Preview",
+        "route planner declined automatic map selection",
+        16,
+        60,
+    )];
+    let requests = vec![
+        {
+            let mut request = test_campaign_request("event_strategy", "Beggar");
+            request.act = 2;
+            request.floor = 21;
+            request.stop_reasons = vec!["event option requires human choice".to_string()];
+            request
+        },
+        {
+            let mut request = test_campaign_request("route_policy_gap", "Map Preview");
+            request.act = 1;
+            request.floor = 16;
+            request.stop_reasons =
+                vec!["route planner declined automatic map selection".to_string()];
+            request
+        },
+    ];
+
+    let pruned = prune_resolved_campaign_strategy_requests_v1(requests, &active, &[], &stuck, &[]);
+
+    assert_eq!(pruned.len(), 1);
+    assert_eq!(pruned[0].kind, "route_policy_gap");
+    assert_eq!(pruned[0].boundary_title, "Map Preview");
+}
+
+#[test]
+fn campaign_recovers_stuck_branch_if_one_auto_step_leaves_frontier() {
+    let mut active = Vec::new();
+    let mut frozen = Vec::new();
+    let mut stuck = vec![test_campaign_branch_with_boundary(
+        "s",
+        "Beggar",
+        "event option requires human choice",
+        21,
+        53,
+    )];
+    let mut snapshot_cache = BTreeMap::new();
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(EventState {
+        id: EventId::Beggar,
+        current_screen: 2,
+        internal_state: 0,
+        completed: false,
+        combat_pending: false,
+        extra_data: Vec::new(),
+    });
+    session.engine_state = EngineState::EventRoom;
+    snapshot_cache.insert(stuck[0].commands.clone(), session);
+
+    let recovered = recover_auto_advanceable_stuck_branches_v1(
+        &mut active,
+        &mut frozen,
+        &mut stuck,
+        &mut snapshot_cache,
+        1,
+        0,
+    );
+
+    assert_eq!(recovered, 1);
+    assert_eq!(stuck.len(), 0);
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].frontier_title, "Map");
+    assert!(matches!(
+        snapshot_cache
+            .get(&active[0].commands)
+            .expect("recovered snapshot should be retained")
+            .engine_state,
+        EngineState::MapNavigation
+    ));
+}
+
+#[test]
 fn campaign_strategy_request_merge_keeps_stop_reasons() {
     let merged = merge_campaign_strategy_requests_v1(vec![test_experiment_request(
         "combat_manual_or_budget",
@@ -882,6 +964,19 @@ fn test_campaign_request(kind: &str, boundary_title: &str) -> BranchCampaignStra
     }
 }
 
+fn test_campaign_branch_with_boundary(
+    id: &str,
+    frontier_title: &str,
+    stop_reason: &str,
+    floor: i32,
+    hp: i32,
+) -> BranchCampaignBranchV1 {
+    let mut branch = test_campaign_branch(id, floor, hp);
+    branch.frontier_title = frontier_title.to_string();
+    branch.stop_reason = stop_reason.to_string();
+    branch
+}
+
 fn test_experiment_request(
     kind: &str,
     boundary_title: &str,
@@ -1082,6 +1177,69 @@ fn campaign_checkpoint_preserves_abandoned_and_stuck_snapshots_for_diagnostics()
 
     assert!(commands.contains(&abandoned.commands));
     assert!(commands.contains(&stuck.commands));
+}
+
+#[test]
+fn campaign_resume_checkpoint_drops_unrestorable_stuck_branches_and_requests() {
+    let mut restorable = test_campaign_branch_with_boundary(
+        "restorable",
+        "Beggar",
+        "event option requires human choice",
+        21,
+        53,
+    );
+    restorable.commands = vec!["event 3".to_string(), "event 0".to_string()];
+    restorable.status = BranchCampaignBranchStatusV1::Stuck;
+    let mut stale = test_campaign_branch_with_boundary(
+        "stale",
+        "Beggar",
+        "event option requires human choice",
+        21,
+        53,
+    );
+    stale.commands = vec!["event 3".to_string(), "event 1".to_string()];
+    stale.status = BranchCampaignBranchStatusV1::Stuck;
+    let mut request = test_campaign_request("event_strategy", "Beggar");
+    request.act = 1;
+    request.floor = 21;
+    request.stop_reasons = vec!["event option requires human choice".to_string()];
+    let previous = BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 0,
+        stop_reason: "needs_intervention".to_string(),
+        active: Vec::new(),
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: vec![restorable.clone(), stale.clone()],
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: vec![request],
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        rounds: Vec::new(),
+    };
+    let checkpoint = BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 0,
+        sessions: vec![BranchCampaignCheckpointSessionV1 {
+            commands: restorable.commands.clone(),
+            session: RunControlSessionCheckpointV1::from_session(&RunControlSession::new(
+                RunControlConfig::default(),
+            )),
+        }],
+    };
+
+    let state = campaign_state_from_report_and_checkpoint_v1(&previous, &checkpoint)
+        .expect("resume checkpoint should load");
+
+    assert_eq!(state.stuck.len(), 1);
+    assert_eq!(state.stuck[0].commands, restorable.commands);
+    assert_eq!(state.strategy_requests.len(), 1);
 }
 
 #[test]
