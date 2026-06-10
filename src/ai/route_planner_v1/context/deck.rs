@@ -16,6 +16,7 @@ pub(super) fn build_deck_summary(run_state: &RunState) -> DeckRouteSummaryV1 {
         block_score: 0,
         aoe_score: 0,
         scaling_score: 0,
+        debuff_score: 0,
         draw_score: 0,
         energy_score: 0,
         key_upgrades_available: 0,
@@ -41,6 +42,20 @@ pub(super) fn build_deck_summary(run_state: &RunState) -> DeckRouteSummaryV1 {
             )
         {
             summary.scaling_score += 1;
+        }
+        if matches!(
+            card.id,
+            CardId::Bash
+                | CardId::ThunderClap
+                | CardId::Shockwave
+                | CardId::Uppercut
+                | CardId::Clothesline
+                | CardId::Disarm
+                | CardId::Intimidate
+                | CardId::Blind
+                | CardId::DarkShackles
+        ) {
+            summary.debuff_score += 1;
         }
         if matches!(
             card.id,

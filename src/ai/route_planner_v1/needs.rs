@@ -15,6 +15,7 @@ pub(super) fn estimate_needs(
     let low_block = ctx.deck.block_score < 24;
     let has_empty_potion_slot = ctx.potions.filled < ctx.potions.slots;
     let high_gold = ctx.gold >= config.early_shop_good_gold;
+    let elite_deck_adjustment = elite_readiness_adjustment(ctx, weak_frontload);
 
     NeedVectorV1 {
         need_card_rewards: clamp01(
@@ -74,7 +75,7 @@ pub(super) fn estimate_needs(
                 } else {
                     0.0
                 }
-                + if weak_frontload { -0.20 } else { 0.0 },
+                + elite_deck_adjustment,
         ),
         avoid_damage: clamp01(1.0 - hp_ratio + if low_block { 0.10 } else { 0.0 }),
         value_flexibility: clamp01(
@@ -89,4 +90,43 @@ pub(super) fn estimate_needs(
 
 fn clamp01(value: f32) -> f32 {
     value.clamp(0.0, 1.0)
+}
+
+fn elite_readiness_adjustment(ctx: &RouteDecisionContextV1, weak_frontload: bool) -> f32 {
+    if ctx.act != 1 {
+        return if weak_frontload { -0.20 } else { 0.0 };
+    }
+
+    let transition_attacks = ctx.deck.attacks.saturating_sub(ctx.deck.starter_strikes);
+    let attack_count_score = f32::from(transition_attacks).min(4.0) / 4.0;
+    let damage_score = ((ctx.deck.frontload_damage_score as f32 - 45.0) / 35.0).clamp(0.0, 1.0);
+    let sentries_coverage = if ctx.deck.aoe_score > 0 { 0.10 } else { 0.0 };
+    let debuff_control = (ctx.deck.debuff_score as f32).min(3.0) / 3.0;
+    let scaling_setup = (ctx.deck.scaling_score as f32).min(2.0) / 2.0;
+
+    let sentries_debt = if ctx.deck.aoe_score == 0 && damage_score < 0.50 {
+        -0.12
+    } else {
+        0.0
+    };
+    let nob_skill_debt = if ctx.deck.skills > ctx.deck.attacks.saturating_add(1) {
+        -0.08
+    } else {
+        0.0
+    };
+    let starter_only_debt = if transition_attacks <= 1 && damage_score < 0.25 {
+        -0.35
+    } else {
+        0.0
+    };
+
+    -0.18
+        + attack_count_score * 0.18
+        + damage_score * 0.20
+        + sentries_coverage
+        + debuff_control * 0.08
+        + scaling_setup * 0.06
+        + sentries_debt
+        + nob_skill_debt
+        + starter_only_debt
 }

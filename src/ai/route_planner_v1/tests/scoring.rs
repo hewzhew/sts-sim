@@ -1,8 +1,11 @@
 use crate::ai::route_planner_v1::{
     plan_route_decision_v1, RoutePlannerConfigV1, RouteSafetyFlagV1,
 };
+use crate::content::cards::CardId;
+use crate::runtime::combat::CombatCard;
 use crate::state::core::EngineState;
 use crate::state::map::node::RoomType;
+use crate::state::RunState;
 
 use super::fixtures::{
     candidate_by_room, run_with_start_nodes, run_with_start_paths, selected_candidate,
@@ -143,4 +146,81 @@ fn route_score_exposes_first_elite_preparation_as_its_own_term() {
         prepared_elite_path.score_terms.elite_prep > immediate_elite_path.score_terms.elite_prep,
         "route scoring should expose first-elite preparation separately from the total score"
     );
+}
+
+#[test]
+fn act1_elite_need_penalizes_unprepared_starter_deck_even_at_high_hp() {
+    let mut starter =
+        run_with_start_nodes(&[RoomType::MonsterRoomElite], Some(RoomType::MonsterRoom));
+    starter.floor_num = 5;
+    starter.current_hp = starter.max_hp;
+
+    let starter_trace = plan_route_decision_v1(
+        &starter,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let starter_needs = &selected_candidate(&starter_trace).needs;
+
+    assert!(
+        starter_needs.can_take_elite < 0.65,
+        "high HP alone should not make an unprepared Act1 starter deck look elite-ready"
+    );
+}
+
+#[test]
+fn act1_elite_need_rewards_frontload_and_sentries_coverage() {
+    let mut weak = run_with_start_nodes(&[RoomType::MonsterRoomElite], Some(RoomType::MonsterRoom));
+    weak.floor_num = 5;
+    weak.current_hp = weak.max_hp;
+
+    let mut prepared = weak.clone();
+    replace_master_deck(
+        &mut prepared,
+        &[
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Cleave,
+            CardId::PommelStrike,
+            CardId::Clothesline,
+        ],
+    );
+
+    let weak_trace = plan_route_decision_v1(
+        &weak,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let prepared_trace = plan_route_decision_v1(
+        &prepared,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let weak_elite = selected_candidate(&weak_trace).needs.can_take_elite;
+    let prepared_elite = selected_candidate(&prepared_trace).needs.can_take_elite;
+
+    assert!(
+        prepared_elite > weak_elite + 0.25,
+        "Act1 elite readiness should distinguish real combat preparation from raw HP"
+    );
+    assert!(
+        prepared_elite > 0.75,
+        "frontload plus AoE/weak coverage should make the route layer more willing to fight elites"
+    );
+}
+
+fn replace_master_deck(run: &mut RunState, cards: &[CardId]) {
+    run.master_deck = cards
+        .iter()
+        .enumerate()
+        .map(|(idx, &card_id)| CombatCard::new(card_id, idx as u32))
+        .collect();
 }

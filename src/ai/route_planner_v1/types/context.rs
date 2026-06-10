@@ -38,6 +38,8 @@ pub struct DeckRouteSummaryV1 {
     pub block_score: i32,
     pub aoe_score: i32,
     pub scaling_score: i32,
+    #[serde(default)]
+    pub debuff_score: i32,
     pub draw_score: i32,
     pub energy_score: i32,
     pub key_upgrades_available: u8,
