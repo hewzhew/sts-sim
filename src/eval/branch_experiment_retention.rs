@@ -316,13 +316,15 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::EngineSetup);
         reasons.push("context: matches current draw/energy need".to_string());
     }
-    if transition_attack_count(&candidate.choice_profiles) <= 1 {
+    let is_plain_skip = is_plain_card_reward_skip(candidate);
+    if !is_plain_skip && transition_attack_count(&candidate.choice_profiles) <= 1 {
         slots.push(BranchRetentionSlotV1::CleanDeck);
         reasons.push("keeps transition-card bloat lower".to_string());
     }
     if context
         .keys
         .contains(&BranchRetentionContextKeyV2::MatchesFormationConsistencyNeed)
+        && !is_plain_skip
     {
         slots.push(BranchRetentionSlotV1::CleanDeck);
         reasons.push("context: matches current consistency need".to_string());
@@ -544,11 +546,14 @@ fn compare_rank(
     left: usize,
     right: usize,
 ) -> std::cmp::Ordering {
+    let left_takes_card = !is_plain_card_reward_skip(&candidates[left]);
+    let right_takes_card = !is_plain_card_reward_skip(&candidates[right]);
     candidates[left]
         .rank_key
         .cmp(&candidates[right].rank_key)
         .then_with(|| candidates[left].hp.cmp(&candidates[right].hp))
         .then_with(|| candidates[left].gold.cmp(&candidates[right].gold))
+        .then_with(|| left_takes_card.cmp(&right_takes_card))
         .then_with(|| {
             candidates[right]
                 .deck_count
@@ -1090,16 +1095,27 @@ fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetention
                 + candidate.hp * 10
         }
         BranchRetentionSlotV1::CleanDeck => {
-            -transition_attack_count(&candidate.choice_profiles) * 10_000
-                - candidate.deck_count as i32 * 100
-                + context_score(
-                    &context,
-                    &[BranchRetentionContextKeyV2::MatchesFormationConsistencyNeed],
-                ) * 20_000
-                + candidate.hp * 10
+            if is_plain_card_reward_skip(candidate) {
+                -1_000_000
+            } else {
+                -transition_attack_count(&candidate.choice_profiles) * 10_000
+                    - candidate.deck_count as i32 * 100
+                    + context_score(
+                        &context,
+                        &[BranchRetentionContextKeyV2::MatchesFormationConsistencyNeed],
+                    ) * 20_000
+                    + candidate.hp * 10
+            }
         }
         BranchRetentionSlotV1::Diversity => -(candidate.index as i32),
     }
+}
+
+fn is_plain_card_reward_skip(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    candidate
+        .choice_effect_keys
+        .iter()
+        .any(|effect| effect == "skip_reward")
 }
 
 fn has_package_candidate(profiles: &[CardRewardSemanticProfileV1]) -> bool {

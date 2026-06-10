@@ -525,7 +525,13 @@ where
         state.dead.extend(selected.dead);
         state.abandoned.extend(selected.abandoned);
         state.stuck.extend(selected.stuck);
-        retain_campaign_snapshot_cache_v1(&mut state.snapshot_cache, &state.active, &state.frozen);
+        retain_campaign_snapshot_cache_v1(
+            &mut state.snapshot_cache,
+            &state.active,
+            &state.frozen,
+            &state.abandoned,
+            &state.stuck,
+        );
         let leading_abandoned_request = if state.active.is_empty() && state.victories.is_empty() {
             leading_abandoned_combat_intervention_request_v1(&state.frozen, &state.abandoned)
         } else {
@@ -708,7 +714,13 @@ fn campaign_checkpoint_from_state_v1(
     state: &BranchCampaignRunStateV1,
 ) -> BranchCampaignCheckpointV1 {
     let mut sessions = Vec::new();
-    for branch in state.active.iter().chain(state.frozen.iter()) {
+    for branch in state
+        .active
+        .iter()
+        .chain(state.frozen.iter())
+        .chain(state.abandoned.iter())
+        .chain(state.stuck.iter())
+    {
         if let Some(session) = state.snapshot_cache.get(&branch.commands) {
             sessions.push(BranchCampaignCheckpointSessionV1 {
                 commands: branch.commands.clone(),
@@ -729,10 +741,14 @@ fn retain_campaign_snapshot_cache_v1(
     snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
     active: &[BranchCampaignBranchV1],
     frozen: &[BranchCampaignBranchV1],
+    abandoned: &[BranchCampaignBranchV1],
+    stuck: &[BranchCampaignBranchV1],
 ) {
     let keep = active
         .iter()
         .chain(frozen.iter())
+        .chain(abandoned.iter())
+        .chain(stuck.iter())
         .map(|branch| branch.commands.clone())
         .collect::<std::collections::BTreeSet<_>>();
     snapshot_cache.retain(|commands, _| keep.contains(commands));

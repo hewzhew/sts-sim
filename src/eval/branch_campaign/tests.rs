@@ -1038,6 +1038,53 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
 }
 
 #[test]
+fn campaign_checkpoint_preserves_abandoned_and_stuck_snapshots_for_diagnostics() {
+    let config = BranchCampaignConfigV1::default();
+    let abandoned = {
+        let mut branch = test_campaign_branch("abandoned", 32, 80);
+        branch.commands = vec!["skip".to_string(), "rest".to_string()];
+        branch.status = BranchCampaignBranchStatusV1::Abandoned;
+        branch
+    };
+    let stuck = {
+        let mut branch = test_campaign_branch("stuck", 30, 59);
+        branch.commands = vec!["rp 0".to_string(), "skip".to_string()];
+        branch.status = BranchCampaignBranchStatusV1::Stuck;
+        branch
+    };
+    let abandoned_session = RunControlSession::new(RunControlConfig::default());
+    let stuck_session = RunControlSession::new(RunControlConfig::default());
+    let state = BranchCampaignRunStateV1 {
+        rounds_completed: 3,
+        active: Vec::new(),
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: vec![abandoned.clone()],
+        stuck: vec![stuck.clone()],
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        rounds: Vec::new(),
+        snapshot_cache: BTreeMap::from([
+            (abandoned.commands.clone(), abandoned_session),
+            (stuck.commands.clone(), stuck_session),
+        ]),
+    };
+
+    let checkpoint = campaign_checkpoint_from_state_v1(&config, &state);
+    let commands = checkpoint
+        .sessions
+        .iter()
+        .map(|entry| entry.commands.clone())
+        .collect::<Vec<_>>();
+
+    assert!(commands.contains(&abandoned.commands));
+    assert!(commands.contains(&stuck.commands));
+}
+
+#[test]
 fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_commands() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();

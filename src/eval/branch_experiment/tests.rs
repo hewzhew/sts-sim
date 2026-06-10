@@ -840,6 +840,16 @@ fn branch_choice_effect_key_preserves_shop_effects() {
     );
 }
 
+#[test]
+fn branch_rank_tracks_card_reward_development_debt() {
+    let take = branch_with_choice("take", "add_card");
+    let skip = branch_with_choice("skip", "skip_card_reward");
+    let full_potion_skip = branch_with_choice("potion-skip", "reward_skip_full_potion");
+
+    assert!(branch_rank_key(&take) > branch_rank_key(&full_potion_skip));
+    assert!(branch_rank_key(&full_potion_skip) > branch_rank_key(&skip));
+}
+
 fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
     BranchWork {
         id: branch_id.to_string(),

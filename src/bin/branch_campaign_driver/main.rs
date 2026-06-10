@@ -18,6 +18,10 @@ use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
 use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
+use sts_simulator::eval::run_control::{
+    render_run_control_details, render_run_control_state, RunControlCommand,
+    RunControlSearchCombatOptions, RunControlSession,
+};
 
 const QUICK_PRESET_MAX_ROUNDS: usize = 2;
 const QUICK_PRESET_ROUND_DEPTH: usize = 2;
@@ -164,6 +168,44 @@ struct Args {
         help = "Write the resulting BranchCampaignCheckpointV1 exact session sidecar"
     )]
     checkpoint_out: Option<PathBuf>,
+
+    #[arg(
+        long = "inspect-checkpoint",
+        value_name = "PATH",
+        help = "Inspect a saved BranchCampaignCheckpointV1 session instead of running a campaign"
+    )]
+    inspect_checkpoint: Option<PathBuf>,
+
+    #[arg(
+        long = "inspect-act",
+        help = "Filter inspected checkpoint sessions by act"
+    )]
+    inspect_act: Option<u8>,
+
+    #[arg(
+        long = "inspect-floor",
+        help = "Filter inspected checkpoint sessions by floor"
+    )]
+    inspect_floor: Option<i32>,
+
+    #[arg(
+        long = "inspect-hp",
+        help = "Filter inspected checkpoint sessions by current HP"
+    )]
+    inspect_hp: Option<i32>,
+
+    #[arg(
+        long = "inspect-index",
+        default_value_t = 0,
+        help = "Select the Nth matching checkpoint session after filters"
+    )]
+    inspect_index: usize,
+
+    #[arg(
+        long = "inspect-search",
+        help = "Run search-combat from the selected checkpoint session and print the result"
+    )]
+    inspect_search: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -330,6 +372,9 @@ fn apply_campaign_preset_defaults<F>(
 }
 
 fn run(args: Args) -> Result<(), String> {
+    if args.inspect_checkpoint.is_some() {
+        return run_checkpoint_inspection(&args);
+    }
     let config = campaign_config_from_args(&args)?;
     if args.resume_checkpoint.is_some() && args.resume.is_none() {
         return Err("--resume-checkpoint requires --resume".to_string());
@@ -387,6 +432,124 @@ fn run(args: Args) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
+    let path = args
+        .inspect_checkpoint
+        .as_ref()
+        .ok_or_else(|| "--inspect-checkpoint requires a path".to_string())?;
+    let checkpoint = read_campaign_checkpoint_v1(path)?;
+    let mut matches = Vec::new();
+    for entry in checkpoint.sessions {
+        let session = entry
+            .session
+            .clone()
+            .into_session()
+            .map_err(|err| format!("failed to restore checkpoint session: {err}"))?;
+        if !checkpoint_session_matches_filters(args, &session) {
+            continue;
+        }
+        matches.push((entry.commands, session));
+    }
+    if matches.is_empty() {
+        return Err(format!(
+            "no checkpoint sessions matched filters act={:?} floor={:?} hp={:?}",
+            args.inspect_act, args.inspect_floor, args.inspect_hp
+        ));
+    }
+    if args.inspect_index >= matches.len() {
+        return Err(format!(
+            "--inspect-index {} is out of range for {} matching checkpoint session(s)",
+            args.inspect_index,
+            matches.len()
+        ));
+    }
+
+    let match_count = matches.len();
+    let (commands, mut session) = matches.swap_remove(args.inspect_index);
+    let (hp, max_hp) = inspect_visible_player_hp(&session);
+    println!(
+        "Checkpoint inspection: seed={} match={}/{} act={} floor={} hp={}/{} engine={:?}",
+        checkpoint.seed,
+        args.inspect_index + 1,
+        match_count,
+        session.run_state.act_num,
+        session.run_state.floor_num,
+        hp,
+        max_hp,
+        session.engine_state
+    );
+    println!("commands: {}", render_inspect_command_path(&commands));
+    if args.inspect_search {
+        let options = inspect_search_options_from_args(args)?;
+        let outcome = session.apply_command(RunControlCommand::SearchCombat(options))?;
+        println!("{}", outcome.message);
+    } else {
+        println!("{}", render_run_control_details(&session));
+        println!();
+        println!("{}", render_run_control_state(&session));
+    }
+    Ok(())
+}
+
+fn checkpoint_session_matches_filters(args: &Args, session: &RunControlSession) -> bool {
+    if args
+        .inspect_act
+        .is_some_and(|act| session.run_state.act_num != act)
+    {
+        return false;
+    }
+    if args
+        .inspect_floor
+        .is_some_and(|floor| session.run_state.floor_num != floor)
+    {
+        return false;
+    }
+    if args
+        .inspect_hp
+        .is_some_and(|hp| inspect_visible_player_hp(session).0 != hp)
+    {
+        return false;
+    }
+    true
+}
+
+fn inspect_visible_player_hp(session: &RunControlSession) -> (i32, i32) {
+    session
+        .active_combat
+        .as_ref()
+        .map(|active| {
+            (
+                active.combat_state.entities.player.current_hp,
+                active.combat_state.entities.player.max_hp,
+            )
+        })
+        .unwrap_or((session.run_state.current_hp, session.run_state.max_hp))
+}
+
+fn inspect_search_options_from_args(args: &Args) -> Result<RunControlSearchCombatOptions, String> {
+    let mut options = parse_branch_experiment_search_options_v1(&args.combat_search_options)?;
+    options.max_nodes = args.search_max_nodes.or(options.max_nodes);
+    options.wall_ms = Some(args.search_wall_ms).or(options.wall_ms);
+    options.max_hp_loss = parse_hp_loss_limit(args.max_hp_loss.as_deref())?.or(options.max_hp_loss);
+    Ok(options)
+}
+
+fn render_inspect_command_path(commands: &[String]) -> String {
+    const HEAD: usize = 4;
+    const TAIL: usize = 6;
+    if commands.is_empty() {
+        return "-".to_string();
+    }
+    if commands.len() <= HEAD + TAIL + 1 {
+        return commands.join(" -> ");
+    }
+    let mut parts = Vec::new();
+    parts.extend(commands.iter().take(HEAD).cloned());
+    parts.push(format!("... {} more ...", commands.len() - HEAD - TAIL));
+    parts.extend(commands.iter().skip(commands.len() - TAIL).cloned());
+    parts.join(" -> ")
 }
 
 fn read_campaign_report_v1(path: &PathBuf) -> Result<BranchCampaignReportV1, String> {

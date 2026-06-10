@@ -35,6 +35,9 @@ mod lineage;
 mod strategy_request;
 mod types;
 
+const CARD_REWARD_PICK_RANK_BONUS: i32 = 150;
+const CARD_REWARD_SKIP_DEVELOPMENT_DEBT: i32 = 450;
+
 pub use types::{
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
     BranchExperimentChoiceV1, BranchExperimentConfigV1, BranchExperimentFirstEliteEvidenceV1,
@@ -1108,8 +1111,21 @@ fn branch_rank_key(branch: &BranchWork) -> i32 {
                 + branch.session.run_state.floor_num * 100
                 + branch.session.run_state.current_hp * 10
                 + branch.session.run_state.gold
+                + card_reward_development_rank_adjustment(&branch.choices)
         }
     }
+}
+
+fn card_reward_development_rank_adjustment(choices: &[BranchExperimentChoiceV1]) -> i32 {
+    let card_picks = choices
+        .iter()
+        .filter(|choice| choice.effect_kind == "add_card")
+        .count() as i32;
+    let ordinary_skips = choices
+        .iter()
+        .filter(|choice| choice.effect_kind == "skip_card_reward")
+        .count() as i32;
+    card_picks * CARD_REWARD_PICK_RANK_BONUS - ordinary_skips * CARD_REWARD_SKIP_DEVELOPMENT_DEBT
 }
 
 fn run_summary(
