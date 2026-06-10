@@ -971,6 +971,12 @@ fn payoff_only_package_branch_cap(
     available_positions: &[usize],
     limit: usize,
 ) -> usize {
+    if !available_positions
+        .iter()
+        .any(|position| has_committed_package_context(&candidates[*position]))
+    {
+        return 1;
+    }
     let distinct_payoff_packages = available_positions
         .iter()
         .filter(|position| is_payoff_only_package_branch(&candidates[**position]))
@@ -987,6 +993,14 @@ fn payoff_only_package_branch_cap(
         .max(distinct_payoff_packages)
         .max(1)
         .min(3)
+}
+
+fn has_committed_package_context(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    candidate
+        .strategy_formation
+        .as_ref()
+        .is_some_and(|formation| !formation.strengths.is_empty())
+        || complete_package_count(&candidate.trajectory) > 0
 }
 
 fn drop_excess_payoff_only_package_after_coverage(

@@ -445,6 +445,66 @@ fn portfolio_retention_caps_payoff_only_package_saturation() {
 }
 
 #[test]
+fn portfolio_retention_limits_payoff_only_branches_without_committed_package() {
+    let candidates = vec![
+        semantic_retention_candidate(
+            0,
+            10_950,
+            78,
+            80,
+            trajectory_with(&[], &["strength_scaling"], 0, 0, 1, 0),
+            &[CardRewardSemanticRoleV1::StrengthPayoff],
+        ),
+        semantic_retention_candidate(
+            1,
+            10_940,
+            78,
+            80,
+            trajectory_with(&[], &["block_engine"], 0, 0, 1, 0),
+            &[CardRewardSemanticRoleV1::BlockPayoff],
+        ),
+        semantic_retention_candidate(
+            2,
+            10_930,
+            78,
+            80,
+            trajectory_with(&[], &["upgrade_sink"], 0, 0, 1, 0),
+            &[CardRewardSemanticRoleV1::UpgradePayoff],
+        ),
+        semantic_retention_candidate(
+            3,
+            10_650,
+            72,
+            80,
+            trajectory_with(&["exhaust_engine"], &[], 0, 1, 0, 0),
+            &[CardRewardSemanticRoleV1::ExhaustGenerator],
+        ),
+        semantic_retention_candidate(
+            4,
+            10_620,
+            72,
+            80,
+            trajectory_with(&["status_package"], &[], 0, 1, 0, 0),
+            &[CardRewardSemanticRoleV1::StatusGenerator],
+        ),
+    ];
+
+    let selection = select_branch_retention_portfolio_v1(&candidates, retention_config(4, Some(4)));
+    let payoff_only_kept = selection
+        .keep_indices
+        .iter()
+        .filter(|index| is_payoff_only_package_branch(&candidates[**index]))
+        .count();
+
+    assert_eq!(
+        payoff_only_kept, 1,
+        "payoff-only branches should be sampled, not allowed to crowd out enablers before a package is committed"
+    );
+    assert!(selection.keep_indices.contains(&3));
+    assert!(selection.keep_indices.contains(&4));
+}
+
+#[test]
 fn portfolio_records_the_lane_that_selected_each_kept_branch() {
     let package_closure = semantic_retention_candidate(
         0,

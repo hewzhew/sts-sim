@@ -24,7 +24,7 @@ pub fn assess_deck_formation_v1(
         .count();
 
     let mut needs = Vec::new();
-    if deck.total_attack_damage < 45 || route_pressure == StrategyPlanPressureV1::High {
+    if needs_frontload(deck, route, route_pressure) {
         push_unique(&mut needs, StrategyDeckFormationNeedV1::Frontload);
     }
     if needs_block(deck, route) {
@@ -103,6 +103,20 @@ fn needs_block(deck: &StrategyDeckFactsV1, route: Option<&StrategyRouteFutureV1>
         return true;
     };
     route.avoid_damage >= 0.30 || route.max_early_pressure >= 2 || route.need_heal >= 0.30
+}
+
+fn needs_frontload(
+    deck: &StrategyDeckFactsV1,
+    route: Option<&StrategyRouteFutureV1>,
+    route_pressure: StrategyPlanPressureV1,
+) -> bool {
+    if deck.total_attack_damage < 45 || route_pressure == StrategyPlanPressureV1::High {
+        return true;
+    }
+    let Some(route) = route else {
+        return false;
+    };
+    route.max_early_pressure >= 2 && route.max_fires <= 1 && deck.total_attack_damage < 60
 }
 
 fn formation_blockers(

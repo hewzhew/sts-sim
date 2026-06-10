@@ -189,6 +189,53 @@ fn starter_shell_formation_marks_frontload_and_scaling_needs() {
 }
 
 #[test]
+fn act1_first_elite_pressure_keeps_frontload_need_after_one_transition_attack() {
+    let snapshot = build_run_strategy_snapshot_v1(
+        StrategyDeckFactsV1 {
+            deck_size: 11,
+            attacks: 7,
+            skills: 4,
+            powers: 0,
+            starter_strikes: 5,
+            starter_defends: 4,
+            strength_sources: 0,
+            strength_payoffs: 0,
+            weak_sources: 0,
+            draw_sources: 0,
+            energy_sources: 0,
+            vulnerable_sources: 1,
+            route_upgrade_payoffs: 0,
+            important_cards_unupgraded: 1,
+            exhaust_generators: 0,
+            exhaust_payoffs: 0,
+            status_generators: 0,
+            status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
+            total_attack_damage: 48,
+            total_block: 15,
+        },
+        Some(StrategyRouteFutureV1 {
+            min_fires: 0,
+            max_fires: 1,
+            first_fire_floor: Some(6),
+            max_early_pressure: 2,
+            need_heal: 0.2,
+            avoid_damage: 0.2,
+        }),
+    );
+
+    assert!(
+        snapshot
+            .formation
+            .needs
+            .contains(&StrategyDeckFormationNeedV1::Frontload),
+        "one extra transition attack should not clear the Act1 first-elite frontload gate"
+    );
+}
+
+#[test]
 fn supported_engine_formation_marks_plan_committed() {
     let snapshot = build_run_strategy_snapshot_v1(
         StrategyDeckFactsV1 {
