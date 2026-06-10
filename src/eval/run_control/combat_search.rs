@@ -1,6 +1,7 @@
 use crate::ai::combat_search_v2::{
-    filter_combat_search_legal_actions, run_combat_search_v2, CombatSearchV2ActionTrace,
-    CombatSearchV2Config, CombatSearchV2Report, SearchTerminalLabel,
+    filter_combat_search_legal_actions, plan_combat_turn_segment_v1, run_combat_search_v2,
+    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2Report,
+    CombatSearchV2TurnSegmentReport, SearchTerminalLabel,
 };
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
@@ -9,7 +10,8 @@ use crate::sim::combat::{
 use crate::state::core::{EngineState, RunResult};
 
 use super::commands::{
-    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
+    RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlSearchCombatOptions,
+    RunControlSearchEvidenceTarget,
 };
 use super::registry::BenchmarkCasePaths;
 use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
@@ -46,6 +48,17 @@ pub(super) fn apply_search_combat(
         .as_ref()
         .filter(|trajectory| trajectory.terminal == SearchTerminalLabel::Win)
     else {
+        if let Some(outcome) = try_apply_turn_segment_after_rejection(
+            session,
+            &start,
+            &config,
+            &options,
+            &report,
+            saved_evidence.as_deref(),
+            "no_complete_winning_candidate",
+        )? {
+            return Ok(outcome);
+        }
         let mut outcome = RunControlCommandOutcome::message(format!(
             "{}{}\n\n{}",
             render_search_rejection(&report, "no_complete_winning_candidate", None),
@@ -57,6 +70,17 @@ pub(super) fn apply_search_combat(
     };
     if let Some(max_hp_loss) = effective_hp_loss_limit(session, &options) {
         if trajectory.hp_loss > max_hp_loss as i32 {
+            if let Some(outcome) = try_apply_turn_segment_after_rejection(
+                session,
+                &start,
+                &config,
+                &options,
+                &report,
+                saved_evidence.as_deref(),
+                "complete_winning_candidate_exceeds_hp_loss_limit",
+            )? {
+                return Ok(outcome);
+            }
             let mut outcome = RunControlCommandOutcome::message(format!(
                 "{}{}\n\n{}",
                 render_search_rejection(
@@ -117,6 +141,70 @@ pub(super) fn apply_search_combat(
         ]);
     outcome.search_evidence_path = saved_evidence;
     Ok(outcome)
+}
+
+fn try_apply_turn_segment_after_rejection(
+    session: &mut RunControlSession,
+    start: &CombatPosition,
+    config: &CombatSearchV2Config,
+    options: &RunControlSearchCombatOptions,
+    search_report: &CombatSearchV2Report,
+    saved_evidence: Option<&std::path::Path>,
+    rejection_result: &'static str,
+) -> Result<Option<RunControlCommandOutcome>, String> {
+    if options.segment_mode != Some(RunControlCombatSegmentMode::TurnBoundary) {
+        return Ok(None);
+    }
+
+    let segment_report = plan_combat_turn_segment_v1(&start.engine, &start.combat, config);
+    let Some(trajectory) = segment_report.selected.as_ref() else {
+        return Ok(None);
+    };
+    verify_segment_trajectory_replays(start, &trajectory.actions, config)?;
+
+    let before_snapshot = RunVisibleSnapshot::capture(session);
+    let applied = trajectory.actions.clone();
+    let mut automation_actions = Vec::new();
+    session.mark_current_combat_search_resolved();
+    for action in &applied {
+        let outcome = session.apply_input(action.input.clone())?;
+        automation_actions.push(CombatAutomationActionV1 {
+            step_index: action.step_index,
+            action_key: action.action_key.clone(),
+            input: action.input.clone(),
+            drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
+        });
+    }
+    let after_snapshot = RunVisibleSnapshot::capture(session);
+    let status = current_run_apply_status(session);
+    let mut transition_label = format!(
+        "search-combat segment applied {} actions (partial turn; not terminal claim)",
+        applied.len()
+    );
+    if let Some(path) = saved_evidence.as_ref() {
+        transition_label.push_str(&format!(" saved_search={}", path.display()));
+    }
+    let action_result = action_result_from_transition(
+        TransitionAction {
+            label: transition_label,
+        },
+        &before_snapshot,
+        &after_snapshot,
+        status,
+    );
+    let message = format!(
+        "{}{}\n{}\n{}",
+        render_segment_application(search_report, &segment_report, rejection_result),
+        render_saved_evidence_note(saved_evidence),
+        render_action_result(&action_result),
+        super::render::render_run_control_state(session)
+    );
+    let mut outcome =
+        RunControlCommandOutcome::action(message, action_result).with_trace_annotations(vec![
+            combat_automation_trace_annotation("search_combat_turn_segment", automation_actions),
+        ]);
+    outcome.search_evidence_path = saved_evidence.map(|path| path.to_path_buf());
+    Ok(Some(outcome))
 }
 
 fn combat_automation_trace_annotation(
@@ -345,6 +433,55 @@ fn verify_trajectory_replays_to_win(
     }
 }
 
+fn verify_segment_trajectory_replays(
+    start: &CombatPosition,
+    actions: &[CombatSearchV2ActionTrace],
+    config: &CombatSearchV2Config,
+) -> Result<(), String> {
+    if actions.is_empty() {
+        return Err("search-combat segment dry-run refused empty action list".to_string());
+    }
+    let stepper = EngineCombatStepper;
+    let mut position = start.clone();
+    for action in actions {
+        let choices = filter_combat_search_legal_actions(
+            stepper.legal_action_choices(&position),
+            config.potion_policy,
+            &position.combat,
+        );
+        let Some(choice) = choices
+            .iter()
+            .find(|choice| choice.input == action.input && choice.action_key == action.action_key)
+        else {
+            return Err(format!(
+                "search-combat segment dry-run drift at step {}: expected {} ({})",
+                action.step_index,
+                action.action_key,
+                client_input_hint(&action.input)
+            ));
+        };
+        let step = stepper.apply_to_stable(
+            &position,
+            choice.input.clone(),
+            CombatStepLimits {
+                max_engine_steps: config.max_engine_steps_per_action,
+                deadline: None,
+            },
+        );
+        if step.truncated {
+            return Err(format!(
+                "search-combat segment dry-run truncated at step {} after {} engine steps",
+                action.step_index, step.engine_steps
+            ));
+        }
+        position = step.position;
+    }
+    match combat_terminal(&position.engine, &position.combat) {
+        CombatTerminal::Loss => Err("search-combat segment dry-run ended in loss".to_string()),
+        CombatTerminal::Win | CombatTerminal::Unresolved => Ok(()),
+    }
+}
+
 fn render_search_rejection(
     report: &CombatSearchV2Report,
     result: &'static str,
@@ -449,6 +586,64 @@ fn render_search_application(
     }
     if actions.len() > 12 {
         lines.push(format!("    ... {} more actions", actions.len() - 12));
+    }
+    lines.join("\n")
+}
+
+fn render_segment_application(
+    search_report: &CombatSearchV2Report,
+    segment_report: &CombatSearchV2TurnSegmentReport,
+    rejection_result: &'static str,
+) -> String {
+    let trajectory = segment_report
+        .selected
+        .as_ref()
+        .expect("caller only renders after selecting a segment");
+    let mut lines = vec![
+        "Search combat applied partial turn segment.".to_string(),
+        format!("  behavior_label={}", segment_report.behavior_label),
+        format!("  source={}", segment_report.source),
+        format!("  original_search_result={rejection_result}"),
+        format!(
+            "  segment_bucket={} stop_reason={} candidate_count={} nodes_expanded={} nodes_generated={}",
+            segment_report.selected_bucket.unwrap_or("unknown"),
+            segment_report.selected_stop_reason.unwrap_or("unknown"),
+            segment_report.candidate_count,
+            segment_report.nodes_expanded,
+            segment_report.nodes_generated
+        ),
+        format!(
+            "  segment_terminal={:?} final_hp={} hp_loss={} turns={} cards_played={} potions_used={}",
+            trajectory.terminal,
+            trajectory.final_hp,
+            trajectory.hp_loss,
+            trajectory.turns,
+            trajectory.cards_played,
+            trajectory.potions_used
+        ),
+        format!(
+            "  search_coverage={:?} reliability={}",
+            search_report.outcome.coverage_status, search_report.evidence_reliability.reliability
+        ),
+        render_search_policy_summary(search_report),
+        render_policy_evidence_summary(search_report),
+        "  terminal_claim=none; this is an exact applied prefix, not a complete-win proof"
+            .to_string(),
+        format!("  action_count={}", trajectory.actions.len()),
+    ];
+    for action in trajectory.actions.iter().take(12) {
+        lines.push(format!(
+            "    {} | {} | {}",
+            action.step_index,
+            client_input_hint(&action.input),
+            action.action_key
+        ));
+    }
+    if trajectory.actions.len() > 12 {
+        lines.push(format!(
+            "    ... {} more actions",
+            trajectory.actions.len() - 12
+        ));
     }
     lines.join("\n")
 }

@@ -6,8 +6,8 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::run_control::{
-    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
-    RunControlSessionCheckpointV1,
+    RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlSearchCombatOptions,
+    RunControlSession, RunControlSessionCheckpointV1,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -79,7 +79,10 @@ impl Default for BranchCampaignConfigV1 {
             search_max_nodes: Some(50_000),
             search_wall_ms: Some(200),
             search_max_hp_loss: None,
-            search_options: RunControlSearchCombatOptions::default(),
+            search_options: RunControlSearchCombatOptions {
+                segment_mode: Some(RunControlCombatSegmentMode::TurnBoundary),
+                ..RunControlSearchCombatOptions::default()
+            },
             combat_retry_policy: BranchCampaignCombatRetryPolicyV1::OnStall,
             include_event_reward_skip: false,
             prefix_commands: Vec::new(),
@@ -537,10 +540,11 @@ where
         } else {
             None
         };
-        let promoted_from_frozen = if leading_abandoned_request.is_none()
-            && state.active.is_empty()
-            && state.victories.is_empty()
-        {
+        if let Some(request) = leading_abandoned_request {
+            state.strategy_requests =
+                merge_campaign_strategy_request_queue_v1(state.strategy_requests, vec![request]);
+        }
+        let promoted_from_frozen = if state.active.is_empty() && state.victories.is_empty() {
             promote_frozen_to_active_v1(&mut state.active, &mut state.frozen, config.max_active)
         } else {
             0
@@ -579,12 +583,6 @@ where
         state.rounds.push(round_summary);
         state.rounds_completed = state.rounds_completed.saturating_add(1);
 
-        if let Some(request) = leading_abandoned_request {
-            state.strategy_requests =
-                merge_campaign_strategy_request_queue_v1(state.strategy_requests, vec![request]);
-            stop_reason = "needs_intervention".to_string();
-            break;
-        }
         if !state.victories.is_empty() {
             stop_reason = "victory_found".to_string();
             break;

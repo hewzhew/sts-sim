@@ -1,0 +1,207 @@
+use crate::runtime::combat::CombatState;
+use crate::sim::combat::{CombatStepper, EngineCombatStepper};
+use crate::state::core::EngineState;
+
+use super::frontier::SearchNode;
+use super::turn_planner::{
+    enumerate_turn_plans, TurnPlanBucket, TurnPlanStopReason, TurnPlanV1, TurnPlannerConfigV1,
+};
+use super::{
+    terminal_label, CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2PotionPolicy,
+    CombatSearchV2TrajectoryReport, RolloutNodeEstimate, SearchTerminalLabel, TurnPrefixState,
+};
+
+#[derive(Clone, Debug)]
+pub struct CombatSearchV2TurnSegmentReport {
+    pub behavior_label: &'static str,
+    pub source: &'static str,
+    pub candidate_count: usize,
+    pub nodes_expanded: usize,
+    pub nodes_generated: usize,
+    pub selected_bucket: Option<&'static str>,
+    pub selected_stop_reason: Option<&'static str>,
+    pub selected: Option<CombatSearchV2TrajectoryReport>,
+}
+
+pub fn plan_combat_turn_segment_v1(
+    engine: &EngineState,
+    combat: &CombatState,
+    config: &CombatSearchV2Config,
+) -> CombatSearchV2TurnSegmentReport {
+    plan_combat_turn_segment_with_stepper_v1(engine, combat, config, &EngineCombatStepper)
+}
+
+fn plan_combat_turn_segment_with_stepper_v1(
+    engine: &EngineState,
+    combat: &CombatState,
+    config: &CombatSearchV2Config,
+    stepper: &impl CombatStepper,
+) -> CombatSearchV2TurnSegmentReport {
+    let root = SearchNode {
+        engine: engine.clone(),
+        combat: combat.clone(),
+        actions: Vec::<CombatSearchV2ActionTrace>::new(),
+        turn_prefix: TurnPrefixState::default(),
+        initial_hp: combat.entities.player.current_hp,
+        potions_used: 0,
+        potions_discarded: 0,
+        cards_played: 0,
+        potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
+        rollout_estimate: RolloutNodeEstimate::unevaluated(),
+    };
+    let turn_config = TurnPlannerConfigV1 {
+        max_inner_nodes: 512,
+        max_end_states: 24,
+        per_bucket_limit: 4,
+        potion_policy: CombatSearchV2PotionPolicy::Never,
+        max_engine_steps_per_action: config.max_engine_steps_per_action,
+    };
+    let enumeration = enumerate_turn_plans(&root, stepper, &turn_config, None);
+    let selected = enumeration
+        .plans
+        .iter()
+        .filter(|plan| turn_segment_plan_is_eligible(combat, plan))
+        .max_by(|left, right| left.eval.cmp(&right.eval));
+
+    CombatSearchV2TurnSegmentReport {
+        behavior_label: "partial_segment_not_terminal_claim",
+        source: "turn_plan_v1_current_turn_exact_enumeration",
+        candidate_count: enumeration.plans.len(),
+        nodes_expanded: enumeration.nodes_expanded,
+        nodes_generated: enumeration.nodes_generated,
+        selected_bucket: selected.map(|plan| plan.bucket.label()),
+        selected_stop_reason: selected.map(|plan| plan.stop_reason.label()),
+        selected: selected.map(|plan| {
+            super::trajectory_report::trajectory_report(
+                &plan.end_node,
+                terminal_label(&plan.end_node.engine, &plan.end_node.combat)
+                    == SearchTerminalLabel::Unresolved,
+            )
+        }),
+    }
+}
+
+fn turn_segment_plan_is_eligible(root_combat: &CombatState, plan: &&TurnPlanV1) -> bool {
+    if plan.actions.is_empty() {
+        return false;
+    }
+    if !matches!(
+        plan.stop_reason,
+        TurnPlanStopReason::NextTurn | TurnPlanStopReason::Terminal
+    ) {
+        return false;
+    }
+    let terminal = terminal_label(&plan.end_node.engine, &plan.end_node.combat);
+    if terminal == SearchTerminalLabel::Loss || plan.bucket == TurnPlanBucket::TerminalLoss {
+        return false;
+    }
+    let final_hp = plan.end_node.combat.entities.player.current_hp;
+    if final_hp <= 0 {
+        return false;
+    }
+    let hp_loss = (root_combat.entities.player.current_hp - final_hp).max(0);
+    hp_loss <= turn_segment_hp_loss_limit(root_combat)
+}
+
+fn turn_segment_hp_loss_limit(combat: &CombatState) -> i32 {
+    let current_hp = combat.entities.player.current_hp.max(0);
+    let max_hp = combat.entities.player.max_hp.max(1);
+    let soft_limit = (max_hp / 3).max(24);
+    soft_limit.min(current_hp.saturating_sub(1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::combat::CombatCard;
+    use crate::sim::combat::{
+        combat_terminal, CombatPosition, CombatStepLimits, CombatStepResult, CombatTerminal,
+    };
+    use crate::state::core::ClientInput;
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    #[derive(Clone, Copy)]
+    struct SegmentTestStepper;
+
+    impl CombatStepper for SegmentTestStepper {
+        fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+            if !matches!(position.engine, EngineState::CombatPlayerTurn) {
+                return Vec::new();
+            }
+            if position.combat.turn.energy > 0 && !position.combat.zones.hand.is_empty() {
+                vec![
+                    ClientInput::PlayCard {
+                        card_index: 0,
+                        target: Some(1),
+                    },
+                    ClientInput::EndTurn,
+                ]
+            } else {
+                vec![ClientInput::EndTurn]
+            }
+        }
+
+        fn apply_to_stable(
+            &self,
+            position: &CombatPosition,
+            input: ClientInput,
+            _limits: CombatStepLimits,
+        ) -> CombatStepResult {
+            let mut combat = position.combat.clone();
+            if matches!(input, ClientInput::PlayCard { .. }) {
+                combat.turn.energy = combat.turn.energy.saturating_sub(1);
+                combat.zones.hand.clear();
+                if let Some(monster) = combat.entities.monsters.first_mut() {
+                    monster.current_hp = monster.current_hp.saturating_sub(12);
+                }
+            }
+            if matches!(input, ClientInput::EndTurn) {
+                combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
+            }
+            let position = CombatPosition::new(position.engine.clone(), combat);
+            CombatStepResult {
+                terminal: combat_terminal(&position.engine, &position.combat),
+                alive: true,
+                truncated: false,
+                timed_out: false,
+                engine_steps: 1,
+                position,
+            }
+        }
+
+        fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+            combat_terminal(&position.engine, &position.combat)
+        }
+    }
+
+    #[test]
+    fn turn_segment_report_is_partial_and_uses_current_turn_actions() {
+        let mut combat = blank_test_combat();
+        combat.entities.player.current_hp = 60;
+        combat.entities.player.max_hp = 80;
+        combat.turn.energy = 1;
+        combat.turn.turn_count = 0;
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.id = 1;
+        monster.current_hp = 50;
+        monster.max_hp = 50;
+        combat.entities.monsters = vec![monster];
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 1)];
+
+        let report = plan_combat_turn_segment_with_stepper_v1(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            &CombatSearchV2Config::default(),
+            &SegmentTestStepper,
+        );
+
+        assert_eq!(report.behavior_label, "partial_segment_not_terminal_claim");
+        let selected = report.selected.expect("segment should be selected");
+        assert_eq!(selected.terminal, SearchTerminalLabel::Unresolved);
+        assert!(!selected.actions.is_empty());
+        assert!(selected.actions.len() <= 2);
+    }
+}

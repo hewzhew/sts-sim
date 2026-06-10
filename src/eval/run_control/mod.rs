@@ -51,8 +51,9 @@ pub use bookmarks::{
 };
 pub use commands::{
     parse_run_control_command, run_control_help, run_control_short_hint, RunControlAutoStepOptions,
-    RunControlCommand, RunControlHpLossLimit, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions, RunControlSearchDefaultsCommand, RunControlSearchEvidenceTarget,
+    RunControlCombatSegmentMode, RunControlCommand, RunControlHpLossLimit,
+    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSearchDefaultsCommand,
+    RunControlSearchEvidenceTarget,
 };
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,

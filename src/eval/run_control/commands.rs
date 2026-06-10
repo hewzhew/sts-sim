@@ -117,7 +117,13 @@ pub struct RunControlSearchCombatOptions {
     pub rollout_beam_width: Option<usize>,
     pub turn_plan_policy: Option<crate::ai::combat_search_v2::CombatSearchV2TurnPlanPolicy>,
     pub frontier_policy: Option<CombatSearchV2FrontierPolicy>,
+    pub segment_mode: Option<RunControlCombatSegmentMode>,
     pub evidence: Option<RunControlSearchEvidenceTarget>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RunControlCombatSegmentMode {
+    TurnBoundary,
 }
 
 #[derive(Clone, Debug, PartialEq)]

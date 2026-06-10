@@ -98,6 +98,7 @@ fn run_control_parser_accepts_search_combat_options() {
                 rollout_beam_width: Some(4),
                 turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::RootFrontierSeed),
                 frontier_policy: Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets),
+                segment_mode: None,
                 evidence: None,
             })
         );
@@ -109,6 +110,13 @@ fn run_control_parser_accepts_search_combat_options() {
         parse_run_control_command("sc save=case").expect("search evidence should parse"),
         RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
             evidence: Some(RunControlSearchEvidenceTarget::LastCaptureCase),
+            ..Default::default()
+        })
+    );
+    assert_eq!(
+        parse_run_control_command("sc segment=turn").expect("segment option should parse"),
+        RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
+            segment_mode: Some(RunControlCombatSegmentMode::TurnBoundary),
             ..Default::default()
         })
     );
@@ -175,6 +183,7 @@ fn run_control_parser_accepts_auto_step_options() {
                 rollout_beam_width: None,
                 turn_plan_policy: None,
                 frontier_policy: None,
+                segment_mode: None,
                 evidence: None,
             },
             max_operations: Some(9),

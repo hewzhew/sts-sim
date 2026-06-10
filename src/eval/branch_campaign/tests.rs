@@ -589,7 +589,7 @@ fn campaign_builds_intervention_when_abandoned_branches_exhaust_routes() {
 }
 
 #[test]
-fn campaign_requests_intervention_for_leading_abandoned_combat_before_promoting_old_frozen() {
+fn campaign_records_deferred_note_for_leading_abandoned_combat_while_frozen_exists() {
     let mut abandoned = test_campaign_branch("abandoned-combat", 48, 78);
     abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
     abandoned.frontier_title = "Combat".to_string();

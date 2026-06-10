@@ -77,6 +77,7 @@ mod decision_microscope;
 mod diagnostics;
 mod diagnostics_tags;
 mod rollout_probe;
+mod segment_plan;
 mod trajectory_report;
 
 #[cfg(test)]
@@ -153,6 +154,7 @@ pub use decision_microscope::{
     CombatSearchV2DecisionTrajectorySummary,
 };
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
+pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};
 pub use trajectory_report::trajectory_from_state;
 pub use types::*;
 

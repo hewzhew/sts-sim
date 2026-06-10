@@ -19,8 +19,8 @@ use sts_simulator::eval::neow_guided_prefix::{
 };
 use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
 use sts_simulator::eval::run_control::{
-    render_run_control_details, render_run_control_state, RunControlCommand,
-    RunControlSearchCombatOptions, RunControlSession,
+    render_run_control_details, render_run_control_state, RunControlCombatSegmentMode,
+    RunControlCommand, RunControlSearchCombatOptions, RunControlSession,
 };
 
 const QUICK_PRESET_MAX_ROUNDS: usize = 2;
@@ -660,7 +660,7 @@ fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, Stri
         search_max_nodes: args.search_max_nodes,
         search_wall_ms: Some(args.search_wall_ms),
         search_max_hp_loss,
-        search_options: parse_branch_experiment_search_options_v1(&args.combat_search_options)?,
+        search_options: campaign_search_options_from_args(args)?,
         combat_retry_policy: match args.combat_retry {
             BranchCampaignCombatRetryArgV1::OnStall => BranchCampaignCombatRetryPolicyV1::OnStall,
             BranchCampaignCombatRetryArgV1::Immediate => {
@@ -670,6 +670,25 @@ fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, Stri
         },
         include_event_reward_skip: false,
         prefix_commands,
+    })
+}
+
+fn campaign_search_options_from_args(args: &Args) -> Result<RunControlSearchCombatOptions, String> {
+    let mut options = parse_branch_experiment_search_options_v1(&args.combat_search_options)?;
+    if !combat_search_options_include_segment_mode(&args.combat_search_options) {
+        options.segment_mode = Some(RunControlCombatSegmentMode::TurnBoundary);
+    }
+    Ok(options)
+}
+
+fn combat_search_options_include_segment_mode(tokens: &[String]) -> bool {
+    tokens.iter().any(|token| {
+        token.split_once('=').is_some_and(|(key, _)| {
+            matches!(
+                key.to_ascii_lowercase().as_str(),
+                "segment" | "segment_mode" | "partial" | "partial_mode"
+            )
+        })
     })
 }
 
@@ -699,9 +718,26 @@ mod tests {
         let config = campaign_config_from_args(&args).expect("config builds");
 
         assert_eq!(config.max_reward_options_per_branch, Some(2));
+        assert_eq!(
+            config.search_options.segment_mode,
+            Some(RunControlCombatSegmentMode::TurnBoundary)
+        );
         assert_eq!(config.max_active, 8);
         assert_eq!(config.max_frozen, 32);
         assert_eq!(config.round_depth, 1);
+    }
+
+    #[test]
+    fn campaign_cli_can_disable_segment_combat_fallback() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--combat-search-option",
+            "segment=off",
+        ])
+        .expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(config.search_options.segment_mode, None);
     }
 
     #[test]

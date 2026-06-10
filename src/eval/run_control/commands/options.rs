@@ -8,9 +8,9 @@ use crate::state::core::ClientInput;
 
 use super::super::reward_auto::{parse_on_off, parse_reward_automation_target};
 use super::{
-    RunControlAutoStepOptions, RunControlCommand, RunControlHpLossLimit,
-    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSearchDefaultsCommand,
-    RunControlSearchEvidenceTarget,
+    RunControlAutoStepOptions, RunControlCombatSegmentMode, RunControlCommand,
+    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+    RunControlSearchDefaultsCommand, RunControlSearchEvidenceTarget,
 };
 
 pub(super) fn parse_search_combat_options(
@@ -64,6 +64,9 @@ pub(super) fn parse_search_combat_options(
             }
             "frontier" | "frontier_policy" | "frontier-policy" => {
                 options.frontier_policy = Some(parse_frontier_policy(value)?);
+            }
+            "segment" | "segment_mode" | "partial" | "partial_mode" => {
+                options.segment_mode = parse_segment_mode(value)?;
             }
             "save" | "evidence" | "output" | "out" => {
                 options.evidence = Some(parse_search_evidence_target(value));
@@ -159,6 +162,9 @@ fn validate_search_default_options(options: &RunControlSearchCombatOptions) -> R
     }
     if options.frontier_policy.is_some() {
         unsupported.push("frontier");
+    }
+    if options.segment_mode.is_some() {
+        unsupported.push("segment");
     }
     if options.evidence.is_some() {
         unsupported.push("save");
@@ -319,6 +325,18 @@ fn parse_frontier_policy(value: &str) -> Result<CombatSearchV2FrontierPolicy, St
         | "eval-buckets" => Ok(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets),
         _ => Err(format!(
             "invalid frontier policy '{value}', expected single_queue|round_robin_eval_buckets"
+        )),
+    }
+}
+
+fn parse_segment_mode(value: &str) -> Result<Option<RunControlCombatSegmentMode>, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "off" | "none" | "disabled" | "false" => Ok(None),
+        "turn" | "turn_boundary" | "turn-boundary" | "current_turn" | "current-turn" => {
+            Ok(Some(RunControlCombatSegmentMode::TurnBoundary))
+        }
+        _ => Err(format!(
+            "invalid segment mode '{value}', expected off|turn_boundary"
         )),
     }
 }
