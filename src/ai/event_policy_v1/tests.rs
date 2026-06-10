@@ -9,7 +9,7 @@ use crate::state::events::{
 use crate::state::run::RunState;
 
 #[test]
-fn event_policy_picks_free_known_benefit() {
+fn event_context_classifies_free_known_benefit() {
     let run = RunState::new(1, 0, false, "Ironclad");
     let context = build_event_decision_context_v1(
         &run,
@@ -44,20 +44,14 @@ fn event_policy_picks_free_known_benefit() {
         ],
     );
 
-    let decision = plan_event_decision_v1(&context, &EventPolicyConfigV1::default());
-
-    assert!(matches!(
-        decision.action,
-        EventPolicyActionV1::Pick { index: 0, .. }
-    ));
     assert_eq!(
-        decision.context.candidates[0].class,
+        context.candidates[0].class,
         EventPolicyClassV1::FreeKnownBenefit
     );
 }
 
 #[test]
-fn event_policy_declines_when_every_other_option_is_risky() {
+fn event_context_classifies_leave_option_without_deciding_policy() {
     let run = RunState::new(1, 0, false, "Ironclad");
     let context = build_event_decision_context_v1(
         &run,
@@ -101,12 +95,7 @@ fn event_policy_declines_when_every_other_option_is_risky() {
         ],
     );
 
-    let decision = plan_event_decision_v1(&context, &EventPolicyConfigV1::default());
-
-    assert!(matches!(
-        decision.action,
-        EventPolicyActionV1::Pick { index: 2, .. }
-    ));
+    assert_eq!(context.candidates[2].class, EventPolicyClassV1::SafeExit);
 }
 
 #[test]

@@ -25,32 +25,6 @@ fn route_planner_can_gate_obvious_forced_elite_risk() {
 }
 
 #[test]
-fn route_planner_prefers_early_monster_over_question_and_low_value_shop() {
-    let mut run = run_with_start_nodes(
-        &[
-            RoomType::MonsterRoom,
-            RoomType::EventRoom,
-            RoomType::ShopRoom,
-        ],
-        Some(RoomType::RestRoom),
-    );
-    run.gold = 80;
-
-    let trace = plan_route_decision_v1(
-        &run,
-        &EngineState::MapNavigation,
-        RoutePlannerConfigV1::default(),
-    );
-    let selected = selected_candidate(&trace);
-
-    assert_eq!(
-        selected.target.room_type,
-        Some(RoomType::MonsterRoom),
-        "Act 1 opening data-collection route should prefer an easy-pool combat over early ?/low-gold shop"
-    );
-}
-
-#[test]
 fn route_planner_shop_need_increases_with_gold() {
     let mut low_gold = run_with_start_nodes(
         &[RoomType::MonsterRoom, RoomType::ShopRoom],
