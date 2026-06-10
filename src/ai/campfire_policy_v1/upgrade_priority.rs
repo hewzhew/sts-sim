@@ -139,4 +139,15 @@ mod tests {
                 )
         );
     }
+
+    #[test]
+    fn campfire_upgrade_priority_marks_bash_as_clear_core_upgrade() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+
+        assert!(
+            campfire_smith_upgrade_priority_v1(&CombatCard::new(CardId::Bash, 1), &run_state)
+                >= crate::ai::campfire_policy_v1::CampfirePolicyConfigV1::default()
+                    .clear_core_smith_priority_threshold
+        );
+    }
 }

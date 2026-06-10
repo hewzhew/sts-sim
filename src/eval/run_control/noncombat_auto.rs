@@ -10,7 +10,8 @@ pub(super) struct NonCombatAutoApplication {
 pub(super) fn apply_planner_noncombat_policy(
     session: &mut RunControlSession,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
-    if let Some((outcome, summary)) = super::campfire_policy::apply_campfire_policy_rest(session)? {
+    if let Some((outcome, summary)) = super::campfire_policy::apply_campfire_policy_action(session)?
+    {
         return Ok(Some(NonCombatAutoApplication {
             outcome,
             summary,

@@ -17,7 +17,8 @@ pub fn build_campfire_decision_context_v1(
     let strategy = build_run_strategy_snapshot_from_run_state_v2(run_state);
     let candidates = available_choices
         .into_iter()
-        .map(|choice| candidate_evidence(choice, &strategy))
+        .flat_map(|choice| expand_choice_targets(run_state, choice))
+        .map(|choice| candidate_evidence(choice, &strategy, run_state))
         .collect();
 
     CampfireDecisionContextV1 {
@@ -25,6 +26,31 @@ pub fn build_campfire_decision_context_v1(
         current_hp: run_state.current_hp,
         max_hp: run_state.max_hp,
         candidates,
+    }
+}
+
+fn expand_choice_targets(run_state: &RunState, choice: CampfireChoice) -> Vec<CampfireChoice> {
+    match choice {
+        CampfireChoice::Smith(_) => run_state
+            .master_deck
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, card)| {
+                crate::state::core::master_deck_card_can_upgrade(card)
+                    .then_some(CampfireChoice::Smith(idx))
+            })
+            .collect(),
+        CampfireChoice::Toke(_) => run_state
+            .master_deck
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, card)| {
+                (crate::state::core::master_deck_card_is_purgeable(card)
+                    && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics))
+                .then_some(CampfireChoice::Toke(idx))
+            })
+            .collect(),
+        _ => vec![choice],
     }
 }
 
@@ -47,11 +73,18 @@ pub fn plan_campfire_decision_v1(
 fn candidate_evidence(
     choice: CampfireChoice,
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+    run_state: &RunState,
 ) -> CampfireCandidateEvidenceV1 {
     let class = class_for_choice(choice);
     let support_gate = support_gate_for_choice(choice, strategy);
     let mut evidence = vec![format!("campfire choice is {choice:?}")];
     let mut risks = Vec::new();
+    let upgrade_priority = match choice {
+        CampfireChoice::Smith(idx) => run_state.master_deck.get(idx).map(|card| {
+            crate::ai::campfire_policy_v1::campfire_smith_upgrade_priority_v1(card, run_state)
+        }),
+        _ => None,
+    };
 
     match class {
         CampfirePolicyClassV1::RestRecovery => {
@@ -61,7 +94,10 @@ fn candidate_evidence(
             ));
         }
         CampfirePolicyClassV1::UpgradeAgency => {
-            risks.push("smith choice changes upgrade plan and remains human".to_string());
+            if let Some(priority) = upgrade_priority {
+                evidence.push(format!("smith upgrade priority is {priority}"));
+            }
+            risks.push("smith choice changes upgrade plan unless priority clears gate".to_string());
         }
         CampfirePolicyClassV1::RelicAction => {
             risks.push("campfire relic action is route/deck dependent".to_string());
@@ -79,6 +115,7 @@ fn candidate_evidence(
         label: label_for_choice(choice),
         choice,
         class,
+        upgrade_priority,
         support_gate,
         evidence,
         risks,

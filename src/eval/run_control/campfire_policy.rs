@@ -2,7 +2,7 @@ use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
 
-pub(super) fn apply_campfire_policy_rest(
+pub(super) fn apply_campfire_policy_action(
     session: &mut RunControlSession,
 ) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
     if !matches!(session.engine_state, EngineState::Campfire) {
@@ -18,14 +18,25 @@ pub(super) fn apply_campfire_policy_rest(
         &crate::ai::campfire_policy_v1::CampfirePolicyConfigV1::default(),
     );
     let noncombat_record = decision.to_noncombat_decision_record_v1();
-    let crate::ai::campfire_policy_v1::CampfirePolicyActionV1::Rest { confidence, reason } =
-        decision.action
-    else {
-        return Ok(None);
+    let (choice, verb, confidence, reason) = match decision.action {
+        crate::ai::campfire_policy_v1::CampfirePolicyActionV1::Rest { confidence, reason } => {
+            (CampfireChoice::Rest, "rest", confidence, reason)
+        }
+        crate::ai::campfire_policy_v1::CampfirePolicyActionV1::Smith {
+            deck_index,
+            confidence,
+            reason,
+        } => (
+            CampfireChoice::Smith(deck_index),
+            "smith",
+            confidence,
+            reason,
+        ),
+        crate::ai::campfire_policy_v1::CampfirePolicyActionV1::Stop { .. } => return Ok(None),
     };
 
     let outcome = session
-        .apply_input(ClientInput::CampfireOption(CampfireChoice::Rest))?
+        .apply_input(ClientInput::CampfireOption(choice))?
         .with_trace_annotations(vec![
             super::noncombat_policy_annotation::noncombat_policy_annotation(
                 "campfire policy",
@@ -35,7 +46,7 @@ pub(super) fn apply_campfire_policy_rest(
     Ok(Some((
         outcome,
         format!(
-            "campfire policy: rest confidence={confidence:.2} reason={reason} label_role={}",
+            "campfire policy: {verb} confidence={confidence:.2} reason={reason} label_role={}",
             decision.label_role
         ),
     )))

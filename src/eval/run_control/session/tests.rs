@@ -730,7 +730,7 @@ fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire()
 }
 
 #[test]
-fn run_control_auto_run_does_not_auto_smith_at_healthy_campfire() {
+fn run_control_auto_run_smiths_clear_core_upgrade_at_healthy_campfire() {
     let mut session = test_session_at_campfire_with_hp(80, 80);
 
     let outcome = session
@@ -740,13 +740,19 @@ fn run_control_auto_run_does_not_auto_smith_at_healthy_campfire() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should stop at healthy campfire");
+        .expect("auto-run should smith a clear core upgrade at healthy campfire");
 
-    assert!(outcome
-        .message
-        .contains("Reason: campfire action requires human choice"));
-    assert!(outcome.action_result.is_none());
-    assert!(matches!(session.engine_state, EngineState::Campfire));
+    assert!(outcome.message.contains("campfire policy: smith"));
+    assert!(outcome.action_result.is_some());
+    assert!(
+        session
+            .run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == crate::content::cards::CardId::Bash && card.upgrades == 1),
+        "healthy campfire policy should upgrade Bash as the default Ironclad core upgrade"
+    );
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
 }
 
 #[test]

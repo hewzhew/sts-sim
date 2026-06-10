@@ -23,6 +23,7 @@ pub struct CampfireCandidateEvidenceV1 {
     pub label: String,
     pub choice: CampfireChoice,
     pub class: CampfirePolicyClassV1,
+    pub upgrade_priority: Option<i32>,
     pub support_gate: StrategyPlanSupportV1,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
@@ -40,12 +41,16 @@ pub enum CampfirePolicyClassV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CampfirePolicyConfigV1 {
     pub allow_rest_under_recovery_pressure: bool,
+    pub allow_clear_core_smith_when_healthy: bool,
+    pub clear_core_smith_priority_threshold: i32,
 }
 
 impl Default for CampfirePolicyConfigV1 {
     fn default() -> Self {
         Self {
             allow_rest_under_recovery_pressure: true,
+            allow_clear_core_smith_when_healthy: true,
+            clear_core_smith_priority_threshold: 180,
         }
     }
 }
@@ -59,14 +64,27 @@ pub struct CampfireDecisionV1 {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CampfirePolicyActionV1 {
-    Rest { confidence: f32, reason: String },
-    Stop { reason: String },
+    Rest {
+        confidence: f32,
+        reason: String,
+    },
+    Smith {
+        deck_index: usize,
+        confidence: f32,
+        reason: String,
+    },
+    Stop {
+        reason: String,
+    },
 }
 
 impl CampfireDecisionV1 {
     pub fn to_noncombat_decision_record_v1(&self) -> NonCombatDecisionRecordV1 {
         let selected_candidate_id = match self.action {
             CampfirePolicyActionV1::Rest { .. } => Some(candidate_id(CampfireChoice::Rest)),
+            CampfirePolicyActionV1::Smith { deck_index, .. } => {
+                Some(candidate_id(CampfireChoice::Smith(deck_index)))
+            }
             CampfirePolicyActionV1::Stop { .. } => None,
         };
 
@@ -93,7 +111,10 @@ impl CampfireDecisionV1 {
             evidence: EvidenceBundleV1 {
                 items: evidence_items(&self.context),
                 assumptions: vec![
-                    "campfire automation only handles conservative rest certificates".to_string(),
+                    "campfire automation handles conservative rest and clear-priority smith certificates"
+                        .to_string(),
+                    "healthy smith automation requires a clear core upgrade priority threshold"
+                        .to_string(),
                     "campfire automation is a behavior policy, not a teacher label".to_string(),
                 ],
                 warnings: Vec::new(),
@@ -101,6 +122,15 @@ impl CampfireDecisionV1 {
             values: Vec::new(),
             selection: match &self.action {
                 CampfirePolicyActionV1::Rest { confidence, reason } => PolicySelectionV1 {
+                    status: PolicySelectionStatusV1::Selected,
+                    selected_candidate_id,
+                    reason: reason.clone(),
+                    confidence: *confidence,
+                    selection_mode: "conservative_campfire_certificate".to_string(),
+                },
+                CampfirePolicyActionV1::Smith {
+                    confidence, reason, ..
+                } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Selected,
                     selected_candidate_id,
                     reason: reason.clone(),
