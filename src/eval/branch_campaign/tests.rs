@@ -155,22 +155,49 @@ fn campaign_report_branch_preserves_stop_reason() {
 }
 
 #[test]
-fn campaign_frozen_overflow_records_discard_examples() {
-    let mut frozen = vec![test_campaign_branch("existing", 3, 80)];
+fn campaign_frozen_overflow_replaces_weaker_existing_branch() {
+    let mut existing = test_campaign_branch("existing", 3, 80);
+    existing.choice_labels = vec!["Body Slam".to_string()];
+    let mut frozen = vec![existing];
     let mut discarded_count = 0usize;
     let mut discarded_examples = Vec::new();
-    let mut overflow = test_campaign_branch("overflow", 4, 75);
-    overflow.choice_labels = vec!["Wild Strike".to_string(), "Skip card reward".to_string()];
+    let mut deeper = test_campaign_branch("deeper", 4, 75);
+    deeper.choice_labels = vec!["Wild Strike".to_string(), "Skip card reward".to_string()];
 
     let added = append_limited_frozen_v1(
         &mut frozen,
-        vec![overflow],
+        vec![deeper],
+        1,
+        &mut discarded_count,
+        &mut discarded_examples,
+    );
+
+    assert_eq!(added, 1);
+    assert_eq!(frozen.len(), 1);
+    assert_eq!(frozen[0].branch_id, "deeper");
+    assert_eq!(discarded_count, 1);
+    assert_eq!(discarded_examples, vec!["Body Slam"]);
+}
+
+#[test]
+fn campaign_frozen_overflow_discards_weaker_incoming_branch() {
+    let mut frozen = vec![test_campaign_branch("existing", 4, 80)];
+    let mut discarded_count = 0usize;
+    let mut discarded_examples = Vec::new();
+    let mut shallow = test_campaign_branch("shallow", 3, 75);
+    shallow.choice_labels = vec!["Wild Strike".to_string(), "Skip card reward".to_string()];
+
+    let added = append_limited_frozen_v1(
+        &mut frozen,
+        vec![shallow],
         1,
         &mut discarded_count,
         &mut discarded_examples,
     );
 
     assert_eq!(added, 0);
+    assert_eq!(frozen.len(), 1);
+    assert_eq!(frozen[0].branch_id, "existing");
     assert_eq!(discarded_count, 1);
     assert_eq!(discarded_examples, vec!["Wild Strike -> Skip card reward"]);
 }

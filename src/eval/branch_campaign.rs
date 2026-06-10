@@ -1643,14 +1643,39 @@ fn append_limited_frozen_v1(
         if frozen.len() < max_frozen {
             frozen.push(branch);
             added = added.saturating_add(1);
+            continue;
+        }
+
+        let Some((worst_index, worst_branch)) =
+            frozen.iter().enumerate().min_by(|(_, left), (_, right)| {
+                campaign_branch_retention_key_v1(left).cmp(&campaign_branch_retention_key_v1(right))
+            })
+        else {
+            record_campaign_discard_v1(&branch, discarded_count, discarded_examples);
+            continue;
+        };
+        if campaign_branch_retention_key_v1(&branch)
+            > campaign_branch_retention_key_v1(worst_branch)
+        {
+            let displaced = std::mem::replace(&mut frozen[worst_index], branch);
+            record_campaign_discard_v1(&displaced, discarded_count, discarded_examples);
+            added = added.saturating_add(1);
         } else {
-            *discarded_count = discarded_count.saturating_add(1);
-            if discarded_examples.len() < 6 {
-                discarded_examples.push(render_campaign_discard_example_v1(&branch));
-            }
+            record_campaign_discard_v1(&branch, discarded_count, discarded_examples);
         }
     }
     added
+}
+
+fn record_campaign_discard_v1(
+    branch: &BranchCampaignBranchV1,
+    discarded_count: &mut usize,
+    discarded_examples: &mut Vec<String>,
+) {
+    *discarded_count = discarded_count.saturating_add(1);
+    if discarded_examples.len() < 6 {
+        discarded_examples.push(render_campaign_discard_example_v1(branch));
+    }
 }
 
 fn merge_campaign_strategy_requests_v1(
