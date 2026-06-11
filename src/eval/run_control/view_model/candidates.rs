@@ -411,8 +411,10 @@ fn shop_candidates(
             get_potion_definition(potion.potion_id).name,
             potion.price
         );
-        let note = shop_block_note(potion.can_buy, potion.blocked_reason.as_deref());
-        if potion.can_buy {
+        let block_reason =
+            super::super::shop_potion_purchase_block_reason_v1(&session.run_state, potion);
+        let note = shop_block_note(block_reason.is_none(), block_reason.as_deref());
+        if block_reason.is_none() {
             candidate(
                 format!("potion-{idx}"),
                 label,
@@ -423,10 +425,7 @@ fn shop_candidates(
             unavailable_candidate(
                 format!("potion-{idx}"),
                 label,
-                potion
-                    .blocked_reason
-                    .clone()
-                    .unwrap_or_else(|| "cannot buy".to_string()),
+                block_reason.unwrap_or_else(|| "cannot buy".to_string()),
                 note,
             )
         }

@@ -624,6 +624,35 @@ fn current_boundary_prefers_boss_potion_over_smoke_bomb_in_capped_shop_portfolio
 }
 
 #[test]
+fn current_boundary_does_not_branch_on_shop_potion_when_slots_are_full() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 200;
+    session.run_state.potions = vec![
+        Some(Potion::new(PotionId::BlockPotion, 0)),
+        Some(Potion::new(PotionId::StrengthPotion, 1)),
+        Some(Potion::new(PotionId::DexterityPotion, 2)),
+    ];
+    let mut shop = ShopState::new();
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::StrengthPotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("full potion slots should still allow leaving the shop");
+    let commands = boundary
+        .options
+        .iter()
+        .map(|option| option.command.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(commands, vec!["leave"]);
+}
+
+#[test]
 fn current_boundary_suppresses_nloth_energy_relic_trade() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session

@@ -707,7 +707,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
 }
 
 #[test]
-fn compact_campaign_report_renders_deferred_strategy_notes_while_continuing() {
+fn compact_campaign_report_suppresses_deferred_strategy_notes_while_active_continues() {
     let report = BranchCampaignReportV1 {
         schema_name: "BranchCampaignV1".to_string(),
         schema_version: 1,
@@ -740,9 +740,9 @@ fn compact_campaign_report_renders_deferred_strategy_notes_while_continuing() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains("Deferred strategy notes:"));
+    assert!(!rendered.contains("Deferred strategy notes:"));
     assert!(!rendered.contains("Needs intervention:"));
-    assert!(rendered.contains("stop: combat search did not find an executable complete win"));
+    assert!(!rendered.contains("stop: combat search did not find an executable complete win"));
 }
 
 #[test]
@@ -1160,7 +1160,7 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains("Deferred strategy notes:"));
+    assert!(!rendered.contains("Deferred strategy notes:"));
     assert!(!rendered.contains("Needs intervention:"));
     assert!(!rendered.contains("Queued interventions:"));
 }

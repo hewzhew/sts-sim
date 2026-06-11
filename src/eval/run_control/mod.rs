@@ -35,6 +35,7 @@ mod selection_surface;
 mod session;
 mod session_trace;
 mod session_trace_outcome;
+mod shop_legal;
 mod shop_policy;
 mod trace_annotation;
 mod trace_replay;
@@ -85,6 +86,9 @@ pub use session_trace::{
     SessionTraceRewardAutomationV1, SessionTraceRunConfigV1, SessionTraceSelectionResolution,
     SessionTraceStepSourceV1, SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME,
     SESSION_TRACE_SCHEMA_VERSION,
+};
+pub(crate) use shop_legal::{
+    shop_potion_purchase_block_reason_v1, shop_potion_purchase_is_allowed_v1,
 };
 pub use trace_annotation::RunControlTraceAnnotationV1;
 pub use trace_replay::{

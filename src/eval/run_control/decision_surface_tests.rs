@@ -6,7 +6,7 @@ use super::view_model::{CandidateAction, DecisionCandidate};
 use super::{RunControlCommand, RunControlConfig, RunControlSession};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
-use crate::content::potions::PotionId;
+use crate::content::potions::{Potion, PotionId};
 use crate::content::relics::{RelicId, RelicState};
 use crate::runtime::action::CardDestination;
 use crate::runtime::combat::CombatCard;
@@ -37,6 +37,43 @@ fn decision_surface_visible_candidates_are_accepted_by_input_gate() {
                 });
         }
     }
+}
+
+#[test]
+fn shop_potion_candidate_is_unavailable_when_potion_slots_are_full() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 200;
+    session.run_state.potions = vec![
+        Some(Potion::new(PotionId::BlockPotion, 0)),
+        Some(Potion::new(PotionId::StrengthPotion, 1)),
+        Some(Potion::new(PotionId::DexterityPotion, 2)),
+    ];
+    let mut shop = crate::state::shop::ShopState::new();
+    shop.potions.push(crate::state::shop::ShopPotion {
+        potion_id: PotionId::StrengthPotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let surface = build_decision_surface(&session);
+    let potion = surface
+        .view
+        .candidates
+        .iter()
+        .find(|candidate| candidate.id == "potion-0")
+        .expect("shop potion candidate");
+
+    assert_eq!(
+        potion.action,
+        CandidateAction::Unavailable {
+            reason: "no empty potion slot".to_string()
+        }
+    );
+    assert!(session
+        .validate_input_for_current_state(&ClientInput::BuyPotion(0))
+        .is_err());
 }
 
 #[test]

@@ -6,8 +6,9 @@ use crate::ai::shop_policy_v1::{
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::get_potion_definition;
 use crate::content::relics::RelicId;
-use crate::eval::run_control::RunControlSession;
+use crate::eval::run_control::{shop_potion_purchase_is_allowed_v1, RunControlSession};
 use crate::state::core::EngineState;
+use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
 const MAX_SHOP_PURCHASE_OPTIONS_PER_BRANCH: usize = 4;
@@ -113,7 +114,7 @@ fn low_fanout_purchase_branch_options(
         }
     }
     for (idx, potion) in shop.potions.iter().enumerate() {
-        if potion.can_buy && potion.price <= session.run_state.gold {
+        if shop_potion_purchase_is_allowed_v1(&session.run_state, potion) {
             let potion_name = get_potion_definition(potion.potion_id).name;
             options.push(ScoredShopBranchOption {
                 score: shop_potion_conversion_priority_for_v1(potion.potion_id, &session.run_state),
@@ -134,7 +135,15 @@ fn low_fanout_purchase_branch_options(
     }
 
     if options.is_empty() {
-        return None;
+        return Some(vec![ShopBranchOption {
+            label: "Leave shop".to_string(),
+            command: "leave".to_string(),
+            card: None,
+            effect_kind: "shop_leave".to_string(),
+            effect_label: "Leave shop | no actionable purchase".to_string(),
+            representative_count: 1,
+            suppressed_count: 0,
+        }]);
     }
     let mut options = select_shop_purchase_portfolio(
         options,
@@ -224,26 +233,26 @@ fn select_shop_purchase_portfolio(
 }
 
 fn shop_combo_pressure(run_state: &crate::state::run::RunState, shop: &ShopState) -> bool {
-    let affordable_count = affordable_purchase_count(shop, run_state.gold);
+    let affordable_count = affordable_purchase_count(shop, run_state);
     affordable_count >= 3
         && (affordable_count > MAX_SHOP_PURCHASE_OPTIONS_PER_BRANCH
             || (run_state.gold >= 300 && shop_conversion_pressure_v1(run_state, shop)))
 }
 
-fn affordable_purchase_count(shop: &ShopState, gold: i32) -> usize {
+fn affordable_purchase_count(shop: &ShopState, run_state: &RunState) -> usize {
     shop.cards
         .iter()
-        .filter(|card| card.can_buy && card.price <= gold)
+        .filter(|card| card.can_buy && card.price <= run_state.gold)
         .count()
         + shop
             .relics
             .iter()
-            .filter(|relic| relic.can_buy && relic.price <= gold)
+            .filter(|relic| relic.can_buy && relic.price <= run_state.gold)
             .count()
         + shop
             .potions
             .iter()
-            .filter(|potion| potion.can_buy && potion.price <= gold)
+            .filter(|potion| shop_potion_purchase_is_allowed_v1(run_state, potion))
             .count()
 }
 
