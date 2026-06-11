@@ -23,6 +23,7 @@ const COMBAT_RETRY_MIN_NODES: usize = 200_000;
 const COMBAT_RETRY_MAX_NODES: usize = 500_000;
 const COMBAT_RETRY_MIN_WALL_MS: u64 = 1_200;
 const COMBAT_RETRY_MAX_WALL_MS: u64 = 5_000;
+const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BranchCampaignCombatRetryPolicyV1 {
@@ -1069,6 +1070,12 @@ pub fn render_branch_campaign_compact_v1(
             }
         }
     }
+    if let Some((count, max_gold, example)) = campaign_unspent_gold_pressure_v1(report) {
+        lines.push(format!(
+            "Resource concern: high_unspent_gold_near_boss={count} max_gold={max_gold}"
+        ));
+        lines.push(format!("  resource example: {example}"));
+    }
     if let Some(victory_lines) = render_campaign_victory_quality_lines_v1(report) {
         lines.push(String::new());
         lines.extend(victory_lines);
@@ -1138,6 +1145,70 @@ pub fn render_branch_campaign_compact_v1(
 
 fn format_bp(value: i32) -> String {
     format!("{:.2}", f64::from(value) / 100.0)
+}
+
+fn campaign_unspent_gold_pressure_v1(
+    report: &BranchCampaignReportV1,
+) -> Option<(usize, i32, String)> {
+    let pressured = report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .filter(|branch| branch_has_unspent_gold_pressure_v1(branch))
+        .collect::<Vec<_>>();
+    if pressured.is_empty() {
+        return None;
+    }
+    let max_gold = pressured
+        .iter()
+        .filter_map(|branch| branch.summary.as_ref().map(|summary| summary.gold))
+        .max()
+        .unwrap_or(0);
+    let example = pressured
+        .iter()
+        .max_by(|left, right| {
+            unspent_gold_pressure_key_v1(left).cmp(&unspent_gold_pressure_key_v1(right))
+        })
+        .map(|branch| {
+            let summary = branch
+                .summary
+                .as_ref()
+                .expect("filtered branch has summary");
+            format!(
+                "A{}F{} gold {} | {}",
+                summary.act,
+                summary.floor,
+                summary.gold,
+                render_compact_choice_path(&branch.choice_labels)
+            )
+        })
+        .unwrap_or_default();
+    Some((pressured.len(), max_gold, example))
+}
+
+fn branch_has_unspent_gold_pressure_v1(branch: &BranchCampaignBranchV1) -> bool {
+    let Some(summary) = branch.summary.as_ref() else {
+        return false;
+    };
+    summary.gold >= UNSPENT_GOLD_PRESSURE_THRESHOLD
+        && summary.floor >= boss_approach_floor_v1(summary.act)
+}
+
+fn unspent_gold_pressure_key_v1(branch: &BranchCampaignBranchV1) -> (i32, i32) {
+    branch
+        .summary
+        .as_ref()
+        .map(|summary| (summary.gold, summary.floor))
+        .unwrap_or((0, 0))
+}
+
+fn boss_approach_floor_v1(act: u8) -> i32 {
+    match act {
+        1 => 14,
+        2 => 30,
+        3 => 46,
+        _ => i32::MAX,
+    }
 }
 
 fn render_branch_pressure_examples_v1(examples: &[String]) -> String {
@@ -2121,6 +2192,10 @@ pub fn select_campaign_branches_v1(
             .rank_key
             .cmp(&left.rank_key)
             .then_with(|| branch_progress_key(right).cmp(&branch_progress_key(left)))
+            .then_with(|| {
+                branch_resource_conversion_key_v1(right)
+                    .cmp(&branch_resource_conversion_key_v1(left))
+            })
             .then_with(|| left.branch_id.cmp(&right.branch_id))
     });
 
@@ -2438,6 +2513,17 @@ fn branch_progress_key(branch: &BranchCampaignBranchV1) -> (u8, i32, i32) {
         .as_ref()
         .map(|summary| (summary.act, summary.floor, summary.hp))
         .unwrap_or((0, 0, 0))
+}
+
+fn branch_resource_conversion_key_v1(branch: &BranchCampaignBranchV1) -> i32 {
+    if branch_has_unspent_gold_pressure_v1(branch) {
+        return -branch
+            .summary
+            .as_ref()
+            .map(|summary| summary.gold)
+            .unwrap_or(0);
+    }
+    0
 }
 
 fn campaign_should_stop_after_victory_v1(

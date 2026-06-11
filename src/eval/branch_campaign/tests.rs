@@ -133,6 +133,26 @@ fn compact_campaign_report_renders_abandoned_examples_while_continuing() {
 }
 
 #[test]
+fn compact_campaign_report_renders_unspent_gold_pressure_near_boss() {
+    let mut report = test_campaign_report_with_active("rich", 16, 30);
+    report.active[0].summary.as_mut().unwrap().gold = 485;
+    report.active[0].choice_labels = vec![
+        "Flame Barrier".to_string(),
+        "Wild Strike".to_string(),
+        "Buy Anchor | 146 gold | auto leave shop".to_string(),
+        "Barricade".to_string(),
+        "Smith Shockwave".to_string(),
+    ];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("Resource concern: high_unspent_gold_near_boss=1 max_gold=485"));
+    assert!(rendered.contains(
+        "resource example: A1F16 gold 485 | Flame Barrier -> Wild Strike -> ... -> Smith Shockwave"
+    ));
+}
+
+#[test]
 fn campaign_report_branch_preserves_stop_reason() {
     let parent = test_campaign_branch("parent", 3, 80);
     let mut child = test_report_branch(
@@ -217,6 +237,21 @@ fn campaign_selection_freezes_active_overflow() {
     assert_eq!(selected.active[0].branch_id, "a");
     assert_eq!(selected.active[1].branch_id, "b");
     assert_eq!(selected.frozen[0].branch_id, "c");
+}
+
+#[test]
+fn campaign_selection_prefers_converted_gold_when_progress_is_tied() {
+    let mut rich = test_campaign_branch("a-rich", 16, 30);
+    rich.rank_key = 100;
+    rich.summary.as_mut().unwrap().gold = 485;
+    let mut converted = test_campaign_branch("b-converted", 16, 30);
+    converted.rank_key = 100;
+    converted.summary.as_mut().unwrap().gold = 120;
+
+    let selected = select_campaign_branches_v1(vec![rich, converted], 1, 4);
+
+    assert_eq!(selected.active.len(), 1);
+    assert_eq!(selected.active[0].branch_id, "b-converted");
 }
 
 #[test]
