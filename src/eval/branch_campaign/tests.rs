@@ -1666,6 +1666,108 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
 }
 
 #[test]
+fn campaign_resume_rehydrates_checkpointed_combat_failures() {
+    let mut active = test_campaign_branch_with_boundary("active-low", "Shop", "test", 46, 7);
+    active.summary.as_mut().expect("summary").act = 3;
+    active.commands = vec!["active".to_string()];
+
+    let mut combat_failure = test_campaign_branch_with_boundary(
+        "combat-high",
+        "Combat",
+        "combat search did not find an executable complete win",
+        48,
+        61,
+    );
+    combat_failure.summary.as_mut().expect("summary").act = 3;
+    combat_failure.commands = vec!["old-combat".to_string()];
+    combat_failure.status = BranchCampaignBranchStatusV1::Abandoned;
+
+    let mut noncombat_failure = test_campaign_branch_with_boundary(
+        "event-old",
+        "Falling",
+        "event option requires human choice",
+        36,
+        70,
+    );
+    noncombat_failure.summary.as_mut().expect("summary").act = 3;
+    noncombat_failure.commands = vec!["old-event".to_string()];
+    noncombat_failure.status = BranchCampaignBranchStatusV1::Abandoned;
+
+    let previous = BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        stop_reason: "max_rounds".to_string(),
+        active: vec![active],
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: vec![combat_failure.clone(), noncombat_failure.clone()],
+        stuck: Vec::new(),
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        rounds: Vec::new(),
+    };
+    let mut restored_session = RunControlSession::new(RunControlConfig::default());
+    restored_session.engine_state = EngineState::CombatPlayerTurn;
+    restored_session.run_state.act_num = 3;
+    restored_session.run_state.floor_num = 48;
+    restored_session.run_state.current_hp = 61;
+    restored_session.run_state.max_hp = 90;
+    let checkpoint = BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        sessions: vec![BranchCampaignCheckpointSessionV1 {
+            commands: combat_failure.commands.clone(),
+            session: RunControlSessionCheckpointV1::from_session(&restored_session),
+        }],
+    };
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &BranchCampaignConfigV1 {
+            seed: 1,
+            max_rounds: 0,
+            max_active: 1,
+            max_frozen: 2,
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+        Some(&checkpoint),
+    )
+    .expect("checkpointed combat failures should be resumable");
+
+    assert!(
+        result
+            .report
+            .frozen
+            .iter()
+            .any(|branch| branch.branch_id == "combat-high"),
+        "old checkpointed combat failure should be reintroduced as a continuable macro branch"
+    );
+    assert!(
+        result
+            .report
+            .abandoned
+            .iter()
+            .all(|branch| branch.branch_id != "combat-high"),
+        "rehydrated combat failure should no longer remain buried in abandoned"
+    );
+    assert!(
+        result
+            .report
+            .abandoned
+            .iter()
+            .any(|branch| branch.branch_id == "event-old"),
+        "noncombat abandoned branches should not be rehydrated by the combat checkpoint path"
+    );
+}
+
+#[test]
 fn campaign_status_distinguishes_pruned_from_terminal_defeat() {
     assert_eq!(
         campaign_status_from_report_status(BranchExperimentBranchStatusV1::Pruned),

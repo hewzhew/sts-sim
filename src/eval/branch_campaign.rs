@@ -423,10 +423,26 @@ where
     F: FnMut(BranchCampaignProgressEventV1),
 {
     validate_campaign_resume_report_v1(config, previous)?;
-    let state = match checkpoint {
+    let mut state = match checkpoint {
         Some(checkpoint) => campaign_state_from_report_and_checkpoint_v1(previous, checkpoint)?,
         None => campaign_state_from_report_v1(previous),
     };
+    if checkpoint.is_some() {
+        let rehydrated = rehydrate_checkpoint_failures_on_resume_v1(
+            &mut state,
+            config.max_active,
+            config.max_frozen,
+        );
+        if rehydrated > 0 {
+            state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
+                state.strategy_requests,
+                &state.active,
+                &state.frozen,
+                &state.stuck,
+                &state.abandoned,
+            );
+        }
+    }
     run_branch_campaign_from_state_with_progress_v1(config, state, progress)
 }
 
@@ -2552,6 +2568,138 @@ fn recover_auto_advanceable_stuck_branches_v1(
     }
     *stuck = remaining;
     recovered
+}
+
+fn rehydrate_checkpoint_failures_on_resume_v1(
+    state: &mut BranchCampaignRunStateV1,
+    max_active: usize,
+    max_frozen: usize,
+) -> usize {
+    if state.snapshot_cache.is_empty() {
+        return 0;
+    }
+
+    let mut recovered = 0usize;
+    let abandoned = std::mem::take(&mut state.abandoned);
+    state.abandoned = rehydrate_checkpoint_failure_list_v1(
+        abandoned,
+        &mut state.active,
+        &mut state.frozen,
+        &state.snapshot_cache,
+        max_active,
+        max_frozen,
+        &mut recovered,
+    );
+    let stuck = std::mem::take(&mut state.stuck);
+    state.stuck = rehydrate_checkpoint_failure_list_v1(
+        stuck,
+        &mut state.active,
+        &mut state.frozen,
+        &state.snapshot_cache,
+        max_active,
+        max_frozen,
+        &mut recovered,
+    );
+    recovered
+}
+
+fn rehydrate_checkpoint_failure_list_v1(
+    branches: Vec<BranchCampaignBranchV1>,
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    snapshot_cache: &BTreeMap<Vec<String>, RunControlSession>,
+    max_active: usize,
+    max_frozen: usize,
+    recovered_count: &mut usize,
+) -> Vec<BranchCampaignBranchV1> {
+    let mut remaining = Vec::new();
+    for branch in branches {
+        if let Some(recovered) = try_rehydrate_checkpoint_failure_branch_v1(&branch, snapshot_cache)
+        {
+            if place_recovered_campaign_branch_v1(active, frozen, recovered, max_active, max_frozen)
+            {
+                *recovered_count = recovered_count.saturating_add(1);
+                continue;
+            }
+        }
+        remaining.push(branch);
+    }
+    remaining
+}
+
+fn try_rehydrate_checkpoint_failure_branch_v1(
+    branch: &BranchCampaignBranchV1,
+    snapshot_cache: &BTreeMap<Vec<String>, RunControlSession>,
+) -> Option<BranchCampaignBranchV1> {
+    let session = snapshot_cache.get(&branch.commands)?;
+    if !campaign_checkpoint_failure_is_combat_resume_candidate_v1(branch, session) {
+        return None;
+    }
+
+    let mut recovered = branch.clone();
+    let previous_status = format!("{:?}", recovered.status);
+    campaign_refresh_branch_summary_from_session_v1(&mut recovered, session);
+    recovered.status = BranchCampaignBranchStatusV1::Active;
+    recovered.stop_reason = if recovered.stop_reason.trim().is_empty() {
+        format!("rehydrated checkpointed {previous_status} combat branch")
+    } else {
+        format!(
+            "rehydrated checkpointed {previous_status} combat branch: {}",
+            recovered.stop_reason
+        )
+    };
+    Some(recovered)
+}
+
+fn campaign_checkpoint_failure_is_combat_resume_candidate_v1(
+    branch: &BranchCampaignBranchV1,
+    session: &RunControlSession,
+) -> bool {
+    if !matches!(
+        branch.status,
+        BranchCampaignBranchStatusV1::Abandoned | BranchCampaignBranchStatusV1::Stuck
+    ) {
+        return false;
+    }
+    let frontier = normalized_campaign_boundary_title(&branch.frontier_title);
+    if frontier.starts_with("combat") {
+        return true;
+    }
+    if campaign_session_is_combat_boundary_v1(session) {
+        return true;
+    }
+    let stop = branch.stop_reason.to_ascii_lowercase();
+    stop.contains("combat search")
+        || stop.contains("search-combat")
+        || stop.contains("hp-loss")
+        || stop.contains("max_hp_loss")
+        || stop.contains("high-stakes combat")
+        || stop.contains("complete_winning_candidate")
+}
+
+fn campaign_session_is_combat_boundary_v1(session: &RunControlSession) -> bool {
+    matches!(
+        session.engine_state,
+        crate::state::core::EngineState::CombatStart(_)
+            | crate::state::core::EngineState::CombatPlayerTurn
+            | crate::state::core::EngineState::CombatProcessing
+            | crate::state::core::EngineState::PendingChoice(_)
+    )
+}
+
+fn campaign_refresh_branch_summary_from_session_v1(
+    branch: &mut BranchCampaignBranchV1,
+    session: &RunControlSession,
+) {
+    let Some(summary) = branch.summary.as_mut() else {
+        return;
+    };
+    summary.act = session.run_state.act_num;
+    summary.floor = session.run_state.floor_num;
+    summary.hp = session.run_state.current_hp;
+    summary.max_hp = session.run_state.max_hp;
+    summary.gold = session.run_state.gold;
+    summary.deck_count = session.run_state.master_deck.len();
 }
 
 fn try_recover_auto_advanceable_stuck_branch_v1(
