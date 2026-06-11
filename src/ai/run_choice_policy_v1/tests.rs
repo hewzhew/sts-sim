@@ -81,6 +81,29 @@ fn run_choice_policy_transform_upgraded_prefers_starter_shell_targets() {
     );
 }
 
+#[test]
+fn run_choice_policy_upgrades_high_priority_card_with_smith_priority() {
+    let run_state = RunState::new(1, 0, false, "Ironclad");
+    let choice = RunPendingChoiceState {
+        min_choices: 1,
+        max_choices: 1,
+        reason: RunPendingChoiceReason::Upgrade,
+        return_state: Box::new(EngineState::MapNavigation),
+    };
+    let context = build_run_choice_decision_context_v1(&run_state, &choice);
+
+    let decision = plan_run_choice_decision_v1(&context, &RunChoicePolicyConfigV1::default());
+
+    let RunChoicePolicyActionV1::SelectDeckIndices {
+        indices, labels, ..
+    } = decision.action
+    else {
+        panic!("expected high-priority upgrade selection");
+    };
+    assert_eq!(indices, vec![9]);
+    assert_eq!(labels, vec!["Bash".to_string()]);
+}
+
 fn purge_choice() -> RunPendingChoiceState {
     RunPendingChoiceState {
         min_choices: 1,

@@ -22,7 +22,19 @@ pub fn build_run_choice_decision_context_v1(
                 run_state,
             );
             let definition = get_card_definition(card.id);
-            let class = if is_deck_mutation_choice(&choice.reason) {
+            let upgrade_priority =
+                if matches!(choice.reason, RunPendingChoiceReason::Upgrade) && selectable {
+                    Some(
+                        crate::ai::campfire_policy_v1::campfire_smith_upgrade_priority_v1(
+                            card, run_state,
+                        ),
+                    )
+                } else {
+                    None
+                };
+            let class = if matches!(choice.reason, RunPendingChoiceReason::Upgrade) && selectable {
+                RunChoicePolicyClassV1::UpgradeTarget
+            } else if is_deck_mutation_choice(&choice.reason) {
                 if definition.card_type == CardType::Curse {
                     RunChoicePolicyClassV1::CursePurge
                 } else if definition.tags.contains(&CardTag::StarterStrike) {
@@ -49,8 +61,12 @@ pub fn build_run_choice_decision_context_v1(
                     format!("choice reason is {:?}", choice.reason),
                     format!("deck mutation rank={rank}"),
                     format!("upgrades={}", card.upgrades),
+                    upgrade_priority
+                        .map(|priority| format!("smith upgrade priority={priority}"))
+                        .unwrap_or_else(|| "smith upgrade priority=none".to_string()),
                 ],
                 risks: mutation_risks(class),
+                upgrade_priority,
             }
         })
         .collect();
@@ -67,7 +83,21 @@ pub fn plan_run_choice_decision_v1(
     context: &RunChoiceDecisionContextV1,
     config: &RunChoicePolicyConfigV1,
 ) -> RunChoiceDecisionV1 {
-    let action = if let Some(selected) = select_deck_mutation_targets(context, config) {
+    let action = if let Some(selected) = select_upgrade_target(context, config) {
+        let reason = selection_reason(&context.reason, &selected);
+        RunChoicePolicyActionV1::SelectDeckIndices {
+            indices: selected
+                .iter()
+                .map(|candidate| candidate.deck_index)
+                .collect(),
+            labels: selected
+                .iter()
+                .map(|candidate| candidate.label.clone())
+                .collect(),
+            confidence: 0.78,
+            reason,
+        }
+    } else if let Some(selected) = select_deck_mutation_targets(context, config) {
         let confidence = selection_confidence(&selected);
         let reason = selection_reason(&context.reason, &selected);
         RunChoicePolicyActionV1::SelectDeckIndices {
@@ -93,6 +123,30 @@ pub fn plan_run_choice_decision_v1(
         label_role: "behavior_policy_not_teacher",
         context: context.clone(),
     }
+}
+
+fn select_upgrade_target<'a>(
+    context: &'a RunChoiceDecisionContextV1,
+    config: &RunChoicePolicyConfigV1,
+) -> Option<Vec<&'a RunChoiceCandidateEvidenceV1>> {
+    if !config.allow_clear_upgrade
+        || context.reason != RunPendingChoiceReason::Upgrade
+        || context.min_choices != 1
+        || context.max_choices != 1
+    {
+        return None;
+    }
+    context
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.selectable)
+        .filter(|candidate| candidate.class == RunChoicePolicyClassV1::UpgradeTarget)
+        .filter_map(|candidate| {
+            let priority = candidate.upgrade_priority?;
+            (priority >= config.clear_upgrade_priority_threshold).then_some((candidate, priority))
+        })
+        .max_by_key(|(candidate, priority)| (*priority, std::cmp::Reverse(candidate.deck_index)))
+        .map(|(candidate, _)| vec![candidate])
 }
 
 fn select_deck_mutation_targets<'a>(
@@ -206,6 +260,7 @@ fn target_allowed(
         RunChoicePolicyClassV1::OtherDeckMutation | RunChoicePolicyClassV1::UnsupportedChoice => {
             false
         }
+        RunChoicePolicyClassV1::UpgradeTarget => false,
     }
 }
 
@@ -216,6 +271,7 @@ fn mutation_target_rank(class: RunChoicePolicyClassV1, upgrades: u8) -> i32 {
         RunChoicePolicyClassV1::StarterDefendMutation => 20,
         RunChoicePolicyClassV1::BasicCardMutation => 35,
         RunChoicePolicyClassV1::OtherDeckMutation => 100,
+        RunChoicePolicyClassV1::UpgradeTarget => 10_000,
         RunChoicePolicyClassV1::UnsupportedChoice => 10_000,
     };
     base + i32::from(upgrades) * 5
@@ -240,6 +296,9 @@ fn mutation_risks(class: RunChoicePolicyClassV1) -> Vec<String> {
         }
         RunChoicePolicyClassV1::OtherDeckMutation => {
             vec!["non-basic deck mutation remains a human choice".to_string()]
+        }
+        RunChoicePolicyClassV1::UpgradeTarget => {
+            vec!["upgrade selection requires clear smith priority".to_string()]
         }
         RunChoicePolicyClassV1::UnsupportedChoice => Vec::new(),
     }

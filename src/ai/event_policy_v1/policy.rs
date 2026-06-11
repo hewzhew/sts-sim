@@ -26,6 +26,8 @@ pub fn build_event_decision_context_v1(
     EventDecisionContextV1 {
         event_id,
         strategy,
+        current_hp: run_state.current_hp,
+        max_hp: run_state.max_hp,
         candidates,
     }
 }
@@ -67,6 +69,8 @@ pub fn plan_event_decision_v1(
 }
 
 fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEvidenceV1 {
+    let hp_cost = hp_cost(&option);
+    let max_hp_gain = max_hp_gain(&option);
     let class = classify_event_option(&option);
     let mut evidence = vec![format!(
         "event action kind is {:?}",
@@ -81,6 +85,10 @@ fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEviden
         }
         EventPolicyClassV1::SafeExit => {
             evidence.push("exit/decline option with no visible cost".to_string());
+        }
+        EventPolicyClassV1::MaxHpForHpCost => {
+            evidence.push(format!("gain {max_hp_gain} max HP for {hp_cost} HP"));
+            risks.push("visible current HP cost".to_string());
         }
         EventPolicyClassV1::ResourceCost => {
             risks.push("visible resource cost".to_string());
@@ -110,6 +118,8 @@ fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEviden
         evidence,
         risks,
         disabled: option.ui.disabled,
+        hp_cost,
+        max_hp_gain,
     }
 }
 
@@ -129,6 +139,9 @@ fn classify_event_option(option: &EventOption) -> EventPolicyClassV1 {
     if has_selection_or_deck_mutation(option) {
         return EventPolicyClassV1::SelectionOrDeckMutation;
     }
+    if is_max_hp_for_hp_cost(option) {
+        return EventPolicyClassV1::MaxHpForHpCost;
+    }
     if has_visible_cost(option) {
         return EventPolicyClassV1::ResourceCost;
     }
@@ -139,6 +152,40 @@ fn classify_event_option(option: &EventOption) -> EventPolicyClassV1 {
         return EventPolicyClassV1::FreeKnownBenefit;
     }
     EventPolicyClassV1::Unknown
+}
+
+fn is_max_hp_for_hp_cost(option: &EventOption) -> bool {
+    hp_cost(option) > 0
+        && max_hp_gain(option) > 0
+        && option
+            .semantics
+            .effects
+            .iter()
+            .all(|effect| matches!(effect, EventEffect::LoseHp(_) | EventEffect::GainMaxHp(_)))
+}
+
+fn hp_cost(option: &EventOption) -> i32 {
+    option
+        .semantics
+        .effects
+        .iter()
+        .map(|effect| match effect {
+            EventEffect::LoseHp(value) => *value,
+            _ => 0,
+        })
+        .sum()
+}
+
+fn max_hp_gain(option: &EventOption) -> i32 {
+    option
+        .semantics
+        .effects
+        .iter()
+        .map(|effect| match effect {
+            EventEffect::GainMaxHp(value) => *value,
+            _ => 0,
+        })
+        .sum()
 }
 
 fn is_safe_exit(option: &EventOption) -> bool {
@@ -247,6 +294,7 @@ fn support_gate_for_class(class: EventPolicyClassV1) -> StrategyPlanSupportV1 {
         EventPolicyClassV1::FreeKnownBenefit | EventPolicyClassV1::SafeExit => {
             StrategyPlanSupportV1::Strong
         }
+        EventPolicyClassV1::MaxHpForHpCost => StrategyPlanSupportV1::Plausible,
         EventPolicyClassV1::ResourceCost
         | EventPolicyClassV1::CurseDebt
         | EventPolicyClassV1::SelectionOrDeckMutation

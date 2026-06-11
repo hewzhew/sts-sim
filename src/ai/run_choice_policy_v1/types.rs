@@ -23,6 +23,7 @@ pub struct RunChoiceCandidateEvidenceV1 {
     pub card: CardId,
     pub class: RunChoicePolicyClassV1,
     pub selectable: bool,
+    pub upgrade_priority: Option<i32>,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
 }
@@ -34,6 +35,7 @@ pub enum RunChoicePolicyClassV1 {
     StarterDefendMutation,
     BasicCardMutation,
     OtherDeckMutation,
+    UpgradeTarget,
     UnsupportedChoice,
 }
 
@@ -42,6 +44,8 @@ pub struct RunChoicePolicyConfigV1 {
     pub allow_curse_purge: bool,
     pub allow_low_value_purge: bool,
     pub allow_low_value_transform: bool,
+    pub allow_clear_upgrade: bool,
+    pub clear_upgrade_priority_threshold: i32,
 }
 
 impl Default for RunChoicePolicyConfigV1 {
@@ -50,6 +54,10 @@ impl Default for RunChoicePolicyConfigV1 {
             allow_curse_purge: true,
             allow_low_value_purge: true,
             allow_low_value_transform: true,
+            allow_clear_upgrade: true,
+            clear_upgrade_priority_threshold:
+                crate::ai::campfire_policy_v1::CampfirePolicyConfigV1::default()
+                    .clear_core_smith_priority_threshold,
         }
     }
 }
@@ -107,6 +115,8 @@ impl RunChoiceDecisionV1 {
                 items: evidence_items(&self.context),
                 assumptions: vec![
                     "run choice automation only handles explicit deck mutation targets with visible low-value cards"
+                        .to_string(),
+                    "upgrade choices reuse campfire smith upgrade priority and require a clear threshold"
                         .to_string(),
                     "run choice automation is a behavior policy, not a teacher label".to_string(),
                 ],

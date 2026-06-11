@@ -13,6 +13,8 @@ use crate::state::events::EventId;
 pub struct EventDecisionContextV1 {
     pub event_id: EventId,
     pub strategy: RunStrategySnapshotV2,
+    pub current_hp: i32,
+    pub max_hp: i32,
     pub candidates: Vec<EventCandidateEvidenceV1>,
 }
 
@@ -25,12 +27,15 @@ pub struct EventCandidateEvidenceV1 {
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
     pub disabled: bool,
+    pub hp_cost: i32,
+    pub max_hp_gain: i32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EventPolicyClassV1 {
     FreeKnownBenefit,
     SafeExit,
+    MaxHpForHpCost,
     ResourceCost,
     CurseDebt,
     SelectionOrDeckMutation,
@@ -43,6 +48,9 @@ pub enum EventPolicyClassV1 {
 pub struct EventPolicyConfigV1 {
     pub allow_free_known_benefit: bool,
     pub allow_safe_exit_from_risky_event: bool,
+    pub allow_max_hp_for_safe_hp_cost: bool,
+    pub min_hp_after_safe_hp_cost: i32,
+    pub min_hp_ratio_after_safe_hp_cost: f32,
 }
 
 impl Default for EventPolicyConfigV1 {
@@ -50,6 +58,9 @@ impl Default for EventPolicyConfigV1 {
         Self {
             allow_free_known_benefit: true,
             allow_safe_exit_from_risky_event: true,
+            allow_max_hp_for_safe_hp_cost: true,
+            min_hp_after_safe_hp_cost: 35,
+            min_hp_ratio_after_safe_hp_cost: 0.50,
         }
     }
 }

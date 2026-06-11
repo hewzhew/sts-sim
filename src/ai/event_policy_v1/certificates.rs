@@ -49,8 +49,41 @@ fn pick_certificate(
                 reason: "declined event because every other visible option has cost, uncertainty, combat, or deck mutation".to_string(),
             })
         }
+        EventPolicyClassV1::MaxHpForHpCost
+            if config.allow_max_hp_for_safe_hp_cost
+                && max_hp_for_hp_cost_is_safe(context, candidate, config) =>
+        {
+            Some(PickCertificate {
+                index: candidate.index,
+                label: candidate.label.clone(),
+                confidence: 0.74,
+                reason: format!(
+                    "gain {} max HP for {} HP while keeping a safe health buffer",
+                    candidate.max_hp_gain, candidate.hp_cost
+                ),
+            })
+        }
         _ => None,
     }
+}
+
+fn max_hp_for_hp_cost_is_safe(
+    context: &EventDecisionContextV1,
+    candidate: &EventCandidateEvidenceV1,
+    config: &EventPolicyConfigV1,
+) -> bool {
+    if candidate.hp_cost <= 0 || candidate.max_hp_gain <= 0 {
+        return false;
+    }
+    let hp_after = context.current_hp.saturating_sub(candidate.hp_cost);
+    if hp_after < config.min_hp_after_safe_hp_cost {
+        return false;
+    }
+    if context.max_hp <= 0 {
+        return false;
+    }
+    let ratio_after = hp_after as f32 / context.max_hp as f32;
+    ratio_after >= config.min_hp_ratio_after_safe_hp_cost
 }
 
 fn all_other_enabled_candidates_are_risky(

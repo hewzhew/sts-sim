@@ -4,7 +4,7 @@ use crate::ai::event_policy_v1::{
 };
 use crate::state::events::{
     EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
-    EventOptionTransition,
+    EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
 
@@ -165,6 +165,43 @@ fn event_policy_stops_for_neow() {
             EventOptionTransition::AdvanceScreen,
         )],
     );
+
+    let decision = plan_event_decision_v1(&context, &EventPolicyConfigV1::default());
+
+    assert!(matches!(decision.action, EventPolicyActionV1::Stop { .. }));
+}
+
+#[test]
+fn event_policy_takes_max_hp_for_hp_when_health_buffer_is_safe() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.current_hp = 74;
+    run.max_hp = 80;
+    run.event_state = Some(EventState::new(EventId::ForgottenAltar));
+    let options = crate::content::events::forgotten_altar::get_options(
+        &run,
+        run.event_state.as_ref().unwrap(),
+    );
+    let context = build_event_decision_context_v1(&run, EventId::ForgottenAltar, options);
+
+    let decision = plan_event_decision_v1(&context, &EventPolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        EventPolicyActionV1::Pick { index: 1, .. }
+    ));
+}
+
+#[test]
+fn event_policy_stops_max_hp_for_hp_when_health_buffer_is_low() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.current_hp = 24;
+    run.max_hp = 80;
+    run.event_state = Some(EventState::new(EventId::ForgottenAltar));
+    let options = crate::content::events::forgotten_altar::get_options(
+        &run,
+        run.event_state.as_ref().unwrap(),
+    );
+    let context = build_event_decision_context_v1(&run, EventId::ForgottenAltar, options);
 
     let decision = plan_event_decision_v1(&context, &EventPolicyConfigV1::default());
 
