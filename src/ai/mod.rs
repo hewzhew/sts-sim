@@ -1,5 +1,6 @@
 pub mod boss_relic_policy_v1;
 pub mod campfire_policy_v1;
+pub mod card_admission_policy_v1;
 pub mod card_reward_policy_v1;
 pub mod combat_auto_policy_v1;
 pub mod combat_belief;

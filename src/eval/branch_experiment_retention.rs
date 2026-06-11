@@ -1,5 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::ai::card_admission_policy_v1::{
+    card_admission_pressure_v1, evaluate_card_profile_admission_v1, CardAdmissionContextV1,
+    CardAdmissionPressureV1, CardAdmissionSourceV1, CardAdmissionVerdictV1,
+};
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
 use crate::ai::noncombat_strategy_v1::StrategyFormationSummaryV2;
 use crate::eval::branch_experiment_trajectory::{
@@ -116,8 +120,6 @@ const SLOT_ORDER: [BranchRetentionSlotV1; 8] = [
     BranchRetentionSlotV1::CleanDeck,
     BranchRetentionSlotV1::Diversity,
 ];
-const DECK_BLOAT_PRESSURE_COUNT: usize = 35;
-
 pub fn default_branch_retention_decision_v1() -> BranchRetentionDecisionV1 {
     BranchRetentionDecisionV1 {
         primary_slot: BranchRetentionSlotV1::Diversity,
@@ -281,18 +283,19 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Survival);
         reasons.push("context: patches low-hp or route pressure".to_string());
     }
-    let deck_bloat_pressure = candidate.deck_count >= DECK_BLOAT_PRESSURE_COUNT;
+    let admission_context = card_admission_context_for_retention_candidate(candidate);
+    let deck_bloat_pressure =
+        card_admission_pressure_v1(&admission_context) >= CardAdmissionPressureV1::High;
     let immediate_safety_patch = context
         .keys
         .contains(&BranchRetentionContextKeyV2::ImmediateSafetyPatch);
+    let rejected_by_admission = added_cards_rejected_by_admission(candidate, &admission_context);
 
     if candidate.choice_profiles.iter().any(|profile| {
         profile
             .roles
             .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
-    }) && (!deck_bloat_pressure
-        || immediate_safety_patch
-        || !is_pure_transition_branch(candidate))
+    }) && (!rejected_by_admission || immediate_safety_patch)
     {
         slots.push(BranchRetentionSlotV1::Frontload);
         reasons.push("contains immediate combat output".to_string());
@@ -1138,6 +1141,39 @@ fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetention
         }
         BranchRetentionSlotV1::Diversity => -(candidate.index as i32),
     }
+}
+
+fn card_admission_context_for_retention_candidate(
+    candidate: &BranchRetentionCandidateInputV1,
+) -> CardAdmissionContextV1 {
+    CardAdmissionContextV1 {
+        act: 0,
+        floor: 0,
+        hp: candidate.hp,
+        max_hp: candidate.max_hp,
+        deck_size: candidate.deck_count,
+        powers: 0,
+        curses: 0,
+        draw_sources: 0,
+        exhaust_generators: 0,
+        formation_needs: candidate
+            .strategy_formation
+            .as_ref()
+            .map(|formation| formation.needs.clone())
+            .unwrap_or_default(),
+    }
+}
+
+fn added_cards_rejected_by_admission(
+    candidate: &BranchRetentionCandidateInputV1,
+    context: &CardAdmissionContextV1,
+) -> bool {
+    !candidate.choice_profiles.is_empty()
+        && candidate.choice_profiles.iter().all(|profile| {
+            evaluate_card_profile_admission_v1(context, profile, CardAdmissionSourceV1::Reward)
+                .verdict
+                == CardAdmissionVerdictV1::Reject
+        })
 }
 
 fn is_plain_card_reward_skip(candidate: &BranchRetentionCandidateInputV1) -> bool {
