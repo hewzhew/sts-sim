@@ -91,7 +91,7 @@ pub fn combat_terminal(engine: &EngineState, combat: &CombatState) -> CombatTerm
     {
         CombatTerminal::Loss
     } else if matches!(engine, EngineState::GameOver(RunResult::Victory))
-        || combat_cleared(combat)
+        || combat.are_monsters_basically_dead_java()
         || post_combat_engine_state(engine)
     {
         CombatTerminal::Win
@@ -217,12 +217,6 @@ fn post_combat_engine_state(engine: &EngineState) -> bool {
     )
 }
 
-fn combat_cleared(combat: &CombatState) -> bool {
-    combat.entities.monsters.iter().all(|monster| {
-        monster.is_dying || monster.is_escaped || monster.half_dead || monster.current_hp <= 0
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::{combat_terminal, stable_boundary, CombatTerminal};
@@ -252,6 +246,29 @@ mod tests {
         assert_eq!(
             combat_terminal(&event_engine, &combat),
             CombatTerminal::Unresolved
+        );
+    }
+
+    #[test]
+    fn combat_terminal_requires_java_death_flags_not_only_zero_hp() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        let (_engine, mut combat) =
+            build_natural_combat_start(&mut run, EncounterId::JawWorm, RoomType::MonsterRoom)
+                .expect("combat should initialize");
+        let monster = combat
+            .entities
+            .monsters
+            .first_mut()
+            .expect("jaw worm should exist");
+        monster.current_hp = 0;
+        monster.is_dying = false;
+        monster.is_escaped = false;
+        monster.half_dead = false;
+
+        assert_eq!(
+            combat_terminal(&EngineState::CombatPlayerTurn, &combat),
+            CombatTerminal::Unresolved,
+            "Java victory settlement waits for isDying/isEscaping flags; zero HP alone is not a terminal combat state"
         );
     }
 }
