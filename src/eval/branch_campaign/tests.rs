@@ -288,6 +288,33 @@ fn campaign_frozen_overflow_replaces_unconverted_gold_branch_when_progress_ties(
 }
 
 #[test]
+fn campaign_frozen_merge_replaces_duplicate_with_better_branch() {
+    let mut existing = test_campaign_branch("existing", 6, 70);
+    existing.rank_key = 70;
+    existing.choice_labels = vec!["old line".to_string()];
+    let mut incoming = test_campaign_branch("incoming", 6, 70);
+    incoming.rank_key = 80;
+    incoming.choice_labels = vec!["better line".to_string()];
+    let mut frozen = vec![existing];
+    let mut discarded_count = 0usize;
+    let mut discarded_examples = Vec::new();
+
+    let added = append_limited_frozen_v1(
+        &mut frozen,
+        vec![incoming],
+        4,
+        &mut discarded_count,
+        &mut discarded_examples,
+    );
+
+    assert_eq!(added, 1);
+    assert_eq!(frozen.len(), 1);
+    assert_eq!(frozen[0].branch_id, "incoming");
+    assert_eq!(discarded_count, 1);
+    assert_eq!(discarded_examples, vec!["merged duplicate: old line"]);
+}
+
+#[test]
 fn campaign_selection_freezes_active_overflow() {
     let branches = vec![
         test_campaign_branch("a", 1, 80),
@@ -317,6 +344,37 @@ fn campaign_selection_prefers_converted_gold_when_progress_is_tied() {
 
     assert_eq!(selected.active.len(), 1);
     assert_eq!(selected.active[0].branch_id, "b-converted");
+}
+
+#[test]
+fn campaign_selection_merges_duplicate_quality_branches() {
+    let mut best = test_campaign_branch("best-frontload", 5, 80);
+    best.rank_key = 120;
+    best.choice_labels = vec!["Pommel Strike".to_string()];
+    let mut duplicate = test_campaign_branch("weaker-frontload", 5, 80);
+    duplicate.rank_key = 100;
+    duplicate.choice_labels = vec!["Twin Strike".to_string()];
+    let mut distinct = test_campaign_branch("distinct-defense", 5, 80);
+    distinct.rank_key = 80;
+    distinct.choice_labels = vec!["Shrug It Off".to_string()];
+    distinct.summary.as_mut().unwrap().trajectory_key = "defense=1".to_string();
+
+    let selected = select_campaign_branches_v1(vec![duplicate, distinct, best], 2, 4);
+
+    assert_eq!(
+        selected
+            .active
+            .iter()
+            .map(|branch| branch.branch_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["best-frontload", "distinct-defense"]
+    );
+    assert!(selected.frozen.is_empty());
+    assert_eq!(selected.discarded_count, 1);
+    assert_eq!(
+        selected.discarded_examples,
+        vec!["merged duplicate: Twin Strike"]
+    );
 }
 
 #[test]
@@ -1640,6 +1698,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
             formation_stage: "PlanSeeded".to_string(),
             formation_strengths: Vec::new(),
             formation_needs: Vec::new(),
+            trajectory_key: "frontload=1".to_string(),
         }),
         frontier_title: "Card Reward".to_string(),
         status: BranchCampaignBranchStatusV1::Active,

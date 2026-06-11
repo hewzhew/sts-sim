@@ -5,13 +5,14 @@ use crate::eval::branch_experiment::{
     BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
 };
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
+use crate::eval::branch_experiment_trajectory::branch_trajectory_key_v1;
 use crate::eval::run_control::{
     apply_branch_experiment_auto_run, build_decision_surface, RunControlAutoStepOptions,
     RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlRouteAutomationMode,
     RunControlSearchCombatOptions, RunControlSession, RunControlSessionCheckpointV1,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const BRANCH_CAMPAIGN_SCHEMA_NAME: &str = "BranchCampaignV1";
 pub const BRANCH_CAMPAIGN_SCHEMA_VERSION: u32 = 1;
@@ -117,6 +118,8 @@ pub struct BranchCampaignBranchSummaryV1 {
     pub formation_stage: String,
     pub formation_strengths: Vec<String>,
     pub formation_needs: Vec<String>,
+    #[serde(default)]
+    pub trajectory_key: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1870,6 +1873,21 @@ fn append_limited_frozen_v1(
 ) -> usize {
     let mut added = 0usize;
     for branch in new_frozen {
+        if let Some(existing_index) = frozen.iter().position(|existing| {
+            campaign_branch_quality_key_v1(existing) == campaign_branch_quality_key_v1(&branch)
+        }) {
+            if campaign_branch_retention_key_v1(&branch)
+                > campaign_branch_retention_key_v1(&frozen[existing_index])
+            {
+                let displaced = std::mem::replace(&mut frozen[existing_index], branch);
+                record_campaign_duplicate_merge_v1(&displaced, discarded_count, discarded_examples);
+                added = added.saturating_add(1);
+            } else {
+                record_campaign_duplicate_merge_v1(&branch, discarded_count, discarded_examples);
+            }
+            continue;
+        }
+
         if frozen.len() < max_frozen {
             frozen.push(branch);
             added = added.saturating_add(1);
@@ -1905,6 +1923,20 @@ fn record_campaign_discard_v1(
     *discarded_count = discarded_count.saturating_add(1);
     if discarded_examples.len() < 6 {
         discarded_examples.push(render_campaign_discard_example_v1(branch));
+    }
+}
+
+fn record_campaign_duplicate_merge_v1(
+    branch: &BranchCampaignBranchV1,
+    discarded_count: &mut usize,
+    discarded_examples: &mut Vec<String>,
+) {
+    *discarded_count = discarded_count.saturating_add(1);
+    if discarded_examples.len() < 6 {
+        discarded_examples.push(format!(
+            "merged duplicate: {}",
+            render_campaign_discard_example_v1(branch)
+        ));
     }
 }
 
@@ -2275,8 +2307,19 @@ pub fn select_campaign_branches_v1(
             .then_with(|| left.branch_id.cmp(&right.branch_id))
     });
 
-    for (index, mut branch) in active_candidates.into_iter().enumerate() {
-        if index < max_active {
+    let mut retained_quality_keys = BTreeSet::new();
+    for mut branch in active_candidates {
+        let quality_key = campaign_branch_quality_key_v1(&branch);
+        if !retained_quality_keys.insert(quality_key) {
+            record_campaign_duplicate_merge_v1(
+                &branch,
+                &mut selection.discarded_count,
+                &mut selection.discarded_examples,
+            );
+            continue;
+        }
+
+        if selection.active.len() < max_active {
             branch.status = BranchCampaignBranchStatusV1::Active;
             selection.active.push(branch);
         } else if selection.frozen.len() < max_frozen {
@@ -2467,6 +2510,48 @@ fn campaign_branch_retention_key_v1(branch: &BranchCampaignBranchV1) -> (u8, i32
         branch.rank_key,
         branch_resource_conversion_key_v1(branch),
     )
+}
+
+fn campaign_branch_quality_key_v1(branch: &BranchCampaignBranchV1) -> String {
+    let frontier = normalized_campaign_boundary_title(&branch.frontier_title);
+    let Some(summary) = branch.summary.as_ref() else {
+        return format!(
+            "frontier={frontier}|summary=-|choices={}",
+            render_choice_path(&branch.choice_labels)
+        );
+    };
+    let strengths = sorted_string_key_v1(&summary.formation_strengths);
+    let needs = sorted_string_key_v1(&summary.formation_needs);
+    let trajectory = if summary.trajectory_key.trim().is_empty() {
+        format!(
+            "legacy_choices={}",
+            render_choice_path(&branch.choice_labels)
+        )
+    } else {
+        summary.trajectory_key.clone()
+    };
+    format!(
+        "frontier={frontier}|a{}f{}|hp={}/{}|gold={}|deck={}|stage={}|strengths={}|needs={}|traj={}",
+        summary.act,
+        summary.floor,
+        summary.hp,
+        summary.max_hp,
+        summary.gold,
+        summary.deck_count,
+        summary.formation_stage,
+        strengths,
+        needs,
+        trajectory
+    )
+}
+
+fn sorted_string_key_v1(values: &[String]) -> String {
+    if values.is_empty() {
+        return "-".to_string();
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort();
+    sorted.join("+")
 }
 
 fn prune_resolved_campaign_strategy_requests_v1(
@@ -2680,6 +2765,7 @@ fn campaign_summary_from_report_branch_v1(
             .iter()
             .map(|value| format!("{value:?}"))
             .collect(),
+        trajectory_key: branch_trajectory_key_v1(&branch.summary.trajectory),
     }
 }
 
