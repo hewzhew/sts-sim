@@ -576,7 +576,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
     assert!(rendered.contains("kind: combat_unresolved_after_retry"));
     assert!(rendered.contains("stop: combat search did not find an executable complete win"));
     assert!(rendered.contains("tried: campaign search budget; combat budget retry x2"));
-    assert!(rendered.contains("possible inputs: raise combat retry budget | provide a manual combat line | abandon this macro route family"));
+    assert!(rendered.contains("possible inputs: switch macro branch | provide combat tactic | add upstream route/reward rule | raise retry budget only if under-spent"));
 }
 
 #[test]
@@ -739,6 +739,42 @@ fn campaign_strategy_requests_are_fatal_only_without_continuable_branches() {
         &request
     ));
     assert!(campaign_strategy_requests_are_fatal_v1(&[], &[], &request));
+}
+
+#[test]
+fn campaign_selection_treats_combat_stuck_as_abandoned_route_branch() {
+    let mut combat = test_campaign_branch_with_boundary(
+        "combat-stuck",
+        "Combat",
+        "combat search did not find an executable complete win",
+        12,
+        55,
+    );
+    combat.status = BranchCampaignBranchStatusV1::Stuck;
+
+    let selected = select_campaign_branches_v1(vec![combat], 2, 4);
+
+    assert_eq!(selected.abandoned.len(), 1);
+    assert_eq!(selected.abandoned[0].branch_id, "combat-stuck");
+    assert!(selected.stuck.is_empty());
+}
+
+#[test]
+fn campaign_selection_keeps_noncombat_stuck_for_strategy_intervention() {
+    let mut event = test_campaign_branch_with_boundary(
+        "event-stuck",
+        "Falling",
+        "event option requires human choice",
+        36,
+        70,
+    );
+    event.status = BranchCampaignBranchStatusV1::Stuck;
+
+    let selected = select_campaign_branches_v1(vec![event], 2, 4);
+
+    assert_eq!(selected.stuck.len(), 1);
+    assert_eq!(selected.stuck[0].branch_id, "event-stuck");
+    assert!(selected.abandoned.is_empty());
 }
 
 #[test]

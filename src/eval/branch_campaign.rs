@@ -1823,7 +1823,7 @@ fn merge_campaign_strategy_requests_v1(
 fn campaign_suggested_action_v1(kind: &str, suggested_action: &str) -> String {
     match kind {
         "combat_hp_loss_policy" | "combat_manual_or_budget" => {
-            "raise combat retry budget, inspect the combat, or provide a manual line".to_string()
+            "provide combat tactic or upstream route/reward strategy; raise budget only if search was clearly under-spent".to_string()
         }
         "card_reward_policy_gap" => {
             "provide reward family policy for this public offer and run context".to_string()
@@ -1947,7 +1947,7 @@ fn abandoned_branches_intervention_request_v1(
         next_card_reward_offer: None,
         boundary_details: Vec::new(),
         suggested_action:
-            "raise combat retry budget, provide a manual combat line, or abandon this route family"
+            "provide combat tactic or upstream route/reward strategy; raise budget only if search was clearly under-spent"
                 .to_string(),
     })
 }
@@ -2063,7 +2063,7 @@ fn campaign_intervention_tried_v2(
 fn campaign_intervention_options_v2(request: &BranchCampaignStrategyRequestV1) -> &'static str {
     match request.kind.as_str() {
         "combat_hp_loss_policy" | "combat_manual_or_budget" => {
-            "raise combat retry budget | provide a manual combat line | abandon this macro route family"
+            "switch macro branch | provide combat tactic | add upstream route/reward rule | raise retry budget only if under-spent"
         }
         "card_reward_policy_gap" => {
             "reward package rule | keep branching this reward family | force human judgment"
@@ -2101,6 +2101,10 @@ pub fn select_campaign_branches_v1(
     let mut active_candidates = Vec::new();
     let mut selection = BranchCampaignSelectionV1::default();
     for branch in branches {
+        if campaign_stuck_branch_should_be_abandoned_for_combat_triage_v1(&branch) {
+            selection.abandoned.push(branch);
+            continue;
+        }
         match branch.status {
             BranchCampaignBranchStatusV1::TerminalVictory => selection.victories.push(branch),
             BranchCampaignBranchStatusV1::TerminalDefeat => selection.dead.push(branch),
@@ -2137,6 +2141,23 @@ pub fn select_campaign_branches_v1(
         }
     }
     selection
+}
+
+fn campaign_stuck_branch_should_be_abandoned_for_combat_triage_v1(
+    branch: &BranchCampaignBranchV1,
+) -> bool {
+    if branch.status != BranchCampaignBranchStatusV1::Stuck {
+        return false;
+    }
+    if !normalized_campaign_boundary_title(&branch.frontier_title).starts_with("combat") {
+        return false;
+    }
+    let stop = branch.stop_reason.to_ascii_lowercase();
+    stop.contains("combat search")
+        || stop.contains("search-combat")
+        || stop.contains("hp-loss")
+        || stop.contains("max_hp_loss")
+        || stop.contains("high-stakes combat")
 }
 
 fn append_discarded_examples_v1(target: &mut Vec<String>, incoming: Vec<String>) {
@@ -2361,7 +2382,7 @@ fn render_compact_choice_path(labels: &[String]) -> String {
 fn campaign_strategy_next_step_v1(kind: &str) -> Option<&'static str> {
     match kind {
         "combat_hp_loss_policy" | "combat_manual_or_budget" => Some(
-            "try a deeper same-seed run, e.g. .\\tools\\campaign.ps1 -More; if it still stops, inspect the combat or provide a manual line",
+            "campaign should switch remaining macro branches first; if all are exhausted, provide a combat tactic or upstream route/reward rule",
         ),
         "card_reward_policy_gap" => {
             Some("decide whether this reward family should be branched, auto-picked, skipped, or kept for human judgment")
