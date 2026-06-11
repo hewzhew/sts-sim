@@ -2584,6 +2584,7 @@ fn route_with_combat_pressure() -> CardRewardRouteEvidenceV1 {
             max_elites: 1,
             min_early_pressure: 1,
             max_early_pressure: 3,
+            ..Default::default()
         }),
         candidate_count: 2,
         need_card_rewards: 1.0,
@@ -2608,6 +2609,7 @@ fn route_without_elites() -> CardRewardRouteEvidenceV1 {
             max_elites: 0,
             min_early_pressure: 1,
             max_early_pressure: 2,
+            ..Default::default()
         }),
         candidate_count: 2,
         need_card_rewards: 0.7,
@@ -2632,6 +2634,7 @@ fn route_with_upgrade_budget() -> CardRewardRouteEvidenceV1 {
             max_elites: 1,
             min_early_pressure: 0,
             max_early_pressure: 1,
+            ..Default::default()
         }),
         candidate_count: 2,
         need_card_rewards: 0.8,

@@ -57,7 +57,7 @@ pub struct StrategyDeckFactsV1 {
     pub total_block: i32,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct StrategyRouteFutureV1 {
     pub min_fires: usize,
     pub max_fires: usize,
@@ -65,6 +65,14 @@ pub struct StrategyRouteFutureV1 {
     pub max_early_pressure: usize,
     pub need_heal: f32,
     pub avoid_damage: f32,
+    #[serde(default)]
+    pub first_elite_forced: bool,
+    #[serde(default)]
+    pub max_hallways_before_first_elite: usize,
+    #[serde(default)]
+    pub can_bail_to_rest_before_first_elite: bool,
+    #[serde(default)]
+    pub can_bail_to_shop_before_first_elite: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

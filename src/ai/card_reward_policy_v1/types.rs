@@ -75,7 +75,7 @@ pub struct CardRewardRouteEvidenceV1 {
     pub warnings: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardSelectedRouteV1 {
     pub next_x: i32,
     pub next_y: i32,
@@ -86,6 +86,14 @@ pub struct CardRewardSelectedRouteV1 {
     pub max_elites: usize,
     pub min_early_pressure: usize,
     pub max_early_pressure: usize,
+    #[serde(default)]
+    pub first_elite_forced: bool,
+    #[serde(default)]
+    pub max_hallways_before_first_elite: usize,
+    #[serde(default)]
+    pub can_bail_to_rest_before_first_elite: bool,
+    #[serde(default)]
+    pub can_bail_to_shop_before_first_elite: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

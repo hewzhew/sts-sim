@@ -141,6 +141,19 @@ pub(crate) fn route_evidence(
             max_elites: candidate.path_summary.max_elites,
             min_early_pressure: candidate.path_summary.min_early_pressure,
             max_early_pressure: candidate.path_summary.max_early_pressure,
+            first_elite_forced: candidate.path_summary.first_elite.forced,
+            max_hallways_before_first_elite: candidate
+                .path_summary
+                .first_elite
+                .max_hallway_fights_before,
+            can_bail_to_rest_before_first_elite: candidate
+                .path_summary
+                .first_elite
+                .can_bail_to_rest_before,
+            can_bail_to_shop_before_first_elite: candidate
+                .path_summary
+                .first_elite
+                .can_bail_to_shop_before,
         });
     let selected_candidate = trace
         .selected_index
@@ -181,6 +194,10 @@ pub(crate) fn strategy_route_future(
         max_early_pressure: selected.max_early_pressure,
         need_heal: route.need_heal,
         avoid_damage: route.avoid_damage,
+        first_elite_forced: selected.first_elite_forced,
+        max_hallways_before_first_elite: selected.max_hallways_before_first_elite,
+        can_bail_to_rest_before_first_elite: selected.can_bail_to_rest_before_first_elite,
+        can_bail_to_shop_before_first_elite: selected.can_bail_to_shop_before_first_elite,
     })
 }
 

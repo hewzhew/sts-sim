@@ -694,6 +694,7 @@ mod tests {
                 max_elites: 1,
                 min_early_pressure: 1,
                 max_early_pressure: 3,
+                ..Default::default()
             }),
             candidate_count: 2,
             need_card_rewards: 0.9,

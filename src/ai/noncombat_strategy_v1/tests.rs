@@ -46,6 +46,7 @@ fn run_strategy_snapshot_keeps_multiple_plan_hypotheses() {
             max_early_pressure: 2,
             need_heal: 0.2,
             avoid_damage: 0.3,
+            ..Default::default()
         }),
     );
 
@@ -99,6 +100,7 @@ fn candidate_plan_delta_uses_strategy_snapshot_not_card_score() {
             max_early_pressure: 1,
             need_heal: 0.0,
             avoid_damage: 0.1,
+            ..Default::default()
         }),
     );
 
@@ -171,6 +173,7 @@ fn starter_shell_formation_marks_frontload_and_scaling_needs() {
             max_early_pressure: 3,
             need_heal: 0.4,
             avoid_damage: 0.5,
+            ..Default::default()
         }),
     );
 
@@ -223,6 +226,7 @@ fn act1_first_elite_pressure_keeps_frontload_need_after_one_transition_attack() 
             max_early_pressure: 2,
             need_heal: 0.2,
             avoid_damage: 0.2,
+            ..Default::default()
         }),
     );
 
@@ -233,6 +237,69 @@ fn act1_first_elite_pressure_keeps_frontload_need_after_one_transition_attack() 
             .contains(&StrategyDeckFormationNeedV1::Frontload),
         "one extra transition attack should not clear the Act1 first-elite frontload gate"
     );
+}
+
+#[test]
+fn forced_first_elite_without_bailout_makes_route_pressure_high() {
+    let snapshot = build_run_strategy_snapshot_v1(
+        StrategyDeckFactsV1 {
+            deck_size: 11,
+            attacks: 7,
+            skills: 4,
+            powers: 0,
+            starter_strikes: 5,
+            starter_defends: 4,
+            strength_sources: 0,
+            strength_payoffs: 0,
+            weak_sources: 0,
+            draw_sources: 0,
+            energy_sources: 0,
+            vulnerable_sources: 1,
+            route_upgrade_payoffs: 0,
+            important_cards_unupgraded: 1,
+            exhaust_generators: 0,
+            exhaust_payoffs: 0,
+            status_generators: 0,
+            status_payoffs: 0,
+            block_retention_sources: 0,
+            block_payoffs: 0,
+            block_multipliers: 0,
+            total_attack_damage: 55,
+            total_block: 20,
+        },
+        Some(StrategyRouteFutureV1 {
+            min_fires: 1,
+            max_fires: 2,
+            first_fire_floor: Some(7),
+            max_early_pressure: 1,
+            need_heal: 0.1,
+            avoid_damage: 0.1,
+            first_elite_forced: true,
+            max_hallways_before_first_elite: 1,
+            can_bail_to_rest_before_first_elite: false,
+            can_bail_to_shop_before_first_elite: false,
+        }),
+    );
+
+    let route_package = snapshot
+        .route_packages
+        .iter()
+        .find(|package| package.id == StrategyRoutePackageIdV1::CombatPatchWindow)
+        .expect("combat patch package should exist");
+
+    assert!(snapshot
+        .formation
+        .needs
+        .contains(&StrategyDeckFormationNeedV1::Frontload));
+    assert!(snapshot
+        .formation
+        .needs
+        .contains(&StrategyDeckFormationNeedV1::Block));
+    assert_eq!(route_package.support, StrategyPlanSupportV1::Strong);
+    assert!(route_package
+        .evidence
+        .iter()
+        .any(|line| line.contains("route pressure is High")));
 }
 
 #[test]
@@ -270,6 +337,7 @@ fn supported_engine_formation_marks_plan_committed() {
             max_early_pressure: 1,
             need_heal: 0.1,
             avoid_damage: 0.1,
+            ..Default::default()
         }),
     );
 
@@ -322,6 +390,7 @@ fn route_packages_link_upgrade_commitment_to_visible_fire_budget() {
             max_early_pressure: 1,
             need_heal: 0.0,
             avoid_damage: 0.1,
+            ..Default::default()
         }),
     );
 
@@ -370,6 +439,7 @@ fn route_packages_mark_combat_patch_window_under_pressure() {
             max_early_pressure: 3,
             need_heal: 0.4,
             avoid_damage: 0.5,
+            ..Default::default()
         }),
     );
 
@@ -418,6 +488,7 @@ fn route_packages_protect_committed_core_plan() {
             max_early_pressure: 1,
             need_heal: 0.1,
             avoid_damage: 0.1,
+            ..Default::default()
         }),
     );
 
@@ -466,6 +537,7 @@ fn strategy_snapshot_v2_unifies_archetype_route_and_resource_packages() {
             max_early_pressure: 1,
             need_heal: 0.1,
             avoid_damage: 0.1,
+            ..Default::default()
         }),
         None,
     );
@@ -623,6 +695,7 @@ fn block_engine_package_recognizes_barricade_body_slam_followup() {
             max_early_pressure: 1,
             need_heal: 0.1,
             avoid_damage: 0.1,
+            ..Default::default()
         }),
         None,
     );
@@ -719,6 +792,7 @@ fn body_slam_without_block_engine_remains_blocked_package_candidate() {
             max_early_pressure: 2,
             need_heal: 0.3,
             avoid_damage: 0.4,
+            ..Default::default()
         }),
         None,
     );
@@ -760,6 +834,7 @@ fn exhaust_engine_candidate_delta_uses_generator_and_payoff_roles() {
             max_early_pressure: 2,
             need_heal: 0.2,
             avoid_damage: 0.3,
+            ..Default::default()
         }),
         None,
     );
@@ -807,6 +882,7 @@ fn status_package_candidate_delta_uses_generator_and_payoff_roles() {
             max_early_pressure: 2,
             need_heal: 0.2,
             avoid_damage: 0.3,
+            ..Default::default()
         }),
         None,
     );
@@ -988,6 +1064,7 @@ fn strategy_package_v2_reports_upgrade_sink_missing_route_budget() {
             max_early_pressure: 3,
             need_heal: 0.4,
             avoid_damage: 0.5,
+            ..Default::default()
         }),
         None,
     );
@@ -1025,6 +1102,7 @@ fn strategy_package_v2_reports_weak_control_missing_source() {
             max_early_pressure: 3,
             need_heal: 0.2,
             avoid_damage: 0.4,
+            ..Default::default()
         }),
         None,
     );

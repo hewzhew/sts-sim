@@ -27,7 +27,7 @@ pub fn assess_deck_formation_v1(
     if needs_frontload(deck, route, route_pressure) {
         push_unique(&mut needs, StrategyDeckFormationNeedV1::Frontload);
     }
-    if needs_block(deck, route) {
+    if needs_block(deck, route, route_pressure) {
         push_unique(&mut needs, StrategyDeckFormationNeedV1::Block);
     }
     if strengths.is_empty() {
@@ -95,9 +95,16 @@ fn formation_stage(
     }
 }
 
-fn needs_block(deck: &StrategyDeckFactsV1, route: Option<&StrategyRouteFutureV1>) -> bool {
+fn needs_block(
+    deck: &StrategyDeckFactsV1,
+    route: Option<&StrategyRouteFutureV1>,
+    route_pressure: StrategyPlanPressureV1,
+) -> bool {
     if deck.total_block >= 25 {
         return false;
+    }
+    if route_pressure == StrategyPlanPressureV1::High {
+        return true;
     }
     let Some(route) = route else {
         return true;

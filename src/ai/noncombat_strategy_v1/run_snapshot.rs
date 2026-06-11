@@ -319,5 +319,9 @@ fn route_future_from_run_state_v1(run_state: &RunState) -> Option<StrategyRouteF
         max_early_pressure: summary.max_early_pressure,
         need_heal: missing_hp_ratio.clamp(0.0, 1.0),
         avoid_damage,
+        first_elite_forced: summary.first_elite.forced,
+        max_hallways_before_first_elite: summary.first_elite.max_hallway_fights_before,
+        can_bail_to_rest_before_first_elite: summary.first_elite.can_bail_to_rest_before,
+        can_bail_to_shop_before_first_elite: summary.first_elite.can_bail_to_shop_before,
     })
 }

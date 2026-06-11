@@ -4,6 +4,9 @@ pub fn route_pressure_v1(route: Option<&StrategyRouteFutureV1>) -> StrategyPlanP
     let Some(route) = route else {
         return StrategyPlanPressureV1::Medium;
     };
+    if forced_first_elite_underprepared_v1(route) {
+        return StrategyPlanPressureV1::High;
+    }
     pressure_from_count_v1(route.max_early_pressure).max(pressure_from_need_v1(route.avoid_damage))
 }
 
@@ -25,4 +28,11 @@ fn pressure_from_count_v1(value: usize) -> StrategyPlanPressureV1 {
     } else {
         StrategyPlanPressureV1::Low
     }
+}
+
+fn forced_first_elite_underprepared_v1(route: &StrategyRouteFutureV1) -> bool {
+    route.first_elite_forced
+        && route.max_hallways_before_first_elite < 2
+        && !route.can_bail_to_rest_before_first_elite
+        && !route.can_bail_to_shop_before_first_elite
 }

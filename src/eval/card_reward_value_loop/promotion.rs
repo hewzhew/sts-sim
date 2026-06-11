@@ -436,6 +436,7 @@ mod tests {
                     max_elites: 1,
                     min_early_pressure: 1,
                     max_early_pressure: 2,
+                    ..Default::default()
                 },
             ),
             candidate_count: 1,
