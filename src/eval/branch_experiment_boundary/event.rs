@@ -1,4 +1,7 @@
-use super::card_reward::{select_card_reward_branch_options_for_session, CardRewardBranchOption};
+use super::card_reward::{
+    select_card_reward_branch_options_for_session, CardRewardBranchOption,
+    CardRewardBranchOptionSource,
+};
 use crate::content::cards::CardId;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState};
@@ -105,6 +108,7 @@ fn select_event_card_reward_branch_options(
                 command: option.command.clone(),
                 card: option.card?,
                 upgrades: option.upgrades.unwrap_or_default(),
+                source: CardRewardBranchOptionSource::PermanentReward,
             })
         })
         .collect::<Option<Vec<_>>>()?;

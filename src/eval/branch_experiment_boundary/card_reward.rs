@@ -12,7 +12,8 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::branch_experiment_trajectory::summarize_branch_trajectory_v1;
 use crate::eval::run_control::RunControlSession;
-use crate::state::core::EngineState;
+use crate::runtime::action::CardDestination;
+use crate::state::core::{EngineState, PendingChoice};
 use crate::state::rewards::{RewardCard, RewardItem};
 
 #[derive(Clone, Debug)]
@@ -21,6 +22,13 @@ pub(crate) struct CardRewardBranchOption {
     pub(crate) command: String,
     pub(crate) card: CardId,
     pub(crate) upgrades: u8,
+    pub(crate) source: CardRewardBranchOptionSource,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CardRewardBranchOptionSource {
+    PermanentReward,
+    CombatGeneratedToHand,
 }
 
 #[derive(Clone, Debug)]
@@ -39,15 +47,20 @@ pub(crate) struct CardRewardPortfolioContext {
 pub(crate) fn card_reward_branch_options(
     session: &RunControlSession,
 ) -> Option<Vec<CardRewardBranchOption>> {
+    let source = card_reward_option_source(session)?;
     let cards = active_or_visible_reward_cards(session)?;
     let options = cards
         .iter()
         .enumerate()
         .map(|(idx, card)| CardRewardBranchOption {
             label: format_reward_card_label(card),
-            command: format!("rp {idx}"),
+            command: match source {
+                CardRewardBranchOptionSource::PermanentReward => format!("rp {idx}"),
+                CardRewardBranchOptionSource::CombatGeneratedToHand => format!("choose {idx}"),
+            },
             card: card.id,
             upgrades: card.upgrades,
+            source,
         })
         .collect::<Vec<_>>();
     if options.is_empty() {
@@ -62,6 +75,15 @@ pub(crate) fn select_card_reward_branch_options_for_session(
     max_reward_options_per_branch: Option<usize>,
     portfolio_context: Option<CardRewardPortfolioContext>,
 ) -> CardRewardBranchOptionSelection {
+    if options
+        .iter()
+        .all(|option| option.source == CardRewardBranchOptionSource::CombatGeneratedToHand)
+    {
+        return CardRewardBranchOptionSelection {
+            options,
+            portfolio: None,
+        };
+    }
     let Some(limit) = max_reward_options_per_branch else {
         return CardRewardBranchOptionSelection {
             options,
@@ -293,6 +315,31 @@ pub(crate) fn active_or_visible_reward_cards(
             .pending_card_choice
             .clone()
             .or_else(|| first_visible_card_reward(reward_state)),
+        EngineState::PendingChoice(PendingChoice::CardRewardSelect {
+            cards,
+            destination: CardDestination::Hand,
+            can_skip: false,
+        }) => Some(
+            cards
+                .iter()
+                .copied()
+                .map(|card| RewardCard::new(card, 0))
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+fn card_reward_option_source(session: &RunControlSession) -> Option<CardRewardBranchOptionSource> {
+    match &session.engine_state {
+        EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => {
+            Some(CardRewardBranchOptionSource::PermanentReward)
+        }
+        EngineState::PendingChoice(PendingChoice::CardRewardSelect {
+            destination: CardDestination::Hand,
+            can_skip: false,
+            ..
+        }) => Some(CardRewardBranchOptionSource::CombatGeneratedToHand),
         _ => None,
     }
 }

@@ -7,8 +7,11 @@ use crate::content::cards::CardId;
 use crate::content::potions::{Potion, PotionId};
 use crate::content::relics::{RelicId, RelicState};
 use crate::eval::run_control::{RunControlConfig, RunControlSession};
+use crate::runtime::action::CardDestination;
 use crate::runtime::combat::CombatCard;
-use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
+use crate::state::core::{
+    EngineState, PendingChoice, RunPendingChoiceReason, RunPendingChoiceState,
+};
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{BossRelicChoiceState, RewardCard, RewardItem, RewardState};
 use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
@@ -76,6 +79,55 @@ fn current_boundary_wraps_card_reward_options() {
     assert_eq!(boundary.options.len(), 1);
     assert_eq!(boundary.options[0].kind, "card_reward");
     assert!(boundary.reward_option_portfolio.is_some());
+}
+
+#[test]
+fn current_boundary_expands_combat_card_reward_select_with_choose_commands() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state = EngineState::PendingChoice(PendingChoice::CardRewardSelect {
+        cards: vec![
+            CardId::Transmutation,
+            CardId::DarkShackles,
+            CardId::JackOfAllTrades,
+        ],
+        destination: CardDestination::Hand,
+        can_skip: false,
+    });
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: Some(1),
+            max_campfire_options_per_branch: None,
+            include_skip: false,
+            include_event_reward_skip: false,
+        },
+        Some(CardRewardPortfolioContext {
+            depth: 0,
+            frontier_key: "combat-card-reward".to_string(),
+            boundary_title: "Combat card reward".to_string(),
+        }),
+    )
+    .expect("combat card reward boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::CardReward);
+    assert_eq!(
+        boundary
+            .options
+            .iter()
+            .map(|option| option.command.as_str())
+            .collect::<Vec<_>>(),
+        vec!["choose 0", "choose 1", "choose 2"],
+        "Toolbox-style combat reward choices are tactical combat branches, not rp card picks"
+    );
+    assert!(
+        boundary.reward_option_portfolio.is_none(),
+        "combat reward choices should not be capped by the macro card reward portfolio limit"
+    );
+    assert!(boundary
+        .options
+        .iter()
+        .all(|option| option.kind == "combat_card_reward"));
 }
 
 #[test]
@@ -931,7 +983,7 @@ fn current_boundary_can_skip_sozu_blocked_potion_reward() {
     assert_eq!(boundary.id, BranchBoundaryIdV1::Reward);
     assert_eq!(boundary.options.len(), 1);
     assert_eq!(boundary.options[0].kind, "reward_skip");
-    assert_eq!(boundary.options[0].command, "skip");
+    assert_eq!(boundary.options[0].command, "claim 0");
     assert_eq!(
         boundary.options[0].effect_kind,
         "reward_skip_blocked_potion"

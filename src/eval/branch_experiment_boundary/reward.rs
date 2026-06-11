@@ -99,23 +99,30 @@ fn blocked_potion_skip_branch_option(
         .map(|candidate| candidate.label.as_str())
         .collect::<Vec<_>>()
         .join(", ");
-    let (effect_kind, effect_key, note) = if has_sozu_blocked {
+    let (effect_kind, effect_key, note, command) = if has_sozu_blocked {
+        let claim_index = context
+            .candidates
+            .iter()
+            .find(|candidate| candidate.class == RewardPolicyClassV1::PotionBlockedBySozu)
+            .map(|candidate| candidate.index)?;
         (
             "reward_skip_blocked_potion",
             "reward:skip_sozu_blocked_potion",
             "Sozu blocks potion rewards",
+            format!("claim {claim_index}"),
         )
     } else {
         (
             "reward_skip_full_potion",
             "reward:skip_full_slot_potion",
             "full potion slots",
+            "skip".to_string(),
         )
     };
     Some(RewardBranchOption {
         kind: "reward_skip",
         label: format!("Skip potion reward: {labels}"),
-        command: "skip".to_string(),
+        command,
         effect_kind: effect_kind.to_string(),
         effect_key: effect_key.to_string(),
         effect_label: format!("Skip potion reward: {labels} | {note}"),

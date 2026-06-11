@@ -276,19 +276,33 @@ impl BranchBoundaryOptionV1 {
     }
 
     fn from_card_reward(option: CardRewardBranchOption) -> Self {
+        let (kind, effect_kind, effect_key_prefix, success_reason) = match option.source {
+            card_reward::CardRewardBranchOptionSource::PermanentReward => (
+                "card_reward",
+                "add_card",
+                "card_reward:add_card",
+                "card reward branch applied",
+            ),
+            card_reward::CardRewardBranchOptionSource::CombatGeneratedToHand => (
+                "combat_card_reward",
+                "combat_generated_card_to_hand",
+                "combat_card_reward:to_hand",
+                "combat card reward branch applied",
+            ),
+        };
         Self {
-            kind: "card_reward",
+            kind,
             effect_label: option.label.clone(),
             label: option.label,
             command: option.command,
             card: Some(option.card),
             upgrades: Some(option.upgrades),
             selected_cards: selected_card_vec(Some(option.card), Some(option.upgrades)),
-            effect_kind: "add_card".to_string(),
-            effect_key: format!("card_reward:add_card:{:?}:{}", option.card, option.upgrades),
+            effect_kind: effect_kind.to_string(),
+            effect_key: format!("{effect_key_prefix}:{:?}:{}", option.card, option.upgrades),
             representative_count: 1,
             suppressed_count: 0,
-            success_reason: "card reward branch applied",
+            success_reason,
         }
     }
 
