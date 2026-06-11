@@ -116,6 +116,7 @@ const SLOT_ORDER: [BranchRetentionSlotV1; 8] = [
     BranchRetentionSlotV1::CleanDeck,
     BranchRetentionSlotV1::Diversity,
 ];
+const DECK_BLOAT_PRESSURE_COUNT: usize = 35;
 
 pub fn default_branch_retention_decision_v1() -> BranchRetentionDecisionV1 {
     BranchRetentionDecisionV1 {
@@ -280,11 +281,19 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Survival);
         reasons.push("context: patches low-hp or route pressure".to_string());
     }
+    let deck_bloat_pressure = candidate.deck_count >= DECK_BLOAT_PRESSURE_COUNT;
+    let immediate_safety_patch = context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::ImmediateSafetyPatch);
+
     if candidate.choice_profiles.iter().any(|profile| {
         profile
             .roles
             .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
-    }) {
+    }) && (!deck_bloat_pressure
+        || immediate_safety_patch
+        || !is_pure_transition_branch(candidate))
+    {
         slots.push(BranchRetentionSlotV1::Frontload);
         reasons.push("contains immediate combat output".to_string());
     }
@@ -317,7 +326,13 @@ pub fn decide_branch_retention_v1(
         reasons.push("context: matches current draw/energy need".to_string());
     }
     let is_plain_skip = is_plain_card_reward_skip(candidate);
-    if !is_plain_skip && transition_attack_count(&candidate.choice_profiles) <= 1 {
+    if is_plain_skip && deck_bloat_pressure {
+        slots.push(BranchRetentionSlotV1::CleanDeck);
+        reasons.push("declines adding a card while deck size pressure is high".to_string());
+    } else if !is_plain_skip
+        && !deck_bloat_pressure
+        && transition_attack_count(&candidate.choice_profiles) <= 1
+    {
         slots.push(BranchRetentionSlotV1::CleanDeck);
         reasons.push("keeps transition-card bloat lower".to_string());
     }
@@ -1110,7 +1125,7 @@ fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetention
         }
         BranchRetentionSlotV1::CleanDeck => {
             if is_plain_card_reward_skip(candidate) {
-                -1_000_000
+                candidate.deck_count as i32 * 500 + candidate.hp * 10
             } else {
                 -transition_attack_count(&candidate.choice_profiles) * 10_000
                     - candidate.deck_count as i32 * 100

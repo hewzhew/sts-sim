@@ -84,6 +84,7 @@ pub fn shop_card_conversion_priority_v1(card: CardId, run_state: &RunState) -> i
     if run_state.act_num >= 2 && boss_or_elite_patch_card(card) {
         priority += 200;
     }
+    priority -= shop_card_deck_bloat_penalty_v1(card, run_state);
     priority
 }
 
@@ -176,6 +177,37 @@ fn boss_or_elite_patch_card(card: CardId) -> bool {
             | CardId::FiendFire
             | CardId::PowerThrough
     )
+}
+
+fn shop_card_deck_bloat_penalty_v1(card: CardId, run_state: &RunState) -> i32 {
+    let deck_size = run_state.master_deck.len();
+    if deck_size < 30 || deck_bloat_exempt_shop_card(card) {
+        return 0;
+    }
+
+    if deck_size >= 40 {
+        800
+    } else if deck_size >= 35 {
+        500
+    } else {
+        200
+    }
+}
+
+fn deck_bloat_exempt_shop_card(card: CardId) -> bool {
+    boss_or_elite_patch_card(card)
+        || matches!(
+            card,
+            CardId::Offering
+                | CardId::BattleTrance
+                | CardId::ShrugItOff
+                | CardId::TrueGrit
+                | CardId::BurningPact
+                | CardId::SecondWind
+                | CardId::FeelNoPain
+                | CardId::DarkEmbrace
+                | CardId::Corruption
+        )
 }
 
 fn boss_or_elite_shop_potion(potion: PotionId) -> bool {

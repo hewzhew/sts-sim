@@ -201,6 +201,40 @@ fn portfolio_retention_treats_special_campfire_actions_as_distinct_effect_kinds(
 }
 
 #[test]
+fn bloated_deck_transition_pick_does_not_claim_clean_deck_or_frontload_slots() {
+    let mut candidate = retention_candidate(0, 10_900, &["Pommel Strike"]);
+    candidate.deck_count = 42;
+
+    let decision = decide_branch_retention_v1(&candidate);
+
+    assert!(
+        !decision.slots.contains(&BranchRetentionSlotV1::CleanDeck),
+        "taking another pure transition card in a bloated deck is not a clean-deck branch"
+    );
+    assert!(
+        !decision.slots.contains(&BranchRetentionSlotV1::Frontload),
+        "high-hp bloated decks should not reserve a frontload lane for another pure transition card"
+    );
+}
+
+#[test]
+fn bloated_deck_skip_can_claim_clean_deck_slot() {
+    let mut candidate = effect_retention_candidate(0, 10_100, "skip_reward");
+    candidate.deck_count = 42;
+
+    let decision = decide_branch_retention_v1(&candidate);
+
+    assert!(
+        decision.slots.contains(&BranchRetentionSlotV1::CleanDeck),
+        "declining a card reward is the clean-deck branch once deck size is already high"
+    );
+    assert!(
+        slot_score(&candidate, BranchRetentionSlotV1::CleanDeck) > 0,
+        "clean-deck scoring should be able to select the skip branch under deck bloat"
+    );
+}
+
+#[test]
 fn portfolio_retention_keeps_distinct_lineage_breakers_when_budget_allows() {
     let mut lineage_breaker = effect_retention_candidate(2, 10_100, "take_card");
     lineage_breaker.lineage_flags = vec!["question_card_reward_count_plus_1".to_string()];

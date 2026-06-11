@@ -76,9 +76,13 @@ fn low_fanout_purchase_branch_options(
     let mut options = Vec::new();
     for (idx, card) in shop.cards.iter().enumerate() {
         if card.can_buy && card.price <= session.run_state.gold {
+            let score = shop_card_conversion_priority_v1(card.card_id, &session.run_state);
+            if score <= 0 {
+                continue;
+            }
             let card_name = get_card_definition(card.card_id).name;
             options.push(ScoredShopBranchOption {
-                score: shop_card_conversion_priority_v1(card.card_id, &session.run_state),
+                score,
                 cost: card.price,
                 can_start_combo: true,
                 can_follow_combo: true,

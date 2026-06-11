@@ -692,6 +692,45 @@ fn current_boundary_does_not_branch_on_shop_potion_when_slots_are_full() {
 }
 
 #[test]
+fn current_boundary_does_not_convert_bloated_deck_into_transition_shop_card() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 3;
+    session.run_state.floor_num = 46;
+    session.run_state.gold = 430;
+    for _ in 0..34 {
+        session.run_state.add_card_to_deck(CardId::Strike);
+    }
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::PommelStrike,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("bloated deck should still expose a shop boundary");
+
+    assert!(
+        boundary
+            .options
+            .iter()
+            .all(|option| option.effect_kind != "shop_buy_card"),
+        "high deck-size pressure should not keep ordinary transition card buys as campaign branches"
+    );
+    assert_eq!(
+        boundary
+            .options
+            .iter()
+            .map(|option| option.command.as_str())
+            .collect::<Vec<_>>(),
+        vec!["leave"]
+    );
+}
+
+#[test]
 fn current_boundary_suppresses_nloth_energy_relic_trade() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session

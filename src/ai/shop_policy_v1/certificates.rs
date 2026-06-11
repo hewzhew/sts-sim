@@ -60,6 +60,7 @@ pub(crate) fn certified_action(
             .filter_map(|candidate| {
                 Some((candidate, candidate.purchase_priority?, candidate.purchase_target?))
             })
+            .filter(|(_, priority, _)| *priority > 0)
             .max_by_key(|(_, priority, target)| (*priority, purchase_tiebreaker(*target)))
             .and_then(|(candidate, priority, _)| {
                 purchase_action(
