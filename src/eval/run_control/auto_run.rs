@@ -121,4 +121,50 @@ mod tests {
         );
         assert!(outcome.message.contains("routine: Leave"));
     }
+
+    #[test]
+    fn branch_experiment_auto_run_uses_match_and_keep_policy() {
+        let mut session =
+            RunControlSession::new(crate::eval::run_control::RunControlConfig::default());
+        let mut event_state = EventState::new(EventId::MatchAndKeep);
+        event_state.current_screen = 1;
+        event_state.extra_data = match_and_keep_board_with_entries(&[
+            (crate::content::cards::CardId::Bash, 1),
+            (crate::content::cards::CardId::Strike, 0),
+            (crate::content::cards::CardId::Defend, 0),
+            (crate::content::cards::CardId::Clumsy, 0),
+            (crate::content::cards::CardId::IronWave, 0),
+            (crate::content::cards::CardId::Cleave, 0),
+        ]);
+        session.run_state.event_state = Some(event_state);
+        session.engine_state = EngineState::EventRoom;
+
+        let outcome = apply_branch_experiment_auto_run(
+            &mut session,
+            RunControlAutoStepOptions {
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        )
+        .expect("branch campaign auto-run should use Match and Keep event policy");
+
+        assert!(outcome.message.contains("event policy: Match and Keep"));
+        assert_eq!(
+            session.run_state.master_deck.last().unwrap().id,
+            crate::content::cards::CardId::IronWave
+        );
+    }
+
+    fn match_and_keep_board_with_entries(
+        entries: &[(crate::content::cards::CardId, u8); 6],
+    ) -> Vec<i32> {
+        let mut extra_data = vec![0, 0, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 0, 5, -1];
+        for &(card_id, upgrades) in entries {
+            extra_data.push(card_id as i32);
+            extra_data.push(upgrades as i32);
+        }
+        extra_data.push(-1);
+        extra_data.push(-1);
+        extra_data
+    }
 }

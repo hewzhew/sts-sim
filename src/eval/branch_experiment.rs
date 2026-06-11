@@ -37,6 +37,7 @@ mod types;
 
 const CARD_REWARD_PICK_RANK_BONUS: i32 = 150;
 const CARD_REWARD_SKIP_DEVELOPMENT_DEBT: i32 = 450;
+const EVENT_CURSE_DEBT_RANK_PENALTY: i32 = 2_000;
 
 pub use types::{
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
@@ -1117,6 +1118,7 @@ fn branch_rank_key(branch: &BranchWork) -> i32 {
                 + branch.session.run_state.current_hp * 10
                 + branch.session.run_state.gold
                 + card_reward_development_rank_adjustment(&branch.choices)
+                + event_debt_rank_adjustment(&branch.choices)
         }
     }
 }
@@ -1131,6 +1133,14 @@ fn card_reward_development_rank_adjustment(choices: &[BranchExperimentChoiceV1])
         .filter(|choice| choice.effect_kind == "skip_card_reward")
         .count() as i32;
     card_picks * CARD_REWARD_PICK_RANK_BONUS - ordinary_skips * CARD_REWARD_SKIP_DEVELOPMENT_DEBT
+}
+
+fn event_debt_rank_adjustment(choices: &[BranchExperimentChoiceV1]) -> i32 {
+    let curse_debt_events = choices
+        .iter()
+        .filter(|choice| choice.effect_kind == "event_gain_curse")
+        .count() as i32;
+    -curse_debt_events * EVENT_CURSE_DEBT_RANK_PENALTY
 }
 
 fn run_summary(

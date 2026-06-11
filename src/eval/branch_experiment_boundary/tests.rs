@@ -910,6 +910,26 @@ fn current_boundary_wraps_low_fanout_event_options() {
 }
 
 #[test]
+fn current_boundary_classifies_gold_plus_curse_event_as_curse_debt() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 3;
+    session.run_state.floor_num = 38;
+    session.run_state.event_state = Some(EventState::new(EventId::MindBloom));
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Mind Bloom should be a branchable event");
+    let desire = boundary
+        .options
+        .iter()
+        .find(|option| option.label.contains("Normality"))
+        .expect("low-floor Mind Bloom Desire should be visible");
+
+    assert_eq!(desire.effect_kind, "event_gain_curse");
+    assert!(desire.effect_key.contains("Normality"));
+}
+
+#[test]
 fn current_boundary_does_not_branch_terminal_single_event_leave_screen() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(EventState {

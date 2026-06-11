@@ -346,7 +346,9 @@ fn apply_noncombat_policy(
         NonCombatAutoMode::FullPlanner => {
             super::noncombat_auto::apply_planner_noncombat_policy(session)
         }
-        NonCombatAutoMode::BranchExperimentBoundary => Ok(None),
+        NonCombatAutoMode::BranchExperimentBoundary => {
+            super::noncombat_auto::apply_branch_experiment_noncombat_policy(session)
+        }
     }
 }
 

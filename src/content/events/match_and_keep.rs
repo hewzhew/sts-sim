@@ -145,7 +145,11 @@ fn push_card_entry(extra_data: &mut Vec<i32>, card_id: CardId, upgrades: u8) {
     extra_data.push(upgrades as i32);
 }
 
-fn card_entry_at(run_state: &RunState, extra_data: &[i32], pos: usize) -> Option<(CardId, u8)> {
+pub(crate) fn card_entry_at(
+    run_state: &RunState,
+    extra_data: &[i32],
+    pos: usize,
+) -> Option<(CardId, u8)> {
     let type_idx = extra_data[pos] as usize;
     let offset = CARD_LOOKUP_OFFSET + type_idx * CARD_ENTRY_WIDTH;
     let card_disc = *extra_data.get(offset)?;
@@ -198,7 +202,7 @@ fn card_id_from_i32(run_state: &RunState, raw: i32) -> Option<CardId> {
     None
 }
 
-fn is_matched(extra_data: &[i32], pos: usize) -> bool {
+pub(crate) fn is_matched(extra_data: &[i32], pos: usize) -> bool {
     (extra_data[12] & (1 << pos)) != 0
 }
 
@@ -206,11 +210,11 @@ fn set_matched(extra_data: &mut [i32], pos: usize) {
     extra_data[12] |= 1 << pos;
 }
 
-fn attempts_remaining(extra_data: &[i32]) -> i32 {
+pub(crate) fn attempts_remaining(extra_data: &[i32]) -> i32 {
     extra_data[13]
 }
 
-fn first_flipped(extra_data: &[i32]) -> i32 {
+pub(crate) fn first_flipped(extra_data: &[i32]) -> i32 {
     extra_data[14]
 }
 

@@ -582,6 +582,22 @@ fn compact_campaign_report_renders_deferred_strategy_notes_while_continuing() {
 }
 
 #[test]
+fn compact_campaign_report_suppresses_stale_strategy_notes_after_victory() {
+    let mut report = test_campaign_report_with_active("winner", 48, 42);
+    report.stop_reason = "victory_found".to_string();
+    report.active.clear();
+    report.victories = vec![test_campaign_branch("winner", 48, 42)];
+    report.stuck = vec![test_campaign_branch("old-stuck", 45, 35)];
+    report.strategy_requests = vec![test_campaign_request("event_strategy", "MatchAndKeep")];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(!rendered.contains("Deferred strategy notes:"));
+    assert!(!rendered.contains("Needs intervention:"));
+    assert!(!rendered.contains("MatchAndKeep"));
+}
+
+#[test]
 fn compact_campaign_report_renders_needs_intervention_even_with_frozen_branches() {
     let mut report = test_campaign_report_with_active("a", 16, 70);
     report.stop_reason = "needs_intervention".to_string();

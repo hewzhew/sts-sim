@@ -1045,7 +1045,7 @@ pub fn render_branch_campaign_compact_v1(
                 .to_string(),
         );
     }
-    if !report.strategy_requests.is_empty() {
+    if report.victories.is_empty() && !report.strategy_requests.is_empty() {
         lines.push(String::new());
         if campaign_report_stop_needs_immediate_intervention_v1(report) {
             lines.push("Needs intervention:".to_string());

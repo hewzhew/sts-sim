@@ -548,6 +548,48 @@ fn run_control_auto_run_event_policy_takes_free_known_benefit() {
 }
 
 #[test]
+fn run_control_auto_run_match_and_keep_flips_best_safe_pair() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut event_state =
+        crate::state::events::EventState::new(crate::state::events::EventId::MatchAndKeep);
+    event_state.current_screen = 1;
+    event_state.extra_data = match_and_keep_board_with_entries(&[
+        (crate::content::cards::CardId::Bash, 1),
+        (crate::content::cards::CardId::Strike, 0),
+        (crate::content::cards::CardId::Defend, 0),
+        (crate::content::cards::CardId::Clumsy, 0),
+        (crate::content::cards::CardId::IronWave, 0),
+        (crate::content::cards::CardId::Cleave, 0),
+    ]);
+    session.run_state.event_state = Some(event_state);
+    session.engine_state = EngineState::EventRoom;
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should use the visible Match and Keep board strategy");
+
+    assert!(
+        outcome.message.contains("event policy: Match and Keep"),
+        "{}",
+        outcome.message
+    );
+    let obtained = session.run_state.master_deck.last().unwrap();
+    assert_eq!(obtained.id, crate::content::cards::CardId::IronWave);
+    assert_eq!(obtained.upgrades, 0);
+    assert!(session
+        .run_state
+        .master_deck
+        .iter()
+        .all(|card| card.id != crate::content::cards::CardId::Clumsy));
+}
+
+#[test]
 fn run_control_auto_step_collapses_terminal_event_leave_to_map() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(crate::state::events::EventState::new(
@@ -2227,6 +2269,19 @@ fn test_session_at_card_reward(card_ids: Vec<crate::content::cards::CardId>) -> 
     reward.pending_card_reward_index = Some(0);
     session.engine_state = EngineState::RewardScreen(reward);
     session
+}
+
+fn match_and_keep_board_with_entries(
+    entries: &[(crate::content::cards::CardId, u8); 6],
+) -> Vec<i32> {
+    let mut extra_data = vec![0, 0, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 0, 5, -1];
+    for &(card_id, upgrades) in entries {
+        extra_data.push(card_id as i32);
+        extra_data.push(upgrades as i32);
+    }
+    extra_data.push(-1);
+    extra_data.push(-1);
+    extra_data
 }
 
 fn test_card_reward_calibration_for_twin_strike(

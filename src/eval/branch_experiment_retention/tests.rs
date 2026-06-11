@@ -151,6 +151,24 @@ fn portfolio_retention_keeps_distinct_reward_effect_kinds_when_budget_allows() {
 }
 
 #[test]
+fn portfolio_retention_does_not_preserve_curse_debt_only_for_effect_coverage() {
+    let candidates = vec![
+        effect_retention_candidate(0, 10_900, "take_card"),
+        effect_retention_candidate(1, 10_890, "shop_buy_relic"),
+        effect_retention_candidate(2, 10_100, "event_gain_curse"),
+    ];
+
+    let selection = select_branch_retention_portfolio_v1(&candidates, retention_config(2, Some(2)));
+
+    assert!(selection.keep_indices.contains(&0));
+    assert!(selection.keep_indices.contains(&1));
+    assert!(
+        !selection.keep_indices.contains(&2),
+        "hazardous curse-debt events should not be reintroduced solely as effect coverage"
+    );
+}
+
+#[test]
 fn portfolio_retention_treats_bottle_card_as_distinct_effect_kind() {
     let candidates = vec![
         effect_retention_candidate(0, 10_900, "take_card"),

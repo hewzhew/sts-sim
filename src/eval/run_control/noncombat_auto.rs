@@ -73,6 +73,22 @@ pub(super) fn apply_planner_noncombat_policy(
     Ok(None)
 }
 
+pub(super) fn apply_branch_experiment_noncombat_policy(
+    session: &mut RunControlSession,
+) -> Result<Option<NonCombatAutoApplication>, String> {
+    if let Some((outcome, summary)) =
+        super::event_policy::apply_match_and_keep_policy_choice(session)?
+    {
+        return Ok(Some(NonCombatAutoApplication {
+            outcome,
+            summary,
+            stop_after_reason: None,
+        }));
+    }
+
+    Ok(None)
+}
+
 pub(super) fn planner_noncombat_policy_stop_annotation(
     session: &RunControlSession,
 ) -> Result<Option<(RunControlTraceAnnotationV1, String)>, String> {

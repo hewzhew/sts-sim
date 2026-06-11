@@ -205,6 +205,13 @@ fn event_option_effect_kind(semantics: &EventOptionSemantics) -> &'static str {
     if semantics
         .effects
         .iter()
+        .any(|effect| matches!(effect, EventEffect::ObtainCurse { .. }))
+    {
+        return "event_gain_curse";
+    }
+    if semantics
+        .effects
+        .iter()
         .any(|effect| matches!(effect, EventEffect::ObtainPotion { .. }))
     {
         return "event_gain_potion";
@@ -238,13 +245,6 @@ fn event_option_effect_kind(semantics: &EventOptionSemantics) -> &'static str {
         )
     }) {
         return "event_pay_resource";
-    }
-    if semantics
-        .effects
-        .iter()
-        .any(|effect| matches!(effect, EventEffect::ObtainCurse { .. }))
-    {
-        return "event_gain_curse";
     }
 
     match semantics.action {

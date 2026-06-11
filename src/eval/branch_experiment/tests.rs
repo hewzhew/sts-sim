@@ -940,6 +940,18 @@ fn branch_rank_tracks_card_reward_development_debt() {
     assert!(branch_rank_key(&full_potion_skip) > branch_rank_key(&skip));
 }
 
+#[test]
+fn branch_rank_treats_curse_gain_as_strategic_debt_despite_gold() {
+    let clean = branch_with_choice("clean", "event_leave");
+    let mut curse_gold = branch_with_choice("curse-gold", "event_gain_curse");
+    curse_gold.session.run_state.gold = clean.session.run_state.gold + 999;
+
+    assert!(
+        branch_rank_key(&clean) > branch_rank_key(&curse_gold),
+        "large gold gain should not make a curse-debt event branch outrank a clean branch"
+    );
+}
+
 fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
     BranchWork {
         id: branch_id.to_string(),
