@@ -1,8 +1,10 @@
+use super::card_reward::{select_card_reward_branch_options_with_limit, CardRewardBranchOption};
+use crate::content::cards::CardId;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::events::{
-    EventActionKind, EventEffect, EventOption, EventOptionSemantics, EventOptionTransition,
-    EventRelicKind, EventSelectionKind,
+    EventActionKind, EventCardKind, EventEffect, EventOption, EventOptionSemantics,
+    EventOptionTransition, EventRelicKind, EventSelectionKind,
 };
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
@@ -11,9 +13,13 @@ const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
 pub(crate) struct EventBranchOption {
     pub(crate) label: String,
     pub(crate) command: String,
+    pub(crate) card: Option<CardId>,
+    pub(crate) upgrades: Option<u8>,
     pub(crate) effect_kind: String,
     pub(crate) effect_key: String,
     pub(crate) effect_label: String,
+    pub(crate) representative_count: usize,
+    pub(crate) suppressed_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -23,7 +29,10 @@ struct EventOptionBranchSemantics {
     effect_label: String,
 }
 
-pub(crate) fn event_branch_options(session: &RunControlSession) -> Option<Vec<EventBranchOption>> {
+pub(crate) fn event_branch_options(
+    session: &RunControlSession,
+    max_card_offer_options: Option<usize>,
+) -> Option<Vec<EventBranchOption>> {
     if !matches!(session.engine_state, EngineState::EventRoom) {
         return None;
     }
@@ -51,16 +60,73 @@ pub(crate) fn event_branch_options(session: &RunControlSession) -> Option<Vec<Ev
         branch_options.push(EventBranchOption {
             label: candidate.label.clone(),
             command: candidate.action.command_hint(),
+            card: event_option_specific_card(event_option),
+            upgrades: event_option_upgrade_hint(event_option),
             effect_kind: semantics.effect_kind,
             effect_key: semantics.effect_key,
             effect_label: semantics.effect_label,
+            representative_count: 1,
+            suppressed_count: 0,
         });
     }
 
-    if branch_options.is_empty() || branch_options.len() > MAX_EVENT_OPTIONS_PER_BRANCH {
+    if branch_options.is_empty() {
+        return None;
+    }
+    if branch_options.len() > MAX_EVENT_OPTIONS_PER_BRANCH {
+        if branch_options
+            .iter()
+            .all(|option| option.effect_kind == "event_card_reward")
+        {
+            let limit = max_card_offer_options
+                .unwrap_or(MAX_EVENT_OPTIONS_PER_BRANCH)
+                .min(branch_options.len());
+            return select_event_card_reward_branch_options(branch_options, limit);
+        }
         return None;
     }
     Some(branch_options)
+}
+
+fn select_event_card_reward_branch_options(
+    options: Vec<EventBranchOption>,
+    limit: usize,
+) -> Option<Vec<EventBranchOption>> {
+    if limit == 0 {
+        return None;
+    }
+    let original_count = options.len();
+    let card_options = options
+        .iter()
+        .map(|option| {
+            Some(CardRewardBranchOption {
+                label: option.label.clone(),
+                command: option.command.clone(),
+                card: option.card?,
+                upgrades: option.upgrades.unwrap_or_default(),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let selected = select_card_reward_branch_options_with_limit(card_options, limit, None).options;
+    let selected_commands = selected
+        .iter()
+        .map(|option| option.command.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut selected_options = options
+        .into_iter()
+        .filter(|option| selected_commands.contains(&option.command))
+        .collect::<Vec<_>>();
+    let suppressed = original_count.saturating_sub(selected_options.len());
+    if suppressed > 0 {
+        if let Some(first) = selected_options.first_mut() {
+            first.suppressed_count = suppressed;
+            first.effect_label = format!(
+                "{} | event card portfolio cap suppressed {suppressed} card offer(s)",
+                first.effect_label
+            );
+        }
+    }
+    Some(selected_options)
 }
 
 fn terminal_no_effect_leave(option: &EventOption) -> bool {
@@ -69,6 +135,28 @@ fn terminal_no_effect_leave(option: &EventOption) -> bool {
         && option.semantics.constraints.is_empty()
         && option.semantics.terminal
         && matches!(option.semantics.transition, EventOptionTransition::Complete)
+}
+
+fn event_option_specific_card(option: &EventOption) -> Option<CardId> {
+    option
+        .semantics
+        .effects
+        .iter()
+        .find_map(|effect| match effect {
+            EventEffect::ObtainCard {
+                kind: EventCardKind::Specific(card),
+                ..
+            }
+            | EventEffect::ObtainColorlessCard {
+                kind: EventCardKind::Specific(card),
+                ..
+            } => Some(*card),
+            _ => None,
+        })
+}
+
+fn event_option_upgrade_hint(option: &EventOption) -> Option<u8> {
+    option.ui.text.contains('+').then_some(1)
 }
 
 fn nloth_trade_is_protected(session: &RunControlSession, option: &EventOption) -> bool {

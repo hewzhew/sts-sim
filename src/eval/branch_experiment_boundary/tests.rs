@@ -1004,6 +1004,51 @@ fn current_boundary_wraps_low_fanout_event_options() {
 }
 
 #[test]
+fn current_boundary_caps_library_card_offer_with_card_semantics() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(EventState {
+        id: EventId::TheLibrary,
+        current_screen: 1,
+        internal_state: 0,
+        completed: false,
+        combat_pending: false,
+        extra_data: [
+            CardId::Havoc,
+            CardId::ShrugItOff,
+            CardId::PommelStrike,
+            CardId::DemonForm,
+            CardId::FlameBarrier,
+            CardId::Clash,
+        ]
+        .into_iter()
+        .flat_map(|card| [card as i32, 0])
+        .collect(),
+    });
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: Some(4),
+            ..BranchBoundaryConfigV1::default()
+        },
+        None,
+    )
+    .expect("The Library card offer should use a capped event card portfolio");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    assert_eq!(boundary.options.len(), 4);
+    assert!(boundary
+        .options
+        .iter()
+        .all(|option| option.effect_kind == "event_card_reward"));
+    assert!(boundary
+        .options
+        .iter()
+        .all(|option| option.selected_cards.len() == 1));
+}
+
+#[test]
 fn current_boundary_classifies_gold_plus_curse_event_as_curse_debt() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.act_num = 3;

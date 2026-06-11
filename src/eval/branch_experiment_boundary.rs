@@ -176,7 +176,7 @@ pub(crate) fn current_branch_boundary(
         });
     }
 
-    if let Some(options) = event_branch_options(session) {
+    if let Some(options) = event_branch_options(session, config.max_reward_options_per_branch) {
         return Some(BranchBoundarySelectionV1 {
             id: BranchBoundaryIdV1::Event,
             options: options
@@ -197,7 +197,7 @@ pub(crate) fn branch_boundary_available(session: &RunControlSession) -> bool {
         || run_selection_branch_options(session).is_some()
         || reward_branch_options(session).is_some()
         || shop_branch_options(session).is_some()
-        || event_branch_options(session).is_some()
+        || event_branch_options(session, Some(4)).is_some()
 }
 
 fn card_reward_skip_available(session: &RunControlSession) -> bool {
@@ -396,14 +396,14 @@ impl BranchBoundaryOptionV1 {
             kind: "event",
             label: option.label,
             command: option.command,
-            card: None,
-            upgrades: None,
-            selected_cards: Vec::new(),
+            card: option.card,
+            upgrades: option.upgrades,
+            selected_cards: selected_card_vec(option.card, option.upgrades),
             effect_kind: option.effect_kind,
             effect_key: option.effect_key,
             effect_label: option.effect_label,
-            representative_count: 1,
-            suppressed_count: 0,
+            representative_count: option.representative_count,
+            suppressed_count: option.suppressed_count,
             success_reason: "event branch applied",
         }
     }
