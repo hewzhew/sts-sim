@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
-use crate::state::core::{ClientInput, EngineState, RunResult};
+use crate::runtime::combat::CombatCard;
+use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
 
 use super::commands::{
     RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
@@ -768,15 +769,7 @@ fn auto_boundary_key(session: &RunControlSession) -> String {
     let active_combat = session
         .active_combat
         .as_ref()
-        .map(|active| {
-            format!(
-                "{:?}:turn{}:hp{}:hand{}",
-                active.engine_state,
-                active.combat_state.turn.turn_count,
-                active.combat_state.entities.player.current_hp,
-                active.combat_state.zones.hand.len()
-            )
-        })
+        .map(active_combat_boundary_key)
         .unwrap_or_else(|| "no-combat".to_string());
     let event = session
         .run_state
@@ -802,6 +795,92 @@ fn auto_boundary_key(session: &RunControlSession) -> String {
         session.run_state.gold,
         active_combat,
         candidates
+    )
+}
+
+fn active_combat_boundary_key(active: &ActiveCombat) -> String {
+    let combat = &active.combat_state;
+    let player = &combat.entities.player;
+    let zones = &combat.zones;
+    let monsters = combat
+        .entities
+        .monsters
+        .iter()
+        .map(|monster| {
+            format!(
+                "slot{}:id{}:hp{}/{}:block{}:dying{}:escaped{}:half{}:move{}:move_state{:?}",
+                monster.slot,
+                monster.monster_type,
+                monster.current_hp,
+                monster.max_hp,
+                monster.block,
+                monster.is_dying,
+                monster.is_escaped,
+                monster.half_dead,
+                monster.planned_move_id(),
+                monster.move_state,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut powers = combat
+        .entities
+        .power_db
+        .iter()
+        .map(|(entity, powers)| format!("{entity}:{powers:?}"))
+        .collect::<Vec<_>>();
+    powers.sort();
+
+    format!(
+        "{:?}:turn{}:{:?}:energy{}:draw_mod{}:player_hp{}/{}:block{}:stance{:?}:gold{}:hand[{}]:draw[{}]:discard[{}]:exhaust[{}]:limbo[{}]:queued{:?}:uuid{}:monsters[{}]:powers[{}]:queue{:?}",
+        active.engine_state,
+        combat.turn.turn_count,
+        combat.turn.current_phase,
+        combat.turn.energy,
+        combat.turn.turn_start_draw_modifier,
+        player.current_hp,
+        player.max_hp,
+        player.block,
+        player.stance,
+        player.gold,
+        combat_card_sequence_key(&zones.hand),
+        combat_card_sequence_key(&zones.draw_pile),
+        combat_card_sequence_key(&zones.discard_pile),
+        combat_card_sequence_key(&zones.exhaust_pile),
+        combat_card_sequence_key(&zones.limbo),
+        zones.queued_cards,
+        zones.card_uuid_counter,
+        monsters,
+        powers.join(","),
+        combat.engine.action_queue,
+    )
+}
+
+fn combat_card_sequence_key(cards: &[CombatCard]) -> String {
+    cards
+        .iter()
+        .map(combat_card_boundary_key)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn combat_card_boundary_key(card: &CombatCard) -> String {
+    format!(
+        "{:?}+{}#{}:misc{}:cost{}:turn{:?}:free{}:ex{:?}:ret{:?}:d{:?}:b{:?}:dm{}:bm{}:mm{}",
+        card.id,
+        card.upgrades,
+        card.uuid,
+        card.misc_value,
+        card.cost_modifier,
+        card.cost_for_turn,
+        card.free_to_play_once,
+        card.exhaust_override,
+        card.retain_override,
+        card.base_damage_override,
+        card.base_block_override,
+        card.base_damage_mut,
+        card.base_block_mut,
+        card.base_magic_num_mut,
     )
 }
 
@@ -860,8 +939,9 @@ fn indent_block(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_guarded_auto_step, auto_no_potion_first_options, auto_potion_rescue_options,
-        auto_search_options, high_stakes_auto_search_requires_hp_loss_gate,
+        apply_guarded_auto_step, auto_boundary_key, auto_no_potion_first_options,
+        auto_potion_rescue_options, auto_search_options,
+        high_stakes_auto_search_requires_hp_loss_gate,
     };
     use crate::ai::combat_search_v2::{
         CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
@@ -874,6 +954,41 @@ mod tests {
     use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use crate::state::map::node::RoomType;
     use std::path::PathBuf;
+
+    #[test]
+    fn auto_boundary_key_distinguishes_combat_enemy_hp_changes() {
+        let mut first =
+            crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
+                crate::content::monsters::EnemyId::Cultist,
+            )]);
+        first.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Strike,
+            10,
+        )];
+        first.entities.monsters[0]
+            .set_planned_visible_spec(Some(crate::runtime::monster_move::MonsterMoveSpec::Unknown));
+        let mut second = first.clone();
+        second.entities.monsters[0].current_hp -= 1;
+
+        let make_session = |combat| {
+            let mut session = RunControlSession::new(RunControlConfig::default());
+            session.engine_state = EngineState::CombatPlayerTurn;
+            session.active_combat = Some(ActiveCombat::new(
+                EngineState::CombatPlayerTurn,
+                combat,
+                CombatContext::Room(RoomCombatContext {
+                    room_type: RoomType::MonsterRoom,
+                }),
+            ));
+            session
+        };
+
+        assert_eq!(first.zones.hand.len(), second.zones.hand.len());
+        assert_ne!(
+            auto_boundary_key(&make_session(first)),
+            auto_boundary_key(&make_session(second))
+        );
+    }
 
     #[test]
     fn auto_search_options_only_add_interactive_time_budget_without_strategy_overrides() {
