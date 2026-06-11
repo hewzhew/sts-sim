@@ -1754,6 +1754,7 @@ fn campaign_branch_experiment_config_v1(
         search_options: config.search_options.clone(),
         include_skip: true,
         include_event_reward_skip: config.include_event_reward_skip,
+        auto_leave_after_shop_purchase_branch: false,
         ..BranchExperimentConfigV1::default()
     }
 }

@@ -320,6 +320,15 @@ fn campaign_selection_prefers_converted_gold_when_progress_is_tied() {
 }
 
 #[test]
+fn campaign_branch_experiment_config_keeps_shop_open_after_purchase() {
+    let config = BranchCampaignConfigV1::default();
+
+    let experiment_config = campaign_branch_experiment_config_v1(&config);
+
+    assert!(!experiment_config.auto_leave_after_shop_purchase_branch);
+}
+
+#[test]
 fn campaign_promotes_frozen_when_active_pool_is_empty() {
     let mut active = Vec::new();
     let mut frozen = vec![
