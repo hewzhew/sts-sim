@@ -150,7 +150,13 @@ pub(crate) fn card_entry_at(
     extra_data: &[i32],
     pos: usize,
 ) -> Option<(CardId, u8)> {
-    let type_idx = extra_data[pos] as usize;
+    if pos >= 12 {
+        return None;
+    }
+    let type_idx = usize::try_from(*extra_data.get(pos)?).ok()?;
+    if type_idx >= CARD_TYPE_COUNT {
+        return None;
+    }
     let offset = CARD_LOOKUP_OFFSET + type_idx * CARD_ENTRY_WIDTH;
     let card_disc = *extra_data.get(offset)?;
     let upgrades = *extra_data.get(offset + 1)?;
@@ -773,6 +779,15 @@ mod tests {
             choices.iter().all(|choice| !choice.disabled),
             "Java GremlinMatchGame exposes board card hitboxes, not a disabled dialog choice for the first flipped card"
         );
+    }
+
+    #[test]
+    fn card_entry_at_rejects_malformed_positions_without_panic() {
+        let run_state = RunState::new(1, 0, false, "Ironclad");
+        let malformed = vec![48; 40];
+
+        assert!(card_entry_at(&run_state, &malformed, 48).is_none());
+        assert!(card_entry_at(&run_state, &malformed, 0).is_none());
     }
 
     fn board_with_entries(entries: &[(CardId, u8); CARD_TYPE_COUNT]) -> Vec<i32> {
