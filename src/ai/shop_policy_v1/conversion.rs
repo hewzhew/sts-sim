@@ -83,7 +83,7 @@ pub fn shop_card_conversion_priority_v1(card: CardId, run_state: &RunState) -> i
     if high_impact_shop_card(card) {
         priority += 450;
     }
-    if run_state.act_num >= 2 && boss_or_elite_patch_card(card) {
+    if run_state.act_num >= 2 && shop_card_is_combat_patch_v1(card) {
         priority += 200;
     }
     priority += evaluate_card_admission_v1(
@@ -114,7 +114,7 @@ pub fn shop_potion_conversion_priority_v1(run_state: &RunState) -> i32 {
 pub fn shop_potion_conversion_priority_for_v1(potion: PotionId, run_state: &RunState) -> i32 {
     let mut priority = shop_potion_conversion_priority_v1(run_state);
     let near_serious_fight = run_state.act_num >= 2 || run_state.floor_num >= 6;
-    if near_serious_fight && boss_or_elite_shop_potion(potion) {
+    if near_serious_fight && shop_potion_is_combat_patch_v1(potion) {
         priority += 260;
         if run_state.act_num >= 3 {
             priority += 120;
@@ -138,12 +138,12 @@ fn affordable_high_impact_shop_purchase(run_state: &RunState, shop: &ShopState) 
             card.can_buy
                 && card.price <= gold
                 && high_impact_shop_card(card.card_id)
-                && (run_state.act_num >= 2 || boss_or_elite_patch_card(card.card_id))
+                && (run_state.act_num >= 2 || shop_card_is_combat_patch_v1(card.card_id))
         })
         || shop.potions.iter().any(|potion| {
             potion.can_buy
                 && potion.price <= gold
-                && boss_or_elite_shop_potion(potion.potion_id)
+                && shop_potion_is_combat_patch_v1(potion.potion_id)
                 && (run_state.act_num >= 2 || run_state.floor_num >= 6)
         })
 }
@@ -172,7 +172,7 @@ fn high_impact_shop_card(card: CardId) -> bool {
     )
 }
 
-fn boss_or_elite_patch_card(card: CardId) -> bool {
+pub(crate) fn shop_card_is_combat_patch_v1(card: CardId) -> bool {
     matches!(
         card,
         CardId::Disarm
@@ -186,7 +186,7 @@ fn boss_or_elite_patch_card(card: CardId) -> bool {
     )
 }
 
-fn boss_or_elite_shop_potion(potion: PotionId) -> bool {
+pub(crate) fn shop_potion_is_combat_patch_v1(potion: PotionId) -> bool {
     matches!(
         potion,
         PotionId::DuplicationPotion

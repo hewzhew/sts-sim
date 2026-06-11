@@ -42,7 +42,10 @@ pub enum CampfirePolicyClassV1 {
 pub struct CampfirePolicyConfigV1 {
     pub allow_rest_under_recovery_pressure: bool,
     pub allow_clear_core_smith_when_healthy: bool,
+    pub allow_combat_patch_smith_when_safe: bool,
     pub clear_core_smith_priority_threshold: i32,
+    pub combat_patch_smith_priority_threshold: i32,
+    pub combat_patch_smith_min_hp_percent: i32,
 }
 
 impl Default for CampfirePolicyConfigV1 {
@@ -50,7 +53,10 @@ impl Default for CampfirePolicyConfigV1 {
         Self {
             allow_rest_under_recovery_pressure: true,
             allow_clear_core_smith_when_healthy: true,
+            allow_combat_patch_smith_when_safe: true,
             clear_core_smith_priority_threshold: 180,
+            combat_patch_smith_priority_threshold: 180,
+            combat_patch_smith_min_hp_percent: 70,
         }
     }
 }

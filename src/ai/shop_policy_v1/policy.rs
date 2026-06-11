@@ -1,5 +1,5 @@
 use crate::ai::noncombat_strategy_v1::{
-    build_run_strategy_snapshot_from_run_state_v2, StrategyPlanSupportV1,
+    build_run_strategy_snapshot_from_run_state_v2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::state::run::RunState;
@@ -47,7 +47,17 @@ pub fn build_shop_decision_context_v1(
                 index,
                 card: card.card_id,
             },
-            crate::ai::shop_policy_v1::shop_card_conversion_priority_v1(card.card_id, run_state),
+            purchase_priority_with_strategy(
+                ShopPurchaseTargetV1::Card {
+                    index,
+                    card: card.card_id,
+                },
+                crate::ai::shop_policy_v1::shop_card_conversion_priority_v1(
+                    card.card_id,
+                    run_state,
+                ),
+                &strategy,
+            ),
         )
     }));
     candidates.extend(shop.relics.iter().enumerate().map(|(index, relic)| {
@@ -72,9 +82,16 @@ pub fn build_shop_decision_context_v1(
                 index,
                 potion: potion.potion_id,
             },
-            crate::ai::shop_policy_v1::shop_potion_conversion_priority_for_v1(
-                potion.potion_id,
-                run_state,
+            purchase_priority_with_strategy(
+                ShopPurchaseTargetV1::Potion {
+                    index,
+                    potion: potion.potion_id,
+                },
+                crate::ai::shop_policy_v1::shop_potion_conversion_priority_for_v1(
+                    potion.potion_id,
+                    run_state,
+                ),
+                &strategy,
             ),
         )
     }));
@@ -199,6 +216,39 @@ fn purchase_candidate_evidence(
         } else {
             Vec::new()
         },
+    }
+}
+
+fn purchase_priority_with_strategy(
+    target: ShopPurchaseTargetV1,
+    base_priority: i32,
+    strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+) -> i32 {
+    base_priority + combat_patch_purchase_bonus(target, strategy)
+}
+
+fn combat_patch_purchase_bonus(
+    target: ShopPurchaseTargetV1,
+    strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+) -> i32 {
+    let support = strategy.support(StrategyPackageIdV2::CombatPatchWindow);
+    let base_bonus = match support {
+        StrategyPlanSupportV1::Strong => 320,
+        StrategyPlanSupportV1::Plausible => 260,
+        _ => return 0,
+    };
+    match target {
+        ShopPurchaseTargetV1::Card { card, .. }
+            if super::conversion::shop_card_is_combat_patch_v1(card) =>
+        {
+            base_bonus / 2
+        }
+        ShopPurchaseTargetV1::Potion { potion, .. }
+            if super::conversion::shop_potion_is_combat_patch_v1(potion) =>
+        {
+            base_bonus
+        }
+        _ => 0,
     }
 }
 
