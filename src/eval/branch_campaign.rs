@@ -57,6 +57,7 @@ pub struct BranchCampaignConfigV1 {
     pub search_options: RunControlSearchCombatOptions,
     pub combat_retry_policy: BranchCampaignCombatRetryPolicyV1,
     pub include_event_reward_skip: bool,
+    pub min_acceptable_victory_hp_percent: u8,
     pub prefix_commands: Vec<String>,
 }
 
@@ -86,6 +87,7 @@ impl Default for BranchCampaignConfigV1 {
             },
             combat_retry_policy: BranchCampaignCombatRetryPolicyV1::OnStall,
             include_event_reward_skip: false,
+            min_acceptable_victory_hp_percent: 20,
             prefix_commands: Vec::new(),
         }
     }
@@ -462,7 +464,15 @@ where
                 &state.abandoned,
             );
         }
-        if state.active.is_empty() && state.victories.is_empty() && !state.frozen.is_empty() {
+        if state.active.is_empty()
+            && !campaign_should_stop_after_victory_v1(
+                config,
+                &state.victories,
+                &state.active,
+                &state.frozen,
+            )
+            && !state.frozen.is_empty()
+        {
             let promoted = promote_frozen_to_active_v1(
                 &mut state.active,
                 &mut state.frozen,
@@ -475,6 +485,17 @@ where
                     frozen_remaining: state.frozen.len(),
                 });
             }
+        }
+        if state.active.is_empty()
+            && campaign_should_stop_after_victory_v1(
+                config,
+                &state.victories,
+                &state.active,
+                &state.frozen,
+            )
+        {
+            stop_reason = "victory_found".to_string();
+            break;
         }
         if state.active.is_empty() {
             stop_reason = "no_active_branch".to_string();
@@ -577,7 +598,13 @@ where
             state.strategy_requests =
                 merge_campaign_strategy_request_queue_v1(state.strategy_requests, vec![request]);
         }
-        let promoted_from_frozen = if state.active.is_empty() && state.victories.is_empty() {
+        let promoted_from_frozen = if state.active.is_empty()
+            && !campaign_should_stop_after_victory_v1(
+                config,
+                &state.victories,
+                &state.active,
+                &state.frozen,
+            ) {
             promote_frozen_to_active_v1(&mut state.active, &mut state.frozen, config.max_active)
         } else {
             0
@@ -616,7 +643,12 @@ where
         state.rounds.push(round_summary);
         state.rounds_completed = state.rounds_completed.saturating_add(1);
 
-        if !state.victories.is_empty() {
+        if campaign_should_stop_after_victory_v1(
+            config,
+            &state.victories,
+            &state.active,
+            &state.frozen,
+        ) {
             stop_reason = "victory_found".to_string();
             break;
         }
@@ -1037,6 +1069,10 @@ pub fn render_branch_campaign_compact_v1(
             }
         }
     }
+    if let Some(victory_lines) = render_campaign_victory_quality_lines_v1(report) {
+        lines.push(String::new());
+        lines.extend(victory_lines);
+    }
     if report.stop_reason == "max_rounds"
         && (!report.active.is_empty() || !report.frozen.is_empty())
     {
@@ -1141,6 +1177,53 @@ fn render_campaign_branch_stop_reasons_v1(
         max_examples,
     )
     .join(" | ")
+}
+
+fn render_campaign_victory_quality_lines_v1(
+    report: &BranchCampaignReportV1,
+) -> Option<Vec<String>> {
+    let first = report.victories.first()?;
+    let best = report
+        .victories
+        .iter()
+        .max_by(|left, right| {
+            victory_quality_key_v1(left)
+                .cmp(&victory_quality_key_v1(right))
+                .then_with(|| left.branch_id.cmp(&right.branch_id).reverse())
+        })
+        .unwrap_or(first);
+
+    let mut lines = Vec::new();
+    if report.victories.len() == 1 || first.branch_id == best.branch_id {
+        lines.push(render_campaign_victory_line_v1("Victory", first));
+    } else {
+        lines.push(render_campaign_victory_line_v1("First victory", first));
+        lines.push(render_campaign_victory_line_v1("Best victory", best));
+    }
+    Some(lines)
+}
+
+fn render_campaign_victory_line_v1(label: &str, branch: &BranchCampaignBranchV1) -> String {
+    format!(
+        "{label}: {} | choices: {}",
+        render_campaign_branch_state(branch),
+        render_compact_choice_path(&branch.choice_labels)
+    )
+}
+
+fn victory_quality_key_v1(branch: &BranchCampaignBranchV1) -> (i32, i32, i32) {
+    branch
+        .summary
+        .as_ref()
+        .map(|summary| {
+            let hp_percent = if summary.max_hp > 0 {
+                (summary.hp.max(0) * 1000) / summary.max_hp
+            } else {
+                1000
+            };
+            (hp_percent, summary.hp, summary.gold)
+        })
+        .unwrap_or((0, 0, 0))
 }
 
 fn unique_limited_strings<I>(items: I, limit: usize) -> Vec<String>
@@ -2334,6 +2417,41 @@ fn branch_progress_key(branch: &BranchCampaignBranchV1) -> (u8, i32, i32) {
         .as_ref()
         .map(|summary| (summary.act, summary.floor, summary.hp))
         .unwrap_or((0, 0, 0))
+}
+
+fn campaign_should_stop_after_victory_v1(
+    config: &BranchCampaignConfigV1,
+    victories: &[BranchCampaignBranchV1],
+    active: &[BranchCampaignBranchV1],
+    frozen: &[BranchCampaignBranchV1],
+) -> bool {
+    if victories.is_empty() {
+        return false;
+    }
+    if victories
+        .iter()
+        .any(|branch| branch_meets_victory_quality_v1(config, branch))
+    {
+        return true;
+    }
+    active.is_empty() && frozen.is_empty()
+}
+
+fn branch_meets_victory_quality_v1(
+    config: &BranchCampaignConfigV1,
+    branch: &BranchCampaignBranchV1,
+) -> bool {
+    let threshold = config.min_acceptable_victory_hp_percent as i64;
+    if threshold == 0 {
+        return true;
+    }
+    let Some(summary) = branch.summary.as_ref() else {
+        return true;
+    };
+    if summary.max_hp <= 0 {
+        return true;
+    }
+    (summary.hp.max(0) as i64) * 100 >= threshold * summary.max_hp as i64
 }
 
 fn campaign_choice_label_v1(

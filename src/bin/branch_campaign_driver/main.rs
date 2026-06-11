@@ -126,6 +126,9 @@ struct Args {
     #[arg(long, value_enum, default_value_t = BranchCampaignCombatRetryArgV1::OnStall)]
     combat_retry: BranchCampaignCombatRetryArgV1,
 
+    #[arg(long, default_value_t = 20)]
+    min_acceptable_victory_hp_percent: u8,
+
     #[arg(long = "prefix", value_name = "COMMAND")]
     prefix_commands: Vec<String>,
 
@@ -669,6 +672,7 @@ fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, Stri
             BranchCampaignCombatRetryArgV1::Disabled => BranchCampaignCombatRetryPolicyV1::Disabled,
         },
         include_event_reward_skip: false,
+        min_acceptable_victory_hp_percent: args.min_acceptable_victory_hp_percent,
         prefix_commands,
     })
 }

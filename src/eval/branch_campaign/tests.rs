@@ -246,6 +246,43 @@ fn campaign_promotes_frozen_when_active_pool_is_empty() {
 }
 
 #[test]
+fn campaign_victory_quality_gate_keeps_searching_after_low_hp_win() {
+    let config = BranchCampaignConfigV1::default();
+    let low_victory = {
+        let mut branch = test_campaign_branch("low-win", 48, 6);
+        branch.status = BranchCampaignBranchStatusV1::TerminalVictory;
+        branch
+    };
+    let active = vec![test_campaign_branch("still-live", 47, 35)];
+    let frozen = vec![test_campaign_branch("backup", 47, 30)];
+
+    assert!(!campaign_should_stop_after_victory_v1(
+        &config,
+        &[low_victory],
+        &active,
+        &frozen
+    ));
+}
+
+#[test]
+fn campaign_victory_quality_gate_accepts_healthy_win() {
+    let config = BranchCampaignConfigV1::default();
+    let healthy_victory = {
+        let mut branch = test_campaign_branch("healthy-win", 48, 24);
+        branch.status = BranchCampaignBranchStatusV1::TerminalVictory;
+        branch
+    };
+    let active = vec![test_campaign_branch("still-live", 47, 35)];
+
+    assert!(campaign_should_stop_after_victory_v1(
+        &config,
+        &[healthy_victory],
+        &active,
+        &[]
+    ));
+}
+
+#[test]
 fn campaign_retry_budget_raises_combat_search_without_restoring_hp_gate() {
     let config = BranchCampaignConfigV1 {
         search_max_nodes: Some(50_000),
@@ -595,6 +632,26 @@ fn compact_campaign_report_suppresses_stale_strategy_notes_after_victory() {
     assert!(!rendered.contains("Deferred strategy notes:"));
     assert!(!rendered.contains("Needs intervention:"));
     assert!(!rendered.contains("MatchAndKeep"));
+}
+
+#[test]
+fn compact_campaign_report_renders_first_and_best_victory_quality() {
+    let mut report = test_campaign_report_with_active("winner", 48, 42);
+    report.active.clear();
+    let mut first = test_campaign_branch("first-win", 48, 6);
+    first.status = BranchCampaignBranchStatusV1::TerminalVictory;
+    first.choice_labels = vec!["risky line".to_string()];
+    let mut best = test_campaign_branch("best-win", 48, 32);
+    best.status = BranchCampaignBranchStatusV1::TerminalVictory;
+    best.choice_labels = vec!["stable line".to_string()];
+    report.victories = vec![first, best];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 2);
+
+    assert!(rendered.contains("First victory: A1F48 HP 6/80"));
+    assert!(rendered.contains("choices: risky line"));
+    assert!(rendered.contains("Best victory: A1F48 HP 32/80"));
+    assert!(rendered.contains("choices: stable line"));
 }
 
 #[test]
