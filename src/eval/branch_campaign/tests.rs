@@ -1818,6 +1818,90 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
 }
 
 #[test]
+fn campaign_resume_rehydrates_only_active_capacity_for_combat_failures() {
+    let mut abandoned = Vec::new();
+    let mut checkpoint_sessions = Vec::new();
+    for idx in 0..3 {
+        let mut branch = test_campaign_branch_with_boundary(
+            &format!("combat-{idx}"),
+            "Combat",
+            "combat search did not find an executable complete win",
+            48,
+            70 - idx,
+        );
+        branch.summary.as_mut().expect("summary").act = 3;
+        branch.commands = vec![format!("old-combat-{idx}")];
+        branch.status = BranchCampaignBranchStatusV1::Abandoned;
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 48;
+        session.run_state.current_hp = 70 - idx;
+        session.run_state.max_hp = 90;
+        checkpoint_sessions.push(BranchCampaignCheckpointSessionV1 {
+            commands: branch.commands.clone(),
+            session: RunControlSessionCheckpointV1::from_session(&session),
+        });
+        abandoned.push(branch);
+    }
+
+    let previous = BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        stop_reason: "needs_intervention".to_string(),
+        active: Vec::new(),
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned,
+        stuck: Vec::new(),
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        rounds: Vec::new(),
+    };
+    let checkpoint = BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        sessions: checkpoint_sessions,
+    };
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &BranchCampaignConfigV1 {
+            seed: 1,
+            max_rounds: 0,
+            max_active: 2,
+            max_frozen: 16,
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+        Some(&checkpoint),
+    )
+    .expect("checkpointed combat failures should be resumable");
+
+    assert_eq!(
+        result.report.active.len(),
+        2,
+        "resume should retry only the active-capacity combat failure representatives"
+    );
+    assert!(
+        result.report.frozen.is_empty(),
+        "resume should not fill frozen with expensive checkpointed combat failures"
+    );
+    assert_eq!(
+        result.report.abandoned.len(),
+        1,
+        "extra checkpointed combat failures should remain abandoned for diagnostics"
+    );
+}
+
+#[test]
 fn campaign_status_distinguishes_pruned_from_terminal_defeat() {
     assert_eq!(
         campaign_status_from_report_status(BranchExperimentBranchStatusV1::Pruned),

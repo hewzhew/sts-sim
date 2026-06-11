@@ -2697,6 +2697,7 @@ fn rehydrate_checkpoint_failures_on_resume_v1(
         &state.snapshot_cache,
         max_active,
         max_frozen,
+        max_active,
         &mut recovered,
     );
     let stuck = std::mem::take(&mut state.stuck);
@@ -2707,6 +2708,7 @@ fn rehydrate_checkpoint_failures_on_resume_v1(
         &state.snapshot_cache,
         max_active,
         max_frozen,
+        max_active,
         &mut recovered,
     );
     recovered
@@ -2719,10 +2721,15 @@ fn rehydrate_checkpoint_failure_list_v1(
     snapshot_cache: &BTreeMap<Vec<String>, RunControlSession>,
     max_active: usize,
     max_frozen: usize,
+    max_recovered: usize,
     recovered_count: &mut usize,
 ) -> Vec<BranchCampaignBranchV1> {
     let mut remaining = Vec::new();
     for branch in branches {
+        if *recovered_count >= max_recovered {
+            remaining.push(branch);
+            continue;
+        }
         if let Some(recovered) = try_rehydrate_checkpoint_failure_branch_v1(&branch, snapshot_cache)
         {
             if place_recovered_campaign_branch_v1(active, frozen, recovered, max_active, max_frozen)

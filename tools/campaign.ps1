@@ -39,6 +39,10 @@ Prints the cargo command without updating the last seed or running it.
 Runs without coarse campaign progress messages.
 
 .EXAMPLE
+.\tools\campaign.ps1 -NoBossSegments
+Keeps boss combats on complete-win search only instead of allowing turn segments.
+
+.EXAMPLE
 .\tools\campaign.ps1 -DebugBuild
 Runs the slower debug build when you are debugging compilation or assertions.
 
@@ -54,6 +58,7 @@ param(
     [switch] $More,
     [switch] $DryRun,
     [switch] $NoProgress,
+    [switch] $NoBossSegments,
     [switch] $DebugBuild,
     [switch] $Build,
 
@@ -153,6 +158,26 @@ Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
 Add-DriverArgIfBound "SearchMaxNodes" "--search-max-nodes" $SearchMaxNodes
 Add-DriverArgIfBound "BranchExamples" "--branch-examples" $BranchExamples
 Add-DriverArgIfBound "VictoryHpPercent" "--min-acceptable-victory-hp-percent" $VictoryHpPercent
+
+function Test-ExtraCombatOptionKey {
+    param(
+        [string[]] $Tokens,
+        [string[]] $Keys
+    )
+
+    foreach ($Arg in $Tokens) {
+        foreach ($Key in $Keys) {
+            if ($Arg -match "(^|\s|=)$([regex]::Escape($Key))=") {
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
+if (-not $NoBossSegments -and -not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
+    $DriverArgs += @("--combat-search-option", "segment=turn")
+}
 
 if (-not $NoProgress) {
     $DriverArgs += "--progress"
