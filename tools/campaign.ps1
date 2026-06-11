@@ -27,6 +27,10 @@ Runs a shorter random-seed campaign for fast smoke testing.
 Runs a larger random-seed campaign when you want to leave it working longer.
 
 .EXAMPLE
+.\tools\campaign.ps1 -More -VictoryHpPercent 50
+Resumes the latest campaign but keeps exploring until it finds a victory at 50% HP or better.
+
+.EXAMPLE
 .\tools\campaign.ps1 -DryRun
 Prints the cargo command without updating the last seed or running it.
 
@@ -61,6 +65,8 @@ param(
     [int] $SearchWallMs = 300,
     [int] $SearchMaxNodes = 50000,
     [int] $BranchExamples = 4,
+    [ValidateRange(0, 100)]
+    [int] $VictoryHpPercent = 20,
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs
@@ -146,6 +152,7 @@ Add-DriverArgIfBound "ExperimentWallMs" "--experiment-wall-ms" $ExperimentWallMs
 Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
 Add-DriverArgIfBound "SearchMaxNodes" "--search-max-nodes" $SearchMaxNodes
 Add-DriverArgIfBound "BranchExamples" "--branch-examples" $BranchExamples
+Add-DriverArgIfBound "VictoryHpPercent" "--min-acceptable-victory-hp-percent" $VictoryHpPercent
 
 if (-not $NoProgress) {
     $DriverArgs += "--progress"

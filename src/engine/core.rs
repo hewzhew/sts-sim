@@ -1717,6 +1717,53 @@ mod tests {
     }
 
     #[test]
+    fn awakened_one_half_dead_rebirth_executes_monster_turn() {
+        let mut awakened = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        awakened.id = 7;
+        awakened.current_hp = 0;
+        awakened.max_hp = 300;
+        awakened.is_dying = false;
+        awakened.half_dead = true;
+        awakened.awakened_one.form1 = false;
+        awakened.awakened_one.first_turn = true;
+        awakened.awakened_one.protocol_seeded = true;
+        awakened.set_planned_move_id(3);
+
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.monsters = vec![awakened];
+        crate::content::powers::store::set_powers_for(
+            &mut combat_state,
+            7,
+            vec![Power {
+                power_type: PowerId::Regen,
+                instance_id: None,
+                amount: 10,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        let mut engine_state = EngineState::CombatPlayerTurn;
+
+        let alive = super::tick_until_stable_turn(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::EndTurn,
+        );
+
+        assert!(alive);
+        let reborn = combat_state
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == 7)
+            .unwrap();
+        assert_eq!(reborn.current_hp, 300);
+        assert!(!reborn.half_dead);
+        assert!(!reborn.is_dying);
+    }
+
+    #[test]
     fn monster_pre_turn_invincible_resets_before_poison_like_java_at_start_of_turn() {
         let mut combat_state = blank_test_combat();
         let mut monster = planned_monster(EnemyId::JawWorm, 1);
