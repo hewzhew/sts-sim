@@ -1125,26 +1125,40 @@ pub fn render_branch_campaign_compact_v1(
     if !report.active.is_empty() {
         lines.push(String::new());
         lines.push("Top active:".to_string());
-        for (index, branch) in report.active.iter().take(branch_examples).enumerate() {
+        let shown = report
+            .active
+            .iter()
+            .take(branch_examples)
+            .collect::<Vec<_>>();
+        let baseline = shown.first().copied();
+        for (index, branch) in shown.into_iter().enumerate() {
             lines.push(format!(
-                "  {}. {} | {} | choices: {}",
+                "  {}. {} | {} | choices: {}{}",
                 index + 1,
                 render_campaign_branch_state(branch),
                 branch.frontier_title,
-                render_compact_choice_path(&branch.choice_labels)
+                render_compact_choice_path(&branch.choice_labels),
+                render_campaign_branch_diff_suffix_v1(branch, baseline, index)
             ));
         }
     }
     if !report.frozen.is_empty() {
         lines.push(String::new());
         lines.push("Frozen examples:".to_string());
-        for (index, branch) in report.frozen.iter().take(branch_examples).enumerate() {
+        let shown = report
+            .frozen
+            .iter()
+            .take(branch_examples)
+            .collect::<Vec<_>>();
+        let baseline = shown.first().copied();
+        for (index, branch) in shown.into_iter().enumerate() {
             lines.push(format!(
-                "  {}. {} | {} | choices: {}",
+                "  {}. {} | {} | choices: {}{}",
                 index + 1,
                 render_campaign_branch_state(branch),
                 branch.frontier_title,
-                render_compact_choice_path(&branch.choice_labels)
+                render_compact_choice_path(&branch.choice_labels),
+                render_campaign_branch_diff_suffix_v1(branch, baseline, index)
             ));
         }
     }
@@ -1326,6 +1340,110 @@ fn render_campaign_branch_stop_reasons_v1(
         max_examples,
     )
     .join(" | ")
+}
+
+fn render_campaign_branch_diff_suffix_v1(
+    branch: &BranchCampaignBranchV1,
+    baseline: Option<&BranchCampaignBranchV1>,
+    index: usize,
+) -> String {
+    if index == 0 {
+        return String::new();
+    }
+    let Some(baseline) = baseline else {
+        return String::new();
+    };
+    let mut parts = Vec::new();
+    if let Some(choice_diff) = render_campaign_choice_diff_v1(branch, baseline) {
+        parts.push(format!("choices {choice_diff}"));
+    }
+    if let (Some(summary), Some(base_summary)) =
+        (branch.summary.as_ref(), baseline.summary.as_ref())
+    {
+        if summary.formation_stage != base_summary.formation_stage {
+            parts.push(format!(
+                "stage {}->{}",
+                base_summary.formation_stage, summary.formation_stage
+            ));
+        }
+        if let Some(diff) = render_string_set_diff_v1(
+            &summary.formation_strengths,
+            &base_summary.formation_strengths,
+        ) {
+            parts.push(format!("strengths {diff}"));
+        }
+        if let Some(diff) =
+            render_string_set_diff_v1(&summary.formation_needs, &base_summary.formation_needs)
+        {
+            parts.push(format!("needs {diff}"));
+        }
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" | diff: {}", parts.join("; "))
+    }
+}
+
+fn render_campaign_choice_diff_v1(
+    branch: &BranchCampaignBranchV1,
+    baseline: &BranchCampaignBranchV1,
+) -> Option<String> {
+    let mut additions = Vec::new();
+    let max_len = branch.choice_labels.len().max(baseline.choice_labels.len());
+    for index in 0..max_len {
+        let current = branch.choice_labels.get(index);
+        let base = baseline.choice_labels.get(index);
+        if current == base {
+            continue;
+        }
+        if let Some(label) = current {
+            additions.push(format!("+{}", truncate_campaign_diff_label_v1(label)));
+        }
+        if additions.len() >= 3 {
+            break;
+        }
+    }
+    if additions.is_empty() {
+        None
+    } else {
+        Some(additions.join(" "))
+    }
+}
+
+fn render_string_set_diff_v1(current: &[String], baseline: &[String]) -> Option<String> {
+    let mut added = current
+        .iter()
+        .filter(|value| !baseline.contains(value))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut removed = baseline
+        .iter()
+        .filter(|value| !current.contains(value))
+        .cloned()
+        .collect::<Vec<_>>();
+    added.sort();
+    removed.sort();
+    let mut parts = Vec::new();
+    parts.extend(added.into_iter().take(3).map(|value| format!("+{value}")));
+    parts.extend(removed.into_iter().take(3).map(|value| format!("-{value}")));
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
+}
+
+fn truncate_campaign_diff_label_v1(value: &str) -> String {
+    const MAX_CHARS: usize = 48;
+    if value.chars().count() <= MAX_CHARS {
+        return value.to_string();
+    }
+    let prefix = value
+        .chars()
+        .take(MAX_CHARS.saturating_sub(3))
+        .collect::<String>();
+    format!("{prefix}...")
 }
 
 fn render_campaign_victory_quality_lines_v1(

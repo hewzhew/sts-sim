@@ -112,6 +112,36 @@ fn compact_campaign_report_truncates_long_active_choice_paths() {
 }
 
 #[test]
+fn compact_campaign_report_renders_active_branch_differences() {
+    let mut report = test_campaign_report_with_active("baseline", 35, 80);
+    report.active[0].choice_labels = vec![
+        "Rampage".to_string(),
+        "Sever Soul".to_string(),
+        "Offering".to_string(),
+        "Cleave".to_string(),
+        "Buy Warcry | 23 gold".to_string(),
+    ];
+    let mut exhaust_branch = test_campaign_branch("exhaust", 35, 80);
+    exhaust_branch.choice_labels = vec![
+        "Rampage".to_string(),
+        "Sever Soul".to_string(),
+        "Offering".to_string(),
+        "Dark Embrace".to_string(),
+        "Buy Warcry | 23 gold".to_string(),
+    ];
+    let summary = exhaust_branch.summary.as_mut().unwrap();
+    summary.formation_stage = "Mature".to_string();
+    summary.formation_strengths = vec!["StrengthScaling".to_string(), "ExhaustEngine".to_string()];
+    report.active.push(exhaust_branch);
+
+    let rendered = render_branch_campaign_compact_v1(&report, 2);
+
+    assert!(rendered.contains(
+        "2. A1F35 HP 80/80 gold 99 deck 10 | Card Reward | choices: Rampage -> Sever Soul -> ... -> Buy Warcry | 23 gold | diff: choices +Dark Embrace; stage PlanSeeded->Mature; strengths +ExhaustEngine +StrengthScaling"
+    ));
+}
+
+#[test]
 fn compact_campaign_report_renders_abandoned_examples_while_continuing() {
     let mut report = test_campaign_report_with_active("a", 7, 80);
     let mut abandoned = test_campaign_branch("abandoned", 6, 55);
