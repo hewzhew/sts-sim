@@ -49,6 +49,32 @@ pub(crate) fn certified_action(
         }
     }
 
+    if context.conversion_pressure {
+        if let Some(action) = context
+            .candidates
+            .iter()
+            .filter(|candidate| {
+                candidate.class == ShopPolicyClassV1::PurchaseOpportunity
+                    && candidate.support_gate == StrategyPlanSupportV1::Strong
+            })
+            .filter_map(|candidate| {
+                Some((candidate, candidate.purchase_priority?, candidate.purchase_target?))
+            })
+            .max_by_key(|(_, priority, target)| (*priority, purchase_tiebreaker(*target)))
+            .and_then(|(candidate, priority, _)| {
+                purchase_action(
+                    candidate,
+                    0.64,
+                    format!(
+                        "shop conversion pressure selected best affordable purchase priority {priority}"
+                    ),
+                )
+            })
+        {
+            return Some(action);
+        }
+    }
+
     if !config.allow_starter_strike_purge_when_core_plan_protected {
         return None;
     }
@@ -68,6 +94,14 @@ pub(crate) fn certified_action(
                 "CorePlanProtection Strong and no affordable purchase competes",
             )
         })
+}
+
+fn purchase_tiebreaker(target: ShopPurchaseTargetV1) -> i32 {
+    match target {
+        ShopPurchaseTargetV1::Relic { .. } => 3,
+        ShopPurchaseTargetV1::Potion { .. } => 2,
+        ShopPurchaseTargetV1::Card { .. } => 1,
+    }
 }
 
 fn purchase_priority_threshold(target: ShopPurchaseTargetV1, config: &ShopPolicyConfigV1) -> i32 {

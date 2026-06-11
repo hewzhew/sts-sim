@@ -270,7 +270,7 @@ fn best_shop_combo_option(
             if first.cost.saturating_add(second.cost) > gold {
                 continue;
             }
-            let candidate = shop_combo_option(first, second);
+            let candidate = shop_combo_option(&[first, second]);
             if best
                 .as_ref()
                 .is_none_or(|current| candidate.score > current.score)
@@ -279,33 +279,74 @@ fn best_shop_combo_option(
             }
         }
     }
+    if gold >= 300 {
+        for first in options.iter().filter(|entry| entry.can_start_combo) {
+            for second in options.iter().filter(|entry| {
+                entry.can_follow_combo
+                    && entry.option.command != first.option.command
+                    && entry.option.effect_kind != first.option.effect_kind
+            }) {
+                for third in options.iter().filter(|entry| {
+                    entry.can_follow_combo
+                        && entry.option.command != first.option.command
+                        && entry.option.command != second.option.command
+                        && entry.option.effect_kind != first.option.effect_kind
+                        && entry.option.effect_kind != second.option.effect_kind
+                }) {
+                    if first
+                        .cost
+                        .saturating_add(second.cost)
+                        .saturating_add(third.cost)
+                        > gold
+                    {
+                        continue;
+                    }
+                    let candidate = shop_combo_option(&[first, second, third]);
+                    if best
+                        .as_ref()
+                        .is_none_or(|current| candidate.score > current.score)
+                    {
+                        best = Some(candidate);
+                    }
+                }
+            }
+        }
+    }
     best
 }
 
-fn shop_combo_option(
-    first: &ScoredShopBranchOption,
-    second: &ScoredShopBranchOption,
-) -> ScoredShopBranchOption {
-    let score = first.score.saturating_add(second.score).saturating_add(100);
-    let cost = first.cost.saturating_add(second.cost);
+fn shop_combo_option(entries: &[&ScoredShopBranchOption]) -> ScoredShopBranchOption {
+    let score = entries
+        .iter()
+        .map(|entry| entry.score)
+        .sum::<i32>()
+        .saturating_add((entries.len() as i32).saturating_sub(1) * 100);
+    let cost = entries.iter().map(|entry| entry.cost).sum::<i32>();
+    let label = entries
+        .iter()
+        .map(|entry| entry.option.label.as_str())
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let command = entries
+        .iter()
+        .map(|entry| entry.option.command.as_str())
+        .collect::<Vec<_>>()
+        .join(SHOP_COMMAND_SEQUENCE_SEPARATOR);
     ScoredShopBranchOption {
         score,
         cost,
         can_start_combo: false,
         can_follow_combo: false,
         option: ShopBranchOption {
-            label: format!("{} + {}", first.option.label, second.option.label),
-            command: format!(
-                "{}{SHOP_COMMAND_SEQUENCE_SEPARATOR}{}",
-                first.option.command, second.option.command
-            ),
-            card: first.option.card.or(second.option.card),
+            label: label.clone(),
+            command,
+            card: entries.iter().find_map(|entry| entry.option.card),
             effect_kind: "shop_buy_combo".to_string(),
             effect_label: format!(
-                "{} then {} | total {cost} gold | shop portfolio combo",
-                first.option.label, second.option.label
+                "{} | total {cost} gold | shop portfolio combo",
+                label.replace(" + ", " then ")
             ),
-            representative_count: 2,
+            representative_count: entries.len(),
             suppressed_count: 0,
         },
     }

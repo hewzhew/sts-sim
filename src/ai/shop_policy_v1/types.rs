@@ -14,8 +14,24 @@ use crate::content::relics::RelicId;
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShopDecisionContextV1 {
     pub strategy: RunStrategySnapshotV2,
+    pub need: ShopNeedProfileV1,
     pub candidates: Vec<ShopCandidateEvidenceV1>,
     pub affordable_purchase_exists: bool,
+    pub conversion_pressure: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShopNeedProfileV1 {
+    pub act: u8,
+    pub floor: i32,
+    pub gold: i32,
+    pub floors_to_boss: i32,
+    pub near_boss: bool,
+    pub has_curse: bool,
+    pub starter_count: usize,
+    pub strike_count: usize,
+    pub defend_count: usize,
+    pub empty_potion_slots: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]

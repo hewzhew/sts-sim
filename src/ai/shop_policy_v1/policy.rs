@@ -16,7 +16,10 @@ pub fn build_shop_decision_context_v1(
     shop: &ShopState,
 ) -> ShopDecisionContextV1 {
     let strategy = build_run_strategy_snapshot_from_run_state_v2(run_state);
+    let need = crate::ai::shop_policy_v1::build_shop_need_profile_v1(run_state);
     let affordable_purchase_exists = affordable_purchase_exists(shop, run_state.gold);
+    let conversion_pressure =
+        crate::ai::shop_policy_v1::shop_conversion_pressure_v1(run_state, shop);
     let mut candidates = Vec::new();
 
     if shop.purge_available && run_state.gold >= shop.purge_cost {
@@ -84,14 +87,16 @@ pub fn build_shop_decision_context_v1(
         purchase_target: None,
         purchase_priority: None,
         support_gate: StrategyPlanSupportV1::Strong,
-        evidence: vec!["leaving shop is always available".to_string()],
-        risks: Vec::new(),
+        evidence: leave_shop_evidence(&need, conversion_pressure),
+        risks: leave_shop_risks(&need, conversion_pressure, affordable_purchase_exists),
     });
 
     ShopDecisionContextV1 {
         strategy,
+        need,
         candidates,
         affordable_purchase_exists,
+        conversion_pressure,
     }
 }
 
@@ -253,6 +258,42 @@ fn affordable_purchase_exists(shop: &ShopState, gold: i32) -> bool {
             .any(|potion| potion.can_buy && potion.price <= gold)
 }
 
+fn leave_shop_evidence(
+    need: &crate::ai::shop_policy_v1::ShopNeedProfileV1,
+    conversion_pressure: bool,
+) -> Vec<String> {
+    let mut evidence = vec![
+        "leaving shop is always mechanically available".to_string(),
+        format!("gold={}", need.gold),
+        format!("floors_to_boss={}", need.floors_to_boss),
+        format!("conversion_pressure={conversion_pressure}"),
+    ];
+    if need.near_boss {
+        evidence.push("near act boss".to_string());
+    }
+    evidence
+}
+
+fn leave_shop_risks(
+    need: &crate::ai::shop_policy_v1::ShopNeedProfileV1,
+    conversion_pressure: bool,
+    affordable_purchase_exists: bool,
+) -> Vec<String> {
+    let mut risks = Vec::new();
+    if conversion_pressure && affordable_purchase_exists {
+        risks.push("unconverted gold remains while affordable purchases exist".to_string());
+    }
+    if need.gold >= 300 {
+        risks.push("gold >= 300 makes empty shop exit a severe policy risk".to_string());
+    } else if need.gold >= 250 {
+        risks.push("gold >= 250 requires an explicit leave reason".to_string());
+    }
+    if need.near_boss && need.gold >= 200 {
+        risks.push("near boss with high gold should evaluate immediate conversion".to_string());
+    }
+    risks
+}
+
 fn stop_reason(context: &ShopDecisionContextV1) -> String {
     let classes = context
         .candidates
@@ -260,5 +301,11 @@ fn stop_reason(context: &ShopDecisionContextV1) -> String {
         .map(|candidate| format!("{}:{:?}", candidate.label, candidate.class))
         .collect::<Vec<_>>()
         .join(", ");
+    if context.conversion_pressure {
+        return format!(
+            "shop policy stopped despite conversion pressure gold={} floors_to_boss={} ({classes})",
+            context.need.gold, context.need.floors_to_boss
+        );
+    }
     format!("shop policy stopped because no conservative purge certificate matched ({classes})")
 }

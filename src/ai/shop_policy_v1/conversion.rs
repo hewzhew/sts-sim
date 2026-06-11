@@ -5,6 +5,52 @@ use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
+use super::types::ShopNeedProfileV1;
+
+pub fn build_shop_need_profile_v1(run_state: &RunState) -> ShopNeedProfileV1 {
+    let floors_to_boss = floors_to_act_boss(run_state.act_num, run_state.floor_num);
+    ShopNeedProfileV1 {
+        act: run_state.act_num,
+        floor: run_state.floor_num,
+        gold: run_state.gold,
+        floors_to_boss,
+        near_boss: floors_to_boss <= 4,
+        has_curse: run_state.master_deck.iter().any(|card| {
+            get_card_definition(card.id).card_type == CardType::Curse
+                && crate::state::core::master_deck_card_is_purgeable(card)
+                && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
+        }),
+        starter_count: run_state
+            .master_deck
+            .iter()
+            .filter(|card| starter_card(card))
+            .count(),
+        strike_count: run_state
+            .master_deck
+            .iter()
+            .filter(|card| {
+                get_card_definition(card.id)
+                    .tags
+                    .contains(&CardTag::StarterStrike)
+            })
+            .count(),
+        defend_count: run_state
+            .master_deck
+            .iter()
+            .filter(|card| {
+                get_card_definition(card.id)
+                    .tags
+                    .contains(&CardTag::StarterDefend)
+            })
+            .count(),
+        empty_potion_slots: run_state
+            .potions
+            .iter()
+            .filter(|potion| potion.is_none())
+            .count(),
+    }
+}
+
 pub fn shop_conversion_pressure_v1(run_state: &RunState, shop: &ShopState) -> bool {
     let gold = run_state.gold;
     if gold >= 300 {
@@ -180,4 +226,14 @@ fn purgeable_curse(card: &CombatCard, run_state: &RunState) -> bool {
 fn starter_card(card: &CombatCard) -> bool {
     let def = get_card_definition(card.id);
     def.tags.contains(&CardTag::StarterStrike) || def.tags.contains(&CardTag::StarterDefend)
+}
+
+fn floors_to_act_boss(act: u8, floor: i32) -> i32 {
+    let boss_floor = match act {
+        1 => 16,
+        2 => 32,
+        3 => 48,
+        _ => floor,
+    };
+    boss_floor.saturating_sub(floor)
 }
