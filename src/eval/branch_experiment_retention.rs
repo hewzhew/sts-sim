@@ -1146,6 +1146,21 @@ fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetention
 fn card_admission_context_for_retention_candidate(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> CardAdmissionContextV1 {
+    let frontload_jobs = count_profiles_with_any_role(
+        &candidate.choice_profiles,
+        &[
+            CardRewardSemanticRoleV1::FrontloadDamage,
+            CardRewardSemanticRoleV1::AoeDamage,
+        ],
+    ) as usize;
+    let block_jobs = count_profiles_with_any_role(
+        &candidate.choice_profiles,
+        &[
+            CardRewardSemanticRoleV1::Block,
+            CardRewardSemanticRoleV1::Weak,
+            CardRewardSemanticRoleV1::EnemyStrengthDown,
+        ],
+    ) as usize;
     CardAdmissionContextV1 {
         act: 0,
         floor: 0,
@@ -1156,6 +1171,8 @@ fn card_admission_context_for_retention_candidate(
         curses: 0,
         draw_sources: 0,
         exhaust_generators: 0,
+        frontload_jobs,
+        block_jobs,
         formation_needs: candidate
             .strategy_formation
             .as_ref()

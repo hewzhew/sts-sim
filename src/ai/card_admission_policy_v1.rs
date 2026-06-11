@@ -41,6 +41,8 @@ pub struct CardAdmissionContextV1 {
     pub curses: usize,
     pub draw_sources: usize,
     pub exhaust_generators: usize,
+    pub frontload_jobs: usize,
+    pub block_jobs: usize,
     pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
 }
 
@@ -67,6 +69,8 @@ pub fn card_admission_context_from_run_state_v1(run_state: &RunState) -> CardAdm
         curses: 0,
         draw_sources: 0,
         exhaust_generators: 0,
+        frontload_jobs: 0,
+        block_jobs: 0,
         formation_needs: strategy.formation_summary().needs,
     };
 
@@ -87,6 +91,7 @@ pub fn card_admission_context_from_run_state_v1(run_state: &RunState) -> CardAdm
         {
             context.exhaust_generators = context.exhaust_generators.saturating_add(1);
         }
+        add_profile_jobs_to_context(&mut context, &profile);
     }
 
     context
@@ -122,6 +127,7 @@ pub fn evaluate_card_profile_admission_v1(
     let strong_access = is_strong_access_or_thinning(profile);
     let draw_one_only = is_draw_one_style_goodstuff(profile);
     let ordinary_frontload = is_ordinary_frontload(profile);
+    let redundant_saturated_job = redundant_saturated_job(context, profile, fills_missing_job);
 
     if fills_missing_job {
         reasons.push("fills_missing_job");
@@ -140,12 +146,17 @@ pub fn evaluate_card_profile_admission_v1(
     if ordinary_frontload {
         reasons.push("ordinary_frontload_under_cycle_pressure");
     }
+    if let Some(reason) = redundant_saturated_job {
+        reasons.push(reason);
+    }
 
     let verdict = match pressure {
         CardAdmissionPressureV1::Low => CardAdmissionVerdictV1::Admit,
         CardAdmissionPressureV1::Medium => {
             if boss_answer || package_enabler || strong_access || fills_missing_job {
                 CardAdmissionVerdictV1::Admit
+            } else if redundant_saturated_job.is_some() {
+                CardAdmissionVerdictV1::Reject
             } else {
                 reasons.push("medium_pressure_requires_clear_job");
                 CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative
@@ -197,6 +208,27 @@ fn effective_cycle_cards(context: &CardAdmissionContextV1) -> f32 {
         .max(1.0)
 }
 
+fn add_profile_jobs_to_context(
+    context: &mut CardAdmissionContextV1,
+    profile: &CardRewardSemanticProfileV1,
+) {
+    if profile
+        .roles
+        .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
+        || profile.roles.contains(&CardRewardSemanticRoleV1::AoeDamage)
+    {
+        context.frontload_jobs = context.frontload_jobs.saturating_add(1);
+    }
+    if profile.roles.contains(&CardRewardSemanticRoleV1::Block)
+        || profile.roles.contains(&CardRewardSemanticRoleV1::Weak)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::EnemyStrengthDown)
+    {
+        context.block_jobs = context.block_jobs.saturating_add(1);
+    }
+}
+
 fn marginal_cycle_cost(profile: &CardRewardSemanticProfileV1) -> f32 {
     if is_strong_access_or_thinning(profile) || is_package_enabler(profile) {
         0.25
@@ -205,6 +237,23 @@ fn marginal_cycle_cost(profile: &CardRewardSemanticProfileV1) -> f32 {
     } else {
         1.0
     }
+}
+
+fn redundant_saturated_job(
+    context: &CardAdmissionContextV1,
+    profile: &CardRewardSemanticProfileV1,
+    fills_missing_job: bool,
+) -> Option<&'static str> {
+    if fills_missing_job || is_boss_or_elite_answer(profile) || is_package_enabler(profile) {
+        return None;
+    }
+    if is_ordinary_frontload(profile) && context.frontload_jobs >= 8 {
+        return Some("frontload_job_saturated_under_pressure");
+    }
+    if is_plain_block(profile) && context.block_jobs >= 8 {
+        return Some("block_job_saturated_under_pressure");
+    }
+    None
 }
 
 fn admission_pressure(
@@ -322,6 +371,13 @@ fn is_ordinary_frontload(profile: &CardRewardSemanticProfileV1) -> bool {
         && !is_package_enabler(profile)
 }
 
+fn is_plain_block(profile: &CardRewardSemanticProfileV1) -> bool {
+    profile.roles.contains(&CardRewardSemanticRoleV1::Block)
+        && !profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
+        && !is_boss_or_elite_answer(profile)
+        && !is_package_enabler(profile)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,5 +423,27 @@ mod tests {
         assert_eq!(report.verdict, CardAdmissionVerdictV1::Admit);
         assert!(report.reasons.contains(&"boss_or_elite_answer"));
         assert_eq!(report.shop_priority_adjustment, 0);
+    }
+
+    #[test]
+    fn medium_pressure_rejects_redundant_frontload_when_frontload_job_is_saturated() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.floor_num = 24;
+        for _ in 0..17 {
+            run_state.add_card_to_deck(CardId::Strike);
+        }
+
+        let report = evaluate_card_admission_v1(
+            &run_state,
+            RewardCard::new(CardId::TwinStrike, 0),
+            CardAdmissionSourceV1::Reward,
+        );
+
+        assert_eq!(report.pressure, CardAdmissionPressureV1::Medium);
+        assert_eq!(report.verdict, CardAdmissionVerdictV1::Reject);
+        assert!(report
+            .reasons
+            .contains(&"frontload_job_saturated_under_pressure"));
     }
 }
