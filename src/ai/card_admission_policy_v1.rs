@@ -5,6 +5,8 @@ use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyDeckFormationNeedV1,
 };
 use crate::content::cards::{get_card_definition, CardId, CardType};
+use crate::content::monsters::factory::EncounterId;
+use crate::content::relics::RelicId;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
@@ -34,6 +36,7 @@ pub enum CardAdmissionVerdictV1 {
 pub struct CardAdmissionContextV1 {
     pub act: u8,
     pub floor: i32,
+    pub boss: Option<EncounterId>,
     pub hp: i32,
     pub max_hp: i32,
     pub deck_size: usize,
@@ -62,6 +65,7 @@ pub fn card_admission_context_from_run_state_v1(run_state: &RunState) -> CardAdm
     let mut context = CardAdmissionContextV1 {
         act: run_state.act_num,
         floor: run_state.floor_num,
+        boss: run_state.boss_key,
         hp: run_state.current_hp,
         max_hp: run_state.max_hp,
         deck_size: run_state.master_deck.len(),
@@ -92,6 +96,13 @@ pub fn card_admission_context_from_run_state_v1(run_state: &RunState) -> CardAdm
             context.exhaust_generators = context.exhaust_generators.saturating_add(1);
         }
         add_profile_jobs_to_context(&mut context, &profile);
+    }
+    for relic in &run_state.relics {
+        match relic.id {
+            RelicId::SneckoEye => context.draw_sources = context.draw_sources.saturating_add(2),
+            RelicId::RunicPyramid => context.draw_sources = context.draw_sources.saturating_add(1),
+            _ => {}
+        }
     }
 
     context
@@ -125,8 +136,11 @@ pub fn evaluate_card_profile_admission_v1(
     let boss_answer = is_boss_or_elite_answer(profile);
     let package_enabler = is_package_enabler(profile);
     let strong_access = is_strong_access_or_thinning(profile);
+    let contextual_boss_answer = is_contextual_boss_answer(context, profile);
+    let boss_answer = boss_answer || contextual_boss_answer;
     let draw_one_only = is_draw_one_style_goodstuff(profile);
     let ordinary_frontload = is_ordinary_frontload(profile);
+    let boss_specific_liability = is_contextual_boss_liability(context, profile);
     let redundant_saturated_job = redundant_saturated_job(context, profile, fills_missing_job);
 
     if fills_missing_job {
@@ -134,6 +148,12 @@ pub fn evaluate_card_profile_admission_v1(
     }
     if boss_answer {
         reasons.push("boss_or_elite_answer");
+    }
+    if contextual_boss_answer {
+        reasons.push("boss_specific_answer");
+    }
+    if boss_specific_liability {
+        reasons.push("boss_specific_cycle_or_counter_liability");
     }
     if package_enabler {
         reasons.push("package_enabler");
@@ -155,6 +175,9 @@ pub fn evaluate_card_profile_admission_v1(
         CardAdmissionPressureV1::Medium => {
             if boss_answer || package_enabler || strong_access || fills_missing_job {
                 CardAdmissionVerdictV1::Admit
+            } else if boss_specific_liability {
+                reasons.push("medium_pressure_rejects_known_boss_liability");
+                CardAdmissionVerdictV1::Reject
             } else if redundant_saturated_job.is_some() {
                 CardAdmissionVerdictV1::Reject
             } else {
@@ -165,6 +188,9 @@ pub fn evaluate_card_profile_admission_v1(
         CardAdmissionPressureV1::High => {
             if boss_answer || package_enabler || strong_access {
                 CardAdmissionVerdictV1::Admit
+            } else if boss_specific_liability {
+                reasons.push("high_pressure_rejects_known_boss_liability");
+                CardAdmissionVerdictV1::Reject
             } else if fills_missing_job && source != CardAdmissionSourceV1::Shop {
                 CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative
             } else {
@@ -261,15 +287,49 @@ fn admission_pressure(
     effective_cycle_cards: f32,
 ) -> CardAdmissionPressureV1 {
     let effective_cycle_time = effective_cycle_cards / 5.0;
-    if context.deck_size >= 40 || effective_cycle_time > 7.0 {
-        CardAdmissionPressureV1::Severe
+    let mut score: u8 = if context.deck_size >= 40 || effective_cycle_time > 7.0 {
+        3
     } else if context.deck_size >= 35 || effective_cycle_time > 6.0 {
-        CardAdmissionPressureV1::High
+        2
     } else if context.deck_size >= 30 || effective_cycle_time > 5.0 {
-        CardAdmissionPressureV1::Medium
+        1
     } else {
-        CardAdmissionPressureV1::Low
+        0
+    };
+
+    if context.act >= 3 {
+        score = score.max(1);
+        if context.floor >= 40 {
+            score = score.saturating_add(1);
+        }
+    } else if context.act == 2 && context.floor >= 28 {
+        score = score.saturating_add(1);
     }
+    if matches!(context.boss, Some(EncounterId::TimeEater)) {
+        score = score.saturating_add(1);
+    }
+    score = score.saturating_sub(large_deck_license_credit(context));
+
+    match score.min(3) {
+        0 => CardAdmissionPressureV1::Low,
+        1 => CardAdmissionPressureV1::Medium,
+        2 => CardAdmissionPressureV1::High,
+        _ => CardAdmissionPressureV1::Severe,
+    }
+}
+
+fn large_deck_license_credit(context: &CardAdmissionContextV1) -> u8 {
+    let mut credit: u8 = 0;
+    if context.draw_sources >= 4 {
+        credit = credit.saturating_add(1);
+    }
+    if context.exhaust_generators >= 2 {
+        credit = credit.saturating_add(1);
+    }
+    if context.powers >= 4 && context.exhaust_generators > 0 {
+        credit = credit.saturating_add(1);
+    }
+    credit.min(2)
 }
 
 fn fills_missing_job(
@@ -328,6 +388,107 @@ fn is_boss_or_elite_answer(profile: &CardRewardSemanticProfileV1) -> bool {
                 | CardId::FiendFire
                 | CardId::PowerThrough
         )
+}
+
+fn is_contextual_boss_answer(
+    context: &CardAdmissionContextV1,
+    profile: &CardRewardSemanticProfileV1,
+) -> bool {
+    match context.boss {
+        Some(EncounterId::TimeEater) => {
+            is_high_impact_per_card(profile)
+                || is_strong_access_or_thinning(profile)
+                || profile
+                    .roles
+                    .contains(&CardRewardSemanticRoleV1::ScalingSource)
+        }
+        Some(EncounterId::Collector) => {
+            profile.roles.contains(&CardRewardSemanticRoleV1::AoeDamage)
+                || profile.roles.contains(&CardRewardSemanticRoleV1::Weak)
+                || profile
+                    .roles
+                    .contains(&CardRewardSemanticRoleV1::EnemyStrengthDown)
+                || matches!(
+                    profile.card,
+                    CardId::FlameBarrier
+                        | CardId::Impervious
+                        | CardId::PowerThrough
+                        | CardId::Shockwave
+                        | CardId::Cleave
+                        | CardId::Whirlwind
+                        | CardId::Immolate
+                )
+        }
+        Some(EncounterId::Automaton) => {
+            is_strong_access_or_thinning(profile)
+                || matches!(
+                    profile.card,
+                    CardId::Impervious
+                        | CardId::FlameBarrier
+                        | CardId::PowerThrough
+                        | CardId::Shockwave
+                        | CardId::DemonForm
+                        | CardId::Corruption
+                )
+        }
+        Some(EncounterId::TheChamp) => {
+            profile
+                .roles
+                .contains(&CardRewardSemanticRoleV1::ScalingSource)
+                || matches!(
+                    profile.card,
+                    CardId::Impervious
+                        | CardId::FlameBarrier
+                        | CardId::PowerThrough
+                        | CardId::DemonForm
+                        | CardId::LimitBreak
+                        | CardId::HeavyBlade
+                )
+        }
+        _ => false,
+    }
+}
+
+fn is_contextual_boss_liability(
+    context: &CardAdmissionContextV1,
+    profile: &CardRewardSemanticProfileV1,
+) -> bool {
+    match context.boss {
+        Some(EncounterId::TimeEater) => is_low_value_time_eater_card(profile),
+        _ => false,
+    }
+}
+
+fn is_high_impact_per_card(profile: &CardRewardSemanticProfileV1) -> bool {
+    profile.roles.contains(&CardRewardSemanticRoleV1::Weak)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::EnemyStrengthDown)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::BlockRetention)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::BlockMultiplier)
+        || matches!(
+            profile.card,
+            CardId::Shockwave
+                | CardId::Uppercut
+                | CardId::FlameBarrier
+                | CardId::Impervious
+                | CardId::PowerThrough
+                | CardId::FiendFire
+                | CardId::Barricade
+                | CardId::DemonForm
+                | CardId::Corruption
+        )
+}
+
+fn is_low_value_time_eater_card(profile: &CardRewardSemanticProfileV1) -> bool {
+    matches!(
+        profile.card,
+        CardId::Anger | CardId::Flex | CardId::Warcry | CardId::Bloodletting | CardId::SeeingRed
+    ) || (is_draw_one_style_goodstuff(profile) && !is_high_impact_per_card(profile))
 }
 
 fn is_package_enabler(profile: &CardRewardSemanticProfileV1) -> bool {
@@ -445,5 +606,44 @@ mod tests {
         assert!(report
             .reasons
             .contains(&"frontload_job_saturated_under_pressure"));
+    }
+
+    #[test]
+    fn time_eater_pressure_rejects_low_value_card_spam() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 3;
+        run_state.floor_num = 44;
+        run_state.boss_key = Some(EncounterId::TimeEater);
+
+        let report = evaluate_card_admission_v1(
+            &run_state,
+            RewardCard::new(CardId::Anger, 0),
+            CardAdmissionSourceV1::Reward,
+        );
+
+        assert_eq!(report.verdict, CardAdmissionVerdictV1::Reject);
+        assert!(report
+            .reasons
+            .contains(&"boss_specific_cycle_or_counter_liability"));
+    }
+
+    #[test]
+    fn collector_pressure_admits_aoe_even_under_late_pressure() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.floor_num = 31;
+        run_state.boss_key = Some(EncounterId::Collector);
+        for _ in 0..26 {
+            run_state.add_card_to_deck(CardId::Strike);
+        }
+
+        let report = evaluate_card_admission_v1(
+            &run_state,
+            RewardCard::new(CardId::Cleave, 0),
+            CardAdmissionSourceV1::Reward,
+        );
+
+        assert_eq!(report.verdict, CardAdmissionVerdictV1::Admit);
+        assert!(report.reasons.contains(&"boss_specific_answer"));
     }
 }

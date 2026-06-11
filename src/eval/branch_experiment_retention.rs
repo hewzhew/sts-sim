@@ -72,6 +72,8 @@ impl FromStr for BranchRetentionBudgetProfileV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchRetentionCandidateInputV1 {
     pub index: usize,
+    pub act: u8,
+    pub floor: i32,
     pub frontier_key: String,
     pub rank_key: i32,
     pub hp: i32,
@@ -410,6 +412,7 @@ fn select_positions_for_slots(
     let selected = cap_redundant_first_pick_prefixes(candidates, positions, selected, limit);
     let selected = cap_pure_transition_saturation(candidates, positions, selected, limit);
     let selected = cap_payoff_only_package_saturation(candidates, positions, selected, limit);
+    let selected = preserve_late_clean_branch(candidates, positions, selected, limit);
     let selected =
         effect_coverage::preserve_choice_effect_coverage(candidates, positions, selected, limit);
     let selected =
@@ -417,6 +420,79 @@ fn select_positions_for_slots(
     let selected =
         drop_excess_first_pick_prefixes_after_coverage(candidates, positions, selected, limit);
     drop_excess_payoff_only_package_after_coverage(candidates, positions, selected, limit)
+}
+
+fn preserve_late_clean_branch(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    selected_picks: Vec<BranchRetentionLanePick>,
+    limit: usize,
+) -> Vec<BranchRetentionLanePick> {
+    if limit < 2
+        || !available_positions
+            .iter()
+            .any(|position| late_clean_retention_applies(&candidates[*position]))
+        || selected_picks
+            .iter()
+            .any(|pick| candidate_has_clean_deck_slot(candidates, pick.position))
+    {
+        return selected_picks;
+    }
+
+    let Some(clean_position) = available_positions
+        .iter()
+        .copied()
+        .filter(|position| candidate_has_clean_deck_slot(candidates, *position))
+        .max_by(|left, right| {
+            compare_slot_score(candidates, *left, *right, BranchRetentionSlotV1::CleanDeck)
+        })
+    else {
+        return selected_picks;
+    };
+
+    let mut selected = selected_picks
+        .iter()
+        .map(|pick| pick.position)
+        .collect::<BTreeSet<_>>();
+    if !selected.insert(clean_position) {
+        return selected_picks;
+    }
+
+    let mut kept = selected_picks;
+    if kept.len() >= limit {
+        if let Some(remove_index) = kept
+            .iter()
+            .enumerate()
+            .filter(|(_, pick)| pick.selected_by_slot != BranchRetentionSlotV1::CleanDeck)
+            .min_by_key(|(_, pick)| candidates[pick.position].rank_key)
+            .map(|(index, _)| index)
+        {
+            kept.remove(remove_index);
+        } else {
+            return kept;
+        }
+    }
+    kept.push(BranchRetentionLanePick {
+        position: clean_position,
+        selected_by_slot: BranchRetentionSlotV1::CleanDeck,
+    });
+    kept
+}
+
+fn late_clean_retention_applies(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    (candidate.act >= 3 || candidate.act == 2 && candidate.floor >= 24)
+        && candidate.max_hp > 0
+        && candidate.hp * 100 >= candidate.max_hp * 35
+}
+
+fn candidate_has_clean_deck_slot(
+    candidates: &[BranchRetentionCandidateInputV1],
+    position: usize,
+) -> bool {
+    let candidate = &candidates[position];
+    decide_branch_retention_v1(candidate)
+        .slots
+        .contains(&BranchRetentionSlotV1::CleanDeck)
 }
 
 fn retention_lane_sequence(
@@ -1162,8 +1238,9 @@ fn card_admission_context_for_retention_candidate(
         ],
     ) as usize;
     CardAdmissionContextV1 {
-        act: 0,
-        floor: 0,
+        act: candidate.act,
+        floor: candidate.floor,
+        boss: None,
         hp: candidate.hp,
         max_hp: candidate.max_hp,
         deck_size: candidate.deck_count,

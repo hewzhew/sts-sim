@@ -811,6 +811,8 @@ fn apply_branch_retention(
             let frontier = branch_frontier(&branch.session);
             BranchRetentionCandidateInputV1 {
                 index,
+                act: branch.session.run_state.act_num,
+                floor: branch.session.run_state.floor_num,
                 frontier_key: frontier.key,
                 rank_key: branch_rank_key(branch),
                 hp: branch.session.run_state.current_hp,

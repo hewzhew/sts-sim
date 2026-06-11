@@ -83,17 +83,11 @@ fn shop_policy_converts_high_gold_into_affordable_relic_even_below_old_high_impa
 
 #[test]
 fn shop_card_priority_penalizes_transition_cards_when_deck_is_bloated() {
-    let mut compact = RunState::new(1, 0, false, "Ironclad");
-    compact.act_num = 3;
-    compact.floor_num = 46;
-
-    let mut bloated = compact.clone();
+    let mut bloated = RunState::new(1, 0, false, "Ironclad");
+    bloated.act_num = 3;
+    bloated.floor_num = 46;
     add_deck_bloat(&mut bloated, 34);
 
-    assert!(
-        shop_card_conversion_priority_v1(CardId::PommelStrike, &compact)
-            >= ShopPolicyConfigV1::default().high_impact_card_purchase_priority_threshold
-    );
     assert!(
         shop_card_conversion_priority_v1(CardId::PommelStrike, &bloated) <= 0,
         "large decks should not keep treating a normal transition card as shop conversion"

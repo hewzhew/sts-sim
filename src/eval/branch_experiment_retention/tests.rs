@@ -235,6 +235,32 @@ fn bloated_deck_skip_can_claim_clean_deck_slot() {
 }
 
 #[test]
+fn late_retention_preserves_clean_branch_under_tight_budget() {
+    let mut frontload = retention_candidate(0, 10_900, &["Twin Strike"]);
+    frontload.act = 2;
+    frontload.floor = 28;
+    frontload.deck_count = 36;
+
+    let mut defense = retention_candidate(1, 10_890, &["Flame Barrier"]);
+    defense.act = 2;
+    defense.floor = 28;
+    defense.deck_count = 36;
+
+    let mut skip = effect_retention_candidate(2, 10_100, "skip_reward");
+    skip.act = 2;
+    skip.floor = 28;
+    skip.deck_count = 36;
+
+    let candidates = vec![frontload, defense, skip];
+    let selection = select_branch_retention_portfolio_v1(&candidates, retention_config(2, Some(2)));
+
+    assert!(
+        selection.keep_indices.contains(&2),
+        "late branch retention should preserve a clean skip branch instead of letting immediate-power branches fill every slot"
+    );
+}
+
+#[test]
 fn portfolio_retention_keeps_distinct_lineage_breakers_when_budget_allows() {
     let mut lineage_breaker = effect_retention_candidate(2, 10_100, "take_card");
     lineage_breaker.lineage_flags = vec!["question_card_reward_count_plus_1".to_string()];
@@ -391,6 +417,8 @@ fn portfolio_retention_preserves_distinct_trajectories_under_same_formation() {
     duplicate_transition.trajectory = transition.trajectory.clone();
     let block_engine = BranchRetentionCandidateInputV1 {
         index: 2,
+        act: 1,
+        floor: 1,
         frontier_key: "same-frontier".to_string(),
         rank_key: 10_760,
         hp: 70,
@@ -632,6 +660,8 @@ fn setup_only_branch_gets_engine_setup_retention_slot() {
 fn retention_slots_come_from_semantic_profiles_not_card_names() {
     let candidate = BranchRetentionCandidateInputV1 {
         index: 0,
+        act: 1,
+        floor: 1,
         frontier_key: "same-frontier".to_string(),
         rank_key: 10_000,
         hp: 70,
@@ -715,6 +745,8 @@ fn retention_candidate(
     );
     BranchRetentionCandidateInputV1 {
         index,
+        act: 1,
+        floor: 1,
         frontier_key: "same-frontier".to_string(),
         rank_key,
         hp: 78,
@@ -736,6 +768,8 @@ fn effect_retention_candidate(
 ) -> BranchRetentionCandidateInputV1 {
     BranchRetentionCandidateInputV1 {
         index,
+        act: 1,
+        floor: 1,
         frontier_key: "same-frontier".to_string(),
         rank_key,
         hp: 78,
@@ -770,6 +804,8 @@ fn semantic_retention_candidate(
 ) -> BranchRetentionCandidateInputV1 {
     BranchRetentionCandidateInputV1 {
         index,
+        act: 1,
+        floor: 1,
         frontier_key: "same-frontier".to_string(),
         rank_key,
         hp,

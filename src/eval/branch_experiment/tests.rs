@@ -1207,6 +1207,8 @@ fn retention_candidate(
 ) -> BranchRetentionCandidateInputV1 {
     BranchRetentionCandidateInputV1 {
         index,
+        act: 1,
+        floor: 1,
         frontier_key: "frontier".to_string(),
         rank_key: 0,
         hp: 80,
