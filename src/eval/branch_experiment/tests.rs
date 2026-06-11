@@ -157,6 +157,68 @@ fn branch_experiment_auto_leaves_after_shop_purchase_branch_by_default() {
 }
 
 #[test]
+fn branch_experiment_keeps_high_gold_shop_open_after_single_purchase() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 631;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Shockwave,
+        upgrades: 0,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::FlameBarrier,
+        upgrades: 0,
+        price: 90,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 4,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    let buy_branch = report
+        .branches
+        .iter()
+        .find(|branch| {
+            branch
+                .choices
+                .iter()
+                .any(|choice| choice.effect_kind == "shop_buy_card")
+        })
+        .expect("buy-card branch");
+    let buy_choice = buy_branch
+        .choices
+        .iter()
+        .find(|choice| choice.effect_kind == "shop_buy_card")
+        .expect("buy-card choice");
+
+    assert!(
+        !buy_choice.effect_label.contains("auto leave shop"),
+        "high-gold shops should keep converting gold instead of leaving after one purchase"
+    );
+    assert_eq!(
+        buy_branch.summary.boundary_title, "Shop",
+        "high-gold purchase branches should remain at the shop for additional purchases"
+    );
+}
+
+#[test]
 fn branch_experiment_does_not_auto_leave_shop_purchase_that_opens_reward_overlay() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.gold = 200;

@@ -7,6 +7,7 @@ use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyFormationSummaryV2,
 };
+use crate::ai::shop_policy_v1::shop_conversion_pressure_v1;
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment_boundary::{
     branch_boundary_available, current_branch_boundary, BranchBoundaryConfigV1,
@@ -747,7 +748,8 @@ fn expand_branch_choice(
         command: draft.command.clone(),
     });
     match apply_branch_choice(&mut child.session, &draft.command).and_then(|_| {
-        if maybe_auto_leave_after_purchase && shop_can_be_auto_left_after_purchase(&child.session) {
+        if maybe_auto_leave_after_purchase && shop_should_auto_leave_after_purchase(&child.session)
+        {
             apply_branch_choice(&mut child.session, "leave")?;
             if let Some(choice) = child.choices.last_mut() {
                 choice.effect_label = format!("{} | auto leave shop", choice.effect_label);
@@ -778,11 +780,11 @@ fn is_shop_purchase_effect(effect_kind: &str) -> bool {
     )
 }
 
-fn shop_can_be_auto_left_after_purchase(session: &RunControlSession) -> bool {
-    matches!(
-        &session.engine_state,
-        EngineState::Shop(shop) if shop.pending_reward_overlay.is_none()
-    )
+fn shop_should_auto_leave_after_purchase(session: &RunControlSession) -> bool {
+    let EngineState::Shop(shop) = &session.engine_state else {
+        return false;
+    };
+    shop.pending_reward_overlay.is_none() && !shop_conversion_pressure_v1(&session.run_state, shop)
 }
 
 #[derive(Clone, Debug)]
