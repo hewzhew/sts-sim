@@ -149,6 +149,33 @@ fn route_score_exposes_first_elite_preparation_as_its_own_term() {
 }
 
 #[test]
+fn rest_after_forced_first_elite_does_not_count_as_elite_bailout() {
+    let run = run_with_start_paths(&[&[
+        RoomType::MonsterRoom,
+        RoomType::MonsterRoomElite,
+        RoomType::RestRoom,
+    ]]);
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let candidate = selected_candidate(&trace);
+
+    assert_eq!(
+        candidate.path_summary.first_elite.max_hallway_fights_before,
+        1
+    );
+    assert!(!candidate.path_summary.first_elite.can_bail_to_rest_before);
+    assert!(!candidate.path_summary.first_elite.can_bail_to_shop_before);
+    assert_eq!(
+        candidate.safety,
+        RouteSafetyFlagV1::RejectUnlessNoAlternative
+    );
+}
+
+#[test]
 fn act1_elite_need_penalizes_unprepared_starter_deck_even_at_high_hp() {
     let mut starter =
         run_with_start_nodes(&[RoomType::MonsterRoomElite], Some(RoomType::MonsterRoom));

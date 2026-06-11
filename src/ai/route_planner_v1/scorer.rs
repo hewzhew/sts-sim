@@ -49,8 +49,14 @@ pub(super) fn safety_flag(
     needs: &NeedVectorV1,
 ) -> RouteSafetyFlagV1 {
     let forced_elite = path.min_elites > 0 || features.is_elite;
-    let no_rest_bailout = path.max_fires == 0 && !features.is_rest;
-    if forced_elite && no_rest_bailout && needs.can_take_elite < 0.45 {
+    let no_pre_elite_bailout = !path.first_elite.can_bail_to_rest_before
+        && !path.first_elite.can_bail_to_shop_before
+        && !features.is_rest
+        && !features.is_shop;
+    if first_elite_is_underprepared(path) && needs.can_take_elite < 0.45 {
+        return RouteSafetyFlagV1::RejectUnlessNoAlternative;
+    }
+    if forced_elite && no_pre_elite_bailout && needs.can_take_elite < 0.45 {
         return RouteSafetyFlagV1::RejectUnlessNoAlternative;
     }
     if first_elite_is_underprepared(path) && needs.can_take_elite < 0.65 {
@@ -165,23 +171,19 @@ fn first_elite_preparation_value(path: &RoutePathSummaryV1, needs: &NeedVectorV1
         0.0
     };
     let optionality = if segment.optional { 0.18 } else { 0.0 };
-    let immediate_forced_debt = if segment.forced
-        && segment.max_hallway_fights_before == 0
-        && !segment.can_bail_to_rest_before
-        && !segment.can_bail_to_shop_before
-    {
-        -0.25
+    let forced_prep_debt = if first_elite_is_underprepared(path) {
+        -0.55
     } else {
         0.0
     };
-    let prep_signal = hallway_prep * 0.75 + bailout_prep + optionality + immediate_forced_debt;
+    let prep_signal = hallway_prep * 0.75 + bailout_prep + optionality + forced_prep_debt;
     needs.need_relics * (0.50 + needs.can_take_elite * 0.50) * prep_signal
 }
 
 fn first_elite_is_underprepared(path: &RoutePathSummaryV1) -> bool {
     let segment = &path.first_elite;
     segment.forced
-        && segment.max_hallway_fights_before == 0
+        && segment.max_hallway_fights_before < 2
         && !segment.can_bail_to_rest_before
         && !segment.can_bail_to_shop_before
 }
