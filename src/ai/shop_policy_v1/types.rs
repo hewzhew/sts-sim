@@ -8,6 +8,8 @@ use crate::ai::noncombat_strategy_v1::{
     RunStrategySnapshotV2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
 use crate::content::cards::CardId;
+use crate::content::potions::PotionId;
+use crate::content::relics::RelicId;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShopDecisionContextV1 {
@@ -23,9 +25,18 @@ pub struct ShopCandidateEvidenceV1 {
     pub class: ShopPolicyClassV1,
     pub deck_index: Option<usize>,
     pub card: Option<CardId>,
+    pub purchase_target: Option<ShopPurchaseTargetV1>,
+    pub purchase_priority: Option<i32>,
     pub support_gate: StrategyPlanSupportV1,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopPurchaseTargetV1 {
+    Card { index: usize, card: CardId },
+    Relic { index: usize, relic: RelicId },
+    Potion { index: usize, potion: PotionId },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -41,6 +52,10 @@ pub enum ShopPolicyClassV1 {
 pub struct ShopPolicyConfigV1 {
     pub allow_curse_purge: bool,
     pub allow_starter_strike_purge_when_core_plan_protected: bool,
+    pub allow_high_impact_purchase: bool,
+    pub high_impact_card_purchase_priority_threshold: i32,
+    pub high_impact_relic_purchase_priority_threshold: i32,
+    pub high_impact_potion_purchase_priority_threshold: i32,
 }
 
 impl Default for ShopPolicyConfigV1 {
@@ -48,6 +63,10 @@ impl Default for ShopPolicyConfigV1 {
         Self {
             allow_curse_purge: true,
             allow_starter_strike_purge_when_core_plan_protected: true,
+            allow_high_impact_purchase: true,
+            high_impact_card_purchase_priority_threshold: 650,
+            high_impact_relic_purchase_priority_threshold: 900,
+            high_impact_potion_purchase_priority_threshold: 780,
         }
     }
 }
@@ -67,6 +86,11 @@ pub enum ShopPolicyActionV1 {
         confidence: f32,
         reason: String,
     },
+    Purchase {
+        target: ShopPurchaseTargetV1,
+        confidence: f32,
+        reason: String,
+    },
     Stop {
         reason: String,
     },
@@ -76,6 +100,7 @@ impl ShopDecisionV1 {
     pub fn to_noncombat_decision_record_v1(&self) -> NonCombatDecisionRecordV1 {
         let selected_candidate_id = match self.action {
             ShopPolicyActionV1::Purge { deck_index, .. } => Some(purge_candidate_id(deck_index)),
+            ShopPolicyActionV1::Purchase { target, .. } => Some(purchase_candidate_id(target)),
             ShopPolicyActionV1::Stop { .. } => None,
         };
 
@@ -102,7 +127,8 @@ impl ShopDecisionV1 {
             evidence: EvidenceBundleV1 {
                 items: evidence_items(&self.context),
                 assumptions: vec![
-                    "shop automation only handles conservative purge certificates".to_string(),
+                    "shop automation handles conservative purge and high-impact purchase certificates"
+                        .to_string(),
                     "shop automation is a behavior policy, not a teacher label".to_string(),
                 ],
                 warnings: Vec::new(),
@@ -110,6 +136,15 @@ impl ShopDecisionV1 {
             values: Vec::new(),
             selection: match &self.action {
                 ShopPolicyActionV1::Purge {
+                    confidence, reason, ..
+                } => PolicySelectionV1 {
+                    status: PolicySelectionStatusV1::Selected,
+                    selected_candidate_id,
+                    reason: reason.clone(),
+                    confidence: *confidence,
+                    selection_mode: "conservative_shop_certificate".to_string(),
+                },
+                ShopPolicyActionV1::Purchase {
                     confidence, reason, ..
                 } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Selected,
@@ -141,8 +176,10 @@ fn candidate_descriptor(candidate: &ShopCandidateEvidenceV1) -> CandidateDescrip
                 .deck_index
                 .map(|idx| format!("purge {idx}"))
                 .or_else(|| {
-                    Some("leave".to_string())
-                        .filter(|_| candidate.class == ShopPolicyClassV1::Leave)
+                    candidate.purchase_target.map(purchase_command).or_else(|| {
+                        Some("leave".to_string())
+                            .filter(|_| candidate.class == ShopPolicyClassV1::Leave)
+                    })
                 }),
         },
         information_classes: vec![InformationClassV1::PublicObservation],
@@ -188,4 +225,20 @@ fn evidence_items(context: &ShopDecisionContextV1) -> Vec<EvidenceItemV1> {
 
 pub(crate) fn purge_candidate_id(deck_index: usize) -> String {
     format!("shop:purge:{deck_index}")
+}
+
+pub(crate) fn purchase_candidate_id(target: ShopPurchaseTargetV1) -> String {
+    match target {
+        ShopPurchaseTargetV1::Card { index, .. } => format!("shop:card-{index}"),
+        ShopPurchaseTargetV1::Relic { index, .. } => format!("shop:relic-{index}"),
+        ShopPurchaseTargetV1::Potion { index, .. } => format!("shop:potion-{index}"),
+    }
+}
+
+fn purchase_command(target: ShopPurchaseTargetV1) -> String {
+    match target {
+        ShopPurchaseTargetV1::Card { index, .. } => format!("card {index}"),
+        ShopPurchaseTargetV1::Relic { index, .. } => format!("relic {index}"),
+        ShopPurchaseTargetV1::Potion { index, .. } => format!("potion {index}"),
+    }
 }

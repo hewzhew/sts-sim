@@ -18,11 +18,13 @@ pub(super) fn apply_planner_noncombat_policy(
             stop_after_reason: None,
         }));
     }
-    if let Some((outcome, summary)) = super::shop_policy::apply_shop_policy_purge(session)? {
+    if let Some((outcome, summary)) = super::shop_policy::apply_shop_policy_action(session)? {
         return Ok(Some(NonCombatAutoApplication {
             outcome,
             summary,
-            stop_after_reason: Some("shop policy changed deck; inspect shop before continuing"),
+            stop_after_reason: Some(
+                "shop policy changed shop/run state; inspect shop before continuing",
+            ),
         }));
     }
     if let Some((outcome, summary)) =

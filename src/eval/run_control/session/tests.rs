@@ -862,6 +862,24 @@ fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_policy() {
 #[test]
 fn run_control_auto_run_does_not_purge_starter_shell_at_shop() {
     let mut session = test_session_at_shop();
+    if let EngineState::Shop(shop) = &mut session.engine_state {
+        shop.cards = vec![
+            crate::state::shop::ShopCard {
+                card_id: crate::content::cards::CardId::Clash,
+                upgrades: 0,
+                price: 45,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            crate::state::shop::ShopCard {
+                card_id: crate::content::cards::CardId::Flex,
+                upgrades: 0,
+                price: 45,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ];
+    }
 
     let outcome = session
         .apply_command(RunControlCommand::AutoRun(
@@ -877,6 +895,51 @@ fn run_control_auto_run_does_not_purge_starter_shell_at_shop() {
         .contains("Reason: shop action requires human choice"));
     assert_eq!(session.run_state.gold, 100);
     assert_eq!(session.run_state.master_deck.len(), 10);
+    assert!(matches!(session.engine_state, EngineState::Shop(_)));
+}
+
+#[test]
+fn run_control_auto_run_buys_high_impact_shop_card_when_affordable() {
+    let mut session = test_session_at_shop();
+    session.run_state.gold = 200;
+    if let EngineState::Shop(shop) = &mut session.engine_state {
+        shop.cards = vec![
+            crate::state::shop::ShopCard {
+                card_id: crate::content::cards::CardId::Shockwave,
+                upgrades: 0,
+                price: 90,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            crate::state::shop::ShopCard {
+                card_id: crate::content::cards::CardId::Clash,
+                upgrades: 0,
+                price: 45,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ];
+    }
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoRun(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-run should buy a clear high-impact shop card");
+
+    assert!(outcome.message.contains("shop policy: buy card Shockwave"));
+    assert_eq!(session.run_state.gold, 110);
+    assert!(
+        session
+            .run_state
+            .master_deck
+            .iter()
+            .any(|card| card.id == crate::content::cards::CardId::Shockwave),
+        "shop purchase should add the selected card to the master deck"
+    );
     assert!(matches!(session.engine_state, EngineState::Shop(_)));
 }
 

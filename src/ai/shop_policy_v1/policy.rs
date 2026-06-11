@@ -8,7 +8,7 @@ use crate::state::shop::ShopState;
 use super::certificates::certified_action;
 use super::types::{
     purge_candidate_id, ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopDecisionV1,
-    ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
+    ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 
 pub fn build_shop_decision_context_v1(
@@ -34,30 +34,45 @@ pub fn build_shop_decision_context_v1(
 
     candidates.extend(shop.cards.iter().enumerate().map(|(index, card)| {
         purchase_candidate_evidence(
-            format!("shop:card-{index}"),
             format!(
                 "buy card {} for {} gold",
                 get_card_definition(card.card_id).name,
                 card.price
             ),
             card.can_buy && card.price <= run_state.gold,
+            ShopPurchaseTargetV1::Card {
+                index,
+                card: card.card_id,
+            },
+            crate::ai::shop_policy_v1::shop_card_conversion_priority_v1(card.card_id, run_state),
         )
     }));
     candidates.extend(shop.relics.iter().enumerate().map(|(index, relic)| {
         purchase_candidate_evidence(
-            format!("shop:relic-{index}"),
             format!("buy relic {:?} for {} gold", relic.relic_id, relic.price),
             relic.can_buy && relic.price <= run_state.gold,
+            ShopPurchaseTargetV1::Relic {
+                index,
+                relic: relic.relic_id,
+            },
+            crate::ai::shop_policy_v1::shop_relic_conversion_priority_v1(relic.relic_id),
         )
     }));
     candidates.extend(shop.potions.iter().enumerate().map(|(index, potion)| {
         purchase_candidate_evidence(
-            format!("shop:potion-{index}"),
             format!(
                 "buy potion {:?} for {} gold",
                 potion.potion_id, potion.price
             ),
             potion.can_buy && potion.price <= run_state.gold,
+            ShopPurchaseTargetV1::Potion {
+                index,
+                potion: potion.potion_id,
+            },
+            crate::ai::shop_policy_v1::shop_potion_conversion_priority_for_v1(
+                potion.potion_id,
+                run_state,
+            ),
         )
     }));
     candidates.push(ShopCandidateEvidenceV1 {
@@ -66,6 +81,8 @@ pub fn build_shop_decision_context_v1(
         class: ShopPolicyClassV1::Leave,
         deck_index: None,
         card: None,
+        purchase_target: None,
+        purchase_priority: None,
         support_gate: StrategyPlanSupportV1::Strong,
         evidence: vec!["leaving shop is always available".to_string()],
         risks: Vec::new(),
@@ -141,6 +158,8 @@ fn purge_candidate_evidence(
         class,
         deck_index: Some(deck_index),
         card: Some(card),
+        purchase_target: None,
+        purchase_priority: None,
         support_gate,
         evidence,
         risks,
@@ -148,24 +167,30 @@ fn purge_candidate_evidence(
 }
 
 fn purchase_candidate_evidence(
-    candidate_id: String,
     label: String,
     can_buy: bool,
+    target: ShopPurchaseTargetV1,
+    priority: i32,
 ) -> ShopCandidateEvidenceV1 {
     ShopCandidateEvidenceV1 {
-        candidate_id,
+        candidate_id: super::types::purchase_candidate_id(target),
         label,
         class: ShopPolicyClassV1::PurchaseOpportunity,
         deck_index: None,
-        card: None,
+        card: match target {
+            ShopPurchaseTargetV1::Card { card, .. } => Some(card),
+            _ => None,
+        },
+        purchase_target: Some(target),
+        purchase_priority: Some(priority),
         support_gate: if can_buy {
             StrategyPlanSupportV1::Strong
         } else {
             StrategyPlanSupportV1::Blocked
         },
-        evidence: vec![format!("can_buy={can_buy}")],
+        evidence: vec![format!("can_buy={can_buy}"), format!("priority={priority}")],
         risks: if can_buy {
-            vec!["affordable purchase should stop starter cleanup automation".to_string()]
+            vec!["purchase must clear high-impact priority gate".to_string()]
         } else {
             Vec::new()
         },
