@@ -225,6 +225,29 @@ fn compact_campaign_report_classifies_shop_leave_without_purchase() {
 }
 
 #[test]
+fn compact_campaign_report_renders_boss_mechanic_pressure() {
+    let mut report = test_campaign_report_with_active("boss", 48, 42);
+    let summary = report.active[0].summary.as_mut().unwrap();
+    summary.act = 3;
+    summary.floor = 48;
+    summary.boss = "AwakenedOne".to_string();
+    summary.boss_pressure = vec![
+        "pressure:dark_echo_block_check".to_string(),
+        "red:enemy_strength_multi_hit_risk".to_string(),
+        "missing:phase_power_plan".to_string(),
+    ];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("Boss pressure: bosses=[AwakenedOne=1]"));
+    assert!(rendered.contains("pressure:dark_echo_block_check=1"));
+    assert!(rendered.contains("red:enemy_strength_multi_hit_risk=1"));
+    assert!(rendered.contains(
+        "boss example: A3F48 HP 42/80 deck 10 boss=AwakenedOne | pressure:dark_echo_block_check red:enemy_strength_multi_hit_risk missing:phase_power_plan"
+    ));
+}
+
+#[test]
 fn campaign_report_branch_preserves_stop_reason() {
     let parent = test_campaign_branch("parent", 3, 80);
     let mut child = test_report_branch(
@@ -1831,6 +1854,8 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
             formation_strengths: Vec::new(),
             formation_needs: Vec::new(),
             trajectory_key: "frontload=1".to_string(),
+            boss: String::new(),
+            boss_pressure: Vec::new(),
         }),
         frontier_title: "Card Reward".to_string(),
         status: BranchCampaignBranchStatusV1::Active,

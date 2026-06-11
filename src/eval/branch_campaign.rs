@@ -120,6 +120,10 @@ pub struct BranchCampaignBranchSummaryV1 {
     pub formation_needs: Vec<String>,
     #[serde(default)]
     pub trajectory_key: String,
+    #[serde(default)]
+    pub boss: String,
+    #[serde(default)]
+    pub boss_pressure: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1096,6 +1100,13 @@ pub fn render_branch_campaign_compact_v1(
         ));
         lines.push(format!("  resource example: {}", pressure.example));
     }
+    if let Some(pressure) = campaign_boss_mechanic_pressure_v1(report) {
+        lines.push(format!(
+            "Boss pressure: bosses=[{}] signals=[{}]",
+            pressure.boss_counts, pressure.signal_counts
+        ));
+        lines.push(format!("  boss example: {}", pressure.example));
+    }
     if let Some(victory_lines) = render_campaign_victory_quality_lines_v1(report) {
         lines.push(String::new());
         lines.extend(victory_lines);
@@ -1190,6 +1201,100 @@ struct CampaignUnspentGoldPressureV1 {
     max_gold: i32,
     cause_counts: String,
     example: String,
+}
+
+struct CampaignBossMechanicPressureV1 {
+    boss_counts: String,
+    signal_counts: String,
+    example: String,
+}
+
+fn campaign_boss_mechanic_pressure_v1(
+    report: &BranchCampaignReportV1,
+) -> Option<CampaignBossMechanicPressureV1> {
+    let branches = report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.victories.iter())
+        .filter(|branch| branch_has_boss_mechanic_pressure_v1(branch))
+        .collect::<Vec<_>>();
+    if branches.is_empty() {
+        return None;
+    }
+
+    let mut boss_counts = BTreeMap::<String, usize>::new();
+    let mut signal_counts = BTreeMap::<String, usize>::new();
+    for branch in &branches {
+        let Some(summary) = branch.summary.as_ref() else {
+            continue;
+        };
+        *boss_counts.entry(summary.boss.clone()).or_default() += 1;
+        for signal in &summary.boss_pressure {
+            *signal_counts.entry(signal.clone()).or_default() += 1;
+        }
+    }
+
+    let example = branches
+        .iter()
+        .max_by(|left, right| {
+            boss_mechanic_pressure_key_v1(left).cmp(&boss_mechanic_pressure_key_v1(right))
+        })
+        .map(|branch| {
+            let summary = branch
+                .summary
+                .as_ref()
+                .expect("filtered branch has summary");
+            format!(
+                "A{}F{} HP {}/{} deck {} boss={} | {}",
+                summary.act,
+                summary.floor,
+                summary.hp,
+                summary.max_hp,
+                summary.deck_count,
+                summary.boss,
+                summary.boss_pressure.join(" ")
+            )
+        })
+        .unwrap_or_default();
+
+    Some(CampaignBossMechanicPressureV1 {
+        boss_counts: render_string_count_map_v1(&boss_counts, usize::MAX),
+        signal_counts: render_string_count_map_v1(&signal_counts, 8),
+        example,
+    })
+}
+
+fn branch_has_boss_mechanic_pressure_v1(branch: &BranchCampaignBranchV1) -> bool {
+    let Some(summary) = branch.summary.as_ref() else {
+        return false;
+    };
+    !summary.boss.is_empty()
+        && !summary.boss_pressure.is_empty()
+        && summary.floor >= boss_approach_floor_v1(summary.act)
+}
+
+fn boss_mechanic_pressure_key_v1(branch: &BranchCampaignBranchV1) -> (i32, i32, i32) {
+    branch
+        .summary
+        .as_ref()
+        .map(|summary| {
+            (
+                summary.floor,
+                summary.boss_pressure.len() as i32,
+                summary.hp,
+            )
+        })
+        .unwrap_or((0, 0, 0))
+}
+
+fn render_string_count_map_v1(counts: &BTreeMap<String, usize>, limit: usize) -> String {
+    counts
+        .iter()
+        .take(limit)
+        .map(|(label, count)| format!("{label}={count}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn campaign_unspent_gold_pressure_v1(
@@ -1789,8 +1894,9 @@ where
         });
         strategy_requests.extend(report.strategy_requests.iter().cloned());
         for branch in &report.branches {
-            let child = campaign_branch_from_report_branch_v1(parent, branch);
+            let mut child = campaign_branch_from_report_branch_v1(parent, branch);
             if let Some(snapshot) = result.branch_sessions.get(&branch.branch_id) {
+                campaign_refresh_branch_summary_from_session_v1(&mut child, snapshot);
                 snapshot_cache.insert(child.commands.clone(), snapshot.clone());
             }
             candidates.push(child);
@@ -2700,6 +2806,31 @@ fn campaign_refresh_branch_summary_from_session_v1(
     summary.max_hp = session.run_state.max_hp;
     summary.gold = session.run_state.gold;
     summary.deck_count = session.run_state.master_deck.len();
+    summary.boss = branch_campaign_boss_label_v1(session);
+    summary.boss_pressure = branch_campaign_boss_pressure_labels_v1(session);
+}
+
+fn branch_campaign_boss_label_v1(session: &RunControlSession) -> String {
+    branch_campaign_boss_v1(session)
+        .map(|boss| format!("{boss:?}"))
+        .unwrap_or_default()
+}
+
+fn branch_campaign_boss_pressure_labels_v1(session: &RunControlSession) -> Vec<String> {
+    let Some(boss) = branch_campaign_boss_v1(session) else {
+        return Vec::new();
+    };
+    crate::ai::boss_mechanics_v1::boss_mechanic_pressure_profile_v1(&session.run_state, boss)
+        .summary_labels()
+}
+
+fn branch_campaign_boss_v1(
+    session: &RunControlSession,
+) -> Option<crate::content::monsters::factory::EncounterId> {
+    session
+        .run_state
+        .boss_key
+        .or_else(|| session.run_state.boss_list.first().copied())
 }
 
 fn try_recover_auto_advanceable_stuck_branch_v1(
@@ -2726,11 +2857,12 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
         return None;
     }
 
-    snapshot_cache.insert(branch.commands.clone(), session);
     let mut recovered = branch.clone();
     recovered.frontier_title = new_frontier;
     recovered.status = BranchCampaignBranchStatusV1::Active;
     recovered.stop_reason = "recovered by one-step auto-advance".to_string();
+    campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
+    snapshot_cache.insert(branch.commands.clone(), session);
     Some(recovered)
 }
 
@@ -3032,6 +3164,8 @@ fn campaign_summary_from_report_branch_v1(
             .map(|value| format!("{value:?}"))
             .collect(),
         trajectory_key: branch_trajectory_key_v1(&branch.summary.trajectory),
+        boss: String::new(),
+        boss_pressure: Vec::new(),
     }
 }
 
