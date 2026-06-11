@@ -248,6 +248,30 @@ fn compact_campaign_report_renders_boss_mechanic_pressure() {
 }
 
 #[test]
+fn compact_campaign_report_renders_boss_pressure_for_abandoned_combat_branches() {
+    let mut report = test_campaign_report_with_active("boss", 48, 42);
+    let mut abandoned = report.active.remove(0);
+    abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.frontier_title = "Combat".to_string();
+    abandoned.stop_reason = "combat search did not find an executable complete win".to_string();
+    let summary = abandoned.summary.as_mut().unwrap();
+    summary.act = 3;
+    summary.floor = 48;
+    summary.boss = "TimeEater".to_string();
+    summary.boss_pressure = vec![
+        "pressure:time_warp_counter_control".to_string(),
+        "red:low_value_card_spam_risk".to_string(),
+    ];
+    report.abandoned = vec![abandoned];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("Boss pressure: bosses=[TimeEater=1]"));
+    assert!(rendered.contains("pressure:time_warp_counter_control=1"));
+    assert!(rendered.contains("red:low_value_card_spam_risk=1"));
+}
+
+#[test]
 fn campaign_report_branch_preserves_stop_reason() {
     let parent = test_campaign_branch("parent", 3, 80);
     let mut child = test_report_branch(
@@ -431,12 +455,15 @@ fn campaign_selection_merges_duplicate_quality_branches() {
 }
 
 #[test]
-fn campaign_branch_experiment_config_keeps_shop_open_after_purchase() {
+fn campaign_branch_experiment_config_preserves_shop_auto_leave_guard() {
     let config = BranchCampaignConfigV1::default();
 
     let experiment_config = campaign_branch_experiment_config_v1(&config);
 
-    assert!(!experiment_config.auto_leave_after_shop_purchase_branch);
+    assert!(
+        experiment_config.auto_leave_after_shop_purchase_branch,
+        "campaign runs should not repeatedly burn rounds on one-item shop purchase branches"
+    );
 }
 
 #[test]

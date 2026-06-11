@@ -1217,6 +1217,9 @@ fn campaign_boss_mechanic_pressure_v1(
         .iter()
         .chain(report.frozen.iter())
         .chain(report.victories.iter())
+        .chain(report.abandoned.iter())
+        .chain(report.stuck.iter())
+        .chain(report.dead.iter())
         .filter(|branch| branch_has_boss_mechanic_pressure_v1(branch))
         .collect::<Vec<_>>();
     if branches.is_empty() {
@@ -2001,7 +2004,7 @@ fn campaign_branch_experiment_config_v1(
         search_options: config.search_options.clone(),
         include_skip: true,
         include_event_reward_skip: config.include_event_reward_skip,
-        auto_leave_after_shop_purchase_branch: false,
+        auto_leave_after_shop_purchase_branch: true,
         ..BranchExperimentConfigV1::default()
     }
 }
