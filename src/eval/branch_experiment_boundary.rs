@@ -353,6 +353,7 @@ impl BranchBoundaryOptionV1 {
                 "shop_buy_card" => "shop_buy_card",
                 "shop_buy_relic" => "shop_buy_relic",
                 "shop_buy_potion" => "shop_buy_potion",
+                "shop_buy_combo" => "shop_buy_combo",
                 _ => "shop",
             },
             effect_label: option.effect_label,

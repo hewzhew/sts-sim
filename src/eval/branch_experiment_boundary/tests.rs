@@ -444,6 +444,53 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
 }
 
 #[test]
+fn current_boundary_includes_combo_purchase_for_high_pressure_shop() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 631;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Shockwave,
+        upgrades: 0,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::FlameBarrier,
+        upgrades: 0,
+        price: 90,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 40,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("high-pressure shop should expose a purchase portfolio");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
+    assert!(
+        boundary
+            .options
+            .iter()
+            .any(|option| option.effect_kind == "shop_buy_combo"
+                && option.command.contains(" && ")),
+        "high-pressure shops should expose compact multi-purchase portfolio branches"
+    );
+}
+
+#[test]
 fn current_boundary_suppresses_shop_leave_for_high_impact_affordable_relic() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.gold = 200;

@@ -39,6 +39,7 @@ mod types;
 const CARD_REWARD_PICK_RANK_BONUS: i32 = 150;
 const CARD_REWARD_SKIP_DEVELOPMENT_DEBT: i32 = 450;
 const EVENT_CURSE_DEBT_RANK_PENALTY: i32 = 2_000;
+const BRANCH_EXPERIMENT_COMMAND_SEQUENCE_SEPARATOR: &str = " && ";
 
 pub use types::{
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
@@ -240,8 +241,7 @@ fn prepare_branch_experiment_start(
                 },
             )?;
         } else {
-            let command = parse_run_control_command(command_line)?;
-            session.apply_command(command)?;
+            apply_branch_choice(&mut session, command_line)?;
         }
     }
 
@@ -776,7 +776,7 @@ fn expand_branch_choice(
 fn is_shop_purchase_effect(effect_kind: &str) -> bool {
     matches!(
         effect_kind,
-        "shop_buy_card" | "shop_buy_relic" | "shop_buy_potion"
+        "shop_buy_card" | "shop_buy_relic" | "shop_buy_potion" | "shop_buy_combo"
     )
 }
 
@@ -988,6 +988,7 @@ pub fn branch_experiment_choice_effect_key_v1(effect_kind: &str) -> &'static str
         "shop_buy_card" => "shop_buy_card",
         "shop_buy_relic" => "shop_buy_relic",
         "shop_buy_potion" => "shop_buy_potion",
+        "shop_buy_combo" => "shop_buy_combo",
         "shop_leave" => "shop_leave",
         "shop_purge" => "shop_purge",
         "dig" => "dig",
@@ -1089,8 +1090,15 @@ fn retention_report_slot(slot: Option<BranchRetentionSlotV1>) -> BranchRetention
 }
 
 fn apply_branch_choice(session: &mut RunControlSession, command: &str) -> Result<(), String> {
-    let command = parse_run_control_command(command)?;
-    session.apply_command(command).map(|_| ())
+    for command in command
+        .split(BRANCH_EXPERIMENT_COMMAND_SEQUENCE_SEPARATOR)
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
+        let command = parse_run_control_command(command)?;
+        session.apply_command(command)?;
+    }
+    Ok(())
 }
 
 fn current_boundary_title(session: &RunControlSession) -> String {

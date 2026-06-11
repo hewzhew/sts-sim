@@ -3,13 +3,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1};
 use crate::content::cards::CardId;
+use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::content::relics::RelicState;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
-use crate::state::shop::{ShopCard, ShopRelic, ShopState};
+use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 use std::fs;
 use std::path::PathBuf;
 
@@ -181,6 +182,12 @@ fn branch_experiment_keeps_high_gold_shop_open_after_single_purchase() {
         can_buy: true,
         blocked_reason: None,
     });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 40,
+        can_buy: true,
+        blocked_reason: None,
+    });
     session.engine_state = EngineState::Shop(shop);
 
     let report = run_branch_experiment_from_session(
@@ -215,6 +222,68 @@ fn branch_experiment_keeps_high_gold_shop_open_after_single_purchase() {
     assert_eq!(
         buy_branch.summary.boundary_title, "Shop",
         "high-gold purchase branches should remain at the shop for additional purchases"
+    );
+}
+
+#[test]
+fn branch_experiment_executes_shop_combo_purchase_branch() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 631;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Shockwave,
+        upgrades: 0,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 40,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 8,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    let combo_branch = report
+        .branches
+        .iter()
+        .find(|branch| {
+            branch
+                .choices
+                .iter()
+                .any(|choice| choice.effect_kind == "shop_buy_combo")
+        })
+        .expect("shop combo branch");
+    let combo_choice = combo_branch
+        .choices
+        .iter()
+        .find(|choice| choice.effect_kind == "shop_buy_combo")
+        .expect("shop combo choice");
+
+    assert!(combo_choice.command.contains(" && "));
+    assert_eq!(
+        combo_branch.summary.gold, 391,
+        "combo branch should spend both the relic and card costs"
+    );
+    assert_eq!(
+        combo_branch.summary.boundary_title, "Shop",
+        "combo purchase should keep high-pressure shop available if more conversion remains"
     );
 }
 
@@ -985,6 +1054,10 @@ fn branch_choice_effect_key_preserves_shop_effects() {
     assert_eq!(
         branch_experiment_choice_effect_key_v1("shop_buy_potion"),
         "shop_buy_potion"
+    );
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("shop_buy_combo"),
+        "shop_buy_combo"
     );
     assert_eq!(
         branch_experiment_choice_effect_key_v1("shop_leave"),
