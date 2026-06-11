@@ -224,9 +224,10 @@ fn select_shop_purchase_portfolio(
 }
 
 fn shop_combo_pressure(run_state: &crate::state::run::RunState, shop: &ShopState) -> bool {
-    run_state.gold >= 300
-        && affordable_purchase_count(shop, run_state.gold) >= 3
-        && shop_conversion_pressure_v1(run_state, shop)
+    let affordable_count = affordable_purchase_count(shop, run_state.gold);
+    affordable_count >= 3
+        && (affordable_count > MAX_SHOP_PURCHASE_OPTIONS_PER_BRANCH
+            || (run_state.gold >= 300 && shop_conversion_pressure_v1(run_state, shop)))
 }
 
 fn affordable_purchase_count(shop: &ShopState, gold: i32) -> usize {

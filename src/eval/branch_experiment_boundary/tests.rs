@@ -491,6 +491,53 @@ fn current_boundary_includes_combo_purchase_for_high_pressure_shop() {
 }
 
 #[test]
+fn current_boundary_includes_combo_purchase_for_capped_affordable_shop() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 220;
+    let mut shop = ShopState::new();
+    for card_id in [
+        CardId::PommelStrike,
+        CardId::TwinStrike,
+        CardId::ShrugItOff,
+        CardId::Cleave,
+        CardId::IronWave,
+    ] {
+        shop.cards.push(ShopCard {
+            card_id,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+    }
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 40,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("capped affordable shop should expose a compact purchase portfolio");
+
+    assert!(
+        boundary
+            .options
+            .iter()
+            .any(|option| option.effect_kind == "shop_buy_combo"
+                && option.command.contains(" && ")),
+        "deep affordable shops should expose a compact two-purchase branch even below the high-gold threshold"
+    );
+}
+
+#[test]
 fn current_boundary_suppresses_shop_leave_for_high_impact_affordable_relic() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.gold = 200;

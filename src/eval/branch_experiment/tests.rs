@@ -288,6 +288,58 @@ fn branch_experiment_executes_shop_combo_purchase_branch() {
 }
 
 #[test]
+fn branch_experiment_retains_shop_combo_purchase_under_branch_cap() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 220;
+    let mut shop = ShopState::new();
+    for card_id in [
+        CardId::PommelStrike,
+        CardId::TwinStrike,
+        CardId::ShrugItOff,
+        CardId::Cleave,
+        CardId::IronWave,
+    ] {
+        shop.cards.push(ShopCard {
+            card_id,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+    }
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 120,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 40,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 4,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    assert!(
+        report.branches.iter().any(|branch| branch
+            .choices
+            .iter()
+            .any(|choice| choice.effect_kind == "shop_buy_combo")),
+        "capped shop portfolios should retain the compact combo representative"
+    );
+}
+
+#[test]
 fn branch_experiment_does_not_auto_leave_shop_purchase_that_opens_reward_overlay() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.gold = 200;
