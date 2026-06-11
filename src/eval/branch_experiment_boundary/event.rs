@@ -1,4 +1,4 @@
-use super::card_reward::{select_card_reward_branch_options_with_limit, CardRewardBranchOption};
+use super::card_reward::{select_card_reward_branch_options_for_session, CardRewardBranchOption};
 use crate::content::cards::CardId;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState};
@@ -81,7 +81,7 @@ pub(crate) fn event_branch_options(
             let limit = max_card_offer_options
                 .unwrap_or(MAX_EVENT_OPTIONS_PER_BRANCH)
                 .min(branch_options.len());
-            return select_event_card_reward_branch_options(branch_options, limit);
+            return select_event_card_reward_branch_options(session, branch_options, limit);
         }
         return None;
     }
@@ -89,6 +89,7 @@ pub(crate) fn event_branch_options(
 }
 
 fn select_event_card_reward_branch_options(
+    session: &RunControlSession,
     options: Vec<EventBranchOption>,
     limit: usize,
 ) -> Option<Vec<EventBranchOption>> {
@@ -107,7 +108,9 @@ fn select_event_card_reward_branch_options(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let selected = select_card_reward_branch_options_with_limit(card_options, limit, None).options;
+    let selected =
+        select_card_reward_branch_options_for_session(session, card_options, Some(limit), None)
+            .options;
     let selected_commands = selected
         .iter()
         .map(|option| option.command.clone())

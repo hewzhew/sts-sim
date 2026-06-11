@@ -22,7 +22,7 @@ pub(crate) use card_reward::{
 };
 use card_reward::{
     card_reward_branch_options, format_reward_card_label, reward_option_semantic_class,
-    select_card_reward_branch_options, CardRewardBranchOption,
+    select_card_reward_branch_options_for_session, CardRewardBranchOption,
 };
 use event::{event_branch_options, EventBranchOption};
 use reward::{reward_branch_options, RewardBranchOption};
@@ -91,7 +91,8 @@ pub(crate) fn current_branch_boundary(
     reward_portfolio_context: Option<CardRewardPortfolioContext>,
 ) -> Option<BranchBoundarySelectionV1> {
     if let Some(options) = card_reward_branch_options(session) {
-        let selected = select_card_reward_branch_options(
+        let selected = select_card_reward_branch_options_for_session(
+            session,
             options,
             config.max_reward_options_per_branch,
             reward_portfolio_context,

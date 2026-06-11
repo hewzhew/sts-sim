@@ -145,6 +145,57 @@ fn current_boundary_can_include_skip_for_unopened_card_reward_item() {
 }
 
 #[test]
+fn current_boundary_uses_admission_to_keep_boss_answer_over_bloated_goodstuff() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 3;
+    session.run_state.floor_num = 46;
+    for _ in 0..34 {
+        session.run_state.add_card_to_deck(CardId::Strike);
+    }
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Card {
+        cards: vec![
+            RewardCard::new(CardId::PommelStrike, 0),
+            RewardCard::new(CardId::Shockwave, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: Some(1),
+            max_campfire_options_per_branch: None,
+            include_skip: true,
+            include_event_reward_skip: false,
+        },
+        None,
+    )
+    .expect("visible card reward boundary");
+
+    assert!(
+        boundary.options.iter().any(|option| {
+            option.kind == "card_reward" && option.card == Some(CardId::Shockwave)
+        }),
+        "admission pressure should preserve a clear boss/elite answer over draw-one goodstuff"
+    );
+    assert!(
+        !boundary.options.iter().any(|option| {
+            option.kind == "card_reward" && option.card == Some(CardId::PommelStrike)
+        }),
+        "rejected goodstuff should not occupy the only card reward branch slot"
+    );
+    assert!(
+        boundary
+            .options
+            .iter()
+            .any(|option| option.kind == "card_reward_skip"),
+        "skip remains an explicit clean-deck branch at unopened rewards"
+    );
+}
+
+#[test]
 fn current_boundary_does_not_offer_unexecutable_card_skip_in_reward_overlay() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();

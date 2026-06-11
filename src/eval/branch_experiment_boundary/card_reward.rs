@@ -1,5 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::ai::card_admission_policy_v1::{
+    evaluate_card_admission_v1, CardAdmissionSourceV1, CardAdmissionVerdictV1,
+};
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
@@ -53,7 +56,8 @@ pub(crate) fn card_reward_branch_options(
     Some(options)
 }
 
-pub(crate) fn select_card_reward_branch_options(
+pub(crate) fn select_card_reward_branch_options_for_session(
+    session: &RunControlSession,
     options: Vec<CardRewardBranchOption>,
     max_reward_options_per_branch: Option<usize>,
     portfolio_context: Option<CardRewardPortfolioContext>,
@@ -64,13 +68,33 @@ pub(crate) fn select_card_reward_branch_options(
             portfolio: None,
         };
     };
-    select_card_reward_branch_options_with_limit(options, limit, portfolio_context)
+    select_card_reward_branch_options_with_limit_and_admission(
+        options,
+        limit,
+        portfolio_context,
+        Some(session),
+    )
 }
 
+#[cfg(test)]
 pub(crate) fn select_card_reward_branch_options_with_limit(
     options: Vec<CardRewardBranchOption>,
     limit: usize,
     portfolio_context: Option<CardRewardPortfolioContext>,
+) -> CardRewardBranchOptionSelection {
+    select_card_reward_branch_options_with_limit_and_admission(
+        options,
+        limit,
+        portfolio_context,
+        None,
+    )
+}
+
+fn select_card_reward_branch_options_with_limit_and_admission(
+    options: Vec<CardRewardBranchOption>,
+    limit: usize,
+    portfolio_context: Option<CardRewardPortfolioContext>,
+    session: Option<&RunControlSession>,
 ) -> CardRewardBranchOptionSelection {
     let capped_limit = limit.min(options.len());
     if options.len() <= capped_limit {
@@ -87,14 +111,20 @@ pub(crate) fn select_card_reward_branch_options_with_limit(
             let profile =
                 card_reward_semantic_profile_v1(&RewardCard::new(option.card, option.upgrades));
             let (priority, class_key) = reward_option_semantic_class(&profile);
-            (index, priority, class_key)
+            let admission = reward_option_admission_order(session, option);
+            (index, admission, priority, class_key)
         })
         .collect::<Vec<_>>();
-    annotated.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+    annotated.sort_by(|left, right| {
+        left.1
+            .cmp(&right.1)
+            .then_with(|| left.2.cmp(&right.2))
+            .then_with(|| left.0.cmp(&right.0))
+    });
 
     let mut selected = Vec::new();
     let mut selected_classes = BTreeSet::new();
-    for (index, _, class_key) in &annotated {
+    for (index, _, _, class_key) in &annotated {
         if selected.len() >= limit {
             break;
         }
@@ -138,12 +168,14 @@ fn reward_option_portfolio_report(
     boundary_title: String,
     max_reward_options_per_branch: usize,
     options: &[CardRewardBranchOption],
-    annotated: &[(usize, usize, String)],
+    annotated: &[(usize, usize, usize, String)],
     selected_indices: &BTreeSet<usize>,
 ) -> BranchExperimentRewardOptionPortfolioV1 {
     let class_by_index = annotated
         .iter()
-        .map(|(index, _, class_key)| (*index, class_key.clone()))
+        .map(|(index, admission, _, class_key)| {
+            (*index, format!("admission={admission}:{class_key}"))
+        })
         .collect::<BTreeMap<_, _>>();
     let mut selected_options = Vec::new();
     let mut pruned_options = Vec::new();
@@ -173,6 +205,26 @@ fn reward_option_portfolio_report(
         selected_count: selected_options.len(),
         selected_options,
         pruned_options,
+    }
+}
+
+fn reward_option_admission_order(
+    session: Option<&RunControlSession>,
+    option: &CardRewardBranchOption,
+) -> usize {
+    let Some(session) = session else {
+        return 0;
+    };
+    match evaluate_card_admission_v1(
+        &session.run_state,
+        RewardCard::new(option.card, option.upgrades),
+        CardAdmissionSourceV1::Reward,
+    )
+    .verdict
+    {
+        CardAdmissionVerdictV1::Admit => 0,
+        CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative => 1,
+        CardAdmissionVerdictV1::Reject => 4,
     }
 }
 
