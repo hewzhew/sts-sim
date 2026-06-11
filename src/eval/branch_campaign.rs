@@ -1070,11 +1070,12 @@ pub fn render_branch_campaign_compact_v1(
             }
         }
     }
-    if let Some((count, max_gold, example)) = campaign_unspent_gold_pressure_v1(report) {
+    if let Some(pressure) = campaign_unspent_gold_pressure_v1(report) {
         lines.push(format!(
-            "Resource concern: high_unspent_gold_near_boss={count} max_gold={max_gold}"
+            "Resource concern: high_unspent_gold_near_boss={} max_gold={} causes=[{}]",
+            pressure.count, pressure.max_gold, pressure.cause_counts
         ));
-        lines.push(format!("  resource example: {example}"));
+        lines.push(format!("  resource example: {}", pressure.example));
     }
     if let Some(victory_lines) = render_campaign_victory_quality_lines_v1(report) {
         lines.push(String::new());
@@ -1147,9 +1148,16 @@ fn format_bp(value: i32) -> String {
     format!("{:.2}", f64::from(value) / 100.0)
 }
 
+struct CampaignUnspentGoldPressureV1 {
+    count: usize,
+    max_gold: i32,
+    cause_counts: String,
+    example: String,
+}
+
 fn campaign_unspent_gold_pressure_v1(
     report: &BranchCampaignReportV1,
-) -> Option<(usize, i32, String)> {
+) -> Option<CampaignUnspentGoldPressureV1> {
     let pressured = report
         .active
         .iter()
@@ -1164,6 +1172,7 @@ fn campaign_unspent_gold_pressure_v1(
         .filter_map(|branch| branch.summary.as_ref().map(|summary| summary.gold))
         .max()
         .unwrap_or(0);
+    let cause_counts = render_unspent_gold_cause_counts_v1(&pressured);
     let example = pressured
         .iter()
         .max_by(|left, right| {
@@ -1175,15 +1184,21 @@ fn campaign_unspent_gold_pressure_v1(
                 .as_ref()
                 .expect("filtered branch has summary");
             format!(
-                "A{}F{} gold {} | {}",
+                "A{}F{} gold {} cause={} | {}",
                 summary.act,
                 summary.floor,
                 summary.gold,
+                branch_unspent_gold_pressure_cause_v1(branch),
                 render_compact_choice_path(&branch.choice_labels)
             )
         })
         .unwrap_or_default();
-    Some((pressured.len(), max_gold, example))
+    Some(CampaignUnspentGoldPressureV1 {
+        count: pressured.len(),
+        max_gold,
+        cause_counts,
+        example,
+    })
 }
 
 fn branch_has_unspent_gold_pressure_v1(branch: &BranchCampaignBranchV1) -> bool {
@@ -1200,6 +1215,62 @@ fn unspent_gold_pressure_key_v1(branch: &BranchCampaignBranchV1) -> (i32, i32) {
         .as_ref()
         .map(|summary| (summary.gold, summary.floor))
         .unwrap_or((0, 0))
+}
+
+fn branch_unspent_gold_pressure_cause_v1(branch: &BranchCampaignBranchV1) -> &'static str {
+    let has_buy = branch
+        .choice_labels
+        .iter()
+        .any(|label| is_campaign_shop_buy_label_v1(label));
+    if has_buy {
+        return "purchase_seen_gold_still_high";
+    }
+    let has_shop_leave = branch
+        .choice_labels
+        .iter()
+        .any(|label| is_campaign_shop_leave_label_v1(label));
+    if has_shop_leave {
+        return "shop_leave_without_purchase";
+    }
+    let has_shop_signal = branch
+        .choice_labels
+        .iter()
+        .any(|label| label.to_ascii_lowercase().contains("shop"));
+    if has_shop_signal {
+        return "shop_seen_without_purchase";
+    }
+    "no_shop_action_seen"
+}
+
+fn is_campaign_shop_buy_label_v1(label: &str) -> bool {
+    let normalized = label.trim().to_ascii_lowercase();
+    normalized.starts_with("buy ") || normalized.contains("| buy ")
+}
+
+fn is_campaign_shop_leave_label_v1(label: &str) -> bool {
+    let normalized = label.to_ascii_lowercase();
+    normalized.contains("leave shop")
+        || normalized.contains("auto leave shop")
+        || normalized.contains("decline selected shop purchase portfolio")
+}
+
+fn render_unspent_gold_cause_counts_v1(branches: &[&BranchCampaignBranchV1]) -> String {
+    let mut counts = BTreeMap::<&'static str, usize>::new();
+    for branch in branches {
+        *counts
+            .entry(branch_unspent_gold_pressure_cause_v1(branch))
+            .or_default() += 1;
+    }
+    [
+        "no_shop_action_seen",
+        "shop_leave_without_purchase",
+        "purchase_seen_gold_still_high",
+        "shop_seen_without_purchase",
+    ]
+    .into_iter()
+    .filter_map(|cause| counts.get(cause).map(|count| format!("{cause}={count}")))
+    .collect::<Vec<_>>()
+    .join(" ")
 }
 
 fn boss_approach_floor_v1(act: u8) -> i32 {
@@ -2264,6 +2335,10 @@ fn promote_frozen_to_active_v1(
         branch_progress_key(right)
             .cmp(&branch_progress_key(left))
             .then_with(|| right.rank_key.cmp(&left.rank_key))
+            .then_with(|| {
+                branch_resource_conversion_key_v1(right)
+                    .cmp(&branch_resource_conversion_key_v1(left))
+            })
             .then_with(|| left.branch_id.cmp(&right.branch_id))
     });
     let mut promoted = 0usize;
@@ -2378,9 +2453,15 @@ fn place_recovered_campaign_branch_v1(
     true
 }
 
-fn campaign_branch_retention_key_v1(branch: &BranchCampaignBranchV1) -> (u8, i32, i32, i32) {
+fn campaign_branch_retention_key_v1(branch: &BranchCampaignBranchV1) -> (u8, i32, i32, i32, i32) {
     let (act, floor, hp) = branch_progress_key(branch);
-    (act, floor, hp, branch.rank_key)
+    (
+        act,
+        floor,
+        hp,
+        branch.rank_key,
+        branch_resource_conversion_key_v1(branch),
+    )
 }
 
 fn prune_resolved_campaign_strategy_requests_v1(

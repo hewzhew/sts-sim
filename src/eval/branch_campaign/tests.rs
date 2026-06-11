@@ -146,9 +146,51 @@ fn compact_campaign_report_renders_unspent_gold_pressure_near_boss() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains("Resource concern: high_unspent_gold_near_boss=1 max_gold=485"));
     assert!(rendered.contains(
-        "resource example: A1F16 gold 485 | Flame Barrier -> Wild Strike -> ... -> Smith Shockwave"
+        "Resource concern: high_unspent_gold_near_boss=1 max_gold=485 causes=[purchase_seen_gold_still_high=1]"
+    ));
+    assert!(rendered.contains(
+        "resource example: A1F16 gold 485 cause=purchase_seen_gold_still_high | Flame Barrier -> Wild Strike -> ... -> Smith Shockwave"
+    ));
+}
+
+#[test]
+fn compact_campaign_report_classifies_unspent_gold_without_shop_visit() {
+    let mut report = test_campaign_report_with_active("rich", 16, 30);
+    report.active[0].summary.as_mut().unwrap().gold = 485;
+    report.active[0].choice_labels = vec![
+        "Flame Barrier".to_string(),
+        "Wild Strike".to_string(),
+        "Smith Shockwave".to_string(),
+    ];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Resource concern: high_unspent_gold_near_boss=1 max_gold=485 causes=[no_shop_action_seen=1]"
+    ));
+    assert!(rendered.contains(
+        "resource example: A1F16 gold 485 cause=no_shop_action_seen | Flame Barrier -> Wild Strike -> Smith Shockwave"
+    ));
+}
+
+#[test]
+fn compact_campaign_report_classifies_shop_leave_without_purchase() {
+    let mut report = test_campaign_report_with_active("rich", 16, 30);
+    report.active[0].summary.as_mut().unwrap().gold = 485;
+    report.active[0].choice_labels = vec![
+        "Flame Barrier".to_string(),
+        "Leave shop | decline selected shop purchase portfolio".to_string(),
+        "Smith Shockwave".to_string(),
+    ];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Resource concern: high_unspent_gold_near_boss=1 max_gold=485 causes=[shop_leave_without_purchase=1]"
+    ));
+    assert!(rendered.contains(
+        "resource example: A1F16 gold 485 cause=shop_leave_without_purchase | Flame Barrier -> Leave shop | decline selected shop purchase portfolio -> Smith Shockwave"
     ));
 }
 
@@ -223,6 +265,29 @@ fn campaign_frozen_overflow_discards_weaker_incoming_branch() {
 }
 
 #[test]
+fn campaign_frozen_overflow_replaces_unconverted_gold_branch_when_progress_ties() {
+    let mut rich = test_campaign_branch("rich", 16, 30);
+    rich.summary.as_mut().unwrap().gold = 485;
+    let mut frozen = vec![rich];
+    let mut discarded_count = 0usize;
+    let mut discarded_examples = Vec::new();
+    let mut converted = test_campaign_branch("converted", 16, 30);
+    converted.summary.as_mut().unwrap().gold = 120;
+
+    let added = append_limited_frozen_v1(
+        &mut frozen,
+        vec![converted],
+        1,
+        &mut discarded_count,
+        &mut discarded_examples,
+    );
+
+    assert_eq!(added, 1);
+    assert_eq!(frozen[0].branch_id, "converted");
+    assert_eq!(discarded_count, 1);
+}
+
+#[test]
 fn campaign_selection_freezes_active_overflow() {
     let branches = vec![
         test_campaign_branch("a", 1, 80),
@@ -278,6 +343,24 @@ fn campaign_promotes_frozen_when_active_pool_is_empty() {
     assert_eq!(active[0].status, BranchCampaignBranchStatusV1::Active);
     assert_eq!(frozen.len(), 1);
     assert_eq!(frozen[0].branch_id, "f1");
+}
+
+#[test]
+fn campaign_promotes_converted_gold_frozen_branch_when_progress_ties() {
+    let mut active = Vec::new();
+    let mut rich = test_campaign_branch("a-rich", 16, 30);
+    rich.status = BranchCampaignBranchStatusV1::Frozen;
+    rich.summary.as_mut().unwrap().gold = 485;
+    let mut converted = test_campaign_branch("b-converted", 16, 30);
+    converted.status = BranchCampaignBranchStatusV1::Frozen;
+    converted.summary.as_mut().unwrap().gold = 120;
+    let mut frozen = vec![rich, converted];
+
+    let promoted = promote_frozen_to_active_v1(&mut active, &mut frozen, 1);
+
+    assert_eq!(promoted, 1);
+    assert_eq!(active[0].branch_id, "b-converted");
+    assert_eq!(frozen[0].branch_id, "a-rich");
 }
 
 #[test]
