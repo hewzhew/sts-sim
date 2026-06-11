@@ -64,6 +64,9 @@ pub(super) fn apply_match_and_keep_policy_choice(
     let Some(event_state) = session.run_state.event_state.as_ref() else {
         return Ok(None);
     };
+    if event_state.id != EventId::MatchAndKeep {
+        return Ok(None);
+    }
 
     let board_ready = match_and_keep_board_ready(event_state);
     let choice = match event_state.current_screen {

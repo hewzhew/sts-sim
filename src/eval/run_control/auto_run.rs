@@ -123,6 +123,56 @@ mod tests {
     }
 
     #[test]
+    fn branch_experiment_auto_run_stops_at_tomb_red_mask_strategy_choice() {
+        let mut session =
+            RunControlSession::new(crate::eval::run_control::RunControlConfig::default());
+        session.run_state.gold = 36;
+        session.run_state.event_state = Some(EventState::new(EventId::TombRedMask));
+        session.engine_state = EngineState::EventRoom;
+
+        let commands = build_run_control_view_model(&session)
+            .candidates
+            .iter()
+            .map(|candidate| candidate.action.command_hint())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            commands,
+            vec![
+                "locked: No Red Mask".to_string(),
+                "event 1".to_string(),
+                "event 2".to_string()
+            ]
+        );
+
+        let outcome = apply_branch_experiment_auto_run(
+            &mut session,
+            RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        )
+        .expect("branch experiment auto-run should stop before Tomb Red Mask choice");
+
+        assert!(matches!(session.engine_state, EngineState::EventRoom));
+        assert_eq!(
+            session
+                .run_state
+                .event_state
+                .as_ref()
+                .expect("event should remain active")
+                .current_screen,
+            0
+        );
+        assert!(
+            outcome
+                .message
+                .contains("event option requires human choice"),
+            "message={}",
+            outcome.message
+        );
+    }
+
+    #[test]
     fn branch_experiment_auto_run_uses_match_and_keep_policy() {
         let mut session =
             RunControlSession::new(crate::eval::run_control::RunControlConfig::default());

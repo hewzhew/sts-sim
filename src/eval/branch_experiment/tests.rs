@@ -951,6 +951,44 @@ fn branch_experiment_can_chain_event_option_into_run_selection_choices() {
 }
 
 #[test]
+fn branch_experiment_skips_disabled_event_options_but_keeps_enabled_options() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 36;
+    session.run_state.event_state = Some(EventState::new(EventId::TombRedMask));
+    session.engine_state = EngineState::EventRoom;
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 8,
+            auto_max_operations: 0,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    let commands = report
+        .branches
+        .iter()
+        .flat_map(|branch| &branch.choices)
+        .map(|choice| choice.command.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(
+        commands.contains(&"event 1"),
+        "pay option should remain branchable when Don the Mask is locked"
+    );
+    assert!(
+        commands.contains(&"event 2"),
+        "leave option should remain branchable when Don the Mask is locked"
+    );
+    assert!(
+        !commands.contains(&"event 0"),
+        "locked Don the Mask option must not be emitted as a branch command"
+    );
+}
+
+#[test]
 fn pruned_first_pick_count_reports_sort_for_stable_comparison() {
     let reports = pruned_first_pick_count_reports(BTreeMap::from([
         ("Shockwave".to_string(), 2),
