@@ -3,6 +3,7 @@ use crate::ai::shop_policy_v1::{
     ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::content::cards::CardId;
+use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::state::map::{MapEdge, MapRoomNode, MapState, RoomType};
@@ -187,6 +188,63 @@ fn shop_policy_buys_elite_potion_when_first_elite_prep_window_is_open() {
             ..
         }
     ));
+}
+
+#[test]
+fn shop_policy_uses_champ_pressure_for_transition_burst_purchase() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 18;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.gold = 125;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Carnage,
+        upgrades: 0,
+        price: 36,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::DeepBreath,
+        upgrades: 0,
+        price: 96,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let decision = plan_shop_decision_v1(&context, &ShopPolicyConfigV1::default());
+
+    assert!(
+        shop_card_conversion_priority_v1(CardId::Carnage, &run_state)
+            >= ShopPolicyConfigV1::default().high_impact_card_purchase_priority_threshold
+    );
+    assert!(matches!(
+        decision.action,
+        ShopPolicyActionV1::Purchase {
+            target: ShopPurchaseTargetV1::Card {
+                card: CardId::Carnage,
+                ..
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn shop_policy_treats_flex_as_champ_burst_piece_when_payoff_exists() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 18;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.gold = 125;
+    run_state.add_card_to_deck(CardId::HeavyBlade);
+
+    assert!(
+        shop_card_conversion_priority_v1(CardId::Flex, &run_state)
+            > shop_card_conversion_priority_v1(CardId::DeepBreath, &run_state)
+    );
 }
 
 fn add_deck_bloat(run_state: &mut RunState, count: usize) {

@@ -59,6 +59,9 @@ pub fn campfire_smith_upgrade_strategy_tag_v1(
         Some(EncounterId::Automaton) if run_state.act_num == 2 => {
             automaton_upgrade_strategy_tag(card.id)
         }
+        Some(EncounterId::TheChamp) if run_state.act_num == 2 => {
+            champ_upgrade_strategy_tag(card.id, run_state)
+        }
         _ => None,
     }
 }
@@ -92,15 +95,11 @@ fn supports_visible_package(card: CardId, run_state: &RunState) -> bool {
             run_state,
             &[CardId::BodySlam, CardId::Entrench, CardId::Barricade],
         ),
-        CardId::HeavyBlade | CardId::LimitBreak => deck_has_any(
-            run_state,
-            &[
-                CardId::Inflame,
-                CardId::SpotWeakness,
-                CardId::DemonForm,
-                CardId::Flex,
-            ],
-        ),
+        CardId::HeavyBlade | CardId::LimitBreak => {
+            let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+            startup.persistent_strength_source_count > 0
+                || startup.convertible_strength_source_count > 0
+        }
         CardId::FeelNoPain | CardId::DarkEmbrace | CardId::Corruption => deck_has_any(
             run_state,
             &[
@@ -129,6 +128,9 @@ fn supports_visible_package(card: CardId, run_state: &RunState) -> bool {
 fn boss_mechanic_upgrade_delta(card: CardId, run_state: &RunState) -> i32 {
     match run_state.boss_key {
         Some(EncounterId::Automaton) if run_state.act_num == 2 => automaton_upgrade_delta(card),
+        Some(EncounterId::TheChamp) if run_state.act_num == 2 => {
+            champ_upgrade_delta(card, run_state)
+        }
         _ => 0,
     }
 }
@@ -171,6 +173,81 @@ fn automaton_upgrade_strategy_tag_for_card(card: CardId) -> Option<(&'static str
         }
         _ => None,
     }
+}
+
+fn champ_upgrade_delta(card: CardId, run_state: &RunState) -> i32 {
+    match champ_upgrade_strategy_tag_for_card(card, run_state) {
+        Some(("transition_burst", _)) => 620,
+        Some(("execute_block", _)) => 560,
+        Some(("access_recovery", _)) => 260,
+        Some(("scaling_setup", _)) => 240,
+        Some(_) | None => 0,
+    }
+}
+
+fn champ_upgrade_strategy_tag(card: CardId, run_state: &RunState) -> Option<&'static str> {
+    champ_upgrade_strategy_tag_for_card(card, run_state).map(|(_, tag)| tag)
+}
+
+fn champ_upgrade_strategy_tag_for_card(
+    card: CardId,
+    run_state: &RunState,
+) -> Option<(&'static str, &'static str)> {
+    match card {
+        CardId::Carnage | CardId::Bludgeon | CardId::Immolate | CardId::Offering => {
+            Some(("transition_burst", "champ:transition_burst"))
+        }
+        CardId::Whirlwind if has_extra_energy_access(run_state) => {
+            Some(("transition_burst", "champ:transition_burst"))
+        }
+        CardId::HeavyBlade if has_champ_strength_burst_support(run_state) => {
+            Some(("transition_burst", "champ:transition_burst"))
+        }
+        CardId::LimitBreak if has_champ_strength_conversion_support(run_state) => {
+            Some(("transition_burst", "champ:transition_burst"))
+        }
+        CardId::Flex if has_champ_flex_upgrade_support(run_state) => {
+            Some(("transition_burst", "champ:transition_burst"))
+        }
+        CardId::Impervious
+        | CardId::PowerThrough
+        | CardId::FlameBarrier
+        | CardId::SecondWind
+        | CardId::TrueGrit
+        | CardId::Barricade
+        | CardId::Entrench => Some(("execute_block", "champ:execute_block")),
+        CardId::BurningPact | CardId::BattleTrance | CardId::PommelStrike | CardId::ShrugItOff => {
+            Some(("access_recovery", "champ:access_recovery"))
+        }
+        CardId::DemonForm | CardId::Corruption => Some(("scaling_setup", "champ:scaling_setup")),
+        _ => None,
+    }
+}
+
+fn has_extra_energy_access(run_state: &RunState) -> bool {
+    run_state.master_deck.iter().any(|card| {
+        matches!(
+            card.id,
+            CardId::Offering | CardId::SeeingRed | CardId::Bloodletting
+        )
+    })
+}
+
+fn has_champ_strength_burst_support(run_state: &RunState) -> bool {
+    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+    startup.persistent_strength_source_count > 0
+        || startup.temporary_strength_burst_count > 0
+        || startup.convertible_strength_source_count > 0
+}
+
+fn has_champ_strength_conversion_support(run_state: &RunState) -> bool {
+    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+    startup.persistent_strength_source_count > 0 || startup.temporary_strength_burst_count > 0
+}
+
+fn has_champ_flex_upgrade_support(run_state: &RunState) -> bool {
+    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+    startup.strength_payoff_count > 0 || startup.strength_converter_count > 0
 }
 
 fn deck_has_any(run_state: &RunState, cards: &[CardId]) -> bool {
@@ -229,6 +306,54 @@ mod tests {
         assert_eq!(
             campfire_smith_upgrade_strategy_tag_v1(&apparition, &run_state),
             Some("automaton:apparition_duration")
+        );
+    }
+
+    #[test]
+    fn champ_pressure_tags_transition_burst_and_execute_block_upgrades() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.boss_key = Some(EncounterId::TheChamp);
+
+        let carnage = CombatCard::new(CardId::Carnage, 31);
+        let true_grit = CombatCard::new(CardId::TrueGrit, 32);
+        let strike = CombatCard::new(CardId::Strike, 33);
+
+        assert_eq!(
+            campfire_smith_upgrade_strategy_tag_v1(&carnage, &run_state),
+            Some("champ:transition_burst")
+        );
+        assert_eq!(
+            campfire_smith_upgrade_strategy_tag_v1(&true_grit, &run_state),
+            Some("champ:execute_block")
+        );
+        assert!(
+            campfire_smith_upgrade_priority_v1(&carnage, &run_state)
+                > campfire_smith_upgrade_priority_v1(&strike, &run_state)
+        );
+        assert!(
+            campfire_smith_upgrade_priority_v1(&true_grit, &run_state)
+                > campfire_smith_upgrade_priority_v1(&strike, &run_state)
+        );
+    }
+
+    #[test]
+    fn champ_pressure_tags_flex_upgrade_as_burst_only_with_payoff() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.boss_key = Some(EncounterId::TheChamp);
+        let flex = CombatCard::new(CardId::Flex, 31);
+
+        assert_eq!(
+            campfire_smith_upgrade_strategy_tag_v1(&flex, &run_state),
+            None
+        );
+
+        run_state.add_card_to_deck(CardId::HeavyBlade);
+
+        assert_eq!(
+            campfire_smith_upgrade_strategy_tag_v1(&flex, &run_state),
+            Some("champ:transition_burst")
         );
     }
 }

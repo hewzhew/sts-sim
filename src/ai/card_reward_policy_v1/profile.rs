@@ -23,6 +23,7 @@ pub(crate) fn run_context(run_state: &RunState) -> CardRewardRunContextV1 {
 }
 
 pub(crate) fn deck_profile(run_state: &RunState) -> DeckProfileV1 {
+    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
     let mut profile = DeckProfileV1 {
         deck_size: run_state.master_deck.len(),
         attacks: 0,
@@ -35,8 +36,11 @@ pub(crate) fn deck_profile(run_state: &RunState) -> DeckProfileV1 {
         total_block: 0,
         draw_cards: 0,
         energy_sources: 0,
-        strength_sources: 0,
-        strength_payoffs: 0,
+        strength_sources: startup.persistent_strength_source_count,
+        temporary_strength_bursts: startup.temporary_strength_burst_count,
+        strength_converters: startup.strength_converter_count,
+        convertible_strength_sources: startup.convertible_strength_source_count,
+        strength_payoffs: startup.strength_payoff_count,
         vulnerable_sources: 0,
         weak_sources: 0,
         exhaust_generators: 0,
@@ -75,15 +79,6 @@ pub(crate) fn deck_profile(run_state: &RunState) -> DeckProfileV1 {
         }
         if facts.energy_gain > 0 {
             profile.energy_sources = profile.energy_sources.saturating_add(1);
-        }
-        if facts.strength_gain > 0 {
-            profile.strength_sources = profile.strength_sources.saturating_add(1);
-        }
-        if facts
-            .pick_dependencies
-            .contains(&CardRewardPickDependencyV1::StrengthScaling)
-        {
-            profile.strength_payoffs = profile.strength_payoffs.saturating_add(1);
         }
         if facts.vulnerable > 0 {
             profile.vulnerable_sources = profile.vulnerable_sources.saturating_add(1);
@@ -270,6 +265,7 @@ fn strategy_plan_effects_from_roles(
             | CardRewardSemanticRoleV1::CardDraw
             | CardRewardSemanticRoleV1::EnergySource
             | CardRewardSemanticRoleV1::Vulnerable
+            | CardRewardSemanticRoleV1::TemporaryStrengthBurst
             | CardRewardSemanticRoleV1::StrikePayoff
             | CardRewardSemanticRoleV1::SelfDamagePayoff
             | CardRewardSemanticRoleV1::PackagePayoff

@@ -222,6 +222,9 @@ fn component_context_from_card_reward_context(
             exhaust_engine_count: context.deck.exhaust_generators,
             strong_draw_count: context.deck.draw_cards,
             persistent_strength_source_count: context.deck.strength_sources,
+            temporary_strength_burst_count: context.deck.temporary_strength_bursts,
+            strength_converter_count: context.deck.strength_converters,
+            convertible_strength_source_count: context.deck.convertible_strength_sources,
             self_damage_source_count: 0,
             strength_payoff_count: context.deck.strength_payoffs,
             ..Default::default()

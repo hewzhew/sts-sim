@@ -174,7 +174,7 @@ fn relic_constraints(run_state: &RunState) -> Vec<String> {
 fn add_card_package_facts(card_id: CardId, facts: &mut StrategyDeckFactsV1) {
     if matches!(
         card_id,
-        CardId::Inflame | CardId::SpotWeakness | CardId::Flex | CardId::DemonForm
+        CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
     ) {
         facts.strength_sources = facts.strength_sources.saturating_add(1);
     }

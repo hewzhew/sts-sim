@@ -39,7 +39,9 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
     if facts.enemy_strength_down > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::EnemyStrengthDown);
     }
-    if facts.strength_gain > 0 {
+    if facts.card == CardId::Flex && facts.strength_gain > 0 {
+        push_role(&mut roles, CardRewardSemanticRoleV1::TemporaryStrengthBurst);
+    } else if facts.strength_gain > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::ScalingSource);
     }
     if facts.exhausts_other_cards {

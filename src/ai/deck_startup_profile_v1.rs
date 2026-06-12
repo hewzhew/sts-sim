@@ -13,6 +13,9 @@ pub struct DeckStartupProfileV1 {
     pub exhaust_engine_count: u8,
     pub strong_draw_count: u8,
     pub persistent_strength_source_count: u8,
+    pub temporary_strength_burst_count: u8,
+    pub strength_converter_count: u8,
+    pub convertible_strength_source_count: u8,
     pub rupture_count: u8,
     pub self_damage_source_count: u8,
     pub strength_payoff_count: u8,
@@ -53,6 +56,14 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
                     profile.persistent_strength_source_count.saturating_add(1);
                 profile.payoff_engine = profile.payoff_engine.saturating_add(1);
             }
+            RelicId::MutagenicStrength => {
+                profile.temporary_strength_burst_count =
+                    profile.temporary_strength_burst_count.saturating_add(1);
+            }
+            RelicId::ClockworkSouvenir | RelicId::OrangePellets => {
+                profile.strength_converter_count =
+                    profile.strength_converter_count.saturating_add(1);
+            }
             RelicId::MedicalKit => {
                 profile.exhaust_engine_count = profile.exhaust_engine_count.saturating_add(1);
                 profile.payoff_engine = profile.payoff_engine.saturating_add(1);
@@ -86,6 +97,13 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
             profile.persistent_strength_source_count =
                 profile.persistent_strength_source_count.saturating_add(1);
             profile.payoff_engine = profile.payoff_engine.saturating_add(1);
+        }
+        if is_temporary_strength_burst_card(id) {
+            profile.temporary_strength_burst_count =
+                profile.temporary_strength_burst_count.saturating_add(1);
+        }
+        if is_strength_converter_card(id) {
+            profile.strength_converter_count = profile.strength_converter_count.saturating_add(1);
         }
         if id == CardId::Rupture {
             profile.rupture_count = profile.rupture_count.saturating_add(1);
@@ -126,11 +144,29 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         }
     }
 
+    for potion in run_state.potions.iter().flatten() {
+        match potion.id {
+            crate::content::potions::PotionId::SteroidPotion => {
+                profile.temporary_strength_burst_count =
+                    profile.temporary_strength_burst_count.saturating_add(1);
+            }
+            crate::content::potions::PotionId::AncientPotion => {
+                profile.strength_converter_count =
+                    profile.strength_converter_count.saturating_add(1);
+            }
+            _ => {}
+        }
+    }
+
     if profile.rupture_count > 0 && profile.self_damage_source_count > 0 {
         profile.persistent_strength_source_count = profile
             .persistent_strength_source_count
             .saturating_add(profile.rupture_count);
         profile.payoff_engine = profile.payoff_engine.saturating_add(profile.rupture_count);
+    }
+    if profile.temporary_strength_burst_count > 0 && profile.strength_converter_count > 0 {
+        profile.convertible_strength_source_count = profile.temporary_strength_burst_count;
+        profile.payoff_engine = profile.payoff_engine.saturating_add(1);
     }
 
     profile.has_setup_debt_high_payment_low = profile.setup_debt >= 4
@@ -315,6 +351,17 @@ fn is_persistent_strength_source_card(card: CardId) -> bool {
     )
 }
 
+fn is_temporary_strength_burst_card(card: CardId) -> bool {
+    matches!(card, CardId::Flex)
+}
+
+fn is_strength_converter_card(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::LimitBreak | CardId::Panacea | CardId::CoreSurge
+    )
+}
+
 fn is_self_damage_source_card(card: CardId) -> bool {
     matches!(
         card,
@@ -330,7 +377,12 @@ fn is_self_damage_source_card(card: CardId) -> bool {
 fn is_strength_payoff_card(card: CardId) -> bool {
     matches!(
         card,
-        CardId::HeavyBlade | CardId::SwordBoomerang | CardId::Pummel | CardId::LimitBreak
+        CardId::HeavyBlade
+            | CardId::SwordBoomerang
+            | CardId::Pummel
+            | CardId::LimitBreak
+            | CardId::Reaper
+            | CardId::Whirlwind
     )
 }
 
@@ -363,6 +415,7 @@ fn is_combat_shape_risk_card(card: CardId, upgrades: u8, has_runic_pyramid: bool
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::potions::{Potion, PotionId};
     use crate::content::relics::RelicState;
 
     #[test]
@@ -431,5 +484,50 @@ mod tests {
         assert_eq!(with_self_damage.persistent_strength_source_count, 1);
         assert!(!with_self_damage.has_rupture_without_self_damage);
         assert!(!with_self_damage.has_strength_payoff_without_strength);
+    }
+
+    #[test]
+    fn flex_is_temporary_burst_not_persistent_strength() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::Flex);
+        run_state.add_card_to_deck(CardId::HeavyBlade);
+
+        let profile = deck_startup_profile_v1(&run_state);
+
+        assert_eq!(profile.persistent_strength_source_count, 0);
+        assert_eq!(profile.temporary_strength_burst_count, 1);
+        assert_eq!(profile.strength_converter_count, 0);
+        assert_eq!(profile.convertible_strength_source_count, 0);
+        assert_eq!(profile.strength_payoff_count, 1);
+        assert!(profile.has_strength_payoff_without_strength);
+    }
+
+    #[test]
+    fn flex_with_limit_break_is_convertible_strength_not_stable_source() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::Flex);
+        run_state.add_card_to_deck(CardId::LimitBreak);
+
+        let profile = deck_startup_profile_v1(&run_state);
+
+        assert_eq!(profile.persistent_strength_source_count, 0);
+        assert_eq!(profile.temporary_strength_burst_count, 1);
+        assert_eq!(profile.strength_converter_count, 1);
+        assert_eq!(profile.convertible_strength_source_count, 1);
+        assert!(profile.has_strength_payoff_without_strength);
+    }
+
+    #[test]
+    fn flex_potion_with_artifact_access_is_convertible_strength() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.potions[0] = Some(Potion::new(PotionId::SteroidPotion, 1));
+        run_state.potions[1] = Some(Potion::new(PotionId::AncientPotion, 2));
+
+        let profile = deck_startup_profile_v1(&run_state);
+
+        assert_eq!(profile.persistent_strength_source_count, 0);
+        assert_eq!(profile.temporary_strength_burst_count, 1);
+        assert_eq!(profile.strength_converter_count, 1);
+        assert_eq!(profile.convertible_strength_source_count, 1);
     }
 }

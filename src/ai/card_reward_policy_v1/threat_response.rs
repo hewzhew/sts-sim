@@ -1,7 +1,7 @@
 use crate::ai::noncombat_strategy_v1::{
     StrategyPlanEffectV1, StrategyThreatSourceV1, StrategyThreatTagV1,
 };
-use crate::content::cards::CardType;
+use crate::content::cards::{CardId, CardType};
 
 use super::types::{
     CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardPickDependencyV1,
@@ -387,7 +387,7 @@ fn dense_card_play(candidate: &CardRewardCandidateEvidenceV1) -> bool {
 }
 
 fn scaling_candidate(candidate: &CardRewardCandidateEvidenceV1) -> bool {
-    candidate.facts.strength_gain > 0
+    (candidate.facts.strength_gain > 0 && candidate.facts.card != CardId::Flex)
         || candidate
             .plan_delta
             .effects

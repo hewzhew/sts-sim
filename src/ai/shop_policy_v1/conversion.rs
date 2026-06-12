@@ -1,7 +1,11 @@
+use crate::ai::boss_mechanics_v1::{
+    boss_mechanic_pressure_profile_v1, BossMechanicMissingAnswerV1, BossMechanicRedFlagV1,
+};
 use crate::ai::card_admission_policy_v1::{
     evaluate_card_admission_v1, CardAdmissionSourceV1, CardAdmissionVerdictV1,
 };
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
+use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
@@ -85,6 +89,7 @@ pub fn shop_card_conversion_priority_v1(card: CardId, run_state: &RunState) -> i
     if high_impact_shop_card(card) {
         priority += 450;
     }
+    priority += boss_mechanic_shop_card_priority_bonus_v1(card, run_state);
     if run_state.act_num >= 2 && shop_card_is_combat_patch_v1(card) {
         priority += 200;
     }
@@ -103,6 +108,69 @@ pub fn shop_card_conversion_priority_v1(card: CardId, run_state: &RunState) -> i
         priority -= 350;
     }
     priority
+}
+
+fn boss_mechanic_shop_card_priority_bonus_v1(card: CardId, run_state: &RunState) -> i32 {
+    match (run_state.act_num, run_state.boss_key) {
+        (2, Some(EncounterId::TheChamp)) => champ_shop_card_priority_bonus_v1(card, run_state),
+        _ => 0,
+    }
+}
+
+fn champ_shop_card_priority_bonus_v1(card: CardId, run_state: &RunState) -> i32 {
+    let profile = boss_mechanic_pressure_profile_v1(run_state, EncounterId::TheChamp);
+    let needs_transition_burst = profile
+        .has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst)
+        || profile.has_red_flag(BossMechanicRedFlagV1::PrematureChampTransitionRisk);
+    let needs_execute_block = profile
+        .has_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan)
+        || profile.has_red_flag(BossMechanicRedFlagV1::NoExecuteBlockPlan);
+    let mut bonus = 0;
+
+    if needs_transition_burst && champ_transition_burst_shop_card_v1(card, run_state) {
+        bonus += 420;
+    }
+    if needs_execute_block && champ_execute_block_shop_card_v1(card) {
+        bonus += 360;
+    }
+
+    bonus
+}
+
+fn champ_transition_burst_shop_card_v1(card: CardId, run_state: &RunState) -> bool {
+    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+    match card {
+        CardId::Carnage
+        | CardId::Bludgeon
+        | CardId::Immolate
+        | CardId::Offering
+        | CardId::DemonForm
+        | CardId::Whirlwind => true,
+        CardId::HeavyBlade => {
+            startup.persistent_strength_source_count > 0
+                || startup.temporary_strength_burst_count > 0
+                || startup.convertible_strength_source_count > 0
+        }
+        CardId::LimitBreak => {
+            startup.persistent_strength_source_count > 0
+                || startup.temporary_strength_burst_count > 0
+        }
+        CardId::Flex => startup.strength_payoff_count > 0 || startup.strength_converter_count > 0,
+        _ => false,
+    }
+}
+
+fn champ_execute_block_shop_card_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Impervious
+            | CardId::PowerThrough
+            | CardId::FlameBarrier
+            | CardId::SecondWind
+            | CardId::TrueGrit
+            | CardId::Entrench
+            | CardId::Barricade
+    )
 }
 
 pub fn shop_relic_conversion_priority_v1(relic: RelicId) -> i32 {

@@ -45,7 +45,9 @@ pub(crate) fn card_facts(card: &RewardCard) -> CardRewardFactsV1 {
 
 pub(crate) fn scaling_signals(facts: &CardRewardFactsV1) -> Vec<CardRewardScalingSignalV1> {
     let mut signals = Vec::new();
-    if facts.strength_gain > 0 {
+    if facts.card == CardId::Flex && facts.strength_gain > 0 {
+        signals.push(CardRewardScalingSignalV1::TemporaryStrengthBurst);
+    } else if facts.strength_gain > 0 {
         signals.push(CardRewardScalingSignalV1::StrengthGain);
     }
     if facts

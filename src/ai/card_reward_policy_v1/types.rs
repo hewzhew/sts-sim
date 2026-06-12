@@ -110,6 +110,12 @@ pub struct DeckProfileV1 {
     pub draw_cards: u8,
     pub energy_sources: u8,
     pub strength_sources: u8,
+    #[serde(default)]
+    pub temporary_strength_bursts: u8,
+    #[serde(default)]
+    pub strength_converters: u8,
+    #[serde(default)]
+    pub convertible_strength_sources: u8,
     pub strength_payoffs: u8,
     pub vulnerable_sources: u8,
     pub weak_sources: u8,
@@ -185,6 +191,7 @@ pub enum CardRewardSemanticRoleV1 {
     Weak,
     EnemyStrengthDown,
     ScalingSource,
+    TemporaryStrengthBurst,
     StrengthPayoff,
     BlockPayoff,
     StrikePayoff,
@@ -223,6 +230,7 @@ pub struct CardRewardCandidateImpactV1 {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CardRewardScalingSignalV1 {
     StrengthGain,
+    TemporaryStrengthBurst,
     StrengthPayoff,
     Vulnerable,
     Weak,

@@ -19,6 +19,10 @@ Reuses the last non-dry-run campaign seed.
 Resumes the latest saved campaign report with deeper defaults.
 
 .EXAMPLE
+.\tools\campaign.ps1 -Inspect
+Summarizes the latest saved campaign checkpoint with active/frozen/abandoned deck context.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -60,6 +64,7 @@ param(
 
     [switch] $Last,
     [switch] $More,
+    [switch] $Inspect,
     [switch] $DryRun,
     [switch] $NoProgress,
     [switch] $NoBossSegments,
@@ -100,7 +105,12 @@ if ($More) {
     }
 }
 
-if ($Last) {
+if ($Inspect) {
+    if ($Seed -le 0 -and (Test-Path $LatestSeedPath)) {
+        $SeedText = (Get-Content -LiteralPath $LatestSeedPath -Raw).Trim()
+        [void] [long]::TryParse($SeedText, [ref] $Seed)
+    }
+} elseif ($Last) {
     if (-not (Test-Path $LatestSeedPath)) {
         throw "No previous campaign seed found at $LatestSeedPath. Run .\tools\campaign.ps1 first."
     }
@@ -235,6 +245,68 @@ function Test-DriverNeedsBuild {
     return $false
 }
 
+$NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
+
+if ($Inspect) {
+    if (-not (Test-Path $LatestCheckpointPath)) {
+        throw "No previous campaign checkpoint found at $LatestCheckpointPath. Run .\tools\campaign.ps1 first."
+    }
+    if (-not (Test-Path $LatestCampaignPath)) {
+        throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first."
+    }
+
+    $InspectArgs = @(
+        "--inspect-checkpoint", "$LatestCheckpointPath",
+        "--inspect-report", "$LatestCampaignPath",
+        "--inspect-summary",
+        "--branch-examples", "$BranchExamples"
+    )
+
+    $RenderedInspectArgs = $InspectArgs | ForEach-Object {
+        if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
+    }
+    $RenderedExe = if ($DriverExe -match '^[A-Za-z0-9_./:=\\-]+$') { $DriverExe } else { "'$($DriverExe -replace "'", "''")'" }
+    $RenderedCommand = $RenderedExe + " " + ($RenderedInspectArgs -join " ")
+
+    Write-Host "mode=inspect latest branch campaign"
+    if ($Seed -gt 0) {
+        Write-Host "seed=$Seed"
+    }
+    Write-Host "build=$BuildProfile exe=$DriverExe"
+    if ($NeedsBuild) {
+        Write-Host "build-needed=yes"
+    } else {
+        Write-Host "build-needed=no"
+    }
+    Write-Host "report=$LatestCampaignPath"
+    Write-Host "checkpoint=$LatestCheckpointPath"
+
+    if ($DryRun) {
+        if ($NeedsBuild) {
+            $RenderedBuildArgs = $BuildArgs | ForEach-Object {
+                if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
+            }
+            Write-Host ("cargo " + ($RenderedBuildArgs -join " "))
+        }
+        Write-Host $RenderedCommand
+        exit 0
+    }
+
+    Push-Location $RepoRoot
+    try {
+        if ($NeedsBuild) {
+            & cargo @BuildArgs
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+            }
+        }
+        & $DriverExe @InspectArgs
+        exit $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+}
+
 Write-Host "seed=$Seed"
 $RenderedArgs = $DriverArgs | ForEach-Object {
     if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
@@ -243,7 +315,6 @@ $RenderedExe = if ($DriverExe -match '^[A-Za-z0-9_./:=\\-]+$') { $DriverExe } el
 $RenderedCommand = $RenderedExe + " " + ($RenderedArgs -join " ")
 
 Write-Host "mode=$Mode branch campaign"
-$NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
 Write-Host "build=$BuildProfile exe=$DriverExe"
 if ($NeedsBuild) {
     Write-Host "build-needed=yes"

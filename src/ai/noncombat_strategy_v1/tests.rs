@@ -661,6 +661,20 @@ fn strategy_snapshot_v2_exposes_formation_and_candidate_delta_without_v1_access(
 }
 
 #[test]
+fn strategy_snapshot_does_not_treat_flex_as_committed_strength_scaling() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::Flex);
+
+    let snapshot = super::build_run_strategy_snapshot_from_run_state_v2(&run_state);
+
+    assert_eq!(
+        snapshot.support(super::StrategyPackageIdV2::StrengthScaling),
+        StrategyPlanSupportV1::Blocked
+    );
+    assert!(!snapshot.has_formation_strength(super::StrategyPackageIdV2::StrengthScaling));
+}
+
+#[test]
 fn block_engine_package_recognizes_barricade_body_slam_followup() {
     let snapshot = super::build_run_strategy_snapshot_v2(
         StrategyDeckFactsV1 {

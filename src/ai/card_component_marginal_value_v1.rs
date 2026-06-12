@@ -179,7 +179,27 @@ fn add_card_specific_components(
         }
         CardId::HeavyBlade | CardId::SwordBoomerang | CardId::Pummel | CardId::LimitBreak => {
             if context.startup.persistent_strength_source_count == 0 {
-                push_str(&mut report.debts, "strength_payoff_without_generator");
+                if context.startup.convertible_strength_source_count > 0 {
+                    push_str(
+                        &mut report.positive_components,
+                        "strength_payoff_has_convertible_burst_source",
+                    );
+                    push_str(
+                        &mut report.notes,
+                        "convertible_strength_requires_draw_timing",
+                    );
+                } else if context.startup.temporary_strength_burst_count > 0 {
+                    push_str(
+                        &mut report.notes,
+                        "strength_payoff_has_temporary_burst_support",
+                    );
+                    push_str(
+                        &mut report.debts,
+                        "strength_payoff_without_stable_generator",
+                    );
+                } else {
+                    push_str(&mut report.debts, "strength_payoff_without_generator");
+                }
             } else {
                 push_str(
                     &mut report.positive_components,
@@ -384,7 +404,9 @@ fn component_roles(profile: &CardRewardSemanticProfileV1) -> Vec<CardComponentRo
     if profile.roles.iter().any(|role| {
         matches!(
             role,
-            CardRewardSemanticRoleV1::FrontloadDamage | CardRewardSemanticRoleV1::Block
+            CardRewardSemanticRoleV1::FrontloadDamage
+                | CardRewardSemanticRoleV1::Block
+                | CardRewardSemanticRoleV1::TemporaryStrengthBurst
         )
     }) {
         push_role(&mut roles, CardComponentRoleV1::Transition);
@@ -416,6 +438,9 @@ fn fills_current_need(
                 || profile
                     .roles
                     .contains(&CardRewardSemanticRoleV1::Vulnerable)
+                || profile
+                    .roles
+                    .contains(&CardRewardSemanticRoleV1::TemporaryStrengthBurst)
         }
         StrategyDeckFormationNeedV1::Block => {
             profile.roles.contains(&CardRewardSemanticRoleV1::Block)
@@ -531,6 +556,42 @@ mod tests {
             CardComponentMarginalVerdictV1::SkipPreferred
         );
         assert!(report.debts.contains(&"self_damage_payoff_without_enabler"));
+    }
+
+    #[test]
+    fn strength_payoff_distinguishes_temporary_and_convertible_strength() {
+        let mut burst_only = context();
+        burst_only.startup.temporary_strength_burst_count = 1;
+        let burst_report = evaluate_card_component_marginal_value_v1(
+            &burst_only,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::HeavyBlade, 0)),
+        );
+
+        assert!(burst_report
+            .notes
+            .contains(&"strength_payoff_has_temporary_burst_support"));
+        assert!(burst_report
+            .debts
+            .contains(&"strength_payoff_without_stable_generator"));
+        assert!(!burst_report
+            .positive_components
+            .contains(&"strength_payoff_has_generator"));
+
+        let mut convertible = context();
+        convertible.startup.temporary_strength_burst_count = 1;
+        convertible.startup.strength_converter_count = 1;
+        convertible.startup.convertible_strength_source_count = 1;
+        let convertible_report = evaluate_card_component_marginal_value_v1(
+            &convertible,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::HeavyBlade, 0)),
+        );
+
+        assert!(convertible_report
+            .positive_components
+            .contains(&"strength_payoff_has_convertible_burst_source"));
+        assert!(convertible_report
+            .notes
+            .contains(&"convertible_strength_requires_draw_timing"));
     }
 
     #[test]

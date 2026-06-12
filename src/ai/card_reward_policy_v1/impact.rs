@@ -94,6 +94,24 @@ fn assess_dependency(
                         deck.strength_sources
                     ),
                 }
+            } else if deck.convertible_strength_sources > 0 {
+                CardRewardDependencyAssessmentV1 {
+                    dependency,
+                    status: CardRewardDependencyStatusV1::Unknown,
+                    reason: format!(
+                        "deck has {} convertible temporary strength source(s), but draw/timing must prove payoff",
+                        deck.convertible_strength_sources
+                    ),
+                }
+            } else if deck.temporary_strength_bursts > 0 {
+                CardRewardDependencyAssessmentV1 {
+                    dependency,
+                    status: CardRewardDependencyStatusV1::Unknown,
+                    reason: format!(
+                        "deck has {} temporary strength burst(s), but no stable strength scaling source",
+                        deck.temporary_strength_bursts
+                    ),
+                }
             } else {
                 CardRewardDependencyAssessmentV1 {
                     dependency,

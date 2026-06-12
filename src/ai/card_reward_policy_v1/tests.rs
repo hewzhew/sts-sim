@@ -13,7 +13,9 @@ use crate::content::monsters::factory::EncounterId;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
-use super::types::{CardRewardRouteEvidenceV1, CardRewardSelectedRouteV1};
+use super::types::{
+    CardRewardDependencyStatusV1, CardRewardRouteEvidenceV1, CardRewardSelectedRouteV1,
+};
 
 #[test]
 fn card_facts_are_mechanical_and_do_not_contain_pick_value() {
@@ -35,6 +37,27 @@ fn card_facts_are_mechanical_and_do_not_contain_pick_value() {
 }
 
 #[test]
+fn deck_profile_keeps_flex_as_temporary_strength_not_stable_source() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::Flex);
+    run_state.add_card_to_deck(CardId::HeavyBlade);
+
+    let context = build_card_reward_decision_context_v1(
+        &run_state,
+        vec![RewardCard::new(CardId::HeavyBlade, 0)],
+        None,
+    );
+    let assessment = &context.candidates[0].impact.dependency_assessments[0];
+
+    assert_eq!(context.deck.strength_sources, 0);
+    assert_eq!(context.deck.temporary_strength_bursts, 1);
+    assert_eq!(context.deck.convertible_strength_sources, 0);
+    assert_eq!(context.deck.strength_payoffs, 1);
+    assert_eq!(assessment.status, CardRewardDependencyStatusV1::Unknown);
+    assert!(assessment.reason.contains("temporary strength burst"));
+}
+
+#[test]
 fn semantic_profile_exports_roles_without_card_name_scoring() {
     let body_slam = card_reward_semantic_profile_v1(&RewardCard::new(CardId::BodySlam, 0));
     let barricade = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Barricade, 0));
@@ -52,6 +75,13 @@ fn semantic_profile_exports_roles_without_card_name_scoring() {
         .roles
         .contains(&CardRewardSemanticRoleV1::BlockPayoff));
     assert!(demon_form
+        .roles
+        .contains(&CardRewardSemanticRoleV1::ScalingSource));
+    let flex = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Flex, 0));
+    assert!(flex
+        .roles
+        .contains(&CardRewardSemanticRoleV1::TemporaryStrengthBurst));
+    assert!(!flex
         .roles
         .contains(&CardRewardSemanticRoleV1::ScalingSource));
     assert!(twin_strike

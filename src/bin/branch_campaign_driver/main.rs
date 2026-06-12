@@ -4,6 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
+mod inspect_summary;
+
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_v1, render_branch_campaign_progress_event_v1,
     run_branch_campaign_from_report_with_checkpoint_and_progress_v1,
@@ -178,6 +180,19 @@ struct Args {
         help = "Inspect a saved BranchCampaignCheckpointV1 session instead of running a campaign"
     )]
     inspect_checkpoint: Option<PathBuf>,
+
+    #[arg(
+        long = "inspect-report",
+        value_name = "PATH",
+        help = "Pair --inspect-checkpoint with a BranchCampaignV1 report for active/frozen/abandoned labels"
+    )]
+    inspect_report: Option<PathBuf>,
+
+    #[arg(
+        long = "inspect-summary",
+        help = "Print compact deck/resource/strategy summaries for checkpoint sessions"
+    )]
+    inspect_summary: bool,
 
     #[arg(
         long = "inspect-act",
@@ -443,6 +458,11 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         .as_ref()
         .ok_or_else(|| "--inspect-checkpoint requires a path".to_string())?;
     let checkpoint = read_campaign_checkpoint_v1(path)?;
+    let report = args
+        .inspect_report
+        .as_ref()
+        .map(read_campaign_report_v1)
+        .transpose()?;
     let mut matches = Vec::new();
     for entry in checkpoint.sessions {
         let session = entry
@@ -460,6 +480,18 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
             "no checkpoint sessions matched filters act={:?} floor={:?} hp={:?}",
             args.inspect_act, args.inspect_floor, args.inspect_hp
         ));
+    }
+    if args.inspect_summary {
+        println!(
+            "{}",
+            inspect_summary::render_checkpoint_inspect_summary_v1(
+                checkpoint.seed,
+                &matches,
+                report.as_ref(),
+                args.branch_examples,
+            )
+        );
+        return Ok(());
     }
     if args.inspect_index >= matches.len() {
         return Err(format!(
@@ -769,6 +801,32 @@ mod tests {
             args.checkpoint_out,
             Some(PathBuf::from("new.checkpoint.json"))
         );
+    }
+
+    #[test]
+    fn campaign_cli_accepts_checkpoint_summary_inspection_paths() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-summary",
+            "--branch-examples",
+            "2",
+        ])
+        .expect("args parse");
+
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+        assert_eq!(
+            args.inspect_report,
+            Some(PathBuf::from("latest.campaign.json"))
+        );
+        assert!(args.inspect_summary);
+        assert_eq!(args.branch_examples, 2);
     }
 
     #[test]

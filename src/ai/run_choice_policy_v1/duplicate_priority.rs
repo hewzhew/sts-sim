@@ -23,6 +23,7 @@ pub fn run_choice_duplicate_priority_v1(card: &CombatCard, run_state: &RunState)
             | CardRewardSemanticRoleV1::Weak
             | CardRewardSemanticRoleV1::Vulnerable => 160,
             CardRewardSemanticRoleV1::ScalingSource => 150,
+            CardRewardSemanticRoleV1::TemporaryStrengthBurst => 70,
             CardRewardSemanticRoleV1::Block
             | CardRewardSemanticRoleV1::BlockRetention
             | CardRewardSemanticRoleV1::BlockMultiplier => 130,
@@ -81,15 +82,11 @@ fn supports_existing_deck_package(card: CardId, run_state: &RunState) -> bool {
             run_state,
             &[CardId::BodySlam, CardId::Entrench, CardId::Barricade],
         ),
-        CardId::HeavyBlade | CardId::LimitBreak => deck_has_any(
-            run_state,
-            &[
-                CardId::Inflame,
-                CardId::SpotWeakness,
-                CardId::DemonForm,
-                CardId::Flex,
-            ],
-        ),
+        CardId::HeavyBlade | CardId::LimitBreak => {
+            let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+            startup.persistent_strength_source_count > 0
+                || startup.convertible_strength_source_count > 0
+        }
         CardId::FeelNoPain | CardId::DarkEmbrace | CardId::Corruption => deck_has_any(
             run_state,
             &[
