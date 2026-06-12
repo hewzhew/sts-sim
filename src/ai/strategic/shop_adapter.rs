@@ -3,9 +3,14 @@ use super::{
     LedgerDelta, OpportunityCost, PressureKind, StrategicDebt, StrategicDecisionSite,
     StrategicDeckFacts, StrategicJob, StrategicSnapshot, VerdictHint,
 };
+use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
+use crate::ai::decision_tags_v1::{
+    strings_have_tag, TAG_COLLECTOR_ANSWER, TAG_ENGINE_CLOSURE, TAG_STARTUP_ACCESS,
+};
 use crate::ai::shop_policy_v1::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyClassV1, ShopPurchaseTargetV1,
 };
+use crate::state::rewards::RewardCard;
 
 pub fn strategic_trace_for_shop(context: &ShopDecisionContextV1) -> super::StrategicDecisionTrace {
     let snapshot = snapshot_from_shop_context(context);
@@ -115,11 +120,7 @@ fn candidate_delta_from_shop_candidate(candidate: &ShopCandidateEvidenceV1) -> C
             delta.role = CandidateRole::ResourceConversion;
             delta.verdict_hint = purchase_verdict_hint(candidate.purchase_priority);
             if candidate.card.is_some() {
-                delta.positive.push(LedgerDelta {
-                    kind: PressureKind::MissingJob(StrategicJob::Frontload),
-                    amount: purchase_priority_amount(candidate.purchase_priority),
-                    reason: "shop_card_purchase_priority".to_string(),
-                });
+                add_shop_card_purchase_deltas(candidate, &mut delta);
                 delta.negative.push(LedgerDelta {
                     kind: PressureKind::DeckDebt(StrategicDebt::CycleTime),
                     amount: 0.12,
@@ -169,6 +170,127 @@ fn candidate_delta_from_shop_candidate(candidate: &ShopCandidateEvidenceV1) -> C
     }
 
     delta
+}
+
+fn add_shop_card_purchase_deltas(candidate: &ShopCandidateEvidenceV1, delta: &mut CandidateDelta) {
+    let priority_amount = purchase_priority_amount(candidate.purchase_priority);
+
+    if candidate_has_evidence(candidate, TAG_COLLECTOR_ANSWER) {
+        delta.role = CandidateRole::BossAnswer;
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::MissingJob(StrategicJob::StatusControl),
+            amount: priority_amount.max(0.45),
+            reason: TAG_COLLECTOR_ANSWER.to_string(),
+        });
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::MissingJob(StrategicJob::Block),
+            amount: 0.20,
+            reason: "collector_answer_reduces_minion_or_debuff_pressure".to_string(),
+        });
+    }
+
+    if candidate_has_evidence(candidate, TAG_ENGINE_CLOSURE) {
+        if delta.role == CandidateRole::ResourceConversion {
+            delta.role = CandidateRole::Enabler;
+        }
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::MissingJob(StrategicJob::ExhaustAccess),
+            amount: priority_amount.max(0.45),
+            reason: TAG_ENGINE_CLOSURE.to_string(),
+        });
+    }
+
+    if candidate_has_evidence(candidate, TAG_STARTUP_ACCESS) {
+        if delta.role == CandidateRole::ResourceConversion {
+            delta.role = CandidateRole::Lubricant;
+        }
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::MissingJob(StrategicJob::DrawEnergy),
+            amount: priority_amount.max(0.35),
+            reason: TAG_STARTUP_ACCESS.to_string(),
+        });
+    }
+
+    add_default_shop_card_semantic_deltas(candidate, delta, priority_amount);
+}
+
+fn add_default_shop_card_semantic_deltas(
+    candidate: &ShopCandidateEvidenceV1,
+    delta: &mut CandidateDelta,
+    priority_amount: f32,
+) {
+    let Some(card) = candidate.card else {
+        return;
+    };
+    let profile = card_reward_semantic_profile_v1(&RewardCard::new(card, 0));
+    if profile.roles.contains(&CardRewardSemanticRoleV1::AoeDamage)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
+    {
+        delta.role = CandidateRole::Transition;
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::MissingJob(StrategicJob::Frontload),
+            amount: priority_amount,
+            reason: "shop_card_adds_frontload".to_string(),
+        });
+    }
+    if profile.roles.contains(&CardRewardSemanticRoleV1::Block)
+        || profile.roles.contains(&CardRewardSemanticRoleV1::Weak)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::EnemyStrengthDown)
+    {
+        if delta.role == CandidateRole::ResourceConversion {
+            delta.role = CandidateRole::DefensivePatch;
+        }
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::MissingJob(StrategicJob::Block),
+            amount: priority_amount.max(0.25),
+            reason: "shop_card_adds_block_or_mitigation".to_string(),
+        });
+    }
+    if profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::EnergySource)
+    {
+        if delta.role == CandidateRole::ResourceConversion {
+            delta.role = CandidateRole::Lubricant;
+        }
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::MissingJob(StrategicJob::DrawEnergy),
+            amount: priority_amount.max(0.25),
+            reason: "shop_card_adds_draw_or_energy".to_string(),
+        });
+    }
+    if profile
+        .roles
+        .contains(&CardRewardSemanticRoleV1::ExhaustGenerator)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::ExhaustPayoff)
+    {
+        if delta.role == CandidateRole::ResourceConversion {
+            delta.role = CandidateRole::Enabler;
+        }
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::MissingJob(StrategicJob::ExhaustAccess),
+            amount: priority_amount.max(0.25),
+            reason: "shop_card_adds_exhaust_access".to_string(),
+        });
+    }
+    if delta.positive.is_empty() {
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::EconomyNeed,
+            amount: priority_amount,
+            reason: "shop_card_converts_gold_without_specific_job".to_string(),
+        });
+    }
+}
+
+fn candidate_has_evidence(candidate: &ShopCandidateEvidenceV1, tag: &str) -> bool {
+    strings_have_tag(&candidate.evidence, tag)
 }
 
 fn purchase_verdict_hint(priority: Option<i32>) -> VerdictHint {

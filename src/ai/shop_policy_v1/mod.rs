@@ -1,6 +1,7 @@
 mod approvals;
 mod conversion;
 mod policy;
+mod strategy_tags;
 mod types;
 
 #[cfg(test)]

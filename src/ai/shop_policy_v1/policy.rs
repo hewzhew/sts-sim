@@ -6,10 +6,12 @@ use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
 use super::approvals::approved_action;
+use super::strategy_tags::shop_purchase_strategy_analysis_v1;
 use super::types::{
     purge_candidate_id, ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopDecisionV1,
     ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
+use crate::ai::decision_tags_v1::TAG_DECK_CLEANING;
 
 pub fn build_shop_decision_context_v1(
     run_state: &RunState,
@@ -36,6 +38,14 @@ pub fn build_shop_decision_context_v1(
     }
 
     candidates.extend(shop.cards.iter().enumerate().map(|(index, card)| {
+        let target = ShopPurchaseTargetV1::Card {
+            index,
+            card: card.card_id,
+        };
+        let base_priority =
+            crate::ai::shop_policy_v1::shop_card_conversion_priority_v1(card.card_id, run_state);
+        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy);
+        let priority = purchase_priority_with_strategy(target, base_priority, &strategy);
         purchase_candidate_evidence(
             format!(
                 "buy card {} for {} gold",
@@ -43,56 +53,47 @@ pub fn build_shop_decision_context_v1(
                 card.price
             ),
             card.can_buy && card.price <= run_state.gold,
-            ShopPurchaseTargetV1::Card {
-                index,
-                card: card.card_id,
-            },
-            purchase_priority_with_strategy(
-                ShopPurchaseTargetV1::Card {
-                    index,
-                    card: card.card_id,
-                },
-                crate::ai::shop_policy_v1::shop_card_conversion_priority_v1(
-                    card.card_id,
-                    run_state,
-                ),
-                &strategy,
-            ),
+            target,
+            priority,
+            analysis.evidence,
         )
     }));
     candidates.extend(shop.relics.iter().enumerate().map(|(index, relic)| {
+        let target = ShopPurchaseTargetV1::Relic {
+            index,
+            relic: relic.relic_id,
+        };
+        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy);
         purchase_candidate_evidence(
             format!("buy relic {:?} for {} gold", relic.relic_id, relic.price),
             relic.can_buy && relic.price <= run_state.gold,
-            ShopPurchaseTargetV1::Relic {
-                index,
-                relic: relic.relic_id,
-            },
+            target,
             crate::ai::shop_policy_v1::shop_relic_conversion_priority_v1(relic.relic_id),
+            analysis.evidence,
         )
     }));
     candidates.extend(shop.potions.iter().enumerate().map(|(index, potion)| {
+        let target = ShopPurchaseTargetV1::Potion {
+            index,
+            potion: potion.potion_id,
+        };
+        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy);
         purchase_candidate_evidence(
             format!(
                 "buy potion {:?} for {} gold",
                 potion.potion_id, potion.price
             ),
             potion.can_buy && potion.price <= run_state.gold,
-            ShopPurchaseTargetV1::Potion {
-                index,
-                potion: potion.potion_id,
-            },
+            target,
             purchase_priority_with_strategy(
-                ShopPurchaseTargetV1::Potion {
-                    index,
-                    potion: potion.potion_id,
-                },
+                target,
                 crate::ai::shop_policy_v1::shop_potion_conversion_priority_for_v1(
                     potion.potion_id,
                     run_state,
                 ),
                 &strategy,
             ),
+            analysis.evidence,
         )
     }));
     candidates.push(ShopCandidateEvidenceV1 {
@@ -152,9 +153,11 @@ fn purge_candidate_evidence(
     let mut risks = Vec::new();
     match class {
         ShopPolicyClassV1::CursePurge => {
+            evidence.push(TAG_DECK_CLEANING.to_string());
             evidence.push("card is a curse".to_string());
         }
         ShopPolicyClassV1::StarterStrikePurge => {
+            evidence.push(TAG_DECK_CLEANING.to_string());
             evidence.push(format!(
                 "CorePlanProtection support is {:?}",
                 strategy.support(
@@ -197,7 +200,16 @@ fn purchase_candidate_evidence(
     can_buy: bool,
     target: ShopPurchaseTargetV1,
     priority: i32,
+    extra_evidence: Vec<String>,
 ) -> ShopCandidateEvidenceV1 {
+    let mut evidence = vec![format!("can_buy={can_buy}"), format!("priority={priority}")];
+    evidence.extend(extra_evidence);
+    let risks = if can_buy {
+        vec!["purchase must clear high-impact priority gate".to_string()]
+    } else {
+        Vec::new()
+    };
+
     ShopCandidateEvidenceV1 {
         candidate_id: super::types::purchase_candidate_id(target),
         label,
@@ -214,12 +226,8 @@ fn purchase_candidate_evidence(
         } else {
             StrategyPlanSupportV1::Blocked
         },
-        evidence: vec![format!("can_buy={can_buy}"), format!("priority={priority}")],
-        risks: if can_buy {
-            vec!["purchase must clear high-impact priority gate".to_string()]
-        } else {
-            Vec::new()
-        },
+        evidence,
+        risks,
     }
 }
 

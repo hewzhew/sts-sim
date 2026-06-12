@@ -24,6 +24,7 @@ use sts_simulator::eval::run_control::{
     render_run_control_details, render_run_control_state, RunControlCombatSegmentMode,
     RunControlCommand, RunControlSearchCombatOptions, RunControlSession,
 };
+use sts_simulator::state::core::EngineState;
 
 const QUICK_PRESET_MAX_ROUNDS: usize = 2;
 const QUICK_PRESET_ROUND_DEPTH: usize = 2;
@@ -224,6 +225,12 @@ struct Args {
         help = "Run search-combat from the selected checkpoint session and print the result"
     )]
     inspect_search: bool,
+
+    #[arg(
+        long = "inspect-shop-evidence",
+        help = "Print current-code shop candidate evidence and strategic deltas for the selected checkpoint session"
+    )]
+    inspect_shop_evidence: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -516,7 +523,9 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         session.engine_state
     );
     println!("commands: {}", render_inspect_command_path(&commands));
-    if args.inspect_search {
+    if args.inspect_shop_evidence {
+        println!("{}", render_checkpoint_shop_evidence_v1(&session)?);
+    } else if args.inspect_search {
         let options = inspect_search_options_from_args(args)?;
         let outcome = session.apply_command(RunControlCommand::SearchCombat(options))?;
         println!("{}", outcome.message);
@@ -526,6 +535,145 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         println!("{}", render_run_control_state(&session));
     }
     Ok(())
+}
+
+fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<String, String> {
+    let EngineState::Shop(shop) = &session.engine_state else {
+        return Err(format!(
+            "--inspect-shop-evidence requires Shop engine state, got {:?}",
+            session.engine_state
+        ));
+    };
+    let context =
+        sts_simulator::ai::shop_policy_v1::build_shop_decision_context_v1(&session.run_state, shop);
+    let trace = sts_simulator::ai::strategic::strategic_trace_for_shop(&context);
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Shop candidate evidence: act={} floor={} hp={}/{} gold={} boss={:?}",
+        session.run_state.act_num,
+        session.run_state.floor_num,
+        session.run_state.current_hp,
+        session.run_state.max_hp,
+        session.run_state.gold,
+        session.run_state.boss_key
+    ));
+    lines.push(format!(
+        "context: conversion_pressure={} affordable_purchase_exists={} candidates={}",
+        context.conversion_pressure,
+        context.affordable_purchase_exists,
+        context.candidates.len()
+    ));
+    for candidate in &context.candidates {
+        let action_id = inspect_shop_candidate_action_id(candidate);
+        let compiled = trace
+            .compiled
+            .iter()
+            .find(|decision| decision.action.candidate_id() == action_id);
+        let delta = trace
+            .candidate_deltas
+            .iter()
+            .find(|delta| delta.action.candidate_id() == action_id);
+        lines.push(format!(
+            "- {} | id={} | class={:?} gate={:?} priority={} verdict={} score={}",
+            candidate.label,
+            action_id,
+            candidate.class,
+            candidate.support_gate,
+            candidate
+                .purchase_priority
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            compiled
+                .map(|decision| format!("{:?}", decision.verdict))
+                .unwrap_or_else(|| "-".to_string()),
+            compiled
+                .map(|decision| format!("{:.2}", decision.score))
+                .unwrap_or_else(|| "-".to_string()),
+        ));
+        lines.push(format!(
+            "    evidence: {}",
+            render_short_list(&candidate.evidence)
+        ));
+        lines.push(format!(
+            "    risks: {}",
+            render_short_list(&candidate.risks)
+        ));
+        if let Some(delta) = delta {
+            lines.push(format!(
+                "    delta: role={:?} hint={:?} positive=[{}] negative=[{}]",
+                delta.role,
+                delta.verdict_hint,
+                render_ledger_deltas(&delta.positive),
+                render_ledger_deltas(&delta.negative)
+            ));
+        }
+    }
+    if let Some(action) = trace.would_choose.as_ref() {
+        lines.push(format!("trace_would_choose: {}", action.candidate_id()));
+    } else {
+        lines.push("trace_would_choose: -".to_string());
+    }
+    Ok(lines.join("\n"))
+}
+
+fn inspect_shop_candidate_action_id(
+    candidate: &sts_simulator::ai::shop_policy_v1::ShopCandidateEvidenceV1,
+) -> String {
+    use sts_simulator::ai::shop_policy_v1::{ShopPolicyClassV1, ShopPurchaseTargetV1};
+    use sts_simulator::ai::strategic::CandidateAction;
+
+    match candidate.purchase_target {
+        Some(ShopPurchaseTargetV1::Card { index, card }) => CandidateAction::BuyCard {
+            shop_index: index,
+            card,
+            gold: 0,
+        }
+        .candidate_id(),
+        Some(ShopPurchaseTargetV1::Relic { index, relic }) => CandidateAction::BuyRelic {
+            shop_index: index,
+            relic,
+            gold: 0,
+        }
+        .candidate_id(),
+        Some(ShopPurchaseTargetV1::Potion { index, potion }) => CandidateAction::BuyPotion {
+            shop_index: index,
+            potion,
+            gold: 0,
+        }
+        .candidate_id(),
+        None if candidate.class == ShopPolicyClassV1::Leave => {
+            CandidateAction::LeaveShop.candidate_id()
+        }
+        None => candidate
+            .deck_index
+            .zip(candidate.card)
+            .map(|(deck_index, card)| CandidateAction::RemoveCard {
+                deck_index,
+                card,
+                gold: None,
+            })
+            .map(|action| action.candidate_id())
+            .unwrap_or_else(|| candidate.candidate_id.clone()),
+    }
+}
+
+fn render_short_list(items: &[String]) -> String {
+    if items.is_empty() {
+        "-".to_string()
+    } else {
+        items.join(", ")
+    }
+}
+
+fn render_ledger_deltas(items: &[sts_simulator::ai::strategic::LedgerDelta]) -> String {
+    if items.is_empty() {
+        return "-".to_string();
+    }
+    items
+        .iter()
+        .map(|delta| format!("{:?}:{:.2}:{}", delta.kind, delta.amount, delta.reason))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn checkpoint_session_matches_filters(args: &Args, session: &RunControlSession) -> bool {
@@ -827,6 +975,27 @@ mod tests {
         );
         assert!(args.inspect_summary);
         assert_eq!(args.branch_examples, 2);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_checkpoint_shop_evidence_inspection() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-act",
+            "2",
+            "--inspect-floor",
+            "18",
+            "--inspect-shop-evidence",
+        ])
+        .expect("args parse");
+
+        assert_eq!(args.inspect_act, Some(2));
+        assert_eq!(args.inspect_floor, Some(18));
+        assert!(args.inspect_shop_evidence);
     }
 
     #[test]

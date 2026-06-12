@@ -1,7 +1,13 @@
+use crate::ai::decision_tags_v1::{
+    TAG_COMBAT_SHAPE_ADDS_SELF_COPY, TAG_COMBAT_SHAPE_ADDS_STATUS, TAG_COMBAT_SHAPE_RANDOM_EXHAUST,
+    TAG_COMBAT_SHAPE_TOPDECK_SENSITIVE, TAG_DIGEST_CAPACITY_DRAW, TAG_DIGEST_CAPACITY_EXHAUST,
+    TAG_DIGEST_CAPACITY_STATUS, TAG_DIGEST_CAPACITY_TOPDECK,
+};
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, plan_shop_decision_v1, shop_card_conversion_priority_v1,
     ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
+use crate::ai::strategic::{CandidateAction, PressureKind, StrategicJob};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
@@ -50,6 +56,91 @@ fn shop_context_exposes_purchase_candidates_without_selecting_policy() {
         .candidates
         .iter()
         .any(|candidate| { candidate.label.contains("Pommel") }));
+}
+
+#[test]
+fn shop_context_exposes_neutral_combat_shape_and_digest_evidence() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    run_state.add_card_to_deck(CardId::Evolve);
+    run_state.add_card_to_deck(CardId::Corruption);
+    run_state.add_card_to_deck(CardId::BattleTrance);
+    run_state.add_card_to_deck(CardId::Headbutt);
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::RecklessCharge,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::Anger,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::Havoc,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let reckless = shop_card_candidate(&context, CardId::RecklessCharge);
+    let anger = shop_card_candidate(&context, CardId::Anger);
+    let havoc = shop_card_candidate(&context, CardId::Havoc);
+
+    assert_has_evidence(reckless, TAG_COMBAT_SHAPE_ADDS_STATUS);
+    assert_has_evidence(reckless, TAG_DIGEST_CAPACITY_STATUS);
+    assert_has_evidence(reckless, TAG_DIGEST_CAPACITY_EXHAUST);
+    assert_has_evidence(reckless, TAG_DIGEST_CAPACITY_DRAW);
+    assert_has_evidence(reckless, TAG_DIGEST_CAPACITY_TOPDECK);
+    assert_has_evidence(anger, TAG_COMBAT_SHAPE_ADDS_SELF_COPY);
+    assert_has_evidence(havoc, TAG_COMBAT_SHAPE_RANDOM_EXHAUST);
+    assert_has_evidence(havoc, TAG_COMBAT_SHAPE_TOPDECK_SENSITIVE);
+    assert!(
+        reckless
+            .risks
+            .iter()
+            .all(|risk| !risk.contains("combat_shape")),
+        "combat shape is neutral evidence, not a risk/approval shortcut"
+    );
+}
+
+#[test]
+fn shop_strategic_trace_maps_buy_cards_by_semantic_jobs() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::ShrugItOff,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::BurningPact,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
+    let shrug = buy_card_delta(&trace, CardId::ShrugItOff);
+    let burning_pact = buy_card_delta(&trace, CardId::BurningPact);
+
+    assert_delta_has_job(shrug, StrategicJob::Block);
+    assert_delta_has_job(shrug, StrategicJob::DrawEnergy);
+    assert_delta_lacks_job(shrug, StrategicJob::Frontload);
+    assert_delta_has_job(burning_pact, StrategicJob::DrawEnergy);
+    assert_delta_has_job(burning_pact, StrategicJob::ExhaustAccess);
 }
 
 #[test]
@@ -281,4 +372,64 @@ fn map_node(x: i32, y: i32, room_type: RoomType) -> MapRoomNode {
     let mut node = MapRoomNode::new(x, y);
     node.class = Some(room_type);
     node
+}
+
+fn shop_card_candidate(
+    context: &crate::ai::shop_policy_v1::ShopDecisionContextV1,
+    card: CardId,
+) -> &crate::ai::shop_policy_v1::ShopCandidateEvidenceV1 {
+    context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == Some(card))
+        .expect("shop card candidate should exist")
+}
+
+fn assert_has_evidence(candidate: &crate::ai::shop_policy_v1::ShopCandidateEvidenceV1, tag: &str) {
+    assert!(
+        candidate.evidence.iter().any(|item| item == tag),
+        "{} should include evidence tag {tag}",
+        candidate.label
+    );
+}
+
+fn buy_card_delta(
+    trace: &crate::ai::strategic::StrategicDecisionTrace,
+    card: CardId,
+) -> &crate::ai::strategic::CandidateDelta {
+    trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| {
+            matches!(
+                delta.action,
+                CandidateAction::BuyCard {
+                    card: candidate,
+                    ..
+                } if candidate == card
+            )
+        })
+        .expect("buy-card delta should exist")
+}
+
+fn assert_delta_has_job(delta: &crate::ai::strategic::CandidateDelta, job: StrategicJob) {
+    assert!(
+        delta
+            .positive
+            .iter()
+            .any(|entry| entry.kind == PressureKind::MissingJob(job)),
+        "delta should include positive job {job:?}, got {:?}",
+        delta.positive
+    );
+}
+
+fn assert_delta_lacks_job(delta: &crate::ai::strategic::CandidateDelta, job: StrategicJob) {
+    assert!(
+        delta
+            .positive
+            .iter()
+            .all(|entry| entry.kind != PressureKind::MissingJob(job)),
+        "delta should not include positive job {job:?}, got {:?}",
+        delta.positive
+    );
 }

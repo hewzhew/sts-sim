@@ -11,6 +11,7 @@ pub mod combat_search_v2;
 #[cfg_attr(not(test), allow(dead_code))]
 pub mod combat_state_key;
 pub mod combat_state_snapshot;
+pub mod decision_tags_v1;
 pub mod deck_startup_profile_v1;
 pub mod event_policy_v1;
 pub mod neow_policy_v1;
