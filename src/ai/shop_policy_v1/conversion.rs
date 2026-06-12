@@ -4,6 +4,7 @@ use crate::ai::boss_mechanics_v1::{
 use crate::ai::card_admission_policy_v1::{
     evaluate_card_admission_v1, CardAdmissionSourceV1, CardAdmissionVerdictV1,
 };
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
@@ -138,7 +139,12 @@ fn champ_shop_card_priority_bonus_v1(card: CardId, run_state: &RunState) -> i32 
 }
 
 fn champ_transition_burst_shop_card_v1(card: CardId, run_state: &RunState) -> bool {
-    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+    let strength_profile = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
+    let mechanics = card_mechanics_profile_v1(card);
+    if mechanics.temporary_strength_burst {
+        return strength_profile.payoffs > 0 || strength_profile.converters > 0;
+    }
+
     match card {
         CardId::Carnage
         | CardId::Bludgeon
@@ -147,15 +153,13 @@ fn champ_transition_burst_shop_card_v1(card: CardId, run_state: &RunState) -> bo
         | CardId::DemonForm
         | CardId::Whirlwind => true,
         CardId::HeavyBlade => {
-            startup.persistent_strength_source_count > 0
-                || startup.temporary_strength_burst_count > 0
-                || startup.convertible_strength_source_count > 0
+            strength_profile.stable_sources > 0
+                || strength_profile.temporary_bursts > 0
+                || strength_profile.convertible_potential_count > 0
         }
         CardId::LimitBreak => {
-            startup.persistent_strength_source_count > 0
-                || startup.temporary_strength_burst_count > 0
+            strength_profile.stable_sources > 0 || strength_profile.temporary_bursts > 0
         }
-        CardId::Flex => startup.strength_payoff_count > 0 || startup.strength_converter_count > 0,
         _ => false,
     }
 }

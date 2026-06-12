@@ -5,6 +5,7 @@ use crate::ai::card_component_marginal_value_v1::{
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::ai::deck_startup_profile_v1::{
     deck_startup_profile_v1, startup_liability_for_candidate_v1, startup_support_for_candidate_v1,
     DeckStartupProfileV1,
@@ -583,9 +584,13 @@ fn is_high_impact_per_card(profile: &CardRewardSemanticProfileV1) -> bool {
 }
 
 fn is_low_value_time_eater_card(profile: &CardRewardSemanticProfileV1) -> bool {
+    if card_mechanics_profile_v1(profile.card).temporary_strength_burst {
+        return true;
+    }
+
     matches!(
         profile.card,
-        CardId::Anger | CardId::Flex | CardId::Warcry | CardId::Bloodletting | CardId::SeeingRed
+        CardId::Anger | CardId::Warcry | CardId::Bloodletting | CardId::SeeingRed
     ) || (is_draw_one_style_goodstuff(profile) && !is_high_impact_per_card(profile))
 }
 

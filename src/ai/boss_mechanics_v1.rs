@@ -1,3 +1,4 @@
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;
@@ -480,9 +481,13 @@ fn is_key_card_for_stasis(card: CardId) -> bool {
 }
 
 fn is_low_value_spam(card: CardId) -> bool {
+    if card_mechanics_profile_v1(card).temporary_strength_burst {
+        return true;
+    }
+
     matches!(
         card,
-        CardId::Anger | CardId::Flex | CardId::Warcry | CardId::Bloodletting | CardId::SeeingRed
+        CardId::Anger | CardId::Warcry | CardId::Bloodletting | CardId::SeeingRed
     )
 }
 

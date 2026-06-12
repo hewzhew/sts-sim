@@ -1,3 +1,4 @@
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::content::cards::{get_card_definition, CardId, CardTarget};
 use crate::state::rewards::RewardCard;
 
@@ -45,7 +46,7 @@ pub(crate) fn card_facts(card: &RewardCard) -> CardRewardFactsV1 {
 
 pub(crate) fn scaling_signals(facts: &CardRewardFactsV1) -> Vec<CardRewardScalingSignalV1> {
     let mut signals = Vec::new();
-    if facts.card == CardId::Flex && facts.strength_gain > 0 {
+    if card_mechanics_profile_v1(facts.card).temporary_strength_burst && facts.strength_gain > 0 {
         signals.push(CardRewardScalingSignalV1::TemporaryStrengthBurst);
     } else if facts.strength_gain > 0 {
         signals.push(CardRewardScalingSignalV1::StrengthGain);

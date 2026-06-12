@@ -1,3 +1,4 @@
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::content::cards::{get_card_definition, upgraded_base_cost_override, CardId, CardTag};
 use crate::content::monsters::factory::EncounterId;
 use crate::runtime::combat::CombatCard;
@@ -193,6 +194,13 @@ fn champ_upgrade_strategy_tag_for_card(
     card: CardId,
     run_state: &RunState,
 ) -> Option<(&'static str, &'static str)> {
+    let mechanics = card_mechanics_profile_v1(card);
+    if mechanics.temporary_strength_burst
+        && has_champ_temporary_strength_burst_upgrade_support(run_state)
+    {
+        return Some(("transition_burst", "champ:transition_burst"));
+    }
+
     match card {
         CardId::Carnage | CardId::Bludgeon | CardId::Immolate | CardId::Offering => {
             Some(("transition_burst", "champ:transition_burst"))
@@ -204,9 +212,6 @@ fn champ_upgrade_strategy_tag_for_card(
             Some(("transition_burst", "champ:transition_burst"))
         }
         CardId::LimitBreak if has_champ_strength_conversion_support(run_state) => {
-            Some(("transition_burst", "champ:transition_burst"))
-        }
-        CardId::Flex if has_champ_flex_upgrade_support(run_state) => {
             Some(("transition_burst", "champ:transition_burst"))
         }
         CardId::Impervious
@@ -234,20 +239,20 @@ fn has_extra_energy_access(run_state: &RunState) -> bool {
 }
 
 fn has_champ_strength_burst_support(run_state: &RunState) -> bool {
-    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
-    startup.persistent_strength_source_count > 0
-        || startup.temporary_strength_burst_count > 0
-        || startup.convertible_strength_source_count > 0
+    let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
+    strength.stable_sources > 0
+        || strength.temporary_bursts > 0
+        || strength.convertible_potential_count > 0
 }
 
 fn has_champ_strength_conversion_support(run_state: &RunState) -> bool {
-    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
-    startup.persistent_strength_source_count > 0 || startup.temporary_strength_burst_count > 0
+    let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
+    strength.stable_sources > 0 || strength.temporary_bursts > 0
 }
 
-fn has_champ_flex_upgrade_support(run_state: &RunState) -> bool {
-    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
-    startup.strength_payoff_count > 0 || startup.strength_converter_count > 0
+fn has_champ_temporary_strength_burst_upgrade_support(run_state: &RunState) -> bool {
+    let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
+    strength.payoffs > 0 || strength.converters > 0
 }
 
 fn deck_has_any(run_state: &RunState, cards: &[CardId]) -> bool {

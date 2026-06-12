@@ -38,6 +38,7 @@ pub struct DeckStartupProfileV1 {
 }
 
 pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
+    let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
     let mut profile = DeckStartupProfileV1 {
         has_runic_pyramid: run_state
             .relics
@@ -50,19 +51,6 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         match relic.id {
             RelicId::RunicPyramid | RelicId::SneckoEye => {
                 profile.setup_payment = profile.setup_payment.saturating_add(1);
-            }
-            RelicId::Vajra => {
-                profile.persistent_strength_source_count =
-                    profile.persistent_strength_source_count.saturating_add(1);
-                profile.payoff_engine = profile.payoff_engine.saturating_add(1);
-            }
-            RelicId::MutagenicStrength => {
-                profile.temporary_strength_burst_count =
-                    profile.temporary_strength_burst_count.saturating_add(1);
-            }
-            RelicId::ClockworkSouvenir | RelicId::OrangePellets => {
-                profile.strength_converter_count =
-                    profile.strength_converter_count.saturating_add(1);
             }
             RelicId::MedicalKit => {
                 profile.exhaust_engine_count = profile.exhaust_engine_count.saturating_add(1);
@@ -93,26 +81,11 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         if is_strong_draw_card(id) {
             profile.strong_draw_count = profile.strong_draw_count.saturating_add(1);
         }
-        if is_persistent_strength_source_card(id) {
-            profile.persistent_strength_source_count =
-                profile.persistent_strength_source_count.saturating_add(1);
-            profile.payoff_engine = profile.payoff_engine.saturating_add(1);
-        }
-        if is_temporary_strength_burst_card(id) {
-            profile.temporary_strength_burst_count =
-                profile.temporary_strength_burst_count.saturating_add(1);
-        }
-        if is_strength_converter_card(id) {
-            profile.strength_converter_count = profile.strength_converter_count.saturating_add(1);
-        }
         if id == CardId::Rupture {
             profile.rupture_count = profile.rupture_count.saturating_add(1);
         }
         if is_self_damage_source_card(id) {
             profile.self_damage_source_count = profile.self_damage_source_count.saturating_add(1);
-        }
-        if is_strength_payoff_card(id) {
-            profile.strength_payoff_count = profile.strength_payoff_count.saturating_add(1);
         }
         if is_dual_wield_target_card(id) {
             profile.dual_wield_target_count = profile.dual_wield_target_count.saturating_add(1);
@@ -144,28 +117,15 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         }
     }
 
-    for potion in run_state.potions.iter().flatten() {
-        match potion.id {
-            crate::content::potions::PotionId::SteroidPotion => {
-                profile.temporary_strength_burst_count =
-                    profile.temporary_strength_burst_count.saturating_add(1);
-            }
-            crate::content::potions::PotionId::AncientPotion => {
-                profile.strength_converter_count =
-                    profile.strength_converter_count.saturating_add(1);
-            }
-            _ => {}
-        }
-    }
-
-    if profile.rupture_count > 0 && profile.self_damage_source_count > 0 {
-        profile.persistent_strength_source_count = profile
-            .persistent_strength_source_count
-            .saturating_add(profile.rupture_count);
-        profile.payoff_engine = profile.payoff_engine.saturating_add(profile.rupture_count);
-    }
-    if profile.temporary_strength_burst_count > 0 && profile.strength_converter_count > 0 {
-        profile.convertible_strength_source_count = profile.temporary_strength_burst_count;
+    profile.persistent_strength_source_count = strength.stable_sources;
+    profile.temporary_strength_burst_count = strength.temporary_bursts;
+    profile.strength_converter_count = strength.converters;
+    profile.convertible_strength_source_count = strength.convertible_potential_count;
+    profile.strength_payoff_count = strength.payoffs;
+    profile.payoff_engine = profile
+        .payoff_engine
+        .saturating_add(strength.stable_sources);
+    if strength.convertible_potential_count > 0 {
         profile.payoff_engine = profile.payoff_engine.saturating_add(1);
     }
 
@@ -344,24 +304,6 @@ fn is_strong_draw_card(card: CardId) -> bool {
     )
 }
 
-fn is_persistent_strength_source_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
-    )
-}
-
-fn is_temporary_strength_burst_card(card: CardId) -> bool {
-    matches!(card, CardId::Flex)
-}
-
-fn is_strength_converter_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::LimitBreak | CardId::Panacea | CardId::CoreSurge
-    )
-}
-
 fn is_self_damage_source_card(card: CardId) -> bool {
     matches!(
         card,
@@ -371,18 +313,6 @@ fn is_self_damage_source_card(card: CardId) -> bool {
             | CardId::Combust
             | CardId::Brutality
             | CardId::JAX
-    )
-}
-
-fn is_strength_payoff_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::HeavyBlade
-            | CardId::SwordBoomerang
-            | CardId::Pummel
-            | CardId::LimitBreak
-            | CardId::Reaper
-            | CardId::Whirlwind
     )
 }
 

@@ -23,7 +23,7 @@ pub(crate) fn run_context(run_state: &RunState) -> CardRewardRunContextV1 {
 }
 
 pub(crate) fn deck_profile(run_state: &RunState) -> DeckProfileV1 {
-    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+    let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
     let mut profile = DeckProfileV1 {
         deck_size: run_state.master_deck.len(),
         attacks: 0,
@@ -36,11 +36,11 @@ pub(crate) fn deck_profile(run_state: &RunState) -> DeckProfileV1 {
         total_block: 0,
         draw_cards: 0,
         energy_sources: 0,
-        strength_sources: startup.persistent_strength_source_count,
-        temporary_strength_bursts: startup.temporary_strength_burst_count,
-        strength_converters: startup.strength_converter_count,
-        convertible_strength_sources: startup.convertible_strength_source_count,
-        strength_payoffs: startup.strength_payoff_count,
+        strength_sources: strength.stable_sources,
+        temporary_strength_bursts: strength.temporary_bursts,
+        strength_converters: strength.converters,
+        convertible_strength_sources: strength.convertible_potential_count,
+        strength_payoffs: strength.payoffs,
         vulnerable_sources: 0,
         weak_sources: 0,
         exhaust_generators: 0,

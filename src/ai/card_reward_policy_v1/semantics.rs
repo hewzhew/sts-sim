@@ -1,3 +1,4 @@
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
 
@@ -39,7 +40,7 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
     if facts.enemy_strength_down > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::EnemyStrengthDown);
     }
-    if facts.card == CardId::Flex && facts.strength_gain > 0 {
+    if card_mechanics_profile_v1(facts.card).temporary_strength_burst && facts.strength_gain > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::TemporaryStrengthBurst);
     } else if facts.strength_gain > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::ScalingSource);
