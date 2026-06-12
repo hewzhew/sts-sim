@@ -990,6 +990,34 @@ fn run_control_auto_run_buys_high_impact_shop_card_when_affordable() {
 }
 
 #[test]
+fn branch_skip_card_reward_consumes_last_non_skippable_reward_item() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = crate::state::rewards::RewardState::new();
+    reward.skippable = false;
+    reward.items.push(crate::state::rewards::RewardItem::Card {
+        cards: vec![
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::TwinStrike, 0),
+            crate::state::rewards::RewardCard::new(crate::content::cards::CardId::ShrugItOff, 0),
+        ],
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    session
+        .apply_command(RunControlCommand::BranchSkipCardReward(0))
+        .expect("synthetic branch skip should consume the card reward item");
+
+    assert!(
+        matches!(session.engine_state, EngineState::MapNavigation),
+        "empty non-skippable reward screens should settle through reward completion"
+    );
+    assert_eq!(
+        session.run_state.master_deck.len(),
+        10,
+        "synthetic skip should not add a reward card"
+    );
+}
+
+#[test]
 fn run_control_auto_run_uses_core_plan_package_to_purge_starter_when_no_purchase_competes() {
     let mut session = test_session_at_shop();
     if let EngineState::Shop(shop) = &mut session.engine_state {

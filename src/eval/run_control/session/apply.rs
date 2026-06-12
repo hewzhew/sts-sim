@@ -1,6 +1,5 @@
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::state::core::{ClientInput, EngineState, RunResult};
-use crate::state::rewards::RewardItem;
 
 use super::{CombatCompletionSource, RunControlCommandOutcome, RunControlSession};
 use crate::eval::run_control::auto_capture::render_auto_capture_result;
@@ -196,32 +195,23 @@ impl RunControlSession {
         &mut self,
         reward_index: usize,
     ) -> Result<RunControlCommandOutcome, String> {
-        let reward_empty = {
+        let next_state = {
             let EngineState::RewardScreen(reward) = &mut self.engine_state else {
                 return Err("branch-skip-card-reward is only valid on a reward screen".to_string());
             };
-            if reward.pending_card_choice.is_some() {
-                return Err(
-                    "branch-skip-card-reward requires an unopened card reward item".to_string(),
-                );
-            }
-            if !matches!(
-                reward.items.get(reward_index),
-                Some(RewardItem::Card { .. })
-            ) {
-                return Err(format!("reward item {reward_index} is not a card reward"));
-            }
-            reward.items.remove(reward_index);
-            reward.items.is_empty()
+            crate::engine::reward_handler::skip_card_reward_item_for_branch_experiment(
+                &mut self.run_state,
+                reward,
+                reward_index,
+            )?
         };
 
-        if reward_empty {
-            self.apply_input(ClientInput::Proceed)
-        } else {
-            Ok(RunControlCommandOutcome::message(format!(
-                "Branch skipped card reward at item {reward_index}"
-            )))
+        if let Some(next_state) = next_state {
+            self.engine_state = next_state;
         }
+        Ok(RunControlCommandOutcome::message(format!(
+            "Branch skipped card reward at item {reward_index}"
+        )))
     }
 
     fn apply_default_candidate(&mut self) -> Result<RunControlCommandOutcome, String> {

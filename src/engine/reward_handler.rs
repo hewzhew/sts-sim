@@ -121,6 +121,27 @@ pub fn handle_overlay(
     handle_internal(run_state, reward_state, input, Some(return_state))
 }
 
+pub(crate) fn skip_card_reward_item_for_branch_experiment(
+    run_state: &mut RunState,
+    reward_state: &mut RewardState,
+    reward_index: usize,
+) -> Result<Option<EngineState>, String> {
+    if reward_state.pending_card_choice.is_some() {
+        return Err("branch card reward skip requires an unopened reward item".to_string());
+    }
+    if !matches!(
+        reward_state.items.get(reward_index),
+        Some(RewardItem::Card { .. })
+    ) {
+        return Err(format!("reward item {reward_index} is not a card reward"));
+    }
+    reward_state.items.remove(reward_index);
+    if reward_state.items.is_empty() {
+        return Ok(Some(reward_done_state(run_state, None)));
+    }
+    Ok(None)
+}
+
 fn handle_internal(
     run_state: &mut crate::state::run::RunState,
     reward_state: &mut crate::state::rewards::RewardState,
